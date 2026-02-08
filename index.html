@@ -3,1616 +3,322 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema do Professor</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: #f5f7fa;
-            color: #2d3748;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        header {
-            background: #4a5568;
-            color: white;
-            padding: 20px;
-            margin-bottom: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        header h1 {
-            font-size: 24px;
-            margin-bottom: 10px;
-        }
-
-        .date-info {
-            font-size: 14px;
-            opacity: 0.9;
-        }
-
-        nav {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 30px;
-            flex-wrap: wrap;
-        }
-
-        nav button {
-            padding: 12px 16px;
-            border: none;
-            background: white;
-            color: #4a5568;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 15px;
-            font-weight: 500;
-            transition: all 0.2s;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            display: inline-flex;
-            align-items: center;
-            gap: 0;
-        }
-
-        nav button:hover {
-            background: #edf2f7;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-
-        nav button.active {
-            background: #3182ce;
-            color: white;
-        }
-
-        nav button .label {
-            max-width: 0;
-            opacity: 0;
-            overflow: hidden;
-            white-space: nowrap;
-            transition: all 0.3s ease;
-        }
-
-        nav button:hover .label,
-        nav button.active .label {
-            max-width: 150px;
-            opacity: 1;
-            margin-left: 8px;
-        }
-
-        .screen {
-            display: none;
-            animation: fadeIn 0.3s;
-        }
-
-        .screen.active {
-            display: block;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .card {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-
-        .card h2 {
-            font-size: 20px;
-            margin-bottom: 15px;
-            color: #2d3748;
-            border-bottom: 2px solid #e2e8f0;
-            padding-bottom: 10px;
-        }
-
-        .card h3 {
-            font-size: 16px;
-            margin: 15px 0 10px 0;
-            color: #4a5568;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-
-        .alert {
-            padding: 12px 16px;
-            border-radius: 6px;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .alert-warning {
-            background: #fef5e7;
-            border-left: 4px solid #f39c12;
-            color: #7d6608;
-        }
-
-        .alert-info {
-            background: #ebf8ff;
-            border-left: 4px solid #3182ce;
-            color: #2c5282;
-        }
-
-        .alert-success {
-            background: #f0fdf4;
-            border-left: 4px solid #22c55e;
-            color: #15803d;
-        }
-
-        .btn {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.2s;
-            margin-right: 8px;
-            margin-bottom: 8px;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .btn-primary {
-            background: #3182ce;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #2563eb;
-        }
-
-        .btn-secondary {
-            background: #e2e8f0;
-            color: #4a5568;
-        }
-
-        .btn-secondary:hover {
-            background: #cbd5e0;
-        }
-
-        .btn-success {
-            background: #22c55e;
-            color: white;
-        }
-
-        .btn-success:hover {
-            background: #16a34a;
-        }
-
-        .btn-danger {
-            background: #ef4444;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #dc2626;
-        }
-
-        nav .btn {
-            gap: 0;
-            padding: 12px 16px;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-        }
-
-        th, td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #e2e8f0;
-        }
-
-        th {
-            background: #f7fafc;
-            font-weight: 600;
-            color: #4a5568;
-            font-size: 14px;
-        }
-
-        td {
-            font-size: 14px;
-        }
-
-        tr:hover {
-            background: #f7fafc;
-        }
-
-        input, textarea, select {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #cbd5e0;
-            border-radius: 6px;
-            font-size: 14px;
-            font-family: inherit;
-            margin-top: 5px;
-        }
-
-        input:focus, textarea:focus, select:focus {
-            outline: none;
-            border-color: #3182ce;
-            box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
-        }
-
-        label {
-            display: block;
-            margin-bottom: 15px;
-            font-weight: 500;
-            font-size: 14px;
-        }
-
-        .form-row {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .badge-danger {
-            background: #fee2e2;
-            color: #991b1b;
-        }
-
-        .badge-success {
-            background: #dcfce7;
-            color: #166534;
-        }
-
-        .badge-warning {
-            background: #fef3c7;
-            color: #92400e;
-        }
-
-        .badge-info {
-            background: #dbeafe;
-            color: #1e40af;
-        }
-
-        .student-list {
-            max-height: 400px;
-            overflow-y: auto;
-        }
-
-        .student-item {
-            padding: 12px;
-            border: 1px solid #e2e8f0;
-            border-radius: 6px;
-            margin-bottom: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .student-item:hover {
-            background: #f7fafc;
-        }
-
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin: 8px 0;
-        }
-
-        .checkbox-group input[type="checkbox"] {
-            width: auto;
-            margin: 0;
-        }
-
-        .stats {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-            margin: 15px 0;
-        }
-
-        .stat-item {
-            flex: 1;
-            min-width: 150px;
-            padding: 15px;
-            background: #f7fafc;
-            border-radius: 6px;
-            text-align: center;
-        }
-
-        .stat-value {
-            font-size: 28px;
-            font-weight: 700;
-            color: #3182ce;
-        }
-
-        .stat-label {
-            font-size: 12px;
-            color: #718096;
-            margin-top: 5px;
-            text-transform: uppercase;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 40px;
-            color: #718096;
-        }
-
-        .empty-state svg {
-            width: 80px;
-            height: 80px;
-            margin-bottom: 15px;
-            opacity: 0.3;
-        }
-
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.active {
-            display: flex;
-        }
-
-        .modal-content {
-            background: white;
-            padding: 30px;
-            border-radius: 8px;
-            max-width: 600px;
-            width: 90%;
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .modal-header h2 {
-            margin: 0;
-        }
-
-        .close-btn {
-            background: none;
-            border: none;
-            font-size: 24px;
-            cursor: pointer;
-            color: #718096;
-        }
-
-        .close-btn:hover {
-            color: #2d3748;
-        }
-
-        .class-item {
-            padding: 15px;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .class-item:hover {
-            border-color: #3182ce;
-            background: #f7fafc;
-        }
-
-        .class-item h3 {
-            margin: 0 0 5px 0;
-            color: #2d3748;
-        }
-
-        .class-info {
-            font-size: 13px;
-            color: #718096;
-        }
-
-        .schedule-item {
-            padding: 12px;
-            background: #f7fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 6px;
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .schedule-info {
-            flex: 1;
-        }
-
-        .schedule-day {
-            font-weight: 600;
-            color: #2d3748;
-            margin-bottom: 3px;
-        }
-
-        .schedule-time {
-            font-size: 13px;
-            color: #718096;
-        }
-
-        .import-info {
-            background: #ebf8ff;
-            padding: 15px;
-            border-radius: 6px;
-            border-left: 4px solid #3182ce;
-            margin-bottom: 20px;
-            font-size: 14px;
-            color: #2c5282;
-        }
-
-        .calendario-dia {
-            background: white;
-            border: 2px solid #e2e8f0;
-            border-radius: 6px;
-            padding: 8px;
-            min-height: 100px;
-            transition: all 0.2s;
-        }
-
-        .calendario-dia:hover {
-            border-color: #3182ce;
-            box-shadow: 0 2px 8px rgba(49, 130, 206, 0.2);
-        }
-
-        .evento-calendario {
-            font-size: 10px;
-            padding: 3px 5px;
-            margin-bottom: 3px;
-            border-radius: 3px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            cursor: pointer;
-            transition: transform 0.1s;
-        }
-
-        .evento-calendario:hover {
-            transform: translateX(2px);
-        }
-
-        .grade-semanal {
-            max-height: 600px;
-            overflow-y: auto;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-
-        .grade-semanal::-webkit-scrollbar {
-            width: 10px;
-        }
-
-        .grade-semanal::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 10px;
-        }
-
-        .grade-semanal::-webkit-scrollbar-thumb {
-            background: #888;
-            border-radius: 10px;
-        }
-
-        .grade-semanal::-webkit-scrollbar-thumb:hover {
-            background: #555;
-        }
-
-        .btn-sm {
-            padding: 6px 12px;
-            font-size: 12px;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 20px;
-            color: #718096;
-        }
-
-        .loading:after {
-            content: '';
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 2px solid #f3f3f3;
-            border-top: 2px solid #3182ce;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin-left: 10px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .warning-box {
-            background: #fef5e7;
-            border-left: 4px solid #f39c12;
-            padding: 12px;
-            border-radius: 6px;
-            margin: 10px 0;
-        }
-
-        .success-box {
-            background: #f0fdf4;
-            border-left: 4px solid #22c55e;
-            padding: 12px;
-            border-radius: 6px;
-            margin: 10px 0;
-        }
-
-        .turma-tab {
-            display: none;
-        }
-
-        .turma-tab.active {
-            display: block;
-        }
-
-        .badge-sm {
-            padding: 2px 8px;
-            font-size: 11px;
-        }
-
-        .status-select {
-            padding: 6px 10px;
-            border-radius: 6px;
-            border: 2px solid #e2e8f0;
-            font-weight: 600;
-            font-size: 13px;
-            cursor: pointer;
-        }
-
-        .status-select:disabled {
-            background: #f7fafc;
-            cursor: not-allowed;
-        }
-
-        /* ESTILOS MAPEAMENTO DE SALA */
-        .map-container {
-            background: white;
-            padding: 20px;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            margin-top: 20px;
-            position: relative;
-            overflow-x: auto;
-        }
-        .sala-grid {
-            display: grid;
-            gap: 10px;
-            margin: 40px auto;
-            justify-content: center;
-        }
-        .seat {
-            background: #f7fafc;
-            border: 1px solid #cbd5e0;
-            border-radius: 6px;
-            padding: 5px;
-            text-align: center;
-            min-width: 100px;
-            min-height: 60px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
-        .seat select {
-            font-size: 11px;
-            margin: 0;
-            padding: 2px;
-            width: 100%;
-            border: none;
-            background: transparent;
-        }
-        .map-object {
-            position: absolute;
-            background: #4a5568;
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            font-weight: bold;
-            border-radius: 4px;
-        }
-
-        @media print {
-            header, nav, .btn, .no-print, .modal { 
-                display: none !important; 
-            }
-            body {
-                background: white;
-                color: black;
-            }
-            .container {
-                max-width: 100%;
-                margin: 0;
-                padding: 0;
-            }
-            .screen {
-                display: none !important;
-            }
-            #relatorioImpressao.active {
-                display: block !important;
-            }
-            .card {
-                box-shadow: none !important;
-                border: none !important;
-                padding: 0 !important;
-            }
-        }
-
-        /* ESTILOS DE LOGIN */
-        .auth-screen {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-
-        .auth-box {
-            background: white;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-            width: 100%;
-            max-width: 400px;
-        }
-
-        .auth-box h2 {
-            text-align: center;
-            margin-bottom: 20px;
-            color: #2d3748;
-        }
-
-        .auth-link {
-            display: block;
-            text-align: center;
-            margin-top: 15px;
-            color: #3182ce;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        
-        .auth-link:hover {
-            text-decoration: underline;
-        }
-
-        .password-wrapper {
-            position: relative;
-            width: 100%;
-        }
-        
-        .toggle-password {
-            position: absolute;
-            right: 10px;
-            top: 16px; /* Ajuste para alinhar com o input que tem margin-top: 5px */
-            background: none;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-        }
-    </style>
+    <title>Login - Sistema do Professor</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="shared.js"></script>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-analytics-compat.js"></script>
 </head>
 <body>
     <!-- TELA DE LOGIN/CADASTRO -->
     <div id="authContainer" class="auth-screen">
-        <!-- O conteúdo será injetado via JS -->
+        <div class="auth-box">
+            <h2>🔐 Login</h2>
+            <form onsubmit="fazerLogin(event)">
+                <label>Email: <input type="email" id="loginEmail" required></label>
+                <label>Senha: 
+                    <div class="password-wrapper">
+                        <input type="password" id="loginSenha" required style="padding-right: 35px;">
+                        <button type="button" class="toggle-password" onclick="toggleSenha('loginSenha', this)">👁️</button>
+                    </div>
+                </label>
+                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Entrar</button>
+            </form>
+            <span class="auth-link" onclick="renderCadastro()">Não tem conta? Cadastre-se</span>
+        </div>
     </div>
 
-    <!-- APLICAÇÃO PRINCIPAL (Inicialmente oculta) -->
-    <div class="container" id="appContainer" style="display: none;">
-        <header>
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h1>📚 Sistema do Professor</h1>
-                <button class="btn btn-danger" onclick="logout()" style="font-size: 12px;">Sair</button>
-            </div>
-            <div class="date-info" id="currentDate"></div>
-        </header>
-
-        <nav>
-            <button class="active" onclick="showScreen('dashboard', event)"><span class="icon">📊</span><span class="label">Dashboard</span></button>
-            <button onclick="showScreen('turmas', event)"><span class="icon">👥</span><span class="label">Turmas</span></button>
-            <button onclick="showScreen('tutoria', event)"><span class="icon">🎓</span><span class="label">Tutoria</span></button>
-            <button onclick="showScreen('agenda', event)"><span class="icon">📅</span><span class="label">Agenda</span></button>
-        </nav>
-
-        <!-- DASHBOARD -->
-        <div id="dashboard" class="screen active">
-            <div class="grid">
-                <div class="card">
-                    <h2>📅 Aulas de Hoje</h2>
-                    <div id="aulasHoje"></div>
+    <!-- ESTRUTURA DA APLICAÇÃO (Adicionada para suportar o JS) -->
+    <div id="appContainer" style="display:none;">
+        <div class="container">
+            <header>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h1>📚 Sistema Escolar</h1>
+                        <div id="painelSubtitle"></div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div class="date-info" id="currentDate"></div>
+                        <button class="btn btn-sm btn-danger" onclick="logout()" style="margin-top: 5px;">Sair</button>
+                    </div>
                 </div>
+            </header>
 
-                <div class="card">
-                    <h2>🤝 Reuniões de Hoje</h2>
-                    <div id="reunioesHoje"></div>
-                </div>
+            <nav>
+                <!-- Botões injetados via JS -->
+            </nav>
 
-                <div class="card">
-                    <h2>👥 Tutorias de Hoje</h2>
-                    <div id="tutoriasHoje"></div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h2>⚠️ Alertas</h2>
-                <div id="alertas"></div>
-            </div>
-        </div>
-
-        <!-- TURMAS -->
-        <div id="turmas" class="screen">
-            <div class="card">
-                <h2>Minhas Turmas</h2>
-                <button class="btn btn-primary" onclick="abrirModalNovaTurma()">+ Nova Turma</button>
-                <div id="listaTurmas"></div>
-            </div>
-        </div>
-
-        <!-- DETALHE DA TURMA -->
-        <div id="turmaDetalhe" class="screen">
-            <div class="card">
-                <button class="btn btn-secondary" onclick="showScreen('turmas')">← Voltar</button>
-                <h2 id="turmaDetalheTitulo"></h2>
-                
-                <div class="stats" id="turmaStats"></div>
-
-                <nav style="margin: 20px 0;">
-                    <button class="btn btn-secondary active" onclick="showTurmaTab('estudantes', event)"><span class="icon">👥</span><span class="label">Estudantes</span></button>
-                    <button class="btn btn-secondary" onclick="showTurmaTab('chamada', event)"><span class="icon">📝</span><span class="label">Chamada</span></button>
-                    <button class="btn btn-secondary" onclick="showTurmaTab('atrasos', event)"><span class="icon">⏰</span><span class="label">Atrasos</span></button>
-                    <button class="btn btn-secondary" onclick="showTurmaTab('trabalhos', event)"><span class="icon">📚</span><span class="label">Trabalhos</span></button>
-                    <button class="btn btn-secondary" onclick="showTurmaTab('compensacoes', event)"><span class="icon">⚖️</span><span class="label">Compensações</span></button>
-                    <button class="btn btn-secondary" onclick="showTurmaTab('mapeamento', event)"><span class="icon">🗺️</span><span class="label">Mapeamento</span></button>
-                    <button class="btn btn-secondary" onclick="showTurmaTab('mapeamento', event)"><span class="icon">🗺️</span><span class="label">Mapeamento</span></button>
-                    <button class="btn btn-secondary" onclick="showTurmaTab('configuracoes', event)"><span class="icon">⚙️</span><span class="label">Configurações</span></button>
-                    <button class="btn btn-secondary" onclick="showTurmaTab('ocorrencias', event)"><span class="icon">⚠️</span><span class="label">Ocorrências</span></button>
-                </nav>
-
-                <div id="tabEstudantes" class="turma-tab active"></div>
-                <div id="tabChamada" class="turma-tab"></div>
-                <div id="tabAtrasos" class="turma-tab"></div>
-                <div id="tabTrabalhos" class="turma-tab"></div>
-                <div id="tabCompensacoes" class="turma-tab"></div>
-                <div id="tabMapeamento" class="turma-tab"></div>
-                <div id="tabOcorrencias" class="turma-tab"></div>
-            </div>
-        </div>
-
-        <!-- DETALHE DO ESTUDANTE (VISÃO GERAL) -->
-        <div id="estudanteDetalhe" class="screen">
-            <div class="card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <button class="btn btn-secondary" onclick="showScreen('turmaDetalhe')">← Voltar para Turma</button>
-                    <h2 id="estudanteGeralNome" style="margin: 0; border: none;"></h2>
-                </div>
-
+            <!-- TELAS -->
+            <div id="dashboard" class="screen">
                 <div class="grid">
-                    <!-- Resumo -->
-                    <div class="card" style="background: #f7fafc; border: 1px solid #e2e8f0;">
-                        <h3>📊 Frequência</h3>
-                        <div id="estudanteGeralFrequencia"></div>
+                    <div class="card">
+                        <h2>📅 Aulas de Hoje</h2>
+                        <div id="aulasHoje"></div>
+                    </div>
+                    <div class="card">
+                        <h2>🤝 Reuniões de Hoje</h2>
+                        <div id="reunioesHoje"></div>
+                    </div>
+                    <div class="card">
+                        <h2>👥 Tutorias/Ações</h2>
+                        <div id="tutoriasHoje"></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h2>⚠️ Alertas</h2>
+                    <div id="alertas"></div>
+                </div>
+            </div>
+
+            <div id="turmas" class="screen">
+                <div class="card">
+                    <h2>Minhas Turmas</h2>
+                    <button class="btn btn-primary" onclick="abrirModalNovaTurma()">+ Nova Turma</button>
+                    <div id="listaTurmas" style="margin-top: 15px;"></div>
+                </div>
+            </div>
+
+            <div id="tutoria" class="screen">
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <h2>🎓 Tutoria</h2>
+                        <button id="btnConfigTutoria" class="btn btn-secondary" onclick="alert('Configurações de Tutoria')">⚙️ Config</button>
+                    </div>
+                    <div class="grid">
+                        <div>
+                            <h3>Meus Tutorados</h3>
+                            <button class="btn btn-primary btn-sm" onclick="showModal('modalNovoTutorado')">+ Novo Tutorado</button>
+                            <div id="listaTutorados" style="margin-top: 10px;"></div>
+                        </div>
+                        <div>
+                            <h3>Próximos Encontros</h3>
+                            <button class="btn btn-primary btn-sm btn-registrar-extra" onclick="showModal('modalNovoEncontro')">+ Registrar Encontro</button>
+                            <button class="btn btn-secondary btn-sm" onclick="showModal('modalGerarAgendamento')">📅 Agendar</button>
+                            <div id="listaEncontros" style="margin-top: 10px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="agenda" class="screen">
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h2 style="margin: 0;">📅 Agenda</h2>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn btn-secondary" onclick="alternarVisualizacao('mes')" id="btnVisMes">Mês</button>
+                            <button class="btn btn-secondary" onclick="alternarVisualizacao('semana')" id="btnVisSemana">Semana</button>
+                            <button class="btn btn-primary" onclick="abrirModalEventoSlot(getTodayString(), '', '')">+ Novo Evento</button>
+                            <button class="btn btn-secondary" onclick="imprimirAgendaMensal()">🖨️ Imprimir</button>
+                        </div>
                     </div>
                     
-                    <!-- Atrasos -->
-                    <div class="card" style="background: #fff5f5; border: 1px solid #feb2b2;">
-                        <h3 style="color: #c53030;">⏰ Atrasos</h3>
-                        <div id="estudanteGeralAtrasos"></div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: #f7fafc; padding: 15px; border-radius: 8px;">
+                        <button class="btn btn-secondary" onclick="navegarPeriodo(-1)">← Anterior</button>
+                        <h3 id="tituloCalendario" style="margin: 0;"></h3>
+                        <button class="btn btn-secondary" onclick="navegarPeriodo(1)">Próximo →</button>
+                    </div>
+
+                    <div id="calendarioView"></div>
+                    
+                    <div style="margin-top: 30px;">
+                        <h3>Lista de Eventos</h3>
+                        <div id="listaEventos"></div>
                     </div>
                 </div>
+            </div>
 
-                <div class="grid">
-                    <!-- Notas -->
-                    <div class="card">
-                        <h3>📝 Notas e Trabalhos</h3>
-                        <div id="estudanteGeralNotas"></div>
-                    </div>
-
-                    <!-- Ocorrências -->
-                    <div class="card">
-                        <h3>⚠️ Ocorrências</h3>
-                        <div id="estudanteGeralOcorrencias"></div>
-                    </div>
-                </div>
-
-                <!-- Compensações -->
+            <!-- DETALHES -->
+            <div id="turmaDetalhe" class="screen">
                 <div class="card">
-                    <h3>⚖️ Compensações</h3>
+                    <button class="btn btn-secondary" onclick="showScreen('turmas')">← Voltar</button>
+                    <h2 id="turmaDetalheTitulo" style="margin-top: 15px;">Detalhes da Turma</h2>
+                    <div id="turmaStats" class="stats"></div>
+                    
+                    <nav style="margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">
+                        <!-- Tabs injetadas via JS -->
+                    </nav>
+
+                    <div id="tabEstudantes" class="turma-tab"></div>
+                    <div id="tabChamada" class="turma-tab" style="display:none;"></div>
+                    <div id="tabAtrasos" class="turma-tab" style="display:none;"></div>
+                    <div id="tabTrabalhos" class="turma-tab" style="display:none;"></div>
+                    <div id="tabCompensacoes" class="turma-tab" style="display:none;"></div>
+                    <div id="tabOcorrencias" class="turma-tab" style="display:none;"></div>
+                    <div id="tabConfiguracoes" class="turma-tab" style="display:none;"></div>
+                </div>
+            </div>
+
+            <div id="tutoradoDetalhe" class="screen">
+                <div class="card">
+                    <button class="btn btn-secondary" onclick="showScreen('tutoria')">← Voltar</button>
+                    <h2 id="tutoradoFichaNome" style="margin-top: 15px;">Nome do Tutorado</h2>
+                    <div class="grid">
+                        <div>
+                            <h3>Agendamentos Futuros</h3>
+                            <div id="tutoradoFichaAgendamentos"></div>
+                        </div>
+                        <div>
+                            <h3>Histórico de Encontros</h3>
+                            <div id="tutoradoFichaHistorico"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="estudanteDetalhe" class="screen">
+                <div class="card">
+                    <button class="btn btn-secondary" onclick="showScreen('turmaDetalhe')">← Voltar para Turma</button>
+                    <h2 id="estudanteGeralNome" style="margin-top: 15px;">Nome do Estudante</h2>
+                    
+                    <div class="grid">
+                        <div class="card" style="background: #f7fafc;">
+                            <h3>Frequência</h3>
+                            <div id="estudanteGeralFrequencia"></div>
+                        </div>
+                        <div class="card" style="background: #fff5f5;">
+                            <h3>Atrasos</h3>
+                            <div id="estudanteGeralAtrasos"></div>
+                        </div>
+                    </div>
+
+                    <h3>Notas e Trabalhos</h3>
+                    <div id="estudanteGeralNotas"></div>
+
+                    <h3>Ocorrências</h3>
+                    <div id="estudanteGeralOcorrencias"></div>
+
+                    <h3>Compensações</h3>
                     <div id="estudanteGeralCompensacoes"></div>
                 </div>
             </div>
-        </div>
 
-        <!-- TUTORIA -->
-        <div id="tutoria" class="screen">
-            <div class="card" style="background: #ebf8ff; border: 1px solid #bee3f8;">
-                <h2 style="color: #2c5282; border-bottom-color: #bee3f8;">📅 Agendamento Automático</h2>
-                <p style="color: #4a5568; font-size: 14px; margin-bottom: 15px;">
-                    Defina sua disponibilidade e o sistema criará uma agenda distribuindo seus tutorados automaticamente nos horários vagos.
-                </p>
-                <div style="display: flex; gap: 10px;">
-                    <button class="btn btn-primary" id="btnConfigTutoria" onclick="showModal('modalGerarAgendamento')">⚙️ Configurar e Gerar</button>
-                    <button class="btn btn-secondary" onclick="abrirListaAgendamentos()">📋 Ver Lista de Agendamentos</button>
-                </div>
-            </div>
-
-            <div class="card">
-                <h2>Meus Tutorados</h2>
-                <button class="btn btn-primary" onclick="showModal('modalNovoTutorado')">+ Novo Tutorado</button>
-                <div id="listaTutorados"></div>
-            </div>
-
-            <div class="card">
-                <h2>Encontros de Tutoria</h2>
-                <button class="btn btn-primary" onclick="showModal('modalNovoEncontro')">+ Registrar Encontro</button>
-                <div id="listaEncontros"></div>
-            </div>
-        </div>
-
-        <!-- AGENDA -->
-        <div id="agenda" class="screen">
-            <div class="card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h2 style="margin: 0;">📅 Agenda</h2>
-                    <div style="display: flex; gap: 10px;">
-                        <button class="btn btn-secondary" onclick="alternarVisualizacao('mes')" id="btnVisMes">Mês</button>
-                        <button class="btn btn-secondary" onclick="alternarVisualizacao('semana')" id="btnVisSemana">Semana</button>
-                        <button class="btn btn-secondary" onclick="imprimirAgendaMensal()">🖨️ Imprimir Mês</button>
-                        <button class="btn btn-primary" onclick="showModal('modalNovoEvento')">+ Novo Evento</button>
-                    </div>
-                </div>
-                
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: #f7fafc; padding: 15px; border-radius: 8px;">
-                    <button class="btn btn-secondary" onclick="navegarPeriodo(-1)">← Anterior</button>
-                    <h3 id="tituloCalendario" style="margin: 0;"></h3>
-                    <button class="btn btn-secondary" onclick="navegarPeriodo(1)">Próximo →</button>
-                </div>
-
-                <div id="calendarioView"></div>
-                
-                <div style="margin-top: 30px;">
-                    <h3>📋 Lista de Eventos</h3>
-                    <div id="listaEventos"></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- RELATÓRIO DE IMPRESSÃO -->
-        <div id="relatorioImpressao" class="screen">
-            <div class="card">
-                <div class="no-print" style="margin-bottom: 20px; display: flex; justify-content: space-between;">
-                    <button class="btn btn-secondary" onclick="showScreen('turmaDetalhe'); showTurmaTab('ocorrencias')">← Voltar</button>
-                    <button class="btn btn-primary" onclick="window.print()">🖨️ Imprimir (Ctrl+P)</button>
-                </div>
+            <div id="relatorioImpressao" class="screen" style="background: white; min-height: 100vh;">
+                <button class="btn btn-secondary no-print" onclick="showScreen('turmaDetalhe')" style="margin: 20px;">← Voltar</button>
+                <button class="btn btn-primary no-print" onclick="window.print()" style="margin: 20px;">🖨️ Imprimir</button>
                 <div id="conteudoRelatorio"></div>
             </div>
         </div>
     </div>
 
-    <!-- PAINEL SUPER ADMIN -->
-    <div id="adminContainer" class="container" style="display: none;">
-        <header style="background: #2d3748;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h1>🛡️ Painel Super Admin</h1>
-                <button class="btn btn-danger" onclick="logout()" style="font-size: 12px;">Sair</button>
-            </div>
-        </header>
-
-        <!-- PAINEL GESTOR -->
-        <div id="gestorContainer" class="container" style="display: none;">
-            <!-- Conteúdo injetado via JS -->
-        </div>
-
-        <!-- Lista de Escolas -->
-        <div id="adminEscolasScreen">
-            <div class="card">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h2>🏢 Escolas Cadastradas</h2>
+    <div id="adminContainer" style="display:none;">
+        <div class="container">
+            <header>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h1>🛡️ Painel Super Admin</h1>
+                    <button class="btn btn-danger" onclick="logout()">Sair</button>
+                </div>
+            </header>
+            <div id="adminEscolasScreen">
+                <div class="card">
+                    <h2>Escolas Cadastradas</h2>
                     <button class="btn btn-primary" onclick="abrirModalEscola()">+ Nova Escola</button>
-                </div>
-                <div id="listaEscolasAdmin"></div>
-            </div>
-        </div>
-
-        <!-- Detalhes da Escola / Usuários -->
-        <div id="adminEscolaDetalheScreen" style="display: none;">
-            <!-- Conteúdo injetado via JS -->
-        </div>
-    </div>
-
-    <!-- MODALS -->
-    <div id="modalNovaTurma" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="tituloModalTurma">Nova Turma</h2>
-                <button class="close-btn" onclick="closeModal('modalNovaTurma')">×</button>
-            </div>
-            <form onsubmit="salvarTurma(event)">
-                <input type="hidden" id="turmaId">
-                <div class="form-row">
-                    <label>
-                        Ano/Série:
-                        <!-- Alterado para select no perfil professor -->
-                        <div id="containerTurmaAnoInput">
-                            <input type="text" id="turmaAno" placeholder="Ex: 9º Ano A">
-                        </div>
-                        <div id="containerTurmaAnoSelect" style="display:none;">
-                            <select id="turmaAnoSelect"></select>
-                        </div>
-                    </label>
-                    <label id="divTurmaDisciplina">
-                        Disciplina:
-                        <input type="text" id="turmaDisciplina" required>
-                    </label>
-                </div>
-                <label>
-                    Turno:
-                    <select id="turmaTurno" required>
-                        <option value="">Selecione...</option>
-                        <option value="Manhã">Manhã</option>
-                        <option value="Tarde">Tarde</option>
-                        <option value="Noite">Noite</option>
-                        <option value="Integral">Integral</option>
-                    </select>
-                </label>
-                <button type="submit" class="btn btn-primary">Salvar</button>
-            </form>
-        </div>
-    </div>
-
-    <div id="modalNovoEstudante" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Novo Estudante</h2>
-                <button class="close-btn" onclick="closeModal('modalNovoEstudante')">×</button>
-            </div>
-            <form onsubmit="salvarEstudante(event)">
-                <label>
-                    Nome Completo:
-                    <input type="text" id="estudanteNome" required>
-                </label>
-                <label>
-                    Status:
-                    <select id="estudanteStatus" required>
-                        <option value="Ativo">Ativo</option>
-                        <option value="Baixa/Transferência">Baixa/Transferência</option>
-                        <option value="Transferido">Transferido</option>
-                        <option value="NCOM">NCOM</option>
-                    </select>
-                </label>
-                <button type="submit" class="btn btn-primary">Salvar</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- FICHA DO TUTORADO -->
-    <div id="tutoradoDetalhe" class="screen">
-        <div class="card">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <button class="btn btn-secondary" onclick="showScreen('tutoria')">← Voltar para Tutoria</button>
-                <h2 id="tutoradoFichaNome" style="margin: 0; border: none;"></h2>
-            </div>
-
-            <div class="grid">
-                <div class="card" style="background: #ebf8ff; border: 1px solid #bee3f8;">
-                    <h3>📅 Agendamentos Futuros</h3>
-                    <div id="tutoradoFichaAgendamentos"></div>
-                </div>
-                
-                <div class="card" style="background: #f0fdf4; border: 1px solid #22c55e;">
-                    <h3>✅ Encontros Realizados (Histórico)</h3>
-                    <div id="tutoradoFichaHistorico"></div>
+                    <div id="listaEscolasAdmin" style="margin-top: 15px;"></div>
                 </div>
             </div>
+            <div id="adminEscolaDetalheScreen" style="display:none;"></div>
         </div>
     </div>
 
-    <div id="modalGerarAgendamento" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Gerar Agendamentos de Tutoria</h2>
-                <button class="close-btn" onclick="closeModal('modalGerarAgendamento')">×</button>
-            </div>
-            <form onsubmit="previewHorariosAuto(event)">
-                <label>
-                    📅 Data Início:
-                    <input type="date" id="agendamentoInicio" required>
-                </label>
-                
-                <div class="form-row">
-                    <label>
-                        ⏰ Hora Início:
-                        <input type="time" id="agendamentoHoraInicio">
-                    </label>
-                    <label>
-                        ⏳ Duração (min):
-                        <input type="number" id="agendamentoDuracao" value="20" min="10" step="5" required>
-                    </label>
-                </div>
-                <div style="margin-bottom: 15px;">
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; background: #ebf8ff; padding: 10px; border-radius: 6px; border: 1px solid #bee3f8;">
-                        <input type="checkbox" id="usarGradeTutoria" onchange="toggleAgendamentoRecorrenciaUI()" checked>
-                        <strong>Usar horários de "Tutoria" definidos pela Gestão</strong>
-                    </label>
-                </div>
+    <!-- MODAIS (Placeholders essenciais) -->
+    <div id="modalNovaTurma" class="modal"><div class="modal-content"><div class="modal-header"><h2 id="tituloModalTurma">Nova Turma</h2><button class="close-btn" onclick="closeModal('modalNovaTurma')">×</button></div><form onsubmit="salvarTurma(event)"><input type="hidden" id="turmaId"><div id="containerTurmaAnoInput"><label>Ano/Série:<input type="text" id="turmaAno"></label></div><div id="containerTurmaAnoSelect" style="display:none;"><label>Turma:<select id="turmaAnoSelect"></select></label></div><div id="divTurmaDisciplina"><label>Disciplina:<input type="text" id="turmaDisciplina"></label></div><label>Turno:<select id="turmaTurno"><option value="Manhã">Manhã</option><option value="Tarde">Tarde</option><option value="Noite">Noite</option></select></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
+    
+    <div id="modalNovoEstudante" class="modal"><div class="modal-content"><div class="modal-header"><h2>Novo Estudante</h2><button class="close-btn" onclick="closeModal('modalNovoEstudante')">×</button></div><form onsubmit="salvarEstudante(event)"><label>Nome Completo:<input type="text" id="estudanteNome" required></label><label>Status:<select id="estudanteStatus"><option value="Ativo">Ativo</option></select></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
+    
+    <div id="modalImportarEstudantes" class="modal"><div class="modal-content"><div class="modal-header"><h2>Importar CSV</h2><button class="close-btn" onclick="closeModal('modalImportarEstudantes')">×</button></div><form onsubmit="importarEstudantes(event)"><label>Arquivo CSV:<input type="file" id="arquivoEstudantes" accept=".csv" required></label><p style="font-size:12px; color:#666;">Formato: Nome Completo;Status</p><button type="submit" class="btn btn-success">Importar</button></form></div></div>
 
-                <div style="margin: 15px 0; padding: 10px; background: #f7fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
-                    <label>
-                        🔄 Repetição:
-                        <select id="agendamentoRecorrenciaTipo" onchange="toggleAgendamentoRecorrenciaUI()" style="margin-top: 5px;">
-                            <option value="nao">Não repetir</option>
-                            <option value="semanal">Semanalmente</option>
-                            <option value="mensal">Mensalmente</option>
-                            <option value="personalizado">Personalizado (Dias da Semana)</option>
-                        </select>
-                    </label>
-                    <div id="divAgendamentoRecorrenciaPersonalizada" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e2e8f0;">
-                        <label style="margin-bottom: 8px; font-size: 13px; color: #4a5568;">Selecione os dias:</label>
-                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;"><input type="checkbox" name="diaAgendamento" value="1" style="width: auto;"> Seg</label>
-                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;"><input type="checkbox" name="diaAgendamento" value="2" style="width: auto;"> Ter</label>
-                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;"><input type="checkbox" name="diaAgendamento" value="3" style="width: auto;"> Qua</label>
-                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;"><input type="checkbox" name="diaAgendamento" value="4" style="width: auto;"> Qui</label>
-                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;"><input type="checkbox" name="diaAgendamento" value="5" style="width: auto;"> Sex</label>
-                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;"><input type="checkbox" name="diaAgendamento" value="6" style="width: auto;"> Sáb</label>
-                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;"><input type="checkbox" name="diaAgendamento" value="0" style="width: auto;"> Dom</label>
-                        </div>
-                    </div>
-                    <div id="divAgendamentoRecorrenciaFim" style="display: none; margin-top: 15px;">
-                        <label>
-                            Até quando:
-                            <input type="date" id="agendamentoRecorrenciaFim">
-                        </label>
-                    </div>
-                </div>
+    <div id="modalNovoTrabalho" class="modal"><div class="modal-content"><div class="modal-header"><h2>Novo Trabalho</h2><button class="close-btn" onclick="closeModal('modalNovoTrabalho')">×</button></div><form onsubmit="salvarTrabalho(event)"><label>Título:<input type="text" id="trabalhoTitulo" required></label><label>Peso:<input type="number" id="trabalhoPeso" step="0.1" value="1.0" required></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
+    
+    <div id="modalLancarNotas" class="modal"><div class="modal-content"><div class="modal-header"><h2>Lançar Notas</h2><button class="close-btn" onclick="closeModal('modalLancarNotas')">×</button></div><div id="conteudoLancarNotas"></div></div></div>
 
-                <button type="submit" class="btn btn-primary">Gerar Horários</button>
-            </form>
-            <div id="areaPreviewAgendamento" style="margin-top: 20px; display: none; border-top: 1px solid #e2e8f0; padding-top: 20px;">
-                <h4>Horários Gerados (<span id="qtdHorariosGerados">0</span>):</h4>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; background: #edf2f7; padding: 10px; border-radius: 6px;">
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="mudarSemanaPreview(-1)">← Anterior</button>
-                    <span id="previewSemanaTexto" style="font-weight: 600; font-size: 13px;"></span>
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="mudarSemanaPreview(1)">Próxima →</button>
-                </div>
-                <div id="listaHorariosPreview" style="min-height: 100px; max-height: 250px; overflow-y: auto; margin-bottom: 15px; background: #f7fafc; padding: 10px; border-radius: 6px; font-size: 13px;"></div>
-                <button class="btn btn-success" onclick="confirmarDistribuicaoAuto()" style="width: 100%;">✓ Confirmar e Gerar Agendamentos</button>
-            </div>
-        </div>
-    </div>
+    <div id="modalNovoEvento" class="modal"><div class="modal-content"><div class="modal-header"><h2>Novo Evento</h2><button class="close-btn" onclick="closeModal('modalNovoEvento')">×</button></div><form onsubmit="salvarEvento(event)"><label>Tipo:<select id="eventoTipo" required><option value="Reunião">Reunião</option><option value="Aula">Aula</option><option value="Pessoal">Pessoal</option></select></label><div id="divEventoTurma" style="display:none;"><label>Turma:<select id="eventoTurmaSelect"></select></label></div><label>Título:<input type="text" id="eventoTitulo" required></label><div class="form-row"><label>Data:<input type="date" id="eventoData" required></label><label>Início:<input type="time" id="eventoHoraInicio" required></label><label>Fim:<input type="time" id="eventoHoraFim" required></label></div><label>Anotações:<textarea id="eventoAnotacoes"></textarea></label><label>Recorrência:<select id="eventoRecorrenciaTipo" onchange="toggleRecorrenciaUI()"><option value="nao">Não repetir</option><option value="semanal">Semanalmente</option><option value="mensal">Mensalmente</option><option value="personalizado">Personalizado</option></select></label><div id="divRecorrenciaFim" style="display:none;"><label>Repetir até:<input type="date" id="eventoRecorrenciaFim"></label></div><div id="divRecorrenciaPersonalizada" style="display:none;"><label>Dias da Semana:</label><div style="display:flex; gap:5px;"><label><input type="checkbox" name="diaSemana" value="1"> Seg</label><label><input type="checkbox" name="diaSemana" value="2"> Ter</label><label><input type="checkbox" name="diaSemana" value="3"> Qua</label><label><input type="checkbox" name="diaSemana" value="4"> Qui</label><label><input type="checkbox" name="diaSemana" value="5"> Sex</label></div></div><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
 
-    <div id="modalListaAgendamentos" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>📅 Agendamentos Futuros</h2>
-                <button class="close-btn" onclick="closeModal('modalListaAgendamentos')">×</button>
-            </div>
-            <div id="listaAgendamentosConteudo"></div>
-        </div>
-    </div>
+    <div id="modalDetalhesEvento" class="modal"><div class="modal-content"><div class="modal-header"><h2>Detalhes do Evento</h2><button class="close-btn" onclick="closeModal('modalDetalhesEvento')">×</button></div><form onsubmit="salvarDetalhesEvento(event)"><input type="hidden" id="detalheEventoId"><input type="hidden" id="detalheEventoTipo"><label>Título:<input type="text" id="detalheEventoTitulo"></label><div class="form-row"><label>Data:<input type="date" id="detalheEventoData"></label><label>Início:<input type="time" id="detalheEventoInicio"></label><label>Fim:<input type="time" id="detalheEventoFim"></label></div><label>Anotações:<textarea id="detalheEventoAnotacoes"></textarea></label><div style="display:flex; justify-content:space-between; margin-top:15px;"><button type="button" class="btn btn-danger" onclick="excluirEventoAtual()">Excluir</button><button type="submit" class="btn btn-primary">Salvar Alterações</button></div></form></div></div>
 
-    <div id="modalNovoTutorado" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Novo Tutorado</h2>
-                <button class="close-btn" onclick="closeModal('modalNovoTutorado')">×</button>
-            </div>
-            <form onsubmit="salvarTutorado(event)">
-                <label>
-                    Nome do Estudante:
-                    <input type="text" id="tutoradoNome" required>
-                </label>
-                <label>
-                    Turma:
-                    <input type="text" id="tutoradoTurma" required>
-                </label>
-                <button type="submit" class="btn btn-primary">Salvar</button>
-            </form>
-        </div>
-    </div>
+    <div id="modalNovoTutorado" class="modal"><div class="modal-content"><div class="modal-header"><h2>Novo Tutorado</h2><button class="close-btn" onclick="closeModal('modalNovoTutorado')">×</button></div><form onsubmit="salvarTutorado(event)"><label>Nome:<input type="text" id="tutoradoNome" required></label><label>Turma:<input type="text" id="tutoradoTurma" required></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
 
-    <div id="modalNovoEncontro" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Registrar Encontro</h2>
-                <button class="close-btn" onclick="closeModal('modalNovoEncontro')">×</button>
-            </div>
-            <form onsubmit="salvarEncontro(event)">
-                <label>
-                    Tutorado:
-                    <select id="encontroTutorado" required></select>
-                </label>
-                <label>
-                    Data:
-                    <input type="date" id="encontroData" required>
-                </label>
-                <label>
-                    Tema:
-                    <input type="text" id="encontroTema" required>
-                </label>
-                <label>
-                    Resumo:
-                    <textarea id="encontroResumo" rows="4" required></textarea>
-                </label>
-                <button type="submit" class="btn btn-primary">Salvar</button>
-            </form>
-        </div>
-    </div>
+    <div id="modalNovoEncontro" class="modal"><div class="modal-content"><div class="modal-header"><h2>Registrar Encontro</h2><button class="close-btn" onclick="closeModal('modalNovoEncontro')">×</button></div><form onsubmit="salvarEncontro(event)"><label>Tutorado:<select id="encontroTutorado" required></select></label><label>Data:<input type="date" id="encontroData" required></label><label>Tema:<input type="text" id="encontroTema" required></label><label>Resumo:<textarea id="encontroResumo" required></textarea></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
 
-    <div id="modalNovoEvento" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Novo Evento</h2>
-                <button class="close-btn" onclick="closeModal('modalNovoEvento')">×</button>
-            </div>
-            <form onsubmit="salvarEvento(event)">
-                <label>
-                    Tipo:
-                    <select id="eventoTipo" required>
-                        <option value="">Selecione...</option>
-                        <option value="Aula">Aula (Minha Turma)</option>
-                        <option value="Planejamento">Planejamento</option>
-                        <option value="Reunião">Reunião</option>
-                        <option value="Atendimento">Atendimento</option>
-                        <option value="Outro">Outro</option>
-                    </select>
-                </label>
-                <div id="divEventoTurma" style="display: none;">
-                    <label>
-                        Selecione a Turma:
-                        <select id="eventoTurmaSelect"></select>
-                    </label>
-                </div>
-                <label>
-                    Título:
-                    <input type="text" id="eventoTitulo" required>
-                </label>
-                <div class="form-row">
-                    <label>
-                        Data:
-                        <input type="date" id="eventoData" required>
-                    </label>
-                    <label>
-                        Hora Início:
-                        <input type="time" id="eventoHoraInicio" required>
-                    </label>
-                </div>
-                <label>
-                    Hora Fim:
-                    <input type="time" id="eventoHoraFim" required>
-                </label>
-                <div style="margin: 15px 0; padding: 10px; background: #f7fafc; border-radius: 6px; border: 1px solid #e2e8f0;">
-                    <label>
-                        🔄 Repetição:
-                        <select id="eventoRecorrenciaTipo" onchange="toggleRecorrenciaUI()" style="margin-top: 5px;">
-                            <option value="nao">Não repetir</option>
-                            <option value="semanal">Semanalmente</option>
-                            <option value="mensal">Mensalmente</option>
-                            <option value="personalizado">Personalizado (Dias da Semana)</option>
-                        </select>
-                    </label>
-                    <div id="divRecorrenciaPersonalizada" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid #e2e8f0;">
-                        <label style="margin-bottom: 8px; font-size: 13px; color: #4a5568;">Selecione os dias:</label>
-                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;"><input type="checkbox" name="diaSemana" value="1" style="width: auto;"> Seg</label>
-                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;"><input type="checkbox" name="diaSemana" value="2" style="width: auto;"> Ter</label>
-                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;"><input type="checkbox" name="diaSemana" value="3" style="width: auto;"> Qua</label>
-                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;"><input type="checkbox" name="diaSemana" value="4" style="width: auto;"> Qui</label>
-                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;"><input type="checkbox" name="diaSemana" value="5" style="width: auto;"> Sex</label>
-                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;"><input type="checkbox" name="diaSemana" value="6" style="width: auto;"> Sáb</label>
-                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;"><input type="checkbox" name="diaSemana" value="0" style="width: auto;"> Dom</label>
-                        </div>
-                    </div>
-                    <div id="divRecorrenciaFim" style="display: none; margin-top: 15px;">
-                        <label>
-                            Até quando:
-                            <input type="date" id="eventoRecorrenciaFim">
-                        </label>
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-primary">Salvar</button>
-            </form>
-        </div>
-    </div>
+    <div id="modalGerarAgendamento" class="modal"><div class="modal-content"><div class="modal-header"><h2>Agendamento Automático</h2><button class="close-btn" onclick="closeModal('modalGerarAgendamento')">×</button></div><form onsubmit="previewHorariosAuto(event)"><label>Início:<input type="date" id="agendamentoInicio" required></label><label>Hora Início (se manual):<input type="time" id="agendamentoHoraInicio"></label><label>Duração (min):<input type="number" id="agendamentoDuracao" value="20"></label><label>Recorrência:<select id="agendamentoRecorrenciaTipo" onchange="toggleAgendamentoRecorrenciaUI()"><option value="nao">Apenas uma vez</option><option value="semanal">Semanal</option><option value="mensal">Mensal</option><option value="personalizado">Dias Específicos</option></select></label><div id="divAgendamentoRecorrenciaFim" style="display:none;"><label>Até:<input type="date" id="agendamentoRecorrenciaFim"></label></div><div id="divAgendamentoRecorrenciaPersonalizada" style="display:none;"><label>Dias:</label><div style="display:flex; gap:5px;"><label><input type="checkbox" name="diaAgendamento" value="1"> Seg</label><label><input type="checkbox" name="diaAgendamento" value="2"> Ter</label><label><input type="checkbox" name="diaAgendamento" value="3"> Qua</label><label><input type="checkbox" name="diaAgendamento" value="4"> Qui</label><label><input type="checkbox" name="diaAgendamento" value="5"> Sex</label></div></div><label><input type="checkbox" id="usarGradeTutoria"> Usar Grade de Tutoria da Escola</label><button type="submit" class="btn btn-secondary">Gerar Preview</button></form><div id="areaPreviewAgendamento" style="display:none; margin-top:15px;"><div style="display:flex; justify-content:space-between;"><h4>Preview (<span id="qtdHorariosGerados">0</span> horários)</h4><div><button onclick="mudarSemanaPreview(-1)">←</button><span id="previewSemanaTexto" style="font-size:12px;"></span><button onclick="mudarSemanaPreview(1)">→</button></div></div><div id="listaHorariosPreview" style="max-height:150px; overflow-y:auto; border:1px solid #eee;"></div><button class="btn btn-primary" style="width:100%; margin-top:10px;" onclick="confirmarDistribuicaoAuto()">Confirmar Agendamento</button></div></div></div>
 
-    <div id="modalImportarEstudantes" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Importar Lista de Estudantes</h2>
-                <button class="close-btn" onclick="closeModal('modalImportarEstudantes')">×</button>
-            </div>
-            <div style="margin-bottom: 20px;">
-                <p style="color: #718096; font-size: 14px; margin-bottom: 10px;">
-                    Selecione um arquivo CSV ou TXT com a lista de estudantes.
-                </p>
-                <p style="color: #718096; font-size: 13px; background: #f7fafc; padding: 10px; border-radius: 4px;">
-                    <strong>Formato do arquivo (uma linha por aluno):</strong><br>
-                    Ana Silva Santos<br>
-                    Bruno Costa Oliveira; Transferido<br>
-                    Carla Mendes Lima; Ativo
-                </p>
-            </div>
-            <form onsubmit="importarEstudantes(event)">
-                <label>
-                    Arquivo:
-                    <input type="file" id="arquivoEstudantes" accept=".csv, .txt" required>
-                </label>
-                <button type="submit" class="btn btn-primary">Importar</button>
-            </form>
-        </div>
-    </div>
+    <div id="modalListaAgendamentos" class="modal"><div class="modal-content"><div class="modal-header"><h2>Agendamentos Futuros</h2><button class="close-btn" onclick="closeModal('modalListaAgendamentos')">×</button></div><div id="listaAgendamentosConteudo"></div></div></div>
 
-    <div id="modalNovoTrabalho" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Novo Trabalho</h2>
-                <button class="close-btn" onclick="closeModal('modalNovoTrabalho')">×</button>
-            </div>
-            <form onsubmit="salvarTrabalho(event)">
-                <label>
-                    Título:
-                    <input type="text" id="trabalhoTitulo" required>
-                </label>
-                <label>
-                    Peso:
-                    <input type="number" id="trabalhoPeso" min="0" max="10" step="0.1" required>
-                </label>
-                <button type="submit" class="btn btn-primary">Salvar</button>
-            </form>
-        </div>
-    </div>
+    <div id="modalRelatorioFaltas" class="modal"><div class="modal-content"><div class="modal-header"><h2>Relatório de Faltas</h2><button class="close-btn" onclick="closeModal('modalRelatorioFaltas')">×</button></div><div id="conteudoRelatorioFaltas"></div></div></div>
 
-    <div id="modalLancarNotas" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Lançar Notas</h2>
-                <button class="close-btn" onclick="closeModal('modalLancarNotas')">×</button>
-            </div>
-            <div id="conteudoLancarNotas"></div>
-        </div>
-    </div>
+    <div id="modalNovoRegistroGestao" class="modal"><div class="modal-content"><div class="modal-header"><h2>Novo Registro Administrativo</h2><button class="close-btn" onclick="closeModal('modalNovoRegistroGestao')">×</button></div><div id="formRegistroGestaoConteudo"></div></div></div>
 
-    <div id="modalRelatorioFaltas" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Relatório de Faltas</h2>
-                <button class="close-btn" onclick="closeModal('modalRelatorioFaltas')">×</button>
-            </div>
-            <div id="conteudoRelatorioFaltas"></div>
-        </div>
-    </div>
+    <div id="modalAdminEscola" class="modal"><div class="modal-content"><div class="modal-header"><h2 id="tituloModalEscola">Escola</h2><button class="close-btn" onclick="closeModal('modalAdminEscola')">×</button></div><form onsubmit="salvarEscola(event)"><input type="hidden" id="adminEscolaId"><label>Nome:<input type="text" id="adminEscolaNome" required></label><label>Endereço:<input type="text" id="adminEscolaEndereco"></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
 
-    <div id="modalDetalhesEvento" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Detalhes do Evento</h2>
-                <button class="close-btn" onclick="closeModal('modalDetalhesEvento')">×</button>
-            </div>
-            <form onsubmit="salvarDetalhesEvento(event)">
-                <input type="hidden" id="detalheEventoId">
-                <div class="form-row">
-                    <label>
-                        Tipo:
-                        <input type="text" id="detalheEventoTipo" readonly style="background: #f7fafc;">
-                    </label>
-                    <label>
-                        Data:
-                        <input type="date" id="detalheEventoData" required>
-                    </label>
-                </div>
-                <div class="form-row">
-                    <label>
-                        Início:
-                        <input type="time" id="detalheEventoInicio" required>
-                    </label>
-                    <label>
-                        Fim:
-                        <input type="time" id="detalheEventoFim" required>
-                    </label>
-                </div>
-                <label>
-                    Título/Descrição:
-                    <input type="text" id="detalheEventoTitulo" required>
-                </label>
-                <label>
-                    📝 Anotações e Lembretes:
-                    <textarea id="detalheEventoAnotacoes" rows="5" placeholder="Adicione notas, pautas ou lembretes aqui..."></textarea>
-                </label>
-                <div style="display: flex; justify-content: space-between; margin-top: 20px;">
-                    <button type="button" class="btn btn-danger" onclick="excluirEventoAtual()">🗑️ Excluir Evento</button>
-                    <button type="submit" class="btn btn-primary">💾 Salvar Alterações</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- MODALS ADMIN -->
-    <div id="modalAdminEscola" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="tituloModalEscola">Nova Escola</h2>
-                <button class="close-btn" onclick="closeModal('modalAdminEscola')">×</button>
-            </div>
-            <form onsubmit="salvarEscola(event)">
-                <input type="hidden" id="adminEscolaId">
-                <label>
-                    Nome da Escola:
-                    <input type="text" id="adminEscolaNome" required>
-                </label>
-                <label>
-                    Endereço/Cidade:
-                    <input type="text" id="adminEscolaEndereco">
-                </label>
-                <button type="submit" class="btn btn-primary">Salvar</button>
-            </form>
-        </div>
-    </div>
-
-    <div id="modalAdminUsuario" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="tituloModalUsuarioAdmin">Gerenciar Usuário</h2>
-                <button class="close-btn" onclick="closeModal('modalAdminUsuario')">×</button>
-            </div>
-            <form onsubmit="salvarUsuarioAdmin(event)">
-                <input type="hidden" id="adminUsuarioId">
-                <label>
-                    Nome:
-                    <input type="text" id="adminUsuarioNome" required>
-                </label>
-                <label>
-                    Email:
-                    <input type="email" id="adminUsuarioEmail" required>
-                </label>
-                <label>
-                    Nova Senha (deixe em branco para manter):
-                    <input type="text" id="adminUsuarioSenha" placeholder="Digite para alterar a senha">
-                </label>
-                <label>
-                    Perfil:
-                    <select id="adminUsuarioRole" required>
-                        <option value="professor">Professor</option>
-                        <option value="gestor">Gestor</option>
-                    </select>
-                </label>
-                <button type="submit" class="btn btn-primary">Salvar</button>
-            </form>
-        </div>
-    </div>
-
-    <!-- MODAL NOVO REGISTRO GESTOR -->
-    <div id="modalNovoRegistroGestao" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Novo Registro Administrativo</h2>
-                <button class="close-btn" onclick="closeModal('modalNovoRegistroGestao')">×</button>
-            </div>
-            <div id="formRegistroGestaoConteudo"></div>
-        </div>
-    </div>
+    <div id="modalAdminUsuario" class="modal"><div class="modal-content"><div class="modal-header"><h2 id="tituloModalUsuarioAdmin">Usuário</h2><button class="close-btn" onclick="closeModal('modalAdminUsuario')">×</button></div><form onsubmit="salvarUsuarioAdmin(event)"><input type="hidden" id="adminUsuarioId"><label>Nome:<input type="text" id="adminUsuarioNome" required></label><label>Email:<input type="email" id="adminUsuarioEmail" required></label><label>Senha:<input type="text" id="adminUsuarioSenha" placeholder="Deixe em branco para manter"></label><label>Perfil:<select id="adminUsuarioRole"><option value="professor">Professor</option><option value="gestor">Gestor</option></select></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
 
     <script>
-        // UTILS
-        let currentUser = null;
+        // --- CONFIGURAÇÃO HÍBRIDA (LOCAL vs FIREBASE) ---
+        
+        // Detecta se está rodando localmente ou em produção
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const USE_FIREBASE = !isLocalhost; // Configuração original (Híbrida)
+        // const USE_FIREBASE = true; // FORÇADO: Usar Firebase mesmo localmente para testes
 
-        function getTodayString() {
-            const today = new Date();
-            return today.toISOString().split('T')[0];
-        }
+        let db; // Variável global para o Firestore
 
-        function formatDate(dateStr) {
-            if (!dateStr) return '';
-            const [y, m, d] = dateStr.split('-');
-            return `${d}/${m}/${y}`;
-        }
-
-        function getStatusColor(status) {
-            const cores = {
-                'pendente': '#ffc107',
-                'notificado': '#3182ce',
-                'entregue': '#22c55e',
-                'entregue_atraso': '#f59e0b',
-                'nao_entregue': '#ef4444'
+        if (USE_FIREBASE) {
+            const firebaseConfig = {
+                apiKey: "AIzaSyCOP_TE6YvVkg9E2DFuwfF7jDkBgxyc8ls",
+                authDomain: "profsis3.firebaseapp.com",
+                databaseURL: "https://profsis3-default-rtdb.firebaseio.com",
+                projectId: "profsis3",
+                storageBucket: "profsis3.firebasestorage.app",
+                messagingSenderId: "944272675889",
+                appId: "1:944272675889:web:2afc6a869f363aefedf110",
+                measurementId: "G-2EJ3T4DPLG"
             };
-            return cores[status] || '#718096';
-        }
-
-        function getStorageKey() {
-            if (currentUser && currentUser.role === 'gestor') {
-                return 'app_data_school_' + (currentUser.schoolId || 'default') + '_gestor';
-            }
-            return 'app_data_' + (currentUser ? currentUser.id : 'temp');
-        }
-
-        // --- FUNÇÕES DE INTEGRAÇÃO GESTÃO-PROFESSOR ---
-        function getDadosGestao() {
-            const schoolId = (currentUser && currentUser.schoolId) || 'default';
-            // Se for gestor, os dados já estão em 'data', mas para leitura externa usamos o localStorage
-            if (currentUser && currentUser.role === 'gestor') return data;
-            return JSON.parse(localStorage.getItem('app_data_school_' + schoolId + '_gestor') || '{}');
-        }
-
-        function getEstudantesDaTurma(turmaId) {
-            const isGestor = currentUser && currentUser.role === 'gestor';
-            if (isGestor) {
-                return data.estudantes.filter(e => e.id_turma === turmaId);
-            }
             
-            const turmaLocal = data.turmas.find(t => t.id === turmaId);
-            if (!turmaLocal) return [];
-            
-            const dadosGestao = getDadosGestao();
-            // O vínculo é feito pelo Nome da Turma (definido na criação)
-            const turmaGestao = (dadosGestao.turmas || []).find(t => t.nome === turmaLocal.nome);
-            if (turmaGestao) {
-                return (dadosGestao.estudantes || []).filter(e => e.id_turma === turmaGestao.id);
+            // Inicializa Firebase
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+            firebase.analytics();
+            console.log("🔥 Modo Produção: Firebase Ativado");
+        } else {
+            console.log("💻 Modo Desenvolvimento: LocalStorage Ativado");
+        }
+
+        // Funções Auxiliares de Dados (Abstração)
+        async function getData(collectionName, docId) {
+            if (USE_FIREBASE) {
+                try {
+                    const doc = await db.collection(collectionName).doc(String(docId)).get();
+                    return doc.exists ? doc.data() : null;
+                } catch (error) {
+                    console.error("Erro ao buscar no Firebase:", error);
+                    return null;
+                }
+            } else {
+                // Comportamento LocalStorage
+                const key = collectionName === 'users' ? 'app_users' : docId; // Adaptação simples
+                const data = localStorage.getItem(key);
+                return data ? JSON.parse(data) : null;
             }
-            return [];
         }
 
-        function getEstudanteById(id) {
-            const isGestor = currentUser && currentUser.role === 'gestor';
-            if (isGestor) return data.estudantes.find(e => e.id === id);
-            
-            const dadosGestao = getDadosGestao();
-            return (dadosGestao.estudantes || []).find(e => e.id === id);
-        }
-
-        // SESSÃO
-        function updateSession() {
-            if (currentUser) {
-                localStorage.setItem('app_last_access', Date.now());
+        async function saveData(collectionName, docId, dataObj) {
+            if (USE_FIREBASE) {
+                try {
+                    await db.collection(collectionName).doc(String(docId)).set(dataObj);
+                } catch (error) {
+                    console.error("Erro ao salvar no Firebase:", error);
+                }
+            } else {
+                // Comportamento LocalStorage
+                const key = collectionName === 'users' ? 'app_users' : docId;
+                // Para users no localStorage, precisamos tratar array vs objeto, 
+                // mas para simplificar a migração, vamos manter a lógica original nos handlers
+                localStorage.setItem(key, JSON.stringify(dataObj));
             }
         }
-        document.addEventListener('click', updateSession);
-        document.addEventListener('keypress', updateSession);
 
-        // DADOS INICIAIS (TEMPLATE)
-        // Esta função retorna uma estrutura vazia para novos usuários
-        function getInitialData() {
-            return {
-            turmas: [
-                {
-                    id: 1,
-                    nome: "9º A",
-                    ano_serie: "9º Ano",
-                    disciplina: "Matemática",
-                    turno: "Manhã"
-                },
-                {
-                    id: 2,
-                    nome: "8º B",
-                    ano_serie: "8º Ano",
-                    disciplina: "Matemática",
-                    turno: "Tarde"
-                }
-            ],
-            estudantes: [],
-            horariosAulas: [
-                { id: 1, id_turma: 1, dia_semana: 1, hora_inicio: "07:30", hora_fim: "08:20" },
-                { id: 2, id_turma: 1, dia_semana: 3, hora_inicio: "07:30", hora_fim: "08:20" },
-                { id: 3, id_turma: 1, dia_semana: 5, hora_inicio: "07:30", hora_fim: "08:20" }
-            ],
-            aulas: [
-                { id: 1, id_turma: 1, data: getTodayString(), horario_id: 1, conteudo: "Equações do 2º Grau" },
-                { id: 2, id_turma: 2, data: getTodayString(), horario_id: null, conteudo: "Frações e Decimais" }
-            ],
-            presencas: [],
-            atrasos: [
-            ],
-            trabalhos: [
-            ],
-            notas: [],
-            compensacoes: [],
-            tutorados: [
-                { id: 1, nome_estudante: "Carlos Eduardo Martins", turma: "9º A" }
-            ],
-            encontros: [
-                { 
-                    id: 1, 
-                    id_tutorado: 1, 
-                    data: getTodayString(), 
-                    tema: "Dificuldades em Matemática",
-                    resumo: "Conversamos sobre as dificuldades e definimos um plano de estudos."
-                }
-            ],
-            eventos: [
-                // Exemplo de evento
-                /* {
-                    id: 1,
-                    tipo: "Reunião",
-                    data: getTodayString(),
-                    hora_inicio: "14:00",
-                    hora_fim: "16:00",
-                    descricao: "Reunião de Planejamento"
-                }
-                */
-            ],
-            ocorrencias: [],
-            gradeHoraria: [], // Nova estrutura para grade de horários base
-            agendamentos: [],
-            registrosAdministrativos: [], // Novo campo para Gestão
-            mapeamentos: [] // Novo campo para Mapeamento de Sala
-        };
-        }
-
-        let data = getInitialData();
-
-        let turmaAtual = null;
-
-        function getNextId(array) {
-            return array.length > 0 ? Math.max(...array.map(i => i.id)) + 1 : 1;
-        }
-
-        // --- SISTEMA DE LOGIN E PERSISTÊNCIA ---
-
-        function renderLogin() {
-            document.getElementById('appContainer').style.display = 'none';
-            document.getElementById('authContainer').style.display = 'flex';
-            document.getElementById('adminContainer').style.display = 'none';
-            document.getElementById('authContainer').innerHTML = `
-                <div class="auth-box">
-                    <h2>🔐 Login</h2>
-                    <form onsubmit="fazerLogin(event)">
-                        <label>Email: <input type="email" id="loginEmail" required></label>
-                        <label>Senha: 
-                            <div class="password-wrapper">
-                                <input type="password" id="loginSenha" required style="padding-right: 35px;">
-                                <button type="button" class="toggle-password" onclick="toggleSenha('loginSenha', this)">👁️</button>
-                            </div>
-                        </label>
-                        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Entrar</button>
-                    </form>
-                    <span class="auth-link" onclick="renderCadastro()">Não tem conta? Cadastre-se</span>
-                </div>
-            `;
-        }
+        // --- FIM CONFIGURAÇÃO ---
 
         function renderCadastro() {
             const schools = JSON.parse(localStorage.getItem('app_schools') || '[]');
@@ -1638,7 +344,7 @@
                         </label>
                         <button type="submit" class="btn btn-success" style="width: 100%; margin-top: 10px;">Criar Conta</button>
                     </form>
-                    <span class="auth-link" onclick="renderLogin()">Já tem conta? Faça Login</span>
+                    <span class="auth-link" onclick="location.reload()">Já tem conta? Faça Login</span>
                 </div>
             `;
         }
@@ -1654,14 +360,20 @@
             }
         }
 
-        function fazerCadastro(e) {
+        async function fazerCadastro(e) {
             e.preventDefault();
             const nome = document.getElementById('cadNome').value;
             const email = document.getElementById('cadEmail').value;
             const senha = document.getElementById('cadSenha').value;
             const schoolId = document.getElementById('cadEscola').value;
 
-            const users = JSON.parse(localStorage.getItem('app_users') || '[]');
+            let users = [];
+            if (USE_FIREBASE) {
+                const usersData = await getData('system', 'users_list'); // Usamos um doc único para lista de usuários simplificada
+                users = usersData ? usersData.list : [];
+            } else {
+                users = JSON.parse(localStorage.getItem('app_users') || '[]');
+            }
             
             if (users.find(u => u.email === email)) {
                 alert('Este email já está cadastrado!');
@@ -1670,43 +382,46 @@
 
             const newUser = { id: Date.now(), nome, email, senha, schoolId: schoolId };
             users.push(newUser);
-            localStorage.setItem('app_users', JSON.stringify(users));
+            
+            if (USE_FIREBASE) {
+                await saveData('system', 'users_list', { list: users });
+            } else {
+                localStorage.setItem('app_users', JSON.stringify(users));
+            }
 
             alert('Cadastro realizado com sucesso! Faça login.');
-            renderLogin();
+            location.reload();
         }
 
-        function fazerLogin(e) {
+        async function fazerLogin(e) {
             e.preventDefault();
             const email = document.getElementById('loginEmail').value;
             const senha = document.getElementById('loginSenha').value;
 
-            // Verificar expiração de sessão (apenas limpeza preventiva, a lógica real está no init)
-            const lastAccess = localStorage.getItem('app_last_access');
-            if (lastAccess && (Date.now() - parseInt(lastAccess) > 72 * 60 * 60 * 1000)) {
-                alert('Sua sessão expirou. Faça login novamente.');
-                logout();
-                return;
-            }
-
             // Super Admin Check
             if (email === 'rafael@adm' && senha === 'Amor@9391') {
-                currentUser = { id: 'admin', nome: 'Super Admin', email: email, role: 'super_admin' };
-                iniciarAdmin();
+                localStorage.setItem('app_current_user', JSON.stringify({ id: 'admin', nome: 'Super Admin', email: email, role: 'super_admin' }));
+                iniciarAdmin(); // CORREÇÃO: Chama a função interna em vez de redirecionar
                 return;
             }
 
-            const users = JSON.parse(localStorage.getItem('app_users') || '[]');
+            let users = [];
+            if (USE_FIREBASE) {
+                const usersData = await getData('system', 'users_list');
+                users = usersData ? usersData.list : [];
+            } else {
+                users = JSON.parse(localStorage.getItem('app_users') || '[]');
+            }
+
             const user = users.find(u => u.email === email && u.senha === senha);
 
             if (user) {
                 if (user.mustChangePassword) {
                     renderTrocarSenha(user);
-                    return;
+                } else {
+                    localStorage.setItem('app_current_user', JSON.stringify(user));
+                    iniciarApp(); // CORREÇÃO: Inicia a SPA em vez de redirecionar
                 }
-                currentUser = user;
-                carregarDadosUsuario();
-                iniciarApp();
             } else {
                 alert('Email ou senha incorretos.');
             }
@@ -1731,12 +446,12 @@
                         </label>
                         <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Salvar e Entrar</button>
                     </form>
-                    <span class="auth-link" onclick="renderLogin()">Voltar ao Login</span>
+                    <span class="auth-link" onclick="location.reload()">Voltar ao Login</span>
                 </div>
             `;
         }
 
-        function confirmarNovaSenha(e, userId) {
+        async function confirmarNovaSenha(e, userId) {
             e.preventDefault();
             const nova = document.getElementById('novaSenha').value;
             const confirma = document.getElementById('confirmaSenha').value;
@@ -1746,13 +461,25 @@
                 return;
             }
 
-            let users = JSON.parse(localStorage.getItem('app_users') || '[]');
+            let users = [];
+            if (USE_FIREBASE) {
+                const usersData = await getData('system', 'users_list');
+                users = usersData ? usersData.list : [];
+            } else {
+                users = JSON.parse(localStorage.getItem('app_users') || '[]');
+            }
+
             const userIndex = users.findIndex(u => u.id === userId);
             
             if (userIndex >= 0) {
                 users[userIndex].senha = nova;
                 users[userIndex].mustChangePassword = false;
-                localStorage.setItem('app_users', JSON.stringify(users));
+                
+                if (USE_FIREBASE) {
+                    await saveData('system', 'users_list', { list: users });
+                } else {
+                    localStorage.setItem('app_users', JSON.stringify(users));
+                }
                 
                 currentUser = users[userIndex];
                 carregarDadosUsuario();
@@ -1770,9 +497,16 @@
             renderLogin();
         }
 
-        function carregarDadosUsuario() {
+        async function carregarDadosUsuario() {
             if (!currentUser) return;
-            const savedData = localStorage.getItem(getStorageKey());
+            
+            let savedData = null;
+            if (USE_FIREBASE) {
+                savedData = JSON.stringify(await getData('app_data', getStorageKey())); // Convertendo para string para manter compatibilidade com JSON.parse abaixo
+            } else {
+                savedData = localStorage.getItem(getStorageKey());
+            }
+
             if (savedData) {
                 data = JSON.parse(savedData);
                 // Garantir compatibilidade se novos campos forem adicionados no futuro
@@ -1781,11 +515,20 @@
             } else {
                 data = getInitialData();
             }
+            
+            // Se for a primeira carga assíncrona, precisamos re-renderizar a tela se o app já tiver iniciado
+            if (document.getElementById('appContainer').style.display === 'block') {
+                showScreen('dashboard'); // Refresh na tela atual
+            }
         }
 
-        function persistirDados() {
+        async function persistirDados() {
             if (currentUser) {
-                localStorage.setItem(getStorageKey(), JSON.stringify(data));
+                if (USE_FIREBASE) {
+                    await saveData('app_data', getStorageKey(), data);
+                } else {
+                    localStorage.setItem(getStorageKey(), JSON.stringify(data));
+                }
             }
         }
 
@@ -1795,7 +538,10 @@
             document.getElementById('adminContainer').style.display = 'none';
             updateSession();
             
-            const today = new Date();
+            // Carregar dados (pode ser assíncrono no Firebase)
+            carregarDadosUsuario().then(() => {
+                // Continua a inicialização após carregar dados
+                const today = new Date();
             const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
             
             let roleLabel = 'Painel do Professor';
@@ -1825,6 +571,7 @@
             } else {
                 renderProfessorPanel();
             }
+            });
         }
 
         function renderProfessorPanel() {

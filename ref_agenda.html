@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Referência Agenda</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Estilos específicos de calendário */
+        .calendario-dia {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 8px;
+            min-height: 100px;
+        }
+        .evento-calendario {
+            font-size: 10px;
+            padding: 3px 5px;
+            margin-bottom: 3px;
+            border-radius: 3px;
+            color: white;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="agenda" class="screen active">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h2 style="margin: 0;">📅 Agenda</h2>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-secondary" onclick="alternarVisualizacao('mes')" id="btnVisMes">Mês</button>
+                        <button class="btn btn-secondary" onclick="alternarVisualizacao('semana')" id="btnVisSemana">Semana</button>
+                        <button class="btn btn-primary" onclick="alert('Abrir Modal Novo Evento')">+ Novo Evento</button>
+                    </div>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: #f7fafc; padding: 15px; border-radius: 8px;">
+                    <button class="btn btn-secondary" onclick="navegarPeriodo(-1)">← Anterior</button>
+                    <h3 id="tituloCalendario" style="margin: 0;"></h3>
+                    <button class="btn btn-secondary" onclick="navegarPeriodo(1)">Próximo →</button>
+                </div>
+
+                <div id="calendarioView"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DADOS DE EXEMPLO
+        let data = {
+            eventos: [
+                { id: 1, tipo: "Aula", data: new Date().toISOString().split('T')[0], hora_inicio: "08:00", hora_fim: "09:00", descricao: "Matemática 9A" },
+                { id: 2, tipo: "Reunião", data: new Date().toISOString().split('T')[0], hora_inicio: "14:00", hora_fim: "15:00", descricao: "Conselho de Classe" }
+            ]
+        };
+
+        let visualizacaoAgenda = 'mes';
+        let dataAtualAgenda = new Date();
+
+        function renderAgenda() {
+            if (visualizacaoAgenda === 'mes') {
+                renderCalendarioMes();
+            } else {
+                renderCalendarioSemana();
+            }
+        }
+
+        function alternarVisualizacao(tipo) {
+            visualizacaoAgenda = tipo;
+            renderAgenda();
+        }
+
+        function navegarPeriodo(direcao) {
+            if (visualizacaoAgenda === 'mes') {
+                dataAtualAgenda.setMonth(dataAtualAgenda.getMonth() + direcao);
+            } else {
+                dataAtualAgenda.setDate(dataAtualAgenda.getDate() + (7 * direcao));
+            }
+            renderAgenda();
+        }
+
+        function renderCalendarioMes() {
+            const ano = dataAtualAgenda.getFullYear();
+            const mes = dataAtualAgenda.getMonth();
+            const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+            
+            document.getElementById('tituloCalendario').textContent = `${meses[mes]} ${ano}`;
+
+            const primeiroDia = new Date(ano, mes, 1);
+            const ultimoDia = new Date(ano, mes + 1, 0);
+            const diasNoMes = ultimoDia.getDate();
+            const diaSemanaInicio = primeiroDia.getDay();
+
+            let html = `
+                <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px;">
+                    ${['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => 
+                        `<div style="text-align: center; font-weight: 600; padding: 10px; background: #4a5568; color: white; border-radius: 6px;">${d}</div>`
+                    ).join('')}
+            `;
+
+            // Dias vazios antes do início do mês
+            for (let i = 0; i < diaSemanaInicio; i++) {
+                html += `<div style="background: #f7fafc; border-radius: 6px; min-height: 100px;"></div>`;
+            }
+
+            // Dias do mês
+            for (let dia = 1; dia <= diasNoMes; dia++) {
+                const dataStr = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+                const eventosNoDia = data.eventos.filter(e => e.data === dataStr);
+
+                html += `
+                    <div class="calendario-dia">
+                        <div style="font-weight: 600; margin-bottom: 5px;">${dia}</div>
+                        ${eventosNoDia.map(e => {
+                            const cor = e.tipo === 'Aula' ? '#22c55e' : '#3182ce';
+                            return `<div class="evento-calendario" style="background: ${cor};">${e.descricao}</div>`;
+                        }).join('')}
+                    </div>
+                `;
+            }
+
+            html += `</div>`;
+            document.getElementById('calendarioView').innerHTML = html;
+        }
+
+        function renderCalendarioSemana() {
+            document.getElementById('calendarioView').innerHTML = '<p style="padding: 20px; text-align: center;">Visualização de Semana (Lógica similar à mensal, mas filtrando por intervalo de 7 dias)</p>';
+            // A lógica completa da semana está no arquivo original e pode ser copiada se necessário
+        }
+
+        // Inicialização
+        renderAgenda();
+    </script>
+</body>
+</html>

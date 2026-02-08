@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Referência Turmas</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- TURMAS -->
+        <div id="turmas" class="screen active">
+            <div class="card">
+                <h2>Minhas Turmas</h2>
+                <button class="btn btn-primary" onclick="abrirModalNovaTurma()">+ Nova Turma</button>
+                <div id="listaTurmas"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL NOVA TURMA -->
+    <div id="modalNovaTurma" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="tituloModalTurma">Nova Turma</h2>
+                <button class="close-btn" onclick="closeModal('modalNovaTurma')">×</button>
+            </div>
+            <form onsubmit="salvarTurma(event)">
+                <input type="hidden" id="turmaId">
+                <div class="form-row">
+                    <label>
+                        Ano/Série:
+                        <input type="text" id="turmaAno" placeholder="Ex: 9º Ano A">
+                    </label>
+                    <label id="divTurmaDisciplina">
+                        Disciplina:
+                        <input type="text" id="turmaDisciplina" required>
+                    </label>
+                </div>
+                <label>
+                    Turno:
+                    <select id="turmaTurno" required>
+                        <option value="">Selecione...</option>
+                        <option value="Manhã">Manhã</option>
+                        <option value="Tarde">Tarde</option>
+                        <option value="Noite">Noite</option>
+                        <option value="Integral">Integral</option>
+                    </select>
+                </label>
+                <button type="submit" class="btn btn-primary">Salvar</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // DADOS DE EXEMPLO (No Firebase virão do Firestore)
+        let data = {
+            turmas: [
+                { id: 1, nome: "9º A", ano_serie: "9º Ano", disciplina: "Matemática", turno: "Manhã" },
+                { id: 2, nome: "8º B", ano_serie: "8º Ano", disciplina: "História", turno: "Tarde" }
+            ],
+            horariosAulas: []
+        };
+
+        function renderTurmas() {
+            const html = data.turmas.map(t => `
+                <div class="class-item" onclick="alert('Abrir detalhes da turma ${t.id}')" style="position: relative;">
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <div>
+                            <h3>${t.ano_serie} ${t.disciplina ? '- ' + t.disciplina : ''}</h3>
+                            <div class="class-info">
+                                ${t.ano_serie} • ${t.turno}
+                            </div>
+                        </div>
+                        <div onclick="event.stopPropagation()">
+                            <button class="btn btn-sm btn-secondary" onclick="editarTurma(${t.id})" title="Editar">✏️</button>
+                            <button class="btn btn-sm btn-danger" onclick="removerTurma(${t.id})" title="Excluir">🗑️</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('listaTurmas').innerHTML = html || '<p class="empty-state">Nenhuma turma cadastrada</p>';
+        }
+
+        function abrirModalNovaTurma() {
+            document.getElementById('turmaId').value = '';
+            document.getElementById('turmaAno').value = '';
+            document.getElementById('turmaDisciplina').value = '';
+            document.getElementById('turmaTurno').value = '';
+            document.getElementById('tituloModalTurma').textContent = 'Nova Turma';
+            document.getElementById('modalNovaTurma').classList.add('active');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+        }
+
+        function salvarTurma(e) {
+            e.preventDefault();
+            const id = document.getElementById('turmaId').value;
+            const ano = document.getElementById('turmaAno').value;
+            const disciplina = document.getElementById('turmaDisciplina').value;
+            const turno = document.getElementById('turmaTurno').value;
+
+            if (id) {
+                // Edição
+                const turma = data.turmas.find(t => t.id == id);
+                if (turma) {
+                    turma.ano_serie = ano;
+                    turma.disciplina = disciplina;
+                    turma.turno = turno;
+                }
+            } else {
+                // Criação
+                data.turmas.push({
+                    id: Date.now(),
+                    nome: ano,
+                    ano_serie: ano,
+                    disciplina: disciplina,
+                    turno: turno
+                });
+            }
+            
+            closeModal('modalNovaTurma');
+            renderTurmas();
+            e.target.reset();
+        }
+
+        // Inicialização
+        renderTurmas();
+    </script>
+</body>
+</html>
