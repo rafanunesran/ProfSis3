@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Referência Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h1>📚 Sistema do Professor</h1>
+                <div class="date-info" id="currentDate"></div>
+            </div>
+        </header>
+
+        <!-- DASHBOARD -->
+        <div id="dashboard" class="screen active">
+            <div class="grid">
+                <div class="card">
+                    <h2>📅 Aulas de Hoje</h2>
+                    <div id="aulasHoje"></div>
+                </div>
+
+                <div class="card">
+                    <h2>🤝 Reuniões de Hoje</h2>
+                    <div id="reunioesHoje"></div>
+                </div>
+
+                <div class="card">
+                    <h2>👥 Tutorias de Hoje</h2>
+                    <div id="tutoriasHoje"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>⚠️ Alertas</h2>
+                <div id="alertas"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DADOS MOCKADOS (Simulando o que virá do Firebase)
+        function getTodayString() {
+            return new Date().toISOString().split('T')[0];
+        }
+
+        const today = getTodayString();
+
+        let data = {
+            turmas: [
+                { id: 1, nome: "9º A", disciplina: "Matemática" },
+                { id: 2, nome: "8º B", disciplina: "História" }
+            ],
+            aulas: [
+                { id: 1, id_turma: 1, data: today, conteudo: "Equações do 2º Grau" }
+            ],
+            eventos: [
+                { id: 1, tipo: "Reunião", data: today, hora_inicio: "10:00", descricao: "Conselho de Classe" }
+            ],
+            encontros: [ // Tutorias
+                { id: 1, id_tutorado: 1, data: today, tema: "Dificuldades em Matemática" }
+            ],
+            tutorados: [
+                { id: 1, nome_estudante: "Carlos Eduardo" }
+            ],
+            compensacoes: [
+                { status: 'pendente', arquivada: false },
+                { status: 'pendente', arquivada: false }
+            ],
+            atrasos: [
+                { data: today }
+            ]
+        };
+
+        function renderDashboard() {
+            // Data no Header
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('currentDate').textContent = new Date().toLocaleDateString('pt-BR', options);
+
+            // Aulas de hoje
+            const aulasHoje = data.aulas.filter(a => a.data === today);
+            const aulasHtml = aulasHoje.length > 0 ? aulasHoje.map(a => {
+                const turma = data.turmas.find(t => t.id === a.id_turma);
+                return `
+                    <div class="btn btn-secondary" style="width: 100%; text-align: left; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; padding: 15px; cursor: default;">
+                        <div>
+                            <span class="badge badge-info">Aula</span>
+                            <strong>${turma.nome} - ${turma.disciplina}</strong> - ${a.conteudo}
+                        </div>
+                    </div>
+                `;
+            }).join('') : '<p class="empty-state">Nenhuma aula registrada para hoje</p>';
+            document.getElementById('aulasHoje').innerHTML = aulasHtml;
+
+            // Reuniões de Hoje
+            const eventosHoje = data.eventos.filter(e => e.data === today && e.tipo !== 'Aula');
+            const reunioesHtml = eventosHoje.length > 0 ? eventosHoje.map(e => `
+                <div class="alert alert-warning" style="margin-bottom: 10px;">
+                    <div>
+                        <span class="badge badge-warning">${e.tipo}</span>
+                        <strong>${e.hora_inicio}</strong> - ${e.descricao}
+                    </div>
+                </div>
+            `).join('') : '<p class="empty-state">Nenhum evento extra hoje</p>';
+            document.getElementById('reunioesHoje').innerHTML = reunioesHtml;
+
+            // Tutorias de hoje
+            const tutoriasHoje = data.encontros.filter(e => e.data === today);
+            const tutoriasHtml = tutoriasHoje.length > 0 ? tutoriasHoje.map(e => {
+                const tutorado = data.tutorados.find(t => t.id === e.id_tutorado);
+                return `
+                    <div class="btn btn-success" style="width: 100%; text-align: left; margin-bottom: 10px; background: #f0fdf4; color: #166534; border: 1px solid #22c55e; cursor: default;">
+                        <div>
+                            <span class="badge badge-success">Tutoria</span>
+                            <strong>${tutorado.nome_estudante}</strong> - ${e.tema}
+                        </div>
+                    </div>
+                `;
+            }).join('') : '<p class="empty-state">Nenhuma tutoria para hoje</p>';
+            document.getElementById('tutoriasHoje').innerHTML = tutoriasHtml;
+
+            // Alertas
+            let alertas = [];
+            
+            const compPendentes = data.compensacoes.filter(c => c.status === 'pendente' && !c.arquivada);
+            if (compPendentes.length > 0) {
+                alertas.push(`<div class="alert alert-warning"><strong>${compPendentes.length}</strong> compensação(ões) pendente(s)</div>`);
+            }
+
+            const atrasosHoje = data.atrasos.filter(a => a.data === today);
+            if (atrasosHoje.length > 0) {
+                alertas.push(`<div class="alert alert-warning"><strong>${atrasosHoje.length}</strong> atraso(s) registrado(s) hoje</div>`);
+            }
+
+            if (alertas.length === 0) {
+                alertas.push('<div class="alert alert-success">Tudo em dia! ✓</div>');
+            }
+            document.getElementById('alertas').innerHTML = alertas.join('');
+        }
+
+        renderDashboard();
+    </script>
+</body>
+</html>
