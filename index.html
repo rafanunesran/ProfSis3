@@ -320,8 +320,17 @@
 
         // --- FIM CONFIGURAÇÃO ---
 
-        function renderCadastro() {
-            const schools = JSON.parse(localStorage.getItem('app_schools') || '[]');
+        async function renderCadastro() {
+            let schools = [];
+            if (USE_FIREBASE) {
+                const data = await getData('system', 'schools_list');
+                schools = data ? data.list : [];
+            } else {
+                schools = JSON.parse(localStorage.getItem('app_schools') || '[]');
+            }
+
+            if (schools.length === 0 && !USE_FIREBASE) schools.push({id: 'local', nome: 'Escola Local (Teste)'});
+
             const options = schools.map(s => `<option value="${s.id}">${s.nome}</option>`).join('');
 
             document.getElementById('authContainer').innerHTML = `
@@ -4303,16 +4312,24 @@
             renderAdminEscolas();
         }
 
-        function getEscolas() {
+        async function fetchEscolas() {
+            if (USE_FIREBASE) {
+                const data = await getData('system', 'schools_list');
+                return data ? data.list : [];
+            }
             return JSON.parse(localStorage.getItem('app_schools') || '[]');
         }
 
-        function saveEscolas(escolas) {
-            localStorage.setItem('app_schools', JSON.stringify(escolas));
+        async function saveEscolasData(escolas) {
+            if (USE_FIREBASE) {
+                await saveData('system', 'schools_list', { list: escolas });
+            } else {
+                localStorage.setItem('app_schools', JSON.stringify(escolas));
+            }
         }
 
-        function renderAdminEscolas() {
-            const escolas = getEscolas();
+        async function renderAdminEscolas() {
+            const escolas = await fetchEscolas();
             document.getElementById('adminEscolasScreen').style.display = 'block';
             document.getElementById('adminEscolaDetalheScreen').style.display = 'none';
 
@@ -4352,8 +4369,8 @@
             showModal('modalAdminEscola');
         }
 
-        function editarEscola(id) {
-            const escolas = getEscolas();
+        async function editarEscola(id) {
+            const escolas = await fetchEscolas();
             const escola = escolas.find(e => e.id === id);
             if (escola) {
                 document.getElementById('adminEscolaId').value = escola.id;
@@ -4364,12 +4381,12 @@
             }
         }
 
-        function salvarEscola(e) {
+        async function salvarEscola(e) {
             e.preventDefault();
             const id = document.getElementById('adminEscolaId').value;
             const nome = document.getElementById('adminEscolaNome').value;
             const endereco = document.getElementById('adminEscolaEndereco').value;
-            let escolas = getEscolas();
+            let escolas = await fetchEscolas();
 
             if (id) {
                 const escola = escolas.find(e => e.id == id);
@@ -4380,23 +4397,23 @@
             } else {
                 escolas.push({ id: Date.now(), nome, endereco });
             }
-            saveEscolas(escolas);
+            await saveEscolasData(escolas);
             closeModal('modalAdminEscola');
             renderAdminEscolas();
         }
 
-        function excluirEscola(id) {
+        async function excluirEscola(id) {
             if (confirm('Tem certeza? Isso não excluirá os usuários, mas eles ficarão sem escola.')) {
-                let escolas = getEscolas();
+                let escolas = await fetchEscolas();
                 escolas = escolas.filter(e => e.id !== id);
-                saveEscolas(escolas);
+                await saveEscolasData(escolas);
                 renderAdminEscolas();
             }
         }
 
-        function verUsuariosEscola(escolaId) {
+        async function verUsuariosEscola(escolaId) {
             escolaAtualAdmin = escolaId;
-            const escolas = getEscolas();
+            const escolas = await fetchEscolas();
             const escola = escolas.find(e => e.id === escolaId);
             
             document.getElementById('adminEscolasScreen').style.display = 'none';
@@ -4419,8 +4436,14 @@
             renderListaUsuariosAdmin();
         }
 
-        function renderListaUsuariosAdmin() {
-            const users = JSON.parse(localStorage.getItem('app_users') || '[]');
+        async function renderListaUsuariosAdmin() {
+            let users = [];
+            if (USE_FIREBASE) {
+                const data = await getData('system', 'users_list');
+                users = data ? data.list : [];
+            } else {
+                users = JSON.parse(localStorage.getItem('app_users') || '[]');
+            }
             const usersEscola = users.filter(u => u.schoolId == escolaAtualAdmin);
 
             const html = usersEscola.length > 0 ? `
@@ -4462,8 +4485,14 @@
             showModal('modalAdminUsuario');
         }
 
-        function editarUsuarioAdmin(userId) {
-            const users = JSON.parse(localStorage.getItem('app_users') || '[]');
+        async function editarUsuarioAdmin(userId) {
+            let users = [];
+            if (USE_FIREBASE) {
+                const data = await getData('system', 'users_list');
+                users = data ? data.list : [];
+            } else {
+                users = JSON.parse(localStorage.getItem('app_users') || '[]');
+            }
             const user = users.find(u => u.id === userId);
             if (user) {
                 document.getElementById('adminUsuarioId').value = user.id;
@@ -4476,7 +4505,7 @@
             }
         }
 
-        function salvarUsuarioAdmin(e) {
+        async function salvarUsuarioAdmin(e) {
             e.preventDefault();
             const id = document.getElementById('adminUsuarioId').value;
             const nome = document.getElementById('adminUsuarioNome').value;
@@ -4484,7 +4513,13 @@
             const senha = document.getElementById('adminUsuarioSenha').value;
             const role = document.getElementById('adminUsuarioRole').value;
 
-            let users = JSON.parse(localStorage.getItem('app_users') || '[]');
+            let users = [];
+            if (USE_FIREBASE) {
+                const data = await getData('system', 'users_list');
+                users = data ? data.list : [];
+            } else {
+                users = JSON.parse(localStorage.getItem('app_users') || '[]');
+            }
 
             if (id) {
                 const user = users.find(u => u.id == id);
@@ -4512,16 +4547,30 @@
                 users.push(newUser);
             }
 
-            localStorage.setItem('app_users', JSON.stringify(users));
+            if (USE_FIREBASE) {
+                await saveData('system', 'users_list', { list: users });
+            } else {
+                localStorage.setItem('app_users', JSON.stringify(users));
+            }
+            
             closeModal('modalAdminUsuario');
             renderListaUsuariosAdmin();
         }
 
-        function excluirUsuarioAdmin(id) {
+        async function excluirUsuarioAdmin(id) {
             if (confirm('Tem certeza que deseja excluir este usuário? Todos os dados dele serão perdidos.')) {
-                let users = JSON.parse(localStorage.getItem('app_users') || '[]');
+                let users = [];
+                if (USE_FIREBASE) {
+                    const data = await getData('system', 'users_list');
+                    users = data ? data.list : [];
+                } else {
+                    users = JSON.parse(localStorage.getItem('app_users') || '[]');
+                }
                 users = users.filter(u => u.id !== id);
-                localStorage.setItem('app_users', JSON.stringify(users));
+                
+                if (USE_FIREBASE) await saveData('system', 'users_list', { list: users });
+                else localStorage.setItem('app_users', JSON.stringify(users));
+                
                 // Limpar dados do usuário
                 localStorage.removeItem('app_data_' + id);
                 renderListaUsuariosAdmin();
