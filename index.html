@@ -285,6 +285,7 @@
                 if (typeof firebase !== 'undefined') {
                     firebase.initializeApp(firebaseConfig);
                     db = firebase.firestore();
+                    firebase.auth(); // Inicializa o serviço de Autenticação
                     firebase.analytics();
                     console.log("🔥 Modo Produção: Firebase Ativado");
                 } else {
@@ -355,6 +356,7 @@
                         <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Entrar</button>
                     </form>
                     <span class="auth-link" onclick="renderCadastro()">Não tem conta? Cadastre-se</span>
+                    <span class="auth-link" onclick="renderEsqueciSenha()" style="margin-top: 10px; font-size: 12px; color: #718096;">Esqueci minha senha</span>
                 </div>
             `;
         }
@@ -397,6 +399,44 @@
             `;
         }
 
+        function renderEsqueciSenha() {
+            document.getElementById('authContainer').innerHTML = `
+                <div class="auth-box">
+                    <h2>🔒 Recuperar Senha</h2>
+                    <p style="text-align: center; margin-bottom: 20px; color: #4a5568; font-size: 14px;">
+                        Digite seu email cadastrado para receber instruções de recuperação.
+                    </p>
+                    <form onsubmit="enviarRecuperacaoSenha(event)">
+                        <label>Email: <input type="email" id="recuperacaoEmail" required></label>
+                        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Enviar Email</button>
+                    </form>
+                    <span class="auth-link" onclick="renderLogin()">Voltar ao Login</span>
+                </div>
+            `;
+        }
+
+        async function enviarRecuperacaoSenha(e) {
+            e.preventDefault();
+            const email = document.getElementById('recuperacaoEmail').value.toLowerCase().trim();
+            
+            let users = [];
+            if (USE_FIREBASE && db) {
+                const usersData = await getData('system', 'users_list');
+                users = (usersData && usersData.list) ? usersData.list : [];
+            } else {
+                users = JSON.parse(localStorage.getItem('app_users') || '[]');
+            }
+
+            const user = users.find(u => u.email === email);
+
+            if (user) {
+                alert(`Simulação: Um email de recuperação foi enviado para ${email}.\n\n(Em um sistema real, isso usaria o Firebase Auth ou um serviço de email como EmailJS. Por enquanto, contate o administrador para resetar sua senha).`);
+                renderLogin();
+            } else {
+                alert('Email não encontrado no sistema.');
+            }
+        }
+
         function toggleSenha(inputId, btn) {
             const input = document.getElementById(inputId);
             if (input.type === 'password') {
@@ -411,7 +451,7 @@
         async function fazerCadastro(e) {
             e.preventDefault();
             const nome = document.getElementById('cadNome').value;
-            const email = document.getElementById('cadEmail').value;
+            const email = document.getElementById('cadEmail').value.toLowerCase().trim(); // Normalização de email
             const senha = document.getElementById('cadSenha').value;
             const schoolId = document.getElementById('cadEscola').value;
 
@@ -443,7 +483,7 @@
 
         async function fazerLogin(e) {
             e.preventDefault();
-            const email = document.getElementById('loginEmail').value;
+            const email = document.getElementById('loginEmail').value.toLowerCase().trim(); // Normalização de email
             const senha = document.getElementById('loginSenha').value;
 
             // Super Admin Check
@@ -4552,7 +4592,7 @@
             e.preventDefault();
             const id = document.getElementById('adminUsuarioId').value;
             const nome = document.getElementById('adminUsuarioNome').value;
-            const email = document.getElementById('adminUsuarioEmail').value;
+            const email = document.getElementById('adminUsuarioEmail').value.toLowerCase().trim(); // Normalização de email
             const senha = document.getElementById('adminUsuarioSenha').value;
             const role = document.getElementById('adminUsuarioRole').value;
 
