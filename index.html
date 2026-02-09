@@ -257,36 +257,49 @@
         // --- CONFIGURAÇÃO HÍBRIDA (LOCAL vs FIREBASE) ---
         
         // Detecta se está rodando localmente ou em produção
-        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        const USE_FIREBASE = !isLocalhost; // Configuração original (Híbrida)
-        // const USE_FIREBASE = true; // FORÇADO: Usar Firebase mesmo localmente para testes
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
+        
+        // CONFIGURAÇÃO: Para testar com o banco REAL (Firebase) mesmo no seu computador, mude para TRUE:
+        const FORCE_FIREBASE_LOCAL = false; 
+
+        const USE_FIREBASE = !isLocalhost || FORCE_FIREBASE_LOCAL;
 
         let db; // Variável global para o Firestore
+        let currentUser = null;
+        let data = (typeof getInitialData === 'function') ? getInitialData() : {};
 
         if (USE_FIREBASE) {
-            const firebaseConfig = {
-                apiKey: "AIzaSyCOP_TE6YvVkg9E2DFuwfF7jDkBgxyc8ls",
-                authDomain: "profsis3.firebaseapp.com",
-                databaseURL: "https://profsis3-default-rtdb.firebaseio.com",
-                projectId: "profsis3",
-                storageBucket: "profsis3.firebasestorage.app",
-                messagingSenderId: "944272675889",
-                appId: "1:944272675889:web:2afc6a869f363aefedf110",
-                measurementId: "G-2EJ3T4DPLG"
-            };
-            
-            // Inicializa Firebase
-            firebase.initializeApp(firebaseConfig);
-            db = firebase.firestore();
-            firebase.analytics();
-            console.log("🔥 Modo Produção: Firebase Ativado");
+            try {
+                const firebaseConfig = {
+                    apiKey: "AIzaSyCOP_TE6YvVkg9E2DFuwfF7jDkBgxyc8ls",
+                    authDomain: "profsis3.firebaseapp.com",
+                    databaseURL: "https://profsis3-default-rtdb.firebaseio.com",
+                    projectId: "profsis3",
+                    storageBucket: "profsis3.firebasestorage.app",
+                    messagingSenderId: "944272675889",
+                    appId: "1:944272675889:web:2afc6a869f363aefedf110",
+                    measurementId: "G-2EJ3T4DPLG"
+                };
+                
+                // Inicializa Firebase com verificação
+                if (typeof firebase !== 'undefined') {
+                    firebase.initializeApp(firebaseConfig);
+                    db = firebase.firestore();
+                    firebase.analytics();
+                    console.log("🔥 Modo Produção: Firebase Ativado");
+                } else {
+                    console.error("⚠️ SDK do Firebase não carregado. Verifique sua conexão.");
+                }
+            } catch (e) {
+                console.error("Erro ao inicializar Firebase:", e);
+            }
         } else {
             console.log("💻 Modo Desenvolvimento: LocalStorage Ativado");
         }
 
         // Funções Auxiliares de Dados (Abstração)
         async function getData(collectionName, docId) {
-            if (USE_FIREBASE) {
+            if (USE_FIREBASE && db) {
                 try {
                     const doc = await db.collection(collectionName).doc(String(docId)).get();
                     return doc.exists ? doc.data() : null;
@@ -296,22 +309,28 @@
                 }
             } else {
                 // Comportamento LocalStorage
-                const key = collectionName === 'users' ? 'app_users' : docId; // Adaptação simples
+                let key = docId;
+                if (docId === 'users_list') key = 'app_users';
+                if (docId === 'schools_list') key = 'app_schools';
                 const data = localStorage.getItem(key);
                 return data ? JSON.parse(data) : null;
             }
         }
 
         async function saveData(collectionName, docId, dataObj) {
-            if (USE_FIREBASE) {
+            if (USE_FIREBASE && db) {
                 try {
+                    console.log(`Salvando no Firebase: ${collectionName}/${docId}`);
                     await db.collection(collectionName).doc(String(docId)).set(dataObj);
                 } catch (error) {
                     console.error("Erro ao salvar no Firebase:", error);
+                    alert("Erro ao salvar dados online. Verifique o console (F12).");
                 }
             } else {
                 // Comportamento LocalStorage
-                const key = collectionName === 'users' ? 'app_users' : docId;
+                let key = docId;
+                if (docId === 'users_list') key = 'app_users';
+                if (docId === 'schools_list') key = 'app_schools';
                 // Para users no localStorage, precisamos tratar array vs objeto, 
                 // mas para simplificar a migração, vamos manter a lógica original nos handlers
                 localStorage.setItem(key, JSON.stringify(dataObj));
@@ -319,6 +338,26 @@
         }
 
         // --- FIM CONFIGURAÇÃO ---
+
+        function renderLogin() {
+            document.getElementById('authContainer').style.display = 'flex';
+            document.getElementById('authContainer').innerHTML = `
+                <div class="auth-box">
+                    <h2>🔐 Login</h2>
+                    <form onsubmit="fazerLogin(event)">
+                        <label>Email: <input type="email" id="loginEmail" required></label>
+                        <label>Senha: 
+                            <div class="password-wrapper">
+                                <input type="password" id="loginSenha" required style="padding-right: 35px;">
+                                <button type="button" class="toggle-password" onclick="toggleSenha('loginSenha', this)">👁️</button>
+                            </div>
+                        </label>
+                        <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Entrar</button>
+                    </form>
+                    <span class="auth-link" onclick="renderCadastro()">Não tem conta? Cadastre-se</span>
+                </div>
+            `;
+        }
 
         async function renderCadastro() {
             let schools = [];
@@ -409,7 +448,9 @@
 
             // Super Admin Check
             if (email === 'rafael@adm' && senha === 'Amor@9391') {
-                localStorage.setItem('app_current_user', JSON.stringify({ id: 'admin', nome: 'Super Admin', email: email, role: 'super_admin' }));
+                const adminUser = { id: 'admin', nome: 'Super Admin', email: email, role: 'super_admin' };
+                localStorage.setItem('app_current_user', JSON.stringify(adminUser));
+                currentUser = adminUser;
                 iniciarAdmin(); // CORREÇÃO: Chama a função interna em vez de redirecionar
                 return;
             }
@@ -429,6 +470,7 @@
                     renderTrocarSenha(user);
                 } else {
                     localStorage.setItem('app_current_user', JSON.stringify(user));
+                        currentUser = user;
                     iniciarApp(); // CORREÇÃO: Inicia a SPA em vez de redirecionar
                 }
             } else {
@@ -502,6 +544,7 @@
         function logout() {
             currentUser = null;
             data = getInitialData(); // Limpa dados da memória
+            localStorage.removeItem('app_current_user');
             localStorage.removeItem('app_last_access');
             renderLogin();
         }
@@ -511,9 +554,9 @@
             
             let savedData = null;
             if (USE_FIREBASE) {
-                savedData = JSON.stringify(await getData('app_data', getStorageKey())); // Convertendo para string para manter compatibilidade com JSON.parse abaixo
+                savedData = JSON.stringify(await getData('app_data', getStorageKey(currentUser))); // Convertendo para string para manter compatibilidade com JSON.parse abaixo
             } else {
-                savedData = localStorage.getItem(getStorageKey());
+                savedData = localStorage.getItem(getStorageKey(currentUser));
             }
 
             if (savedData) {
@@ -534,9 +577,9 @@
         async function persistirDados() {
             if (currentUser) {
                 if (USE_FIREBASE) {
-                    await saveData('app_data', getStorageKey(), data);
+                    await saveData('app_data', getStorageKey(currentUser), data);
                 } else {
-                    localStorage.setItem(getStorageKey(), JSON.stringify(data));
+                    localStorage.setItem(getStorageKey(currentUser), JSON.stringify(data));
                 }
             }
         }
@@ -4579,7 +4622,17 @@
 
         // INICIALIZAÇÃO
         function init() {
-            renderLogin();
+            const userJson = localStorage.getItem('app_current_user');
+            if (userJson) {
+                currentUser = JSON.parse(userJson);
+                if (currentUser.role === 'super_admin') {
+                    iniciarAdmin();
+                } else {
+                    iniciarApp();
+                }
+            } else {
+                renderLogin();
+            }
         }
 
         // Inicializar quando a página carregar
