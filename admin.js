@@ -182,10 +182,21 @@ function abrirModalUsuarioAdmin() {
 
 async function excluirUsuarioAdmin(id) {
     if (confirm('Tem certeza que deseja excluir este usuário?')) {
-        let users = JSON.parse(localStorage.getItem('app_users') || '[]');
+        let users = [];
+        if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
+            const data = await getData('system', 'users_list');
+            users = data ? data.list : [];
+        } else {
+            users = JSON.parse(localStorage.getItem('app_users') || '[]');
+        }
+
         users = users.filter(u => u.id != id);
-        localStorage.setItem('app_users', JSON.stringify(users));
-        // Se estiver usando Firebase, precisaria atualizar lá também
+
+        if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
+            await saveData('system', 'users_list', { list: users });
+        } else {
+            localStorage.setItem('app_users', JSON.stringify(users));
+        }
         renderListaUsuariosAdmin();
     }
 }
