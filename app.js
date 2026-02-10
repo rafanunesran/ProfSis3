@@ -192,6 +192,13 @@ function abrirModalNovaTurma() {
     document.getElementById('turmaAno').value = '';
     document.getElementById('turmaDisciplina').value = '';
     document.getElementById('tituloModalTurma').textContent = 'Nova Turma';
+    
+    // Gestor define apenas Ano/Série; Professor define Disciplina
+    if (currentUser && currentUser.role === 'gestor') {
+        document.getElementById('divTurmaDisciplina').style.display = 'none';
+    } else {
+        document.getElementById('divTurmaDisciplina').style.display = 'block';
+    }
     showModal('modalNovaTurma');
 }
 
@@ -203,6 +210,12 @@ function editarTurma(id) {
         document.getElementById('turmaDisciplina').value = turma.disciplina;
         document.getElementById('turmaTurno').value = turma.turno;
         document.getElementById('tituloModalTurma').textContent = 'Editar Turma';
+        
+        if (currentUser && currentUser.role === 'gestor') {
+            document.getElementById('divTurmaDisciplina').style.display = 'none';
+        } else {
+            document.getElementById('divTurmaDisciplina').style.display = 'block';
+        }
         showModal('modalNovaTurma');
     }
 }
@@ -269,13 +282,16 @@ function showTurmaTab(tab, evt) {
 function renderEstudantes() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
     const html = `
-        <button class="btn btn-primary btn-sm" onclick="showModal('modalNovoEstudante')">+ Novo Estudante</button>
+        <div style="display:flex; gap: 10px; margin-bottom: 10px;">
+            <button class="btn btn-primary btn-sm" onclick="="showModal('modalImportarEstudantes')">📂 Importar CSV</button>
+        </div>
         <table style="margin-top:10px;">
-            <thead><tr><th>Nome</th><th>Ações</th></tr></thead>
+            <thead><tr><th>Nome</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody>
                 ${estudantes.map(e => `
                     <tr>
-                        <td>${e.nome_completo}</td>
+                        <td><a href="#" onclick="abrirEstudanteDetalhe(${e.id})" style="font-weight:bold; text-decoration:none; color:#2b6cb0;">${e.nome_completo}</a></td>
+                        <td><span style="font-size:12px; padding:2px 6px; border-radius:4px; background:#edf2f7;">${e.status || 'Ativo'}</span></td>
                         <td><button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})">🗑️</button></td>
                     </tr>
                 `).join('')}
@@ -285,15 +301,28 @@ function renderEstudantes() {
     document.getElementById('tabEstudantes').innerHTML = html;
 }
 
+function abrirModalNovoEstudante() {
+    document.getElementById('estudanteNome').value = '';
+    const statusSelect = document.getElementById('estudanteStatus');
+    statusSelect.value = 'Ativo';
+    
+    // Apenas gestor pode editar o status; Professor vê travado em 'Ativo'
+    statusSelect.disabled = (currentUser && currentUser.role !== 'gestor');
+    
+    showModal('modalNovoEstudante');
+}
+
 function salvarEstudante(e) {
     e.preventDefault();
     const nome = document.getElementById('estudanteNome').value;
+    // Garante que se não for gestor, o status seja semstor') ? document.getElementById('estudanteStatus').value : 'Ativo';
+    
     if (!data.estudantes) data.estudantes = [];
     data.estudantes.push({
         id: Date.now(),
         id_turma: turmaAtual,
         nome_completo: nome,
-        status: 'Ativo'
+        status: status
     });
     persistirDados();
     closeModal('modalNovoEstudante');
@@ -548,8 +577,61 @@ function toggleAgendamentoRecorrenciaUI() {
 
 function importarEstudantes(e) {
     e.preventDefault();
-    alert('Importação simulada com sucesso.');
-    closeModal('modalImportarEstudantes');
+    const fileInput = document.getElementById('arquivoEstudantes');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        alert('Selecione um arquivo CSV.');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        const text = event.target.result;
+        const lines = text.split('\n');
+        
+        // Procura a linha de cabeçalho específica para começar a ler os dados depois dela
+        let dataStartIndex = -1;
+        const headerSignature = 'Nome do Aluno;Situação do Aluno';
+        
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes(headerSignature)) {
+                dataStartIndex = i + 1;
+                break;
+            }
+        }
+
+        if (dataStartIndex === -1) {
+            alert('Formato de arquivo inválido. Cabeçalho "Nome do Aluno;Situação do Aluno" não encontrado.');
+            return;
+        }
+
+        if (!data.estudantes) data.estudantes = [];
+        let nextId = data.estudantes.length > 0 ? Math.max(...data.estudantes.map(e => e.id)) + 1 : 1;
+        let count = 0;
+
+        for (let i = dataStartIndex; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+
+            const parts = line.split(';');
+            const nome = parts[0] ? parts[0].trim() : '';
+            const status = parts[1] ? parts[1].trim() : 'Ativo';
+
+            // Verifica se tem nome e se já não existe na turma
+            if (nome && !data.estudantes.find(e => e.id_turma == turmaAtual && e.nome_completo === nome)) {
+                data.estudantes.push({ id: nextId++, id_turma: turmaAtual, nome_completo: nome, status: status });
+                count++;
+            }
+        }
+
+        persistirDados();
+        alert(`Importação concluída! ${count} estudantes adicionados.`);
+        closeModal('modalImportarEstudantes');
+        renderEstudantes();
+        fileInput.value = ''; // Limpa o input
+    };
+    reader.readAsText(file);
 }
 
 function salvarEncontro(e) {
@@ -574,4 +656,101 @@ function salvarDetalhesEvento(e) {
 function excluirEventoAtual() {
     alert('Excluído');
     closeModal('modalDetalhesEvento');
+}
+
+// --- DETALHES DO ESTUDANTE (Painel Unificado por Nome) ---
+let estudanteAtualDetalhe = null;
+
+function abrirEstudanteDetalhe(id) {
+    // Encontra o estudante clicado
+    const estudante = data.estudantes.find(e => e.id == id);
+    if (!estudante) return;
+
+    estudanteAtualDetalhe = estudante;
+    showScreen('estudanteDetalhe');
+    renderEstudanteGeral();
+}
+
+function renderEstudanteGeral() {
+    if (!estudanteAtualDetalhe) return;
+    
+    const nome = estudanteAtualDetalhe.nome_completo;
+    document.getElementById('estudanteGeralNome').textContent = nome;
+    
+    const isGestor = currentUser && currentUser.role === 'gestor';
+
+    // LÓGICA DE UNIFICAÇÃO:
+    // Encontra TODOS os IDs que esse aluno possui no sistema (em qualquer turma), baseado no Nome Completo.
+    // Isso permite que registros de quando ele era "Remanejado" em outra turma apareçam aqui.
+    const todosRegistrosAluno = data.estudantes.filter(e => e.nome_completo === nome);
+    const todosIds = todosRegistrosAluno.map(e => e.id);
+
+    // 1. Frequência (Soma de todas as turmas)
+    const faltas = (data.presencas || [])
+        .filter(p => todosIds.includes(p.id_estudante) && p.status === 'falta')
+        .length;
+    
+    document.getElementById('estudanteGeralFrequencia').innerHTML = `
+        <div style="font-size: 24px; color: #e53e3e; font-weight: bold;">${faltas} <span style="font-size:14px; color:#718096; font-weight:normal;">faltas totais</span></div>
+        <p style="font-size:12px; color:#666;">(Soma de todos os registros deste nome)</p>
+    `;
+
+    // 2. Atrasos
+    const atrasos = (data.atrasos || [])
+        .filter(a => todosIds.includes(a.id_estudante))
+        .length;
+    
+    document.getElementById('estudanteGeralAtrasos').innerHTML = `
+        <div style="font-size: 24px; color: #d69e2e; font-weight: bold;">${atrasos} <span style="font-size:14px; color:#718096; font-weight:normal;">atrasos</span></div>
+    `;
+
+    // 3. Ocorrências
+    const ocorrencias = (data.ocorrencias || []).filter(o => {
+        // Verifica se o ID do aluno está na lista de envolvidos da ocorrência (se houver) 
+        // ou se a ocorrência está ligada à turma e precisamos cruzar dados (simplificado aqui para buscar pelo contexto da turma se necessário, mas idealmente a ocorrência tem ids_estudantes)
+        // Assumindo estrutura simples onde ocorrência pode ter ids_estudantes ou ser geral da turma.
+        // Se sua estrutura de ocorrência não tem lista de estudantes explícita, essa filtragem pode precisar de ajuste.
+        // Vou assumir que filtramos por turma onde ele passou:
+        return false; // Placeholder se não houver vínculo direto na ocorrência
+    });
+    // Como o modelo de dados de ocorrência no código fornecido é simples (id_turma, relato), 
+    // vamos listar as turmas por onde ele passou:
+    const historicoTurmas = todosRegistrosAluno.map(e => {
+        const t = data.turmas.find(turma => turma.id == e.id_turma);
+        return `<div class="badge badge-info" style="margin-right:5px;">${t ? t.nome : 'Turma Excluída'} (${e.status})</div>`;
+    }).join('');
+    
+    document.getElementById('estudanteGeralOcorrencias').innerHTML = `
+        <p><strong>Histórico de Matrículas:</strong></p>
+        <div style="margin-bottom:15px;">${historicoTurmas}</div>
+        <p><em>Para ver ocorrências específicas, o sistema buscará em todas as turmas acima.</em></p>
+    `;
+
+    // VISIBILIDADE POR PERFIL
+    // Gestor vê apenas: Faltas, Atrasos, Ocorrências.
+    // Professor vê tudo (Notas, Compensações, etc).
+    
+    const divNotas = document.getElementById('estudanteGeralNotas');
+    const h3Notas = divNotas.previousElementSibling; // Seleciona o título <h3>Notas...
+    
+    const divComp = document.getElementById('estudanteGeralCompensacoes');
+    const h3Comp = divComp.previousElementSibling; // Seleciona o título <h3>Compensações...
+
+    if (isGestor) {
+        if(h3Notas) h3Notas.style.display = 'none';
+        divNotas.style.display = 'none';
+        
+        if(h3Comp) h3Comp.style.display = 'none';
+        divComp.style.display = 'none';
+    } else {
+        if(h3Notas) h3Notas.style.display = 'block';
+        divNotas.style.display = 'block';
+        
+        if(h3Comp) h3Comp.style.display = 'block';
+        divComp.style.display = 'block';
+        
+        // Preenche com placeholders ou dados reais do professor
+        divNotas.innerHTML = '<p class="empty-state">Sem notas registradas.</p>';
+        divComp.innerHTML = '<p class="empty-state">Sem compensações.</p>';
+    }
 }

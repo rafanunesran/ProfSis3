@@ -94,6 +94,19 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function init() {
+    // Verifica se é um link de compartilhamento
+    const params = new URLSearchParams(window.location.search);
+    const shareId = params.get('share');
+    if (shareId) {
+        // Aguarda carregamento do gestor.js se necessário, ou chama direto
+        if (typeof carregarVistaCompartilhada === 'function') {
+            carregarVistaCompartilhada(shareId);
+        } else {
+            window.addEventListener('load', () => carregarVistaCompartilhada(shareId));
+        }
+        return; // Interrompe o fluxo normal de login
+    }
+
     // Tenta recuperar usuário da sessão
     const userJson = localStorage.getItem('app_current_user');
     if (userJson) {

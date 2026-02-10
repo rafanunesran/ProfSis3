@@ -180,6 +180,48 @@ function abrirModalUsuarioAdmin() {
     showModal('modalAdminUsuario');
 }
 
+async function salvarUsuarioAdmin(e) {
+    e.preventDefault();
+    const id = document.getElementById('adminUsuarioId').value;
+    const nome = document.getElementById('adminUsuarioNome').value;
+    const email = document.getElementById('adminUsuarioEmail').value.trim().toLowerCase();
+    const senha = document.getElementById('adminUsuarioSenha').value;
+    const role = document.getElementById('adminUsuarioRole').value;
+
+    let users = [];
+    if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
+        const data = await getData('system', 'users_list');
+        users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
+    } else {
+        users = JSON.parse(localStorage.getItem('app_users') || '[]');
+    }
+
+    if (id) {
+        const u = users.find(x => x.id == id);
+        if (u) {
+            u.nome = nome;
+            u.email = email;
+            if (senha) u.senha = senha;
+            u.role = role;
+            if (!u.schoolId && escolaAtualAdmin) u.schoolId = escolaAtualAdmin;
+        }
+    } else {
+        if (users.find(u => u.email === email)) {
+            alert('Email já cadastrado!');
+            return;
+        }
+        users.push({ id: Date.now(), nome, email, senha: senha || '123456', role, schoolId: escolaAtualAdmin, mustChangePassword: true });
+    }
+
+    if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
+        await saveData('system', 'users_list', { list: users });
+    } else {
+        localStorage.setItem('app_users', JSON.stringify(users));
+    }
+    closeModal('modalAdminUsuario');
+    renderListaUsuariosAdmin();
+}
+
 async function excluirUsuarioAdmin(id) {
     if (confirm('Tem certeza que deseja excluir este usuário?')) {
         let users = [];
