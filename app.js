@@ -55,6 +55,7 @@ function showScreen(screenId, evt) {
     if (screenId === 'agenda') renderAgenda();
     if (screenId === 'registrosGestor') renderRegistrosGestor();
     if (screenId === 'ocorrenciasGestor') renderOcorrenciasGestor();
+    if (screenId === 'horariosGestor') renderHorariosGestor();
 }
 
 function showModal(modalId) {
@@ -283,7 +284,8 @@ function renderEstudantes() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
     const html = `
         <div style="display:flex; gap: 10px; margin-bottom: 10px;">
-            <button class="btn btn-primary btn-sm" onclick="="showModal('modalImportarEstudantes')">📂 Importar CSV</button>
+            <button class="btn btn-primary btn-sm" onclick="abrirModalNovoEstudante()">+ Novo Estudante</button>
+            <button class="btn btn-secondary btn-sm" onclick="showModal('modalImportarEstudantes')">📂 Importar CSV</button>
         </div>
         <table style="margin-top:10px;">
             <thead><tr><th>Nome</th><th>Status</th><th>Ações</th></tr></thead>
@@ -473,13 +475,20 @@ function abrirFichaTutorado(id) {
 let visualizacaoAgenda = 'mes';
 let dataAtualAgenda = new Date();
 
-function renderAgenda() {
+async function renderAgenda() {
     const ano = dataAtualAgenda.getFullYear();
     const mes = dataAtualAgenda.getMonth();
     const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
     
     document.getElementById('tituloCalendario').textContent = `${meses[mes]} ${ano}`;
+    document.getElementById('containerGradeHoraria').style.display = visualizacaoAgenda === 'grade' ? 'block' : 'none';
+    document.getElementById('containerCalendario').style.display = visualizacaoAgenda !== 'grade' ? 'block' : 'none';
     
+    if (visualizacaoAgenda === 'grade') {
+        await renderGradeHorariaProfessor();
+        return;
+    }
+
     // Renderização simplificada do calendário
     const diasNoMes = new Date(ano, mes + 1, 0).getDate();
     let html = '<div style="display:grid; grid-template-columns:repeat(7, 1fr); gap:5px;">';
@@ -547,6 +556,11 @@ function navegarPeriodo(dir) {
 function alternarVisualizacao(tipo) {
     visualizacaoAgenda = tipo;
     renderAgenda();
+    
+    // Atualiza botões
+    document.getElementById('btnVisMes').className = tipo === 'mes' ? 'btn btn-primary' : 'btn btn-secondary';
+    document.getElementById('btnVisSemana').className = tipo === 'semana' ? 'btn btn-primary' : 'btn btn-secondary';
+    document.getElementById('btnVisGrade').className = tipo === 'grade' ? 'btn btn-primary' : 'btn btn-secondary';
 }
 
 function abrirModalEventoSlot(dataStr) {
@@ -753,4 +767,79 @@ function renderEstudanteGeral() {
         divNotas.innerHTML = '<p class="empty-state">Sem notas registradas.</p>';
         divComp.innerHTML = '<p class="empty-state">Sem compensações.</p>';
     }
+}
+
+// --- GRADE HORÁRIA (PROFESSOR) ---
+async function renderGradeHorariaProfessor() {
+    const container = document.getElementById('containerGradeHoraria');
+    container.innerHTML = '<p>Carregando grade da escola...</p>';
+
+    // 1. Buscar a Grade configurada pelo Gestor (Dados da Escola)
+    let gradeEscola = [];
+    if (currentUser && currentUser.schoolId) {
+        const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+        let gestorData = null;
+        
+        if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
+            gestorData = await getData('app_data', key);
+        } else {
+            gestorData = JSON.parse(localStorage.getItem(key));
+        }
+        
+        if (gestorData && gestorData.gradeHoraria) {
+            gradeEscola = gestorData.gradeHoraria;
+        }
+    }
+
+    if (gradeEscola.length === 0) {
+        container.innerHTML = '<p class="empty-state">A gestão ainda não configurou a grade de horários.</p>';
+        return;
+    }
+
+    // 2. Renderizar a Grade
+    const dias = {1: 'Segunda', 2: 'Terça', 3: 'Quarta', 4: 'Quinta', 5: 'Sexta'};
+    const turmas = data.turmas || [];
+    const minhasAulas = data.horariosAulas || []; // Onde salvamos as escolhas do professor
+
+    let html = '<div class="grid" style="grid-template-columns: repeat(5, 1fr); gap: 10px;">';
+
+    for (let d = 1; d <= 5; d++) {
+        const blocosDia = gradeEscola.filter(g => g.diaSemana == d).sort((a,b) => a.inicio.localeCompare(b.inicio));
+        
+        html += `<div class="card" style="padding:10px;">
+            <h3 style="text-align:center; border-bottom:1px solid #eee; margin-bottom:10px;">${dias[d]}</h3>
+            ${blocosDia.map(bloco => {
+                const aulaSalva = minhasAulas.find(a => a.id_bloco == bloco.id);
+                const turmaSelecionada = aulaSalva ? aulaSalva.id_turma : '';
+
+                return `
+                    <div style="background:#f7fafc; padding:8px; margin-bottom:8px; border-radius:4px; border:1px solid #e2e8f0;">
+                        <div style="font-size:12px; font-weight:bold; color:#4a5568;">${bloco.inicio} - ${bloco.fim}</div>
+                        <select style="width:100%; margin-top:5px; font-size:12px;" onchange="salvarAulaGrade(${bloco.id}, this.value)">
+                            <option value="">-- Livre --</option>
+                            ${turmas.map(t => `<option value="${t.id}" ${t.id == turmaSelecionada ? 'selected' : ''}>${t.nome}</option>`).join('')}
+                        </select>
+                    </div>
+                `;
+            }).join('')}
+        </div>`;
+    }
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function salvarAulaGrade(blocoId, turmaId) {
+    if (!data.horariosAulas) data.horariosAulas = [];
+    
+    // Remove registro anterior desse bloco
+    data.horariosAulas = data.horariosAulas.filter(a => a.id_bloco != blocoId);
+    
+    if (turmaId) {
+        data.horariosAulas.push({
+            id: Date.now() + Math.random(),
+            id_bloco: blocoId,
+            id_turma: turmaId
+        });
+    }
+    persistirDados();
 }

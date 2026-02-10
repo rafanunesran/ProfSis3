@@ -115,6 +115,7 @@
                         <div style="display: flex; gap: 10px;">
                             <button class="btn btn-secondary" onclick="alternarVisualizacao('mes')" id="btnVisMes">Mês</button>
                             <button class="btn btn-secondary" onclick="alternarVisualizacao('semana')" id="btnVisSemana">Semana</button>
+                            <button class="btn btn-secondary" onclick="alternarVisualizacao('grade')" id="btnVisGrade">Grade de Aulas</button>
                             <button class="btn btn-primary" onclick="abrirModalEventoSlot(getTodayString(), '', '')">+ Novo Evento</button>
                             <button class="btn btn-secondary" onclick="imprimirAgendaMensal()">🖨️ Imprimir</button>
                         </div>
@@ -126,7 +127,8 @@
                         <button class="btn btn-secondary" onclick="navegarPeriodo(1)">Próximo →</button>
                     </div>
 
-                    <div id="calendarioView"></div>
+                    <div id="containerCalendario"><div id="calendarioView"></div></div>
+                    <div id="containerGradeHoraria" style="display:none;"></div>
                     
                     <div style="margin-top: 30px;">
                         <h3>Lista de Eventos</h3>
