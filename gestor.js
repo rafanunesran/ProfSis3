@@ -39,11 +39,13 @@ function renderGestorPanel() {
     showScreen('dashboard');
 }
 
-function renderRegistrosGestor() {
+function renderRegistrosGestor(isReadOnly = false) {
     const registros = data.registrosAdministrativos || [];
     const today = new Date();
+    today.setHours(0,0,0,0);
 
-    const lista = registros.map(r => {
+    // 1. Processar e Filtrar
+    let lista = registros.map(r => {
         // Simulação de busca de estudante (em produção buscaria do banco)
         const estudante = data.estudantes.find(e => e.id == r.estudanteId) || { nome_completo: 'Desconhecido' };
         const turma = data.turmas.find(t => t.id == r.turmaId) || { nome: '?' };
@@ -52,54 +54,74 @@ function renderRegistrosGestor() {
         let cor = '#22c55e';
 
         if (r.tipo === 'Atestado') {
-            const dataInicio = new Date(r.data);
+            // Ajuste de data para evitar problemas de fuso horário (YYYY-MM-DD)
+            const parts = r.data.split('-');
+            const dataInicio = new Date(parts[0], parts[1]-1, parts[2]);
+            
             const dataFim = new Date(dataInicio);
-            dataFim.setDate(dataFim.getDate() + parseInt(r.dias));
+            // Subtrai 1 porque se é 1 dia, começa e termina hoje
+            dataFim.setDate(dataFim.getDate() + (parseInt(r.dias) || 1) - 1);
             
             if (today > dataFim) {
                 status = 'Vencido';
-                cor = '#718096';
+                return null; // Filtra atestados vencidos ("aparecem enquanto vigente")
             }
         } else if (r.tipo === 'Faltoso') {
             cor = '#ef4444';
+            // Faltosos aparecem indeterminadamente (não retorna null)
         }
 
         return { ...r, estudanteNome: estudante.nome_completo, turmaNome: turma.nome, status, cor };
+    }).filter(item => item !== null);
+
+    // 2. Agrupar por Turma
+    const grupos = {};
+    lista.forEach(item => {
+        if (!grupos[item.turmaNome]) grupos[item.turmaNome] = [];
+        grupos[item.turmaNome].push(item);
     });
+
+    const turmasOrdenadas = Object.keys(grupos).sort();
 
     const html = `
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <h2>📂 Registros Administrativos</h2>
-                <button class="btn btn-primary" onclick="abrirNovoRegistroGestao()">+ Novo Registro</button>
+                <div>
+                    ${!isReadOnly ? `<button class="btn btn-secondary" onclick="compartilharRelatorio()">🔗 Compartilhar Online</button>` : ''}
+                    ${!isReadOnly ? `<button class="btn btn-primary" onclick="abrirNovoRegistroGestao()">+ Novo Registro</button>` : ''}
+                </div>
             </div>
             <div style="margin-top: 20px;">
                 ${lista.length > 0 ? `
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Tipo</th>
-                                <th>Estudante</th>
-                                <th>Turma</th>
-                                <th>Data/Detalhes</th>
-                                <th>Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${lista.map(r => `
+                    ${turmasOrdenadas.map(turmaNome => `
+                        <h3 style="margin-top: 20px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: #2d3748;">${turmaNome}</h3>
+                        <table>
+                            <thead>
                                 <tr>
-                                    <td style="color: ${r.cor}; font-weight: bold;">${r.tipo}</td>
-                                    <td>${r.estudanteNome}</td>
-                                    <td>${r.turmaNome}</td>
-                                    <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''}</td>
-                                    <td>
-                                        <button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})">🗑️</button>
-                                    </td>
+                                    <th>Tipo</th>
+                                    <th>Estudante</th>
+                                    <th>Data/Detalhes</th>
+                                    ${!isReadOnly ? '<th>Ações</th>' : ''}
                                 </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                ` : '<p class="empty-state">Nenhum registro encontrado.</p>'}
+                            </thead>
+                            <tbody>
+                                ${grupos[turmaNome].map(r => `
+                                    <tr>
+                                        <td style="color: ${r.cor}; font-weight: bold;">${r.tipo}</td>
+                                        <td>${r.estudanteNome}</td>
+                                        <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''}</td>
+                                        ${!isReadOnly ? `
+                                        <td>
+                                            <button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})">🗑️</button>
+                                        </td>
+                                        ` : ''}
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `).join('')}
+                ` : '<p class="empty-state">Nenhum registro vigente ou faltoso encontrado.</p>'}
             </div>
         </div>
     `;
@@ -218,4 +240,59 @@ function renderOcorrenciasGestor() {
         </div>
     `;
     document.getElementById('ocorrenciasGestor').innerHTML = html;
+}
+
+async function compartilharRelatorio() {
+    if (typeof USE_FIREBASE === 'undefined' || !USE_FIREBASE) {
+        alert('O compartilhamento requer que o sistema esteja ONLINE (Firebase).');
+        return;
+    }
+
+    const confirmacao = confirm('Isso criará um link público de leitura para estes registros. Deseja continuar?');
+    if (!confirmacao) return;
+
+    // Prepara os dados para salvar (Snapshot do momento)
+    const payload = {
+        criadoEm: new Date().toISOString(),
+        escolaId: (currentUser && currentUser.schoolId) ? currentUser.schoolId : 'default',
+        dados: {
+            registrosAdministrativos: data.registrosAdministrativos || [],
+            estudantes: (data.estudantes || []).map(e => ({id: e.id, nome_completo: e.nome_completo})), // Minifica dados
+            turmas: (data.turmas || []).map(t => ({id: t.id, nome: t.nome})) // Minifica dados
+        }
+    };
+
+    try {
+        const docRef = await db.collection('shared_views').add(payload);
+        const link = `${window.location.origin}${window.location.pathname}?share=${docRef.id}`;
+        
+        prompt("Link gerado com sucesso! Copie e envie para os professores:", link);
+    } catch (error) {
+        console.error("Erro ao compartilhar:", error);
+        alert("Erro ao gerar link.");
+    }
+}
+
+async function carregarVistaCompartilhada(shareId) {
+    document.getElementById('authContainer').style.display = 'none';
+    document.getElementById('appContainer').style.display = 'block';
+    document.querySelector('nav').style.display = 'none'; // Esconde navegação
+    document.getElementById('painelSubtitle').textContent = 'Visualização Compartilhada (Leitura)';
+    document.getElementById('currentDate').innerHTML = '<a href="index.html" style="color:white;">Ir para Login</a>';
+
+    const container = document.getElementById('dashboard');
+    container.innerHTML = '<p style="text-align:center; margin-top:50px;">Carregando dados compartilhados...</p>';
+
+    const docData = await getData('shared_views', shareId);
+    
+    if (docData && docData.dados) {
+        // Popula a variável global 'data' com o snapshot
+        data = docData.dados;
+        // Renderiza usando a função existente, mas em modo leitura
+        document.getElementById('registrosGestor').style.display = 'block'; // Garante visibilidade
+        renderRegistrosGestor(true); // true = ReadOnly
+        document.getElementById('dashboard').innerHTML = document.getElementById('registrosGestor').innerHTML;
+    } else {
+        container.innerHTML = '<p style="text-align:center; color:red; margin-top:50px;">Link inválido ou expirado.</p>';
+    }
 }
