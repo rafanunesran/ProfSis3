@@ -1,4 +1,3 @@
-// core.js - Lógica Central de Autenticação e Dados
 // core.js - Lógica Central de Autenticação e Dados (Híbrido: Local + Firebase)
 
 // --- CONFIGURAÇÃO HÍBRIDA (LOCAL vs FIREBASE) ---
@@ -15,7 +14,6 @@ let db; // Variável global para o Firestore
 
 // Variáveis Globais
 let currentUser = null;
-let data = {};
 let data = (typeof getInitialData === 'function') ? getInitialData() : {};
 
 if (USE_FIREBASE) {
@@ -111,7 +109,6 @@ function init() {
 }
 
 // Funções de Auth
-function fazerLogin(e) {
 async function fazerLogin(e) {
     e.preventDefault();
     const email = document.getElementById('loginEmail').value.trim().toLowerCase();
@@ -120,7 +117,6 @@ async function fazerLogin(e) {
     // Admin Hardcoded (Legado/Backup)
     if (email === 'rafael@adm' && senha === 'Amor@9391') {
         const adminUser = { id: 'admin', nome: 'Super Admin', email: email, role: 'super_admin' };
-        loginSuccess(adminUser);
         localStorage.setItem('app_current_user', JSON.stringify(adminUser));
         currentUser = adminUser;
         if (typeof iniciarAdmin === 'function') iniciarAdmin();
@@ -128,7 +124,6 @@ async function fazerLogin(e) {
     }
 
     // Busca usuários
-    const users = JSON.parse(localStorage.getItem('app_users') || '[]');
     let users = [];
     if (USE_FIREBASE) {
         const usersData = await getData('system', 'users_list');
@@ -140,7 +135,6 @@ async function fazerLogin(e) {
     const user = users.find(u => u.email === email && u.senha === senha);
 
     if (user) {
-        loginSuccess(user);
         localStorage.setItem('app_current_user', JSON.stringify(user));
         currentUser = user;
         if (typeof iniciarApp === 'function') iniciarApp();
@@ -149,19 +143,6 @@ async function fazerLogin(e) {
     }
 }
 
-function loginSuccess(user) {
-    currentUser = user;
-    localStorage.setItem('app_current_user', JSON.stringify(user));
-    localStorage.setItem('app_last_access', Date.now());
-    
-    if (user.role === 'super_admin') {
-        iniciarAdmin();
-    } else {
-        iniciarApp();
-    }
-}
-
-function fazerCadastro(e) {
 async function fazerCadastro(e) {
     e.preventDefault();
     const nome = document.getElementById('cadNome').value;
@@ -169,7 +150,6 @@ async function fazerCadastro(e) {
     const senha = document.getElementById('cadSenha').value;
     const escolaId = document.getElementById('cadEscola').value;
 
-    const users = JSON.parse(localStorage.getItem('app_users') || '[]');
     let users = [];
     if (USE_FIREBASE) {
         const usersData = await getData('system', 'users_list');
@@ -193,7 +173,6 @@ async function fazerCadastro(e) {
     };
 
     users.push(newUser);
-    localStorage.setItem('app_users', JSON.stringify(users));
     if (USE_FIREBASE) {
         await saveData('system', 'users_list', { list: users });
     } else {
@@ -233,8 +212,6 @@ function renderLogin() {
     `;
 }
 
-function renderCadastro() {
-    const schools = JSON.parse(localStorage.getItem('app_schools') || '[]');
 async function renderCadastro() {
     let schools = [];
     if (USE_FIREBASE) {
@@ -304,8 +281,6 @@ async function carregarDadosUsuario() {
 
 async function persistirDados() {
     if (!currentUser) return;
-    const key = typeof getStorageKey === 'function' ? getStorageKey(currentUser) : 'app_data_' + currentUser.id;
-    localStorage.setItem(key, JSON.stringify(data));
     if (USE_FIREBASE) {
         await saveData('app_data', getStorageKey(currentUser), data);
     } else {
