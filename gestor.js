@@ -296,3 +296,76 @@ async function carregarVistaCompartilhada(shareId) {
         container.innerHTML = '<p style="text-align:center; color:red; margin-top:50px;">Link inválido ou expirado.</p>';
     }
 }
+
+// --- GRADE DE HORÁRIOS (GESTOR) ---
+
+function renderHorariosGestor() {
+    const grade = (data.gradeHoraria || []).sort((a, b) => {
+        if (a.diaSemana !== b.diaSemana) return a.diaSemana - b.diaSemana;
+        return a.inicio.localeCompare(b.inicio);
+    });
+
+    const dias = {1: 'Segunda', 2: 'Terça', 3: 'Quarta', 4: 'Quinta', 5: 'Sexta', 6: 'Sábado'};
+
+    const html = `
+        <div class="card">
+            <h2>⏰ Configuração da Grade Horária</h2>
+            <p style="color:#666; font-size:14px; margin-bottom:15px;">Crie os blocos de aula disponíveis na escola. Os professores usarão esses blocos para encaixar suas turmas.</p>
+            
+            <div class="form-row" style="align-items: flex-end; gap: 10px; background: #f7fafc; padding: 15px; border-radius: 8px;">
+                <label>Dia:
+                    <select id="gradeDia">
+                        <option value="1">Segunda</option>
+                        <option value="2">Terça</option>
+                        <option value="3">Quarta</option>
+                        <option value="4">Quinta</option>
+                        <option value="5">Sexta</option>
+                    </select>
+                </label>
+                <label>Início: <input type="time" id="gradeInicio" required></label>
+                <label>Fim: <input type="time" id="gradeFim" required></label>
+                <button class="btn btn-primary" onclick="salvarBlocoHorario()">+ Adicionar Bloco</button>
+            </div>
+
+            <div style="margin-top: 20px;">
+                ${grade.length > 0 ? `
+                    <table>
+                        <thead><tr><th>Dia</th><th>Horário</th><th>Ações</th></tr></thead>
+                        <tbody>
+                            ${grade.map(g => `
+                                <tr>
+                                    <td><strong>${dias[g.diaSemana]}</strong></td>
+                                    <td>${g.inicio} - ${g.fim}</td>
+                                    <td><button class="btn btn-danger btn-sm" onclick="removerBlocoHorario(${g.id})">🗑️</button></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                ` : '<p class="empty-state">Nenhum bloco de horário configurado.</p>'}
+            </div>
+        </div>
+    `;
+    document.getElementById('horariosGestor').innerHTML = html;
+}
+
+function salvarBlocoHorario() {
+    const dia = parseInt(document.getElementById('gradeDia').value);
+    const inicio = document.getElementById('gradeInicio').value;
+    const fim = document.getElementById('gradeFim').value;
+
+    if (!inicio || !fim) return alert('Defina o horário de início e fim.');
+
+    if (!data.gradeHoraria) data.gradeHoraria = [];
+    data.gradeHoraria.push({ id: Date.now(), diaSemana: dia, inicio, fim });
+    
+    persistirDados();
+    renderHorariosGestor();
+}
+
+function removerBlocoHorario(id) {
+    if (confirm('Remover este bloco?')) {
+        data.gradeHoraria = data.gradeHoraria.filter(g => g.id !== id);
+        persistirDados();
+        renderHorariosGestor();
+    }
+}
