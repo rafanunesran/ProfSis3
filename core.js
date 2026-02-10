@@ -48,7 +48,8 @@ if (USE_FIREBASE) {
 
 // Funções Auxiliares de Dados (Abstração)
 async function getData(collectionName, docId) {
-    if (USE_FIREBASE && db) {
+    if (USE_FIREBASE) {
+        if (!db) return null; // Se o Firebase deveria estar ativo mas não carregou, retorna null
         try {
             const doc = await db.collection(collectionName).doc(String(docId)).get();
             return doc.exists ? doc.data() : null;
@@ -67,7 +68,8 @@ async function getData(collectionName, docId) {
 }
 
 async function saveData(collectionName, docId, dataObj) {
-    if (USE_FIREBASE && db) {
+    if (USE_FIREBASE) {
+        if (!db) return;
         try {
             console.log(`Salvando no Firebase: ${collectionName}/`);
             await db.collection(collectionName).doc(String(docId)).set(dataObj);
@@ -127,7 +129,7 @@ async function fazerLogin(e) {
     let users = [];
     if (USE_FIREBASE) {
         const usersData = await getData('system', 'users_list');
-        users = (usersData && Array.isArray(usersData.list)) ? usersData.list : [];
+        users = (usersData && usersData.list && Array.isArray(usersData.list)) ? usersData.list : [];
     } else {
         users = JSON.parse(localStorage.getItem('app_users') || '[]');
     }
@@ -153,7 +155,7 @@ async function fazerCadastro(e) {
     let users = [];
     if (USE_FIREBASE) {
         const usersData = await getData('system', 'users_list');
-        users = (usersData && Array.isArray(usersData.list)) ? usersData.list : [];
+        users = (usersData && usersData.list && Array.isArray(usersData.list)) ? usersData.list : [];
     } else {
         users = JSON.parse(localStorage.getItem('app_users') || '[]');
     }
@@ -216,7 +218,7 @@ async function renderCadastro() {
     let schools = [];
     if (USE_FIREBASE) {
         const data = await getData('system', 'schools_list');
-        schools = (data && Array.isArray(data.list)) ? data.list : [];
+        schools = (data && data.list && Array.isArray(data.list)) ? data.list : [];
     } else {
         schools = JSON.parse(localStorage.getItem('app_schools') || '[]');
     }

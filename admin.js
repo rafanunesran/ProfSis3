@@ -11,7 +11,7 @@ function iniciarAdmin() {
 async function fetchEscolas() {
     if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
         const data = await getData('system', 'schools_list');
-        return (data && Array.isArray(data.list)) ? data.list : [];
+        return (data && data.list && Array.isArray(data.list)) ? data.list : [];
     }
     return JSON.parse(localStorage.getItem('app_schools') || '[]');
 }
@@ -136,7 +136,7 @@ async function renderListaUsuariosAdmin() {
     let users = [];
     if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
         const data = await getData('system', 'users_list');
-        users = (data && Array.isArray(data.list)) ? data.list : [];
+        users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
     } else {
         users = JSON.parse(localStorage.getItem('app_users') || '[]');
     }
@@ -185,7 +185,7 @@ async function excluirUsuarioAdmin(id) {
         let users = [];
         if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
             const data = await getData('system', 'users_list');
-            users = (data && Array.isArray(data.list)) ? data.list : [];
+            users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
         } else {
             users = JSON.parse(localStorage.getItem('app_users') || '[]');
         }
