@@ -127,7 +127,7 @@ async function fazerLogin(e) {
     let users = [];
     if (USE_FIREBASE) {
         const usersData = await getData('system', 'users_list');
-        users = usersData ? usersData.list : [];
+        users = (usersData && Array.isArray(usersData.list)) ? usersData.list : [];
     } else {
         users = JSON.parse(localStorage.getItem('app_users') || '[]');
     }
@@ -153,7 +153,7 @@ async function fazerCadastro(e) {
     let users = [];
     if (USE_FIREBASE) {
         const usersData = await getData('system', 'users_list');
-        users = usersData ? usersData.list : [];
+        users = (usersData && Array.isArray(usersData.list)) ? usersData.list : [];
     } else {
         users = JSON.parse(localStorage.getItem('app_users') || '[]');
     }
@@ -216,7 +216,7 @@ async function renderCadastro() {
     let schools = [];
     if (USE_FIREBASE) {
         const data = await getData('system', 'schools_list');
-        schools = data ? data.list : [];
+        schools = (data && Array.isArray(data.list)) ? data.list : [];
     } else {
         schools = JSON.parse(localStorage.getItem('app_schools') || '[]');
     }
