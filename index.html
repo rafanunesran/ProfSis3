@@ -90,18 +90,17 @@
                 <div class="card">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <h2>🎓 Tutoria</h2>
-                        <button id="btnConfigTutoria" class="btn btn-secondary" onclick="alert('Configurações de Tutoria')">⚙️ Config</button>
                     </div>
                     <div class="grid">
                         <div>
                             <h3>Meus Tutorados</h3>
-                            <button class="btn btn-primary btn-sm" onclick="showModal('modalNovoTutorado')">+ Novo Tutorado</button>
+                            <button class="btn btn-primary btn-sm" onclick="abrirModalNovoTutorado()">+ Novo Tutorado</button>
                             <div id="listaTutorados" style="margin-top: 10px;"></div>
                         </div>
                         <div>
-                            <h3>Próximos Encontros</h3>
+                            <h3>Agenda de Tutoria</h3>
                             <button class="btn btn-primary btn-sm btn-registrar-extra" onclick="showModal('modalNovoEncontro')">+ Registrar Encontro</button>
-                            <button class="btn btn-secondary btn-sm" onclick="showModal('modalGerarAgendamento')">📅 Agendar</button>
+                            <button class="btn btn-secondary btn-sm" onclick="gerarAgendamentosTutoria()">📅 Gerar Agenda (Grade)</button>
                             <div id="listaEncontros" style="margin-top: 10px;"></div>
                         </div>
                     </div>
@@ -111,29 +110,10 @@
             <div id="agenda" class="screen">
                 <div class="card">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <h2 style="margin: 0;">📅 Agenda</h2>
-                        <div style="display: flex; gap: 10px;">
-                            <button class="btn btn-secondary" onclick="alternarVisualizacao('mes')" id="btnVisMes">Mês</button>
-                            <button class="btn btn-secondary" onclick="alternarVisualizacao('semana')" id="btnVisSemana">Semana</button>
-                            <button class="btn btn-secondary" onclick="alternarVisualizacao('grade')" id="btnVisGrade">Grade de Aulas</button>
-                            <button class="btn btn-primary" onclick="abrirModalEventoSlot(getTodayString(), '', '')">+ Novo Evento</button>
-                            <button class="btn btn-secondary" onclick="imprimirAgendaMensal()">🖨️ Imprimir</button>
-                        </div>
-                    </div>
-                    
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: #f7fafc; padding: 15px; border-radius: 8px;">
-                        <button class="btn btn-secondary" onclick="navegarPeriodo(-1)">← Anterior</button>
-                        <h3 id="tituloCalendario" style="margin: 0;"></h3>
-                        <button class="btn btn-secondary" onclick="navegarPeriodo(1)">Próximo →</button>
+                        <h2 style="margin: 0;">📅 Grade de Horários</h2>
                     </div>
 
-                    <div id="containerCalendario"><div id="calendarioView"></div></div>
-                    <div id="containerGradeHoraria" style="display:none;"></div>
-                    
-                    <div style="margin-top: 30px;">
-                        <h3>Lista de Eventos</h3>
-                        <div id="listaEventos"></div>
-                    </div>
+                    <div id="containerGradeHoraria"></div>
                 </div>
             </div>
 
@@ -244,7 +224,7 @@
 
     <div id="modalDetalhesEvento" class="modal"><div class="modal-content"><div class="modal-header"><h2>Detalhes do Evento</h2><button class="close-btn" onclick="closeModal('modalDetalhesEvento')">×</button></div><form onsubmit="salvarDetalhesEvento(event)"><input type="hidden" id="detalheEventoId"><input type="hidden" id="detalheEventoTipo"><label>Título:<input type="text" id="detalheEventoTitulo"></label><div class="form-row"><label>Data:<input type="date" id="detalheEventoData"></label><label>Início:<input type="time" id="detalheEventoInicio"></label><label>Fim:<input type="time" id="detalheEventoFim"></label></div><label>Anotações:<textarea id="detalheEventoAnotacoes"></textarea></label><div style="display:flex; justify-content:space-between; margin-top:15px;"><button type="button" class="btn btn-danger" onclick="excluirEventoAtual()">Excluir</button><button type="submit" class="btn btn-primary">Salvar Alterações</button></div></form></div></div>
 
-    <div id="modalNovoTutorado" class="modal"><div class="modal-content"><div class="modal-header"><h2>Novo Tutorado</h2><button class="close-btn" onclick="closeModal('modalNovoTutorado')">×</button></div><form onsubmit="salvarTutorado(event)"><label>Nome:<input type="text" id="tutoradoNome" required></label><label>Turma:<input type="text" id="tutoradoTurma" required></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
+    <div id="modalNovoTutorado" class="modal"><div class="modal-content"><div class="modal-header"><h2>Novo Tutorado</h2><button class="close-btn" onclick="closeModal('modalNovoTutorado')">×</button></div><form onsubmit="salvarTutorado(event)"><label>Turma:<select id="tutoradoTurmaSelect" onchange="carregarEstudantesTutorado()" required></select></label><label>Estudante:<select id="tutoradoEstudanteSelect" required disabled></select></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
 
     <div id="modalNovoEncontro" class="modal"><div class="modal-content"><div class="modal-header"><h2>Registrar Encontro</h2><button class="close-btn" onclick="closeModal('modalNovoEncontro')">×</button></div><form onsubmit="salvarEncontro(event)"><label>Tutorado:<select id="encontroTutorado" required></select></label><label>Data:<input type="date" id="encontroData" required></label><label>Tema:<input type="text" id="encontroTema" required></label><label>Resumo:<textarea id="encontroResumo" required></textarea></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
 

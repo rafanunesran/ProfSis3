@@ -84,8 +84,18 @@ function closeModal(modalId) {
     document.getElementById(modalId).classList.remove('active');
 }
 
+// Helper para buscar grade da escola
+async function getGradeEscola() {
+    if (currentUser && currentUser.schoolId) {
+        const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+        const gestorData = await getData('app_data', key);
+        return (gestorData && gestorData.gradeHoraria) ? gestorData.gradeHoraria : [];
+    }
+    return [];
+}
+
 // --- DASHBOARD ---
-function renderDashboard() {
+async function renderDashboard() {
     const today = getTodayString();
     const dashboardContainer = document.getElementById('dashboard');
     
@@ -140,12 +150,8 @@ function renderDashboard() {
     dashboardContainer.innerHTML = `
         <div class="grid">
             <div class="card">
-                <h2>📅 Aulas de Hoje</h2>
-                <div id="aulasHoje"></div>
-            </div>
-            <div class="card">
-                <h2>🤝 Reuniões de Hoje</h2>
-                <div id="reunioesHoje"></div>
+                <h2>📅 Agenda do Dia</h2>
+                <div id="agendaHoje"><p>Carregando...</p></div>
             </div>
             <div class="card">
                 <h2>👥 Tutorias/Ações</h2>
@@ -158,22 +164,49 @@ function renderDashboard() {
         </div>
     `;
 
-    // Aulas
-    const aulasHoje = (data.aulas || []).filter(a => a.data === today);
-    const aulasHtml = aulasHoje.length > 0 ? aulasHoje.map(a => {
-        const turma = (data.turmas || []).find(t => t.id == a.id_turma);
-        return `<div class="btn btn-secondary" style="width:100%; text-align:left; margin-bottom:5px;">
-            <strong>${turma ? turma.nome : 'Turma'}</strong> - ${a.conteudo || 'Aula'}
-        </div>`;
-    }).join('') : '<p class="empty-state">Nenhuma aula hoje</p>';
-    document.getElementById('aulasHoje').innerHTML = aulasHtml;
+    // Agenda do Dia (Baseada na Grade)
+    const gradeEscola = await getGradeEscola();
+    const diaSemanaHoje = new Date().getDay(); // 0=Dom, 1=Seg...
+    
+    // Filtra blocos do dia atual
+    const blocosHoje = gradeEscola.filter(g => g.diaSemana == diaSemanaHoje).sort((a,b) => a.inicio.localeCompare(b.inicio));
+    const minhasAulas = data.horariosAulas || [];
 
-    // Eventos
-    const eventosHoje = (data.eventos || []).filter(e => e.data === today);
-    const eventosHtml = eventosHoje.length > 0 ? eventosHoje.map(e => 
-        `<div class="alert alert-info">${e.hora_inicio} - ${e.descricao}</div>`
-    ).join('') : '<p class="empty-state">Sem eventos</p>';
-    document.getElementById('reunioesHoje').innerHTML = eventosHtml;
+    let agendaHtml = '';
+    if (blocosHoje.length === 0) {
+        agendaHtml = '<p class="empty-state">Sem grade configurada para hoje.</p>';
+    } else {
+        agendaHtml = blocosHoje.map(bloco => {
+            const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
+            
+            if (!aula) {
+                return `<div class="alert alert-secondary" style="opacity:0.6;">${bloco.inicio} - Livre</div>`;
+            }
+            
+            if (aula.tipo === 'aula' && aula.id_turma) {
+                const turma = (data.turmas || []).find(t => t.id == aula.id_turma);
+                return `<button class="btn btn-primary" style="width:100%; margin-bottom:5px; text-align:left; display:flex; justify-content:space-between;" onclick="abrirTurma(${aula.id_turma})">
+                    <span><strong>${bloco.inicio}</strong> - ${turma ? turma.nome : 'Turma Removida'}</span>
+                    <span>Ir para Turma →</span>
+                </button>`;
+            } else if (aula.tipo === 'tutoria') {
+                return `<button class="btn btn-info" style="width:100%; margin-bottom:5px; text-align:left; display:flex; justify-content:space-between;" onclick="showScreen('tutoria')">
+                    <span><strong>${bloco.inicio}</strong> - Tutoria</span>
+                    <span>Registrar →</span>
+                </button>`;
+            } else {
+                // Estudo, Reunião, APCG, etc.
+                return `<div class="alert alert-info" style="margin-bottom:5px;">
+                    <strong>${bloco.inicio}</strong> - ${aula.tipo.toUpperCase()} ${aula.tema ? '('+aula.tema+')' : ''}
+                </div>`;
+            }
+        }).join('');
+    }
+    document.getElementById('agendaHoje').innerHTML = agendaHtml;
+
+    // Tutorias Hoje (Mantido)
+    const tutoriasHoje = []; // Placeholder se quiser listar agendamentos específicos
+    document.getElementById('tutoriasHoje').innerHTML = tutoriasHoje.length > 0 ? '' : '<p class="empty-state">Nenhum agendamento específico.</p>';
 
     // Alertas
     let alertas = [];
@@ -354,7 +387,10 @@ function showTurmaTab(tab, evt) {
 
     if (tab === 'estudantes') renderEstudantes();
     if (tab === 'chamada') renderChamada();
-    if (tab === 'ocorrencias') renderOcorrencias();
+    if (tab === 'ocorrencias') {
+        tempOcorrenciaIds = []; // Reseta seleção ao entrar na aba
+        renderOcorrencias();
+    }
     if (tab === 'atrasos') renderAtrasos();
     if (tab === 'trabalhos') renderTrabalhos();
     if (tab === 'mapeamento') renderMapeamento();
@@ -425,13 +461,21 @@ function removerEstudante(id) {
 }
 
 // --- CHAMADA ---
-function renderChamada() {
+async function renderChamada() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
+    
+    // Validação de Dia de Aula
+    const gradeEscola = await getGradeEscola();
+    const minhasAulas = (data.horariosAulas || []).filter(a => a.id_turma == turmaAtual);
+    const blocosTurma = gradeEscola.filter(g => minhasAulas.some(a => a.id_bloco == g.id));
+    const diasPermitidos = [...new Set(blocosTurma.map(g => g.diaSemana))]; // Ex: [1, 3, 5]
+
     const html = `
         <div class="form-row">
-            <label>Data: <input type="date" id="chamadaData" value="${getTodayString()}"></label>
-            <button class="btn btn-success" onclick="salvarChamadaManual()">Salvar Chamada</button>
+            <label>Data: <input type="date" id="chamadaData" value="${getTodayString()}" onchange="validarDataChamada([${diasPermitidos}])"></label>
+            <button class="btn btn-success" id="btnSalvarChamada" onclick="salvarChamadaManual()">Salvar Chamada</button>
         </div>
+        <div id="avisoChamada" style="color:#e53e3e; display:none; margin-bottom:10px; font-weight:bold;">⚠️ Esta turma não tem aula agendada para este dia da semana.</div>
         <table>
             <thead><tr><th>Estudante</th><th>Presença</th></tr></thead>
             <tbody>
@@ -445,6 +489,24 @@ function renderChamada() {
         </table>
     `;
     document.getElementById('tabChamada').innerHTML = html;
+    
+    // Valida data inicial
+    setTimeout(() => validarDataChamada(diasPermitidos), 100);
+}
+
+function validarDataChamada(diasPermitidos) {
+    const input = document.getElementById('chamadaData');
+    if(!input) return;
+    
+    const diaSemana = new Date(input.value + 'T12:00:00').getDay(); // 0=Dom, 1=Seg...
+    const btn = document.getElementById('btnSalvarChamada');
+    const aviso = document.getElementById('avisoChamada');
+    
+    // Se diasPermitidos estiver vazio, assume que não foi configurado e libera. Se tiver, valida.
+    const bloqueado = diasPermitidos.length > 0 && !diasPermitidos.includes(diaSemana);
+    
+    btn.disabled = bloqueado;
+    aviso.style.display = bloqueado ? 'block' : 'none';
 }
 
 function salvarChamadaManual() {
@@ -475,27 +537,101 @@ function salvarChamadaManual() {
 }
 
 // --- OCORRÊNCIAS ---
+let tempOcorrenciaIds = []; // Variável temporária para armazenar seleção
+
 function renderOcorrencias() {
     const ocorrencias = (data.ocorrencias || []).filter(o => o.id_turma == turmaAtual);
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
+
+    // Filtra estudantes disponíveis e selecionados
+    const disponiveis = estudantes.filter(e => !tempOcorrenciaIds.includes(e.id));
+    const selecionados = estudantes.filter(e => tempOcorrenciaIds.includes(e.id));
+
+    // Preserva o texto digitado caso haja re-renderização
+    const textoAtual = document.getElementById('novaOcorrenciaTexto') ? document.getElementById('novaOcorrenciaTexto').value : '';
+
     const html = `
-        <div style="margin-bottom:10px;">
-            <textarea id="novaOcorrenciaTexto" placeholder="Descreva a ocorrência..." rows="3"></textarea>
+        <div class="card" style="margin-bottom: 20px; border: 1px solid #e2e8f0;">
+            <h3>Nova Ocorrência</h3>
+            
+            <div style="margin-bottom: 10px;">
+                <label style="font-weight:bold; display:block; margin-bottom:5px;">Adicionar Estudante:</label>
+                <div style="display:flex; gap:5px;">
+                    <select id="selEstudanteOcorrencia" style="flex-grow:1;">
+                        <option value="">Selecione...</option>
+                        ${disponiveis.map(e => `<option value="${e.id}">${e.nome_completo}</option>`).join('')}
+                    </select>
+                    <button class="btn btn-secondary" onclick="adicionarEstudanteOcorrencia()">Adicionar</button>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 10px;">
+                <label style="font-weight:bold; display:block; margin-bottom:5px;">Estudantes Envolvidos:</label>
+                <div style="background: #f7fafc; padding: 10px; border-radius: 4px; border: 1px solid #e2e8f0; min-height: 40px;">
+                    ${selecionados.length > 0 ? selecionados.map(e => `
+                        <div style="display:inline-block; background:white; padding:2px 8px; border-radius:12px; border:1px solid #cbd5e0; margin-right:5px; margin-bottom:5px; font-size:12px;">
+                            ${e.nome_completo} <span style="cursor:pointer; color:red; font-weight:bold; margin-left:5px;" onclick="removerEstudanteOcorrencia(${e.id})">×</span>
+                        </div>
+                    `).join('') : '<span style="color:#a0aec0; font-size:12px;">Nenhum estudante selecionado.</span>'}
+                </div>
+            </div>
+
+            <textarea id="novaOcorrenciaTexto" placeholder="Descreva a ocorrência..." rows="3" style="width:100%; margin-bottom:10px;">${textoAtual}</textarea>
             <button class="btn btn-primary" onclick="salvarOcorrencia()">Registrar Ocorrência</button>
         </div>
-        ${ocorrencias.map(o => `
+
+        <h3>Histórico</h3>
+        ${ocorrencias.map(o => {
+            const nomes = (o.ids_estudantes || []).map(id => {
+                const est = estudantes.find(e => e.id == id);
+                return est ? est.nome_completo : 'Excluído';
+            }).join(', ');
+
+            return `
             <div class="card" style="background:#fff5f5; margin-bottom:5px;">
-                <small>${formatDate(o.data)}</small>
+                <div style="display:flex; justify-content:space-between;">
+                    <small style="font-weight:bold;">${formatDate(o.data)}</small>
+                    <div>
+                        <button class="btn btn-sm btn-secondary" onclick="imprimirOcorrencia(${o.id})">🖨️ Imprimir</button>
+                        <button class="btn btn-sm btn-danger" onclick="removerOcorrencia(${o.id})">🗑️</button>
+                    </div>
+                </div>
+                <p style="margin: 5px 0; font-size: 13px; color: #c53030;"><strong>Envolvidos:</strong> ${nomes || 'Nenhum selecionado'}</p>
                 <p>${o.relato}</p>
-                <button class="btn btn-sm btn-danger" onclick="removerOcorrencia(${o.id})">🗑️</button>
             </div>
-        `).join('')}
+        `}).join('')}
     `;
     document.getElementById('tabOcorrencias').innerHTML = html;
+
+    // Restaura foco se havia texto
+    if(textoAtual) {
+        const txt = document.getElementById('novaOcorrenciaTexto');
+        if(txt) {
+            txt.focus();
+            txt.setSelectionRange(txt.value.length, txt.value.length);
+        }
+    }
+}
+
+function adicionarEstudanteOcorrencia() {
+    const sel = document.getElementById('selEstudanteOcorrencia');
+    const id = parseInt(sel.value);
+    if (id) {
+        tempOcorrenciaIds.push(id);
+        renderOcorrencias();
+    }
+}
+
+function removerEstudanteOcorrencia(id) {
+    tempOcorrenciaIds = tempOcorrenciaIds.filter(x => x !== id);
+    renderOcorrencias();
 }
 
 function salvarOcorrencia() {
     const texto = document.getElementById('novaOcorrenciaTexto').value;
-    if (!texto) return;
+    const ids = tempOcorrenciaIds;
+
+    if (!texto) return alert('Descreva a ocorrência.');
     
     if (!data.ocorrencias) data.ocorrencias = [];
     data.ocorrencias.push({
@@ -503,9 +639,13 @@ function salvarOcorrencia() {
         id_turma: turmaAtual,
         data: getTodayString(),
         relato: texto,
-        ids_estudantes: [] // Simplificado
+        ids_estudantes: ids
     });
     persistirDados();
+    
+    // Limpa estado
+    tempOcorrenciaIds = [];
+    document.getElementById('novaOcorrenciaTexto').value = '';
     renderOcorrencias();
 }
 
@@ -517,10 +657,57 @@ function removerOcorrencia(id) {
     }
 }
 
+function imprimirOcorrencia(id) {
+    const o = data.ocorrencias.find(x => x.id == id);
+    if (!o) return;
+
+    const turma = data.turmas.find(t => t.id == o.id_turma);
+    const estudantes = (data.estudantes || []).filter(e => (o.ids_estudantes || []).includes(e.id));
+    const nomes = estudantes.map(e => e.nome_completo).join(', ');
+
+    const conteudo = `
+        <div style="font-family: Arial, sans-serif; padding: 40px;">
+            <h1 style="text-align: center;">Registro de Ocorrência</h1>
+            <hr>
+            <p><strong>Data:</strong> ${formatDate(o.data)}</p>
+            <p><strong>Professor:</strong> ${currentUser.nome}</p>
+            <p><strong>Turma:</strong> ${turma ? turma.nome : '?'}</p>
+            <p><strong>Estudantes Envolvidos:</strong> ${nomes}</p>
+            <hr>
+            <h3>Relato:</h3>
+            <p style="white-space: pre-wrap;">${o.relato}</p>
+            <br><br><br>
+            <div style="display: flex; justify-content: space-between; margin-top: 50px;">
+                <div style="border-top: 1px solid #000; width: 40%; text-align: center; padding-top: 5px;">Assinatura do Professor</div>
+                <div style="border-top: 1px solid #000; width: 40%; text-align: center; padding-top: 5px;">Assinatura da Coordenação</div>
+            </div>
+        </div>
+    `;
+
+    const janela = window.open('', '', 'width=800,height=600');
+    janela.document.write('<html><head><title>Imprimir Ocorrência</title></head><body>');
+    janela.document.write(conteudo);
+    janela.document.write('<script>window.print();</script>');
+    janela.document.write('</body></html>');
+    janela.document.close();
+}
+
 // --- ATRASOS ---
 function renderAtrasos() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
-    const atrasos = (data.atrasos || []).filter(a => a.id_turma == turmaAtual);
+    
+    // Filtro de Meses
+    const currentYear = new Date().getFullYear();
+    const mesInicio = document.getElementById('filtroAtrasoMesInicio') ? parseInt(document.getElementById('filtroAtrasoMesInicio').value) : 0; // Jan
+    const mesFim = document.getElementById('filtroAtrasoMesFim') ? parseInt(document.getElementById('filtroAtrasoMesFim').value) : 11; // Dez
+
+    let atrasos = (data.atrasos || []).filter(a => a.id_turma == turmaAtual);
+    atrasos = atrasos.filter(a => {
+        const d = new Date(a.data);
+        return d.getMonth() >= mesInicio && d.getMonth() <= mesFim && d.getFullYear() === currentYear;
+    });
+
+    const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
     
     const html = `
         <div class="card" style="background: #fffaf0; margin-bottom: 20px;">
@@ -532,14 +719,18 @@ function renderAtrasos() {
                         ${estudantes.map(e => `<option value="${e.id}">${e.nome_completo}</option>`).join('')}
                     </select>
                 </label>
-                <label>Minutos: <input type="number" id="atrasoMinutos" value="10" style="width:80px;"></label>
                 <button class="btn btn-warning" onclick="salvarAtraso()">Registrar</button>
             </div>
         </div>
 
         <h3>Histórico de Atrasos</h3>
+        <div style="margin-bottom: 10px; display: flex; gap: 10px; align-items: center;">
+            <label>De: <select id="filtroAtrasoMesInicio" onchange="renderAtrasos()">${meses.map((m, i) => `<option value="${i}" ${i === mesInicio ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+            <label>Até: <select id="filtroAtrasoMesFim" onchange="renderAtrasos()">${meses.map((m, i) => `<option value="${i}" ${i === mesFim ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+        </div>
+
         <table>
-            <thead><tr><th>Data</th><th>Estudante</th><th>Tempo</th><th>Ações</th></tr></thead>
+            <thead><tr><th>Data</th><th>Estudante</th><th>Ações</th></tr></thead>
             <tbody>
                 ${atrasos.length > 0 ? atrasos.map(a => {
                     const est = estudantes.find(e => e.id == a.id_estudante);
@@ -547,11 +738,10 @@ function renderAtrasos() {
                         <tr>
                             <td>${formatDate(a.data)}</td>
                             <td>${est ? est.nome_completo : 'Excluído'}</td>
-                            <td>${a.minutos} min</td>
                             <td><button class="btn btn-danger btn-sm" onclick="removerAtraso(${a.id})">🗑️</button></td>
                         </tr>
                     `;
-                }).join('') : '<tr><td colspan="4" style="text-align:center; color:#999;">Nenhum atraso registrado.</td></tr>'}
+                }).join('') : '<tr><td colspan="3" style="text-align:center; color:#999;">Nenhum atraso registrado neste período.</td></tr>'}
             </tbody>
         </table>
     `;
@@ -560,7 +750,6 @@ function renderAtrasos() {
 
 function salvarAtraso() {
     const estudanteId = document.getElementById('atrasoEstudante').value;
-    const minutos = document.getElementById('atrasoMinutos').value;
     
     if (!estudanteId) return alert('Selecione um estudante.');
     
@@ -569,8 +758,7 @@ function salvarAtraso() {
         id: Date.now(),
         id_turma: turmaAtual,
         id_estudante: parseInt(estudanteId),
-        data: getTodayString(),
-        minutos: minutos
+        data: getTodayString()
     });
     persistirDados();
     renderAtrasos();
@@ -633,19 +821,102 @@ function renderTutoria() {
         </table>
     ` : '<p class="empty-state">Nenhum tutorado.</p>';
     document.getElementById('listaTutorados').innerHTML = html;
+
+    // Renderizar Agendamentos (Agenda Gerada)
+    const agendamentos = (data.agendamentos || []).sort((a,b) => a.data.localeCompare(b.data) || a.inicio.localeCompare(b.inicio));
+    const htmlAgenda = agendamentos.length > 0 ? `
+        <div style="max-height: 300px; overflow-y: auto;">
+            ${agendamentos.map(a => `
+                <div class="card" style="padding: 10px; margin-bottom: 8px; border-left: 4px solid ${a.tutoradoId ? '#22c55e' : '#cbd5e0'}; background: #fff;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <strong>${formatDate(a.data)}</strong> <span style="font-size:12px; color:#666;">${a.inicio} - ${a.fim}</span>
+                            <div style="font-size:13px; color:${a.tutoradoId ? '#2f855a' : '#718096'};">${a.tutoradoId ? 'Ocupado' : 'Livre'}</div>
+                        </div>
+                        ${!a.tutoradoId ? `<button class="btn btn-sm btn-danger" onclick="removerAgendamento(${a.id})">🗑️</button>` : ''}
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    ` : '<p class="empty-state">Nenhuma agenda gerada.</p>';
+    document.getElementById('listaEncontros').innerHTML = htmlAgenda;
+}
+
+async function abrirModalNovoTutorado() {
+    // Carregar dados da escola (Gestor)
+    let turmasEscola = [];
+    let estudantesEscola = [];
+    
+    if (currentUser && currentUser.schoolId) {
+        const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+        const gestorData = await getData('app_data', key);
+        if (gestorData) {
+            turmasEscola = gestorData.turmas || [];
+            estudantesEscola = gestorData.estudantes || [];
+        }
+    }
+
+    // Salva temporariamente no DOM para acesso no onchange
+    const modal = document.getElementById('modalNovoTutorado');
+    modal.dataset.estudantes = JSON.stringify(estudantesEscola);
+
+    const selectTurma = document.getElementById('tutoradoTurmaSelect');
+    selectTurma.innerHTML = '<option value="">Selecione a Turma...</option>' + 
+        turmasEscola.map(t => `<option value="${t.id}">${t.nome}</option>`).join('');
+    
+    const selectEstudante = document.getElementById('tutoradoEstudanteSelect');
+    selectEstudante.innerHTML = '<option value="">Selecione a Turma primeiro...</option>';
+    selectEstudante.disabled = true;
+
+    showModal('modalNovoTutorado');
+}
+
+function carregarEstudantesTutorado() {
+    const modal = document.getElementById('modalNovoTutorado');
+    const estudantesEscola = JSON.parse(modal.dataset.estudantes || '[]');
+    const turmaId = document.getElementById('tutoradoTurmaSelect').value;
+    const selectEstudante = document.getElementById('tutoradoEstudanteSelect');
+
+    if (!turmaId) {
+        selectEstudante.innerHTML = '<option value="">Selecione a Turma primeiro...</option>';
+        selectEstudante.disabled = true;
+        return;
+    }
+
+    const filtrados = estudantesEscola.filter(e => e.id_turma == turmaId);
+    selectEstudante.innerHTML = '<option value="">Selecione o Estudante...</option>' + 
+        filtrados.map(e => `<option value="${e.id}">${e.nome_completo}</option>`).join('');
+    selectEstudante.disabled = false;
 }
 
 function salvarTutorado(e) {
     e.preventDefault();
-    const nome = document.getElementById('tutoradoNome').value;
-    const turma = document.getElementById('tutoradoTurma').value;
+    const selectTurma = document.getElementById('tutoradoTurmaSelect');
+    const selectEstudante = document.getElementById('tutoradoEstudanteSelect');
+    
+    const turmaNome = selectTurma.options[selectTurma.selectedIndex].text;
+    const estudanteNome = selectEstudante.options[selectEstudante.selectedIndex].text;
+    const estudanteId = selectEstudante.value;
+
+    if (!estudanteId) return alert('Selecione um estudante.');
     
     if (!data.tutorados) data.tutorados = [];
-    data.tutorados.push({ id: Date.now(), nome_estudante: nome, turma });
+    
+    // Evitar duplicidade
+    if (data.tutorados.find(t => t.id_estudante_origem == estudanteId)) {
+        return alert('Este estudante já é seu tutorado.');
+    }
+
+    data.tutorados.push({ 
+        id: Date.now(), 
+        nome_estudante: estudanteNome, 
+        turma: turmaNome,
+        id_estudante_origem: estudanteId 
+    });
+
     persistirDados();
     closeModal('modalNovoTutorado');
     renderTutoria();
-    e.target.reset();
 }
 
 function abrirFichaTutorado(id) {
@@ -654,107 +925,98 @@ function abrirFichaTutorado(id) {
     showScreen('tutoradoDetalhe');
 }
 
-// --- AGENDA ---
-let visualizacaoAgenda = 'mes';
-let dataAtualAgenda = new Date();
+async function gerarAgendamentosTutoria() {
+    if (!confirm('Gerar janelas de atendimento para a próxima semana baseadas na sua Grade de Horários?')) return;
 
-async function renderAgenda() {
-    const ano = dataAtualAgenda.getFullYear();
-    const mes = dataAtualAgenda.getMonth();
-    const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    const gradeEscola = await getGradeEscola();
+    const meusHorarios = data.horariosAulas || [];
     
-    document.getElementById('tituloCalendario').textContent = `${meses[mes]} ${ano}`;
-    document.getElementById('containerGradeHoraria').style.display = visualizacaoAgenda === 'grade' ? 'block' : 'none';
-    document.getElementById('containerCalendario').style.display = visualizacaoAgenda !== 'grade' ? 'block' : 'none';
-    
-    if (visualizacaoAgenda === 'grade') {
-        await renderGradeHorariaProfessor();
+    // Filtra blocos onde o professor marcou 'tutoria'
+    const blocosTutoria = gradeEscola.filter(g => 
+        meusHorarios.some(a => a.id_bloco == g.id && a.tipo === 'tutoria')
+    );
+
+    if (blocosTutoria.length === 0) {
+        alert('Você não definiu horários de Tutoria na sua Grade de Horários (Agenda).');
         return;
     }
 
-    // Renderização simplificada do calendário
-    const diasNoMes = new Date(ano, mes + 1, 0).getDate();
-    let html = '<div style="display:grid; grid-template-columns:repeat(7, 1fr); gap:5px;">';
-    
-    for (let i = 1; i <= diasNoMes; i++) {
-        const dataStr = `${ano}-${String(mes+1).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
-        const eventos = (data.eventos || []).filter(e => e.data === dataStr);
-        
-        html += `
-            <div class="calendario-dia" style="min-height:80px; border:1px solid #eee; padding:5px;">
-                <strong>${i}</strong>
-                ${eventos.map(e => `<div style="font-size:10px; background:#bee3f8; margin-top:2px;">${e.descricao}</div>`).join('')}
-            </div>
-        `;
+    if (!data.agendamentos) data.agendamentos = [];
+
+    const hoje = new Date();
+    let count = 0;
+
+    // Gera para os próximos 7 dias
+    for (let i = 0; i < 7; i++) {
+        const d = new Date();
+        d.setDate(hoje.getDate() + i);
+        const diaSemana = d.getDay(); // 0=Dom, 1=Seg...
+
+        const blocosHoje = blocosTutoria.filter(b => b.diaSemana == diaSemana);
+
+        blocosHoje.forEach(b => {
+            const dataStr = d.toISOString().split('T')[0];
+            // Verifica se já existe agendamento neste dia/horario
+            const exists = data.agendamentos.find(a => a.data === dataStr && a.inicio === b.inicio);
+            if (!exists) {
+                data.agendamentos.push({
+                    id: Date.now() + Math.random(),
+                    data: dataStr,
+                    inicio: b.inicio,
+                    fim: b.fim,
+                    tutoradoId: null // Livre
+                });
+                count++;
+            }
+        });
     }
-    html += '</div>';
-    document.getElementById('calendarioView').innerHTML = html;
-    renderListaEventos();
-}
 
-function renderListaEventos() {
-    const eventos = (data.eventos || []).sort((a,b) => a.data.localeCompare(b.data));
-    const html = eventos.map(e => `
-        <div style="display:flex; justify-content:space-between; border-bottom:1px solid #eee; padding:5px;">
-            <span>${formatDate(e.data)} - ${e.descricao}</span>
-            <button class="btn btn-sm btn-danger" onclick="removerEvento(${e.id})">x</button>
-        </div>
-    `).join('');
-    document.getElementById('listaEventos').innerHTML = html;
-}
-
-function salvarEvento(e) {
-    e.preventDefault();
-    const titulo = document.getElementById('eventoTitulo').value;
-    const dataEvt = document.getElementById('eventoData').value;
-    const inicio = document.getElementById('eventoHoraInicio').value;
-    
-    if (!data.eventos) data.eventos = [];
-    data.eventos.push({
-        id: Date.now(),
-        descricao: titulo,
-        data: dataEvt,
-        hora_inicio: inicio,
-        tipo: document.getElementById('eventoTipo').value
-    });
     persistirDados();
-    closeModal('modalNovoEvento');
-    renderAgenda();
-    e.target.reset();
+    alert(`${count} janelas de tutoria geradas.`);
+    renderTutoria();
 }
 
-function removerEvento(id) {
-    if (confirm('Remover evento?')) {
-        data.eventos = data.eventos.filter(e => e.id != id);
+function removerAgendamento(id) {
+    if (confirm('Remover esta janela de atendimento?')) {
+        data.agendamentos = data.agendamentos.filter(a => a.id != id);
         persistirDados();
-        renderAgenda();
+        renderTutoria();
     }
 }
 
-function navegarPeriodo(dir) {
-    dataAtualAgenda.setMonth(dataAtualAgenda.getMonth() + dir);
-    renderAgenda();
-}
-
-function alternarVisualizacao(tipo) {
-    visualizacaoAgenda = tipo;
-    renderAgenda();
-    
-    // Atualiza botões
-    document.getElementById('btnVisMes').className = tipo === 'mes' ? 'btn btn-primary' : 'btn btn-secondary';
-    document.getElementById('btnVisSemana').className = tipo === 'semana' ? 'btn btn-primary' : 'btn btn-secondary';
-    document.getElementById('btnVisGrade').className = tipo === 'grade' ? 'btn btn-primary' : 'btn btn-secondary';
-}
-
-function abrirModalEventoSlot(dataStr) {
-    document.getElementById('eventoData').value = dataStr;
-    showModal('modalNovoEvento');
+// --- AGENDA ---
+async function renderAgenda() {
+    await renderGradeHorariaProfessor();
 }
 
 // --- PREVIEW AGENDAMENTO (Placeholder) ---
-function previewHorariosAuto(e) {
+async function previewHorariosAuto(e) {
     e.preventDefault();
-    alert('Funcionalidade de preview simplificada.');
+    
+    const usarGrade = document.getElementById('usarGradeTutoria').checked;
+    
+    if (usarGrade) {
+        const gradeEscola = await getGradeEscola();
+        const meusHorarios = data.horariosAulas || [];
+        
+        // Encontra blocos marcados como 'tutoria'
+        const blocosTutoria = gradeEscola.filter(g => 
+            meusHorarios.some(a => a.id_bloco == g.id && a.tipo === 'tutoria')
+        );
+
+        if (blocosTutoria.length === 0) {
+            alert('Você não definiu horários de Tutoria na sua Grade de Horários.');
+            return;
+        }
+
+        const dias = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'];
+        const lista = document.getElementById('listaHorariosPreview');
+        lista.innerHTML = blocosTutoria.map(b => `<div style="padding:5px; border-bottom:1px solid #eee;">${dias[b.diaSemana]}: ${b.inicio} - ${b.fim}</div>`).join('');
+        document.getElementById('qtdHorariosGerados').textContent = blocosTutoria.length + ' blocos/semana';
+    } else {
+        document.getElementById('listaHorariosPreview').innerHTML = '<p>Geração manual (sem grade).</p>';
+    }
+    
     document.getElementById('areaPreviewAgendamento').style.display = 'block';
 }
 
@@ -814,6 +1076,11 @@ function importarEstudantes(e) {
             const parts = line.split(';');
             const nome = parts[0] ? parts[0].trim() : '';
             const status = parts[1] ? parts[1].trim() : 'Ativo';
+            
+            if (parts.length <= idxNome) continue; // Linha inválida/incompleta
+
+            const nome = parts[idxNome].trim();
+            const status = (idxStatus !== -1 && parts.length > idxStatus) ? parts[idxStatus].trim() : 'Ativo';
 
             // Verifica se tem nome e se já não existe na turma
             if (nome && !data.estudantes.find(e => e.id_turma == turmaAtual && e.nome_completo === nome)) {
@@ -1010,15 +1277,35 @@ async function renderGradeHorariaProfessor() {
             <h3 style="text-align:center; border-bottom:1px solid #eee; margin-bottom:10px;">${dias[d]}</h3>
             ${blocosDia.map(bloco => {
                 const aulaSalva = minhasAulas.find(a => a.id_bloco == bloco.id);
-                const turmaSelecionada = aulaSalva ? aulaSalva.id_turma : '';
+                
+                // Determina o valor selecionado (ID da turma ou tipo especial)
+                let valorSelecionado = '';
+                if (aulaSalva) {
+                    valorSelecionado = (['tutoria', 'estudo', 'apcg', 'atpca', 'reuniao'].includes(aulaSalva.tipo)) ? aulaSalva.tipo : aulaSalva.id_turma;
+                }
+                const descricao = (aulaSalva && (aulaSalva.tipo === 'estudo' || aulaSalva.tipo === 'reuniao')) ? (aulaSalva.tema || '') : '';
 
                 return `
                     <div style="background:#f7fafc; padding:8px; margin-bottom:8px; border-radius:4px; border:1px solid #e2e8f0;">
                         <div style="font-size:12px; font-weight:bold; color:#4a5568;">${bloco.inicio} - ${bloco.fim}</div>
                         <select style="width:100%; margin-top:5px; font-size:12px;" onchange="salvarAulaGrade(${bloco.id}, this.value)">
                             <option value="">-- Livre --</option>
-                            ${turmas.map(t => `<option value="${t.id}" ${t.id == turmaSelecionada ? 'selected' : ''}>${t.nome}</option>`).join('')}
+                            <optgroup label="Turmas">
+                                ${turmas.map(t => `<option value="${t.id}" ${t.id == valorSelecionado ? 'selected' : ''}>${t.nome} - ${t.disciplina || ''}</option>`).join('')}
+                            </optgroup>
+                            <optgroup label="Outros">
+                                <option value="tutoria" ${valorSelecionado === 'tutoria' ? 'selected' : ''}>Tutoria</option>
+                                <option value="estudo" ${valorSelecionado === 'estudo' ? 'selected' : ''}>Estudo</option>
+                                <option value="apcg" ${valorSelecionado === 'apcg' ? 'selected' : ''}>APCG</option>
+                                <option value="atpca" ${valorSelecionado === 'atpca' ? 'selected' : ''}>ATPCA</option>
+                                <option value="reuniao" ${valorSelecionado === 'reuniao' ? 'selected' : ''}>Reunião</option>
+                            </optgroup>
                         </select>
+                        ${(valorSelecionado === 'estudo' || valorSelecionado === 'reuniao') ? `
+                            <input type="text" placeholder="${valorSelecionado === 'estudo' ? 'Tema do estudo...' : 'Descrição da reunião...'}" value="${descricao}" 
+                                style="width:100%; margin-top:5px; font-size:11px; padding:4px; border:1px solid #cbd5e0; border-radius:3px;"
+                                onblur="salvarDescricaoAula(${bloco.id}, this.value)">
+                        ` : ''}
                     </div>
                 `;
             }).join('')}
@@ -1028,18 +1315,37 @@ async function renderGradeHorariaProfessor() {
     container.innerHTML = html;
 }
 
-function salvarAulaGrade(blocoId, turmaId) {
+function salvarAulaGrade(blocoId, valor) {
     if (!data.horariosAulas) data.horariosAulas = [];
     
     // Remove registro anterior desse bloco
     data.horariosAulas = data.horariosAulas.filter(a => a.id_bloco != blocoId);
     
-    if (turmaId) {
-        data.horariosAulas.push({
+    if (valor) {
+        const novo = {
             id: Date.now() + Math.random(),
             id_bloco: blocoId,
-            id_turma: turmaId
-        });
+            tipo: 'aula', // default
+            id_turma: null,
+            tema: ''
+        };
+
+        if (['tutoria', 'estudo', 'apcg', 'atpca', 'reuniao'].includes(valor)) {
+            novo.tipo = valor;
+        } else {
+            novo.tipo = 'aula';
+            novo.id_turma = valor;
+        }
+        data.horariosAulas.push(novo);
     }
     persistirDados();
+    renderGradeHorariaProfessor(); // Re-renderiza para mostrar/esconder o campo de tema
+}
+
+function salvarDescricaoAula(blocoId, texto) {
+    const aula = (data.horariosAulas || []).find(a => a.id_bloco == blocoId);
+    if (aula && (aula.tipo === 'estudo' || aula.tipo === 'reuniao')) {
+        aula.tema = texto;
+        persistirDados();
+    }
 }

@@ -3,7 +3,13 @@
 // --- CONFIGURAÇÃO HÍBRIDA (LOCAL vs FIREBASE) ---
 
 // Detecta se está rodando localmente ou em produção
-const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.protocol === 'file:';
+const isLocalhost = Boolean(
+    window.location.hostname === 'localhost' || 
+    window.location.hostname === '127.0.0.1' || 
+    window.location.hostname.startsWith('192.168.') || 
+    window.location.hostname.startsWith('10.') || 
+    window.location.protocol === 'file:'
+);
 
 // CONFIGURAÇÃO: Para testar com o banco REAL (Firebase) mesmo no seu computador, mude para TRUE:
 const FORCE_FIREBASE_LOCAL = false; 
@@ -36,6 +42,7 @@ if (USE_FIREBASE) {
             firebase.auth(); // Inicializa o serviço de Autenticação
             firebase.analytics();
             console.log("🔥 Modo Produção: Firebase Ativado");
+            mostrarIndicadorAmbiente('🔥 Online (Firebase)');
         } else {
             console.error("⚠️ SDK do Firebase não carregado. Verifique sua conexão.");
         }
@@ -44,6 +51,22 @@ if (USE_FIREBASE) {
     }
 } else {
     console.log("💻 Modo Desenvolvimento: LocalStorage Ativado");
+    mostrarIndicadorAmbiente('💻 Local (Offline)');
+}
+
+function mostrarIndicadorAmbiente(texto) {
+    const div = document.createElement('div');
+    div.style.position = 'fixed';
+    div.style.bottom = '10px';
+    div.style.right = '10px';
+    div.style.background = 'rgba(0,0,0,0.7)';
+    div.style.color = 'white';
+    div.style.padding = '5px 10px';
+    div.style.borderRadius = '5px';
+    div.style.fontSize = '12px';
+    div.style.zIndex = '9999';
+    div.textContent = texto;
+    document.body.appendChild(div);
 }
 
 // Funções Auxiliares de Dados (Abstração)
@@ -66,12 +89,17 @@ async function getData(collectionName, docId) {
         const data = localStorage.getItem(key);
         if (!data) return null;
 
-        const parsed = JSON.parse(data);
-        // Compatibilidade: Se for array (formato antigo local), envelopa em { list: ... }
-        if (Array.isArray(parsed) && (key === 'app_users' || key === 'app_schools')) {
-            return { list: parsed };
+        try {
+            const parsed = JSON.parse(data);
+            // Compatibilidade: Se for array (formato antigo local), envelopa em { list: ... }
+            if (Array.isArray(parsed) && (key === 'app_users' || key === 'app_schools')) {
+                return { list: parsed };
+            }
+            return parsed;
+        } catch (e) {
+            console.error(`[Core] Erro ao processar JSON de ${key}:`, e);
+            return null;
         }
-        return parsed;
     }
 }
 
@@ -140,30 +168,56 @@ function init() {
 // Funções de Auth
 async function fazerLogin(e) {
     e.preventDefault();
-    const email = document.getElementById('loginEmail').value.trim().toLowerCase();
-    const senha = document.getElementById('loginSenha').value;
+    try {
+        const email = document.getElementById('loginEmail').value.trim().toLowerCase();
+        const senha = document.getElementById('loginSenha').value;
 
-    // Admin Hardcoded (Legado/Backup)
-    if (email === 'rafael@adm' && senha === 'Amor@9391') {
-        const adminUser = { id: 'admin', nome: 'Super Admin', email: email, role: 'super_admin' };
-        localStorage.setItem('app_current_user', JSON.stringify(adminUser));
-        currentUser = adminUser;
-        if (typeof iniciarAdmin === 'function') iniciarAdmin();
-        return;
-    }
+        // Admin Hardcoded (Legado/Backup) - Funciona mesmo sem banco de dados
+        if (email === 'rafael@adm' && senha === 'Amor@9391') {
+            const adminUser = { id: 'admin', nome: 'Super Admin', email: email, role: 'super_admin' };
+            localStorage.setItem('app_current_user', JSON.stringify(adminUser));
+            currentUser = adminUser;
+            if (typeof iniciarAdmin === 'function') iniciarAdmin();
+            return;
+        }
 
-    // Busca usuários
-    const usersData = await getData('system', 'users_list');
-    const users = (usersData && usersData.list && Array.isArray(usersData.list)) ? usersData.list : [];
+        // Verificação de segurança: Se estiver online mas sem conexão com o banco
+        if (USE_FIREBASE && !db) {
+            alert("⚠️ Sistema Offline ou Erro de Conexão.\nNão foi possível conectar ao banco de dados para verificar seu usuário.\nTente recarregar a página.");
+            return;
+        }
 
-    const user = users.find(u => u.email === email && u.senha === senha);
+        // Busca usuários
+        const usersData = await getData('system', 'users_list');
+        const users = (usersData && usersData.list && Array.isArray(usersData.list)) ? usersData.list : [];
 
-    if (user) {
-        localStorage.setItem('app_current_user', JSON.stringify(user));
-        currentUser = user;
-        if (typeof iniciarApp === 'function') iniciarApp();
-    } else {
-        alert('Email ou senha incorretos.');
+        console.log(`[Login] Tentando: ${email} | Modo: ${USE_FIREBASE ? 'Firebase' : 'Local'} | Usuários encontrados: ${users.length}`);
+
+        // Debug: Ajuda a entender se o banco está vazio
+        if (users.length === 0) {
+            const msg = USE_FIREBASE 
+                ? "⚠️ A lista de usuários no Firebase está vazia ou não pôde ser carregada." 
+                : "⚠️ A lista de usuários Local está vazia.";
+            console.warn(msg);
+        }
+
+        const user = users.find(u => u.email === email && u.senha === senha);
+
+        if (user) {
+            localStorage.setItem('app_current_user', JSON.stringify(user));
+            currentUser = user;
+            if (typeof iniciarApp === 'function') iniciarApp();
+        } else {
+            console.log("Emails disponíveis:", users.map(u => u.email));
+            if (users.length === 0) {
+                alert('Erro: Nenhum usuário encontrado no banco de dados. Verifique o console (F12) para mais detalhes.');
+            } else {
+                alert('Email ou senha incorretos.\nVerifique o console (F12) para ver a lista de emails cadastrados.');
+            }
+        }
+    } catch (err) {
+        console.error("Erro fatal no login:", err);
+        alert("Ocorreu um erro inesperado. Veja o console.");
     }
 }
 
