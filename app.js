@@ -204,7 +204,7 @@ function renderTurmas() {
     document.getElementById('listaTurmas').innerHTML = html || '<p class="empty-state">Nenhuma turma.</p>';
 }
 
-function abrirModalNovaTurma() {
+async function abrirModalNovaTurma() {
     document.getElementById('turmaId').value = '';
     document.getElementById('turmaAno').value = '';
     document.getElementById('turmaDisciplina').value = '';
@@ -213,8 +213,32 @@ function abrirModalNovaTurma() {
     // Gestor define apenas Ano/Série; Professor define Disciplina
     if (currentUser && currentUser.role === 'gestor') {
         document.getElementById('divTurmaDisciplina').style.display = 'none';
+        document.getElementById('containerTurmaAnoInput').style.display = 'block';
+        document.getElementById('containerTurmaAnoSelect').style.display = 'none';
     } else {
         document.getElementById('divTurmaDisciplina').style.display = 'block';
+        document.getElementById('containerTurmaAnoInput').style.display = 'none';
+        document.getElementById('containerTurmaAnoSelect').style.display = 'block';
+
+        // Carregar turmas do Gestor (Escola)
+        const select = document.getElementById('turmaAnoSelect');
+        select.innerHTML = '<option>Carregando...</option>';
+
+        let turmasEscola = [];
+        if (currentUser && currentUser.schoolId) {
+            const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+            let gestorData = null;
+            if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
+                gestorData = await getData('app_data', key);
+            } else {
+                gestorData = JSON.parse(localStorage.getItem(key));
+            }
+            if (gestorData && gestorData.turmas) turmasEscola = gestorData.turmas;
+        }
+
+        select.innerHTML = turmasEscola.length > 0 
+            ? turmasEscola.map(t => `<option value="${t.id}" data-nome="${t.nome}">${t.nome} (${t.turno})</option>`).join('')
+            : '<option value="">Nenhuma turma cadastrada pela gestão</option>';
     }
     showModal('modalNovaTurma');
 }
@@ -230,8 +254,12 @@ function editarTurma(id) {
         
         if (currentUser && currentUser.role === 'gestor') {
             document.getElementById('divTurmaDisciplina').style.display = 'none';
+            document.getElementById('containerTurmaAnoInput').style.display = 'block';
+            document.getElementById('containerTurmaAnoSelect').style.display = 'none';
         } else {
             document.getElementById('divTurmaDisciplina').style.display = 'block';
+            document.getElementById('containerTurmaAnoInput').style.display = 'none';
+            document.getElementById('containerTurmaAnoSelect').style.display = 'block';
         }
         showModal('modalNovaTurma');
     }
@@ -240,16 +268,30 @@ function editarTurma(id) {
 function salvarTurma(e) {
     e.preventDefault();
     const id = document.getElementById('turmaId').value;
-    const nome = document.getElementById('turmaAno').value;
     const disciplina = document.getElementById('turmaDisciplina').value;
     const turno = document.getElementById('turmaTurno').value;
+    
+    let nome = '';
+    let masterId = null;
+
+    if (currentUser.role === 'gestor') {
+        nome = document.getElementById('turmaAno').value;
+    } else {
+        // Professor pega do Select
+        const select = document.getElementById('turmaAnoSelect');
+        masterId = select.value; // ID da turma do Gestor
+        nome = select.options[select.selectedIndex].text;
+        // Remove o turno do texto se estiver no formato "Nome (Turno)"
+        nome = nome.split(' (')[0];
+    }
 
     if (id) {
         const t = data.turmas.find(x => x.id == id);
-        if (t) { t.nome = nome; t.ano_serie = nome; t.disciplina = disciplina; t.turno = turno; }
+        if (t) { t.nome = nome; t.ano_serie = nome; t.disciplina = disciplina; t.turno = turno; if(masterId) t.masterId = masterId; }
     } else {
         if (!data.turmas) data.turmas = [];
-        data.turmas.push({ id: Date.now(), nome, ano_serie: nome, disciplina, turno });
+        // masterId serve para vincular a turma do professor à turma original da escola
+        data.turmas.push({ id: Date.now(), nome, ano_serie: nome, disciplina, turno, masterId: masterId });
     }
     persistirDados();
     closeModal('modalNovaTurma');
@@ -265,10 +307,40 @@ function removerTurma(id) {
 }
 
 let turmaAtual = null;
-function abrirTurma(id) {
+async function abrirTurma(id) {
     turmaAtual = id;
     const turma = data.turmas.find(t => t.id == id);
     document.getElementById('turmaDetalheTitulo').textContent = turma.nome;
+
+    // --- SINCRONIZAÇÃO DE ALUNOS (PROFESSOR) ---
+    // Se for professor e a turma tiver um vínculo (masterId), atualiza a lista de alunos
+    if (currentUser.role !== 'gestor' && turma.masterId && currentUser.schoolId) {
+        const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+        let gestorData = null;
+        if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
+            gestorData = await getData('app_data', key);
+        } else {
+            gestorData = JSON.parse(localStorage.getItem(key));
+        }
+
+        if (gestorData && gestorData.estudantes) {
+            // 1. Pega os alunos da turma original do gestor
+            const alunosGestor = gestorData.estudantes.filter(e => e.id_turma == turma.masterId);
+            
+            // 2. Remove os alunos antigos dessa turma na base local do professor
+            if (!data.estudantes) data.estudantes = [];
+            data.estudantes = data.estudantes.filter(e => e.id_turma != turmaAtual);
+
+            // 3. Adiciona os alunos atualizados (mantendo o ID original do aluno para preservar notas/presença)
+            alunosGestor.forEach(alunoMaster => {
+                // Clona o aluno e ajusta o id_turma para o ID da turma do professor
+                const alunoLocal = { ...alunoMaster, id_turma: turmaAtual };
+                data.estudantes.push(alunoLocal);
+            });
+            
+            persistirDados(); // Salva a atualização localmente
+        }
+    }
     
     // Setup Tabs
     const nav = document.querySelector('#turmaDetalhe nav');
