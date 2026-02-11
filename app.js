@@ -812,8 +812,10 @@ function renderTutoria() {
     
     // 1. Botões Superiores
     const htmlTop = `
-        <div style="display:flex; gap:10px; margin-bottom:15px;">
+        <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
             <button class="btn btn-primary" onclick="abrirModalNovoTutorado()">+ Novo Tutorado</button>
+            <button class="btn btn-secondary" onclick="imprimirListaTutorados()">🖨️ Lista por Turma</button>
+            <button class="btn btn-secondary" onclick="imprimirAgendamentosTutorados()">🖨️ Cartões Agendamento</button>
             <button class="btn btn-success" onclick="showModal('modalNovoEncontro')">Registrar Encontro</button>
         </div>
     `;
@@ -842,15 +844,9 @@ function renderTutoria() {
 
     const htmlAgendaControls = `
         <div class="card" style="background: #f0fff4; margin-bottom: 15px; border: 1px solid #c6f6d5;">
-            <h3 style="margin-top:0; font-size:16px;">Agendamento Rápido</h3>
-            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-                <select id="selAgendarTutorado" style="flex-grow:1;">
-                    <option value="">Selecione o Tutorado...</option>
-                    ${tutorados.map(t => `<option value="${t.id}">${t.nome_estudante}</option>`).join('')}
-                </select>
-                <button class="btn btn-success" onclick="agendarProximoTutorado()">Agendar</button>
-                <button class="btn btn-info" onclick="agendarTodosTutorados()">Agendar Todos</button>
-            </div>
+            <h3 style="margin-top:0; font-size:16px;">Organização Automática</h3>
+            <p style="font-size:12px; color:#666; margin-bottom:10px;">Limpa agendamentos futuros e reorganiza todos os tutorados nos horários disponíveis.</p>
+            <button class="btn btn-info" onclick="agendarTodosTutorados()">🔄 Reorganizar e Agendar Todos</button>
         </div>
         
         <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
@@ -921,53 +917,42 @@ function agendarProximoTutorado() {
 }
 
 function agendarTodosTutorados() {
-    if (!confirm('Deseja agendar automaticamente todos os tutorados (que ainda não têm horário futuro) nos próximos horários livres?')) return;
+    if (!confirm('ATENÇÃO: Isso limpará todos os agendamentos futuros e reorganizará a agenda para todos os tutorados. Continuar?')) return;
 
     const tutorados = data.tutorados || [];
-    const agendamentos = data.agendamentos || [];
     const today = getTodayString();
 
-    // 1. Identificar tutorados que já têm agendamento futuro
-    const tutoradosComAgendamento = new Set();
-    agendamentos.forEach(a => {
-        if (a.data >= today && a.tutoradoId) {
-            tutoradosComAgendamento.add(a.tutoradoId);
-        }
-    });
+    // 1. Limpar agendamentos futuros
+    if (data.agendamentos) {
+        data.agendamentos.forEach(a => {
+            if (a.data >= today) {
+                a.tutoradoId = null; // Limpa
+            }
+        });
+    }
 
-    // 2. Filtrar tutorados que precisam de agendamento
-    const pendentes = tutorados.filter(t => !tutoradosComAgendamento.has(t.id));
+    // 2. Buscar slots livres (agora todos os futuros estão livres)
+    const slotsLivres = (data.agendamentos || [])
+        .filter(a => a.data >= today)
+        .sort((a,b) => a.data.localeCompare(b.data) || a.inicio.localeCompare(b.inicio));
 
-    if (pendentes.length === 0) {
-        alert('Todos os tutorados já possuem agendamentos futuros.');
+    if (slotsLivres.length === 0) {
+        alert('Não há horários futuros gerados. Gere a agenda primeiro.');
         return;
     }
 
-    // 3. Buscar slots livres futuros
-    const slotsLivres = agendamentos
-        .filter(a => a.data >= today && !a.tutoradoId)
-        .sort((a,b) => a.data.localeCompare(b.data) || a.inicio.localeCompare(b.inicio));
-
-    if (slotsLivres.length < pendentes.length) {
-        alert(`Atenção: Há ${pendentes.length} tutorados para agendar, mas apenas ${slotsLivres.length} horários livres. Alguns ficarão sem agenda.`);
-    }
-
-    // 4. Distribuir
+    // 3. Distribuir sequencialmente
     let agendadosCount = 0;
-    for (let i = 0; i < pendentes.length; i++) {
+    for (let i = 0; i < tutorados.length; i++) {
         if (i < slotsLivres.length) {
-            slotsLivres[i].tutoradoId = pendentes[i].id;
+            slotsLivres[i].tutoradoId = tutorados[i].id;
             agendadosCount++;
         }
     }
 
-    if (agendadosCount > 0) {
-        persistirDados();
-        renderTutoria();
-        alert(`${agendadosCount} tutorados foram agendados com sucesso.`);
-    } else {
-        alert('Não há horários livres disponíveis.');
-    }
+    persistirDados();
+    renderTutoria();
+    alert(`Reorganização concluída. ${agendadosCount} tutorados agendados.`);
 }
 
 async function abrirModalNovoTutorado() {
@@ -1076,6 +1061,60 @@ function desvincularTutorado(id) {
         persistirDados();
         showScreen('tutoria');
     }
+}
+
+function imprimirListaTutorados() {
+    const tutorados = data.tutorados || [];
+    if (tutorados.length === 0) return alert('Nenhum tutorado para imprimir.');
+
+    // Agrupar por turma
+    const porTurma = {};
+    tutorados.forEach(t => {
+        if (!porTurma[t.turma]) porTurma[t.turma] = [];
+        porTurma[t.turma].push(t);
+    });
+
+    const turmasOrdenadas = Object.keys(porTurma).sort();
+
+    let html = `
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
+            <h1 style="text-align: center;">Lista de Tutorados por Turma</h1>
+            <p style="text-align: center; margin-bottom: 30px;">Professor: ${currentUser.nome}</p>
+    `;
+
+    turmasOrdenadas.forEach(turma => {
+        html += `
+            <h3 style="border-bottom: 1px solid #000; padding-bottom: 5px; margin-top: 20px;">${turma}</h3>
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 10px;">
+                <thead>
+                    <tr style="background: #eee;">
+                        <th style="border: 1px solid #ccc; padding: 8px; text-align: left;">Estudante</th>
+                        <th style="border: 1px solid #ccc; padding: 8px; text-align: center; width: 150px;">Assinatura</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+        
+        porTurma[turma].sort((a,b) => a.nome_estudante.localeCompare(b.nome_estudante)).forEach(t => {
+            html += `
+                <tr>
+                    <td style="border: 1px solid #ccc; padding: 8px;">${t.nome_estudante}</td>
+                    <td style="border: 1px solid #ccc; padding: 8px;"></td>
+                </tr>
+            `;
+        });
+
+        html += `</tbody></table>`;
+    });
+
+    html += `</div>`;
+
+    const janela = window.open('', '', 'width=800,height=600');
+    janela.document.write('<html><head><title>Lista de Tutorados</title></head><body>');
+    janela.document.write(html);
+    janela.document.write('<script>window.print();</script>');
+    janela.document.write('</body></html>');
+    janela.document.close();
 }
 
 async function gerarAgendamentosTutoria() {
@@ -1473,6 +1512,7 @@ async function renderGradeHorariaProfessor() {
                                 <option value="almoco" ${valorSelecionado === 'almoco' ? 'selected' : ''}>Almoço</option>
                                 <option value="cafe" ${valorSelecionado === 'cafe' ? 'selected' : ''}>Café</option>
                                 <option value="ped_presenc" ${valorSelecionado === 'ped_presenc' ? 'selected' : ''}>Ped. Presenç</option>
+                                <option value="eletiva" ${valorSelecionado === 'eletiva' ? 'selected' : ''}>Eletiva</option>
                             </optgroup>
                         </select>
                         ${(valorSelecionado === 'estudo' || valorSelecionado === 'reuniao') ? `
@@ -1504,7 +1544,7 @@ function salvarAulaGrade(blocoId, valor) {
             tema: ''
         };
 
-        if (['tutoria', 'estudo', 'apcg', 'atpca', 'reuniao', 'almoco', 'cafe', 'ped_presenc'].includes(valor)) {
+        if (['tutoria', 'estudo', 'apcg', 'atpca', 'reuniao', 'almoco', 'cafe', 'ped_presenc', 'eletiva'].includes(valor)) {
             novo.tipo = valor;
         } else {
             novo.tipo = 'aula';
