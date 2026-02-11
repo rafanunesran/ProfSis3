@@ -1117,6 +1117,56 @@ function imprimirListaTutorados() {
     janela.document.close();
 }
 
+function imprimirAgendamentosTutorados() {
+    const agendamentos = (data.agendamentos || []).filter(a => a.tutoradoId);
+    const tutorados = data.tutorados || [];
+    
+    if (agendamentos.length === 0) return alert('Nenhum agendamento com tutorado vinculado para imprimir.');
+
+    // Ordenar por data e horário
+    agendamentos.sort((a,b) => a.data.localeCompare(b.data) || a.inicio.localeCompare(b.inicio));
+
+    let html = `
+        <style>
+            body { font-family: Arial, sans-serif; }
+            .card { border: 1px solid #000; padding: 15px; width: 45%; box-sizing: border-box; margin-bottom: 20px; page-break-inside: avoid; border-radius: 5px; }
+            .container { display: flex; flex-wrap: wrap; gap: 20px; justify-content: space-between; }
+            @media print { .no-print { display: none; } }
+        </style>
+        <div style="padding: 20px;">
+            <h2 style="text-align: center;">Cartões de Agendamento - Tutoria</h2>
+            <p style="text-align: center; margin-bottom: 30px;">Professor: ${currentUser.nome}</p>
+            <div class="container">
+    `;
+
+    agendamentos.forEach(a => {
+        const t = tutorados.find(x => x.id == a.tutoradoId);
+        const nome = t ? t.nome_estudante : 'Aluno Removido';
+        const turma = t ? t.turma : '-';
+
+        html += `
+            <div class="card">
+                <h3 style="margin-top: 0; border-bottom: 1px solid #ccc; padding-bottom: 5px;">${nome}</h3>
+                <p><strong>Turma:</strong> ${turma}</p>
+                <p style="font-size: 1.2em;"><strong>📅 Data:</strong> ${formatDate(a.data)}</p>
+                <p style="font-size: 1.2em;"><strong>⏰ Horário:</strong> ${a.inicio} às ${a.fim}</p>
+                <div style="margin-top: 40px; border-top: 1px dashed #000; padding-top: 5px; font-size: 12px; text-align: center;">
+                    Visto do Professor / Coordenação
+                </div>
+            </div>
+        `;
+    });
+
+    html += `</div></div>`;
+
+    const janela = window.open('', '', 'width=800,height=600');
+    janela.document.write('<html><head><title>Cartões de Agendamento</title></head><body>');
+    janela.document.write(html);
+    janela.document.write('<script>window.print();</script>');
+    janela.document.write('</body></html>');
+    janela.document.close();
+}
+
 async function gerarAgendamentosTutoria() {
     if (!confirm('Gerar janelas de atendimento para os próximos 6 meses baseadas na sua Grade de Horários?')) return;
 
@@ -1491,7 +1541,7 @@ async function renderGradeHorariaProfessor() {
                 // Determina o valor selecionado (ID da turma ou tipo especial)
                 let valorSelecionado = '';
                 if (aulaSalva) {
-                    valorSelecionado = (['tutoria', 'estudo', 'apcg', 'atpca', 'reuniao', 'almoco', 'cafe', 'ped_presenc'].includes(aulaSalva.tipo)) ? aulaSalva.tipo : aulaSalva.id_turma;
+                    valorSelecionado = (['tutoria', 'estudo', 'apcg', 'atpca', 'reuniao', 'almoco', 'cafe', 'ped_presenc', 'eletiva'].includes(aulaSalva.tipo)) ? aulaSalva.tipo : aulaSalva.id_turma;
                 }
                 const descricao = (aulaSalva && (aulaSalva.tipo === 'estudo' || aulaSalva.tipo === 'reuniao')) ? (aulaSalva.tema || '') : '';
 
