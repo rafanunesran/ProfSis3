@@ -63,7 +63,14 @@ async function getData(collectionName, docId) {
         if (docId === 'users_list') key = 'app_users';
         if (docId === 'schools_list') key = 'app_schools';
         const data = localStorage.getItem(key);
-        return data ? JSON.parse(data) : null;
+        if (!data) return null;
+
+        const parsed = JSON.parse(data);
+        // Compatibilidade: Se for array (formato antigo local), envelopa em { list: ... }
+        if (Array.isArray(parsed) && (key === 'app_users' || key === 'app_schools')) {
+            return { list: parsed };
+        }
+        return parsed;
     }
 }
 
@@ -139,13 +146,8 @@ async function fazerLogin(e) {
     }
 
     // Busca usuários
-    let users = [];
-    if (USE_FIREBASE) {
-        const usersData = await getData('system', 'users_list');
-        users = (usersData && usersData.list && Array.isArray(usersData.list)) ? usersData.list : [];
-    } else {
-        users = JSON.parse(localStorage.getItem('app_users') || '[]');
-    }
+    const usersData = await getData('system', 'users_list');
+    const users = (usersData && usersData.list && Array.isArray(usersData.list)) ? usersData.list : [];
 
     const user = users.find(u => u.email === email && u.senha === senha);
 
@@ -165,13 +167,8 @@ async function fazerCadastro(e) {
     const senha = document.getElementById('cadSenha').value;
     const escolaId = document.getElementById('cadEscola').value;
 
-    let users = [];
-    if (USE_FIREBASE) {
-        const usersData = await getData('system', 'users_list');
-        users = (usersData && usersData.list && Array.isArray(usersData.list)) ? usersData.list : [];
-    } else {
-        users = JSON.parse(localStorage.getItem('app_users') || '[]');
-    }
+    const usersData = await getData('system', 'users_list');
+    const users = (usersData && usersData.list && Array.isArray(usersData.list)) ? usersData.list : [];
     
     if (users.find(u => u.email === email)) {
         alert('Email já cadastrado.');
@@ -188,11 +185,7 @@ async function fazerCadastro(e) {
     };
 
     users.push(newUser);
-    if (USE_FIREBASE) {
-        await saveData('system', 'users_list', { list: users });
-    } else {
-        localStorage.setItem('app_users', JSON.stringify(users));
-    }
+    await saveData('system', 'users_list', { list: users });
     
     alert('Cadastro realizado! Faça login.');
     renderLogin();
@@ -228,13 +221,8 @@ function renderLogin() {
 }
 
 async function renderCadastro() {
-    let schools = [];
-    if (USE_FIREBASE) {
-        const data = await getData('system', 'schools_list');
-        schools = (data && data.list && Array.isArray(data.list)) ? data.list : [];
-    } else {
-        schools = JSON.parse(localStorage.getItem('app_schools') || '[]');
-    }
+    const data = await getData('system', 'schools_list');
+    const schools = (data && data.list && Array.isArray(data.list)) ? data.list : [];
 
     if (schools.length === 0) schools.push({id: 'default', nome: 'Escola Padrão'});
     

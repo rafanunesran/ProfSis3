@@ -9,19 +9,12 @@ function iniciarAdmin() {
 }
 
 async function fetchEscolas() {
-    if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
-        const data = await getData('system', 'schools_list');
-        return (data && data.list && Array.isArray(data.list)) ? data.list : [];
-    }
-    return JSON.parse(localStorage.getItem('app_schools') || '[]');
+    const data = await getData('system', 'schools_list');
+    return (data && data.list && Array.isArray(data.list)) ? data.list : [];
 }
 
 async function saveEscolasData(escolas) {
-    if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
-        await saveData('system', 'schools_list', { list: escolas });
-    } else {
-        localStorage.setItem('app_schools', JSON.stringify(escolas));
-    }
+    await saveData('system', 'schools_list', { list: escolas });
 }
 
 async function renderAdminEscolas() {
@@ -133,13 +126,8 @@ async function verUsuariosEscola(escolaId) {
 }
 
 async function renderListaUsuariosAdmin() {
-    let users = [];
-    if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
-        const data = await getData('system', 'users_list');
-        users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
-    } else {
-        users = JSON.parse(localStorage.getItem('app_users') || '[]');
-    }
+    const data = await getData('system', 'users_list');
+    const users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
     const usersEscola = users.filter(u => u.schoolId == escolaAtualAdmin);
 
     const html = usersEscola.length > 0 ? `
@@ -188,13 +176,8 @@ async function salvarUsuarioAdmin(e) {
     const senha = document.getElementById('adminUsuarioSenha').value;
     const role = document.getElementById('adminUsuarioRole').value;
 
-    let users = [];
-    if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
-        const data = await getData('system', 'users_list');
-        users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
-    } else {
-        users = JSON.parse(localStorage.getItem('app_users') || '[]');
-    }
+    const data = await getData('system', 'users_list');
+    const users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
 
     if (id) {
         const u = users.find(x => x.id == id);
@@ -213,32 +196,17 @@ async function salvarUsuarioAdmin(e) {
         users.push({ id: Date.now(), nome, email, senha: senha || '123456', role, schoolId: escolaAtualAdmin, mustChangePassword: true });
     }
 
-    if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
-        await saveData('system', 'users_list', { list: users });
-    } else {
-        localStorage.setItem('app_users', JSON.stringify(users));
-    }
+    await saveData('system', 'users_list', { list: users });
     closeModal('modalAdminUsuario');
     renderListaUsuariosAdmin();
 }
 
 async function excluirUsuarioAdmin(id) {
     if (confirm('Tem certeza que deseja excluir este usuário?')) {
-        let users = [];
-        if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
-            const data = await getData('system', 'users_list');
-            users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
-        } else {
-            users = JSON.parse(localStorage.getItem('app_users') || '[]');
-        }
-
+        const data = await getData('system', 'users_list');
+        let users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
         users = users.filter(u => u.id != id);
-
-        if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
-            await saveData('system', 'users_list', { list: users });
-        } else {
-            localStorage.setItem('app_users', JSON.stringify(users));
-        }
+        await saveData('system', 'users_list', { list: users });
         renderListaUsuariosAdmin();
     }
 }
