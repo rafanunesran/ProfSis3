@@ -181,6 +181,17 @@ async function fazerLogin(e) {
             return;
         }
 
+        // --- LOGIN DE TESTE RÁPIDO (Backdoor) ---
+        // Permite entrar como Professor mesmo se o banco estiver vazio ou com erro
+        if (email === 'prof@teste' && senha === '123') {
+            const testUser = { id: 'test_prof', nome: 'Professor Teste', email: email, role: 'professor', schoolId: 'default' };
+            localStorage.setItem('app_current_user', JSON.stringify(testUser));
+            currentUser = testUser;
+            if (typeof iniciarApp === 'function') iniciarApp();
+            return;
+        }
+        // ----------------------------------------
+
         // Verificação de segurança: Se estiver online mas sem conexão com o banco
         if (USE_FIREBASE && !db) {
             alert("⚠️ Sistema Offline ou Erro de Conexão.\nNão foi possível conectar ao banco de dados para verificar seu usuário.\nTente recarregar a página.");

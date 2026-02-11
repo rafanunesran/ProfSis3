@@ -1049,19 +1049,27 @@ function importarEstudantes(e) {
         const text = event.target.result;
         const lines = text.split('\n');
         
-        // Procura a linha de cabeçalho específica para começar a ler os dados depois dela
-        let dataStartIndex = -1;
-        const headerSignature = 'Nome do Aluno;Situação do Aluno';
+        let headerIndex = -1;
+        let idxNome = -1;
+        let idxStatus = -1;
         
+        // 1. Encontrar o cabeçalho dinamicamente
         for (let i = 0; i < lines.length; i++) {
-            if (lines[i].includes(headerSignature)) {
-                dataStartIndex = i + 1;
-                break;
+            const line = lines[i];
+            if (line.includes('Nome do Aluno')) {
+                const cols = line.split(';').map(c => c.trim());
+                idxNome = cols.indexOf('Nome do Aluno');
+                idxStatus = cols.indexOf('Situação do Aluno');
+                
+                if (idxNome !== -1) {
+                    headerIndex = i;
+                    break;
+                }
             }
         }
 
-        if (dataStartIndex === -1) {
-            alert('Formato de arquivo inválido. Cabeçalho "Nome do Aluno;Situação do Aluno" não encontrado.');
+        if (headerIndex === -1) {
+            alert('Erro: Cabeçalho "Nome do Aluno" não encontrado no arquivo CSV.');
             return;
         }
 
@@ -1069,19 +1077,18 @@ function importarEstudantes(e) {
         let nextId = data.estudantes.length > 0 ? Math.max(...data.estudantes.map(e => e.id)) + 1 : 1;
         let count = 0;
 
-        for (let i = dataStartIndex; i < lines.length; i++) {
+        for (let i = headerIndex + 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
 
             const parts = line.split(';');
-            const nome = parts[0] ? parts[0].trim() : '';
-            const status = parts[1] ? parts[1].trim() : 'Ativo';
             
-            if (parts.length <= idxNome) continue; // Linha inválida/incompleta
+            // Verifica se a linha tem colunas suficientes
+            if (parts.length <= idxNome) continue;
 
             const nome = parts[idxNome].trim();
             const status = (idxStatus !== -1 && parts.length > idxStatus) ? parts[idxStatus].trim() : 'Ativo';
-
+            
             // Verifica se tem nome e se já não existe na turma
             if (nome && !data.estudantes.find(e => e.id_turma == turmaAtual && e.nome_completo === nome)) {
                 data.estudantes.push({ id: nextId++, id_turma: turmaAtual, nome_completo: nome, status: status });
