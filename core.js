@@ -12,7 +12,7 @@ const isLocalhost = Boolean(
 );
 
 // CONFIGURAÇÃO: Para testar com o banco REAL (Firebase) mesmo no seu computador, mude para TRUE:
-const FORCE_FIREBASE_LOCAL = false; 
+const FORCE_FIREBASE_LOCAL = true; 
 
 const USE_FIREBASE = !isLocalhost || FORCE_FIREBASE_LOCAL;
 
