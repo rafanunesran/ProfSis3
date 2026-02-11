@@ -221,16 +221,23 @@ function renderOcorrenciasGestor() {
                     <tr>
                         <th>Data</th>
                         <th>Turma</th>
+                        <th>Envolvidos</th>
                         <th>Relato</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${ocorrencias.map(o => {
                         const turma = data.turmas.find(t => t.id == o.id_turma);
+                        const envolvidos = (o.ids_estudantes || []).map(id => {
+                            const est = (data.estudantes || []).find(e => e.id == id);
+                            return est ? est.nome_completo : '?';
+                        }).join(', ');
+
                         return `
                             <tr>
                                 <td>${formatDate(o.data)}</td>
                                 <td>${turma ? turma.nome : '?'}</td>
+                                <td>${envolvidos || '-'}</td>
                                 <td>${o.relato}</td>
                             </tr>
                         `;

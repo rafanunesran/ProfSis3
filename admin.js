@@ -6,6 +6,7 @@ function iniciarAdmin() {
     document.getElementById('appContainer').style.display = 'none';
     document.getElementById('adminContainer').style.display = 'block';
     renderAdminEscolas();
+    renderBackupOptions(); // Nova função
 }
 
 async function fetchEscolas() {
@@ -21,6 +22,7 @@ async function renderAdminEscolas() {
     const escolas = await fetchEscolas();
     document.getElementById('adminEscolasScreen').style.display = 'block';
     document.getElementById('adminEscolaDetalheScreen').style.display = 'none';
+    document.getElementById('adminBackupScreen').style.display = 'none';
 
     const html = escolas.length > 0 ? `
         <table>
@@ -107,6 +109,7 @@ async function verUsuariosEscola(escolaId) {
     
     document.getElementById('adminEscolasScreen').style.display = 'none';
     document.getElementById('adminEscolaDetalheScreen').style.display = 'block';
+    document.getElementById('adminBackupScreen').style.display = 'none';
     
     const container = document.getElementById('adminEscolaDetalheScreen');
     container.innerHTML = `
@@ -209,4 +212,99 @@ async function excluirUsuarioAdmin(id) {
         await saveData('system', 'users_list', { list: users });
         renderListaUsuariosAdmin();
     }
+}
+
+// --- BACKUP E MIGRAÇÃO ---
+function renderBackupOptions() {
+    // Cria a tela de backup se não existir
+    if (!document.getElementById('adminBackupScreen')) {
+        const div = document.createElement('div');
+        div.id = 'adminBackupScreen';
+        div.style.display = 'none';
+        div.innerHTML = `
+            <div class="card" style="margin-top: 20px; border-left: 5px solid #805ad5;">
+                <h2>💾 Backup e Migração de Dados</h2>
+                <p>Use esta ferramenta para transferir dados do seu computador (Local) para a internet (Firebase) ou para fazer cópias de segurança.</p>
+                
+                <div style="display: flex; gap: 20px; margin-top: 20px; flex-wrap: wrap;">
+                    <div style="flex: 1; background: #f7fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                        <h3>1. Exportar (Baixar)</h3>
+                        <p style="font-size: 13px; color: #666;">Gera um arquivo com todos os dados atuais deste navegador.</p>
+                        <button class="btn btn-primary" onclick="exportarDadosSistema()">⬇️ Baixar Arquivo de Dados</button>
+                    </div>
+
+                    <div style="flex: 1; background: #f7fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                        <h3>2. Importar (Subir)</h3>
+                        <p style="font-size: 13px; color: #666;">Envia os dados de um arquivo para o sistema atual (Local ou Firebase).</p>
+                        <input type="file" id="fileBackupImport" accept=".json" style="margin-bottom: 10px;">
+                        <button class="btn btn-success" onclick="importarDadosSistema()">⬆️ Importar e Salvar</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.querySelector('#adminContainer .container').appendChild(div);
+    }
+    
+    // Adiciona botão no header se não existir
+    const header = document.querySelector('#adminContainer header div');
+    if (!document.getElementById('btnNavBackup')) {
+        const btn = document.createElement('button');
+        btn.id = 'btnNavBackup';
+        btn.className = 'btn btn-secondary';
+        btn.style.marginRight = '10px';
+        btn.textContent = '💾 Migração';
+        btn.onclick = () => {
+            document.getElementById('adminEscolasScreen').style.display = 'none';
+            document.getElementById('adminEscolaDetalheScreen').style.display = 'none';
+            document.getElementById('adminBackupScreen').style.display = 'block';
+        };
+        header.insertBefore(btn, header.lastElementChild); // Antes do Sair
+    }
+}
+
+function exportarDadosSistema() {
+    const backup = {};
+    // Coleta tudo do LocalStorage que pertence ao app
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith('app_') || key === 'users_list' || key === 'schools_list') {
+            backup[key] = JSON.parse(localStorage.getItem(key));
+        }
+    }
+    
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backup));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", "profsis_backup_" + new Date().toISOString().slice(0,10) + ".json");
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+}
+
+async function importarDadosSistema() {
+    const fileInput = document.getElementById('fileBackupImport');
+    const file = fileInput.files[0];
+    if (!file) return alert('Selecione um arquivo .json');
+
+    if (!confirm('ATENÇÃO: Isso substituirá os dados atuais pelos do arquivo. Se estiver online, salvará no Firebase. Continuar?')) return;
+
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const backup = JSON.parse(e.target.result);
+            
+            // Processa cada chave
+            for (const [key, value] of Object.entries(backup)) {
+                if (key === 'app_users') await saveData('system', 'users_list', { list: value });
+                else if (key === 'app_schools') await saveData('system', 'schools_list', { list: value });
+                else if (key.startsWith('app_data_')) await saveData('app_data', key, value);
+                else localStorage.setItem(key, JSON.stringify(value)); // Outros locais
+            }
+            alert('Importação concluída com sucesso! Recarregue a página.');
+            location.reload();
+        } catch (err) {
+            alert('Erro ao importar: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
 }
