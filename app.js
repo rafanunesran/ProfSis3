@@ -1348,6 +1348,146 @@ async function renderAgenda() {
     await renderGradeHorariaProfessor();
 }
 
+async function imprimirAgendaMensal() {
+    // 1. Solicita o Mês/Ano
+    const input = prompt("Digite o Mês e Ano para a Agenda (ex: 03/2026):", new Date().toLocaleDateString('pt-BR', {month: '2-digit', year: 'numeric'}));
+    if (!input) return;
+
+    const [mesStr, anoStr] = input.split('/');
+    const mes = parseInt(mesStr) - 1; // JS conta meses de 0 a 11
+    const ano = parseInt(anoStr);
+
+    if (isNaN(mes) || isNaN(ano)) return alert("Data inválida. Use o formato MM/AAAA");
+
+    // 2. Prepara os dados da Grade Fixa
+    const gradeEscola = await getGradeEscola();
+    const minhasAulas = data.horariosAulas || [];
+    const turmas = data.turmas || [];
+
+    // Mapeia a grade fixa por dia da semana (1=Seg, 2=Ter...)
+    const gradePorDia = {};
+    for (let d = 1; d <= 5; d++) {
+        const blocosDia = gradeEscola.filter(g => g.diaSemana == d).sort((a,b) => a.inicio.localeCompare(b.inicio));
+        gradePorDia[d] = blocosDia.map(bloco => {
+            const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
+            if (!aula) return null;
+
+            let texto = '';
+            if (aula.tipo === 'aula' && aula.id_turma) {
+                const t = turmas.find(x => x.id == aula.id_turma);
+                texto = t ? t.nome : 'Turma?';
+            } else {
+                texto = aula.tipo.toUpperCase(); // ESTUDO, TUTORIA, ETC
+            }
+            return { inicio: bloco.inicio, fim: bloco.fim, texto };
+        }).filter(x => x !== null);
+    }
+
+    // 3. Gera o Calendário
+    const dataInicial = new Date(ano, mes, 1);
+    const dataFinal = new Date(ano, mes + 1, 0);
+    const nomeMes = dataInicial.toLocaleDateString('pt-BR', { month: 'long' }).toUpperCase();
+    
+    let html = `
+        <html>
+        <head>
+            <title>Agenda Mensal - ${nomeMes}/${ano}</title>
+            <style>
+                @page { size: A4 landscape; margin: 10mm; }
+                body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; color: #333; }
+                .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #2c5282; padding-bottom: 10px; margin-bottom: 10px; }
+                .header h1 { margin: 0; font-size: 24px; color: #2c5282; text-transform: uppercase; }
+                .header p { margin: 0; font-size: 14px; }
+                
+                table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+                th { background-color: #2c5282; color: white; padding: 5px; border: 1px solid #000; font-size: 14px; text-transform: uppercase; }
+                td { border: 1px solid #000; vertical-align: top; height: 120px; padding: 5px; font-size: 11px; background: #fff; }
+                
+                .day-number { font-weight: bold; font-size: 14px; margin-bottom: 5px; display: block; text-align: right; color: #2c5282; }
+                .aula-item { margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                .aula-time { font-weight: bold; color: #555; margin-right: 3px; font-size: 10px; }
+                
+                .gray-bg { background-color: #f7fafc; }
+                .weekend { background-color: #e2e8f0; color: #a0aec0; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div>
+                    <h1>Agenda Mensal - PEI</h1>
+                    <p><strong>Escola:</strong> ${document.querySelector('#appContainer h1').textContent.replace('SisProf - ', '')}</p>
+                </div>
+                <div style="text-align: right;">
+                    <p><strong>Professor:</strong> ${currentUser.nome}</p>
+                    <p><strong>Mês de Referência:</strong> ${nomeMes} / ${ano}</p>
+                </div>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 20%;">Segunda</th>
+                        <th style="width: 20%;">Terça</th>
+                        <th style="width: 20%;">Quarta</th>
+                        <th style="width: 20%;">Quinta</th>
+                        <th style="width: 20%;">Sexta</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    // Lógica de preenchimento dos dias
+    let currentDay = new Date(dataInicial);
+    // Ajusta para começar na segunda-feira anterior se o mês não começar na segunda
+    // getDay(): 0=Dom, 1=Seg...
+    let startOffset = currentDay.getDay() - 1;
+    if (startOffset < 0) startOffset = 6; // Se for domingo, volta 6 dias
+    currentDay.setDate(currentDay.getDate() - startOffset);
+
+    // Loop por 5 ou 6 semanas para garantir que o mês caiba
+    for (let week = 0; week < 6; week++) {
+        // Se já passou do mês e estamos numa nova semana, para
+        if (currentDay > dataFinal && week > 0) break;
+
+        html += '<tr>';
+        for (let d = 1; d <= 5; d++) { // Apenas Seg a Sex
+            const diaMes = currentDay.getDate();
+            const isCurrentMonth = currentDay.getMonth() === mes;
+            
+            html += `<td class="${!isCurrentMonth ? 'gray-bg' : ''}">`;
+            html += `<span class="day-number" style="${!isCurrentMonth ? 'color:#ccc' : ''}">${diaMes}</span>`;
+            
+            if (isCurrentMonth && gradePorDia[d]) {
+                gradePorDia[d].forEach(a => {
+                    html += `<div class="aula-item"><span class="aula-time">${a.inicio}</span> ${a.texto}</div>`;
+                });
+            }
+            html += `</td>`;
+            
+            // Avança um dia
+            currentDay.setDate(currentDay.getDate() + 1);
+        }
+        // Pula Sábado e Domingo no loop visual (mas avança a data)
+        currentDay.setDate(currentDay.getDate() + 2);
+        html += '</tr>';
+    }
+
+    html += `
+                </tbody>
+            </table>
+            <div style="margin-top: 20px; font-size: 10px; text-align: center; color: #666;">
+                Documento gerado automaticamente pelo Sistema SisProf PEI em ${new Date().toLocaleDateString()}
+            </div>
+            <script>window.print();</script>
+        </body>
+        </html>
+    `;
+
+    const janela = window.open('', '', 'width=1100,height=800');
+    janela.document.write(html);
+    janela.document.close();
+}
+
 // --- PREVIEW AGENDAMENTO (Placeholder) ---
 async function previewHorariosAuto(e) {
     e.preventDefault();
@@ -1645,7 +1785,12 @@ async function renderGradeHorariaProfessor() {
     const turmas = data.turmas || [];
     const minhasAulas = data.horariosAulas || []; // Onde salvamos as escolhas do professor
 
-    let html = '<div class="grid" style="grid-template-columns: repeat(5, 1fr); gap: 10px;">';
+    let html = `
+        <div style="display:flex; justify-content:flex-end; margin-bottom:15px;">
+            <button class="btn btn-secondary" onclick="imprimirAgendaMensal()">🖨️ Imprimir Agenda Mensal</button>
+        </div>
+        <div class="grid" style="grid-template-columns: repeat(5, 1fr); gap: 10px;">
+    `;
 
     for (let d = 1; d <= 5; d++) {
         const blocosDia = gradeEscola.filter(g => g.diaSemana == d).sort((a,b) => a.inicio.localeCompare(b.inicio));
