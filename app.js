@@ -46,6 +46,7 @@ function renderProfessorPanel() {
         <button onclick="showScreen('turmas', event)"><span class="icon">👥</span><span class="label">Turmas</span></button>
         <button onclick="showScreen('tutoria', event)"><span class="icon">🎓</span><span class="label">Tutoria</span></button>
         <button onclick="showScreen('agenda', event)"><span class="icon">📅</span><span class="label">Agenda</span></button>
+        <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
     `;
     renderDashboard();
     showScreen('dashboard');
@@ -65,6 +66,7 @@ function showScreen(screenId, evt) {
     if (screenId === 'turmas') renderTurmas();
     if (screenId === 'tutoria') renderTutoria();
     if (screenId === 'agenda') renderAgenda();
+    if (screenId === 'registrosProfessor') renderRegistrosProfessor();
     if (screenId === 'registrosGestor') renderRegistrosGestor();
     if (screenId === 'ocorrenciasGestor') renderOcorrenciasGestor();
     if (screenId === 'horariosGestor') renderHorariosGestor();
@@ -399,8 +401,47 @@ function showTurmaTab(tab, evt) {
 function renderEstudantes() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
     const isGestor = currentUser && currentUser.role === 'gestor';
+
+    // --- MURAL DE AVISOS (Registros Administrativos) ---
+    const registros = data.registrosAdministrativos || [];
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    // Filtra registros relevantes para esta turma
+    const avisosTurma = registros.filter(r => {
+        // Verifica se o aluno pertence a esta turma (pelo ID do aluno na lista filtrada acima)
+        const alunoNaTurma = estudantes.find(e => e.id == r.estudanteId);
+        if (!alunoNaTurma) return false;
+
+        // Lógica de validade (Atestados vencidos não aparecem, Faltosos e Observações aparecem sempre ou por um tempo)
+        if (r.tipo === 'Atestado') {
+            const parts = r.data.split('-');
+            const dataInicio = new Date(parts[0], parts[1]-1, parts[2]);
+            const dataFim = new Date(dataInicio);
+            dataFim.setDate(dataFim.getDate() + (parseInt(r.dias) || 1) - 1);
+            return today <= dataFim;
+        }
+        return true; // Faltoso e Observação mostramos sempre (ou poderia filtrar por data recente)
+    });
+
+    let muralHtml = '';
+    if (avisosTurma.length > 0) {
+        muralHtml = `<div class="card" style="background: #fffbeb; border: 1px solid #fbd38d; margin-bottom: 20px;">
+            <h3 style="margin-top:0; color: #744210;">📌 Mural de Avisos & Observações</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+                ${avisosTurma.map(r => {
+                    const est = estudantes.find(e => e.id == r.estudanteId);
+                    const nome = est ? est.nome_completo : 'Desconhecido';
+                    const icone = r.tipo === 'Faltoso' ? '🔴' : (r.tipo === 'Atestado' ? '🔵' : '🟡');
+                    const textoExtra = r.tipo === 'Observacao' ? ` - <em>${r.descricao}</em>` : (r.tipo === 'Atestado' ? ` (${r.dias} dias)` : '');
+                    return `<li style="padding: 5px 0; border-bottom: 1px dashed #fbd38d;">${icone} <strong>${nome}</strong>: ${r.tipo}${textoExtra} <span style="font-size:11px; color:#666;">(${formatDate(r.data)})</span></li>`;
+                }).join('')}
+            </ul>
+        </div>`;
+    }
     
     const html = `
+        ${muralHtml}
         ${isGestor ? `
             <div style="display:flex; gap: 10px; margin-bottom: 10px;">
                 <button class="btn btn-primary btn-sm" onclick="abrirModalNovoEstudante()">+ Novo Estudante</button>
@@ -1613,4 +1654,97 @@ function salvarDescricaoAula(blocoId, texto) {
         aula.tema = texto;
         persistirDados();
     }
+}
+
+async function renderRegistrosProfessor() {
+    // Garante que o container da tela existe
+    if (!document.getElementById('registrosProfessor')) {
+        const div = document.createElement('div');
+        div.id = 'registrosProfessor';
+        div.className = 'screen';
+        document.querySelector('#appContainer .container').appendChild(div);
+    }
+
+    const screen = document.getElementById('registrosProfessor');
+    screen.innerHTML = '<div class="card"><p>Carregando registros da gestão...</p></div>';
+
+    let registros = [];
+    let estudantes = [];
+    let turmas = [];
+
+    // Busca dados da escola (Gestor)
+    if (currentUser && currentUser.schoolId) {
+        const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+        const gestorData = await getData('app_data', key);
+        if (gestorData) {
+            registros = gestorData.registrosAdministrativos || [];
+            estudantes = gestorData.estudantes || [];
+            turmas = gestorData.turmas || [];
+        }
+    }
+
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    // Filtra e processa
+    let lista = registros.map(r => {
+        const est = estudantes.find(e => e.id == r.estudanteId) || { nome_completo: 'Desconhecido' };
+        const turma = turmas.find(t => t.id == r.turmaId) || { nome: '?' };
+        
+        let cor = '#22c55e'; // Verde (Observação/Outros)
+
+        if (r.tipo === 'Atestado') {
+            const parts = r.data.split('-');
+            const dataInicio = new Date(parts[0], parts[1]-1, parts[2]);
+            const dataFim = new Date(dataInicio);
+            dataFim.setDate(dataFim.getDate() + (parseInt(r.dias) || 1) - 1);
+            
+            if (today > dataFim) return null; // Oculta vencidos
+            cor = '#3182ce'; // Azul
+        } else if (r.tipo === 'Faltoso') {
+            cor = '#ef4444'; // Vermelho
+        }
+
+        return { ...r, estudanteNome: est.nome_completo, turmaNome: turma.nome, cor };
+    }).filter(item => item !== null);
+
+    // Agrupa por Turma
+    const grupos = {};
+    lista.forEach(item => {
+        if (!grupos[item.turmaNome]) grupos[item.turmaNome] = [];
+        grupos[item.turmaNome].push(item);
+    });
+    const turmasOrdenadas = Object.keys(grupos).sort();
+
+    const html = `
+        <div class="card">
+            <h2>📂 Registros da Gestão (Faltas/Atestados)</h2>
+            <div style="margin-top: 20px;">
+                ${lista.length > 0 ? `
+                    ${turmasOrdenadas.map(turmaNome => `
+                        <h3 style="margin-top: 20px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: #2d3748;">${turmaNome}</h3>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Tipo</th>
+                                    <th>Estudante</th>
+                                    <th>Data/Detalhes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${grupos[turmaNome].map(r => `
+                                    <tr>
+                                        <td style="color: ${r.cor}; font-weight: bold;">${r.tipo}</td>
+                                        <td>${r.estudanteNome}</td>
+                                        <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `).join('')}
+                ` : '<p class="empty-state">Nenhum registro vigente encontrado.</p>'}
+            </div>
+        </div>
+    `;
+    screen.innerHTML = html;
 }
