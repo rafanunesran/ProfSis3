@@ -6,7 +6,7 @@ function iniciarApp() {
     document.getElementById('adminContainer').style.display = 'none';
     
     // Carregar dados
-    carregarDadosUsuario().then(() => {
+    carregarDadosUsuario().then(async () => {
         const today = new Date();
         const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
         
@@ -18,6 +18,22 @@ function iniciarApp() {
         
         const subTitle = document.getElementById('painelSubtitle');
         if (subTitle) subTitle.textContent = roleLabel;
+
+        // Atualiza o título com o nome da escola
+        let nomeEscola = 'Escola';
+        if (currentUser && currentUser.schoolId) {
+            let schools = [];
+            if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
+                const sData = await getData('system', 'schools_list');
+                schools = (sData && sData.list) ? sData.list : [];
+            } else {
+                schools = JSON.parse(localStorage.getItem('app_schools') || '[]');
+            }
+            const escola = schools.find(s => s.id == currentUser.schoolId);
+            if (escola) nomeEscola = escola.nome;
+        }
+        const headerTitle = document.querySelector('#appContainer h1');
+        if (headerTitle) headerTitle.textContent = `SisProf - ${nomeEscola}`;
 
         if (currentUser.role === 'gestor') {
             renderGestorPanel();
