@@ -55,6 +55,7 @@ async function getData(collectionName, docId) {
             return doc.exists ? doc.data() : null;
         } catch (error) {
             console.error("Erro ao buscar no Firebase:", error);
+            alert("Erro de conexão ao buscar dados. Verifique sua internet.");
             return null;
         }
     } else {
@@ -76,13 +77,19 @@ async function getData(collectionName, docId) {
 
 async function saveData(collectionName, docId, dataObj) {
     if (USE_FIREBASE) {
-        if (!db) return;
+        if (!db) {
+            alert("ERRO CRÍTICO: Banco de dados não conectado. Suas alterações NÃO serão salvas online.\nRecarregue a página.");
+            return;
+        }
         try {
-            console.log(`Salvando no Firebase: ${collectionName}/`);
-            await db.collection(collectionName).doc(String(docId)).set(dataObj);
+            // SANITIZAÇÃO: Remove campos 'undefined' que fazem o Firebase travar
+            const cleanData = JSON.parse(JSON.stringify(dataObj));
+            
+            console.log(`Salvando no Firebase: ${collectionName}/${docId}`);
+            await db.collection(collectionName).doc(String(docId)).set(cleanData);
         } catch (error) {
             console.error("Erro ao salvar no Firebase:", error);
-            alert("Erro ao salvar dados online. Verifique o console (F12).");
+            alert(`Erro ao salvar dados online: ${error.message}\nVerifique se as Regras do Firestore permitem escrita.`);
         }
     } else {
         // Comportamento LocalStorage
