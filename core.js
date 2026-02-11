@@ -181,9 +181,9 @@ async function fazerLogin(e) {
             return;
         }
 
-        // --- LOGIN DE TESTE RÁPIDO (Backdoor) ---
-        // Permite entrar como Professor mesmo se o banco estiver vazio ou com erro
-        if (email === 'prof@teste' && senha === '123') {
+        // --- LOGIN DE TESTE RÁPIDO (Apenas Localhost) ---
+        // Permite testar rápido no seu PC sem afetar a segurança da versão Online
+        if (isLocalhost && email === 'prof@teste' && senha === '123') {
             const testUser = { id: 'test_prof', nome: 'Professor Teste', email: email, role: 'professor', schoolId: 'default' };
             localStorage.setItem('app_current_user', JSON.stringify(testUser));
             currentUser = testUser;
@@ -221,7 +221,7 @@ async function fazerLogin(e) {
         } else {
             console.log("Emails disponíveis:", users.map(u => u.email));
             if (users.length === 0) {
-                alert('Erro: Nenhum usuário encontrado no banco de dados. Verifique o console (F12) para mais detalhes.');
+                alert(`Erro: Nenhum usuário encontrado no banco de dados (${USE_FIREBASE ? 'Online' : 'Local'}).\n\nDica: Entre como Admin (rafael@adm) para cadastrar usuários.`);
             } else {
                 alert('Email ou senha incorretos.\nVerifique o console (F12) para ver a lista de emails cadastrados.');
             }
@@ -274,9 +274,15 @@ function renderLogin() {
     const adminContainer = document.getElementById('adminContainer');
     if (adminContainer) adminContainer.style.display = 'none';
 
+    const statusDb = USE_FIREBASE ? '🔥 Banco: Online (Firebase)' : '💻 Banco: Local (Offline)';
+    const colorDb = USE_FIREBASE ? '#e53e3e' : '#3182ce';
+
     container.innerHTML = `
         <div class="auth-box">
             <h2>🔐 Login</h2>
+            <div style="text-align:center; margin-bottom:15px; font-size:12px; color:${colorDb}; font-weight:bold; background:#f7fafc; padding:5px; border-radius:4px; border:1px solid ${colorDb}40;">
+                ${statusDb}
+            </div>
             <form onsubmit="fazerLogin(event)">
                 <label>Email: <input type="email" id="loginEmail" required></label>
                 <label>Senha: 
