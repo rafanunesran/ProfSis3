@@ -1387,6 +1387,7 @@ async function imprimirAgendaMensal() {
     const dataInicial = new Date(ano, mes, 1);
     const dataFinal = new Date(ano, mes + 1, 0);
     const nomeMes = dataInicial.toLocaleDateString('pt-BR', { month: 'long' }).toUpperCase();
+    const nomeEscola = document.querySelector('#appContainer h1').textContent.replace('SisProf - ', '');
     
     let html = `
         <html>
@@ -1394,43 +1395,50 @@ async function imprimirAgendaMensal() {
             <title>Agenda Mensal - ${nomeMes}/${ano}</title>
             <style>
                 @page { size: A4 landscape; margin: 10mm; }
-                body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; color: #333; }
-                .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #2c5282; padding-bottom: 10px; margin-bottom: 10px; }
-                .header h1 { margin: 0; font-size: 24px; color: #2c5282; text-transform: uppercase; }
-                .header p { margin: 0; font-size: 14px; }
+                body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; color: #000; }
                 
+                .header-container { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; border-bottom: 2px solid #000; padding-bottom: 10px; }
+                .header-left { font-size: 11px; font-weight: bold; line-height: 1.4; }
+                .header-center { text-align: center; flex-grow: 1; }
+                .header-center h1 { margin: 0; font-size: 22px; text-transform: uppercase; font-weight: bold; }
+                .header-center h2 { margin: 5px 0 0 0; font-size: 14px; font-weight: normal; }
+                .header-right { font-size: 12px; text-align: right; line-height: 1.4; }
+
                 table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-                th { background-color: #2c5282; color: white; padding: 5px; border: 1px solid #000; font-size: 14px; text-transform: uppercase; }
-                td { border: 1px solid #000; vertical-align: top; height: 120px; padding: 5px; font-size: 11px; background: #fff; }
+                th { border: 1px solid #000; background-color: #e0e0e0; padding: 5px; font-size: 12px; text-transform: uppercase; color: #000; }
+                td { border: 1px solid #000; vertical-align: top; height: 110px; padding: 5px; font-size: 10px; background: #fff; }
                 
-                .day-number { font-weight: bold; font-size: 14px; margin-bottom: 5px; display: block; text-align: right; color: #2c5282; }
+                .day-number { font-weight: bold; font-size: 14px; float: right; margin-bottom: 5px; }
                 .aula-item { margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                .aula-time { font-weight: bold; color: #555; margin-right: 3px; font-size: 10px; }
+                .aula-time { font-weight: bold; margin-right: 4px; }
                 
-                .gray-bg { background-color: #f7fafc; }
-                .weekend { background-color: #e2e8f0; color: #a0aec0; }
+                .gray-bg { background-color: #f5f5f5; color: #999; }
             </style>
         </head>
         <body>
-            <div class="header">
-                <div>
-                    <h1>Agenda Mensal - PEI</h1>
-                    <p><strong>Escola:</strong> ${document.querySelector('#appContainer h1').textContent.replace('SisProf - ', '')}</p>
+            <div class="header-container">
+                <div class="header-left">
+                    GOVERNO DO ESTADO DE SÃO PAULO<br>
+                    SECRETARIA DA EDUCAÇÃO
                 </div>
-                <div style="text-align: right;">
-                    <p><strong>Professor:</strong> ${currentUser.nome}</p>
-                    <p><strong>Mês de Referência:</strong> ${nomeMes} / ${ano}</p>
+                <div class="header-center">
+                    <h1>Agenda Mensal</h1>
+                    <h2>${nomeEscola}</h2>
+                </div>
+                <div class="header-right">
+                    <strong>Mês:</strong> ${nomeMes}/${ano}<br>
+                    <strong>Professor:</strong> ${currentUser.nome}
                 </div>
             </div>
 
             <table>
                 <thead>
                     <tr>
-                        <th style="width: 20%;">Segunda</th>
-                        <th style="width: 20%;">Terça</th>
-                        <th style="width: 20%;">Quarta</th>
-                        <th style="width: 20%;">Quinta</th>
-                        <th style="width: 20%;">Sexta</th>
+                        <th>Segunda-feira</th>
+                        <th>Terça-feira</th>
+                        <th>Quarta-feira</th>
+                        <th>Quinta-feira</th>
+                        <th>Sexta-feira</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1455,7 +1463,7 @@ async function imprimirAgendaMensal() {
             const isCurrentMonth = currentDay.getMonth() === mes;
             
             html += `<td class="${!isCurrentMonth ? 'gray-bg' : ''}">`;
-            html += `<span class="day-number" style="${!isCurrentMonth ? 'color:#ccc' : ''}">${diaMes}</span>`;
+            html += `<span class="day-number">${diaMes}</span>`;
             
             if (isCurrentMonth && gradePorDia[d]) {
                 gradePorDia[d].forEach(a => {
