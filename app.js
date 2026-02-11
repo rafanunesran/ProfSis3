@@ -805,9 +805,21 @@ function removerTrabalho(id) {
 }
 
 // --- TUTORIA ---
+let agendaLimit = 10; // Controle de paginação da agenda
+
 function renderTutoria() {
     const tutorados = data.tutorados || [];
-    const html = tutorados.length > 0 ? `
+    
+    // 1. Botões Superiores
+    const htmlTop = `
+        <div style="display:flex; gap:10px; margin-bottom:15px;">
+            <button class="btn btn-primary" onclick="abrirModalNovoTutorado()">+ Novo Tutorado</button>
+            <button class="btn btn-success" onclick="showModal('modalNovoEncontro')">Registrar Encontro</button>
+        </div>
+    `;
+
+    // 2. Lista de Tutorados
+    const htmlTutorados = tutorados.length > 0 ? `
         <table>
             <thead><tr><th>Nome</th><th>Turma</th></tr></thead>
             <tbody>
@@ -820,26 +832,91 @@ function renderTutoria() {
             </tbody>
         </table>
     ` : '<p class="empty-state">Nenhum tutorado.</p>';
-    document.getElementById('listaTutorados').innerHTML = html;
+    
+    document.getElementById('listaTutorados').innerHTML = htmlTop + htmlTutorados;
 
-    // Renderizar Agendamentos (Agenda Gerada)
+    // 3. Seção de Agendamento e Controles
     const agendamentos = (data.agendamentos || []).sort((a,b) => a.data.localeCompare(b.data) || a.inicio.localeCompare(b.inicio));
-    const htmlAgenda = agendamentos.length > 0 ? `
+    const today = getTodayString();
+    const futuros = agendamentos.filter(a => a.data >= today);
+
+    const htmlAgendaControls = `
+        <div class="card" style="background: #f0fff4; margin-bottom: 15px; border: 1px solid #c6f6d5;">
+            <h3 style="margin-top:0; font-size:16px;">Agendamento Rápido</h3>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <select id="selAgendarTutorado" style="flex-grow:1;">
+                    <option value="">Selecione o Tutorado...</option>
+                    ${tutorados.map(t => `<option value="${t.id}">${t.nome_estudante}</option>`).join('')}
+                </select>
+                <button class="btn btn-success" onclick="agendarProximoTutorado()">Agendar</button>
+            </div>
+        </div>
+        
+        <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="margin:0;">Próximas Janelas</h3>
+            <button class="btn btn-secondary btn-sm" onclick="gerarAgendamentosTutoria()">🔄 Gerar Agenda (6 Meses)</button>
+        </div>
+    `;
+
+    // 4. Lista de Agenda (Limitada com botão Ampliar)
+    const visibleAgenda = futuros.slice(0, agendaLimit);
+
+    const htmlAgendaList = visibleAgenda.length > 0 ? `
         <div style="max-height: 300px; overflow-y: auto;">
-            ${agendamentos.map(a => `
-                <div class="card" style="padding: 10px; margin-bottom: 8px; border-left: 4px solid ${a.tutoradoId ? '#22c55e' : '#cbd5e0'}; background: #fff;">
+            ${visibleAgenda.map(a => {
+                // Busca nome do tutorado se estiver ocupado
+                let statusLabel = 'Livre';
+                let statusColor = '#718096';
+                let cardBorder = '#cbd5e0';
+                
+                if (a.tutoradoId) {
+                    const t = tutorados.find(x => x.id == a.tutoradoId);
+                    statusLabel = t ? t.nome_estudante : 'Tutorado (Excluído)';
+                    statusColor = '#2f855a';
+                    cardBorder = '#22c55e';
+                }
+
+                return `
+                <div class="card" style="padding: 10px; margin-bottom: 8px; border-left: 4px solid ${cardBorder}; background: #fff;">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <div>
                             <strong>${formatDate(a.data)}</strong> <span style="font-size:12px; color:#666;">${a.inicio} - ${a.fim}</span>
-                            <div style="font-size:13px; color:${a.tutoradoId ? '#2f855a' : '#718096'};">${a.tutoradoId ? 'Ocupado' : 'Livre'}</div>
+                            <div style="font-size:14px; font-weight:bold; color:${statusColor}; margin-top:2px;">${statusLabel}</div>
                         </div>
                         ${!a.tutoradoId ? `<button class="btn btn-sm btn-danger" onclick="removerAgendamento(${a.id})">🗑️</button>` : ''}
                     </div>
                 </div>
-            `).join('')}
+            `}).join('')}
         </div>
+        ${futuros.length > agendaLimit ? `<button class="btn btn-secondary" style="width:100%; margin-top:10px;" onclick="expandirAgendaTutoria()">Ampliar (+10)</button>` : ''}
     ` : '<p class="empty-state">Nenhuma agenda gerada.</p>';
-    document.getElementById('listaEncontros').innerHTML = htmlAgenda;
+    
+    document.getElementById('listaEncontros').innerHTML = htmlAgendaControls + htmlAgendaList;
+}
+
+function expandirAgendaTutoria() {
+    agendaLimit += 10;
+    renderTutoria();
+}
+
+function agendarProximoTutorado() {
+    const id = document.getElementById('selAgendarTutorado').value;
+    if (!id) return alert('Selecione um tutorado.');
+    
+    const today = getTodayString();
+    // Encontra o primeiro slot livre no futuro
+    const slot = (data.agendamentos || [])
+        .sort((a,b) => a.data.localeCompare(b.data) || a.inicio.localeCompare(b.inicio))
+        .find(a => !a.tutoradoId && a.data >= today);
+        
+    if (slot) {
+        slot.tutoradoId = parseInt(id);
+        persistirDados();
+        renderTutoria();
+        alert('Agendado para ' + formatDate(slot.data) + ' às ' + slot.inicio);
+    } else {
+        alert('Não há horários livres na agenda. Gere mais horários.');
+    }
 }
 
 async function abrirModalNovoTutorado() {
@@ -921,12 +998,37 @@ function salvarTutorado(e) {
 
 function abrirFichaTutorado(id) {
     const t = data.tutorados.find(x => x.id == id);
-    document.getElementById('tutoradoFichaNome').textContent = t.nome_estudante;
+    if (!t) return;
+    
+    const titleEl = document.getElementById('tutoradoFichaNome');
+    titleEl.textContent = t.nome_estudante;
+    
+    // Injeta botão de desvincular se não existir
+    let actionContainer = document.getElementById('tutoradoAcoesContainer');
+    if (!actionContainer) {
+        actionContainer = document.createElement('div');
+        actionContainer.id = 'tutoradoAcoesContainer';
+        actionContainer.style.marginTop = '10px';
+        titleEl.parentNode.insertBefore(actionContainer, titleEl.nextSibling);
+    }
+    
+    actionContainer.innerHTML = `
+        <button class="btn btn-danger btn-sm" onclick="desvincularTutorado(${t.id})">Desvincular Tutorado</button>
+    `;
+
     showScreen('tutoradoDetalhe');
 }
 
+function desvincularTutorado(id) {
+    if (confirm('Tem certeza? O estudante sairá da sua lista, mas os registros de encontros passados serão mantidos.')) {
+        data.tutorados = data.tutorados.filter(t => t.id != id);
+        persistirDados();
+        showScreen('tutoria');
+    }
+}
+
 async function gerarAgendamentosTutoria() {
-    if (!confirm('Gerar janelas de atendimento para a próxima semana baseadas na sua Grade de Horários?')) return;
+    if (!confirm('Gerar janelas de atendimento para os próximos 6 meses baseadas na sua Grade de Horários?')) return;
 
     const gradeEscola = await getGradeEscola();
     const meusHorarios = data.horariosAulas || [];
@@ -946,8 +1048,8 @@ async function gerarAgendamentosTutoria() {
     const hoje = new Date();
     let count = 0;
 
-    // Gera para os próximos 7 dias
-    for (let i = 0; i < 7; i++) {
+    // Gera para os próximos 6 meses (~180 dias)
+    for (let i = 0; i < 180; i++) {
         const d = new Date();
         d.setDate(hoje.getDate() + i);
         const diaSemana = d.getDay(); // 0=Dom, 1=Seg...
@@ -1256,17 +1358,28 @@ async function renderGradeHorariaProfessor() {
 
     // 1. Buscar a Grade configurada pelo Gestor (Dados da Escola)
     let gradeEscola = [];
+    
+    // Debug: Ajuda a verificar se o usuário está vinculado à escola correta
+    console.log(`[Grade] Renderizando para: ${currentUser.email} | Escola ID: ${currentUser.schoolId}`);
+
     if (currentUser && currentUser.schoolId) {
         const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
         const gestorData = await getData('app_data', key);
         
         if (gestorData && gestorData.gradeHoraria) {
             gradeEscola = gestorData.gradeHoraria;
+            console.log(`[Grade] Encontrados ${gradeEscola.length} blocos de horário.`);
+        } else {
+            console.warn(`[Grade] Nenhum dado encontrado na chave: ${key}`);
         }
     }
 
     if (gradeEscola.length === 0) {
-        container.innerHTML = '<p class="empty-state">A gestão ainda não configurou a grade de horários.</p>';
+        container.innerHTML = `
+            <div class="empty-state">
+                <p>A gestão ainda não configurou a grade de horários.</p>
+                <p style="font-size:12px; color:#666;">Verifique se sua conta está vinculada à escola correta (ID: ${currentUser ? currentUser.schoolId : 'N/A'}).</p>
+            </div>`;
         return;
     }
 
@@ -1288,14 +1401,14 @@ async function renderGradeHorariaProfessor() {
                 // Determina o valor selecionado (ID da turma ou tipo especial)
                 let valorSelecionado = '';
                 if (aulaSalva) {
-                    valorSelecionado = (['tutoria', 'estudo', 'apcg', 'atpca', 'reuniao'].includes(aulaSalva.tipo)) ? aulaSalva.tipo : aulaSalva.id_turma;
+                    valorSelecionado = (['tutoria', 'estudo', 'apcg', 'atpca', 'reuniao', 'almoco', 'cafe', 'ped_presenc'].includes(aulaSalva.tipo)) ? aulaSalva.tipo : aulaSalva.id_turma;
                 }
                 const descricao = (aulaSalva && (aulaSalva.tipo === 'estudo' || aulaSalva.tipo === 'reuniao')) ? (aulaSalva.tema || '') : '';
 
                 return `
                     <div style="background:#f7fafc; padding:8px; margin-bottom:8px; border-radius:4px; border:1px solid #e2e8f0;">
                         <div style="font-size:12px; font-weight:bold; color:#4a5568;">${bloco.inicio} - ${bloco.fim}</div>
-                        <select style="width:100%; margin-top:5px; font-size:12px;" onchange="salvarAulaGrade(${bloco.id}, this.value)">
+                        <select style="width:100%; margin-top:5px; font-size:12px;" onchange="salvarAulaGrade('${bloco.id}', this.value)">
                             <option value="">-- Livre --</option>
                             <optgroup label="Turmas">
                                 ${turmas.map(t => `<option value="${t.id}" ${t.id == valorSelecionado ? 'selected' : ''}>${t.nome} - ${t.disciplina || ''}</option>`).join('')}
@@ -1306,12 +1419,15 @@ async function renderGradeHorariaProfessor() {
                                 <option value="apcg" ${valorSelecionado === 'apcg' ? 'selected' : ''}>APCG</option>
                                 <option value="atpca" ${valorSelecionado === 'atpca' ? 'selected' : ''}>ATPCA</option>
                                 <option value="reuniao" ${valorSelecionado === 'reuniao' ? 'selected' : ''}>Reunião</option>
+                                <option value="almoco" ${valorSelecionado === 'almoco' ? 'selected' : ''}>Almoço</option>
+                                <option value="cafe" ${valorSelecionado === 'cafe' ? 'selected' : ''}>Café</option>
+                                <option value="ped_presenc" ${valorSelecionado === 'ped_presenc' ? 'selected' : ''}>Ped. Presenç</option>
                             </optgroup>
                         </select>
                         ${(valorSelecionado === 'estudo' || valorSelecionado === 'reuniao') ? `
                             <input type="text" placeholder="${valorSelecionado === 'estudo' ? 'Tema do estudo...' : 'Descrição da reunião...'}" value="${descricao}" 
                                 style="width:100%; margin-top:5px; font-size:11px; padding:4px; border:1px solid #cbd5e0; border-radius:3px;"
-                                onblur="salvarDescricaoAula(${bloco.id}, this.value)">
+                                onblur="salvarDescricaoAula('${bloco.id}', this.value)">
                         ` : ''}
                     </div>
                 `;
@@ -1325,19 +1441,19 @@ async function renderGradeHorariaProfessor() {
 function salvarAulaGrade(blocoId, valor) {
     if (!data.horariosAulas) data.horariosAulas = [];
     
-    // Remove registro anterior desse bloco
+    // Remove registro anterior desse bloco (comparação solta para string/number)
     data.horariosAulas = data.horariosAulas.filter(a => a.id_bloco != blocoId);
     
     if (valor) {
         const novo = {
             id: Date.now() + Math.random(),
-            id_bloco: blocoId,
+            id_bloco: Number(blocoId), // Garante formato numérico
             tipo: 'aula', // default
             id_turma: null,
             tema: ''
         };
 
-        if (['tutoria', 'estudo', 'apcg', 'atpca', 'reuniao'].includes(valor)) {
+        if (['tutoria', 'estudo', 'apcg', 'atpca', 'reuniao', 'almoco', 'cafe', 'ped_presenc'].includes(valor)) {
             novo.tipo = valor;
         } else {
             novo.tipo = 'aula';
@@ -1350,6 +1466,7 @@ function salvarAulaGrade(blocoId, valor) {
 }
 
 function salvarDescricaoAula(blocoId, texto) {
+    // Comparação solta (==) para garantir compatibilidade string/number
     const aula = (data.horariosAulas || []).find(a => a.id_bloco == blocoId);
     if (aula && (aula.tipo === 'estudo' || aula.tipo === 'reuniao')) {
         aula.tema = texto;
