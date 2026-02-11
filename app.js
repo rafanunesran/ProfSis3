@@ -1190,34 +1190,26 @@ function imprimirListaTutorados() {
     const turmasOrdenadas = Object.keys(porTurma).sort();
 
     let html = `
-        <div style="font-family: Arial, sans-serif; padding: 20px;">
-            <h1 style="text-align: center;">Lista de Tutorados por Turma</h1>
-            <p style="text-align: center; margin-bottom: 30px;">Professor: ${currentUser.nome}</p>
+        <div style="font-family: Arial, sans-serif; padding: 20px; font-size: 12px;">
+            <h2 style="text-align: center; margin: 0 0 10px 0;">Lista de Tutorados</h2>
+            <p style="text-align: center; margin-bottom: 15px;">Professor: ${currentUser.nome}</p>
+            <div style="column-count: 2; column-gap: 20px;">
     `;
 
     turmasOrdenadas.forEach(turma => {
         html += `
-            <h3 style="border-bottom: 1px solid #000; padding-bottom: 5px; margin-top: 20px;">${turma}</h3>
-            <table style="width: 100%; border-collapse: collapse; margin-bottom: 10px;">
-                <thead>
-                    <tr style="background: #eee;">
-                        <th style="border: 1px solid #ccc; padding: 8px; text-align: left;">Estudante</th>
-                        <th style="border: 1px solid #ccc; padding: 8px; text-align: center; width: 150px;">Assinatura</th>
-                    </tr>
-                </thead>
-                <tbody>
+            <div style="break-inside: avoid; margin-bottom: 15px;">
+                <h3 style="border-bottom: 1px solid #000; padding-bottom: 2px; margin: 0 0 5px 0; font-size: 14px;">${turma}</h3>
+                <ul style="margin: 0; padding-left: 20px;">
         `;
         
         porTurma[turma].sort((a,b) => a.nome_estudante.localeCompare(b.nome_estudante)).forEach(t => {
             html += `
-                <tr>
-                    <td style="border: 1px solid #ccc; padding: 8px;">${t.nome_estudante}</td>
-                    <td style="border: 1px solid #ccc; padding: 8px;"></td>
-                </tr>
+                <li style="margin-bottom: 2px;">${t.nome_estudante}</li>
             `;
         });
 
-        html += `</tbody></table>`;
+        html += `</ul></div>`;
     });
 
     html += `</div>`;
@@ -1236,36 +1228,48 @@ function imprimirAgendamentosTutorados() {
     
     if (agendamentos.length === 0) return alert('Nenhum agendamento com tutorado vinculado para imprimir.');
 
-    // Ordenar por data e horário
-    agendamentos.sort((a,b) => a.data.localeCompare(b.data) || a.inicio.localeCompare(b.inicio));
+    // Agrupar por aluno
+    const porAluno = {};
+    agendamentos.forEach(a => {
+        if (!porAluno[a.tutoradoId]) porAluno[a.tutoradoId] = [];
+        porAluno[a.tutoradoId].push(a);
+    });
 
     let html = `
         <style>
             body { font-family: Arial, sans-serif; }
-            .card { border: 1px solid #000; padding: 15px; width: 45%; box-sizing: border-box; margin-bottom: 20px; page-break-inside: avoid; border-radius: 5px; }
-            .container { display: flex; flex-wrap: wrap; gap: 20px; justify-content: space-between; }
+            .card { border: 1px solid #000; padding: 10px; width: 48%; box-sizing: border-box; margin-bottom: 15px; page-break-inside: avoid; border-radius: 5px; float: left; margin-right: 2%; height: 160px; }
+            .card:nth-child(2n) { margin-right: 0; }
+            .container { overflow: hidden; }
             @media print { .no-print { display: none; } }
         </style>
         <div style="padding: 20px;">
-            <h2 style="text-align: center;">Cartões de Agendamento - Tutoria</h2>
-            <p style="text-align: center; margin-bottom: 30px;">Professor: ${currentUser.nome}</p>
+            <h2 style="text-align: center; margin-bottom: 10px;">Cartões de Agendamento</h2>
             <div class="container">
     `;
 
-    agendamentos.forEach(a => {
-        const t = tutorados.find(x => x.id == a.tutoradoId);
-        const nome = t ? t.nome_estudante : 'Aluno Removido';
-        const turma = t ? t.turma : '-';
+    const today = getTodayString();
+
+    Object.keys(porAluno).forEach(tId => {
+        const t = tutorados.find(x => x.id == tId);
+        if (!t) return;
+
+        // Filtrar futuros e ordenar (pega os próximos 3)
+        const appts = porAluno[tId]
+            .filter(a => a.data >= today)
+            .sort((a,b) => a.data.localeCompare(b.data) || a.inicio.localeCompare(b.inicio))
+            .slice(0, 3);
+
+        if (appts.length === 0) return;
 
         html += `
             <div class="card">
-                <h3 style="margin-top: 0; border-bottom: 1px solid #ccc; padding-bottom: 5px;">${nome}</h3>
-                <p><strong>Turma:</strong> ${turma}</p>
-                <p style="font-size: 1.2em;"><strong>📅 Data:</strong> ${formatDate(a.data)}</p>
-                <p style="font-size: 1.2em;"><strong>⏰ Horário:</strong> ${a.inicio} às ${a.fim}</p>
-                <div style="margin-top: 40px; border-top: 1px dashed #000; padding-top: 5px; font-size: 12px; text-align: center;">
-                    Visto do Professor / Coordenação
-                </div>
+                <h3 style="margin: 0 0 5px 0; border-bottom: 1px solid #ccc; padding-bottom: 5px; font-size: 16px;">${t.nome_estudante}</h3>
+                <p style="margin: 0 0 10px 0; font-size: 12px;"><strong>Turma:</strong> ${t.turma}</p>
+                <strong style="font-size: 12px;">Próximos Atendimentos:</strong>
+                <ul style="margin: 5px 0 0 0; padding-left: 20px; font-size: 13px;">
+                    ${appts.map(a => `<li>${formatDate(a.data)} às ${a.inicio}</li>`).join('')}
+                </ul>
             </div>
         `;
     });
