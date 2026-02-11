@@ -544,6 +544,9 @@ function removerEstudante(id) {
 async function renderChamada() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
     
+    // Preserva a data selecionada se já estiver na tela, senão usa hoje
+    const dataSelecionada = document.getElementById('chamadaData') ? document.getElementById('chamadaData').value : getTodayString();
+    
     // Validação de Dia de Aula
     const gradeEscola = await getGradeEscola();
     const minhasAulas = (data.horariosAulas || []).filter(a => a.id_turma == turmaAtual);
@@ -552,19 +555,49 @@ async function renderChamada() {
 
     const html = `
         <div class="form-row">
-            <label>Data: <input type="date" id="chamadaData" value="${getTodayString()}" onchange="validarDataChamada([${diasPermitidos}])"></label>
+            <label>Data: <input type="date" id="chamadaData" value="${dataSelecionada}" onchange="renderChamada()"></label>
             <button class="btn btn-success" id="btnSalvarChamada" onclick="salvarChamadaManual()">Salvar Chamada</button>
         </div>
         <div id="avisoChamada" style="color:#e53e3e; display:none; margin-bottom:10px; font-weight:bold;">⚠️ Esta turma não tem aula agendada para este dia da semana.</div>
         <table>
             <thead><tr><th>Estudante</th><th>Presença</th></tr></thead>
             <tbody>
-                ${estudantes.map(e => `
+                ${estudantes.map(e => {
+                    // Verifica registros administrativos vigentes para a data selecionada
+                    let badges = '';
+                    const registros = data.registrosAdministrativos || [];
+                    
+                    // Filtra registros deste aluno
+                    const regsAluno = registros.filter(r => r.estudanteId == e.id);
+                    
+                    regsAluno.forEach(r => {
+                        if (r.tipo === 'Faltoso') {
+                            badges += `<span style="background:#fed7d7; color:#c53030; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold;">Faltoso</span>`;
+                        } else if (r.tipo === 'Atestado') {
+                            // Verifica se a data da chamada cai dentro do período do atestado
+                            const parts = r.data.split('-');
+                            const inicio = new Date(parts[0], parts[1]-1, parts[2]);
+                            const fim = new Date(inicio);
+                            fim.setDate(fim.getDate() + (parseInt(r.dias) || 1) - 1);
+                            
+                            const dataChamadaParts = dataSelecionada.split('-');
+                            const dataChamadaObj = new Date(dataChamadaParts[0], dataChamadaParts[1]-1, dataChamadaParts[2]);
+                            
+                            if (dataChamadaObj >= inicio && dataChamadaObj <= fim) {
+                                badges += `<span style="background:#bee3f8; color:#2c5282; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold;">Atestado (${r.dias}d)</span>`;
+                            }
+                        }
+                    });
+
+                    return `
                     <tr>
-                        <td>${e.nome_completo}</td>
-                        <td><input type="checkbox" class="presenca-check" data-id="${e.id}" checked></td>
+                        <td>
+                            ${e.nome_completo}
+                            ${badges}
+                        </td>
+                        <td><input type="checkbox" class="presenca-check" data-id="${e.id}" ${badges.includes('Atestado') ? '' : 'checked'}></td>
                     </tr>
-                `).join('')}
+                `}).join('')}
             </tbody>
         </table>
     `;
