@@ -110,7 +110,7 @@ function renderRegistrosGestor(isReadOnly = false) {
                                     <tr>
                                         <td style="color: ${r.cor}; font-weight: bold;">${r.tipo}</td>
                                         <td>${r.estudanteNome}</td>
-                                        <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''}</td>
+                                        <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
                                         ${!isReadOnly ? `
                                         <td>
                                             <button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})">🗑️</button>
@@ -145,6 +145,7 @@ function abrirNovoRegistroGestao() {
             </label>
             <label>Tipo:
                 <select id="regGestaoTipo" onchange="toggleDiasAtestado()" required>
+                    <option value="Observacao">Observação</option>
                     <option value="Atestado">Atestado Médico</option>
                     <option value="Faltoso">Aluno Faltoso</option>
                 </select>
@@ -152,9 +153,14 @@ function abrirNovoRegistroGestao() {
             <label>Data Início:
                 <input type="date" id="regGestaoData" value="${getTodayString()}" required>
             </label>
-            <div id="divDiasAtestado">
+            <div id="divDiasAtestado" style="display:none;">
                 <label>Duração (dias):
                     <input type="number" id="regGestaoDias" value="1" min="1">
+                </label>
+            </div>
+            <div id="divDescricaoObs">
+                <label>Descrição/Observação:
+                    <textarea id="regGestaoDescricao" rows="3"></textarea>
                 </label>
             </div>
             <button type="submit" class="btn btn-primary" style="margin-top: 15px;">Salvar</button>
@@ -183,6 +189,7 @@ function carregarEstudantesRegGestao() {
 function toggleDiasAtestado() {
     const tipo = document.getElementById('regGestaoTipo').value;
     document.getElementById('divDiasAtestado').style.display = tipo === 'Atestado' ? 'block' : 'none';
+    document.getElementById('divDescricaoObs').style.display = tipo === 'Observacao' ? 'block' : 'none';
 }
 
 function salvarRegistroGestao(e) {
@@ -193,7 +200,8 @@ function salvarRegistroGestao(e) {
         estudanteId: parseInt(document.getElementById('regGestaoEstudante').value),
         tipo: document.getElementById('regGestaoTipo').value,
         data: document.getElementById('regGestaoData').value,
-        dias: document.getElementById('regGestaoDias').value || 0
+        dias: document.getElementById('regGestaoDias').value || 0,
+        descricao: document.getElementById('regGestaoDescricao').value || ''
     };
     
     if (!data.registrosAdministrativos) data.registrosAdministrativos = [];
