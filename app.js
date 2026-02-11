@@ -22,13 +22,9 @@ function iniciarApp() {
         // Atualiza o título com o nome da escola
         let nomeEscola = 'Escola';
         if (currentUser && currentUser.schoolId) {
-            let schools = [];
-            if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
-                const sData = await getData('system', 'schools_list');
-                schools = (sData && sData.list) ? sData.list : [];
-            } else {
-                schools = JSON.parse(localStorage.getItem('app_schools') || '[]');
-            }
+            const sData = await getData('system', 'schools_list');
+            const schools = (sData && sData.list) ? sData.list : [];
+            
             const escola = schools.find(s => s.id == currentUser.schoolId);
             if (escola) nomeEscola = escola.nome;
         }
@@ -227,12 +223,7 @@ async function abrirModalNovaTurma() {
         let turmasEscola = [];
         if (currentUser && currentUser.schoolId) {
             const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
-            let gestorData = null;
-            if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
-                gestorData = await getData('app_data', key);
-            } else {
-                gestorData = JSON.parse(localStorage.getItem(key));
-            }
+            const gestorData = await getData('app_data', key);
             if (gestorData && gestorData.turmas) turmasEscola = gestorData.turmas;
         }
 
@@ -316,12 +307,7 @@ async function abrirTurma(id) {
     // Se for professor e a turma tiver um vínculo (masterId), atualiza a lista de alunos
     if (currentUser.role !== 'gestor' && turma.masterId && currentUser.schoolId) {
         const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
-        let gestorData = null;
-        if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
-            gestorData = await getData('app_data', key);
-        } else {
-            gestorData = JSON.parse(localStorage.getItem(key));
-        }
+        const gestorData = await getData('app_data', key);
 
         if (gestorData && gestorData.estudantes) {
             // 1. Pega os alunos da turma original do gestor
@@ -345,9 +331,12 @@ async function abrirTurma(id) {
     // Setup Tabs
     const nav = document.querySelector('#turmaDetalhe nav');
     nav.innerHTML = `
-        <button class="btn btn-secondary active" onclick="showTurmaTab('estudantes', event)">Estudantes</button>
-        <button class="btn btn-secondary" onclick="showTurmaTab('chamada', event)">Chamada</button>
-        <button class="btn btn-secondary" onclick="showTurmaTab('ocorrencias', event)">Ocorrências</button>
+        <button class="btn btn-secondary active" onclick="showTurmaTab('estudantes', event)">👥 Estudantes</button>
+        <button class="btn btn-secondary" onclick="showTurmaTab('chamada', event)">✅ Chamada</button>
+        <button class="btn btn-secondary" onclick="showTurmaTab('atrasos', event)">⏰ Atrasos</button>
+        <button class="btn btn-secondary" onclick="showTurmaTab('trabalhos', event)">📝 Trabalhos</button>
+        <button class="btn btn-secondary" onclick="showTurmaTab('ocorrencias', event)">⚠️ Ocorrências</button>
+        <button class="btn btn-secondary" onclick="showTurmaTab('mapeamento', event)">🗺️ Mapeamento</button>
     `;
     
     showScreen('turmaDetalhe');
@@ -366,15 +355,22 @@ function showTurmaTab(tab, evt) {
     if (tab === 'estudantes') renderEstudantes();
     if (tab === 'chamada') renderChamada();
     if (tab === 'ocorrencias') renderOcorrencias();
+    if (tab === 'atrasos') renderAtrasos();
+    if (tab === 'trabalhos') renderTrabalhos();
+    if (tab === 'mapeamento') renderMapeamento();
 }
 
 function renderEstudantes() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
+    const isGestor = currentUser && currentUser.role === 'gestor';
+    
     const html = `
-        <div style="display:flex; gap: 10px; margin-bottom: 10px;">
-            <button class="btn btn-primary btn-sm" onclick="abrirModalNovoEstudante()">+ Novo Estudante</button>
-            <button class="btn btn-secondary btn-sm" onclick="showModal('modalImportarEstudantes')">📂 Importar CSV</button>
-        </div>
+        ${isGestor ? `
+            <div style="display:flex; gap: 10px; margin-bottom: 10px;">
+                <button class="btn btn-primary btn-sm" onclick="abrirModalNovoEstudante()">+ Novo Estudante</button>
+                <button class="btn btn-secondary btn-sm" onclick="showModal('modalImportarEstudantes')">📂 Importar CSV</button>
+            </div>
+        ` : ''}
         <table style="margin-top:10px;">
             <thead><tr><th>Nome</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody>
@@ -382,7 +378,7 @@ function renderEstudantes() {
                     <tr>
                         <td><a href="#" onclick="abrirEstudanteDetalhe(${e.id})" style="font-weight:bold; text-decoration:none; color:#2b6cb0;">${e.nome_completo}</a></td>
                         <td><span style="font-size:12px; padding:2px 6px; border-radius:4px; background:#edf2f7;">${e.status || 'Ativo'}</span></td>
-                        <td><button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})">🗑️</button></td>
+                        <td>${isGestor ? `<button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})">🗑️</button>` : '<span style="color:#ccc;">-</span>'}</td>
                     </tr>
                 `).join('')}
             </tbody>
@@ -518,6 +514,105 @@ function removerOcorrencia(id) {
         data.ocorrencias = data.ocorrencias.filter(o => o.id != id);
         persistirDados();
         renderOcorrencias();
+    }
+}
+
+// --- ATRASOS ---
+function renderAtrasos() {
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
+    const atrasos = (data.atrasos || []).filter(a => a.id_turma == turmaAtual);
+    
+    const html = `
+        <div class="card" style="background: #fffaf0; margin-bottom: 20px;">
+            <h3>Registrar Atraso</h3>
+            <div class="form-row" style="align-items: flex-end;">
+                <label style="flex-grow:1;">Estudante:
+                    <select id="atrasoEstudante">
+                        <option value="">Selecione...</option>
+                        ${estudantes.map(e => `<option value="${e.id}">${e.nome_completo}</option>`).join('')}
+                    </select>
+                </label>
+                <label>Minutos: <input type="number" id="atrasoMinutos" value="10" style="width:80px;"></label>
+                <button class="btn btn-warning" onclick="salvarAtraso()">Registrar</button>
+            </div>
+        </div>
+
+        <h3>Histórico de Atrasos</h3>
+        <table>
+            <thead><tr><th>Data</th><th>Estudante</th><th>Tempo</th><th>Ações</th></tr></thead>
+            <tbody>
+                ${atrasos.length > 0 ? atrasos.map(a => {
+                    const est = estudantes.find(e => e.id == a.id_estudante);
+                    return `
+                        <tr>
+                            <td>${formatDate(a.data)}</td>
+                            <td>${est ? est.nome_completo : 'Excluído'}</td>
+                            <td>${a.minutos} min</td>
+                            <td><button class="btn btn-danger btn-sm" onclick="removerAtraso(${a.id})">🗑️</button></td>
+                        </tr>
+                    `;
+                }).join('') : '<tr><td colspan="4" style="text-align:center; color:#999;">Nenhum atraso registrado.</td></tr>'}
+            </tbody>
+        </table>
+    `;
+    document.getElementById('tabAtrasos').innerHTML = html;
+}
+
+function salvarAtraso() {
+    const estudanteId = document.getElementById('atrasoEstudante').value;
+    const minutos = document.getElementById('atrasoMinutos').value;
+    
+    if (!estudanteId) return alert('Selecione um estudante.');
+    
+    if (!data.atrasos) data.atrasos = [];
+    data.atrasos.push({
+        id: Date.now(),
+        id_turma: turmaAtual,
+        id_estudante: parseInt(estudanteId),
+        data: getTodayString(),
+        minutos: minutos
+    });
+    persistirDados();
+    renderAtrasos();
+}
+
+function removerAtraso(id) {
+    if (confirm('Remover este registro de atraso?')) {
+        data.atrasos = data.atrasos.filter(a => a.id != id);
+        persistirDados();
+        renderAtrasos();
+    }
+}
+
+// --- TRABALHOS ---
+function renderTrabalhos() {
+    const trabalhos = (data.trabalhos || []).filter(t => t.id_turma == turmaAtual);
+    
+    const html = `
+        <button class="btn btn-primary" onclick="showModal('modalNovoTrabalho')" style="margin-bottom:15px;">+ Novo Trabalho/Atividade</button>
+        
+        <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px;">
+            ${trabalhos.map(t => `
+                <div class="card" style="border-left: 4px solid #805ad5;">
+                    <h4>${t.titulo}</h4>
+                    <p style="font-size:12px; color:#666;">Peso: ${t.peso}</p>
+                    <div style="margin-top:10px; display:flex; gap:5px;">
+                        <button class="btn btn-sm btn-secondary" onclick="alert('Funcionalidade de lançar notas virá em breve')">📝 Notas</button>
+                        <button class="btn btn-sm btn-danger" onclick="removerTrabalho(${t.id})">🗑️</button>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+        ${trabalhos.length === 0 ? '<p class="empty-state">Nenhum trabalho atribuído.</p>' : ''}
+    `;
+    document.getElementById('tabTrabalhos').innerHTML = html;
+}
+
+function removerTrabalho(id) {
+    if (confirm('Excluir trabalho?')) {
+        data.trabalhos = data.trabalhos.filter(t => t.id != id);
+        persistirDados();
+        renderTrabalhos();
     }
 }
 
@@ -745,8 +840,21 @@ function salvarEncontro(e) {
 
 function salvarTrabalho(e) {
     e.preventDefault();
-    alert('Trabalho salvo');
+    const titulo = document.getElementById('trabalhoTitulo').value;
+    const peso = document.getElementById('trabalhoPeso').value;
+
+    if (!data.trabalhos) data.trabalhos = [];
+    data.trabalhos.push({
+        id: Date.now(),
+        id_turma: turmaAtual,
+        titulo: titulo,
+        peso: peso
+    });
+    
+    persistirDados();
     closeModal('modalNovoTrabalho');
+    renderTrabalhos();
+    e.target.reset();
 }
 
 function salvarDetalhesEvento(e) {
@@ -857,6 +965,16 @@ function renderEstudanteGeral() {
     }
 }
 
+// --- MAPEAMENTO ---
+function renderMapeamento() {
+    document.getElementById('tabMapeamento').innerHTML = `
+        <div class="empty-state" style="padding: 50px; text-align: center;">
+            <h3>🗺️ Mapeamento de Sala</h3>
+            <p>Esta funcionalidade será configurada em breve.</p>
+        </div>
+    `;
+}
+
 // --- GRADE HORÁRIA (PROFESSOR) ---
 async function renderGradeHorariaProfessor() {
     const container = document.getElementById('containerGradeHoraria');
@@ -866,13 +984,7 @@ async function renderGradeHorariaProfessor() {
     let gradeEscola = [];
     if (currentUser && currentUser.schoolId) {
         const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
-        let gestorData = null;
-        
-        if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE) {
-            gestorData = await getData('app_data', key);
-        } else {
-            gestorData = JSON.parse(localStorage.getItem(key));
-        }
+        const gestorData = await getData('app_data', key);
         
         if (gestorData && gestorData.gradeHoraria) {
             gradeEscola = gestorData.gradeHoraria;
