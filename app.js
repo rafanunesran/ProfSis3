@@ -1395,43 +1395,50 @@ async function imprimirAgendaMensal() {
             <title>Agenda Mensal - ${nomeMes}/${ano}</title>
             <style>
                 @page { size: A4 landscape; margin: 10mm; }
-                body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; color: #000; }
+                body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 0; color: #000; }
                 
-                .header-container { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; border-bottom: 2px solid #000; padding-bottom: 10px; }
-                .header-left { font-size: 11px; font-weight: bold; line-height: 1.4; }
-                .header-center { text-align: center; flex-grow: 1; }
-                .header-center h1 { margin: 0; font-size: 22px; text-transform: uppercase; font-weight: bold; }
-                .header-center h2 { margin: 5px 0 0 0; font-size: 14px; font-weight: normal; }
-                .header-right { font-size: 12px; text-align: right; line-height: 1.4; }
-
-                table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-                th { border: 1px solid #000; background-color: #e0e0e0; padding: 5px; font-size: 12px; text-transform: uppercase; color: #000; }
-                td { border: 1px solid #000; vertical-align: top; height: 110px; padding: 5px; font-size: 10px; background: #fff; }
+                .header-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; border: 2px solid #000; }
+                .header-table td { border: 1px solid #000; padding: 8px; vertical-align: middle; }
                 
-                .day-number { font-weight: bold; font-size: 14px; float: right; margin-bottom: 5px; }
-                .aula-item { margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                .aula-time { font-weight: bold; margin-right: 4px; }
+                .title { font-size: 18px; font-weight: bold; text-align: center; text-transform: uppercase; }
+                .subtitle { font-size: 14px; text-align: center; margin-top: 5px; }
                 
-                .gray-bg { background-color: #f5f5f5; color: #999; }
+                .info-bar { border: 2px solid #000; padding: 8px; margin-bottom: 15px; font-weight: bold; font-size: 14px; background: #f0f0f0; }
+                
+                table.calendar { width: 100%; border-collapse: collapse; table-layout: fixed; border: 2px solid #000; }
+                table.calendar th { border: 1px solid #000; background-color: #ddd; padding: 8px; font-size: 12px; text-transform: uppercase; }
+                table.calendar td { border: 1px solid #000; vertical-align: top; height: 100px; padding: 5px; background: #fff; }
+                
+                .day-num { float: right; font-weight: bold; font-size: 14px; margin-bottom: 5px; }
+                .aula-line { font-size: 10px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                
+                .footer { margin-top: 40px; display: flex; justify-content: space-around; }
+                .sign-box { width: 40%; border-top: 1px solid #000; text-align: center; padding-top: 5px; font-size: 12px; }
             </style>
         </head>
         <body>
-            <div class="header-container">
-                <div class="header-left">
-                    GOVERNO DO ESTADO DE SÃO PAULO<br>
-                    SECRETARIA DA EDUCAÇÃO
-                </div>
-                <div class="header-center">
-                    <h1>Agenda Mensal</h1>
-                    <h2>${nomeEscola}</h2>
-                </div>
-                <div class="header-right">
-                    <strong>Mês:</strong> ${nomeMes}/${ano}<br>
-                    <strong>Professor:</strong> ${currentUser.nome}
-                </div>
+            <table class="header-table">
+                <tr>
+                    <td width="20%" style="text-align:center; font-size:10px; font-weight:bold;">
+                        GOVERNO DO ESTADO DE SÃO PAULO<br>
+                        SECRETARIA DA EDUCAÇÃO
+                    </td>
+                    <td width="60%" class="title">
+                        AGENDA MENSAL DE TRABALHO
+                        <div class="subtitle">${nomeEscola}</div>
+                    </td>
+                    <td width="20%" style="font-size:12px;">
+                        <strong>Mês:</strong> ${nomeMes}<br>
+                        <strong>Ano:</strong> ${ano}
+                    </td>
+                </tr>
+            </table>
+
+            <div class="info-bar">
+                PROFESSOR(A): ${currentUser.nome.toUpperCase()}
             </div>
 
-            <table>
+            <table class="calendar">
                 <thead>
                     <tr>
                         <th>Segunda-feira</th>
@@ -1462,12 +1469,12 @@ async function imprimirAgendaMensal() {
             const diaMes = currentDay.getDate();
             const isCurrentMonth = currentDay.getMonth() === mes;
             
-            html += `<td class="${!isCurrentMonth ? 'gray-bg' : ''}">`;
-            html += `<span class="day-number">${diaMes}</span>`;
+            html += `<td style="${!isCurrentMonth ? 'background:#f9f9f9; color:#ccc;' : ''}">`;
+            html += `<span class="day-num">${diaMes}</span>`;
             
             if (isCurrentMonth && gradePorDia[d]) {
                 gradePorDia[d].forEach(a => {
-                    html += `<div class="aula-item"><span class="aula-time">${a.inicio}</span> ${a.texto}</div>`;
+                    html += `<div class="aula-line"><strong>${a.inicio}</strong> ${a.texto}</div>`;
                 });
             }
             html += `</td>`;
@@ -1483,9 +1490,16 @@ async function imprimirAgendaMensal() {
     html += `
                 </tbody>
             </table>
-            <div style="margin-top: 20px; font-size: 10px; text-align: center; color: #666;">
-                Documento gerado automaticamente pelo Sistema SisProf PEI em ${new Date().toLocaleDateString()}
+
+            <div class="footer">
+                <div class="sign-box">
+                    Assinatura do(a) Professor(a)
+                </div>
+                <div class="sign-box">
+                    Assinatura do(a) Diretor(a) / CGPG
+                </div>
             </div>
+            
             <script>window.print();</script>
         </body>
         </html>
