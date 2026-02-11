@@ -849,6 +849,7 @@ function renderTutoria() {
                     ${tutorados.map(t => `<option value="${t.id}">${t.nome_estudante}</option>`).join('')}
                 </select>
                 <button class="btn btn-success" onclick="agendarProximoTutorado()">Agendar</button>
+                <button class="btn btn-info" onclick="agendarTodosTutorados()">Agendar Todos</button>
             </div>
         </div>
         
@@ -916,6 +917,56 @@ function agendarProximoTutorado() {
         alert('Agendado para ' + formatDate(slot.data) + ' às ' + slot.inicio);
     } else {
         alert('Não há horários livres na agenda. Gere mais horários.');
+    }
+}
+
+function agendarTodosTutorados() {
+    if (!confirm('Deseja agendar automaticamente todos os tutorados (que ainda não têm horário futuro) nos próximos horários livres?')) return;
+
+    const tutorados = data.tutorados || [];
+    const agendamentos = data.agendamentos || [];
+    const today = getTodayString();
+
+    // 1. Identificar tutorados que já têm agendamento futuro
+    const tutoradosComAgendamento = new Set();
+    agendamentos.forEach(a => {
+        if (a.data >= today && a.tutoradoId) {
+            tutoradosComAgendamento.add(a.tutoradoId);
+        }
+    });
+
+    // 2. Filtrar tutorados que precisam de agendamento
+    const pendentes = tutorados.filter(t => !tutoradosComAgendamento.has(t.id));
+
+    if (pendentes.length === 0) {
+        alert('Todos os tutorados já possuem agendamentos futuros.');
+        return;
+    }
+
+    // 3. Buscar slots livres futuros
+    const slotsLivres = agendamentos
+        .filter(a => a.data >= today && !a.tutoradoId)
+        .sort((a,b) => a.data.localeCompare(b.data) || a.inicio.localeCompare(b.inicio));
+
+    if (slotsLivres.length < pendentes.length) {
+        alert(`Atenção: Há ${pendentes.length} tutorados para agendar, mas apenas ${slotsLivres.length} horários livres. Alguns ficarão sem agenda.`);
+    }
+
+    // 4. Distribuir
+    let agendadosCount = 0;
+    for (let i = 0; i < pendentes.length; i++) {
+        if (i < slotsLivres.length) {
+            slotsLivres[i].tutoradoId = pendentes[i].id;
+            agendadosCount++;
+        }
+    }
+
+    if (agendadosCount > 0) {
+        persistirDados();
+        renderTutoria();
+        alert(`${agendadosCount} tutorados foram agendados com sucesso.`);
+    } else {
+        alert('Não há horários livres disponíveis.');
     }
 }
 
