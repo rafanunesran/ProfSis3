@@ -270,13 +270,14 @@ async function carregarDadosUsuario() {
     if (!currentUser) return;
     // getStorageKey e getInitialData vêm de shared.js
     const key = typeof getStorageKey === 'function' ? getStorageKey(currentUser) : 'app_data_' + currentUser.id;
-    const saved = localStorage.getItem(key);
+    
+    // CORREÇÃO: Usar getData para buscar do Firebase quando online, ou LocalStorage quando offline
+    const savedData = await getData('app_data', key);
     
     const initial = typeof getInitialData === 'function' ? getInitialData() : {};
     
-    if (saved) {
-        data = JSON.parse(saved);
-        data = { ...initial, ...data };
+    if (savedData) {
+        data = { ...initial, ...savedData };
     } else {
         data = initial;
     }
@@ -284,10 +285,7 @@ async function carregarDadosUsuario() {
 
 async function persistirDados() {
     if (!currentUser) return;
-    if (USE_FIREBASE) {
-        await saveData('app_data', getStorageKey(currentUser), data);
-    } else {
-        const key = typeof getStorageKey === 'function' ? getStorageKey(currentUser) : 'app_data_' + currentUser.id;
-        localStorage.setItem(key, JSON.stringify(data));
-    }
+    const key = typeof getStorageKey === 'function' ? getStorageKey(currentUser) : 'app_data_' + currentUser.id;
+    // CORREÇÃO: Usar saveData unificado para garantir persistência no local correto (Firebase ou Local)
+    await saveData('app_data', key, data);
 }
