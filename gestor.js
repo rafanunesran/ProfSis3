@@ -274,89 +274,182 @@ async function compartilharRelatorio() {
 }
 
 async function carregarVistaCompartilhada(shareId) {
-    document.getElementById('authContainer').style.display = 'none';
-    document.getElementById('appContainer').style.display = 'block';
-    document.querySelector('nav').style.display = 'none'; // Esconde navegação
-    document.getElementById('painelSubtitle').textContent = 'Visualização Compartilhada (Leitura)';
-    document.getElementById('currentDate').innerHTML = '<a href="index.html" style="color:white;">Ir para Login</a>';
-
-    const container = document.getElementById('dashboard');
-    container.innerHTML = '<p style="text-align:center; margin-top:50px;">Carregando dados compartilhados...</p>';
+    // Substitui o corpo do documento para exibir apenas o relatório limpo (estilo "nova aba/html")
+    document.body.innerHTML = `
+        <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f7fafc; color: #2d3748; margin: 0; padding: 40px; }
+            .report-container { max-width: 900px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+            h1 { text-align: center; color: #2c5282; margin-bottom: 10px; font-size: 28px; }
+            .meta-info { text-align: center; color: #718096; font-size: 14px; margin-bottom: 40px; border-bottom: 1px solid #e2e8f0; padding-bottom: 20px; }
+            h3 { color: #2d3748; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 30px; font-size: 18px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+            th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+            th { background-color: #f8fafc; font-weight: 600; color: #4a5568; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; }
+            tr:hover { background-color: #f7fafc; }
+            .badge { padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: bold; display: inline-block; }
+            .empty-state { text-align: center; padding: 40px; color: #a0aec0; font-style: italic; background: #f9fafb; border-radius: 8px; margin-top: 20px; }
+            .footer { text-align: center; margin-top: 50px; font-size: 12px; color: #cbd5e0; }
+            @media print {
+                body { background: white; padding: 0; }
+                .report-container { box-shadow: none; padding: 0; }
+            }
+        </style>
+        <div class="report-container">
+            <div id="loading" style="text-align: center; padding: 50px; color: #4a5568;">Carregando dados do relatório...</div>
+        </div>
+    `;
 
     const docData = await getData('shared_views', shareId);
+    const container = document.querySelector('.report-container');
     
     if (docData && docData.dados) {
-        // Popula a variável global 'data' com o snapshot
-        data = docData.dados;
-        // Renderiza usando a função existente, mas em modo leitura
-        document.getElementById('registrosGestor').style.display = 'block'; // Garante visibilidade
-        renderRegistrosGestor(true); // true = ReadOnly
-        document.getElementById('dashboard').innerHTML = document.getElementById('registrosGestor').innerHTML;
+        data = docData.dados; // Popula dados globais
+        const registros = data.registrosAdministrativos || [];
+        const today = new Date();
+        today.setHours(0,0,0,0);
+
+        // Processamento dos dados (Filtragem e Agrupamento)
+        let lista = registros.map(r => {
+            const estudante = (data.estudantes || []).find(e => e.id == r.estudanteId) || { nome_completo: 'Desconhecido' };
+            const turma = (data.turmas || []).find(t => t.id == r.turmaId) || { nome: '?' };
+            
+            let cor = '#22c55e'; let bg = '#f0fff4';
+
+            if (r.tipo === 'Atestado') {
+                const parts = r.data.split('-');
+                const dataInicio = new Date(parts[0], parts[1]-1, parts[2]);
+                const dataFim = new Date(dataInicio);
+                dataFim.setDate(dataFim.getDate() + (parseInt(r.dias) || 1) - 1);
+                
+                if (today > dataFim) return null; // Filtra vencidos
+                
+                cor = '#3182ce'; bg = '#ebf8ff';
+            } else if (r.tipo === 'Faltoso') {
+                cor = '#e53e3e'; bg = '#fff5f5';
+            }
+
+            return { ...r, estudanteNome: estudante.nome_completo, turmaNome: turma.nome, cor, bg };
+        }).filter(item => item !== null);
+
+        const grupos = {};
+        lista.forEach(item => {
+            if (!grupos[item.turmaNome]) grupos[item.turmaNome] = [];
+            grupos[item.turmaNome].push(item);
+        });
+        const turmasOrdenadas = Object.keys(grupos).sort();
+
+        // Construção do HTML do Relatório
+        let html = `
+            <h1>Relatório de Registros Administrativos</h1>
+            <div class="meta-info">Gerado em: ${new Date(docData.criadoEm).toLocaleDateString('pt-BR')} às ${new Date(docData.criadoEm).toLocaleTimeString('pt-BR')}</div>
+        `;
+
+        if (lista.length > 0) {
+            turmasOrdenadas.forEach(turmaNome => {
+                html += `<h3>${turmaNome}</h3><table><thead><tr><th style="width:120px;">Tipo</th><th>Estudante</th><th>Detalhes</th></tr></thead><tbody>`;
+                grupos[turmaNome].forEach(r => {
+                    html += `<tr>
+                        <td><span class="badge" style="color:${r.cor}; background-color:${r.bg};">${r.tipo}</span></td>
+                        <td><strong>${r.estudanteNome}</strong></td>
+                        <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `<span style="color:#718096; font-size:0.9em;">(${r.dias} dias)</span>` : ''}</td>
+                    </tr>`;
+                });
+                html += `</tbody></table>`;
+            });
+        } else {
+            html += '<div class="empty-state">Nenhum registro vigente encontrado.</div>';
+        }
+        html += `<div class="footer">Sistema Escolar - Relatório Compartilhado</div>`;
+        container.innerHTML = html;
     } else {
-        container.innerHTML = '<p style="text-align:center; color:red; margin-top:50px;">Link inválido ou expirado.</p>';
+        container.innerHTML = '<div class="empty-state" style="color: #e53e3e;">Link inválido ou expirado.</div>';
     }
 }
 
 // --- GRADE DE HORÁRIOS (GESTOR) ---
 
 function renderHorariosGestor() {
-    const grade = (data.gradeHoraria || []).sort((a, b) => {
-        if (a.diaSemana !== b.diaSemana) return a.diaSemana - b.diaSemana;
-        return a.inicio.localeCompare(b.inicio);
-    });
+    const grade = (data.gradeHoraria || []);
+    const dias = [
+        { id: 1, nome: 'Segunda' },
+        { id: 2, nome: 'Terça' },
+        { id: 3, nome: 'Quarta' },
+        { id: 4, nome: 'Quinta' },
+        { id: 5, nome: 'Sexta' }
+    ];
 
-    const dias = {1: 'Segunda', 2: 'Terça', 3: 'Quarta', 4: 'Quinta', 5: 'Sexta', 6: 'Sábado'};
-
-    const html = `
+    let html = `
         <div class="card">
             <h2>⏰ Configuração da Grade Horária</h2>
-            <p style="color:#666; font-size:14px; margin-bottom:15px;">Crie os blocos de aula disponíveis na escola. Os professores usarão esses blocos para encaixar suas turmas.</p>
+            <p style="color:#666; font-size:14px; margin-bottom:15px;">Defina os horários de aula para cada dia da semana.</p>
             
-            <div class="form-row" style="align-items: flex-end; gap: 10px; background: #f7fafc; padding: 15px; border-radius: 8px;">
-                <label>Dia:
-                    <select id="gradeDia">
-                        <option value="1">Segunda</option>
-                        <option value="2">Terça</option>
-                        <option value="3">Quarta</option>
-                        <option value="4">Quinta</option>
-                        <option value="5">Sexta</option>
-                    </select>
-                </label>
-                <label>Início: <input type="time" id="gradeInicio" required></label>
-                <label>Fim: <input type="time" id="gradeFim" required></label>
-                <button class="btn btn-primary" onclick="salvarBlocoHorario()">+ Adicionar Bloco</button>
+            <div style="background: #edf2f7; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
+                <h3 style="margin-top:0; font-size: 16px; margin-bottom: 10px;">Adicionar Horário em Lote</h3>
+                <div class="form-row" style="align-items: flex-end; gap: 15px; display: flex; flex-wrap: wrap;">
+                    <label>Início: <input type="time" id="loteInicio"></label>
+                    <label>Fim: <input type="time" id="loteFim"></label>
+                    <div style="flex-grow: 1;">
+                        <label style="display:block; margin-bottom:5px; font-weight:bold;">Repetir nos dias:</label>
+                        <div style="display:flex; gap: 15px; flex-wrap: wrap;">
+                            <label><input type="checkbox" class="lote-dia" value="1"> Seg</label>
+                            <label><input type="checkbox" class="lote-dia" value="2"> Ter</label>
+                            <label><input type="checkbox" class="lote-dia" value="3"> Qua</label>
+                            <label><input type="checkbox" class="lote-dia" value="4"> Qui</label>
+                            <label><input type="checkbox" class="lote-dia" value="5"> Sex</label>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="salvarGradeLote()">Adicionar</button>
+                </div>
             </div>
 
-            <div style="margin-top: 20px;">
-                ${grade.length > 0 ? `
-                    <table>
-                        <thead><tr><th>Dia</th><th>Horário</th><th>Ações</th></tr></thead>
-                        <tbody>
-                            ${grade.map(g => `
-                                <tr>
-                                    <td><strong>${dias[g.diaSemana]}</strong></td>
-                                    <td>${g.inicio} - ${g.fim}</td>
-                                    <td><button class="btn btn-danger btn-sm" onclick="removerBlocoHorario(${g.id})">🗑️</button></td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                ` : '<p class="empty-state">Nenhum bloco de horário configurado.</p>'}
+            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; overflow-x: auto;">
+    `;
+
+    dias.forEach(dia => {
+        const slots = grade.filter(g => g.diaSemana == dia.id).sort((a,b) => a.inicio.localeCompare(b.inicio));
+        
+        html += `
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; min-width: 140px;">
+                <h3 style="text-align: center; border-bottom: 2px solid #cbd5e0; padding-bottom: 5px; margin-bottom: 10px; color: #2d3748; font-size: 14px;">${dia.nome}</h3>
+                
+                <div style="flex-grow: 1;">
+                    ${slots.length > 0 ? slots.map(s => `
+                        <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 6px 10px; border-radius: 4px; margin-bottom: 5px; border: 1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                            <span style="font-size: 12px; font-weight: 600; color: #4a5568;">${s.inicio} - ${s.fim}</span>
+                            <button class="btn btn-danger btn-sm" style="margin:0; padding: 0 5px; font-size: 14px; line-height: 1;" onclick="removerBlocoHorario(${s.id})" title="Remover">×</button>
+                        </div>
+                    `).join('') : '<p style="font-size: 12px; color: #a0aec0; text-align: center; padding: 10px;">--</p>'}
+                </div>
+            </div>
+        `;
+    });
+
+    html += `
             </div>
         </div>
     `;
     document.getElementById('horariosGestor').innerHTML = html;
 }
 
-function salvarBlocoHorario() {
-    const dia = parseInt(document.getElementById('gradeDia').value);
-    const inicio = document.getElementById('gradeInicio').value;
-    const fim = document.getElementById('gradeFim').value;
+function salvarGradeLote() {
+    const inicio = document.getElementById('loteInicio').value;
+    const fim = document.getElementById('loteFim').value;
+    const checks = document.querySelectorAll('.lote-dia:checked');
 
     if (!inicio || !fim) return alert('Defina o horário de início e fim.');
+    if (inicio >= fim) return alert('O horário de fim deve ser maior que o início.');
+    if (checks.length === 0) return alert('Selecione pelo menos um dia.');
 
     if (!data.gradeHoraria) data.gradeHoraria = [];
-    data.gradeHoraria.push({ id: Date.now(), diaSemana: dia, inicio, fim });
+
+    checks.forEach(chk => {
+        data.gradeHoraria.push({ 
+            id: Date.now() + Math.random(), 
+            diaSemana: parseInt(chk.value), 
+            inicio, 
+            fim 
+        });
+    });
     
     persistirDados();
     renderHorariosGestor();
