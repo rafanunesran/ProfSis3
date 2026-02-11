@@ -358,6 +358,11 @@ async function abrirTurma(id) {
                 const alunoLocal = { ...alunoMaster, id_turma: turmaAtual };
                 data.estudantes.push(alunoLocal);
             });
+
+            // Sincroniza Registros Administrativos (Atestados/Faltosos) para o Dashboard
+            if (gestorData.registrosAdministrativos) {
+                data.registrosAdministrativos = gestorData.registrosAdministrativos;
+            }
             
             persistirDados(); // Salva a atualização localmente
         }
@@ -426,18 +431,52 @@ function renderEstudantes() {
 
     let muralHtml = '';
     if (avisosTurma.length > 0) {
-        muralHtml = `<div class="card" style="background: #fffbeb; border: 1px solid #fbd38d; margin-bottom: 20px;">
-            <h3 style="margin-top:0; color: #744210;">📌 Mural de Avisos & Observações</h3>
-            <ul style="list-style: none; padding: 0; margin: 0;">
-                ${avisosTurma.map(r => {
-                    const est = estudantes.find(e => e.id == r.estudanteId);
-                    const nome = est ? est.nome_completo : 'Desconhecido';
-                    const icone = r.tipo === 'Faltoso' ? '🔴' : (r.tipo === 'Atestado' ? '🔵' : '🟡');
-                    const textoExtra = r.tipo === 'Observacao' ? ` - <em>${r.descricao}</em>` : (r.tipo === 'Atestado' ? ` (${r.dias} dias)` : '');
-                    return `<li style="padding: 5px 0; border-bottom: 1px dashed #fbd38d;">${icone} <strong>${nome}</strong>: ${r.tipo}${textoExtra} <span style="font-size:11px; color:#666;">(${formatDate(r.data)})</span></li>`;
-                }).join('')}
-            </ul>
-        </div>`;
+        const atestados = avisosTurma.filter(r => r.tipo === 'Atestado');
+        const faltosos = avisosTurma.filter(r => r.tipo === 'Faltoso');
+        const observacoes = avisosTurma.filter(r => r.tipo === 'Observacao');
+
+        muralHtml = `
+            <div class="card" style="background: #f8fafc; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+                <h3 style="margin-top:0; color: #2d3748; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 15px;">📌 Dashboard da Turma</h3>
+                <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                    ${atestados.length > 0 ? `
+                        <div style="flex: 1; min-width: 200px; background: #ebf8ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3182ce;">
+                            <div style="font-weight: bold; color: #2c5282; margin-bottom: 5px;">🔵 Atestados (${atestados.length})</div>
+                            <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #2a4365;">
+                                ${atestados.map(r => {
+                                    const est = estudantes.find(e => e.id == r.estudanteId);
+                                    return `<li style="margin-bottom: 3px;"><strong>${est ? est.nome_completo : 'Desconhecido'}</strong>: ${r.dias} dias</li>`;
+                                }).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+
+                    ${faltosos.length > 0 ? `
+                        <div style="flex: 1; min-width: 200px; background: #fff5f5; padding: 15px; border-radius: 8px; border-left: 4px solid #e53e3e;">
+                            <div style="font-weight: bold; color: #c53030; margin-bottom: 5px;">🔴 Faltosos (${faltosos.length})</div>
+                            <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #742a2a;">
+                                ${faltosos.map(r => {
+                                    const est = estudantes.find(e => e.id == r.estudanteId);
+                                    return `<li style="margin-bottom: 3px;"><strong>${est ? est.nome_completo : 'Desconhecido'}</strong></li>`;
+                                }).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+
+                    ${observacoes.length > 0 ? `
+                        <div style="flex: 1; min-width: 200px; background: #fffff0; padding: 15px; border-radius: 8px; border-left: 4px solid #d69e2e;">
+                            <div style="font-weight: bold; color: #744210; margin-bottom: 5px;">🟡 Observações (${observacoes.length})</div>
+                            <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #744210;">
+                                ${observacoes.map(r => {
+                                    const est = estudantes.find(e => e.id == r.estudanteId);
+                                    return `<li style="margin-bottom: 3px;"><strong>${est ? est.nome_completo : 'Desconhecido'}</strong>: ${r.descricao}</li>`;
+                                }).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
     }
     
     const html = `
