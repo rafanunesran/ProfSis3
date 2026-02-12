@@ -220,41 +220,123 @@ function removerRegistroGestao(id) {
 }
 
 function renderOcorrenciasGestor() {
-    const ocorrencias = (data.ocorrencias || []).sort((a, b) => new Date(b.data) - new Date(a.data));
+    const todasOcorrencias = (data.ocorrencias || []).sort((a, b) => new Date(b.data) - new Date(a.data));
+    
+    // Filtro de Status
+    const mostrarConfirmadas = document.getElementById('filtroOcorrenciaConfirmada') ? document.getElementById('filtroOcorrenciaConfirmada').checked : false;
+    
+    const ocorrenciasFiltradas = todasOcorrencias.filter(o => {
+        const status = o.status || 'pendente';
+        return mostrarConfirmadas ? status === 'confirmada' : status === 'pendente';
+    });
+
     const html = `
         <div class="card">
-            <h2>⚠️ Ocorrências da Escola</h2>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+                <h2>⚠️ Ocorrências da Escola</h2>
+                <div style="background: #edf2f7; padding: 5px 15px; border-radius: 20px; display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 13px; font-weight: bold; color: #4a5568;">Visualizar:</span>
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:5px;">
+                        <input type="radio" name="filtroOco" onclick="renderOcorrenciasGestor()" ${!mostrarConfirmadas ? 'checked' : ''}> Pendentes
+                    </label>
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:5px;">
+                        <input type="radio" name="filtroOco" id="filtroOcorrenciaConfirmada" onclick="renderOcorrenciasGestor()" ${mostrarConfirmadas ? 'checked' : ''}> Confirmadas
+                    </label>
+                </div>
+            </div>
+
             <table>
                 <thead>
                     <tr>
                         <th>Data</th>
-                        <th>Turma</th>
+                        <th>Turma - Disciplina</th>
+                        <th>Autor</th>
                         <th>Envolvidos</th>
-                        <th>Relato</th>
+                        <th>Arquivo</th>
+                        <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${ocorrencias.map(o => {
+                    ${ocorrenciasFiltradas.length > 0 ? ocorrenciasFiltradas.map(o => {
                         const turma = data.turmas.find(t => t.id == o.id_turma);
+                        // Usa o snapshot salvo pelo professor ou tenta montar com dados atuais
+                        const turmaDisplay = o.turma_snapshot || (turma ? `${turma.nome} ${o.disciplina ? '- ' + o.disciplina : ''}` : '?');
+                        
                         const envolvidos = (o.ids_estudantes || []).map(id => {
                             const est = (data.estudantes || []).find(e => e.id == id);
                             return est ? est.nome_completo : '?';
                         }).join(', ');
 
+                        const isPendente = (o.status || 'pendente') === 'pendente';
+
                         return `
                             <tr>
                                 <td>${formatDate(o.data)}</td>
-                                <td>${turma ? turma.nome : '?'}</td>
+                                <td>${turmaDisplay}</td>
+                                <td>${o.autor || 'Gestão'}</td>
                                 <td>${envolvidos || '-'}</td>
-                                <td>${o.relato}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-secondary" onclick="imprimirOcorrenciaGestor(${o.id})">📄 Baixar PDF</button>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm ${isPendente ? 'btn-warning' : 'btn-success'}" onclick="toggleStatusOcorrencia(${o.id})">
+                                        ${isPendente ? '⏳ Pendente' : '✅ Confirmada'}
+                                    </button>
+                                </td>
                             </tr>
                         `;
-                    }).join('')}
+                    }).join('') : '<tr><td colspan="6" style="text-align:center; padding:20px; color:#a0aec0;">Nenhuma ocorrência nesta categoria.</td></tr>'}
                 </tbody>
             </table>
         </div>
     `;
     document.getElementById('ocorrenciasGestor').innerHTML = html;
+}
+
+function toggleStatusOcorrencia(id) {
+    const o = data.ocorrencias.find(x => x.id == id);
+    if (o) {
+        o.status = (o.status === 'confirmada') ? 'pendente' : 'confirmada';
+        persistirDados();
+        renderOcorrenciasGestor();
+    }
+}
+
+function imprimirOcorrenciaGestor(id) {
+    const o = data.ocorrencias.find(x => x.id == id);
+    if (!o) return;
+
+    const envolvidos = (o.ids_estudantes || []).map(id => {
+        const est = (data.estudantes || []).find(e => e.id == id);
+        return est ? est.nome_completo : 'Excluído';
+    }).join(', ');
+
+    const conteudo = `
+        <div style="font-family: Arial, sans-serif; padding: 40px;">
+            <h1 style="text-align: center;">Registro de Ocorrência</h1>
+            <hr>
+            <p><strong>Data:</strong> ${formatDate(o.data)}</p>
+            <p><strong>Professor/Autor:</strong> ${o.autor || 'Gestão'}</p>
+            <p><strong>Turma/Disciplina:</strong> ${o.turma_snapshot || 'N/A'}</p>
+            <p><strong>Estudantes Envolvidos:</strong> ${envolvidos}</p>
+            <p><strong>Status:</strong> ${o.status ? o.status.toUpperCase() : 'PENDENTE'}</p>
+            <hr>
+            <h3>Relato:</h3>
+            <p style="white-space: pre-wrap; background: #f9f9f9; padding: 15px; border: 1px solid #ddd;">${o.relato}</p>
+            <br><br><br>
+            <div style="display: flex; justify-content: space-between; margin-top: 50px;">
+                <div style="border-top: 1px solid #000; width: 40%; text-align: center; padding-top: 5px;">Assinatura do Responsável</div>
+                <div style="border-top: 1px solid #000; width: 40%; text-align: center; padding-top: 5px;">Assinatura da Coordenação</div>
+            </div>
+        </div>
+    `;
+
+    const janela = window.open('', '', 'width=800,height=600');
+    janela.document.write('<html><head><title>Ocorrência - ' + formatDate(o.data) + '</title></head><body>');
+    janela.document.write(conteudo);
+    janela.document.write('<script>window.print();</script>');
+    janela.document.write('</body></html>');
+    janela.document.close();
 }
 
 async function compartilharRelatorio() {
