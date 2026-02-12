@@ -668,11 +668,19 @@ async function renderChamada() {
 
     const isGestor = currentUser && currentUser.role === 'gestor';
 
+    // Verifica status da chamada (baseado se há faltas registradas para esta turma nesta data)
+    const faltasRegistradas = (data.presencas || []).filter(p => p.data == dataSelecionada && estudantes.some(e => e.id == p.id_estudante));
+    const statusTexto = faltasRegistradas.length > 0 ? 'Registrada (Faltas)' : 'Pendente / Todos Presentes';
+    const statusCor = faltasRegistradas.length > 0 ? '#2f855a' : '#d69e2e'; // Verde escuro vs Laranja escuro
+    const statusBg = faltasRegistradas.length > 0 ? '#f0fff4' : '#fffaf0';
+
     const html = `
         <div style="margin-bottom:15px;"><button class="btn btn-info" onclick="renderRelatorioMensalFaltas()">📅 Relatório Mensal de Faltas</button></div>
-        <div class="form-row">
+        <div class="form-row" style="display:flex; justify-content:space-between; align-items:center;">
             <label>Data: <input type="date" id="chamadaData" value="${dataSelecionada}" onchange="renderChamada()"></label>
-            <button class="btn btn-success" id="btnSalvarChamada" onclick="salvarChamadaManual()">Salvar Chamada</button>
+            <div style="padding: 5px 10px; border-radius: 6px; background: ${statusBg}; color: ${statusCor}; border: 1px solid ${statusCor}; font-weight: bold; font-size: 13px;">
+                Status: ${statusTexto}
+            </div>
         </div>
         <div id="avisoChamada" style="color:#e53e3e; display:none; margin-bottom:10px; font-weight:bold;">⚠️ Esta turma não tem aula agendada para este dia da semana.</div>
         <table>
@@ -716,6 +724,7 @@ async function renderChamada() {
                 `}).join('')}
             </tbody>
         </table>
+        <button class="btn btn-success" id="btnSalvarChamada" onclick="salvarChamadaManual()" style="width:100%; margin-top:15px; padding: 12px; font-size: 16px;">💾 Salvar Chamada</button>
     `;
     document.getElementById('tabChamada').innerHTML = html;
     
@@ -843,7 +852,10 @@ function verFaltasDoDia(dia, mes, ano) {
     const html = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
             <h3 style="margin:0;">Faltas em ${dataFormatada}</h3>
-            <button class="btn btn-secondary" onclick="copiarTextoFaltas('${encodeURIComponent(textoCopia)}')" title="Copiar Lista">📋</button>
+            <div>
+                <button class="btn btn-secondary" onclick="copiarTextoFaltas('${encodeURIComponent(textoCopia)}')" title="Copiar Lista">📋</button>
+                <button class="btn btn-secondary" onclick="closeModal('modalDetalheFaltasDia')" title="Fechar" style="margin-left:5px;">✖</button>
+            </div>
         </div>
         <div style="max-height:300px; overflow-y:auto;">
             ${listaNomes.length > 0 
