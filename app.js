@@ -232,7 +232,15 @@ function renderTurmas() {
             <div style="font-size:12px; color:#718096;">${t.turno}</div>
         </div>
     `).join('');
-    document.getElementById('listaTurmas').innerHTML = html || '<p class="empty-state">Nenhuma turma.</p>';
+    
+    const btnMassa = (currentUser && currentUser.role === 'gestor') 
+        ? `<div style="margin-bottom: 15px; padding: 10px; background: #ebf8ff; border: 1px solid #bee3f8; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+             <span>📂 Atualização de Estudantes em Massa (Vários CSVs)</span>
+             <button class="btn btn-primary" onclick="abrirModalImportacaoMassa()">Importar Arquivos</button>
+           </div>` 
+        : '';
+
+    document.getElementById('listaTurmas').innerHTML = btnMassa + (html || '<p class="empty-state">Nenhuma turma.</p>');
 }
 
 async function abrirModalNovaTurma() {
