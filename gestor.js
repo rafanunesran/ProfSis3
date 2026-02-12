@@ -477,3 +477,157 @@ function removerBlocoHorario(id) {
         renderHorariosGestor();
     }
 }
+
+// --- IMPORTAÇÃO EM MASSA (ESTUDANTES) ---
+
+function abrirModalImportacaoMassa() {
+    // Cria o modal dinamicamente se não existir
+    if (!document.getElementById('modalImportacaoMassa')) {
+        const div = document.createElement('div');
+        div.id = 'modalImportacaoMassa';
+        div.className = 'modal';
+        div.innerHTML = `
+            <div class="modal-content" style="max-width: 600px;">
+                <h3>📂 Importação em Massa de Estudantes</h3>
+                <p style="font-size:13px; color:#666;">Selecione os arquivos CSV de cada turma. O sistema tentará identificar a turma pelo nome do arquivo.</p>
+                
+                <div style="margin: 20px 0; padding: 15px; background: #f7fafc; border: 2px dashed #cbd5e0; text-align: center;">
+                    <input type="file" id="filesMassa" multiple accept=".csv" onchange="analisarArquivosMassa()">
+                    <p style="margin-top:10px; font-size:12px;">Formatos: .csv (separado por ponto e vírgula)</p>
+                </div>
+
+                <div id="previewMassa" style="max-height: 200px; overflow-y: auto; margin-bottom: 20px; border: 1px solid #e2e8f0; display:none;">
+                    <!-- Lista de arquivos e turmas detectadas -->
+                </div>
+
+                <div style="display:flex; justify-content: flex-end; gap: 10px;">
+                    <button class="btn btn-secondary" onclick="closeModal('modalImportacaoMassa')">Cancelar</button>
+                    <button class="btn btn-success" id="btnConfirmarMassa" onclick="processarImportacaoMassa()" disabled>Confirmar e Atualizar</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(div);
+    }
+    
+    document.getElementById('filesMassa').value = '';
+    document.getElementById('previewMassa').style.display = 'none';
+    document.getElementById('btnConfirmarMassa').disabled = true;
+    showModal('modalImportacaoMassa');
+}
+
+let mapaArquivosTurmas = []; // Armazena { file, turmaId }
+
+function analisarArquivosMassa() {
+    const files = document.getElementById('filesMassa').files;
+    const preview = document.getElementById('previewMassa');
+    const btn = document.getElementById('btnConfirmarMassa');
+    const turmas = data.turmas || [];
+
+    if (files.length === 0) return;
+
+    mapaArquivosTurmas = [];
+    let html = '<table style="width:100%; font-size:12px;"><thead><tr><th>Arquivo</th><th>Turma Detectada</th></tr></thead><tbody>';
+
+    // Função auxiliar para normalizar strings para comparação (remove acentos, espaços, lowercase)
+    const normalize = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+
+    Array.from(files).forEach(file => {
+        const nomeArquivo = normalize(file.name.replace('.csv', ''));
+        
+        // Tenta encontrar a turma que mais se parece com o nome do arquivo
+        // Ex: Arquivo "6A.csv" deve bater com Turma "6º Ano A" ou "6A"
+        const turmaMatch = turmas.find(t => {
+            const nomeTurma = normalize(t.nome);
+            return nomeTurma.includes(nomeArquivo) || nomeArquivo.includes(nomeTurma);
+        });
+
+        if (turmaMatch) {
+            mapaArquivosTurmas.push({ file, turmaId: turmaMatch.id });
+            html += `<tr><td>${file.name}</td><td style="color:green;">✅ ${turmaMatch.nome}</td></tr>`;
+        } else {
+            mapaArquivosTurmas.push({ file, turmaId: null });
+            html += `<tr><td>${file.name}</td><td style="color:red;">❌ Não identificada</td></tr>`;
+        }
+    });
+
+    html += '</tbody></table>';
+    preview.innerHTML = html;
+    preview.style.display = 'block';
+    
+    // Habilita botão se pelo menos uma turma foi identificada
+    btn.disabled = mapaArquivosTurmas.every(m => m.turmaId === null);
+}
+
+async function processarImportacaoMassa() {
+    if (!confirm('Isso atualizará a lista de estudantes. Alunos existentes em outras turmas serão movidos (remanejados) para as novas turmas detectadas. Continuar?')) return;
+
+    let processados = 0;
+    let novos = 0;
+    let remanejados = 0;
+
+    if (!data.estudantes) data.estudantes = [];
+
+    for (const item of mapaArquivosTurmas) {
+        if (!item.turmaId) continue; // Pula arquivos sem turma
+
+        const text = await item.file.text(); // Leitura assíncrona do arquivo
+        const lines = text.split('\n');
+        
+        // Detecta colunas
+        let idxNome = -1;
+        let idxStatus = -1;
+        
+        // Procura cabeçalho nas primeiras 10 linhas
+        for (let i = 0; i < Math.min(lines.length, 10); i++) {
+            const cols = lines[i].split(';').map(c => c.trim().toLowerCase()); // CSV padrão excel/pt-br usa ;
+            if (cols.includes('nome do aluno')) {
+                idxNome = cols.indexOf('nome do aluno');
+                // Tenta achar status ou situação
+                idxStatus = cols.findIndex(c => c.includes('situação') || c.includes('situacao') || c.includes('status'));
+                break;
+            }
+        }
+
+        if (idxNome === -1) continue; // Arquivo inválido
+
+        // Processa linhas
+        for (const line of lines) {
+            const parts = line.split(';');
+            if (parts.length <= idxNome) continue;
+
+            const nome = parts[idxNome].trim().toUpperCase(); // Normaliza nome para Upper
+            if (!nome || nome.includes('NOME DO ALUNO')) continue; // Pula cabeçalho ou vazio
+
+            const status = (idxStatus !== -1 && parts.length > idxStatus) ? parts[idxStatus].trim() : 'Ativo';
+
+            // LÓGICA DE UPSERT / REMANEJAMENTO
+            const estudanteExistente = data.estudantes.find(e => e.nome_completo.toUpperCase() === nome);
+
+            if (estudanteExistente) {
+                // Se já existe, atualiza a turma (Remanejamento) e status
+                if (estudanteExistente.id_turma != item.turmaId) remanejados++;
+                estudanteExistente.id_turma = item.turmaId;
+                estudanteExistente.status = status;
+            } else {
+                // Novo estudante
+                data.estudantes.push({
+                    id: Date.now() + Math.random(), // ID único
+                    id_turma: item.turmaId,
+                    nome_completo: nome, // Salva como veio, mas a busca é case insensitive
+                    status: status
+                });
+                novos++;
+            }
+            processados++;
+        }
+    }
+
+    persistirDados();
+    closeModal('modalImportacaoMassa');
+    alert(`Processamento Concluído!\n\nProcessados: ${processados}\nNovos Alunos: ${novos}\nRemanejados: ${remanejados}`);
+    
+    // Atualiza a tela se estiver em Turmas
+    if (document.getElementById('turmas').classList.contains('active')) {
+        renderTurmas();
+    }
+}
