@@ -260,10 +260,9 @@ async function renderDashboard() {
 
     Object.values(gruposTurmas).forEach(grupo => {
         const avisosEspecificos = avisosMural.filter(a => 
-            !a.turmasAlvo.includes('todas') && (
-                (grupo.masterId && a.turmasAlvo.includes(String(grupo.masterId))) || 
-                grupo.ids.some(id => a.turmasAlvo.includes(String(id)))
-            )
+            a.turmasAlvo.includes('todas') || 
+            (grupo.masterId && a.turmasAlvo.includes(String(grupo.masterId))) || 
+            grupo.ids.some(id => a.turmasAlvo.includes(String(id)))
         );
 
         const registrosTurma = registros.filter(r => 
@@ -525,10 +524,15 @@ function renderEstudantes() {
     today.setHours(0,0,0,0);
     
     // Busca Avisos Gerais para esta turma
+    const turmaObj = (data.turmas || []).find(t => t.id == turmaAtual);
+    const masterId = turmaObj ? turmaObj.masterId : null;
+
     const avisosRaw = data.avisosMural || [];
     const avisosUnique = Array.from(new Map(avisosRaw.map(item => [item.id, item])).values());
     const avisosMural = avisosUnique.filter(a => 
-        a.turmasAlvo.includes('todas') || a.turmasAlvo.includes(turmaAtual.toString())
+        a.turmasAlvo.includes('todas') || 
+        a.turmasAlvo.includes(turmaAtual.toString()) ||
+        (masterId && a.turmasAlvo.includes(masterId.toString()))
     );
 
     // Filtra registros relevantes para esta turma
