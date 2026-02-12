@@ -108,7 +108,8 @@ async function renderDashboard() {
     if (currentUser && currentUser.role === 'gestor') {
         const ocorrencias = (data.ocorrencias || []);
         const registros = (data.registrosAdministrativos || []);
-        const avisos = (data.avisosMural || []);
+        const avisosRaw = (data.avisosMural || []);
+        const avisos = Array.from(new Map(avisosRaw.map(item => [item.id, item])).values());
 
         dashboardContainer.innerHTML = `
             <div class="grid">
@@ -163,9 +164,9 @@ async function renderDashboard() {
                 <div id="tutoriasHoje"></div>
             </div>
         </div>
-        <div class="card">
-            <h2>⚠️ Alertas</h2>
-            <div id="alertas"></div>
+        <div class="card" style="margin-top: 20px;">
+            <h2>📢 Quadro de Avisos</h2>
+            <div id="avisosGerais"></div>
         </div>
     `;
 
@@ -213,12 +214,97 @@ async function renderDashboard() {
     const tutoriasHoje = []; // Placeholder se quiser listar agendamentos específicos
     document.getElementById('tutoriasHoje').innerHTML = tutoriasHoje.length > 0 ? '' : '<p class="empty-state">Nenhum agendamento específico.</p>';
 
-    // Alertas
-    let alertas = [];
-    const atrasosHoje = (data.atrasos || []).filter(a => a.data === today);
-    if (atrasosHoje.length > 0) alertas.push(`<div class="alert alert-warning">${atrasosHoje.length} atrasos hoje</div>`);
-    if (alertas.length === 0) alertas.push('<div class="alert alert-success">Tudo tranquilo!</div>');
-    document.getElementById('alertas').innerHTML = alertas.join('');
+    // --- AVISOS E ALERTAS POR TURMA ---
+    const turmas = data.turmas || [];
+    // Deduplica avisos por ID para evitar repetição visual
+    const avisosRaw = data.avisosMural || [];
+    const avisosMural = Array.from(new Map(avisosRaw.map(item => [item.id, item])).values());
+    const registros = data.registrosAdministrativos || [];
+    const todayDate = new Date();
+    todayDate.setHours(0,0,0,0);
+
+    let htmlAvisos = '';
+
+    // 1. Avisos Gerais
+    const avisosGerais = avisosMural.filter(a => a.turmasAlvo.includes('todas'));
+    if (avisosGerais.length > 0) {
+        htmlAvisos += `
+            <div style="margin-bottom: 20px; background: #fffaf0; padding: 15px; border-radius: 8px; border-left: 4px solid #ed8936;">
+                <h3 style="margin-top:0; color: #c05621; font-size: 16px;">🏫 Avisos Gerais</h3>
+                <ul style="margin: 0; padding-left: 20px; color: #7b341e;">
+                    ${avisosGerais.map(a => `<li style="margin-bottom: 5px;">${a.texto}</li>`).join('')}
+                </ul>
+            </div>
+        `;
+    }
+
+    // 2. Agrupamento por Turma
+    let htmlTurmas = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px;">';
+    let temAvisosTurma = false;
+
+    // Agrupa turmas que compartilham o mesmo masterId (mesma turma física)
+    const gruposTurmas = {};
+    turmas.forEach(t => {
+        const key = t.masterId || t.id;
+        if (!gruposTurmas[key]) {
+            gruposTurmas[key] = {
+                nomeBase: t.nome,
+                disciplinas: [],
+                ids: [],
+                masterId: t.masterId
+            };
+        }
+        if (t.disciplina) gruposTurmas[key].disciplinas.push(t.disciplina);
+        gruposTurmas[key].ids.push(t.id);
+    });
+
+    Object.values(gruposTurmas).forEach(grupo => {
+        const avisosEspecificos = avisosMural.filter(a => 
+            !a.turmasAlvo.includes('todas') && (
+                (grupo.masterId && a.turmasAlvo.includes(String(grupo.masterId))) || 
+                grupo.ids.some(id => a.turmasAlvo.includes(String(id)))
+            )
+        );
+
+        const registrosTurma = registros.filter(r => 
+            (grupo.masterId && r.turmaId == grupo.masterId) || 
+            grupo.ids.includes(r.turmaId)
+        );
+        
+        const ativos = registrosTurma.filter(r => {
+            if (r.tipo === 'Atestado') {
+                const parts = r.data.split('-');
+                const fim = new Date(parts[0], parts[1]-1, parts[2]);
+                fim.setDate(fim.getDate() + (parseInt(r.dias) || 1) - 1);
+                return todayDate <= fim;
+            }
+            return true; 
+        });
+
+        if (avisosEspecificos.length > 0 || ativos.length > 0) {
+            temAvisosTurma = true;
+            const disciplinasStr = grupo.disciplinas.length > 0 ? ` <span style="font-size:0.8em; font-weight:normal; color:#718096;">(${grupo.disciplinas.join(', ')})</span>` : '';
+            
+            htmlTurmas += `
+                <div class="card" style="border: 1px solid #e2e8f0; background: #fff; padding: 15px;">
+                    <h4 style="margin-top:0; border-bottom: 1px solid #eee; padding-bottom: 5px; color: #2c5282; margin-bottom: 10px;">${grupo.nomeBase}${disciplinasStr}</h4>
+                    ${avisosEspecificos.length > 0 ? `<div style="margin-bottom: 10px;"><strong style="font-size:12px; color:#ed8936;">📢 Mural:</strong><ul style="margin:0; padding-left:15px; font-size:13px; color: #4a5568;">${avisosEspecificos.map(a => `<li>${a.texto}</li>`).join('')}</ul></div>` : ''}
+                    ${ativos.length > 0 ? `<div><strong style="font-size:12px; color:#3182ce;">📂 Administrativo:</strong><ul style="margin:0; padding-left:15px; font-size:13px; color: #4a5568;">${ativos.map(r => {
+                        const est = (data.estudantes || []).find(e => e.id == r.estudanteId);
+                        const nomeEst = est ? est.nome_completo : 'Estudante';
+                        let icon = r.tipo === 'Atestado' ? '🔵' : (r.tipo === 'Faltoso' ? '🔴' : '📝');
+                        return `<li>${icon} <strong>${nomeEst}</strong>: ${r.tipo}</li>`;
+                    }).join('')}</ul></div>` : ''}
+                </div>
+            `;
+        }
+    });
+    htmlTurmas += '</div>';
+
+    if (temAvisosTurma) htmlAvisos += htmlTurmas;
+    if (htmlAvisos === '') htmlAvisos = '<p class="empty-state">Nenhum aviso ou alerta para suas turmas.</p>';
+    
+    document.getElementById('avisosGerais').innerHTML = htmlAvisos;
 }
 
 // --- TURMAS ---
@@ -424,7 +510,9 @@ function renderEstudantes() {
     today.setHours(0,0,0,0);
     
     // Busca Avisos Gerais para esta turma
-    const avisosMural = (data.avisosMural || []).filter(a => 
+    const avisosRaw = data.avisosMural || [];
+    const avisosUnique = Array.from(new Map(avisosRaw.map(item => [item.id, item])).values());
+    const avisosMural = avisosUnique.filter(a => 
         a.turmasAlvo.includes('todas') || a.turmasAlvo.includes(turmaAtual.toString())
     );
 
@@ -581,7 +669,7 @@ async function renderChamada() {
     const isGestor = currentUser && currentUser.role === 'gestor';
 
     const html = `
-        ${isGestor ? `<div style="margin-bottom:15px;"><button class="btn btn-info" onclick="renderRelatorioMensalFaltas()">📅 Relatório Mensal de Faltas</button></div>` : ''}
+        <div style="margin-bottom:15px;"><button class="btn btn-info" onclick="renderRelatorioMensalFaltas()">📅 Relatório Mensal de Faltas</button></div>
         <div class="form-row">
             <label>Data: <input type="date" id="chamadaData" value="${dataSelecionada}" onchange="renderChamada()"></label>
             <button class="btn btn-success" id="btnSalvarChamada" onclick="salvarChamadaManual()">Salvar Chamada</button>
@@ -714,7 +802,7 @@ function renderRelatorioMensalFaltas() {
                     <thead>
                         <tr>
                             <th style="text-align:left; min-width: 200px; position:sticky; left:0; background:#fff; z-index:10; border-bottom:2px solid #cbd5e0;">Estudante</th>
-                            ${diasUteis.map(d => `<th style="text-align:center; width: 25px; padding: 2px; border-bottom:2px solid #cbd5e0;">${d}</th>`).join('')}
+                            ${diasUteis.map(d => `<th style="text-align:center; width: 25px; padding: 2px; border-bottom:2px solid #cbd5e0;"><button class="btn btn-sm btn-outline-secondary" onclick="verFaltasDoDia(${d}, ${mesAtual}, ${anoAtual})" style="padding:2px 5px; font-size:10px; min-width:25px; cursor:pointer;" title="Ver lista de faltas">${d}</button></th>`).join('')}
                             <th style="text-align:center; border-bottom:2px solid #cbd5e0;">Total</th>
                         </tr>
                     </thead>
@@ -735,6 +823,43 @@ function renderRelatorioMensalFaltas() {
         </div>
     `;
     document.getElementById('tabChamada').innerHTML = html;
+}
+
+function verFaltasDoDia(dia, mes, ano) {
+    const dataStr = `${ano}-${String(mes+1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+    const dataFormatada = `${String(dia).padStart(2, '0')}/${String(mes+1).padStart(2, '0')}/${ano}`;
+    
+    // Filtra estudantes da turma atual
+    const estudantesTurma = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
+    
+    // Busca quem faltou neste dia
+    const faltosos = estudantesTurma.filter(e => {
+        return (data.presencas || []).some(p => p.id_estudante == e.id && p.data == dataStr && p.status == 'falta');
+    });
+
+    const listaNomes = faltosos.map(e => e.nome_completo).sort();
+    const textoCopia = `Faltas dia ${dataFormatada}:\n${listaNomes.join('\n')}`;
+
+    const html = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
+            <h3 style="margin:0;">Faltas em ${dataFormatada}</h3>
+            <button class="btn btn-secondary" onclick="copiarTextoFaltas('${encodeURIComponent(textoCopia)}')" title="Copiar Lista">📋</button>
+        </div>
+        <div style="max-height:300px; overflow-y:auto;">
+            ${listaNomes.length > 0 
+                ? `<ul style="padding-left:20px;">${listaNomes.map(nome => `<li>${nome}</li>`).join('')}</ul>` 
+                : '<p class="empty-state">Nenhuma falta registrada neste dia.</p>'}
+        </div>
+        <div style="margin-top:10px; font-size:12px; color:#666; text-align:right;">Total: ${listaNomes.length}</div>
+    `;
+
+    document.getElementById('conteudoDetalheFaltasDia').innerHTML = html;
+    showModal('modalDetalheFaltasDia');
+}
+
+function copiarTextoFaltas(textoEncoded) {
+    const texto = decodeURIComponent(textoEncoded);
+    navigator.clipboard.writeText(texto).then(() => alert('Lista copiada para a área de transferência!'));
 }
 
 // --- OCORRÊNCIAS ---
