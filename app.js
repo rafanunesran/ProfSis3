@@ -550,7 +550,7 @@ function removerEstudante(id) {
 
 // --- CHAMADA ---
 async function renderChamada() {
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
     
     // Preserva a data selecionada se já estiver na tela, senão usa hoje
     const dataSelecionada = document.getElementById('chamadaData') ? document.getElementById('chamadaData').value : getTodayString();
@@ -561,7 +561,10 @@ async function renderChamada() {
     const blocosTurma = gradeEscola.filter(g => minhasAulas.some(a => a.id_bloco == g.id));
     const diasPermitidos = [...new Set(blocosTurma.map(g => g.diaSemana))]; // Ex: [1, 3, 5]
 
+    const isGestor = currentUser && currentUser.role === 'gestor';
+
     const html = `
+        ${isGestor ? `<div style="margin-bottom:15px;"><button class="btn btn-info" onclick="renderRelatorioMensalFaltas()">📅 Relatório Mensal de Faltas</button></div>` : ''}
         <div class="form-row">
             <label>Data: <input type="date" id="chamadaData" value="${dataSelecionada}" onchange="renderChamada()"></label>
             <button class="btn btn-success" id="btnSalvarChamada" onclick="salvarChamadaManual()">Salvar Chamada</button>
@@ -655,6 +658,66 @@ function salvarChamadaManual() {
     
     persistirDados();
     alert('Chamada salva!');
+}
+
+function renderRelatorioMensalFaltas() {
+    const today = new Date();
+    const mesInput = document.getElementById('relFaltaMes');
+    const anoInput = document.getElementById('relFaltaAno');
+    
+    const mesAtual = mesInput ? parseInt(mesInput.value) : today.getMonth();
+    const anoAtual = anoInput ? parseInt(anoInput.value) : today.getFullYear();
+
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
+    const presencas = data.presencas || [];
+
+    const daysInMonth = new Date(anoAtual, mesAtual + 1, 0).getDate();
+    const diasUteis = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+        const date = new Date(anoAtual, mesAtual, d);
+        const dayOfWeek = date.getDay();
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) diasUteis.push(d); // Apenas dias úteis (Seg-Sex)
+    }
+
+    const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+    const html = `
+        <button class="btn btn-secondary" style="margin-bottom:15px;" onclick="renderChamada()">← Voltar para Chamada Diária</button>
+        <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <h3>Relatório Mensal de Faltas</h3>
+                <button class="btn btn-primary btn-sm" onclick="window.print()">🖨️ Imprimir</button>
+            </div>
+            <div class="form-row" style="background:#f7fafc; padding:10px; border-radius:8px; margin-bottom:15px;">
+                <label>Mês: <select id="relFaltaMes" onchange="renderRelatorioMensalFaltas()">${meses.map((m, i) => `<option value="${i}" ${i === mesAtual ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+                <label>Ano: <input type="number" id="relFaltaAno" value="${anoAtual}" onchange="renderRelatorioMensalFaltas()" style="width:80px;"></label>
+            </div>
+            <div style="overflow-x:auto;">
+                <table style="font-size: 12px; border-collapse: collapse; width: 100%; min-width: 800px;">
+                    <thead>
+                        <tr>
+                            <th style="text-align:left; min-width: 200px; position:sticky; left:0; background:#fff; z-index:10; border-bottom:2px solid #cbd5e0;">Estudante</th>
+                            ${diasUteis.map(d => `<th style="text-align:center; width: 25px; padding: 2px; border-bottom:2px solid #cbd5e0;">${d}</th>`).join('')}
+                            <th style="text-align:center; border-bottom:2px solid #cbd5e0;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${estudantes.map(e => {
+                            let totalFaltas = 0;
+                            const cols = diasUteis.map(d => {
+                                const dataStr = `${anoAtual}-${String(mesAtual+1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                                const falta = presencas.find(p => p.id_estudante == e.id && p.data == dataStr && p.status == 'falta');
+                                if (falta) totalFaltas++;
+                                return `<td style="text-align:center; background: ${falta ? '#fed7d7' : ''}; color: ${falta ? '#c53030' : '#e2e8f0'}; border: 1px solid #e2e8f0; padding: 4px;">${falta ? 'F' : '•'}</td>`;
+                            }).join('');
+                            return `<tr><td style="position:sticky; left:0; background:#fff; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 8px;">${e.nome_completo}</td>${cols}<td style="text-align:center; font-weight:bold; color: ${totalFaltas > 0 ? '#e53e3e' : '#2d3748'}; border-bottom: 1px solid #e2e8f0;">${totalFaltas}</td></tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+    document.getElementById('tabChamada').innerHTML = html;
 }
 
 // --- OCORRÊNCIAS ---
