@@ -239,5 +239,17 @@
 
     <div id="modalAdminUsuario" class="modal"><div class="modal-content"><div class="modal-header"><h2 id="tituloModalUsuarioAdmin">Usuário</h2><button class="close-btn" onclick="closeModal('modalAdminUsuario')">×</button></div><form onsubmit="salvarUsuarioAdmin(event)"><input type="hidden" id="adminUsuarioId"><label>Nome:<input type="text" id="adminUsuarioNome" required></label><label>Email:<input type="email" id="adminUsuarioEmail" required></label><label>Senha:<input type="text" id="adminUsuarioSenha" placeholder="Deixe em branco para manter"></label><label>Perfil:<select id="adminUsuarioRole"><option value="professor">Professor</option><option value="gestor">Gestor</option></select></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
 
+    <div id="modalNovoAviso" class="modal">
+        <div class="modal-content">
+            <div class="modal-header"><h2>📢 Novo Aviso para Mural</h2><button class="close-btn" onclick="closeModal('modalNovoAviso')">×</button></div>
+            <div style="margin-bottom:15px;">
+                <label>Mensagem do Aviso:</label>
+                <textarea id="textoNovoAviso" rows="4" style="width:100%; margin-top:5px;" placeholder="Ex: Reunião de pais na sexta-feira..."></textarea>
+            </div>
+            <label>Publicar para as Turmas:</label>
+            <div id="listaTurmasAviso" style="margin-bottom:15px;"></div>
+            <button class="btn btn-primary" onclick="salvarAviso()">Publicar Aviso</button>
+        </div>
+    </div>
 </body>
 </html>

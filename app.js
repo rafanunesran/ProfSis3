@@ -108,7 +108,7 @@ async function renderDashboard() {
     if (currentUser && currentUser.role === 'gestor') {
         const ocorrencias = (data.ocorrencias || []);
         const registros = (data.registrosAdministrativos || []);
-        const eventosHoje = (data.eventos || []).filter(e => e.data === today);
+        const avisos = (data.avisosMural || []);
 
         dashboardContainer.innerHTML = `
             <div class="grid">
@@ -126,10 +126,19 @@ async function renderDashboard() {
                     </div>
                     <button class="btn btn-sm btn-secondary" onclick="showScreen('registrosGestor')" style="margin-top:10px;">Gerenciar</button>
                 </div>
-                <div class="card">
-                    <h2>🤝 Reuniões de Hoje</h2>
-                    <div id="reunioesHoje"></div>
+            </div>
+
+            <div class="card" style="margin-top: 20px;">
+                <h2>📢 Avisos (Mural)</h2>
+                <div id="listaAvisosDashboard" style="max-height: 100px; overflow-y: auto; margin-bottom: 10px;">
+                    ${avisos.length > 0 ? avisos.map(a => `
+                        <div style="font-size:12px; border-bottom:1px solid #eee; padding:5px 0; display:flex; justify-content:space-between;">
+                            <span>${a.texto.substring(0, 30)}...</span>
+                            <button class="btn btn-xs btn-danger" style="padding:0 5px;" onclick="excluirAviso(${a.id})">×</button>
+                        </div>
+                    `).join('') : '<p class="empty-state">Nenhum aviso ativo.</p>'}
                 </div>
+                <button class="btn btn-primary btn-sm" onclick="abrirModalNovoAviso()">+ Novo Aviso</button>
             </div>
             <div class="card" style="margin-top: 20px;">
                 <h2>📊 Resumo da Escola</h2>
@@ -137,12 +146,6 @@ async function renderDashboard() {
                 <p>Total de Estudantes: ${(data.estudantes || []).length}</p>
             </div>
         `;
-
-        // Renderizar Eventos para Gestor
-        const eventosHtml = eventosHoje.length > 0 ? eventosHoje.map(e => 
-            `<div class="alert alert-info">${e.hora_inicio} - ${e.descricao}</div>`
-        ).join('') : '<p class="empty-state">Sem reuniões hoje</p>';
-        document.getElementById('reunioesHoje').innerHTML = eventosHtml;
         
         return; // IMPORTANTE: Encerra aqui para não carregar a visão do professor abaixo
     }
@@ -419,6 +422,11 @@ function renderEstudantes() {
     const registros = data.registrosAdministrativos || [];
     const today = new Date();
     today.setHours(0,0,0,0);
+    
+    // Busca Avisos Gerais para esta turma
+    const avisosMural = (data.avisosMural || []).filter(a => 
+        a.turmasAlvo.includes('todas') || a.turmasAlvo.includes(turmaAtual.toString())
+    );
 
     // Filtra registros relevantes para esta turma
     const avisosTurma = registros.filter(r => {
@@ -438,7 +446,7 @@ function renderEstudantes() {
     });
 
     let muralHtml = '';
-    if (avisosTurma.length > 0) {
+    if (avisosTurma.length > 0 || avisosMural.length > 0) {
         const atestados = avisosTurma.filter(r => r.tipo === 'Atestado');
         const faltosos = avisosTurma.filter(r => r.tipo === 'Faltoso');
         const observacoes = avisosTurma.filter(r => r.tipo === 'Observacao');
@@ -447,6 +455,15 @@ function renderEstudantes() {
             <div class="card" style="background: #f8fafc; border: 1px solid #e2e8f0; margin-bottom: 20px;">
                 <h3 style="margin-top:0; color: #2d3748; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 15px;">📌 Dashboard da Turma</h3>
                 <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                    ${avisosMural.length > 0 ? `
+                        <div style="flex: 1; min-width: 200px; background: #fffaf0; padding: 15px; border-radius: 8px; border-left: 4px solid #ed8936;">
+                            <div style="font-weight: bold; color: #c05621; margin-bottom: 5px;">📢 Avisos da Gestão</div>
+                            <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #7b341e;">
+                                ${avisosMural.map(a => `<li style="margin-bottom: 3px;">${a.texto}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+
                     ${atestados.length > 0 ? `
                         <div style="flex: 1; min-width: 200px; background: #ebf8ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3182ce;">
                             <div style="font-weight: bold; color: #2c5282; margin-bottom: 5px;">🔵 Atestados (${atestados.length})</div>
@@ -724,7 +741,7 @@ function renderRelatorioMensalFaltas() {
 let tempOcorrenciaIds = []; // Variável temporária para armazenar seleção
 
 function renderOcorrencias() {
-    const ocorrencias = (data.ocorrencias || []).filter(o => o.id_turma == turmaAtual);
+    const ocorrencias = (data.ocorrencias || []).filter(o => o.id_turma == turmaAtual).sort((a, b) => new Date(b.data) - new Date(a.data));
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
 
     // Filtra estudantes disponíveis e selecionados
@@ -2090,4 +2107,61 @@ async function renderRegistrosProfessor() {
         </div>
     `;
     screen.innerHTML = html;
+}
+
+// --- AVISOS MURAL (GESTOR) ---
+function abrirModalNovoAviso() {
+    const turmas = data.turmas || [];
+    const container = document.getElementById('listaTurmasAviso');
+    
+    container.innerHTML = `
+        <label style="font-weight:bold; margin-bottom:5px; display:block;">
+            <input type="checkbox" onchange="toggleTodasTurmasAviso(this)"> Selecionar Todas
+        </label>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; max-height:150px; overflow-y:auto; border:1px solid #eee; padding:5px;">
+            ${turmas.map(t => `
+                <label style="font-size:12px;">
+                    <input type="checkbox" class="chk-turma-aviso" value="${t.id}"> ${t.nome}
+                </label>
+            `).join('')}
+        </div>
+    `;
+    
+    document.getElementById('textoNovoAviso').value = '';
+    showModal('modalNovoAviso');
+}
+
+function toggleTodasTurmasAviso(source) {
+    const checkboxes = document.querySelectorAll('.chk-turma-aviso');
+    checkboxes.forEach(cb => cb.checked = source.checked);
+}
+
+function salvarAviso() {
+    const texto = document.getElementById('textoNovoAviso').value;
+    const checkboxes = document.querySelectorAll('.chk-turma-aviso:checked');
+    const todasCheckbox = document.querySelector('input[onchange="toggleTodasTurmasAviso(this)"]');
+    
+    if (!texto) return alert('Digite o aviso.');
+    if (checkboxes.length === 0) return alert('Selecione pelo menos uma turma.');
+
+    const turmasAlvo = todasCheckbox.checked ? ['todas'] : Array.from(checkboxes).map(cb => cb.value);
+
+    if (!data.avisosMural) data.avisosMural = [];
+    data.avisosMural.push({
+        id: Date.now(),
+        texto,
+        data: getTodayString(),
+        turmasAlvo
+    });
+
+    persistirDados();
+    closeModal('modalNovoAviso');
+    renderDashboard(); // Atualiza o card no dashboard
+}
+
+function excluirAviso(id) {
+    if(!confirm('Excluir este aviso?')) return;
+    data.avisosMural = data.avisosMural.filter(a => a.id !== id);
+    persistirDados();
+    renderDashboard();
 }
