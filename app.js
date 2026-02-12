@@ -467,13 +467,27 @@ async function abrirTurma(id) {
     
     // Setup Tabs
     const nav = document.querySelector('#turmaDetalhe nav');
+    // Estilos inline para o comportamento de expandir/contrair
     nav.innerHTML = `
-        <button class="btn btn-secondary active" onclick="showTurmaTab('estudantes', event)">👥 Estudantes</button>
-        <button class="btn btn-secondary" onclick="showTurmaTab('chamada', event)">✅ Chamada</button>
-        <button class="btn btn-secondary" onclick="showTurmaTab('atrasos', event)">⏰ Atrasos</button>
-        <button class="btn btn-secondary" onclick="showTurmaTab('trabalhos', event)">📝 Trabalhos</button>
-        <button class="btn btn-secondary" onclick="showTurmaTab('ocorrencias', event)">⚠️ Ocorrências</button>
-        <button class="btn btn-secondary" onclick="showTurmaTab('mapeamento', event)">🗺️ Mapeamento</button>
+        <style>
+            .turma-nav-btn {
+                display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px;
+                background: transparent; border: none; cursor: pointer;
+                color: #718096; border-bottom: 3px solid transparent;
+                transition: all 0.2s; font-size: 16px;
+            }
+            .turma-nav-btn.active { color: #3182ce; border-bottom: 3px solid #3182ce; background: #ebf8ff; border-radius: 4px 4px 0 0; }
+            .turma-nav-btn .label { display: none; font-size: 14px; font-weight: bold; }
+            .turma-nav-btn.active .label { display: inline; }
+            .turma-nav-btn:hover { background: #f7fafc; }
+        </style>
+        <button class="turma-nav-btn active" onclick="showTurmaTab('estudantes', event)"><span class="icon">👥</span><span class="label">Estudantes</span></button>
+        <button class="turma-nav-btn" onclick="showTurmaTab('chamada', event)"><span class="icon">✅</span><span class="label">Chamada</span></button>
+        <button class="turma-nav-btn" onclick="showTurmaTab('atrasos', event)"><span class="icon">⏰</span><span class="label">Atrasos</span></button>
+        <button class="turma-nav-btn" onclick="showTurmaTab('trabalhos', event)"><span class="icon">📝</span><span class="label">Trabalhos</span></button>
+        <button class="turma-nav-btn" onclick="showTurmaTab('compensacoes', event)"><span class="icon">⚖️</span><span class="label">Compensações</span></button>
+        <button class="turma-nav-btn" onclick="showTurmaTab('ocorrencias', event)"><span class="icon">⚠️</span><span class="label">Ocorrências</span></button>
+        <button class="turma-nav-btn" onclick="showTurmaTab('mapeamento', event)"><span class="icon">🗺️</span><span class="label">Mapeamento</span></button>
     `;
     
     showScreen('turmaDetalhe');
@@ -485,8 +499,8 @@ function showTurmaTab(tab, evt) {
     document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).style.display = 'block';
     
     if (evt) {
-        document.querySelectorAll('#turmaDetalhe nav button').forEach(b => b.classList.remove('active'));
-        evt.target.classList.add('active');
+        document.querySelectorAll('#turmaDetalhe nav .turma-nav-btn').forEach(b => b.classList.remove('active'));
+        evt.currentTarget.classList.add('active');
     }
 
     if (tab === 'estudantes') renderEstudantes();
@@ -497,6 +511,7 @@ function showTurmaTab(tab, evt) {
     }
     if (tab === 'atrasos') renderAtrasos();
     if (tab === 'trabalhos') renderTrabalhos();
+    if (tab === 'compensacoes') renderCompensacoes();
     if (tab === 'mapeamento') renderMapeamento();
 }
 
@@ -1168,6 +1183,213 @@ function removerTrabalho(id) {
         data.trabalhos = data.trabalhos.filter(t => t.id != id);
         persistirDados();
         renderTrabalhos();
+    }
+}
+
+// --- COMPENSAÇÕES DE AUSÊNCIAS ---
+function renderCompensacoes() {
+    const today = new Date();
+    // Padrão: Mês anterior para "consolidado", ou atual se for dia 20+
+    let defaultMes = today.getMonth() - 1; 
+    let defaultAno = today.getFullYear();
+    if (defaultMes < 0) { defaultMes = 11; defaultAno--; }
+
+    // Recupera seleção anterior se houver (para não resetar ao clicar em status)
+    const selMes = document.getElementById('compMes') ? parseInt(document.getElementById('compMes').value) : defaultMes;
+    const selAno = document.getElementById('compAno') ? parseInt(document.getElementById('compAno').value) : defaultAno;
+
+    // Filtros da Tabela (Recupera estado ou define padrão "Todos")
+    const selMesFiltro = document.getElementById('filtroCompMes') ? parseInt(document.getElementById('filtroCompMes').value) : -1;
+    const selAnoFiltro = document.getElementById('filtroCompAno') ? parseInt(document.getElementById('filtroCompAno').value) : defaultAno;
+
+    const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+    // 1. Buscar Compensações Já Criadas para esta turma
+    let compensacoes = (data.compensacoes || []).filter(c => c.id_turma == turmaAtual);
+    
+    // Aplica Filtro na Tabela
+    if (selMesFiltro !== -1) {
+        compensacoes = compensacoes.filter(c => c.mes_referencia === selMesFiltro && c.ano_referencia === selAnoFiltro);
+    }
+    
+    compensacoes.sort((a,b) => b.id - a.id);
+
+    const html = `
+        <div class="card" style="background: #f0fff4; border: 1px solid #c6f6d5; margin-bottom: 20px;">
+            <h3 style="margin-top:0; color: #276749;">Nova Atribuição de Compensação</h3>
+            <p style="font-size:12px; color:#555;">Selecione o mês e defina a atividade. O sistema atribuirá automaticamente para todos os alunos com faltas no período.</p>
+            
+            <div class="form-row" style="align-items: flex-end; margin-bottom: 10px;">
+                <label>Mês Referência: <select id="compMes">${meses.map((m, i) => `<option value="${i}" ${i === selMes ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+                <label>Ano: <input type="number" id="compAno" value="${selAno}" style="width:80px;"></label>
+            </div>
+
+            <div style="margin-bottom: 10px;">
+                <label style="display:block; margin-bottom:5px; font-weight:bold;">Atividade de Compensação:</label>
+                <input type="text" id="atividadeCompensacao" placeholder="Ex: Resumo do Cap. 5, Lista de Exercícios..." style="width:100%;">
+            </div>
+
+            <button class="btn btn-success" onclick="gerarCompensacoesAutomatico()">🚀 Gerar Compensações</button>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; margin-bottom:10px;">
+            <h3 style="margin:0;">Controle de Entregas</h3>
+            <div style="font-size:13px;">
+                <label>Filtrar: <select id="filtroCompMes" onchange="renderCompensacoes()" style="padding:2px;">
+                    <option value="-1" ${selMesFiltro === -1 ? 'selected' : ''}>Todos</option>
+                    ${meses.map((m, i) => `<option value="${i}" ${i === selMesFiltro ? 'selected' : ''}>${m}</option>`).join('')}
+                </select></label>
+                <input type="number" id="filtroCompAno" value="${selAnoFiltro}" onchange="renderCompensacoes()" style="width:50px; padding:2px;">
+            </div>
+        </div>
+        <div style="overflow-x:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Estudante</th>
+                        <th>Ref.</th>
+                        <th>Atividade</th>
+                        <th>Status (Clique para alterar)</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${compensacoes.length > 0 ? compensacoes.map(c => {
+                        const est = (data.estudantes || []).find(e => e.id == c.id_estudante);
+                        const nomeEst = est ? est.nome_completo : 'Excluído';
+                        const statusMap = {
+                            'pendente': { label: '⏳ Pendente', color: '#d69e2e', bg: '#fffaf0' },
+                            'notificado': { label: '📩 Notificado', color: '#3182ce', bg: '#ebf8ff' },
+                            'entregue': { label: '✅ Entregue', color: '#2f855a', bg: '#f0fff4' },
+                            'nao_entregue': { label: '❌ Não Entregue', color: '#e53e3e', bg: '#fff5f5' }
+                        };
+                        const st = statusMap[c.status] || statusMap['pendente'];
+
+                        // Gera o log minimizado (Ex: A 12/1 Notf 14/1)
+                        const logMinimizado = (c.historico || []).map(h => {
+                            if (!h.data) return '';
+                            const d = new Date(h.data);
+                            const dia = d.getDate();
+                            const mes = d.getMonth() + 1;
+                            const mapSigla = { 'pendente': 'A', 'notificado': 'Notf', 'entregue': 'E', 'nao_entregue': 'X' };
+                            return `<span style="margin-right:4px;">${mapSigla[h.status] || '?'} ${dia}/${mes}</span>`;
+                        }).join('');
+
+                        return `
+                            <tr>
+                                <td>
+                                    <strong>${nomeEst}</strong>
+                                    <div style="font-size:10px; color:#718096; margin-top:2px;">${logMinimizado}</div>
+                                </td>
+                                <td style="font-size:12px;">${meses[c.mes_referencia]}/${c.ano_referencia}</td>
+                                <td>${c.atividade} <br><span style="font-size:10px; color:#666;">Faltas: ${c.qtd_faltas}</span></td>
+                                <td>
+                                    <button onclick="toggleStatusCompensacao(${c.id})" style="border:1px solid ${st.color}; background:${st.bg}; color:${st.color}; padding:5px 10px; border-radius:15px; font-weight:bold; cursor:pointer; width: 130px;">
+                                        ${st.label}
+                                    </button>
+                                </td>
+                                <td><button class="btn btn-danger btn-sm" onclick="removerCompensacao(${c.id})">🗑️</button></td>
+                            </tr>
+                        `;
+                    }).join('') : '<tr><td colspan="5" style="text-align:center; color:#999;">Nenhuma compensação registrada.</td></tr>'}
+                </tbody>
+            </table>
+        </div>
+    `;
+    document.getElementById('tabCompensacoes').innerHTML = html;
+}
+
+function gerarCompensacoesAutomatico() {
+    const mes = parseInt(document.getElementById('compMes').value);
+    const ano = parseInt(document.getElementById('compAno').value);
+    const atividade = document.getElementById('atividadeCompensacao').value;
+
+    if (!atividade) return alert('Digite a descrição da atividade.');
+
+    // Filtra presenças do mês/ano selecionado
+    const presencas = (data.presencas || []).filter(p => {
+        const d = new Date(p.data);
+        // Ajuste de fuso simples ou apenas comparação de mês/ano
+        // getMonth() é 0-based
+        return d.getMonth() === mes && d.getFullYear() === ano && p.status === 'falta';
+    });
+
+    // Agrupa por estudante
+    const contagem = {};
+    presencas.forEach(p => {
+        if (!contagem[p.id_estudante]) contagem[p.id_estudante] = 0;
+        contagem[p.id_estudante]++;
+    });
+
+    // Filtra estudantes da turma atual que têm faltas
+    const estudantesComFalta = (data.estudantes || [])
+        .filter(e => e.id_turma == turmaAtual && contagem[e.id] > 0)
+        .map(e => ({ ...e, faltas: contagem[e.id] }))
+        .sort((a,b) => b.faltas - a.faltas);
+
+    if (estudantesComFalta.length === 0) {
+        return alert('Nenhuma falta registrada para esta turma neste mês.');
+    }
+
+    if (!confirm(`Encontrados ${estudantesComFalta.length} estudantes com faltas. Confirmar atribuição da atividade "${atividade}" para todos?`)) return;
+
+    if (!data.compensacoes) data.compensacoes = [];
+
+    let count = 0;
+    estudantesComFalta.forEach(e => {
+        // Evita duplicidade exata (mesmo aluno, mês, ano e atividade)
+        const jaExiste = data.compensacoes.some(c => 
+            c.id_estudante == e.id && 
+            c.mes_referencia == mes && 
+            c.ano_referencia == ano && 
+            c.atividade === atividade
+        );
+
+        if (jaExiste) return;
+
+        data.compensacoes.push({
+            id: Date.now() + Math.random(),
+            id_turma: turmaAtual,
+            id_estudante: e.id,
+            mes_referencia: mes,
+            ano_referencia: ano,
+            atividade: atividade,
+            qtd_faltas: e.faltas,
+            status: 'pendente', // pendente -> notificado -> entregue -> nao_entregue
+            data_criacao: getTodayString(),
+            historico: [{ status: 'pendente', data: getTodayString() }] // Log inicial
+        });
+        count++;
+    });
+
+    persistirDados();
+    alert(`${count} compensações atribuídas com sucesso!`);
+    renderCompensacoes();
+}
+
+function toggleStatusCompensacao(id) {
+    const comp = data.compensacoes.find(c => c.id == id);
+    if (!comp) return;
+
+    const ciclo = ['pendente', 'notificado', 'entregue', 'nao_entregue'];
+    const atualIdx = ciclo.indexOf(comp.status);
+    const proximoIdx = (atualIdx + 1) % ciclo.length;
+    
+    comp.status = ciclo[proximoIdx];
+    
+    // Adiciona ao histórico
+    if (!comp.historico) comp.historico = [];
+    comp.historico.push({ status: comp.status, data: getTodayString() });
+
+    persistirDados();
+    renderCompensacoes();
+}
+
+function removerCompensacao(id) {
+    if(confirm('Excluir esta atribuição?')) {
+        data.compensacoes = data.compensacoes.filter(c => c.id !== id);
+        persistirDados();
+        renderCompensacoes();
     }
 }
 
