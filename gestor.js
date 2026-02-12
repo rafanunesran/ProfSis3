@@ -223,11 +223,14 @@ function renderOcorrenciasGestor() {
     const todasOcorrencias = (data.ocorrencias || []).sort((a, b) => new Date(b.data) - new Date(a.data));
     
     // Filtro de Status
-    const mostrarConfirmadas = document.getElementById('filtroOcorrenciaConfirmada') ? document.getElementById('filtroOcorrenciaConfirmada').checked : false;
+    let filtro = 'pendente';
+    const radioChecked = document.querySelector('input[name="filtroOco"]:checked');
+    if (radioChecked) filtro = radioChecked.value;
     
     const ocorrenciasFiltradas = todasOcorrencias.filter(o => {
+        if (filtro === 'todas') return true;
         const status = o.status || 'pendente';
-        return mostrarConfirmadas ? status === 'confirmada' : status === 'pendente';
+        return status === filtro;
     });
 
     const html = `
@@ -237,10 +240,13 @@ function renderOcorrenciasGestor() {
                 <div style="background: #edf2f7; padding: 5px 15px; border-radius: 20px; display: flex; align-items: center; gap: 10px;">
                     <span style="font-size: 13px; font-weight: bold; color: #4a5568;">Visualizar:</span>
                     <label style="cursor:pointer; display:flex; align-items:center; gap:5px;">
-                        <input type="radio" name="filtroOco" onclick="renderOcorrenciasGestor()" ${!mostrarConfirmadas ? 'checked' : ''}> Pendentes
+                        <input type="radio" name="filtroOco" value="pendente" onclick="renderOcorrenciasGestor()" ${filtro === 'pendente' ? 'checked' : ''}> Pendentes
                     </label>
                     <label style="cursor:pointer; display:flex; align-items:center; gap:5px;">
-                        <input type="radio" name="filtroOco" id="filtroOcorrenciaConfirmada" onclick="renderOcorrenciasGestor()" ${mostrarConfirmadas ? 'checked' : ''}> Confirmadas
+                        <input type="radio" name="filtroOco" value="confirmada" onclick="renderOcorrenciasGestor()" ${filtro === 'confirmada' ? 'checked' : ''}> Confirmadas
+                    </label>
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:5px;">
+                        <input type="radio" name="filtroOco" value="todas" onclick="renderOcorrenciasGestor()" ${filtro === 'todas' ? 'checked' : ''}> Todas
                     </label>
                 </div>
             </div>
