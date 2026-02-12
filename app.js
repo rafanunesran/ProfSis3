@@ -748,21 +748,50 @@ function removerEstudanteOcorrencia(id) {
     renderOcorrencias();
 }
 
-function salvarOcorrencia() {
+async function salvarOcorrencia() {
     const texto = document.getElementById('novaOcorrenciaTexto').value;
     const ids = tempOcorrenciaIds;
 
     if (!texto) return alert('Descreva a ocorrência.');
     
-    if (!data.ocorrencias) data.ocorrencias = [];
-    data.ocorrencias.push({
+    // Identifica a turma correta para o contexto (Local vs Gestão)
+    const turmaObj = (data.turmas || []).find(t => t.id == turmaAtual);
+    const idTurmaGestao = (turmaObj && turmaObj.masterId) ? turmaObj.masterId : turmaAtual;
+    const nomeTurmaCompleto = turmaObj ? `${turmaObj.nome} - ${turmaObj.disciplina || ''}` : 'Turma Desconhecida';
+    const disciplina = turmaObj ? turmaObj.disciplina : '';
+
+    const novaOcorrencia = {
         id: Date.now(),
         id_turma: turmaAtual,
         data: getTodayString(),
         relato: texto,
-        ids_estudantes: ids
-    });
-    persistirDados();
+        ids_estudantes: ids,
+        autor: currentUser.nome,
+        status: 'pendente', // Status inicial
+        turma_snapshot: nomeTurmaCompleto, // Salva o nome como está agora
+        disciplina: disciplina
+    };
+
+    if (!data.ocorrencias) data.ocorrencias = [];
+    data.ocorrencias.push(novaOcorrencia);
+    await persistirDados();
+    
+    // Sincroniza com a Gestão (se for professor vinculado)
+    if (currentUser.role !== 'gestor' && currentUser.schoolId) {
+        try {
+            const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+            const gestorData = await getData('app_data', key);
+            
+            if (gestorData) {
+                if (!gestorData.ocorrencias) gestorData.ocorrencias = [];
+                // Salva com o ID da turma da gestão para que o gestor saiba de qual turma é
+                gestorData.ocorrencias.push({ ...novaOcorrencia, id_turma: idTurmaGestao });
+                await saveData('app_data', key, gestorData);
+            }
+        } catch (e) {
+            console.error('Erro ao sincronizar ocorrência:', e);
+        }
+    }
     
     // Limpa estado
     tempOcorrenciaIds = [];
