@@ -106,7 +106,7 @@ async function renderDashboard() {
     
     // 1. VISÃO DO GESTOR
     if (currentUser && currentUser.role === 'gestor') {
-        const ocorrencias = (data.ocorrencias || []);
+        const ocorrencias = (data.ocorrencias || []).filter(o => (o.status || 'pendente') === 'pendente');
         const registros = (data.registrosAdministrativos || []);
         const avisosRaw = (data.avisosMural || []);
         const avisos = Array.from(new Map(avisosRaw.map(item => [item.id, item])).values());
@@ -116,7 +116,7 @@ async function renderDashboard() {
                 <div class="card">
                     <h2>⚠️ Ocorrências</h2>
                     <div style="font-size: 24px; font-weight: bold; color: #e53e3e;">
-                        ${ocorrencias.length} <span style="font-size:14px; color:#718096; font-weight:normal;">registradas</span>
+                        ${ocorrencias.length} <span style="font-size:14px; color:#718096; font-weight:normal;">pendentes</span>
                     </div>
                     <button class="btn btn-sm btn-secondary" onclick="showScreen('ocorrenciasGestor')" style="margin-top:10px;">Ver Todas</button>
                 </div>
@@ -237,14 +237,21 @@ async function renderDashboard() {
 
     let htmlAvisos = '';
 
-    // 1. Avisos Gerais
-    const avisosGerais = avisosMural.filter(a => a.turmasAlvo.includes('todas'));
-    if (avisosGerais.length > 0) {
+    // 1. Mural de Avisos (Consolidado: Gerais + Específicos do Professor)
+    const meusIds = new Set(turmas.map(t => String(t.id)));
+    turmas.forEach(t => { if(t.masterId) meusIds.add(String(t.masterId)); });
+
+    const avisosExibir = avisosMural.filter(a => 
+        a.turmasAlvo.includes('todas') || 
+        a.turmasAlvo.some(id => meusIds.has(id))
+    );
+
+    if (avisosExibir.length > 0) {
         htmlAvisos += `
             <div style="margin-bottom: 20px; background: #fffaf0; padding: 15px; border-radius: 8px; border-left: 4px solid #ed8936;">
-                <h3 style="margin-top:0; color: #c05621; font-size: 16px;">🏫 Avisos Gerais</h3>
+                <h3 style="margin-top:0; color: #c05621; font-size: 16px;">📢 Mural de Avisos</h3>
                 <ul style="margin: 0; padding-left: 20px; color: #7b341e;">
-                    ${avisosGerais.map(a => `<li style="margin-bottom: 5px;">${a.texto}</li>`).join('')}
+                    ${avisosExibir.map(a => `<li style="margin-bottom: 5px;">${a.texto}</li>`).join('')}
                 </ul>
             </div>
         `;
@@ -271,12 +278,6 @@ async function renderDashboard() {
     });
 
     Object.values(gruposTurmas).forEach(grupo => {
-        const avisosEspecificos = avisosMural.filter(a => 
-            a.turmasAlvo.includes('todas') || 
-            (grupo.masterId && a.turmasAlvo.includes(String(grupo.masterId))) || 
-            grupo.ids.some(id => a.turmasAlvo.includes(String(id)))
-        );
-
         const registrosTurma = registros.filter(r => 
             (grupo.masterId && r.turmaId == grupo.masterId) || 
             grupo.ids.includes(r.turmaId)
@@ -292,20 +293,19 @@ async function renderDashboard() {
             return true; 
         });
 
-        if (avisosEspecificos.length > 0 || ativos.length > 0) {
+        if (ativos.length > 0) {
             temAvisosTurma = true;
             const disciplinasStr = grupo.disciplinas.length > 0 ? ` <span style="font-size:0.8em; font-weight:normal; color:#718096;">(${grupo.disciplinas.join(', ')})</span>` : '';
             
             htmlTurmas += `
                 <div class="card" style="border: 1px solid #e2e8f0; background: #fff; padding: 15px;">
                     <h4 style="margin-top:0; border-bottom: 1px solid #eee; padding-bottom: 5px; color: #2c5282; margin-bottom: 10px;">${grupo.nomeBase}${disciplinasStr}</h4>
-                    ${avisosEspecificos.length > 0 ? `<div style="margin-bottom: 10px;"><strong style="font-size:12px; color:#ed8936;">📢 Mural:</strong><ul style="margin:0; padding-left:15px; font-size:13px; color: #4a5568;">${avisosEspecificos.map(a => `<li>${a.texto}</li>`).join('')}</ul></div>` : ''}
-                    ${ativos.length > 0 ? `<div><strong style="font-size:12px; color:#3182ce;">📂 Administrativo:</strong><ul style="margin:0; padding-left:15px; font-size:13px; color: #4a5568;">${ativos.map(r => {
+                    <div><strong style="font-size:12px; color:#3182ce;">📂 Administrativo:</strong><ul style="margin:0; padding-left:15px; font-size:13px; color: #4a5568;">${ativos.map(r => {
                         const est = (data.estudantes || []).find(e => e.id == r.estudanteId);
                         const nomeEst = est ? est.nome_completo : 'Estudante';
                         let icon = r.tipo === 'Atestado' ? '🔵' : (r.tipo === 'Faltoso' ? '🔴' : '📝');
                         return `<li>${icon} <strong>${nomeEst}</strong>: ${r.tipo}</li>`;
-                    }).join('')}</ul></div>` : ''}
+                    }).join('')}</ul></div>
                 </div>
             `;
         }
@@ -2347,7 +2347,7 @@ async function renderMapeamento() {
             ${gridHtml}
         </div>
         <div class="no-print" style="margin-top:10px; text-align:right;">
-            <button class="btn btn-primary" onclick="window.print()">🖨️ Imprimir Mapa</button>
+            <button class="btn btn-primary" onclick="imprimirMapeamentoSala()">🖨️ Imprimir Mapa</button>
         </div>
 
         <!-- Controle de Estudantes Não Mapeados -->
@@ -2483,6 +2483,72 @@ async function dropMap(ev, targetCoord) {
         persistirDados();
     }
     renderMapeamento();
+}
+
+async function imprimirMapeamentoSala() {
+    // 1. Get Data
+    const turma = (data.turmas || []).find(t => t.id == turmaAtual);
+    if (!turma) return alert('Turma não encontrada.');
+
+    const sharedTurmaId = turma.masterId || turma.id;
+
+    let mapeamentos = [];
+    if (currentUser && currentUser.schoolId) {
+        const key = 'maps_school_' + currentUser.schoolId;
+        const doc = await getData('app_data', key);
+        mapeamentos = (doc && doc.list) ? doc.list : [];
+    } else {
+        mapeamentos = data.mapeamentos || [];
+    }
+
+    const mapeamento = mapeamentos.find(m => m.id_turma == sharedTurmaId);
+    if (!mapeamento) return alert('Nenhum mapeamento encontrado para esta turma.');
+
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
+
+    // 2. Build HTML for printing
+    let gridHtml = `<div style="display:grid; grid-template-columns: repeat(${mapeamento.colunas}, 1fr); gap:10px;">`;
+    for (let r = 0; r < mapeamento.linhas; r++) {
+        for (let c = 0; c < mapeamento.colunas; c++) {
+            const key = `${r}-${c}`;
+            const estudanteId = mapeamento.assentos[key];
+            const estudante = estudantes.find(e => e.id == estudanteId);
+            
+            gridHtml += `
+                <div style="border: 1px solid #333; padding: 5px; border-radius: 4px; text-align: center; min-height: 60px; display: flex; flex-direction: column; justify-content: center; page-break-inside: avoid;">
+                    <div style="font-size: 10px; font-weight: ${estudante ? 'bold' : 'normal'}; color: ${estudante ? '#000' : '#aaa'};">
+                        ${estudante ? estudante.nome_completo : '(Vazio)'}
+                    </div>
+                </div>
+            `;
+        }
+    }
+    gridHtml += '</div>';
+
+    const printHtml = `
+        <html>
+        <head>
+            <title>Mapeamento - ${turma.nome}</title>
+            <style>
+                @page { size: A4 landscape; margin: 1cm; }
+                body { font-family: Arial, sans-serif; }
+                h1 { text-align: center; margin-bottom: 20px; font-size: 18px; }
+                .lousa { background: #333; color: white; padding: 8px; text-align: center; border-radius: 4px; margin-bottom: 20px; font-weight: bold; letter-spacing: 1px; }
+            </style>
+        </head>
+        <body>
+            <h1>Mapeamento da Sala - ${turma.nome}</h1>
+            <div class="lousa">LOUSA (Frente)</div>
+            ${gridHtml}
+        </body>
+        </html>
+    `;
+
+    // 3. Open print window
+    const janela = window.open('', '', 'width=1123,height=794');
+    janela.document.write(printHtml);
+    janela.document.write('<script>window.print();</script>');
+    janela.document.close();
 }
 
 async function ajustarMapeamento(acao) {
