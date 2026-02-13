@@ -171,7 +171,19 @@ async function renderDashboard() {
     `;
 
     // Agenda do Dia (Baseada na Grade)
-    const gradeEscola = await getGradeEscola();
+    let gradeEscola = [];
+    
+    // Busca dados da Escola (Gestor) para sincronizar Avisos e Grade
+    if (currentUser && currentUser.schoolId) {
+        const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+        const gestorData = await getData('app_data', key);
+        if (gestorData) {
+            gradeEscola = gestorData.gradeHoraria || [];
+            if (gestorData.avisosMural) data.avisosMural = gestorData.avisosMural;
+            if (gestorData.registrosAdministrativos) data.registrosAdministrativos = gestorData.registrosAdministrativos;
+        }
+    } else { gradeEscola = await getGradeEscola(); }
+
     const diaSemanaHoje = new Date().getDay(); // 0=Dom, 1=Seg...
     
     // Filtra blocos do dia atual
@@ -458,6 +470,9 @@ async function abrirTurma(id) {
             // Sincroniza Registros Administrativos (Atestados/Faltosos) para o Dashboard
             if (gestorData.registrosAdministrativos) {
                 data.registrosAdministrativos = gestorData.registrosAdministrativos;
+            }
+            if (gestorData.avisosMural) {
+                data.avisosMural = gestorData.avisosMural;
             }
             
             persistirDados(); // Salva a atualização localmente
@@ -2310,7 +2325,7 @@ async function renderMapeamento() {
     gridHtml += '</div>';
 
     // Identifica estudantes não mapeados
-    const assentosOcupados = Object.values(mapeamento.assentos).map(id => parseInt(id));
+    const assentosOcupados = Object.values(mapeamento.assentos).map(id => Number(id));
     const estudantesNaoMapeados = estudantes.filter(e => !assentosOcupados.includes(e.id));
 
     const html = `
@@ -2413,7 +2428,7 @@ async function dropMap(ev, targetCoord) {
     try { dragData = JSON.parse(dataStr); } catch(e) { return; }
 
     const { type, id, coord: sourceCoord } = dragData;
-    const sourceId = parseInt(id);
+    const sourceId = Number(id);
     
     // Carrega dados do mapa
     const turma = (data.turmas || []).find(t => t.id == turmaAtual);
@@ -2438,6 +2453,13 @@ async function dropMap(ev, targetCoord) {
     if (type === 'seat' && sourceCoord === targetCoord) return; // Soltou no mesmo lugar
 
     if (type === 'list') {
+        // Verifica se já está sentado em outro lugar (previne duplicação)
+        let oldCoord = null;
+        for (const [k, v] of Object.entries(m.assentos)) {
+            if (v == sourceId) { oldCoord = k; break; }
+        }
+        if (oldCoord) delete m.assentos[oldCoord];
+
         // Da Lista -> Carteira (Se ocupada, sobrescreve/troca implicitamente)
         m.assentos[targetCoord] = sourceId;
     } else if (type === 'seat') {
@@ -2511,7 +2533,7 @@ async function atribuirLugarMapeamento(coord, idEstudante) {
     const m = mapeamentos.find(x => x.id_turma == sharedTurmaId);
     if (!m) return;
     
-    const novoId = idEstudante ? parseInt(idEstudante) : null;
+    const novoId = idEstudante ? Number(idEstudante) : null;
     
     // Verifica se o estudante já está em outro lugar
     let coordAntiga = null;

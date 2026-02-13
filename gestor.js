@@ -699,7 +699,7 @@ async function processarImportacaoMassa() {
             } else {
                 // Novo estudante
                 data.estudantes.push({
-                    id: Date.now() + Math.random(), // ID único
+                    id: Date.now() + Math.floor(Math.random() * 1000), // ID único inteiro
                     id_turma: item.turmaId,
                     nome_completo: nome, // Salva como veio, mas a busca é case insensitive
                     status: status
