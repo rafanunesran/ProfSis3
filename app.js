@@ -2241,13 +2241,355 @@ function renderEstudanteGeral() {
 }
 
 // --- MAPEAMENTO ---
-function renderMapeamento() {
-    document.getElementById('tabMapeamento').innerHTML = `
-        <div class="empty-state" style="padding: 50px; text-align: center;">
-            <h3>🗺️ Mapeamento de Sala</h3>
-            <p>Esta funcionalidade será configurada em breve.</p>
+let estudanteSelecionadoMap = null; // Variável para controlar a seleção interativa
+
+async function renderMapeamento() {
+    const container = document.getElementById('tabMapeamento');
+    if (!container) return;
+    
+    container.innerHTML = '<div style="padding:40px; text-align:center; color:#718096;">🔄 Sincronizando mapa da sala...</div>';
+
+    const turma = (data.turmas || []).find(t => t.id == turmaAtual);
+    if (!turma) return;
+    
+    // ID Compartilhado: Se for professor (tem masterId), usa o do gestor. Se for gestor, usa o próprio.
+    const sharedTurmaId = turma.masterId || turma.id;
+
+    let mapeamentos = [];
+    if (currentUser && currentUser.schoolId) {
+        const key = 'maps_school_' + currentUser.schoolId;
+        const doc = await getData('app_data', key);
+        mapeamentos = (doc && doc.list) ? doc.list : [];
+    } else {
+        mapeamentos = data.mapeamentos || [];
+    }
+
+    let mapeamento = mapeamentos.find(m => m.id_turma == sharedTurmaId);
+    
+    if (!mapeamento) {
+        // Se não existir, cria um layout padrão 6x6 e continua
+        mapeamento = { id: Date.now(), id_turma: sharedTurmaId, linhas: 6, colunas: 6, assentos: {} };
+        mapeamentos.push(mapeamento);
+        if (currentUser && currentUser.schoolId) { await saveData('app_data', 'maps_school_' + currentUser.schoolId, { list: mapeamentos }); } 
+        else { data.mapeamentos = mapeamentos; persistirDados(); }
+    }
+
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
+
+    // Grid de Carteiras
+    // Nota: "Fileiras" geralmente são colunas verticais na sala de aula.
+    let gridHtml = `<div style="display:grid; grid-template-columns: repeat(${mapeamento.colunas}, 1fr); gap:10px; flex-grow:1;">`;
+    
+    for (let r = 0; r < mapeamento.linhas; r++) {
+        for (let c = 0; c < mapeamento.colunas; c++) {
+            const key = `${r}-${c}`;
+            const estudanteId = mapeamento.assentos[key];
+            const estudante = estudantes.find(e => e.id == estudanteId);
+            
+            // Estilo dinâmico e Atributos de Drag & Drop
+            const cursorStyle = estudanteSelecionadoMap ? 'cursor: alias; border-color: #3182ce; background: #ebf8ff;' : (estudanteId ? 'cursor: grab;' : '');
+            const dragAttr = estudanteId ? `draggable="true" ondragstart="dragStartMap(event, 'seat', ${estudanteId}, '${key}')" ondragend="dragEndMap(event)"` : '';
+            const dropAttr = `ondragover="allowDropMap(event)" ondrop="dropMap(event, '${key}')"`;
+            
+            // Botão para limpar carteira (já que removemos o select com opção vazio)
+            const btnLimpar = estudanteId ? `<div onclick="atribuirLugarMapeamento('${key}', null); event.stopPropagation();" style="position:absolute; top:2px; right:2px; cursor:pointer; color:#e53e3e; font-weight:bold; font-size:12px; line-height:1; padding:2px; z-index:10;" title="Remover aluno">×</div>` : '';
+            
+            gridHtml += `
+                <div class="card-assento" ${dragAttr} ${dropAttr} onclick="clicarAssentoMap('${key}', event)" style="background:white; border:1px solid #cbd5e0; padding:5px; border-radius:6px; text-align:center; min-height:60px; display:flex; flex-direction:column; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05); position:relative; ${cursorStyle}">
+                    ${btnLimpar}
+                    <div style="font-size:11px; font-weight:${estudante ? 'bold' : 'normal'}; color:${estudante ? '#2d3748' : '#a0aec0'}; pointer-events:none; user-select:none; padding: 0 5px;">
+                        ${estudante ? estudante.nome_completo : '<span style="color:#e2e8f0;">(Vazio)</span>'}
+                    </div>
+                    <!-- Overlay para capturar clique quando houver seleção -->
+                    ${estudanteSelecionadoMap ? `<div style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:5;"></div>` : ''}
+                    <div style="font-size:9px; color:#cbd5e0; margin-top:2px;">F${c+1}-C${r+1}</div>
+                </div>
+            `;
+        }
+    }
+    gridHtml += '</div>';
+
+    // Identifica estudantes não mapeados
+    const assentosOcupados = Object.values(mapeamento.assentos).map(id => parseInt(id));
+    const estudantesNaoMapeados = estudantes.filter(e => !assentosOcupados.includes(e.id));
+
+    const html = `
+        <style>@media print { .no-print { display: none !important; } }</style>
+        <style>.is-dragging select { pointer-events: none !important; opacity: 0.5; } .is-dragging .card-assento { border: 2px dashed #3182ce !important; background: #ebf8ff !important; }</style>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; flex-wrap:wrap; gap:10px;">
+            <h3 style="margin:0;">🗺️ Mapeamento da Sala</h3>
+            <div style="display:flex; gap:5px;">
+                <button class="btn btn-sm btn-secondary" onclick="ajustarMapeamento('addLinha')" title="Adicionar Linha (Fundo)">+ Linha</button>
+                <button class="btn btn-sm btn-secondary" onclick="ajustarMapeamento('remLinha')" title="Remover Linha">- Linha</button>
+                <button class="btn btn-sm btn-secondary" onclick="ajustarMapeamento('addCol')" title="Adicionar Fileira (Lateral)">+ Fileira</button>
+                <button class="btn btn-sm btn-secondary" onclick="ajustarMapeamento('remCol')" title="Remover Fileira">- Fileira</button>
+                <button class="btn btn-sm btn-danger" onclick="resetarMapeamento()" style="margin-left:10px;">🗑️ Resetar</button>
+            </div>
         </div>
+        
+        <div class="card" style="background:#f7fafc; overflow-x:auto; border:1px solid #e2e8f0; padding: 20px;">
+            <div style="background:#2d3748; color:white; padding:5px; text-align:center; border-radius:4px; margin-bottom:15px; font-weight:bold; letter-spacing:1px;">📺 LOUSA (Frente)</div>
+            ${gridHtml}
+        </div>
+        <div class="no-print" style="margin-top:10px; text-align:right;">
+            <button class="btn btn-primary" onclick="window.print()">🖨️ Imprimir Mapa</button>
+        </div>
+
+        <!-- Controle de Estudantes Não Mapeados -->
+        <div class="no-print" style="margin-top: 20px;">
+            ${estudantesNaoMapeados.length > 0 ? `
+                <div style="padding: 15px; background: #fff5f5; border: 1px solid #feb2b2; border-radius: 8px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                        <h4 style="margin:0; color: #c53030;">⚠️ Estudantes sem lugar definido (${estudantesNaoMapeados.length})</h4>
+                        ${estudanteSelecionadoMap ? '<span style="font-size:12px; color:#3182ce; font-weight:bold; animation: pulse 1s infinite;">👈 Clique em uma carteira acima para sentar o aluno</span>' : '<span style="font-size:11px; color:#718096;">Clique no nome para selecionar e depois clique na carteira</span>'}
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                        ${estudantesNaoMapeados.map(e => {
+                            const isSelected = estudanteSelecionadoMap == e.id;
+                            const style = isSelected 
+                                ? 'background:#3182ce; color:white; border:1px solid #2c5282; box-shadow: 0 0 5px rgba(66,153,225,0.5); transform: scale(1.05);' 
+                                : 'background:white; color:#c53030; border:1px solid #fc8181; cursor:pointer;';
+                            
+                            return `<div draggable="true" ondragstart="dragStartMap(event, 'list', ${e.id})" ondragend="dragEndMap(event)" onclick="toggleSelecaoMap(${e.id})" style="padding:4px 12px; border-radius:15px; font-size:12px; transition:all 0.2s; display:flex; align-items:center; ${style}">
+                                👤 ${e.nome_completo}
+                            </div>`;
+                        }).join('')}
+                    </div>
+                </div>
+            ` : `
+                <div style="padding: 15px; background: #f0fff4; border: 1px solid #9ae6b4; border-radius: 8px; text-align:center; color: #2f855a; font-weight:bold;">
+                    ✅ Todos os estudantes ativos estão mapeados!
+                </div>
+            `}
+        </div>
+        <style>
+            @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+        </style>
     `;
+    
+    container.innerHTML = html;
+}
+
+function toggleSelecaoMap(id) {
+    if (estudanteSelecionadoMap == id) {
+        estudanteSelecionadoMap = null; // Desmarcar
+    } else {
+        estudanteSelecionadoMap = id; // Marcar
+    }
+    renderMapeamento(); // Atualiza visualmente
+}
+
+function clicarAssentoMap(coord, event) {
+    if (estudanteSelecionadoMap) {
+        atribuirLugarMapeamento(coord, estudanteSelecionadoMap);
+        estudanteSelecionadoMap = null; // Limpa seleção após atribuir
+    }
+}
+
+// --- FUNÇÕES DE DRAG & DROP ---
+function dragStartMap(ev, type, id, coord) {
+    // Salva dados do arrasto: tipo (lista/assento), ID do aluno e coordenada de origem (se houver)
+    ev.dataTransfer.setData("text/plain", JSON.stringify({type, id, coord}));
+    ev.dataTransfer.effectAllowed = "move";
+    document.body.classList.add('is-dragging');
+}
+
+function dragEndMap(ev) {
+    document.body.classList.remove('is-dragging');
+}
+
+function allowDropMap(ev) {
+    ev.preventDefault(); // Necessário para permitir o drop
+    ev.dataTransfer.dropEffect = "move";
+}
+
+async function dropMap(ev, targetCoord) {
+    ev.preventDefault();
+    document.body.classList.remove('is-dragging');
+    const dataStr = ev.dataTransfer.getData("text/plain");
+    if (!dataStr) return;
+    
+    let dragData;
+    try { dragData = JSON.parse(dataStr); } catch(e) { return; }
+
+    const { type, id, coord: sourceCoord } = dragData;
+    const sourceId = parseInt(id);
+    
+    // Carrega dados do mapa
+    const turma = (data.turmas || []).find(t => t.id == turmaAtual);
+    if (!turma) return;
+    const sharedTurmaId = turma.masterId || turma.id;
+
+    let mapeamentos = [];
+    if (currentUser && currentUser.schoolId) {
+        const key = 'maps_school_' + currentUser.schoolId;
+        const doc = await getData('app_data', key);
+        mapeamentos = (doc && doc.list) ? doc.list : [];
+    } else {
+        mapeamentos = data.mapeamentos || [];
+    }
+
+    const m = mapeamentos.find(x => x.id_turma == sharedTurmaId);
+    if (!m) return;
+
+    const targetId = m.assentos[targetCoord];
+
+    // Lógica de Troca/Atribuição
+    if (type === 'seat' && sourceCoord === targetCoord) return; // Soltou no mesmo lugar
+
+    if (type === 'list') {
+        // Da Lista -> Carteira (Se ocupada, sobrescreve/troca implicitamente)
+        m.assentos[targetCoord] = sourceId;
+    } else if (type === 'seat') {
+        // Carteira -> Carteira
+        if (targetId) {
+            // Troca (Swap)
+            m.assentos[sourceCoord] = targetId;
+            m.assentos[targetCoord] = sourceId;
+        } else {
+            // Move (Livre)
+            delete m.assentos[sourceCoord];
+            m.assentos[targetCoord] = sourceId;
+        }
+    }
+
+    // Salva
+    if (currentUser && currentUser.schoolId) {
+        await saveData('app_data', 'maps_school_' + currentUser.schoolId, { list: mapeamentos });
+    } else {
+        data.mapeamentos = mapeamentos;
+        persistirDados();
+    }
+    renderMapeamento();
+}
+
+async function ajustarMapeamento(acao) {
+    const turma = (data.turmas || []).find(t => t.id == turmaAtual);
+    if (!turma) return;
+    const sharedTurmaId = turma.masterId || turma.id;
+
+    let mapeamentos = [];
+    if (currentUser && currentUser.schoolId) {
+        const key = 'maps_school_' + currentUser.schoolId;
+        const doc = await getData('app_data', key);
+        mapeamentos = (doc && doc.list) ? doc.list : [];
+    } else {
+        mapeamentos = data.mapeamentos || [];
+    }
+
+    const m = mapeamentos.find(x => x.id_turma == sharedTurmaId);
+    if (!m) return;
+    
+    if (acao === 'addLinha') m.linhas++;
+    if (acao === 'remLinha' && m.linhas > 1) m.linhas--;
+    if (acao === 'addCol') m.colunas++;
+    if (acao === 'remCol' && m.colunas > 1) m.colunas--;
+    
+    if (currentUser && currentUser.schoolId) {
+        await saveData('app_data', 'maps_school_' + currentUser.schoolId, { list: mapeamentos });
+    } else {
+        data.mapeamentos = mapeamentos;
+        persistirDados();
+    }
+    renderMapeamento();
+}
+
+async function atribuirLugarMapeamento(coord, idEstudante) {
+    const turma = (data.turmas || []).find(t => t.id == turmaAtual);
+    if (!turma) return;
+    const sharedTurmaId = turma.masterId || turma.id;
+
+    let mapeamentos = [];
+    if (currentUser && currentUser.schoolId) {
+        const key = 'maps_school_' + currentUser.schoolId;
+        const doc = await getData('app_data', key);
+        mapeamentos = (doc && doc.list) ? doc.list : [];
+    } else {
+        mapeamentos = data.mapeamentos || [];
+    }
+
+    const m = mapeamentos.find(x => x.id_turma == sharedTurmaId);
+    if (!m) return;
+    
+    const novoId = idEstudante ? parseInt(idEstudante) : null;
+    
+    // Verifica se o estudante já está em outro lugar
+    let coordAntiga = null;
+    if (novoId) {
+        for (const [key, val] of Object.entries(m.assentos)) {
+            if (val == novoId && key !== coord) {
+                coordAntiga = key;
+                break;
+            }
+        }
+    }
+    
+    const ocupanteAtual = m.assentos[coord];
+    
+    if (coordAntiga) {
+        // Estudante já sentado em outro lugar
+        if (ocupanteAtual) {
+            // Troca (Swap)
+            if (confirm('Este estudante já está sentado em outro lugar. Deseja trocar os dois de lugar?')) {
+                m.assentos[coordAntiga] = ocupanteAtual;
+                m.assentos[coord] = novoId;
+            } else {
+                renderMapeamento(); // Reverte visualmente
+                return;
+            }
+        } else {
+            // Move
+            if (confirm('Mover estudante para este novo lugar?')) {
+                delete m.assentos[coordAntiga];
+                m.assentos[coord] = novoId;
+            } else {
+                renderMapeamento(); // Reverte
+                return;
+            }
+        }
+    } else {
+        // Apenas atribui (sobrescreve se tiver alguém)
+        if (novoId) {
+            m.assentos[coord] = novoId;
+        } else {
+            delete m.assentos[coord];
+        }
+    }
+    
+    if (currentUser && currentUser.schoolId) {
+        await saveData('app_data', 'maps_school_' + currentUser.schoolId, { list: mapeamentos });
+    } else {
+        data.mapeamentos = mapeamentos;
+        persistirDados();
+    }
+    renderMapeamento();
+}
+
+async function resetarMapeamento() {
+    if (!confirm('Isso apagará todo o layout e as posições. Continuar?')) return;
+
+    const turma = (data.turmas || []).find(t => t.id == turmaAtual);
+    if (!turma) return;
+    const sharedTurmaId = turma.masterId || turma.id;
+
+    let mapeamentos = [];
+    if (currentUser && currentUser.schoolId) {
+        const key = 'maps_school_' + currentUser.schoolId;
+        const doc = await getData('app_data', key);
+        mapeamentos = (doc && doc.list) ? doc.list : [];
+    } else {
+        mapeamentos = data.mapeamentos || [];
+    }
+
+    mapeamentos = mapeamentos.filter(m => m.id_turma != sharedTurmaId);
+    
+    if (currentUser && currentUser.schoolId) {
+        await saveData('app_data', 'maps_school_' + currentUser.schoolId, { list: mapeamentos });
+    } else {
+        data.mapeamentos = mapeamentos;
+        persistirDados();
+    }
+    renderMapeamento();
 }
 
 // --- GRADE HORÁRIA (PROFESSOR) ---
