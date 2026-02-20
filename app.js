@@ -110,7 +110,8 @@ async function renderDashboard() {
     
     // 1. VISÃO DO GESTOR
     if (currentUser && currentUser.role === 'gestor') {
-        const ocorrencias = (data.ocorrencias || []).filter(o => (o.status || 'pendente') === 'pendente');
+        // Filtra ocorrências pendentes que NÃO sejam do tipo 'rapida'
+        const ocorrencias = (data.ocorrencias || []).filter(o => (o.status || 'pendente') === 'pendente' && o.tipo !== 'rapida');
         const registros = (data.registrosAdministrativos || []);
         const avisosRaw = (data.avisosMural || []);
         const avisos = Array.from(new Map(avisosRaw.map(item => [item.id, item])).values());
@@ -915,9 +916,24 @@ function copiarTextoFaltas(textoEncoded) {
 // --- OCORRÊNCIAS ---
 let tempOcorrenciaIds = []; // Variável temporária para armazenar seleção
 
-function renderOcorrencias() {
+async function renderOcorrencias() {
     const ocorrencias = (data.ocorrencias || []).filter(o => o.id_turma == turmaAtual).sort((a, b) => new Date(b.data) - new Date(a.data));
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
+    
+    // Buscar opções de ocorrência rápida
+    let opcoesRapidas = [];
+    if (currentUser.role === 'gestor') {
+        opcoesRapidas = data.opcoesOcorrenciaRapida || [];
+    } else if (currentUser.schoolId) {
+        // Professor busca da escola
+        try {
+            const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+            const gestorData = await getData('app_data', key);
+            if (gestorData && gestorData.opcoesOcorrenciaRapida) {
+                opcoesRapidas = gestorData.opcoesOcorrenciaRapida;
+            }
+        } catch(e) { console.log('Erro ao buscar opções rápidas'); }
+    }
 
     // Filtra estudantes disponíveis e selecionados
     const disponiveis = estudantes.filter(e => !tempOcorrenciaIds.includes(e.id));
@@ -927,6 +943,28 @@ function renderOcorrencias() {
     const textoAtual = document.getElementById('novaOcorrenciaTexto') ? document.getElementById('novaOcorrenciaTexto').value : '';
 
     const html = `
+        <!-- OCORRÊNCIA RÁPIDA -->
+        ${opcoesRapidas.length > 0 ? `
+        <div class="card" style="margin-bottom: 20px; border: 1px solid #bee3f8; background: #ebf8ff;">
+            <h3 style="color: #2c5282; margin-top:0;">⚡ Registro Rápido</h3>
+            <div class="form-row" style="align-items: flex-end;">
+                <label style="flex-grow:1;">Estudante:
+                    <select id="selEstudanteRapido">
+                        <option value="">Selecione...</option>
+                        ${estudantes.map(e => `<option value="${e.id}">${e.nome_completo}</option>`).join('')}
+                    </select>
+                </label>
+                <label style="flex-grow:1;">Ocorrência:
+                    <select id="selOpcaoRapida">
+                        <option value="">Selecione...</option>
+                        ${opcoesRapidas.map(op => `<option value="${op}">${op}</option>`).join('')}
+                    </select>
+                </label>
+                <button class="btn btn-info" onclick="salvarOcorrenciaRapida()">Registrar</button>
+            </div>
+        </div>
+        ` : ''}
+
         <div class="card" style="margin-bottom: 20px; border: 1px solid #e2e8f0;">
             <h3>Nova Ocorrência</h3>
             
@@ -962,17 +1000,20 @@ function renderOcorrencias() {
                 const est = estudantes.find(e => e.id == id);
                 return est ? est.nome_completo : 'Excluído';
             }).join(', ');
+            
+            const isRapida = o.tipo === 'rapida';
+            const cardStyle = isRapida ? 'background:#ebf8ff; border-left:4px solid #3182ce;' : 'background:#fff5f5; border-left:4px solid #e53e3e;';
 
             return `
-            <div class="card" style="background:#fff5f5; margin-bottom:5px;">
+            <div class="card" style="${cardStyle} margin-bottom:5px; padding:10px;">
                 <div style="display:flex; justify-content:space-between;">
-                    <small style="font-weight:bold;">${formatDate(o.data)}</small>
+                    <small style="font-weight:bold;">${formatDate(o.data)} ${isRapida ? '⚡' : ''}</small>
                     <div>
                         <button class="btn btn-sm btn-secondary" onclick="imprimirOcorrencia(${o.id})">🖨️ Imprimir</button>
                         <button class="btn btn-sm btn-danger" onclick="removerOcorrencia(${o.id})">🗑️</button>
                     </div>
                 </div>
-                <p style="margin: 5px 0; font-size: 13px; color: #c53030;"><strong>Envolvidos:</strong> ${nomes || 'Nenhum selecionado'}</p>
+                <p style="margin: 5px 0; font-size: 13px; color: ${isRapida ? '#2c5282' : '#c53030'};"><strong>Envolvidos:</strong> ${nomes || 'Nenhum selecionado'}</p>
                 <p>${o.relato}</p>
             </div>
         `}).join('')}
@@ -1003,12 +1044,44 @@ function removerEstudanteOcorrencia(id) {
     renderOcorrencias();
 }
 
+async function salvarOcorrenciaRapida() {
+    const idEstudante = document.getElementById('selEstudanteRapido').value;
+    const opcao = document.getElementById('selOpcaoRapida').value;
+
+    if (!idEstudante || !opcao) return alert('Selecione o estudante e a ocorrência.');
+
+    // Reutiliza a lógica de salvamento, mas com tipo 'rapida'
+    // Passamos o ID do estudante como array para manter compatibilidade
+    await registrarOcorrenciaNoBanco({
+        ids: [parseInt(idEstudante)],
+        texto: opcao,
+        tipo: 'rapida'
+    });
+    
+    alert('Registro rápido salvo!');
+    renderOcorrencias();
+}
+
 async function salvarOcorrencia() {
     const texto = document.getElementById('novaOcorrenciaTexto').value;
     const ids = tempOcorrenciaIds;
 
     if (!texto) return alert('Descreva a ocorrência.');
     
+    await registrarOcorrenciaNoBanco({
+        ids: ids,
+        texto: texto,
+        tipo: 'disciplinar'
+    });
+    
+    // Limpa estado
+    tempOcorrenciaIds = [];
+    document.getElementById('novaOcorrenciaTexto').value = '';
+    renderOcorrencias();
+}
+
+// Função auxiliar para centralizar o salvamento
+async function registrarOcorrenciaNoBanco({ ids, texto, tipo }) {
     // Identifica a turma correta para o contexto (Local vs Gestão)
     const turmaObj = (data.turmas || []).find(t => t.id == turmaAtual);
     const idTurmaGestao = (turmaObj && turmaObj.masterId) ? turmaObj.masterId : turmaAtual;
@@ -1022,7 +1095,8 @@ async function salvarOcorrencia() {
         relato: texto,
         ids_estudantes: ids,
         autor: currentUser.nome,
-        status: 'pendente', // Status inicial
+        status: tipo === 'rapida' ? 'registrada' : 'pendente', // Rápidas não ficam pendentes
+        tipo: tipo, // 'rapida' ou 'disciplinar'
         turma_snapshot: nomeTurmaCompleto, // Salva o nome como está agora
         disciplina: disciplina
     };
@@ -1047,11 +1121,6 @@ async function salvarOcorrencia() {
             console.error('Erro ao sincronizar ocorrência:', e);
         }
     }
-    
-    // Limpa estado
-    tempOcorrenciaIds = [];
-    document.getElementById('novaOcorrenciaTexto').value = '';
-    renderOcorrencias();
 }
 
 function removerOcorrencia(id) {

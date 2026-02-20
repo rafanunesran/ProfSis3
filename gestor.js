@@ -233,22 +233,54 @@ function removerRegistroGestao(id) {
     }
 }
 
+let currentOcorrenciaTab = 'disciplinares'; // disciplinares, rapidas, config
+
 function renderOcorrenciasGestor() {
     const todasOcorrencias = (data.ocorrencias || []).sort((a, b) => new Date(b.data) - new Date(a.data));
     
+    // Filtra por tipo
+    const disciplinares = todasOcorrencias.filter(o => o.tipo !== 'rapida');
+    const rapidas = todasOcorrencias.filter(o => o.tipo === 'rapida');
+
+    const html = `
+        <div class="card">
+            <div style="margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 10px;">
+                <button class="btn ${currentOcorrenciaTab === 'disciplinares' ? 'btn-primary' : 'btn-secondary'}" 
+                        onclick="currentOcorrenciaTab='disciplinares'; renderOcorrenciasGestor()">
+                    ⚠️ Disciplinares
+                </button>
+                <button class="btn ${currentOcorrenciaTab === 'rapidas' ? 'btn-primary' : 'btn-secondary'}" 
+                        onclick="currentOcorrenciaTab='rapidas'; renderOcorrenciasGestor()">
+                    ⚡ Registros Rápidos
+                </button>
+                <button class="btn ${currentOcorrenciaTab === 'config' ? 'btn-primary' : 'btn-secondary'}" 
+                        onclick="currentOcorrenciaTab='config'; renderOcorrenciasGestor()">
+                    ⚙️ Configuração
+                </button>
+            </div>
+
+            ${currentOcorrenciaTab === 'disciplinares' ? renderAbaDisciplinares(disciplinares) : ''}
+            ${currentOcorrenciaTab === 'rapidas' ? renderAbaRapidas(rapidas) : ''}
+            ${currentOcorrenciaTab === 'config' ? renderAbaConfigOcorrencias() : ''}
+        </div>
+    `;
+    document.getElementById('ocorrenciasGestor').innerHTML = html;
+}
+
+function renderAbaDisciplinares(lista) {
     // Filtro de Status
     let filtro = 'pendente';
     const radioChecked = document.querySelector('input[name="filtroOco"]:checked');
     if (radioChecked) filtro = radioChecked.value;
-    
-    const ocorrenciasFiltradas = todasOcorrencias.filter(o => {
+
+    const filtradas = lista.filter(o => {
         if (filtro === 'todas') return true;
         const status = o.status || 'pendente';
         return status === filtro;
     });
 
-    const html = `
-        <div class="card">
+    return `
+        <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
                 <h2>⚠️ Ocorrências da Escola</h2>
                 <div style="background: #edf2f7; padding: 5px 15px; border-radius: 20px; display: flex; align-items: center; gap: 10px;">
@@ -277,7 +309,7 @@ function renderOcorrenciasGestor() {
                     </tr>
                 </thead>
                 <tbody>
-                    ${ocorrenciasFiltradas.length > 0 ? ocorrenciasFiltradas.map(o => {
+                    ${filtradas.length > 0 ? filtradas.map(o => {
                         const turma = data.turmas.find(t => t.id == o.id_turma);
                         // Usa o snapshot salvo pelo professor ou tenta montar com dados atuais
                         const turmaDisplay = o.turma_snapshot || (turma ? `${turma.nome} ${o.disciplina ? '- ' + o.disciplina : ''}` : '?');
@@ -310,7 +342,88 @@ function renderOcorrenciasGestor() {
             </table>
         </div>
     `;
-    document.getElementById('ocorrenciasGestor').innerHTML = html;
+}
+
+function renderAbaRapidas(lista) {
+    return `
+        <div>
+            <h2>⚡ Histórico de Registros Rápidos</h2>
+            <p style="color:#666; font-size:13px; margin-bottom:15px;">Estes registros são apenas informativos e não geram alertas no dashboard.</p>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Turma</th>
+                        <th>Estudante</th>
+                        <th>Ocorrência</th>
+                        <th>Professor</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${lista.length > 0 ? lista.map(o => {
+                        const envolvidos = (o.ids_estudantes || []).map(id => {
+                            const est = (data.estudantes || []).find(e => e.id == id);
+                            return est ? est.nome_completo : '?';
+                        }).join(', ');
+
+                        return `
+                            <tr>
+                                <td>${formatDate(o.data)}</td>
+                                <td>${o.turma_snapshot || '-'}</td>
+                                <td><strong>${envolvidos}</strong></td>
+                                <td><span style="background:#ebf8ff; color:#2c5282; padding:2px 8px; border-radius:10px; font-size:12px;">${o.relato}</span></td>
+                                <td>${o.autor}</td>
+                            </tr>
+                        `;
+                    }).join('') : '<tr><td colspan="5" style="text-align:center; padding:20px; color:#a0aec0;">Nenhum registro rápido encontrado.</td></tr>'}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function renderAbaConfigOcorrencias() {
+    const opcoes = data.opcoesOcorrenciaRapida || [];
+    
+    return `
+        <div>
+            <h2>⚙️ Configuração de Ocorrências Rápidas</h2>
+            <p style="color:#666;">Defina as opções que aparecerão para os professores (ex: "Sem material", "Conversa paralela").</p>
+            
+            <div style="display:flex; gap:10px; margin-bottom:20px; background:#f7fafc; padding:15px; border-radius:8px;">
+                <input type="text" id="novaOpcaoRapida" placeholder="Ex: Esqueceu material" style="flex-grow:1;">
+                <button class="btn btn-success" onclick="adicionarOpcaoRapida()">+ Adicionar</button>
+            </div>
+
+            <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:10px;">
+                ${opcoes.map((op, index) => `
+                    <div style="border:1px solid #e2e8f0; padding:10px; border-radius:6px; display:flex; justify-content:space-between; align-items:center; background:white;">
+                        <span>${op}</span>
+                        <button class="btn btn-sm btn-danger" onclick="removerOpcaoRapida(${index})">🗑️</button>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function adicionarOpcaoRapida() {
+    const input = document.getElementById('novaOpcaoRapida');
+    const valor = input.value.trim();
+    if (!valor) return;
+
+    if (!data.opcoesOcorrenciaRapida) data.opcoesOcorrenciaRapida = [];
+    data.opcoesOcorrenciaRapida.push(valor);
+    persistirDados();
+    renderOcorrenciasGestor();
+}
+
+function removerOpcaoRapida(index) {
+    if (!confirm('Remover esta opção?')) return;
+    data.opcoesOcorrenciaRapida.splice(index, 1);
+    persistirDados();
+    renderOcorrenciasGestor();
 }
 
 function toggleStatusOcorrencia(id) {
