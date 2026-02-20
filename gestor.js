@@ -956,7 +956,7 @@ async function verRelatorioTutoriaAluno(profId, profNome, alunoId, alunoNome) {
                         <option value="2">2º Semestre ${currentYear}</option>
                         <option value="todos">Todo o Ano</option>
                     </select>
-                    <button class="btn btn-primary" onclick="window.print()">🖨️ Imprimir</button>
+                    <button class="btn btn-primary" onclick="imprimirRelatorioTutoriaGestorSimplificado('${profNome}', '${alunoNome}')">🖨️ Imprimir</button>
                 </div>
             </div>
 
@@ -1007,4 +1007,72 @@ function filtrarRelatorioTutoriaUI() {
             <p style="white-space: pre-wrap; color: #4a5568; margin:0;">${e.resumo || ''}</p>
         </div>
     `).join('');
+}
+
+function imprimirRelatorioTutoriaGestorSimplificado(profNome, alunoNome) {
+    const container = document.getElementById('tutoriasGestor');
+    const semestreVal = document.getElementById('filtroSemestre').value;
+    const encontros = JSON.parse(container.dataset.encontros || '[]');
+    
+    // Filtra conforme seleção na tela
+    const currentYear = new Date().getFullYear();
+    const filtrados = encontros.filter(e => {
+        if (semestreVal === 'todos') return true;
+        const d = new Date(e.data);
+        const mes = d.getMonth();
+        if (semestreVal === '1') return mes <= 5;
+        if (semestreVal === '2') return mes >= 6;
+        return true;
+    });
+    
+    // Ordenação (Mais antigo para mais novo para leitura sequencial)
+    filtrados.sort((a,b) => new Date(a.data) - new Date(b.data));
+
+    // Nome da Escola (Pega do cabeçalho da aplicação)
+    const nomeEscola = document.querySelector('header h1') ? document.querySelector('header h1').textContent.replace('SisProf - ', '') : 'Escola';
+    
+    // Texto do Semestre
+    let semLabel = semestreVal === 'todos' ? `Ano de ${currentYear}` : `${semestreVal}º Semestre de ${currentYear}`;
+
+    const html = `
+        <html>
+        <head>
+            <title>Relatório de Tutoria</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 40px; color: #000; line-height: 1.5; }
+                h1 { text-align: center; font-size: 22px; margin: 0 0 5px 0; text-transform: uppercase; }
+                .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid #000; padding-bottom: 20px; }
+                .sub-header { font-size: 16px; margin-top: 5px; }
+                .info { margin-bottom: 30px; font-size: 14px; border: 1px solid #ccc; padding: 15px; border-radius: 5px; }
+                .registro { margin-bottom: 25px; }
+                .registro-titulo { font-weight: bold; font-size: 15px; margin-bottom: 5px; text-decoration: underline; }
+                .registro-texto { white-space: pre-wrap; text-align: justify; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>${nomeEscola}</h1>
+                <div class="sub-header">Relatório de Tutoria - ${semLabel}</div>
+            </div>
+            
+            <div class="info">
+                <p style="margin: 5px 0;"><strong>Professor Tutor:</strong> ${profNome}</p>
+                <p style="margin: 5px 0;"><strong>Estudante Tutorado:</strong> ${alunoNome}</p>
+            </div>
+
+            ${filtrados.length > 0 ? filtrados.map(e => `
+                <div class="registro">
+                    <div class="registro-titulo">${e.tema || 'Sem Título'}</div>
+                    <div class="registro-texto">${e.resumo || ''}</div>
+                </div>
+            `).join('') : '<p style="text-align:center; font-style:italic;">Nenhum registro encontrado para este período.</p>'}
+
+            <script>window.print();</script>
+        </body>
+        </html>
+    `;
+    
+    const win = window.open('', '', 'width=900,height=800');
+    win.document.write(html);
+    win.document.close();
 }
