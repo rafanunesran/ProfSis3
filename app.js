@@ -2390,16 +2390,17 @@ function renderEstudanteGeral() {
     `;
 
     // 3. Ocorrências
-    const ocorrencias = (data.ocorrencias || []).filter(o => {
-        // Verifica se o ID do aluno está na lista de envolvidos da ocorrência (se houver) 
-        // ou se a ocorrência está ligada à turma e precisamos cruzar dados (simplificado aqui para buscar pelo contexto da turma se necessário, mas idealmente a ocorrência tem ids_estudantes)
-        // Assumindo estrutura simples onde ocorrência pode ter ids_estudantes ou ser geral da turma.
-        // Se sua estrutura de ocorrência não tem lista de estudantes explícita, essa filtragem pode precisar de ajuste.
-        // Vou assumir que filtramos por turma onde ele passou:
-        return false; // Placeholder se não houver vínculo direto na ocorrência
+    let ocorrenciasAluno = (data.ocorrencias || []).filter(o => {
+        return (o.ids_estudantes || []).some(id => todosIds.includes(id));
     });
-    // Como o modelo de dados de ocorrência no código fornecido é simples (id_turma, relato), 
-    // vamos listar as turmas por onde ele passou:
+
+    // Filtro por Perfil: Professor vê apenas as suas; Gestor vê todas
+    if (!isGestor) {
+        ocorrenciasAluno = ocorrenciasAluno.filter(o => o.autor === currentUser.nome);
+    }
+    
+    ocorrenciasAluno.sort((a,b) => new Date(b.data) - new Date(a.data));
+
     const historicoTurmas = todosRegistrosAluno.map(e => {
         const t = data.turmas.find(turma => turma.id == e.id_turma);
         return `<div class="badge badge-info" style="margin-right:5px;">${t ? t.nome : 'Turma Excluída'} (${e.status})</div>`;
@@ -2408,7 +2409,22 @@ function renderEstudanteGeral() {
     document.getElementById('estudanteGeralOcorrencias').innerHTML = `
         <p><strong>Histórico de Matrículas:</strong></p>
         <div style="margin-bottom:15px;">${historicoTurmas}</div>
-        <p><em>Para ver ocorrências específicas, o sistema buscará em todas as turmas acima.</em></p>
+        
+        ${ocorrenciasAluno.length > 0 ? `
+            <table style="font-size:13px;">
+                <thead><tr><th>Data</th><th>Tipo</th><th>Relato</th><th>Autor</th></tr></thead>
+                <tbody>
+                    ${ocorrenciasAluno.map(o => `
+                        <tr style="${o.tipo === 'rapida' ? 'background:#ebf8ff;' : 'background:#fff5f5;'}">
+                            <td>${formatDate(o.data)}</td>
+                            <td>${o.tipo === 'rapida' ? '⚡ Rápida' : '⚠️ Disciplinar'}</td>
+                            <td>${o.relato}</td>
+                            <td>${o.autor || '-'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        ` : '<p class="empty-state">Nenhuma ocorrência registrada para este estudante (neste perfil).</p>'}
     `;
 
     // VISIBILIDADE POR PERFIL
