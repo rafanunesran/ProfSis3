@@ -8,6 +8,7 @@ function renderGestorPanel() {
         <button onclick="showScreen('turmas', event)"><span class="icon">👥</span><span class="label">Turmas</span></button>
         <button onclick="showScreen('registrosGestor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('ocorrenciasGestor', event)"><span class="icon">⚠️</span><span class="label">Ocorrências</span></button>
+        <button onclick="showScreen('tutoriasGestor', event)"><span class="icon">🎓</span><span class="label">Tutorias</span></button>
         <button onclick="showScreen('horariosGestor', event)"><span class="icon">⏰</span><span class="label">Horários</span></button>
     `;
     
@@ -28,6 +29,13 @@ function renderGestorPanel() {
         container.appendChild(oco);
     }
 
+    if (!document.getElementById('tutoriasGestor')) {
+        const tut = document.createElement('div');
+        tut.id = 'tutoriasGestor';
+        tut.className = 'screen';
+        container.appendChild(tut);
+    }
+
     if (!document.getElementById('horariosGestor')) {
         const hor = document.createElement('div');
         hor.id = 'horariosGestor';
@@ -37,6 +45,11 @@ function renderGestorPanel() {
 
     renderDashboard();
     showScreen('dashboard');
+    
+    // Se a tela atual for tutorias, renderiza
+    if (document.getElementById('tutoriasGestor').classList.contains('active')) {
+        renderTutoriasGestor();
+    }
 }
 
 function renderRegistrosGestor(isReadOnly = false) {
@@ -718,4 +731,180 @@ async function processarImportacaoMassa() {
     if (document.getElementById('turmas').classList.contains('active')) {
         renderTurmas();
     }
+}
+
+// --- TUTORIAS (GESTOR) ---
+
+async function renderTutoriasGestor() {
+    const container = document.getElementById('tutoriasGestor');
+    container.innerHTML = '<div class="card"><p>Carregando professores...</p></div>';
+
+    // 1. Buscar todos os usuários
+    const usersData = await getData('system', 'users_list');
+    const users = (usersData && usersData.list) ? usersData.list : [];
+
+    // 2. Filtrar professores da escola atual
+    // Normaliza para string para evitar erros de tipo (número vs texto)
+    const mySchoolId = String(currentUser.schoolId || '');
+    const professores = users.filter(u => {
+        const uSchoolId = String(u.schoolId || '');
+        return uSchoolId === mySchoolId && u.role !== 'gestor';
+    });
+
+    const html = `
+        <div class="card">
+            <h2>🎓 Acompanhamento de Tutorias</h2>
+            <p style="color:#666; margin-bottom:20px;">Selecione um professor para ver seus tutorados e registros.</p>
+            
+            ${professores.length > 0 ? `
+                <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px;">
+                    ${professores.map(p => `
+                        <div style="border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; background: #f7fafc; cursor: pointer; transition: all 0.2s;" 
+                             onmouseover="this.style.background='#ebf8ff'; this.style.borderColor='#3182ce';" 
+                             onmouseout="this.style.background='#f7fafc'; this.style.borderColor='#e2e8f0';"
+                             onclick="verTutoradosProfessor('${p.id}', '${p.nome}')">
+                            <div style="font-weight: bold; color: #2c5282; font-size: 16px;">${p.nome}</div>
+                            <div style="font-size: 12px; color: #718096; margin-top: 5px;">${p.email}</div>
+                            <div style="margin-top: 10px; text-align: right; font-size: 12px; color: #3182ce;">Ver Tutorados →</div>
+                        </div>
+                    `).join('')}
+                </div>
+            ` : `
+                <p class="empty-state">Nenhum professor encontrado nesta escola.</p>
+                <p style="text-align:center; font-size:12px; color:#cbd5e0;">(ID da Escola: ${currentUser.schoolId || 'Indefinido'})</p>
+            `}
+        </div>
+    `;
+
+    container.innerHTML = html;
+}
+
+async function verTutoradosProfessor(profId, profNome) {
+    const container = document.getElementById('tutoriasGestor');
+    container.innerHTML = '<div class="card"><p>Carregando dados do professor...</p></div>';
+
+    // Busca os dados específicos do professor (app_data_ID)
+    const key = 'app_data_' + profId;
+    const profData = await getData('app_data', key);
+    const tutorados = (profData && profData.tutorados) ? profData.tutorados : [];
+
+    const html = `
+        <div class="card">
+            <button class="btn btn-secondary" onclick="renderTutoriasGestor()">← Voltar para Professores</button>
+            <h2 style="margin-top: 15px;">Tutorados de: ${profNome}</h2>
+            
+            ${tutorados.length > 0 ? `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Estudante</th>
+                            <th>Turma</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tutorados.map(t => `
+                            <tr>
+                                <td><strong>${t.nome_estudante}</strong></td>
+                                <td>${t.turma}</td>
+                                <td>
+                                    <button class="btn btn-info btn-sm" onclick="verRelatorioTutoriaAluno('${profId}', '${profNome}', '${t.id}', '${t.nome_estudante}')">📄 Ver Relatório</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            ` : '<p class="empty-state">Este professor não possui tutorados cadastrados.</p>'}
+        </div>
+    `;
+
+    container.innerHTML = html;
+}
+
+async function verRelatorioTutoriaAluno(profId, profNome, alunoId, alunoNome) {
+    const container = document.getElementById('tutoriasGestor');
+    container.innerHTML = '<div class="card"><p>Gerando relatório...</p></div>';
+
+    // Busca dados novamente para garantir frescor
+    const key = 'app_data_' + profId;
+    const profData = await getData('app_data', key);
+    const encontros = (profData && profData.encontros) ? profData.encontros : []; // Assumindo que encontros são salvos aqui
+    
+    // Filtra encontros deste aluno (encontros devem ter id_tutorado ou similar, adaptando conforme app.js)
+    // Nota: app.js usa 'encontroTutorado' (value=id) no modal. Vamos assumir que salva como 'tutoradoId' ou similar.
+    // Como o app.js original tinha apenas um alert no salvarEncontro, assumiremos que se fosse salvo, teria essa estrutura.
+    // Para compatibilidade com o modalNovoEncontro do app.js, vamos supor que o objeto salvo tenha { tutoradoId: id, ... }
+    // Se o app.js não salva, isso virá vazio, mas a estrutura está pronta.
+    
+    // Vamos injetar o HTML base e depois filtrar via JS local para não recarregar tudo
+    const currentYear = new Date().getFullYear();
+    
+    const html = `
+        <div class="card">
+            <div class="no-print">
+                <button class="btn btn-secondary" onclick="verTutoradosProfessor('${profId}', '${profNome}')">← Voltar para Lista</button>
+            </div>
+            
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:15px; border-bottom: 1px solid #eee; padding-bottom:10px;">
+                <div>
+                    <h2 style="margin:0;">Relatório de Tutoria</h2>
+                    <div style="color:#666;"><strong>Professor:</strong> ${profNome} | <strong>Estudante:</strong> ${alunoNome}</div>
+                </div>
+                <div class="no-print" style="display:flex; gap:10px; align-items:center;">
+                    <select id="filtroSemestre" onchange="filtrarRelatorioTutoriaUI()" style="margin:0; padding:8px;">
+                        <option value="1">1º Semestre ${currentYear}</option>
+                        <option value="2">2º Semestre ${currentYear}</option>
+                        <option value="todos">Todo o Ano</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="window.print()">🖨️ Imprimir</button>
+                </div>
+            </div>
+
+            <div id="listaEncontrosRelatorio" style="margin-top: 20px;">
+                <!-- Preenchido via JS -->
+            </div>
+        </div>
+    `;
+
+    container.innerHTML = html;
+
+    // Armazena dados temporariamente no DOM para filtragem
+    // Filtra encontros onde o ID do tutorado bate (pode ser string ou number, comparamos solto)
+    const encontrosAluno = encontros.filter(e => e.tutoradoId == alunoId || e.encontroTutorado == alunoId); 
+    container.dataset.encontros = JSON.stringify(encontrosAluno);
+    
+    filtrarRelatorioTutoriaUI();
+}
+
+function filtrarRelatorioTutoriaUI() {
+    const container = document.getElementById('tutoriasGestor');
+    const listaDiv = document.getElementById('listaEncontrosRelatorio');
+    const semestre = document.getElementById('filtroSemestre').value;
+    const encontros = JSON.parse(container.dataset.encontros || '[]');
+
+    const filtrados = encontros.filter(e => {
+        if (semestre === 'todos') return true;
+        const d = new Date(e.data);
+        const mes = d.getMonth(); // 0-11
+        if (semestre === '1') return mes <= 5; // Jan-Jun
+        if (semestre === '2') return mes >= 6; // Jul-Dez
+        return true;
+    });
+
+    filtrados.sort((a,b) => new Date(b.data) - new Date(a.data));
+
+    if (filtrados.length === 0) {
+        listaDiv.innerHTML = '<p class="empty-state">Nenhum registro de encontro encontrado para este período.</p>';
+        return;
+    }
+
+    listaDiv.innerHTML = filtrados.map(e => `
+        <div style="border: 1px solid #cbd5e0; padding: 15px; border-radius: 6px; margin-bottom: 10px; page-break-inside: avoid;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+                <strong>📅 ${formatDate(e.data)}</strong>
+                <span style="font-size:12px; background:#edf2f7; padding:2px 8px; border-radius:10px;">${e.tema || 'Sem tema'}</span>
+            </div>
+            <p style="white-space: pre-wrap; color: #4a5568; margin:0;">${e.resumo || ''}</p>
+        </div>
+    `).join('');
 }

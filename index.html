@@ -208,6 +208,7 @@
             <div id="adminEscolaDetalheScreen" style="display:none;"></div>
         </div>
     </div>
+    <div id="tutoriasGestor" class="screen" style="display:none;"></div>
 
     <!-- MODAIS (Placeholders essenciais) -->
     <div id="modalNovaTurma" class="modal"><div class="modal-content"><div class="modal-header"><h2 id="tituloModalTurma">Nova Turma</h2><button class="close-btn" onclick="closeModal('modalNovaTurma')">×</button></div><form onsubmit="salvarTurma(event)"><input type="hidden" id="turmaId"><div id="containerTurmaAnoInput"><label>Ano/Série:<input type="text" id="turmaAno"></label></div><div id="containerTurmaAnoSelect" style="display:none;"><label>Turma:<select id="turmaAnoSelect"></select></label></div><div id="divTurmaDisciplina"><label>Disciplina:<input type="text" id="turmaDisciplina"></label></div><label>Turno:<select id="turmaTurno"><option value="Manhã">Manhã</option><option value="Tarde">Tarde</option><option value="Noite">Noite</option><option value="Integral">Integral</option></select></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>

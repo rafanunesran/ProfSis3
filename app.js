@@ -69,6 +69,7 @@ function showScreen(screenId, evt) {
     if (screenId === 'registrosProfessor') renderRegistrosProfessor();
     if (screenId === 'registrosGestor') renderRegistrosGestor();
     if (screenId === 'ocorrenciasGestor') renderOcorrenciasGestor();
+    if (screenId === 'tutoriasGestor') renderTutoriasGestor();
     if (screenId === 'horariosGestor') renderHorariosGestor();
 }
 
@@ -2123,8 +2124,22 @@ function importarEstudantes(e) {
 
 function salvarEncontro(e) {
     e.preventDefault();
-    // Lógica simplificada
-    alert('Encontro registrado');
+    const tutoradoId = document.getElementById('encontroTutorado').value;
+    const dataEncontro = document.getElementById('encontroData').value;
+    const tema = document.getElementById('encontroTema').value;
+    const resumo = document.getElementById('encontroResumo').value;
+
+    if (!data.encontros) data.encontros = [];
+    data.encontros.push({
+        id: Date.now(),
+        tutoradoId: tutoradoId,
+        data: dataEncontro,
+        tema: tema,
+        resumo: resumo
+    });
+    
+    persistirDados();
+    alert('Encontro registrado com sucesso!');
     closeModal('modalNovoEncontro');
 }
 
