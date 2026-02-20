@@ -55,7 +55,10 @@ function renderProfessorPanel() {
 function showScreen(screenId, evt) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     const screen = document.getElementById(screenId);
-    if (screen) screen.classList.add('active');
+    if (screen) {
+        screen.classList.add('active');
+        screen.style.display = ''; // Remove display:none inline se existir
+    }
     
     document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
     if (evt && evt.currentTarget) {

@@ -14,6 +14,7 @@ function renderGestorPanel() {
     
     // Criar telas do Gestor se não existirem
     const container = document.getElementById('appContainer');
+    const innerContainer = container.querySelector('.container') || container;
     
     if (!document.getElementById('registrosGestor')) {
         const reg = document.createElement('div');
@@ -33,7 +34,7 @@ function renderGestorPanel() {
         const tut = document.createElement('div');
         tut.id = 'tutoriasGestor';
         tut.className = 'screen';
-        container.appendChild(tut);
+        innerContainer.appendChild(tut);
     }
 
     if (!document.getElementById('horariosGestor')) {
@@ -737,46 +738,145 @@ async function processarImportacaoMassa() {
 
 async function renderTutoriasGestor() {
     const container = document.getElementById('tutoriasGestor');
-    container.innerHTML = '<div class="card"><p>Carregando professores...</p></div>';
+    if (!container) return;
+    
+    container.innerHTML = '<div class="card"><p>🔄 Carregando dados do sistema...</p></div>';
 
-    // 1. Buscar todos os usuários
-    const usersData = await getData('system', 'users_list');
-    const users = (usersData && usersData.list) ? usersData.list : [];
+    try {
+        // 1. Buscar todos os usuários
+        const usersData = await getData('system', 'users_list');
+        const users = (usersData && usersData.list) ? usersData.list : [];
 
-    // 2. Filtrar professores da escola atual
-    // Normaliza para string para evitar erros de tipo (número vs texto)
-    const mySchoolId = String(currentUser.schoolId || '');
-    const professores = users.filter(u => {
-        const uSchoolId = String(u.schoolId || '');
-        return uSchoolId === mySchoolId && u.role !== 'gestor';
-    });
+        // 2. Identificar ID da escola atual
+        const mySchoolId = currentUser.schoolId ? String(currentUser.schoolId) : '';
 
-    const html = `
-        <div class="card">
-            <h2>🎓 Acompanhamento de Tutorias</h2>
-            <p style="color:#666; margin-bottom:20px;">Selecione um professor para ver seus tutorados e registros.</p>
+        // 3. Filtrar professores (Da escola e Sem Vínculo/Antigos)
+        const professoresDaEscola = [];
+        const professoresSemVinculo = [];
+
+        users.forEach(u => {
+            if (u.role === 'gestor' || u.role === 'super_admin') return;
             
-            ${professores.length > 0 ? `
-                <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px;">
-                    ${professores.map(p => `
-                        <div style="border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; background: #f7fafc; cursor: pointer; transition: all 0.2s;" 
-                             onmouseover="this.style.background='#ebf8ff'; this.style.borderColor='#3182ce';" 
-                             onmouseout="this.style.background='#f7fafc'; this.style.borderColor='#e2e8f0';"
-                             onclick="verTutoradosProfessor('${p.id}', '${p.nome}')">
-                            <div style="font-weight: bold; color: #2c5282; font-size: 16px;">${p.nome}</div>
-                            <div style="font-size: 12px; color: #718096; margin-top: 5px;">${p.email}</div>
-                            <div style="margin-top: 10px; text-align: right; font-size: 12px; color: #3182ce;">Ver Tutorados →</div>
-                        </div>
-                    `).join('')}
-                </div>
-            ` : `
-                <p class="empty-state">Nenhum professor encontrado nesta escola.</p>
-                <p style="text-align:center; font-size:12px; color:#cbd5e0;">(ID da Escola: ${currentUser.schoolId || 'Indefinido'})</p>
-            `}
-        </div>
-    `;
+            const uSchoolId = u.schoolId ? String(u.schoolId) : '';
+            
+            if (uSchoolId === mySchoolId) {
+                professoresDaEscola.push(u);
+            } else if (!uSchoolId) {
+                // Usuários antigos ou sem escola definida
+                professoresSemVinculo.push(u);
+            }
+        });
 
-    container.innerHTML = html;
+        // 4. Renderizar HTML
+        const html = `
+            <div class="card">
+                <h2>🎓 Acompanhamento de Tutorias</h2>
+                <p style="color:#666; margin-bottom:20px;">
+                    Gestor: <strong>${currentUser.nome}</strong> | Escola ID: <strong>${mySchoolId || 'Não definido'}</strong>
+                </p>
+                
+                <!-- PROFESSORES VINCULADOS -->
+                ${professoresDaEscola.length > 0 ? `
+                    <h3 style="color: #2c5282; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">Professores da Escola</h3>
+                    <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px;">
+                        ${professoresDaEscola.map(p => `
+                            <div style="border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; background: #f7fafc; cursor: pointer; transition: all 0.2s;" 
+                                 onmouseover="this.style.background='#ebf8ff'; this.style.borderColor='#3182ce';" 
+                                 onmouseout="this.style.background='#f7fafc'; this.style.borderColor='#e2e8f0';"
+                                 onclick="verTutoradosProfessor('${p.id}', '${p.nome}')">
+                                <div style="font-weight: bold; color: #2c5282; font-size: 16px;">${p.nome}</div>
+                                <div style="font-size: 12px; color: #718096; margin-top: 5px;">${p.email}</div>
+                                <div style="margin-top: 10px; text-align: right; font-size: 12px; color: #3182ce;">Ver Tutorados →</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : '<p class="empty-state">Nenhum professor vinculado oficialmente.</p>'}
+
+                <!-- PROFESSORES SEM VÍNCULO (ANTIGOS) -->
+                ${professoresSemVinculo.length > 0 ? `
+                    <div style="margin-top: 30px; border-top: 2px dashed #cbd5e0; padding-top: 20px;">
+                        <h3 style="color: #d69e2e;">⚠️ Professores Sem Vínculo (Antigos)</h3>
+                        <p style="font-size:13px; color:#666; margin-bottom:15px;">Estes usuários não têm escola definida. Clique em "Vincular" para trazê-los para sua escola.</p>
+                        
+                        <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px;">
+                            ${professoresSemVinculo.map(p => `
+                                <div style="border: 1px dashed #ed8936; padding: 15px; border-radius: 8px; background: #fffaf0;">
+                                    <div style="font-weight: bold; color: #744210; font-size: 16px;">${p.nome}</div>
+                                    <div style="font-size: 12px; color: #744210; margin-top: 5px;">${p.email}</div>
+                                    <div style="margin-top: 10px; display:flex; gap:5px;">
+                                        <button class="btn btn-sm btn-warning" onclick="vincularProfessor('${p.id}')" style="width:100%;">🔗 Vincular à Escola</button>
+                                        <button class="btn btn-sm btn-secondary" onclick="verTutoradosProfessor('${p.id}', '${p.nome}')">👁️ Ver</button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+
+                <!-- DIAGNÓSTICO (Se ambos vazios) -->
+                ${(professoresDaEscola.length === 0 && professoresSemVinculo.length === 0) ? `
+                    <div class="empty-state" style="margin-top:20px; background:#fff5f5; border:1px solid #feb2b2; color:#c53030;">
+                        <p><strong>Diagnóstico:</strong> Nenhum professor encontrado no sistema (nem vinculado, nem solto).</p>
+                    </div>
+                    <div style="margin-top: 20px; overflow-x: auto;">
+                        <table style="width:100%; font-size:12px; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background: #edf2f7;">
+                                    <th style="padding:8px; border:1px solid #e2e8f0;">Nome</th>
+                                    <th style="padding:8px; border:1px solid #e2e8f0;">Email</th>
+                                    <th style="padding:8px; border:1px solid #e2e8f0;">Escola ID (Atual)</th>
+                                    <th style="padding:8px; border:1px solid #e2e8f0;">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${users.filter(u => u.role !== 'gestor' && u.role !== 'super_admin').map(u => {
+                                    const uSchoolId = u.schoolId ? String(u.schoolId) : '';
+                                    const match = uSchoolId === mySchoolId;
+                                    return `
+                                    <tr style="background: ${match ? '#f0fff4' : '#fff'};">
+                                        <td style="padding:8px; border:1px solid #e2e8f0;">${u.nome}</td>
+                                        <td style="padding:8px; border:1px solid #e2e8f0;">${u.email}</td>
+                                        <td style="padding:8px; border:1px solid #e2e8f0;"><strong>${uSchoolId || '(Vazio)'}</strong></td>
+                                        <td style="padding:8px; border:1px solid #e2e8f0; color: ${match ? 'green' : 'red'}; font-weight:bold;">
+                                            ${match ? '✅ Compatível' : '❌ Diferente'}
+                                        </td>
+                                    </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+
+        container.innerHTML = html;
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = `<div class="card"><h3 style="color:red">Erro Técnico:</h3><p>${e.message}</p></div>`;
+    }
+}
+
+async function vincularProfessor(id) {
+    if (!confirm('Deseja vincular este professor à sua escola atual? Ele passará a aparecer na lista principal.')) return;
+    
+    try {
+        const usersData = await getData('system', 'users_list');
+        const users = (usersData && usersData.list) ? usersData.list : [];
+        const user = users.find(u => u.id == id);
+        
+        if (user) {
+            user.schoolId = currentUser.schoolId; // Atualiza o ID
+            await saveData('system', 'users_list', { list: users });
+            alert(`Professor ${user.nome} vinculado com sucesso!`);
+            renderTutoriasGestor(); // Recarrega a tela
+        } else {
+            alert('Usuário não encontrado.');
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Erro ao vincular: ' + e.message);
+    }
 }
 
 async function verTutoradosProfessor(profId, profNome) {
