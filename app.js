@@ -1661,10 +1661,108 @@ function abrirFichaTutorado(id) {
     }
     
     actionContainer.innerHTML = `
-        <button class="btn btn-danger btn-sm" onclick="desvincularTutorado(${t.id})">Desvincular Tutorado</button>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" onclick="imprimirRelatorioTutorado(${t.id}, '${t.nome_estudante}')">🖨️ Relatório Semestral</button>
+            <button class="btn btn-danger btn-sm" onclick="desvincularTutorado(${t.id})">Desvincular Tutorado</button>
+        </div>
     `;
 
+    // Preencher listas (Agendamentos e Histórico)
+    const agendamentos = (data.agendamentos || []).filter(a => a.tutoradoId == id && a.data >= getTodayString()).sort((a,b) => a.data.localeCompare(b.data));
+    const encontros = (data.encontros || []).filter(e => e.tutoradoId == id).sort((a,b) => b.data.localeCompare(a.data)); // Decrescente
+
+    document.getElementById('tutoradoFichaAgendamentos').innerHTML = agendamentos.length > 0 
+        ? agendamentos.map(a => `<div class="card" style="padding:10px; margin-bottom:5px; border-left:4px solid #3182ce; background:#fff;"><strong>${formatDate(a.data)}</strong> às ${a.inicio}</div>`).join('')
+        : '<p class="empty-state">Nenhum agendamento futuro.</p>';
+
+    document.getElementById('tutoradoFichaHistorico').innerHTML = encontros.length > 0
+        ? encontros.map(e => `
+            <div class="card" style="padding:10px; margin-bottom:5px; background:#f7fafc; border:1px solid #e2e8f0;">
+                <div style="font-weight:bold; color:#2d3748;">${formatDate(e.data)} - ${e.tema}</div>
+                <p style="margin:5px 0 0 0; font-size:13px; color:#4a5568; white-space:pre-wrap;">${e.resumo}</p>
+            </div>`).join('')
+        : '<p class="empty-state">Nenhum encontro registrado.</p>';
+
     showScreen('tutoradoDetalhe');
+}
+
+function imprimirRelatorioTutorado(id, nome) {
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth(); // 0-11
+    const defaultSem = currentMonth < 6 ? 1 : 2;
+    
+    const input = prompt(`Digite o Semestre e Ano para o relatório (ex: ${defaultSem}/${currentYear}):`, `${defaultSem}/${currentYear}`);
+    if (!input) return;
+    
+    const parts = input.split('/');
+    if (parts.length !== 2) return alert('Formato inválido. Use Semestre/Ano (ex: 1/2026).');
+    
+    const semestre = parseInt(parts[0]);
+    const ano = parseInt(parts[1]);
+    
+    if (![1, 2].includes(semestre) || isNaN(ano)) {
+        return alert('Semestre deve ser 1 ou 2, e Ano deve ser válido.');
+    }
+
+    // Filtra Encontros
+    const encontros = (data.encontros || []).filter(e => {
+        if (e.tutoradoId != id) return false;
+        const d = new Date(e.data);
+        const mes = d.getMonth();
+        const anoEnc = d.getFullYear();
+        
+        if (anoEnc !== ano) return false;
+        if (semestre === 1) return mes <= 5;
+        if (semestre === 2) return mes >= 6;
+        return false;
+    }).sort((a,b) => new Date(a.data) - new Date(b.data)); // Crescente para leitura
+
+    if (encontros.length === 0) return alert('Nenhum registro encontrado para este período.');
+
+    // Nome da Escola (Pega do cabeçalho)
+    const nomeEscola = document.querySelector('header h1') ? document.querySelector('header h1').textContent.replace('SisProf - ', '') : 'Escola';
+
+    const html = `
+        <html>
+        <head>
+            <title>Relatório de Tutoria - ${nome}</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 40px; color: #000; line-height: 1.5; }
+                h1 { text-align: center; font-size: 22px; margin: 0 0 5px 0; text-transform: uppercase; }
+                .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid #000; padding-bottom: 20px; }
+                .sub-header { font-size: 16px; margin-top: 5px; }
+                .info { margin-bottom: 30px; font-size: 14px; border: 1px solid #ccc; padding: 15px; border-radius: 5px; }
+                .registro { margin-bottom: 25px; }
+                .registro-titulo { font-weight: bold; font-size: 15px; margin-bottom: 5px; text-decoration: underline; }
+                .registro-texto { white-space: pre-wrap; text-align: justify; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>${nomeEscola}</h1>
+                <div class="sub-header">Relatório de Tutoria - ${semestre}º Semestre de ${ano}</div>
+            </div>
+            
+            <div class="info">
+                <p style="margin: 5px 0;"><strong>Professor Tutor:</strong> ${currentUser.nome}</p>
+                <p style="margin: 5px 0;"><strong>Estudante Tutorado:</strong> ${nome}</p>
+            </div>
+
+            ${encontros.map(e => `
+                <div class="registro">
+                    <div class="registro-titulo">${e.tema || 'Sem Título'}</div>
+                    <div class="registro-texto">${e.resumo || ''}</div>
+                </div>
+            `).join('')}
+
+            <script>window.print();</script>
+        </body>
+        </html>
+    `;
+
+    const win = window.open('', '', 'width=900,height=800');
+    win.document.write(html);
+    win.document.close();
 }
 
 function desvincularTutorado(id) {
