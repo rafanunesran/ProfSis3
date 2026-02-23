@@ -151,6 +151,7 @@ async function renderListaUsuariosAdmin() {
                         <td><span class="badge ${u.role === 'gestor' ? 'badge-warning' : 'badge-info'}">${u.role || 'Professor'}</span></td>
                         <td>
                             <button class="btn btn-warning btn-sm" onclick="resetarSenhaAuth('${u.email}')" title="Enviar email de redefinição">📧 Senha</button>
+                            <button class="btn btn-secondary btn-sm" onclick="editarUsuarioAdmin('${u.id}')" title="Alterar Perfil/Nome">✏️ Perfil</button>
                             <button class="btn btn-danger btn-sm" onclick="excluirUsuarioAdmin(${u.id})">🗑️</button>
                         </td>
                     </tr>
@@ -174,6 +175,29 @@ function abrirModalUsuarioAdmin() {
     showModal('modalAdminUsuario');
 }
 
+// [NOVO] Função para abrir modal de edição
+async function editarUsuarioAdmin(id) {
+    const data = await getData('system', 'users_list');
+    const users = (data && data.list) ? data.list : [];
+    const user = users.find(u => u.id == id);
+
+    if (user) {
+        document.getElementById('adminUsuarioId').value = user.id;
+        document.getElementById('adminUsuarioNome').value = user.nome;
+        document.getElementById('adminUsuarioEmail').value = user.email;
+        document.getElementById('adminUsuarioRole').value = user.role || 'professor';
+        
+        // Senha não é editável por aqui no modo Firebase
+        const senhaInput = document.getElementById('adminUsuarioSenha');
+        senhaInput.value = '';
+        senhaInput.placeholder = 'Gerenciado pelo Auth (Inalterável aqui)';
+        senhaInput.disabled = true;
+
+        document.getElementById('tituloModalUsuarioAdmin').textContent = 'Editar Usuário';
+        showModal('modalAdminUsuario');
+    }
+}
+
 async function salvarUsuarioAdmin(e) {
     e.preventDefault();
     const id = document.getElementById('adminUsuarioId').value;
@@ -191,6 +215,8 @@ async function salvarUsuarioAdmin(e) {
             u.nome = nome;
             u.email = email;
             if (senha) u.senha = senha;
+            // Se estiver editando, não mexe na senha (segurança do Auth)
+            if (senha && !USE_FIREBASE) u.senha = senha; 
             u.role = role;
             if (!u.schoolId && escolaAtualAdmin) u.schoolId = escolaAtualAdmin;
         }
