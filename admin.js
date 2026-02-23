@@ -239,6 +239,12 @@ function renderBackupOptions() {
                         <input type="file" id="fileBackupImport" accept=".json" style="margin-bottom: 10px;">
                         <button class="btn btn-success" onclick="importarDadosSistema()">⬆️ Importar e Salvar</button>
                     </div>
+
+                    <div style="flex: 1; background: #fffaf0; padding: 15px; border-radius: 8px; border: 1px solid #fbd38d;">
+                        <h3>3. Migração Auth</h3>
+                        <p style="font-size: 13px; color: #666;">Cria usuários no Firebase Auth baseados na lista atual.</p>
+                        <button class="btn btn-warning" onclick="migrarUsuariosParaFirebase()">🚀 Migrar Usuários para Auth</button>
+                    </div>
                 </div>
             </div>
         `;
