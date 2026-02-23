@@ -55,7 +55,18 @@ function checkAuth(requiredRole) {
 function logout() {
     localStorage.removeItem('app_current_user');
     localStorage.removeItem('app_last_access');
-    window.location.href = 'index.html';
+    
+    // Se o Firebase estiver ativo, desloga dele também para evitar login automático ao recarregar
+    if (typeof firebase !== 'undefined' && firebase.auth) {
+        firebase.auth().signOut().then(() => {
+            window.location.href = 'index.html';
+        }).catch((error) => {
+            console.error("Erro ao deslogar do Firebase:", error);
+            window.location.href = 'index.html'; // Redireciona mesmo com erro
+        });
+    } else {
+        window.location.href = 'index.html';
+    }
 }
 
 function getStorageKey(user) {
