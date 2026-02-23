@@ -214,7 +214,6 @@ async function salvarUsuarioAdmin(e) {
         if (u) {
             u.nome = nome;
             u.email = email;
-            if (senha) u.senha = senha;
             // Se estiver editando, não mexe na senha (segurança do Auth)
             if (senha && !USE_FIREBASE) u.senha = senha; 
             u.role = role;
