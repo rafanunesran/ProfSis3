@@ -133,6 +133,25 @@ async function saveData(collectionName, docId, dataObj) {
 // Inicialização
 document.addEventListener('DOMContentLoaded', () => {
     init();
+    
+    // [NOVO] Monitorar estado do login do Firebase (Mantém a sessão ativa)
+    if (USE_FIREBASE && typeof firebase !== 'undefined') {
+        firebase.auth().onAuthStateChanged(async (user) => {
+            if (user && !currentUser) {
+                // Se o Firebase diz que está logado, mas o app não sabe, recupera os dados
+                const usersData = await getData('system', 'users_list');
+                const users = (usersData && usersData.list) ? usersData.list : [];
+                const userProfile = users.find(u => u.email === user.email);
+                
+                if (userProfile) {
+                    currentUser = { ...userProfile, uid: user.uid }; // Vincula UID do Auth
+                    localStorage.setItem('app_current_user', JSON.stringify(currentUser));
+                    // Se estiver na tela de login, recarrega para entrar
+                    if (document.getElementById('authContainer').style.display !== 'none') init();
+                }
+            }
+        });
+    }
 });
 
 function init() {
@@ -173,12 +192,34 @@ async function fazerLogin(e) {
         const senha = document.getElementById('loginSenha').value;
 
         // Admin Hardcoded (Legado/Backup) - Funciona mesmo sem banco de dados
-        if (email === 'rafael@adm' && senha === 'Amor@9391') {
+        if ((email === 'rafael@adm' || email === 'rafael@adm.com') && senha === 'Amor@9391') {
             const adminUser = { id: 'admin', nome: 'Super Admin', email: email, role: 'super_admin' };
             localStorage.setItem('app_current_user', JSON.stringify(adminUser));
             currentUser = adminUser;
             if (typeof iniciarAdmin === 'function') iniciarAdmin();
             return;
+        }
+
+        // [NOVO] Tenta login via Firebase Auth primeiro
+        if (USE_FIREBASE && typeof firebase !== 'undefined') {
+            try {
+                await firebase.auth().signInWithEmailAndPassword(email, senha);
+                // O onAuthStateChanged vai lidar com o resto, mas buscamos o perfil aqui para agilizar
+                const usersData = await getData('system', 'users_list');
+                const users = (usersData && usersData.list) ? usersData.list : [];
+                const user = users.find(u => u.email === email);
+                
+                if (user) {
+                    localStorage.setItem('app_current_user', JSON.stringify(user));
+                    currentUser = user;
+                    if (typeof iniciarApp === 'function') iniciarApp();
+                    return;
+                }
+            } catch (e) {
+                // Se falhar (ex: usuário ainda não migrado), continua para o método antigo abaixo
+                // Isso garante que ninguém fica trancado para fora durante a transição
+                console.warn("Login Auth falhou (tentando legado):", e.code);
+            }
         }
 
         // --- LOGIN DE TESTE RÁPIDO (Apenas Localhost) ---
@@ -238,6 +279,17 @@ async function fazerCadastro(e) {
     const email = document.getElementById('cadEmail').value.trim().toLowerCase();
     const senha = document.getElementById('cadSenha').value;
     const escolaId = document.getElementById('cadEscola').value;
+
+    // [NOVO] Cadastro direto no Firebase Auth
+    if (USE_FIREBASE && typeof firebase !== 'undefined') {
+        try {
+            const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, senha);
+            // Continua para salvar os dados do perfil no banco (sem a senha)
+        } catch (error) {
+            alert("Erro ao criar conta: " + error.message);
+            return;
+        }
+    }
 
     const usersData = await getData('system', 'users_list');
     const users = (usersData && usersData.list && Array.isArray(usersData.list)) ? usersData.list : [];
@@ -366,4 +418,65 @@ async function persistirDados() {
     const key = typeof getStorageKey === 'function' ? getStorageKey(currentUser) : 'app_data_' + currentUser.id;
     // CORREÇÃO: Usar saveData unificado para garantir persistência no local correto (Firebase ou Local)
     await saveData('app_data', key, data);
+}
+
+// [NOVO] Função de Migração (Pode ser chamada pelo console ou botão de Admin)
+async function migrarUsuariosParaFirebase() {
+    if (!USE_FIREBASE || typeof firebase === 'undefined') return alert('Firebase não está ativo.');
+    if (!confirm('ATENÇÃO: Isso tentará criar contas no Firebase Auth para TODOS os usuários da sua lista atual.\n\nO processo pode demorar. Abra o console (F12) para ver o progresso.\n\nContinuar?')) return;
+
+    const usersData = await getData('system', 'users_list');
+    const users = (usersData && usersData.list) ? usersData.list : [];
+    
+    console.log(`🚀 Iniciando migração de ${users.length} usuários...`);
+    let sucessos = 0;
+    let erros = 0;
+    let jaExistentes = 0;
+    let alterados = 0;
+
+    for (const u of users) {
+        if (!u.email || !u.senha) {
+            console.warn(`⚠️ Pulado (sem email/senha): ${u.nome}`);
+            continue;
+        }
+
+        // [CORREÇÃO AUTOMÁTICA DE EMAIL]
+        // Se o email não tiver ponto depois do @ (ex: 'prof@peralta'), adiciona '.com'
+        let emailFinal = u.email.trim();
+        const parts = emailFinal.split('@');
+        if (parts.length === 2 && !parts[1].includes('.')) {
+            emailFinal = `${emailFinal}.com`;
+            console.log(`✏️ Email ajustado: ${u.email} -> ${emailFinal}`);
+            
+            // Atualiza o objeto local para salvar no banco depois
+            u.email = emailFinal; 
+            alterados++;
+        }
+        
+        try {
+            // Tenta criar o usuário
+            await firebase.auth().createUserWithEmailAndPassword(emailFinal, u.senha);
+            console.log(`✅ Criado: ${emailFinal}`);
+            sucessos++;
+        } catch (e) {
+            if (e.code === 'auth/email-already-in-use') {
+                console.log(`ℹ️ Já existe: ${emailFinal}`);
+                jaExistentes++;
+            } else {
+                console.error(`❌ Erro em ${u.email}:`, e.message);
+                erros++;
+            }
+        }
+    }
+
+    // Se houve alteração nos emails (adição de .com), salva a lista atualizada no banco
+    if (alterados > 0) {
+        console.log(`💾 Salvando ${alterados} emails corrigidos no banco de dados...`);
+        await saveData('system', 'users_list', { list: users });
+    }
+    
+    alert(`Migração Finalizada!\n\n✅ Criados: ${sucessos}\nℹ️ Já existiam: ${jaExistentes}\n❌ Erros: ${erros}`);
+    
+    // O loop de criação loga automaticamente no último usuário, então deslogamos para limpar
+    firebase.auth().signOut().then(() => location.reload());
 }
