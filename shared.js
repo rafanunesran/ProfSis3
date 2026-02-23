@@ -62,7 +62,11 @@ function getStorageKey(user) {
     if (user && user.role === 'gestor') {
         return 'app_data_school_' + (user.schoolId || 'default') + '_gestor';
     }
-    return 'app_data_' + (user ? user.id : 'temp');
+    // Prioriza o UID para segurança. Se não existir (modo local/antigo), usa o ID numérico.
+    if (user && user.uid) {
+        return 'app_data_' + user.uid;
+    }
+    return 'app_data_' + (user ? user.id : 'temp'); // Fallback
 }
 
 function getInitialData() {

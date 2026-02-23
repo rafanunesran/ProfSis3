@@ -280,10 +280,12 @@ async function fazerCadastro(e) {
     const senha = document.getElementById('cadSenha').value;
     const escolaId = document.getElementById('cadEscola').value;
 
+    let userAuth = null;
     // [NOVO] Cadastro direto no Firebase Auth
     if (USE_FIREBASE && typeof firebase !== 'undefined') {
         try {
             const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, senha);
+            userAuth = userCredential.user;
             // Continua para salvar os dados do perfil no banco (sem a senha)
         } catch (error) {
             alert("Erro ao criar conta: " + error.message);
@@ -301,6 +303,8 @@ async function fazerCadastro(e) {
 
     const newUser = {
         id: Date.now(),
+        id: userAuth ? userAuth.uid : Date.now(), // Usa UID como ID principal
+        uid: userAuth ? userAuth.uid : null,      // Armazena o UID seguro
         nome,
         email,
         senha,
@@ -312,6 +316,10 @@ async function fazerCadastro(e) {
     await saveData('system', 'users_list', { list: users });
     
     alert('Cadastro realizado! Faça login.');
+    // Desloga o usuário recém-criado para forçar o fluxo de login padrão
+    if (userAuth) {
+        await firebase.auth().signOut();
+    }
     renderLogin();
 }
 
@@ -428,6 +436,10 @@ async function migrarUsuariosParaFirebase() {
     const usersData = await getData('system', 'users_list');
     const users = (usersData && usersData.list) ? usersData.list : [];
     
+    // Busca escolas para definir um padrão caso o usuário não tenha
+    const schoolsData = await getData('system', 'schools_list');
+    const defaultSchoolId = (schoolsData && schoolsData.list && schoolsData.list.length > 0) ? schoolsData.list[0].id : 'default';
+
     console.log(`🚀 Iniciando migração de ${users.length} usuários...`);
     let sucessos = 0;
     let erros = 0;
@@ -450,6 +462,14 @@ async function migrarUsuariosParaFirebase() {
             
             // Atualiza o objeto local para salvar no banco depois
             u.email = emailFinal; 
+            alterados++;
+        }
+
+        // [CORREÇÃO AUTOMÁTICA DE ESCOLA]
+        // Se usuário antigo não tiver escola, vincula à primeira encontrada
+        if (!u.schoolId) {
+            u.schoolId = defaultSchoolId;
+            console.log(`🏫 Escola vinculada automaticamente para ${u.email}: ${u.schoolId}`);
             alterados++;
         }
         
