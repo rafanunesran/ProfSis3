@@ -150,6 +150,7 @@ async function renderListaUsuariosAdmin() {
                         <td>${u.email}</td>
                         <td><span class="badge ${u.role === 'gestor' ? 'badge-warning' : 'badge-info'}">${u.role || 'Professor'}</span></td>
                         <td>
+                            <button class="btn btn-warning btn-sm" onclick="resetarSenhaAuth('${u.email}')" title="Enviar email de redefinição">📧 Senha</button>
                             <button class="btn btn-danger btn-sm" onclick="excluirUsuarioAdmin(${u.id})">🗑️</button>
                         </td>
                     </tr>
@@ -168,6 +169,8 @@ function abrirModalUsuarioAdmin() {
     document.getElementById('adminUsuarioSenha').value = '';
     document.getElementById('adminUsuarioRole').value = 'professor';
     document.getElementById('tituloModalUsuarioAdmin').textContent = 'Novo Usuário';
+    alert('A criação de novos usuários deve ser feita pela tela pública de "Cadastro" para garantir a segurança da senha.');
+    // A criação direta pelo admin não é segura no lado do cliente.
     showModal('modalAdminUsuario');
 }
 
@@ -197,6 +200,11 @@ async function salvarUsuarioAdmin(e) {
             return;
         }
         users.push({ id: Date.now(), nome, email, senha: senha || '123456', role, schoolId: escolaAtualAdmin, mustChangePassword: true });
+        // A criação de novos usuários deve ser feita pela tela de cadastro pública
+        // para que o Firebase Auth possa lidar com a senha de forma segura.
+        alert('Função desativada. Use a tela de "Cadastro" pública para criar novos usuários.');
+        closeModal('modalAdminUsuario');
+        return;
     }
 
     await saveData('system', 'users_list', { list: users });
@@ -212,6 +220,90 @@ async function excluirUsuarioAdmin(id) {
         await saveData('system', 'users_list', { list: users });
         renderListaUsuariosAdmin();
     }
+}
+
+// [NOVO] Função para resetar senha via Firebase Auth
+async function resetarSenhaAuth(email) {
+    // Verifica se está usando Firebase
+    if (typeof firebase === 'undefined' || (typeof USE_FIREBASE !== 'undefined' && !USE_FIREBASE)) {
+        alert('No modo Local (Offline), você pode alterar a senha clicando no botão de Editar (lápis) e mudando o texto manualmente.');
+        return;
+    }
+
+    if (!confirm(`Deseja enviar um e-mail de redefinição de senha para:\n${email}?`)) return;
+
+    try {
+        await firebase.auth().sendPasswordResetEmail(email);
+        alert(`✅ Sucesso!\n\nUm e-mail foi enviado para ${email} com um link para ele criar uma nova senha.`);
+    } catch (error) {
+        console.error("Erro reset senha:", error);
+        if (error.code === 'auth/user-not-found') {
+            alert('Erro: Este usuário existe na sua lista, mas não foi encontrado no Firebase Auth.\n\nUse o botão "Migrar Usuários" na aba de Backup.');
+        } else {
+            alert('Erro ao enviar e-mail: ' + error.message);
+        }
+    }
+}
+
+async function sincronizarUIDsERemoverSenhas() {
+    if (!USE_FIREBASE || typeof firebase === 'undefined') return alert('Firebase não está ativo.');
+    if (!confirm('ATENÇÃO: Este processo irá logar em cada conta para obter o ID de segurança (UID) e REMOVER a senha do banco de dados. É um passo CRUCIAL para a segurança.\n\nO processo pode demorar. Abra o console (F12) para ver o progresso.\n\nContinuar?')) return;
+
+    const usersData = await getData('system', 'users_list');
+    if (!usersData || !usersData.list) return alert('Lista de usuários não encontrada.');
+    const users = usersData.list;
+
+    console.log(`🚀 Iniciando sincronização de ${users.length} usuários...`);
+    let sucessos = 0;
+    let erros = 0;
+    let jaSincronizados = 0;
+    let alterado = false;
+
+    // Precisamos da senha do admin para re-logar no final do processo
+    const adminEmail = currentUser.email;
+    const adminPass = prompt(`Para re-autenticar no final, por favor, insira a senha do Super Admin (${adminEmail}):`);
+    if (!adminPass) return alert('Senha do admin necessária para continuar.');
+
+    for (const u of users) {
+        // Pula o super admin hardcoded e usuários já limpos
+        if (u.id === 'admin' || (u.uid && !u.hasOwnProperty('senha'))) {
+            console.log(`ℹ️ Já limpo/ignorado: ${u.email}`);
+            jaSincronizados++;
+            continue;
+        }
+
+        if (!u.email || !u.senha) {
+            console.warn(`⚠️ Pulado (sem email/senha): ${u.nome}`);
+            if (u.senha) delete u.senha; // Limpa mesmo se não tiver email
+            continue;
+        }
+
+        try {
+            const userCredential = await firebase.auth().signInWithEmailAndPassword(u.email, u.senha);
+            const userAuth = userCredential.user;
+
+            console.log(`✅ Logado como ${u.email}, UID: ${userAuth.uid}`);
+            u.uid = userAuth.uid; // Adiciona o UID
+            delete u.senha;       // REMOVE A SENHA
+            alterado = true;
+            sucessos++;
+
+            await firebase.auth().signOut(); // Desloga para o próximo
+
+        } catch (e) {
+            console.error(`❌ Erro ao logar em ${u.email}:`, e.message);
+            erros++;
+            if (firebase.auth().currentUser) await firebase.auth().signOut();
+        }
+    }
+
+    if (alterado) {
+        console.log(`💾 Salvando lista de usuários atualizada no banco de dados...`);
+        await saveData('system', 'users_list', { list: users });
+    }
+
+    alert(`Sincronização Finalizada!\n\n✅ Sincronizados e Limpos: ${sucessos}\nℹ️ Já estavam OK: ${jaSincronizados}\n❌ Erros: ${erros}\n\nO sistema será recarregado.`);
+    location.reload();
 }
 
 // --- BACKUP E MIGRAÇÃO ---
@@ -242,6 +334,7 @@ function renderBackupOptions() {
 
                     <div style="flex: 1; background: #fffaf0; padding: 15px; border-radius: 8px; border: 1px solid #fbd38d;">
                         <h3>3. Migração Auth</h3>
+                        <h3>3. Migração Inicial</h3>
                         <p style="font-size: 13px; color: #666;">Cria usuários no Firebase Auth baseados na lista atual.</p>
                         <button class="btn btn-warning" onclick="migrarUsuariosParaFirebase()">🚀 Migrar Usuários para Auth</button>
                     </div>

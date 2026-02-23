@@ -1,10 +1,28 @@
 // --- LÓGICA PRINCIPAL (PROFESSOR/APP) ---
 
-function iniciarApp() {
+async function iniciarApp() {
     document.getElementById('authContainer').style.display = 'none';
     document.getElementById('appContainer').style.display = 'block';
     document.getElementById('adminContainer').style.display = 'none';
     
+    // [CORREÇÃO] Sincroniza perfil do usuário ao iniciar
+    // Isso garante que usuários antigos recebam o 'schoolId' assim que ele for corrigido no banco
+    if (currentUser && currentUser.email) {
+        try {
+            const usersData = await getData('system', 'users_list');
+            const users = (usersData && usersData.list) ? usersData.list : [];
+            const freshUser = users.find(u => u.email === currentUser.email);
+            if (freshUser) {
+                // Mantém o ID da sessão (Auth), mas atualiza dados do perfil (Escola, Role)
+                const currentId = currentUser.id;
+                const currentUid = currentUser.uid;
+                currentUser = { ...freshUser, id: currentId };
+                if (currentUid) currentUser.uid = currentUid;
+                localStorage.setItem('app_current_user', JSON.stringify(currentUser));
+            }
+        } catch (e) { console.warn('Erro ao sincronizar perfil:', e); }
+    }
+
     // Carregar dados
     carregarDadosUsuario().then(async () => {
         const today = new Date();
@@ -246,10 +264,11 @@ async function renderDashboard() {
     const meusIds = new Set(turmas.map(t => String(t.id)));
     turmas.forEach(t => { if(t.masterId) meusIds.add(String(t.masterId)); });
 
-    const avisosExibir = avisosMural.filter(a => 
-        a.turmasAlvo.includes('todas') || 
-        a.turmasAlvo.some(id => meusIds.has(id))
-    );
+    // [CORREÇÃO] Verificação segura para evitar erro em dados antigos
+    const avisosExibir = avisosMural.filter(a => {
+        const alvos = Array.isArray(a.turmasAlvo) ? a.turmasAlvo : [];
+        return alvos.includes('todas') || alvos.some(id => meusIds.has(id));
+    });
 
     if (avisosExibir.length > 0) {
         htmlAvisos += `
