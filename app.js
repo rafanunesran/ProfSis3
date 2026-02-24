@@ -264,9 +264,22 @@ async function renderDashboard() {
     }
     document.getElementById('agendaHoje').innerHTML = agendaHtml;
 
-    // Tutorias Hoje (Mantido)
-    const tutoriasHoje = []; // Placeholder se quiser listar agendamentos específicos
-    document.getElementById('tutoriasHoje').innerHTML = tutoriasHoje.length > 0 ? '' : '<p class="empty-state">Nenhum agendamento específico.</p>';
+    // Tutorias Hoje
+    const agendamentosHoje = (data.agendamentos || []).filter(a => a.data === today && a.tutoradoId);
+    agendamentosHoje.sort((a,b) => a.inicio.localeCompare(b.inicio));
+
+    const htmlTutorias = agendamentosHoje.length > 0 ? agendamentosHoje.map(a => {
+        const tutorado = (data.tutorados || []).find(t => t.id == a.tutoradoId);
+        const nome = tutorado ? tutorado.nome_estudante : 'Desconhecido';
+        return `
+            <button class="btn btn-success" style="width:100%; margin-bottom:5px; text-align:left; display:flex; justify-content:space-between; align-items:center;" onclick="registrarEncontroAtalho(${a.tutoradoId})">
+                <span><strong>${a.inicio}</strong> - ${nome}</span>
+                <span>📝 Registrar</span>
+            </button>
+        `;
+    }).join('') : '<p class="empty-state">Nenhum agendamento de tutoria para hoje.</p>';
+
+    document.getElementById('tutoriasHoje').innerHTML = htmlTutorias;
 
     // --- AVISOS E ALERTAS POR TURMA ---
     const turmas = data.turmas || [];
@@ -2413,6 +2426,13 @@ function salvarEncontro(e) {
     persistirDados();
     alert('Encontro registrado com sucesso!');
     closeModal('modalNovoEncontro');
+}
+
+function registrarEncontroAtalho(tutoradoId) {
+    showModal('modalNovoEncontro');
+    const select = document.getElementById('encontroTutorado');
+    if (select) select.value = tutoradoId;
+    document.getElementById('encontroData').value = getTodayString();
 }
 
 function salvarTrabalho(e) {
