@@ -600,6 +600,18 @@ async function carregarVistaCompartilhada(shareId) {
 
 function renderHorariosGestor() {
     // Renderização Padrão (Semanal)
+    // Inicializa tipos padrão se não existirem
+    if (!data.tiposHorarioFixo) {
+        data.tiposHorarioFixo = [
+            { id: 'tutoria', nome: '🎓 Tutoria' },
+            { id: 'almoco', nome: '🍽️ Almoço' },
+            { id: 'cafe', nome: '☕ Café' },
+            { id: 'atpca', nome: '📚 ATPCA' },
+            { id: 'apcg', nome: '📝 APCG' },
+            { id: 'reuniao', nome: '🤝 Reunião' }
+        ];
+    }
+
     const grade = (data.gradeHoraria || []);
     const dias = [
         { id: 1, nome: 'Segunda' },
@@ -616,7 +628,10 @@ function renderHorariosGestor() {
                     <h2 style="margin:0;">⏰ Grade Horária Padrão</h2>
                     <p style="color:#666; font-size:14px; margin:0;">Defina a rotina semanal (Seg-Sex).</p>
                 </div>
-                <button class="btn btn-warning" onclick="abrirGerenciadorDiasAtipicos()">📅 Configurar Dia Atípico</button>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-info" onclick="abrirGerenciadorTiposHorario()">⚙️ Tipos</button>
+                    <button class="btn btn-warning" onclick="abrirGerenciadorDiasAtipicos()">📅 Dia Atípico</button>
+                </div>
             </div>
             
             <div style="background: #edf2f7; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
@@ -657,12 +672,7 @@ function renderHorariosGestor() {
                             </div>
                             <select style="width:100%; font-size:11px; padding:2px; border:1px solid #cbd5e0; border-radius:3px; background-color: ${s.tipo ? '#ebf8ff' : '#fff'};" onchange="atualizarTipoBloco(${s.id}, this.value)">
                                 <option value="">🔓 Livre (Prof. Escolhe)</option>
-                                <option value="tutoria" ${s.tipo === 'tutoria' ? 'selected' : ''}>🎓 Tutoria (Fixo)</option>
-                                <option value="almoco" ${s.tipo === 'almoco' ? 'selected' : ''}>🍽️ Almoço (Fixo)</option>
-                                <option value="cafe" ${s.tipo === 'cafe' ? 'selected' : ''}>☕ Café (Fixo)</option>
-                                <option value="atpca" ${s.tipo === 'atpca' ? 'selected' : ''}>📚 ATPCA (Fixo)</option>
-                                <option value="apcg" ${s.tipo === 'apcg' ? 'selected' : ''}>📝 APCG (Fixo)</option>
-                                <option value="reuniao" ${s.tipo === 'reuniao' ? 'selected' : ''}>🤝 Reunião (Fixo)</option>
+                                ${data.tiposHorarioFixo.map(t => `<option value="${t.id}" ${s.tipo === t.id ? 'selected' : ''}>${t.nome} (Fixo)</option>`).join('')}
                             </select>
                         </div>
                     `).join('') : '<p style="font-size: 12px; color: #a0aec0; text-align: center; padding: 10px;">--</p>'}
@@ -676,6 +686,48 @@ function renderHorariosGestor() {
         </div>
     `;
     document.getElementById('horariosGestor').innerHTML = html;
+}
+
+// --- GERENCIADOR DE TIPOS DE HORÁRIO ---
+function abrirGerenciadorTiposHorario() {
+    const html = `
+        <div class="card">
+            <button class="btn btn-secondary" onclick="renderHorariosGestor()">← Voltar</button>
+            <h2 style="margin-top:15px;">⚙️ Gerenciar Tipos de Horário Fixo</h2>
+            <p style="color:#666;">Cadastre opções como Almoço, Café, Reunião, etc. para travar na grade.</p>
+            
+            <div style="display:flex; gap:10px; margin-bottom:20px; background:#f7fafc; padding:15px; border-radius:8px;">
+                <input type="text" id="novoTipoNome" placeholder="Nome (ex: 🧘 Yoga)" style="flex-grow:1;">
+                <button class="btn btn-success" onclick="adicionarTipoHorario()">+ Adicionar</button>
+            </div>
+
+            <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:10px;">
+                ${data.tiposHorarioFixo.map((t, index) => `
+                    <div style="border:1px solid #e2e8f0; padding:10px; border-radius:6px; display:flex; justify-content:space-between; align-items:center; background:white;">
+                        <span>${t.nome}</span>
+                        <button class="btn btn-sm btn-danger" onclick="removerTipoHorario(${index})">🗑️</button>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+    document.getElementById('horariosGestor').innerHTML = html;
+}
+
+function adicionarTipoHorario() {
+    const nome = document.getElementById('novoTipoNome').value.trim();
+    if (!nome) return;
+    const id = 'custom_' + Date.now();
+    data.tiposHorarioFixo.push({ id, nome });
+    persistirDados();
+    abrirGerenciadorTiposHorario();
+}
+
+function removerTipoHorario(index) {
+    if (!confirm('Remover este tipo?')) return;
+    data.tiposHorarioFixo.splice(index, 1);
+    persistirDados();
+    abrirGerenciadorTiposHorario();
 }
 
 // --- DIAS ATÍPICOS (EXCEÇÕES) ---
@@ -741,13 +793,7 @@ function carregarDiaAtipico() {
                     <input type="time" class="inicio" value="${b.inicio}">
                     <span>até</span>
                     <input type="time" class="fim" value="${b.fim}">
-                    <select class="tipo">
-                        <option value="">Livre</option>
-                        <option value="tutoria" ${b.tipo === 'tutoria' ? 'selected' : ''}>Tutoria</option>
-                        <option value="almoco" ${b.tipo === 'almoco' ? 'selected' : ''}>Almoço</option>
-                        <option value="reuniao" ${b.tipo === 'reuniao' ? 'selected' : ''}>Reunião</option>
-                        <option value="evento" ${b.tipo === 'evento' ? 'selected' : ''}>Evento</option>
-                    </select>
+                    <select class="tipo"><option value="">Livre</option>${data.tiposHorarioFixo.map(t => `<option value="${t.id}" ${b.tipo === t.id ? 'selected' : ''}>${t.nome}</option>`).join('')}</select>
                     <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">🗑️</button>
                 </div>
             `).join('')}
@@ -771,7 +817,7 @@ function adicionarBlocoAtipicoUI() {
     div.style = "display:flex; gap:10px; align-items:center; margin-bottom:10px; background:white; padding:10px; border:1px solid #ddd; border-radius:5px;";
     div.innerHTML = `
         <input type="time" class="inicio"> <span>até</span> <input type="time" class="fim">
-        <select class="tipo"><option value="">Livre</option><option value="tutoria">Tutoria</option><option value="almoco">Almoço</option><option value="reuniao">Reunião</option><option value="evento">Evento</option></select>
+        <select class="tipo"><option value="">Livre</option>${data.tiposHorarioFixo.map(t => `<option value="${t.id}">${t.nome}</option>`).join('')}</select>
         <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">🗑️</button>
     `;
     document.getElementById('listaBlocosAtipicos').appendChild(div);
