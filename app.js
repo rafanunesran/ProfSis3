@@ -1505,7 +1505,7 @@ function removerCompensacao(id) {
 }
 
 // --- TUTORIA ---
-let agendaLimit = 10; // Controle de paginação da agenda
+let agendaLimit = 50; // Controle de paginação da agenda (Aumentado para mostrar mais dias)
 
 function renderTutoria() {
     const tutorados = data.tutorados || [];
@@ -1520,20 +1520,32 @@ function renderTutoria() {
         </div>
     `;
 
-    // 2. Lista de Tutorados
-    const htmlTutorados = tutorados.length > 0 ? `
-        <table>
-            <thead><tr><th>Nome</th><th>Turma</th></tr></thead>
-            <tbody>
-                ${tutorados.map(t => `
+    // 2. Lista de Tutorados (Agrupados por Turma e Ordem Alfabética)
+    const porTurma = {};
+    tutorados.forEach(t => {
+        if (!porTurma[t.turma]) porTurma[t.turma] = [];
+        porTurma[t.turma].push(t);
+    });
+    
+    const turmasOrdenadas = Object.keys(porTurma).sort();
+    
+    let htmlTutorados = '';
+    if (turmasOrdenadas.length > 0) {
+        turmasOrdenadas.forEach(turma => {
+            porTurma[turma].sort((a, b) => a.nome_estudante.localeCompare(b.nome_estudante));
+            
+            htmlTutorados += `<h4 style="margin-top:15px; margin-bottom:5px; color:#2c5282; border-bottom:1px solid #e2e8f0;">${turma}</h4>`;
+            htmlTutorados += `<table style="margin-top:0;"><tbody>`;
+            htmlTutorados += porTurma[turma].map(t => `
                     <tr>
                         <td><a href="#" onclick="abrirFichaTutorado(${t.id})">${t.nome_estudante}</a></td>
-                        <td>${t.turma}</td>
                     </tr>
-                `).join('')}
-            </tbody>
-        </table>
-    ` : '<p class="empty-state">Nenhum tutorado.</p>';
+            `).join('');
+            htmlTutorados += `</tbody></table>`;
+        });
+    } else {
+        htmlTutorados = '<p class="empty-state">Nenhum tutorado.</p>';
+    }
     
     document.getElementById('listaTutorados').innerHTML = htmlTop + htmlTutorados;
 
@@ -1551,7 +1563,6 @@ function renderTutoria() {
         
         <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
             <h3 style="margin:0;">Próximas Janelas</h3>
-            <button class="btn btn-secondary btn-sm" onclick="gerarAgendamentosTutoria()">🔄 Gerar Agenda (6 Meses)</button>
         </div>
     `;
 
@@ -1559,7 +1570,7 @@ function renderTutoria() {
     const visibleAgenda = futuros.slice(0, agendaLimit);
 
     const htmlAgendaList = visibleAgenda.length > 0 ? `
-        <div style="max-height: 300px; overflow-y: auto;">
+        <div style="max-height: 600px; overflow-y: auto;">
             ${visibleAgenda.map(a => {
                 // Busca nome do tutorado se estiver ocupado
                 let statusLabel = 'Livre';
@@ -1977,7 +1988,8 @@ async function gerarAgendamentosTutoria() {
     
     // Filtra blocos onde o professor marcou 'tutoria'
     const blocosTutoria = gradeEscola.filter(g => 
-        meusHorarios.some(a => a.id_bloco == g.id && a.tipo === 'tutoria')
+        (g.tipo === 'tutoria') || // Definido pelo Gestor (Fixo)
+        meusHorarios.some(a => a.id_bloco == g.id && a.tipo === 'tutoria') // Definido pelo Professor
     );
 
     if (blocosTutoria.length === 0) {
@@ -2379,7 +2391,14 @@ function renderEstudanteGeral() {
     if (!estudanteAtualDetalhe) return;
     
     const nome = estudanteAtualDetalhe.nome_completo;
-    document.getElementById('estudanteGeralNome').textContent = nome;
+    
+    // Verifica se é tutorado do usuário atual
+    const isTutorado = (data.tutorados || []).find(t => t.id_estudante_origem == estudanteAtualDetalhe.id);
+    const htmlNome = isTutorado 
+        ? `${nome} <div style="font-size: 14px; color: #3182ce; font-weight: normal; margin-top: 4px;">🎓 Seu Tutorado</div>` 
+        : nome;
+
+    document.getElementById('estudanteGeralNome').innerHTML = htmlNome;
     
     const isGestor = currentUser && currentUser.role === 'gestor';
 
@@ -2425,9 +2444,23 @@ function renderEstudanteGeral() {
         return `<div class="badge badge-info" style="margin-right:5px;">${t ? t.nome : 'Turma Excluída'} (${e.status})</div>`;
     }).join('');
     
+    // Histórico de Atestados (Incluindo expirados)
+    const atestadosAluno = (data.registrosAdministrativos || [])
+        .filter(r => todosIds.includes(r.estudanteId) && r.tipo === 'Atestado')
+        .sort((a,b) => new Date(b.data) - new Date(a.data));
+
+    const htmlAtestados = atestadosAluno.length > 0 ? `
+        <p><strong>Histórico de Atestados:</strong></p>
+        <ul style="margin-bottom:15px; padding-left:20px; font-size:13px; color:#2c5282;">
+            ${atestadosAluno.map(a => `<li><strong>${formatDate(a.data)}</strong> (${a.dias} dias): ${a.descricao || 'Sem observações'}</li>`).join('')}
+        </ul>
+    ` : '<p style="font-size:13px; color:#718096; margin-bottom:15px;">Nenhum atestado registrado.</p>';
+
     document.getElementById('estudanteGeralOcorrencias').innerHTML = `
         <p><strong>Histórico de Matrículas:</strong></p>
         <div style="margin-bottom:15px;">${historicoTurmas}</div>
+        
+        ${htmlAtestados}
         
         ${ocorrenciasAluno.length > 0 ? `
             <table style="font-size:13px;">
@@ -2951,6 +2984,22 @@ async function renderGradeHorariaProfessor() {
             <h3 style="text-align:center; border-bottom:1px solid #eee; margin-bottom:10px;">${dias[d]}</h3>
             ${blocosDia.map(bloco => {
                 const aulaSalva = minhasAulas.find(a => a.id_bloco == bloco.id);
+                
+                // VERIFICAÇÃO DE BLOCO FIXO (GESTOR)
+                if (bloco.tipo && bloco.tipo !== '') {
+                    const labels = {
+                        'tutoria': '🎓 Tutoria', 'almoco': '🍽️ Almoço', 'cafe': '☕ Café',
+                        'atpca': '📚 ATPCA', 'apcg': '📝 APCG', 'reuniao': '🤝 Reunião'
+                    };
+                    const label = labels[bloco.tipo] || bloco.tipo.toUpperCase();
+                    
+                    return `
+                        <div style="background:#edf2f7; padding:8px; margin-bottom:8px; border-radius:4px; border:1px solid #cbd5e0; opacity: 0.8;">
+                            <div style="font-size:12px; font-weight:bold; color:#4a5568;">${bloco.inicio} - ${bloco.fim}</div>
+                            <div style="margin-top:5px; font-size:12px; font-weight:bold; color:#2c5282; text-align:center;">🔒 ${label}</div>
+                        </div>
+                    `;
+                }
                 
                 // Determina o valor selecionado (ID da turma ou tipo especial)
                 let valorSelecionado = '';

@@ -644,9 +644,20 @@ function renderHorariosGestor() {
                 
                 <div style="flex-grow: 1;">
                     ${slots.length > 0 ? slots.map(s => `
-                        <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 6px 10px; border-radius: 4px; margin-bottom: 5px; border: 1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                            <span style="font-size: 12px; font-weight: 600; color: #4a5568;">${s.inicio} - ${s.fim}</span>
-                            <button class="btn btn-danger btn-sm" style="margin:0; padding: 0 5px; font-size: 14px; line-height: 1;" onclick="removerBlocoHorario(${s.id})" title="Remover">×</button>
+                        <div style="background: white; padding: 6px 10px; border-radius: 4px; margin-bottom: 5px; border: 1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                <span style="font-size: 12px; font-weight: 600; color: #4a5568;">${s.inicio} - ${s.fim}</span>
+                                <button class="btn btn-danger btn-sm" style="margin:0; padding: 0 5px; font-size: 14px; line-height: 1;" onclick="removerBlocoHorario(${s.id})" title="Remover">×</button>
+                            </div>
+                            <select style="width:100%; font-size:11px; padding:2px; border:1px solid #cbd5e0; border-radius:3px; background-color: ${s.tipo ? '#ebf8ff' : '#fff'};" onchange="atualizarTipoBloco(${s.id}, this.value)">
+                                <option value="">🔓 Livre (Prof. Escolhe)</option>
+                                <option value="tutoria" ${s.tipo === 'tutoria' ? 'selected' : ''}>🎓 Tutoria (Fixo)</option>
+                                <option value="almoco" ${s.tipo === 'almoco' ? 'selected' : ''}>🍽️ Almoço (Fixo)</option>
+                                <option value="cafe" ${s.tipo === 'cafe' ? 'selected' : ''}>☕ Café (Fixo)</option>
+                                <option value="atpca" ${s.tipo === 'atpca' ? 'selected' : ''}>📚 ATPCA (Fixo)</option>
+                                <option value="apcg" ${s.tipo === 'apcg' ? 'selected' : ''}>📝 APCG (Fixo)</option>
+                                <option value="reuniao" ${s.tipo === 'reuniao' ? 'selected' : ''}>🤝 Reunião (Fixo)</option>
+                            </select>
                         </div>
                     `).join('') : '<p style="font-size: 12px; color: #a0aec0; text-align: center; padding: 10px;">--</p>'}
                 </div>
@@ -683,6 +694,16 @@ function salvarGradeLote() {
     
     persistirDados();
     renderHorariosGestor();
+}
+
+function atualizarTipoBloco(id, valor) {
+    const bloco = data.gradeHoraria.find(g => g.id == id);
+    if (bloco) {
+        bloco.tipo = valor; // Salva o tipo fixo (ex: 'tutoria', 'almoco') ou vazio
+        persistirDados();
+        // Re-renderiza para atualizar a cor do select
+        renderHorariosGestor();
+    }
 }
 
 function removerBlocoHorario(id) {
@@ -819,6 +840,11 @@ async function processarImportacaoMassa() {
             const estudanteExistente = data.estudantes.find(e => e.nome_completo.toUpperCase() === nome);
 
             if (estudanteExistente) {
+                // Evita duplicidade/atualização se não houve mudança
+                if (estudanteExistente.id_turma == item.turmaId && estudanteExistente.status === status) {
+                    continue;
+                }
+
                 // Se já existe, atualiza a turma (Remanejamento) e status
                 if (estudanteExistente.id_turma != item.turmaId) remanejados++;
                 estudanteExistente.id_turma = item.turmaId;
@@ -1004,7 +1030,10 @@ async function verTutoradosProfessor(profId, profNome) {
     const html = `
         <div class="card">
             <button class="btn btn-secondary" onclick="renderTutoriasGestor()">← Voltar para Professores</button>
-            <h2 style="margin-top: 15px;">Tutorados de: ${profNome}</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
+                <h2 style="margin: 0;">Tutorados de: ${profNome}</h2>
+                <button class="btn btn-primary" onclick="imprimirTodosRelatoriosTutoriaGestor('${profId}', '${profNome}')">🖨️ Imprimir Todos</button>
+            </div>
             
             ${tutorados.length > 0 ? `
                 <table>
@@ -1185,6 +1214,83 @@ function imprimirRelatorioTutoriaGestorSimplificado(profNome, alunoNome) {
         </html>
     `;
     
+    const win = window.open('', '', 'width=900,height=800');
+    win.document.write(html);
+    win.document.close();
+}
+
+async function imprimirTodosRelatoriosTutoriaGestor(profId, profNome) {
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth(); // 0-11
+    const defaultSem = currentMonth < 6 ? 1 : 2;
+    
+    const input = prompt(`Gerar relatório em massa.\nDigite o Semestre e Ano (ex: ${defaultSem}/${currentYear}):`, `${defaultSem}/${currentYear}`);
+    if (!input) return;
+    
+    const parts = input.split('/');
+    if (parts.length !== 2) return alert('Formato inválido.');
+    
+    const semestre = parseInt(parts[0]);
+    const ano = parseInt(parts[1]);
+
+    // Busca dados
+    const key = 'app_data_' + profId;
+    const profData = await getData('app_data', key);
+    const tutorados = (profData && profData.tutorados) ? profData.tutorados : [];
+    const encontros = (profData && profData.encontros) ? profData.encontros : [];
+
+    if (tutorados.length === 0) return alert('Nenhum tutorado encontrado para este professor.');
+
+    // Ordena alunos alfabeticamente
+    tutorados.sort((a,b) => a.nome_estudante.localeCompare(b.nome_estudante));
+
+    // Nome da Escola
+    const nomeEscola = document.querySelector('header h1') ? document.querySelector('header h1').textContent.replace('SisProf - ', '') : 'Escola';
+    const semLabel = `${semestre}º Semestre de ${ano}`;
+
+    let html = `
+        <html>
+        <head>
+            <title>Relatórios de Tutoria - ${profNome}</title>
+            <style>
+                body { font-family: Arial, sans-serif; color: #000; line-height: 1.4; }
+                .page-break { page-break-after: always; padding: 40px; }
+                h1 { text-align: center; font-size: 20px; margin: 0 0 5px 0; text-transform: uppercase; }
+                .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #000; padding-bottom: 15px; }
+                .sub-header { font-size: 14px; margin-top: 5px; }
+                .info { margin-bottom: 20px; font-size: 14px; border: 1px solid #ccc; padding: 10px; border-radius: 5px; background: #f9f9f9; }
+                .registro { margin-bottom: 20px; border-bottom: 1px dashed #ccc; padding-bottom: 10px; }
+                .registro:last-child { border-bottom: none; }
+                .registro-titulo { font-weight: bold; font-size: 14px; margin-bottom: 3px; }
+                .registro-data { font-size: 12px; color: #555; margin-bottom: 5px; }
+                .registro-texto { white-space: pre-wrap; text-align: justify; font-size: 13px; }
+            </style>
+        </head>
+        <body>
+    `;
+
+    tutorados.forEach(t => {
+        // Filtra encontros do aluno no período
+        const encontrosAluno = encontros.filter(e => {
+            if (e.tutoradoId != t.id && e.encontroTutorado != t.id) return false;
+            const d = new Date(e.data);
+            if (d.getFullYear() !== ano) return false;
+            const mes = d.getMonth();
+            if (semestre === 1) return mes <= 5;
+            if (semestre === 2) return mes >= 6;
+            return false;
+        }).sort((a,b) => new Date(a.data) - new Date(b.data));
+
+        html += `<div class="page-break">
+            <div class="header"><h1>${nomeEscola}</h1><div class="sub-header">Relatório de Tutoria - ${semLabel}</div></div>
+            <div class="info"><p style="margin:3px 0;"><strong>Professor:</strong> ${profNome}</p><p style="margin:3px 0;"><strong>Estudante:</strong> ${t.nome_estudante}</p><p style="margin:3px 0;"><strong>Turma:</strong> ${t.turma}</p></div>
+            ${encontrosAluno.length > 0 ? encontrosAluno.map(e => `<div class="registro"><div class="registro-data">📅 ${formatDate(e.data)}</div><div class="registro-titulo">${e.tema || 'Sem Título'}</div><div class="registro-texto">${e.resumo || ''}</div></div>`).join('') : '<p style="text-align:center; font-style:italic; color:#777;">Nenhum registro encontrado neste semestre.</p>'}
+            <div style="margin-top:50px; border-top:1px solid #000; width:200px; text-align:center; font-size:10px; padding-top:5px;">Visto da Coordenação</div>
+        </div>`;
+    });
+
+    html += `<script>window.print();</script></body></html>`;
+
     const win = window.open('', '', 'width=900,height=800');
     win.document.write(html);
     win.document.close();
