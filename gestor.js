@@ -599,6 +599,7 @@ async function carregarVistaCompartilhada(shareId) {
 // --- GRADE DE HORÁRIOS (GESTOR) ---
 
 function renderHorariosGestor() {
+    // Renderização Padrão (Semanal)
     const grade = (data.gradeHoraria || []);
     const dias = [
         { id: 1, nome: 'Segunda' },
@@ -610,8 +611,13 @@ function renderHorariosGestor() {
 
     let html = `
         <div class="card">
-            <h2>⏰ Configuração da Grade Horária</h2>
-            <p style="color:#666; font-size:14px; margin-bottom:15px;">Defina os horários de aula para cada dia da semana.</p>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <div>
+                    <h2 style="margin:0;">⏰ Grade Horária Padrão</h2>
+                    <p style="color:#666; font-size:14px; margin:0;">Defina a rotina semanal (Seg-Sex).</p>
+                </div>
+                <button class="btn btn-warning" onclick="abrirGerenciadorDiasAtipicos()">📅 Configurar Dia Atípico</button>
+            </div>
             
             <div style="background: #edf2f7; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
                 <h3 style="margin-top:0; font-size: 16px; margin-bottom: 10px;">Adicionar Horário em Lote</h3>
@@ -670,6 +676,145 @@ function renderHorariosGestor() {
         </div>
     `;
     document.getElementById('horariosGestor').innerHTML = html;
+}
+
+// --- DIAS ATÍPICOS (EXCEÇÕES) ---
+
+function abrirGerenciadorDiasAtipicos() {
+    const html = `
+        <div class="card" style="border-left: 5px solid #ed8936;">
+            <button class="btn btn-secondary" onclick="renderHorariosGestor()">← Voltar para Grade Padrão</button>
+            <h2 style="margin-top:15px; color:#c05621;">📅 Configurar Dia Atípico</h2>
+            <p style="color:#666;">Use para dias com horários diferentes (Ex: Conselho, Eventos, Provas).</p>
+
+            <div style="margin: 20px 0; padding: 15px; background: #fffaf0; border: 1px solid #ed8936; border-radius: 8px;">
+                <label style="font-weight:bold;">Selecione a Data:</label>
+                <div style="display:flex; gap:10px; margin-top:5px;">
+                    <input type="date" id="dataAtipica" onchange="carregarDiaAtipico()" style="padding:8px;">
+                    <button class="btn btn-primary" onclick="carregarDiaAtipico()">Carregar</button>
+                </div>
+            </div>
+
+            <div id="editorDiaAtipico" style="display:none;">
+                <!-- Conteúdo carregado via JS -->
+            </div>
+        </div>
+    `;
+    document.getElementById('horariosGestor').innerHTML = html;
+}
+
+function carregarDiaAtipico() {
+    const dataStr = document.getElementById('dataAtipica').value;
+    if (!dataStr) return;
+
+    const container = document.getElementById('editorDiaAtipico');
+    const excecoes = data.gradeHorariaExcecoes || [];
+    const excecaoExistente = excecoes.find(e => e.data === dataStr);
+
+    // Se não existe exceção, pegamos a grade padrão do dia da semana como base
+    let blocos = [];
+    let isNovo = true;
+
+    if (excecaoExistente) {
+        blocos = excecaoExistente.blocos;
+        isNovo = false;
+    } else {
+        // Pega dia da semana (0-6, ajusta para 1-5)
+        // Note: input date é YYYY-MM-DD. new Date() pode ter fuso, melhor usar split
+        const parts = dataStr.split('-');
+        const dateObj = new Date(parts[0], parts[1]-1, parts[2]);
+        const diaSemana = dateObj.getDay(); // 0=Dom, 1=Seg...
+        
+        // Copia a grade padrão para editar
+        blocos = (data.gradeHoraria || [])
+            .filter(g => g.diaSemana == diaSemana)
+            .map(g => ({ ...g, id: Date.now() + Math.random() })); // Novos IDs para não alterar a padrão
+    }
+
+    // Renderiza editor simples
+    let html = `
+        <h3 style="border-bottom:1px solid #eee; padding-bottom:5px;">Editando: ${formatDate(dataStr)} ${isNovo ? '(Novo)' : '(Salvo)'}</h3>
+        
+        <div id="listaBlocosAtipicos">
+            ${blocos.map((b, idx) => `
+                <div class="bloco-atipico-item" style="display:flex; gap:10px; align-items:center; margin-bottom:10px; background:white; padding:10px; border:1px solid #ddd; border-radius:5px;">
+                    <input type="time" class="inicio" value="${b.inicio}">
+                    <span>até</span>
+                    <input type="time" class="fim" value="${b.fim}">
+                    <select class="tipo">
+                        <option value="">Livre</option>
+                        <option value="tutoria" ${b.tipo === 'tutoria' ? 'selected' : ''}>Tutoria</option>
+                        <option value="almoco" ${b.tipo === 'almoco' ? 'selected' : ''}>Almoço</option>
+                        <option value="reuniao" ${b.tipo === 'reuniao' ? 'selected' : ''}>Reunião</option>
+                        <option value="evento" ${b.tipo === 'evento' ? 'selected' : ''}>Evento</option>
+                    </select>
+                    <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">🗑️</button>
+                </div>
+            `).join('')}
+        </div>
+
+        <button class="btn btn-secondary btn-sm" onclick="adicionarBlocoAtipicoUI()">+ Adicionar Horário</button>
+        
+        <div style="margin-top:20px; border-top:1px solid #eee; padding-top:15px; display:flex; justify-content:flex-end; gap:10px;">
+            ${!isNovo ? `<button class="btn btn-danger" onclick="excluirDiaAtipico('${dataStr}')">Restaurar Padrão</button>` : ''}
+            <button class="btn btn-success" onclick="salvarDiaAtipico('${dataStr}')">💾 Salvar Exceção</button>
+        </div>
+    `;
+
+    container.innerHTML = html;
+    container.style.display = 'block';
+}
+
+function adicionarBlocoAtipicoUI() {
+    const div = document.createElement('div');
+    div.className = 'bloco-atipico-item';
+    div.style = "display:flex; gap:10px; align-items:center; margin-bottom:10px; background:white; padding:10px; border:1px solid #ddd; border-radius:5px;";
+    div.innerHTML = `
+        <input type="time" class="inicio"> <span>até</span> <input type="time" class="fim">
+        <select class="tipo"><option value="">Livre</option><option value="tutoria">Tutoria</option><option value="almoco">Almoço</option><option value="reuniao">Reunião</option><option value="evento">Evento</option></select>
+        <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">🗑️</button>
+    `;
+    document.getElementById('listaBlocosAtipicos').appendChild(div);
+}
+
+function salvarDiaAtipico(dataStr) {
+    const itens = document.querySelectorAll('.bloco-atipico-item');
+    const novosBlocos = [];
+
+    itens.forEach(div => {
+        const inicio = div.querySelector('.inicio').value;
+        const fim = div.querySelector('.fim').value;
+        const tipo = div.querySelector('.tipo').value;
+        if (inicio && fim) {
+            novosBlocos.push({ id: Date.now() + Math.random(), inicio, fim, tipo, diaSemana: -1 }); // diaSemana -1 indica exceção
+        }
+    });
+
+    if (!data.gradeHorariaExcecoes) data.gradeHorariaExcecoes = [];
+    
+    // Remove anterior se houver
+    data.gradeHorariaExcecoes = data.gradeHorariaExcecoes.filter(e => e.data !== dataStr);
+    
+    // Adiciona novo
+    data.gradeHorariaExcecoes.push({
+        data: dataStr,
+        blocos: novosBlocos.sort((a,b) => a.inicio.localeCompare(b.inicio))
+    });
+
+    persistirDados();
+    alert('Configuração para o dia ' + formatDate(dataStr) + ' salva com sucesso!');
+    carregarDiaAtipico(); // Recarrega para atualizar botões
+}
+
+function excluirDiaAtipico(dataStr) {
+    if (!confirm('Deseja remover a configuração específica deste dia e voltar a usar a grade semanal padrão?')) return;
+    
+    if (data.gradeHorariaExcecoes) {
+        data.gradeHorariaExcecoes = data.gradeHorariaExcecoes.filter(e => e.data !== dataStr);
+        persistirDados();
+        alert('Dia restaurado para o padrão.');
+        carregarDiaAtipico();
+    }
 }
 
 function salvarGradeLote() {

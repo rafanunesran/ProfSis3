@@ -195,6 +195,7 @@ async function renderDashboard() {
 
     // Agenda do Dia (Baseada na Grade)
     let gradeEscola = [];
+    let excecoesGrade = [];
     
     // Busca dados da Escola (Gestor) para sincronizar Avisos e Grade
     if (currentUser && currentUser.schoolId) {
@@ -202,6 +203,7 @@ async function renderDashboard() {
         const gestorData = await getData('app_data', key);
         if (gestorData) {
             gradeEscola = gestorData.gradeHoraria || [];
+            excecoesGrade = gestorData.gradeHorariaExcecoes || [];
             if (gestorData.avisosMural) data.avisosMural = gestorData.avisosMural;
             if (gestorData.registrosAdministrativos) data.registrosAdministrativos = gestorData.registrosAdministrativos;
         }
@@ -209,14 +211,27 @@ async function renderDashboard() {
 
     const diaSemanaHoje = new Date().getDay(); // 0=Dom, 1=Seg...
     
-    // Filtra blocos do dia atual
-    const blocosHoje = gradeEscola.filter(g => g.diaSemana == diaSemanaHoje).sort((a,b) => a.inicio.localeCompare(b.inicio));
+    // LÓGICA DE EXCEÇÃO (DIA ATÍPICO)
+    // Verifica se há uma grade específica para a data de hoje
+    const excecaoHoje = excecoesGrade.find(e => e.data === today);
+    
+    let blocosHoje = [];
+    if (excecaoHoje) {
+        blocosHoje = excecaoHoje.blocos; // Usa a grade específica
+    } else {
+        blocosHoje = gradeEscola.filter(g => g.diaSemana == diaSemanaHoje).sort((a,b) => a.inicio.localeCompare(b.inicio));
+    }
+
     const minhasAulas = data.horariosAulas || [];
 
     let agendaHtml = '';
     if (blocosHoje.length === 0) {
         agendaHtml = '<p class="empty-state">Sem grade configurada para hoje.</p>';
     } else {
+        if (excecaoHoje) {
+            agendaHtml += `<div class="alert alert-warning" style="margin-bottom:10px; font-size:12px;">⚠️ Horário Especial Definido pela Gestão</div>`;
+        }
+
         agendaHtml = blocosHoje.map(bloco => {
             const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
             
@@ -235,6 +250,10 @@ async function renderDashboard() {
                     <span><strong>${bloco.inicio}</strong> - Tutoria</span>
                     <span>Registrar →</span>
                 </button>`;
+            } else if (bloco.tipo === 'evento') {
+                return `<div class="alert alert-warning" style="margin-bottom:5px;">
+                    <strong>${bloco.inicio}</strong> - EVENTO / ATIVIDADE ESPECIAL
+                </div>`;
             } else {
                 // Estudo, Reunião, APCG, etc.
                 return `<div class="alert alert-info" style="margin-bottom:5px;">
@@ -1627,43 +1646,95 @@ function agendarProximoTutorado() {
     }
 }
 
-function agendarTodosTutorados() {
-    if (!confirm('ATENÇÃO: Isso limpará todos os agendamentos futuros e reorganizará a agenda para todos os tutorados. Continuar?')) return;
+async function agendarTodosTutorados() {
+    if (!confirm('ATENÇÃO: O sistema irá gerar horários baseados na sua Grade de Tutoria até o fim do semestre e distribuir seus tutorados rotativamente.\n\nAgendamentos futuros existentes serão reorganizados. Continuar?')) return;
 
     const tutorados = data.tutorados || [];
+    if (tutorados.length === 0) return alert('Você não possui tutorados cadastrados.');
+
+    // 1. Definir Fim do Semestre
+    const hoje = new Date();
+    const ano = hoje.getFullYear();
+    const mes = hoje.getMonth(); // 0-11
+    let dataFim;
+
+    if (mes < 6) { // 1º Semestre (até 30 de Junho)
+        dataFim = new Date(ano, 5, 30);
+    } else { // 2º Semestre (até 20 de Dezembro)
+        dataFim = new Date(ano, 11, 20);
+    }
+
+    // 2. Obter Grade de Horários (Tutoria)
+    const gradeEscola = await getGradeEscola();
+    const meusHorarios = data.horariosAulas || [];
+    
+    // Filtra blocos de Tutoria (Fixos ou Definidos pelo Professor)
+    const blocosTutoria = gradeEscola.filter(g => 
+        (g.tipo === 'tutoria') || 
+        meusHorarios.some(a => a.id_bloco == g.id && a.tipo === 'tutoria')
+    );
+
+    if (blocosTutoria.length === 0) return alert('Não há horários de Tutoria definidos na sua Agenda (Grade). Configure-os primeiro na tela de Agenda.');
+
+    if (!data.agendamentos) data.agendamentos = [];
     const today = getTodayString();
 
-    // 1. Limpar agendamentos futuros
-    if (data.agendamentos) {
-        data.agendamentos.forEach(a => {
-            if (a.data >= today) {
-                a.tutoradoId = null; // Limpa
-            }
-        });
+    // 3. Limpar atribuições futuras (mantendo os slots, mas esvaziando o aluno para reorganizar)
+    data.agendamentos.forEach(a => {
+        if (a.data >= today) {
+            a.tutoradoId = null;
+        }
+    });
+
+    // 4. Gerar Slots até o fim do semestre
+    let cursor = new Date();
+    cursor.setDate(cursor.getDate() + 1); // Começa amanhã
+
+    while (cursor <= dataFim) {
+        const diaSemana = cursor.getDay(); // 0=Dom, 1=Seg...
+        
+        // Se for dia útil (1-5)
+        if (diaSemana >= 1 && diaSemana <= 5) {
+            const blocosDoDia = blocosTutoria.filter(b => b.diaSemana == diaSemana);
+            const dataStr = cursor.toISOString().split('T')[0];
+
+            blocosDoDia.forEach(b => {
+                // Verifica se já existe o slot
+                const existe = data.agendamentos.find(a => a.data === dataStr && a.inicio === b.inicio);
+                if (!existe) {
+                    data.agendamentos.push({
+                        id: Date.now() + Math.random(),
+                        data: dataStr,
+                        inicio: b.inicio,
+                        fim: b.fim,
+                        tutoradoId: null
+                    });
+                }
+            });
+        }
+        cursor.setDate(cursor.getDate() + 1);
     }
 
-    // 2. Buscar slots livres (agora todos os futuros estão livres)
-    const slotsLivres = (data.agendamentos || [])
-        .filter(a => a.data >= today)
+    // 5. Distribuir Alunos (Round Robin / Rotativo)
+    // Pega todos os slots livres futuros ordenados
+    const slotsLivres = data.agendamentos
+        .filter(a => a.data >= today && !a.tutoradoId)
         .sort((a,b) => a.data.localeCompare(b.data) || a.inicio.localeCompare(b.inicio));
 
-    if (slotsLivres.length === 0) {
-        alert('Não há horários futuros gerados. Gere a agenda primeiro.');
-        return;
-    }
+    if (slotsLivres.length === 0) return alert('Nenhum horário disponível gerado.');
 
-    // 3. Distribuir sequencialmente
-    let agendadosCount = 0;
-    for (let i = 0; i < tutorados.length; i++) {
-        if (i < slotsLivres.length) {
-            slotsLivres[i].tutoradoId = tutorados[i].id;
-            agendadosCount++;
-        }
-    }
+    let tIndex = 0;
+    // Ordena tutorados alfabeticamente para garantir ordem consistente
+    tutorados.sort((a,b) => a.nome_estudante.localeCompare(b.nome_estudante));
+
+    slotsLivres.forEach(slot => {
+        slot.tutoradoId = tutorados[tIndex].id;
+        tIndex = (tIndex + 1) % tutorados.length; // Cicla pelos alunos
+    });
 
     persistirDados();
     renderTutoria();
-    alert(`Reorganização concluída. ${agendadosCount} tutorados agendados.`);
+    alert(`Agenda gerada até ${formatDate(dataFim.toISOString().split('T')[0])}.\n${slotsLivres.length} atendimentos agendados e distribuídos.`);
 }
 
 async function abrirModalNovoTutorado() {
