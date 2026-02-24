@@ -2140,7 +2140,18 @@ async function imprimirAgendaMensal() {
 
     if (isNaN(mes) || isNaN(ano)) return alert("Data inválida. Use o formato MM/AAAA");
 
-    // 2. Prepara os dados da Grade Fixa
+    // 2. Carrega o Template HTML (Agenda.html)
+    let templateHtml = '';
+    try {
+        const response = await fetch('Agenda.html');
+        if (!response.ok) throw new Error('Arquivo Agenda.html não encontrado.');
+        templateHtml = await response.text();
+    } catch (e) {
+        console.error(e);
+        return alert('Erro ao carregar o modelo de impressão (Agenda.html). Verifique se o arquivo está na pasta do sistema.');
+    }
+
+    // 3. Prepara os dados da Grade Fixa
     const gradeEscola = await getGradeEscola();
     const minhasAulas = data.horariosAulas || [];
     const turmas = data.turmas || [];
@@ -2151,144 +2162,136 @@ async function imprimirAgendaMensal() {
         const blocosDia = gradeEscola.filter(g => g.diaSemana == d).sort((a,b) => a.inicio.localeCompare(b.inicio));
         gradePorDia[d] = blocosDia.map(bloco => {
             const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
-            if (!aula) return null;
-
             let texto = '';
-            if (aula.tipo === 'aula' && aula.id_turma) {
-                const t = turmas.find(x => x.id == aula.id_turma);
-                texto = t ? t.nome : 'Turma?';
-            } else {
-                texto = aula.tipo.toUpperCase(); // ESTUDO, TUTORIA, ETC
+            if (aula) {
+                if (aula.tipo === 'aula' && aula.id_turma) {
+                    const t = turmas.find(x => x.id == aula.id_turma);
+                    texto = t ? `${t.nome} ${t.disciplina || ''}` : 'Turma?';
+                } else {
+                    texto = aula.tipo.toUpperCase(); // ESTUDO, TUTORIA, ETC
+                }
             }
+            // Se for intervalo/almoço fixo (definido pelo gestor), usa o tipo do bloco
+            if (!texto && bloco.tipo) texto = bloco.tipo.toUpperCase();
+            
             return { inicio: bloco.inicio, fim: bloco.fim, texto };
-        }).filter(x => x !== null);
+        });
     }
 
-    // 3. Gera o Calendário
-    const dataInicial = new Date(ano, mes, 1);
-    const dataFinal = new Date(ano, mes + 1, 0);
-    const nomeMes = dataInicial.toLocaleDateString('pt-BR', { month: 'long' }).toUpperCase();
+    // 4. Manipula o DOM do Template
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(templateHtml, 'text/html');
+
+    // Adiciona BASE tag para carregar CSS/Imagens relativos corretamente
+    const base = doc.createElement('base');
+    base.href = window.location.href;
+    doc.head.appendChild(base);
+
+    // A. Atualizar Cabeçalho (Escola, Professor, Mês)
     const nomeEscola = document.querySelector('#appContainer h1').textContent.replace('SisProf - ', '');
+    const nomeProf = currentUser.nome;
+    const meses = ['JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'];
+    const tituloAgenda = `AGENDA MENSAL DE TRABALHO – Prof. ${nomeProf} - ${meses[mes]} ${ano}`;
+
+    // Procura células para substituir
+    const cells = doc.querySelectorAll('td');
+    cells.forEach(td => {
+        // Substitui nome da escola se encontrar o padrão do template
+        if (td.textContent.includes('UNIDADE REGIONAL') || td.textContent.includes('E.E.')) {
+            // Tenta manter a formatação substituindo apenas o nome da escola antiga
+            if (td.textContent.includes('E.E.')) {
+                td.innerHTML = td.innerHTML.replace(/E\.E\..*?(?=<br>|$)/, nomeEscola);
+            }
+        }
+        // Substitui o título da agenda
+        if (td.textContent.includes('AGENDA MENSAL DE TRABALHO')) {
+            td.textContent = tituloAgenda;
+        }
+    });
+
+    // B. Mapear e Preencher o Grid
+    // Encontra os blocos de semanas procurando por "2ªfeira"
+    const rows = Array.from(doc.querySelectorAll('tr'));
+    let weekBlocks = [];
     
-    let html = `
-        <html>
-        <head>
-            <title>Agenda Mensal - ${nomeMes}/${ano}</title>
-            <style>
-                @page { size: A4 landscape; margin: 10mm; }
-                body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 0; color: #000; }
-                
-                .header-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; border: 2px solid #000; }
-                .header-table td { border: 1px solid #000; padding: 8px; vertical-align: middle; }
-                
-                .title { font-size: 18px; font-weight: bold; text-align: center; text-transform: uppercase; }
-                .subtitle { font-size: 14px; text-align: center; margin-top: 5px; }
-                
-                .info-bar { border: 2px solid #000; padding: 8px; margin-bottom: 15px; font-weight: bold; font-size: 14px; background: #f0f0f0; }
-                
-                table.calendar { width: 100%; border-collapse: collapse; table-layout: fixed; border: 2px solid #000; }
-                table.calendar th { border: 1px solid #000; background-color: #ddd; padding: 8px; font-size: 12px; text-transform: uppercase; }
-                table.calendar td { border: 1px solid #000; vertical-align: top; height: 100px; padding: 5px; background: #fff; }
-                
-                .day-num { float: right; font-weight: bold; font-size: 14px; margin-bottom: 5px; }
-                .aula-line { font-size: 10px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                
-                .footer { margin-top: 40px; display: flex; justify-content: space-around; }
-                .sign-box { width: 40%; border-top: 1px solid #000; text-align: center; padding-top: 5px; font-size: 12px; }
-            </style>
-        </head>
-        <body>
-            <table class="header-table">
-                <tr>
-                    <td width="20%" style="text-align:center; font-size:10px; font-weight:bold;">
-                        GOVERNO DO ESTADO DE SÃO PAULO<br>
-                        SECRETARIA DA EDUCAÇÃO
-                    </td>
-                    <td width="60%" class="title">
-                        AGENDA MENSAL DE TRABALHO
-                        <div class="subtitle">${nomeEscola}</div>
-                    </td>
-                    <td width="20%" style="font-size:12px;">
-                        <strong>Mês:</strong> ${nomeMes}<br>
-                        <strong>Ano:</strong> ${ano}
-                    </td>
-                </tr>
-            </table>
+    rows.forEach((tr, index) => {
+        if (tr.textContent.includes('2ªfeira') && tr.textContent.includes('3ª feira')) {
+            weekBlocks.push({
+                dateRowIndex: index + 1, // A linha logo abaixo dos dias da semana contém as datas
+                lessonRowsStartIndex: index + 2 // As aulas começam na linha seguinte
+            });
+        }
+    });
 
-            <div class="info-bar">
-                PROFESSOR(A): ${currentUser.nome.toUpperCase()}
-            </div>
-
-            <table class="calendar">
-                <thead>
-                    <tr>
-                        <th>Segunda-feira</th>
-                        <th>Terça-feira</th>
-                        <th>Quarta-feira</th>
-                        <th>Quinta-feira</th>
-                        <th>Sexta-feira</th>
-                    </tr>
-                </thead>
-                <tbody>
-    `;
-
-    // Lógica de preenchimento dos dias
-    let currentDay = new Date(dataInicial);
-    // Ajusta para começar na segunda-feira anterior se o mês não começar na segunda
-    // getDay(): 0=Dom, 1=Seg...
+    // Lógica de Datas
+    let currentDay = new Date(ano, mes, 1);
+    // Ajusta para a segunda-feira da semana do dia 1
     let startOffset = currentDay.getDay() - 1;
-    if (startOffset < 0) startOffset = 6; // Se for domingo, volta 6 dias
+    if (startOffset < 0) startOffset = 6; // Domingo volta 6
     currentDay.setDate(currentDay.getDate() - startOffset);
 
-    // Loop por 5 ou 6 semanas para garantir que o mês caiba
-    for (let week = 0; week < 6; week++) {
-        // Se já passou do mês e estamos numa nova semana, para
-        if (currentDay > dataFinal && week > 0) break;
+    weekBlocks.forEach(block => {
+        // 1. Preencher Datas (Seg-Sex)
+        const dateRow = rows[block.dateRowIndex];
+        if (!dateRow) return;
+        
+        // As células de data são as colunas 3 a 7 (índices 3,4,5,6,7) no template padrão
+        const dateCells = Array.from(dateRow.children).slice(3, 8);
 
-        html += '<tr>';
-        for (let d = 1; d <= 5; d++) { // Apenas Seg a Sex
-            const diaMes = currentDay.getDate();
-            const isCurrentMonth = currentDay.getMonth() === mes;
+        for (let i = 0; i < 5; i++) { // 0=Seg, 4=Sex
+            const d = new Date(currentDay);
+            d.setDate(d.getDate() + i);
             
-            html += `<td style="${!isCurrentMonth ? 'background:#f9f9f9; color:#ccc;' : ''}">`;
-            html += `<span class="day-num">${diaMes}</span>`;
+            const diaMes = d.getDate();
+            const isCurrentMonth = d.getMonth() === mes;
             
-            if (isCurrentMonth && gradePorDia[d]) {
-                gradePorDia[d].forEach(a => {
-                    html += `<div class="aula-line"><strong>${a.inicio}</strong> ${a.texto}</div>`;
-                });
+            if (dateCells[i]) {
+                dateCells[i].textContent = isCurrentMonth ? diaMes : '';
+                // Opcional: mudar cor de fundo se não for do mês
+                if (!isCurrentMonth) dateCells[i].style.backgroundColor = '#f2f2f2';
             }
-            html += `</td>`;
+
+            // 2. Preencher Aulas
+            const diaSemana = i + 1; // 1=Seg
+            const aulasDoDia = gradePorDia[diaSemana] || [];
             
-            // Avança um dia
-            currentDay.setDate(currentDay.getDate() + 1);
+            let aulaIndex = 0;
+            // Percorre as linhas de aula (aprox 10 linhas, pulando almoço)
+            for (let r = 0; r < 12; r++) { 
+                const lessonRow = rows[block.lessonRowsStartIndex + r];
+                if (!lessonRow) continue;
+                
+                // Pula linha de almoço
+                if (lessonRow.textContent.includes('Almoço')) continue;
+
+                // Pega a célula correspondente ao dia
+                const lessonCells = Array.from(lessonRow.children);
+                // Ajuste de índice: Header(0) + Spacer(1) + Label(2) + Seg(3)...
+                const cell = lessonCells[3 + i];
+                
+                if (cell) {
+                    if (isCurrentMonth && aulasDoDia[aulaIndex]) {
+                        const a = aulasDoDia[aulaIndex];
+                        // Insere o texto da aula
+                        cell.innerHTML = `<div style="font-size:9px; overflow:hidden;">${a.texto}</div>`;
+                    } else {
+                        cell.textContent = '';
+                    }
+                }
+                aulaIndex++;
+            }
         }
-        // Pula Sábado e Domingo no loop visual (mas avança a data)
-        currentDay.setDate(currentDay.getDate() + 2);
-        html += '</tr>';
-    }
+        // Avança uma semana
+        currentDay.setDate(currentDay.getDate() + 7);
+    });
 
-    html += `
-                </tbody>
-            </table>
-
-            <div class="footer">
-                <div class="sign-box">
-                    Assinatura do(a) Professor(a)
-                </div>
-                <div class="sign-box">
-                    Assinatura do(a) Diretor(a) / CGPG
-                </div>
-            </div>
-            
-            <script>window.print();</script>
-        </body>
-        </html>
-    `;
-
-    const janela = window.open('', '', 'width=1100,height=800');
-    janela.document.write(html);
+    // 5. Abre Janela de Impressão
+    const win = window.open('', '', 'width=1200,height=800');
+    win.document.write(doc.documentElement.outerHTML);
     janela.document.close();
+    
+    // Delay para carregar estilos
+    setTimeout(() => { win.print(); }, 500);
 }
 
 // --- PREVIEW AGENDAMENTO (Placeholder) ---
