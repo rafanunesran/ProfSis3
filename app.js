@@ -2484,9 +2484,10 @@ function renderEstudanteGeral() {
     const nome = estudanteAtualDetalhe.nome_completo;
     
     // Verifica se é tutorado do usuário atual
-    const isTutorado = (data.tutorados || []).find(t => t.id_estudante_origem == estudanteAtualDetalhe.id);
-    const htmlNome = isTutorado 
-        ? `${nome} <div style="font-size: 14px; color: #3182ce; font-weight: normal; margin-top: 4px;">🎓 Seu Tutorado</div>` 
+    const tutoradoEntry = (data.tutorados || []).find(t => t.id_estudante_origem == estudanteAtualDetalhe.id);
+    
+    const htmlNome = tutoradoEntry 
+        ? `${nome} <div style="font-size: 14px; color: #3182ce; font-weight: normal; margin-top: 4px;">🎓 Tutor: ${currentUser.nome}</div>` 
         : nome;
 
     document.getElementById('estudanteGeralNome').innerHTML = htmlNome;
@@ -2573,6 +2574,7 @@ function renderEstudanteGeral() {
     // VISIBILIDADE POR PERFIL
     // Gestor vê apenas: Faltas, Atrasos, Ocorrências.
     // Professor vê tudo (Notas, Compensações, etc).
+    // ATUALIZAÇÃO: Gestor agora vê TUDO também (Visualização Unificada).
     
     const divNotas = document.getElementById('estudanteGeralNotas');
     const h3Notas = divNotas.previousElementSibling; // Seleciona o título <h3>Notas...
@@ -2580,21 +2582,18 @@ function renderEstudanteGeral() {
     const divComp = document.getElementById('estudanteGeralCompensacoes');
     const h3Comp = divComp.previousElementSibling; // Seleciona o título <h3>Compensações...
 
-    if (isGestor) {
-        if(h3Notas) h3Notas.style.display = 'none';
-        divNotas.style.display = 'none';
-        
-        if(h3Comp) h3Comp.style.display = 'none';
-        divComp.style.display = 'none';
-    } else {
-        if(h3Notas) h3Notas.style.display = 'block';
-        divNotas.style.display = 'block';
-        
-        if(h3Comp) h3Comp.style.display = 'block';
-        divComp.style.display = 'block';
-        
-        // Preenche com placeholders ou dados reais do professor
+    // Garante que tudo esteja visível para Professor e Gestor
+    if(h3Notas) h3Notas.style.display = 'block';
+    divNotas.style.display = 'block';
+    
+    if(h3Comp) h3Comp.style.display = 'block';
+    divComp.style.display = 'block';
+    
+    // Preenche com placeholders se estiver vazio (caso o gestor não tenha dados de notas carregados)
+    if (!divNotas.innerHTML || divNotas.innerHTML.trim() === '') {
         divNotas.innerHTML = '<p class="empty-state">Sem notas registradas.</p>';
+    }
+    if (!divComp.innerHTML || divComp.innerHTML.trim() === '') {
         divComp.innerHTML = '<p class="empty-state">Sem compensações.</p>';
     }
 }
@@ -3031,6 +3030,7 @@ async function renderGradeHorariaProfessor() {
 
     // 1. Buscar a Grade configurada pelo Gestor (Dados da Escola)
     let gradeEscola = [];
+    let tiposFixos = [];
     
     // Debug: Ajuda a verificar se o usuário está vinculado à escola correta
     console.log(`[Grade] Renderizando para: ${currentUser.email} | Escola ID: ${currentUser.schoolId}`);
@@ -3041,6 +3041,7 @@ async function renderGradeHorariaProfessor() {
         
         if (gestorData && gestorData.gradeHoraria) {
             gradeEscola = gestorData.gradeHoraria;
+            tiposFixos = gestorData.tiposHorarioFixo || [];
             console.log(`[Grade] Encontrados ${gradeEscola.length} blocos de horário.`);
         } else {
             console.warn(`[Grade] Nenhum dado encontrado na chave: ${key}`);
@@ -3062,32 +3063,37 @@ async function renderGradeHorariaProfessor() {
     const minhasAulas = data.horariosAulas || []; // Onde salvamos as escolhas do professor
 
     let html = `
-        <div style="display:flex; justify-content:flex-end; margin-bottom:15px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+            <p style="color:#718096; font-size:14px; margin:0;">Configure sua disponibilidade semanal.</p>
             <button class="btn btn-secondary" onclick="imprimirAgendaMensal()">🖨️ Imprimir Agenda Mensal</button>
         </div>
-        <div class="grid" style="grid-template-columns: repeat(5, 1fr); gap: 10px;">
+        <div class="grid" style="grid-template-columns: repeat(5, 1fr); gap: 15px; align-items: start;">
     `;
 
     for (let d = 1; d <= 5; d++) {
         const blocosDia = gradeEscola.filter(g => g.diaSemana == d).sort((a,b) => a.inicio.localeCompare(b.inicio));
         
-        html += `<div class="card" style="padding:10px;">
-            <h3 style="text-align:center; border-bottom:1px solid #eee; margin-bottom:10px;">${dias[d]}</h3>
+        html += `<div style="background:white; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05); border:1px solid #e2e8f0; overflow:hidden;">
+            <div style="background:#f7fafc; padding:8px 0; text-align:center; font-weight:bold; color:#2d3748; font-size:14px; border-bottom:1px solid #edf2f7;">${dias[d]}</div>
+            <div style="padding:10px;">
             ${blocosDia.map(bloco => {
                 const aulaSalva = minhasAulas.find(a => a.id_bloco == bloco.id);
                 
                 // VERIFICAÇÃO DE BLOCO FIXO (GESTOR)
                 if (bloco.tipo && bloco.tipo !== '') {
-                    const labels = {
+                    // Tenta achar no dinâmico, senão usa hardcoded
+                    let label = bloco.tipo.toUpperCase();
+                    const tipoObj = tiposFixos.find(t => t.id === bloco.tipo);
+                    if (tipoObj) label = tipoObj.nome;
+                    else if ({
                         'tutoria': '🎓 Tutoria', 'almoco': '🍽️ Almoço', 'cafe': '☕ Café',
                         'atpca': '📚 ATPCA', 'apcg': '📝 APCG', 'reuniao': '🤝 Reunião'
-                    };
-                    const label = labels[bloco.tipo] || bloco.tipo.toUpperCase();
+                    }[bloco.tipo]) label = { 'tutoria': '🎓 Tutoria', 'almoco': '🍽️ Almoço', 'cafe': '☕ Café', 'atpca': '📚 ATPCA', 'apcg': '📝 APCG', 'reuniao': '🤝 Reunião' }[bloco.tipo];
                     
                     return `
-                        <div style="background:#edf2f7; padding:8px; margin-bottom:8px; border-radius:4px; border:1px solid #cbd5e0; opacity: 0.8;">
-                            <div style="font-size:12px; font-weight:bold; color:#4a5568;">${bloco.inicio} - ${bloco.fim}</div>
-                            <div style="margin-top:5px; font-size:12px; font-weight:bold; color:#2c5282; text-align:center;">🔒 ${label}</div>
+                        <div style="background:#edf2f7; padding:8px; margin-bottom:8px; border-radius:6px; border-left:3px solid #cbd5e0; opacity: 0.8;">
+                            <div style="font-size:10px; color:#718096; margin-bottom:2px;">${bloco.inicio} - ${bloco.fim}</div>
+                            <div style="font-size:12px; font-weight:bold; color:#4a5568;">🔒 ${label}</div>
                         </div>
                     `;
                 }
@@ -3099,11 +3105,22 @@ async function renderGradeHorariaProfessor() {
                 }
                 const descricao = (aulaSalva && (aulaSalva.tipo === 'estudo' || aulaSalva.tipo === 'reuniao')) ? (aulaSalva.tema || '') : '';
 
+                // Estilo dinâmico baseado na seleção
+                let borderLeftColor = 'transparent';
+                let bgStyle = 'background: #fff;';
+                if (valorSelecionado) {
+                    borderLeftColor = '#3182ce'; // Azul se tiver algo selecionado
+                    bgStyle = 'background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.05);';
+                } else {
+                    bgStyle = 'background: #fff; border: 1px dashed #e2e8f0;';
+                }
+
                 return `
-                    <div style="background:#f7fafc; padding:8px; margin-bottom:8px; border-radius:4px; border:1px solid #e2e8f0;">
-                        <div style="font-size:12px; font-weight:bold; color:#4a5568;">${bloco.inicio} - ${bloco.fim}</div>
-                        <select style="width:100%; margin-top:5px; font-size:12px;" onchange="salvarAulaGrade('${bloco.id}', this.value)">
-                            <option value="">-- Livre --</option>
+                    <div style="${bgStyle} padding:8px; margin-bottom:8px; border-radius:6px; border-left: 3px solid ${borderLeftColor}; transition: all 0.2s;">
+                        <div style="font-size:10px; color:#a0aec0; font-weight:600; margin-bottom:2px;">${bloco.inicio} - ${bloco.fim}</div>
+                        
+                        <select style="width:100%; border:none; background:transparent; font-size:12px; color:#2d3748; font-weight:600; cursor:pointer; outline:none; padding:0;" onchange="salvarAulaGrade('${bloco.id}', this.value)">
+                            <option value="" style="color:#a0aec0;">-- Selecionar --</option>
                             <optgroup label="Turmas">
                                 ${turmas.map(t => `<option value="${t.id}" ${t.id == valorSelecionado ? 'selected' : ''}>${t.nome} - ${t.disciplina || ''}</option>`).join('')}
                             </optgroup>
@@ -3121,12 +3138,13 @@ async function renderGradeHorariaProfessor() {
                         </select>
                         ${(valorSelecionado === 'estudo' || valorSelecionado === 'reuniao') ? `
                             <input type="text" placeholder="${valorSelecionado === 'estudo' ? 'Tema do estudo...' : 'Descrição da reunião...'}" value="${descricao}" 
-                                style="width:100%; margin-top:5px; font-size:11px; padding:4px; border:1px solid #cbd5e0; border-radius:3px;"
+                                style="width:100%; margin-top:4px; font-size:11px; padding:2px 0; border:none; border-bottom:1px solid #e2e8f0; background:transparent; outline:none;"
                                 onblur="salvarDescricaoAula('${bloco.id}', this.value)">
                         ` : ''}
                     </div>
                 `;
             }).join('')}
+            </div>
         </div>`;
     }
     html += '</div>';
