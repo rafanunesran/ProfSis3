@@ -2204,6 +2204,8 @@ async function imprimirAgendaMensal() {
                 if (aula.tipo === 'aula' && aula.id_turma) {
                     const t = turmas.find(x => x.id == aula.id_turma);
                     texto = t ? `${t.nome} ${t.disciplina || ''}` : 'Turma?';
+                } else if ((aula.tipo === 'estudo' || aula.tipo === 'reuniao') && aula.tema) {
+                    texto = aula.tema;
                 } else {
                     texto = aula.tipo.toUpperCase(); // ESTUDO, TUTORIA, ETC
                 }
