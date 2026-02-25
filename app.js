@@ -2151,6 +2151,43 @@ async function imprimirAgendaMensal() {
         return alert('Erro ao carregar o modelo de impressão (Agenda.html). Verifique se o arquivo está na pasta do sistema.');
     }
 
+    // Helper para Feriados (Nacionais e Osasco)
+    function getFeriado(data) {
+        const d = data.getDate();
+        const m = data.getMonth() + 1;
+        const y = data.getFullYear();
+        const key = `${d}/${m}`;
+
+        const fixos = {
+            '1/1': 'Confraternização Universal',
+            '19/2': 'Emancipação de Osasco',
+            '21/4': 'Tiradentes',
+            '1/5': 'Dia do Trabalho',
+            '13/6': 'Santo Antônio',
+            '9/7': 'Rev. Constitucionalista',
+            '7/9': 'Independência',
+            '12/10': 'N. Sra. Aparecida',
+            '2/11': 'Finados',
+            '15/11': 'Proc. da República',
+            '20/11': 'Consciência Negra',
+            '25/12': 'Natal'
+        };
+        if (fixos[key]) return fixos[key];
+
+        // Páscoa (Algoritmo de Meeus/Jones/Butcher)
+        const a = y % 19, b = Math.floor(y/100), c = y%100, d_val = Math.floor(b/4), e = b%4, f = Math.floor((b+8)/25);
+        const g = Math.floor((b-f+1)/3), h = (19*a+b-d_val-g+15)%30, i = Math.floor(c/4), k = c%4, l = (32+2*e+2*i-h-k)%7;
+        const m_val = Math.floor((a+11*h+22*l)/451), month = Math.floor((h+l-7*m_val+114)/31), day = ((h+l-7*m_val+114)%31)+1;
+        const pascoa = new Date(y, month-1, day);
+
+        const check = (diff, nome) => {
+            const dt = new Date(pascoa); dt.setDate(pascoa.getDate() + diff);
+            return (dt.getDate() === d && (dt.getMonth()+1) === m) ? nome : null;
+        };
+
+        return check(-47, 'Carnaval') || check(-2, 'Sexta-feira Santa') || check(60, 'Corpus Christi');
+    }
+
     // 3. Prepara os dados da Grade Fixa
     const gradeEscola = await getGradeEscola();
     const minhasAulas = data.horariosAulas || [];
@@ -2220,6 +2257,7 @@ async function imprimirAgendaMensal() {
     rows.forEach((tr, index) => {
         if (tr.textContent.includes('2ªfeira') && tr.textContent.includes('3ª feira')) {
             weekBlocks.push({
+                headerRowIndex: index,
                 dateRowIndex: index + 1, // A linha logo abaixo dos dias da semana contém as datas
                 lessonRowsStartIndex: index + 2 // As aulas começam na linha seguinte
             });
@@ -2233,7 +2271,26 @@ async function imprimirAgendaMensal() {
     if (startOffset < 0) startOffset = 6; // Domingo volta 6
     currentDay.setDate(currentDay.getDate() - startOffset);
 
-    weekBlocks.forEach(block => {
+    weekBlocks.forEach((block, blkIdx) => {
+        // Verifica se a semana tem dias no mês selecionado
+        let hasDaysInMonth = false;
+        for (let i = 0; i < 5; i++) {
+            const d = new Date(currentDay);
+            d.setDate(d.getDate() + i);
+            if (d.getMonth() === mes) hasDaysInMonth = true;
+        }
+
+        if (!hasDaysInMonth) {
+            // Se a semana estiver vazia (fora do mês), oculta as linhas do bloco
+            const nextBlock = weekBlocks[blkIdx + 1];
+            const endIndex = nextBlock ? nextBlock.headerRowIndex : rows.length;
+            for (let r = block.headerRowIndex; r < endIndex; r++) {
+                if (rows[r]) rows[r].style.display = 'none';
+            }
+            currentDay.setDate(currentDay.getDate() + 7);
+            return;
+        }
+
         // 1. Preencher Datas (Seg-Sex)
         const dateRow = rows[block.dateRowIndex];
         if (!dateRow) return;
@@ -2247,11 +2304,16 @@ async function imprimirAgendaMensal() {
             
             const diaMes = d.getDate();
             const isCurrentMonth = d.getMonth() === mes;
+            const feriado = isCurrentMonth ? getFeriado(d) : null;
             
             if (dateCells[i]) {
                 dateCells[i].textContent = isCurrentMonth ? diaMes : '';
                 // Opcional: mudar cor de fundo se não for do mês
                 if (!isCurrentMonth) dateCells[i].style.backgroundColor = '#f2f2f2';
+                if (feriado) {
+                    dateCells[i].style.backgroundColor = '#ffebee'; // Fundo avermelhado no cabeçalho do dia
+                    dateCells[i].title = feriado;
+                }
             }
 
             // 2. Preencher Aulas
@@ -2280,6 +2342,13 @@ async function imprimirAgendaMensal() {
                 const cell = lessonCells[3 + i];
                 
                 if (cell) {
+                    if (feriado) {
+                        // Limpa o dia e marca Feriado
+                        cell.innerHTML = `<div style="font-size:10px; font-weight:bold; color:#c53030; text-align:center;">FERIADO<br><span style="font-size:8px; font-weight:normal; color:#000;">${feriado}</span></div>`;
+                        cell.style.backgroundColor = '#fff5f5';
+                        continue;
+                    }
+
                     // Tenta encontrar uma aula que corresponda a este rótulo (ex: "1ª Aula")
                     // Se não tiver rótulo definido na grade, tenta usar a ordem sequencial como fallback se necessário,
                     // mas a solicitação pede identificação explícita.
