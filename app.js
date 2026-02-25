@@ -2174,7 +2174,10 @@ async function imprimirAgendaMensal() {
             // Se for intervalo/almoço fixo (definido pelo gestor), usa o tipo do bloco
             if (!texto && bloco.tipo) texto = bloco.tipo.toUpperCase();
             
-            return { inicio: bloco.inicio, fim: bloco.fim, texto };
+            // Define o rótulo final (Apenas Gestor)
+            const labelFinal = bloco.label || '';
+
+            return { inicio: bloco.inicio, fim: bloco.fim, texto, label: labelFinal };
         });
     }
 
@@ -2255,30 +2258,44 @@ async function imprimirAgendaMensal() {
             const diaSemana = i + 1; // 1=Seg
             const aulasDoDia = gradePorDia[diaSemana] || [];
             
-            let aulaIndex = 0;
+            // let aulaIndex = 0; // Removido em favor do mapeamento por rótulo
+            
             // Percorre as linhas de aula (aprox 10 linhas, pulando almoço)
             for (let r = 0; r < 12; r++) { 
                 const lessonRow = rows[block.lessonRowsStartIndex + r];
                 if (!lessonRow) continue;
                 
-                // Pula linha de almoço
-                if (lessonRow.textContent.includes('Almoço')) continue;
-
                 // Pega a célula correspondente ao dia
                 const lessonCells = Array.from(lessonRow.children);
+                
+                // Tenta identificar o rótulo da linha (Coluna C no Excel, índice 2 aqui considerando TH)
+                // Estrutura esperada: TH(0), TD(1), TD(2-Label), TD(3-Seg)...
+                const labelCell = lessonCells[2]; 
+                const rowLabel = labelCell ? labelCell.textContent.trim() : '';
+
+                // Se a linha não tiver rótulo (ex: Almoço, Espaçamento), pula para manter o original do template
+                if (!rowLabel) continue;
+
                 // Ajuste de índice: Header(0) + Spacer(1) + Label(2) + Seg(3)...
                 const cell = lessonCells[3 + i];
                 
                 if (cell) {
-                    if (isCurrentMonth && aulasDoDia[aulaIndex]) {
-                        const a = aulasDoDia[aulaIndex];
-                        // Insere o texto da aula
+                    // Tenta encontrar uma aula que corresponda a este rótulo (ex: "1ª Aula")
+                    // Se não tiver rótulo definido na grade, tenta usar a ordem sequencial como fallback se necessário,
+                    // mas a solicitação pede identificação explícita.
+                    
+                    // Normaliza strings para comparação
+                    const normalize = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const aulaCorrespondente = aulasDoDia.find(a => normalize(a.label) === normalize(rowLabel));
+
+                    if (isCurrentMonth && aulaCorrespondente) {
+                        const a = aulaCorrespondente;
+                        // Insere o texto da aula (Turma ou Atividade)
                         cell.innerHTML = `<div style="font-size:9px; overflow:hidden;">${a.texto}</div>`;
                     } else {
                         cell.textContent = '';
                     }
                 }
-                aulaIndex++;
             }
         }
         // Avança uma semana
@@ -3103,6 +3120,9 @@ async function renderGradeHorariaProfessor() {
                 
                 // Determina o valor selecionado (ID da turma ou tipo especial)
                 let valorSelecionado = '';
+                // Rótulo: Apenas leitura (Definido pelo Gestor)
+                const labelDisplay = bloco.label || '';
+
                 if (aulaSalva) {
                     valorSelecionado = (['tutoria', 'estudo', 'apcg', 'atpca', 'reuniao', 'almoco', 'cafe', 'ped_presenc', 'eletiva'].includes(aulaSalva.tipo)) ? aulaSalva.tipo : aulaSalva.id_turma;
                 }
@@ -3120,7 +3140,10 @@ async function renderGradeHorariaProfessor() {
 
                 return `
                     <div style="${bgStyle} padding:8px; margin-bottom:8px; border-radius:6px; border-left: 3px solid ${borderLeftColor}; transition: all 0.2s;">
-                        <div style="font-size:10px; color:#a0aec0; font-weight:600; margin-bottom:2px;">${bloco.inicio} - ${bloco.fim}</div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                            <div style="font-size:10px; color:#a0aec0; font-weight:600;">${bloco.inicio} - ${bloco.fim}</div>
+                            ${labelDisplay ? `<div style="font-size:10px; font-weight:bold; color:#4a5568; background:#edf2f7; padding:1px 4px; border-radius:3px;">${labelDisplay}</div>` : ''}
+                        </div>
                         
                         <select style="width:100%; border:none; background:transparent; font-size:12px; color:#2d3748; font-weight:600; cursor:pointer; outline:none; padding:0;" onchange="salvarAulaGrade('${bloco.id}', this.value)">
                             <option value="" style="color:#a0aec0;">-- Selecionar --</option>

@@ -670,6 +670,9 @@ function renderHorariosGestor() {
                                 <span style="font-size: 12px; font-weight: 600; color: #4a5568;">${s.inicio} - ${s.fim}</span>
                                 <button class="btn btn-danger btn-sm" style="margin:0; padding: 0 5px; font-size: 14px; line-height: 1;" onclick="removerBlocoHorario(${s.id})" title="Remover">×</button>
                             </div>
+                            <input type="text" placeholder="Rótulo (ex: 1ª Aula)" value="${s.label || ''}" 
+                                style="width:100%; margin-bottom:4px; font-size:11px; padding:2px; border:1px solid #cbd5e0; border-radius:3px;"
+                                onblur="atualizarLabelBloco(${s.id}, this.value)">
                             <select style="width:100%; font-size:11px; padding:2px; border:1px solid #cbd5e0; border-radius:3px; background-color: ${s.tipo ? '#ebf8ff' : '#fff'};" onchange="atualizarTipoBloco(${s.id}, this.value)">
                                 <option value="">🔓 Livre (Prof. Escolhe)</option>
                                 ${data.tiposHorarioFixo.map(t => `<option value="${t.id}" ${s.tipo === t.id ? 'selected' : ''}>${t.nome} (Fixo)</option>`).join('')}
@@ -894,6 +897,14 @@ function atualizarTipoBloco(id, valor) {
         persistirDados();
         // Re-renderiza para atualizar a cor do select
         renderHorariosGestor();
+    }
+}
+
+function atualizarLabelBloco(id, valor) {
+    const bloco = data.gradeHoraria.find(g => g.id == id);
+    if (bloco) {
+        bloco.label = valor;
+        persistirDados();
     }
 }
 
