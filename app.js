@@ -553,6 +553,7 @@ async function abrirTurma(id) {
         </style>
         <button class="turma-nav-btn active" onclick="showTurmaTab('estudantes', event)"><span class="icon">👥</span><span class="label">Estudantes</span></button>
         <button class="turma-nav-btn" onclick="showTurmaTab('chamada', event)"><span class="icon">✅</span><span class="label">Chamada</span></button>
+        <button class="turma-nav-btn" onclick="showTurmaTab('registros', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button class="turma-nav-btn" onclick="showTurmaTab('atrasos', event)"><span class="icon">⏰</span><span class="label">Atrasos</span></button>
         <button class="turma-nav-btn" onclick="showTurmaTab('trabalhos', event)"><span class="icon">📝</span><span class="label">Trabalhos</span></button>
         <button class="turma-nav-btn" onclick="showTurmaTab('compensacoes', event)"><span class="icon">⚖️</span><span class="label">Compensações</span></button>
@@ -575,6 +576,7 @@ function showTurmaTab(tab, evt) {
 
     if (tab === 'estudantes') renderEstudantes();
     if (tab === 'chamada') renderChamada();
+    if (tab === 'registros') renderTurmaRegistros();
     if (tab === 'ocorrencias') {
         tempOcorrenciaIds = []; // Reseta seleção ao entrar na aba
         renderOcorrencias();
@@ -1294,6 +1296,70 @@ function removerAtraso(id) {
         data.atrasos = data.atrasos.filter(a => a.id != id);
         persistirDados();
         renderAtrasos();
+    }
+}
+
+// --- REGISTROS DE AULA (DIÁRIO DE CLASSE) ---
+function renderTurmaRegistros() {
+    // Busca registros específicos de aula (não administrativos)
+    const registros = (data.registrosAula || []).filter(r => r.id_turma == turmaAtual);
+    
+    // Ordena por data (mais recente primeiro)
+    registros.sort((a, b) => new Date(b.data) - new Date(a.data));
+    
+    const html = `
+        <div style="margin-bottom: 20px;">
+            <button class="btn btn-primary" onclick="abrirModalNovoRegistroAula()">+ Novo Registro de Aula</button>
+        </div>
+
+        <h3>Histórico de Aulas</h3>
+        <div class="grid" style="grid-template-columns: 1fr;">
+            ${registros.length > 0 ? registros.map(r => `
+                <div class="card" style="border-left: 4px solid #3182ce; margin-bottom: 10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <h4 style="margin:0 0 10px 0; color:#2c5282;">📅 ${formatDate(r.data)}</h4>
+                        <button class="btn btn-sm btn-danger" onclick="removerRegistroAula(${r.id})">🗑️</button>
+                    </div>
+                    <p style="white-space: pre-wrap; margin:0; color:#4a5568;">${r.conteudo}</p>
+                </div>
+            `).join('') : '<p class="empty-state">Nenhum registro de aula encontrado.</p>'}
+        </div>
+    `;
+    document.getElementById('tabRegistros').innerHTML = html;
+}
+
+function abrirModalNovoRegistroAula() {
+    document.getElementById('regAulaData').value = getTodayString();
+    document.getElementById('regAulaConteudo').value = '';
+    showModal('modalNovoRegistroAula');
+}
+
+function salvarRegistroAula(e) {
+    e.preventDefault();
+    const dataReg = document.getElementById('regAulaData').value;
+    const conteudo = document.getElementById('regAulaConteudo').value;
+    
+    if (!dataReg || !conteudo) return alert('Preencha todos os campos.');
+    
+    if (!data.registrosAula) data.registrosAula = [];
+    
+    data.registrosAula.push({
+        id: Date.now(),
+        id_turma: turmaAtual,
+        data: dataReg,
+        conteudo: conteudo
+    });
+    
+    persistirDados();
+    closeModal('modalNovoRegistroAula');
+    renderTurmaRegistros();
+}
+
+function removerRegistroAula(id) {
+    if(confirm('Excluir este registro de aula?')) {
+        data.registrosAula = data.registrosAula.filter(r => r.id !== id);
+        persistirDados();
+        renderTurmaRegistros();
     }
 }
 
@@ -2375,8 +2441,8 @@ async function imprimirAgendaMensal() {
 
     // 5. Abre Janela de Impressão
     const win = window.open('', '', 'width=1200,height=800');
-    win.document.write(doc.documentElement.outerHTML);
-    janela.document.close();
+    win.document.write('<!DOCTYPE html>' + doc.documentElement.outerHTML);
+    win.document.close();
     
     // Delay para carregar estilos
     setTimeout(() => { win.print(); }, 500);

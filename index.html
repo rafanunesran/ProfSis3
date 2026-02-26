@@ -128,6 +128,7 @@
 
                     <div id="tabEstudantes" class="turma-tab"></div>
                     <div id="tabChamada" class="turma-tab" style="display:none;"></div>
+                    <div id="tabRegistros" class="turma-tab" style="display:none;"></div>
                     <div id="tabAtrasos" class="turma-tab" style="display:none;"></div>
                     <div id="tabTrabalhos" class="turma-tab" style="display:none;"></div>
                     <div id="tabCompensacoes" class="turma-tab" style="display:none;"></div>
@@ -254,5 +255,17 @@
     </div>
 
     <div id="modalDetalheFaltasDia" class="modal"><div class="modal-content"><div class="modal-header" style="display:none;"></div><button class="close-btn" onclick="closeModal('modalDetalheFaltasDia')" style="position:absolute; right:15px; top:15px;">×</button><div id="conteudoDetalheFaltasDia" style="margin-top:10px;"></div></div></div>
+
+    <!-- Modal Novo Registro de Aula (Professor) -->
+    <div id="modalNovoRegistroAula" class="modal">
+        <div class="modal-content">
+            <div class="modal-header"><h2>Novo Registro de Aula</h2><button class="close-btn" onclick="closeModal('modalNovoRegistroAula')">×</button></div>
+            <form onsubmit="salvarRegistroAula(event)">
+                <label>Data:<input type="date" id="regAulaData" required></label>
+                <label>Conteúdo / Observação:<textarea id="regAulaConteudo" rows="5" required placeholder="Descreva o conteúdo ministrado ou observações da aula..."></textarea></label>
+                <button type="submit" class="btn btn-primary">Salvar Registro</button>
+            </form>
+        </div>
+    </div>
 </body>
 </html>
