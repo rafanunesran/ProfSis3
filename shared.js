@@ -70,7 +70,7 @@ function logout() {
 }
 
 function getStorageKey(user) {
-    if (user && user.role === 'gestor') {
+    if (user && user.role === 'gestor' && !user.forceProfessorMode) {
         return 'app_data_school_' + (user.schoolId || 'default') + '_gestor';
     }
     // Prioriza o UID para segurança. Se não existir (modo local/antigo), usa o ID numérico.
