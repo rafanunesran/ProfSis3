@@ -178,6 +178,28 @@ async function mudarTema(temaKey) {
     }
 }
 
+function salvarBackgroundPersonalizado(input) {
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                // Salva a imagem em Base64 no LocalStorage
+                localStorage.setItem('app_custom_bg', e.target.result);
+                aplicarTemaSalvo();
+                alert('Fundo atualizado com sucesso!');
+            } catch (err) {
+                alert('A imagem é muito grande para ser salva no navegador. Tente uma imagem menor (abaixo de 3MB).');
+            }
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+function removerBackgroundPersonalizado() {
+    localStorage.removeItem('app_custom_bg');
+    aplicarTemaSalvo();
+}
+
 function aplicarTemaSalvo() {
     let temaKey = (currentUser && currentUser.theme) ? currentUser.theme : (localStorage.getItem('app_theme') || 'padrao');
     const tema = TEMAS_APP[temaKey];
@@ -187,16 +209,16 @@ function aplicarTemaSalvo() {
     const oldStyle = document.getElementById('theme-style-override');
     if (oldStyle) oldStyle.remove();
 
-    if (temaKey === 'padrao') return; // Não precisa de override
+    // Verifica se tem background personalizado salvo
+    const customBg = localStorage.getItem('app_custom_bg');
+
+    if (temaKey === 'padrao' && !customBg) return; // Se for padrão e sem imagem, não faz nada
 
     // Cria CSS dinâmico para sobrescrever cores principais
     const style = document.createElement('style');
     style.id = 'theme-style-override';
     
     let css = `
-        /* Background Global */
-        body { background-color: ${tema.bgBody} !important; }
-
         /* Header e Botões Principais */
         header { background: ${tema.bgHeader} !important; }
         .btn-primary { background-color: ${tema.cor} !important; border-color: ${tema.cor} !important; }
@@ -230,11 +252,33 @@ function aplicarTemaSalvo() {
         }
     `;
 
+    // --- LÓGICA DE BACKGROUND PERSONALIZADO ---
+    if (customBg) {
+        css += `
+            body { 
+                background-image: url('${customBg}') !important; 
+                background-size: cover !important; 
+                background-attachment: fixed !important; 
+                background-position: center !important;
+                background-repeat: no-repeat !important;
+            }
+            /* Efeito Fumé (Transparência) nos Containers para ler o texto */
+            .card, .modal-content, .auth-box, .turma-tab {
+                background-color: ${tema.isDark ? 'rgba(45, 55, 72, 0.85)' : 'rgba(255, 255, 255, 0.85)'} !important;
+                backdrop-filter: blur(3px); /* Efeito de vidro fosco */
+            }
+        `;
+    } else {
+        css += `body { background-color: ${tema.bgBody} !important; }`;
+    }
+
     // --- REGRAS ESPECÍFICAS PARA MODO ESCURO ---
     if (tema.isDark) {
+        // Se tiver imagem, usa fundo escuro transparente, senão usa sólido
+        const bgCard = customBg ? 'rgba(45, 55, 72, 0.85)' : '#2d3748';
         css += `
             body, .container { color: #e2e8f0 !important; }
-            .card, .modal-content, .auth-box { background-color: #2d3748 !important; color: #e2e8f0 !important; border-color: #4a5568 !important; }
+            .card, .modal-content, .auth-box { background-color: ${bgCard} !important; color: #e2e8f0 !important; border-color: #4a5568 !important; }
             input, select, textarea { background-color: #4a5568 !important; color: #fff !important; border-color: #718096 !important; }
             table th { background-color: #4a5568 !important; color: #fff !important; }
             table td { border-bottom-color: #4a5568 !important; color: #e2e8f0 !important; }
@@ -246,7 +290,7 @@ function aplicarTemaSalvo() {
             [style*="background: #fff"], [style*="background:#fff"],
             [style*="background: #fffaf0"], [style*="background:#fffaf0"],
             [style*="background: #ebf8ff"], [style*="background:#ebf8ff"] {
-                background-color: #2d3748 !important;
+                background-color: ${bgCard} !important;
                 color: #e2e8f0 !important;
                 border-color: #4a5568 !important;
             }

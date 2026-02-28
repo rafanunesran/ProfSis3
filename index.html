@@ -292,6 +292,13 @@
             <div id="listaTemas" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                 <!-- Opções injetadas via JS -->
             </div>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;">
+            <h3>🖼️ Plano de Fundo</h3>
+            <div style="margin-bottom: 15px; text-align: center;">
+                <input type="file" id="bgUpload" accept="image/*" onchange="salvarBackgroundPersonalizado(this)" style="display:none;">
+                <button class="btn btn-secondary" onclick="document.getElementById('bgUpload').click()">📤 Carregar Imagem</button>
+                <button class="btn btn-danger" onclick="removerBackgroundPersonalizado()">🗑️ Remover</button>
+            </div>
             <button class="btn btn-secondary" style="width: 100%; margin-top: 20px;" onclick="closeModal('modalPerfilUsuario')">Fechar</button>
         </div>
     </div>
