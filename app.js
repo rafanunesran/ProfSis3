@@ -64,6 +64,10 @@ async function iniciarApp() {
             injectGestorToggleButton();
         }
 
+        // Injeta botão de Perfil e aplica tema
+        injectProfileButton();
+        aplicarTemaSalvo();
+
         // Renderiza conforme o modo de visualização atual
         if (currentViewMode === 'gestor') {
             renderGestorPanel();
@@ -89,6 +93,180 @@ function injectGestorToggleButton() {
     // Insere antes do botão Sair
     const btnSair = container.querySelector('.btn-danger');
     container.insertBefore(btn, btnSair);
+}
+
+// Função para injetar o botão de Perfil
+function injectProfileButton() {
+    const container = document.getElementById('headerUserArea');
+    if (!container || document.getElementById('btnPerfilUser')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'btnPerfilUser';
+    btn.className = 'btn btn-sm btn-secondary';
+    btn.style.marginTop = '5px';
+    btn.style.marginRight = '5px';
+    btn.innerHTML = '👤 Perfil';
+    btn.onclick = abrirModalPerfil;
+
+    // Insere antes do botão Sair (e depois do botão de Gestor se houver)
+    const btnSair = container.querySelector('.btn-danger');
+    container.insertBefore(btn, btnSair);
+}
+
+// --- SISTEMA DE TEMAS ---
+const TEMAS_APP = {
+    'padrao': { nome: 'Padrão (Azul)', cor: '#3182ce', bgHeader: 'linear-gradient(135deg, #3182ce, #2c5282)', bgBody: '#f7fafc' },
+    'natureza': { nome: 'Natureza (Verde)', cor: '#38a169', bgHeader: 'linear-gradient(135deg, #38a169, #276749)', bgBody: '#f0fff4' },
+    'sunset': { nome: 'Pôr do Sol (Laranja)', cor: '#dd6b20', bgHeader: 'linear-gradient(135deg, #dd6b20, #c05621)', bgBody: '#fffaf0' },
+    'oceano': { nome: 'Oceano (Ciano)', cor: '#0bc5ea', bgHeader: 'linear-gradient(135deg, #0bc5ea, #0987a0)', bgBody: '#ebf8ff' },
+    'roxo': { nome: 'Cyber (Roxo)', cor: '#805ad5', bgHeader: 'linear-gradient(135deg, #805ad5, #553c9a)', bgBody: '#faf5ff' },
+    'dark': { nome: 'Modo Escuro', cor: '#63b3ed', bgHeader: 'linear-gradient(135deg, #2d3748, #1a202c)', bgBody: '#1a202c', isDark: true }
+};
+
+function abrirModalPerfil() {
+    if (!currentUser) return;
+
+    document.getElementById('perfilNome').textContent = currentUser.nome;
+    document.getElementById('perfilEmail').textContent = currentUser.email;
+    document.getElementById('perfilRole').textContent = (currentUser.role || 'Professor').toUpperCase();
+    
+    const containerTemas = document.getElementById('listaTemas');
+    const temaAtual = (currentUser && currentUser.theme) ? currentUser.theme : (localStorage.getItem('app_theme') || 'padrao');
+
+    containerTemas.innerHTML = Object.entries(TEMAS_APP).map(([key, tema]) => `
+        <button onclick="mudarTema('${key}')" style="
+            background: ${tema.bgHeader}; 
+            color: white; 
+            border: ${temaAtual === key ? '3px solid #000' : '1px solid #ddd'}; 
+            padding: 10px; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-weight: bold;
+            opacity: ${temaAtual === key ? '1' : '0.8'};
+        ">
+            ${temaAtual === key ? '✅ ' : ''}${tema.nome}
+        </button>
+    `).join('');
+
+    showModal('modalPerfilUsuario');
+}
+
+async function mudarTema(temaKey) {
+    // 1. Atualiza Localmente
+    localStorage.setItem('app_theme', temaKey);
+    
+    if (currentUser) {
+        currentUser.theme = temaKey;
+        localStorage.setItem('app_current_user', JSON.stringify(currentUser));
+    }
+
+    aplicarTemaSalvo();
+    abrirModalPerfil(); // Re-renderiza para atualizar a seleção visual
+
+    // 2. Salva Online (Persistência)
+    if (currentUser && currentUser.email) {
+        try {
+            const usersData = await getData('system', 'users_list');
+            const users = (usersData && usersData.list) ? usersData.list : [];
+            const idx = users.findIndex(u => u.email === currentUser.email);
+            
+            if (idx !== -1) {
+                users[idx].theme = temaKey;
+                await saveData('system', 'users_list', { list: users });
+            }
+        } catch (e) { console.error("Erro ao salvar tema online:", e); }
+    }
+}
+
+function aplicarTemaSalvo() {
+    let temaKey = (currentUser && currentUser.theme) ? currentUser.theme : (localStorage.getItem('app_theme') || 'padrao');
+    const tema = TEMAS_APP[temaKey];
+    if (!tema) return;
+
+    // Remove estilo anterior se houver
+    const oldStyle = document.getElementById('theme-style-override');
+    if (oldStyle) oldStyle.remove();
+
+    if (temaKey === 'padrao') return; // Não precisa de override
+
+    // Cria CSS dinâmico para sobrescrever cores principais
+    const style = document.createElement('style');
+    style.id = 'theme-style-override';
+    
+    let css = `
+        /* Background Global */
+        body { background-color: ${tema.bgBody} !important; }
+
+        /* Header e Botões Principais */
+        header { background: ${tema.bgHeader} !important; }
+        .btn-primary { background-color: ${tema.cor} !important; border-color: ${tema.cor} !important; }
+        .btn-primary:hover { opacity: 0.9; }
+        
+        /* Menu Principal (Nav) */
+        nav button.active { background-color: ${tema.cor} !important; border-color: ${tema.cor} !important; color: #fff !important; }
+        nav button.active .icon { color: #fff !important; }
+        
+        /* Títulos e Textos Coloridos */
+        h2, h3, h4 { color: ${tema.cor} !important; }
+        .turma-nav-btn.active { color: ${tema.cor} !important; border-bottom-color: ${tema.cor} !important; }
+        
+        /* Cards e Bordas */
+        .card { border-left-color: ${tema.cor} !important; }
+        
+        /* Ícones e Badges */
+        .icon { color: ${tema.cor} !important; }
+        
+        /* Ajustes específicos para manter consistência */
+        a { color: ${tema.cor} !important; }
+        
+        /* Sobrescreve cores inline comuns usadas no app.js */
+        [style*="color: #2c5282"], [style*="color:#2c5282"],
+        [style*="color: #3182ce"], [style*="color:#3182ce"],
+        [style*="color: #2b6cb0"], [style*="color:#2b6cb0"] {
+            color: ${tema.cor} !important;
+        }
+        [style*="border-left: 4px solid #3182ce"] {
+            border-left-color: ${tema.cor} !important;
+        }
+    `;
+
+    // --- REGRAS ESPECÍFICAS PARA MODO ESCURO ---
+    if (tema.isDark) {
+        css += `
+            body, .container { color: #e2e8f0 !important; }
+            .card, .modal-content, .auth-box { background-color: #2d3748 !important; color: #e2e8f0 !important; border-color: #4a5568 !important; }
+            input, select, textarea { background-color: #4a5568 !important; color: #fff !important; border-color: #718096 !important; }
+            table th { background-color: #4a5568 !important; color: #fff !important; }
+            table td { border-bottom-color: #4a5568 !important; color: #e2e8f0 !important; }
+            .btn-secondary { background-color: #4a5568 !important; border-color: #718096 !important; color: #e2e8f0 !important; }
+            
+            /* Força elementos com fundo claro a ficarem escuros */
+            [style*="background: #f7fafc"], [style*="background:#f7fafc"],
+            [style*="background: white"], [style*="background:white"],
+            [style*="background: #fff"], [style*="background:#fff"],
+            [style*="background: #fffaf0"], [style*="background:#fffaf0"],
+            [style*="background: #ebf8ff"], [style*="background:#ebf8ff"] {
+                background-color: #2d3748 !important;
+                color: #e2e8f0 !important;
+                border-color: #4a5568 !important;
+            }
+            
+            /* Ajusta textos que eram escuros para ficarem claros */
+            [style*="color: #4a5568"], [style*="color:#4a5568"],
+            [style*="color: #2d3748"], [style*="color:#2d3748"],
+            [style*="color: #718096"], [style*="color:#718096"] {
+                color: #cbd5e0 !important;
+            }
+            
+            /* Ajuste específico para Mural de Avisos (Vermelho escuro -> Rosa claro) */
+            [style*="color: #7b341e"], [style*="color:#7b341e"] {
+                color: #ffe4e6 !important;
+            }
+        `;
+    }
+
+    style.innerHTML = css;
+    document.head.appendChild(style);
 }
 
 // Função que realiza a troca de contexto
