@@ -1,5 +1,7 @@
 // --- LÓGICA PRINCIPAL (PROFESSOR/APP) ---
 
+let currentViewMode = null; // Controle de estado: 'gestor' ou 'professor'
+
 async function iniciarApp() {
     document.getElementById('authContainer').style.display = 'none';
     document.getElementById('appContainer').style.display = 'block';
@@ -23,13 +25,21 @@ async function iniciarApp() {
         } catch (e) { console.warn('Erro ao sincronizar perfil:', e); }
     }
 
+    // Define o modo inicial se ainda não estiver definido
+    if (!currentViewMode && currentUser) currentViewMode = currentUser.role;
+
+    // Configura flag para carregar dados pessoais se um Gestor estiver no modo Professor
+    if (currentUser && currentUser.role === 'gestor') {
+        currentUser.forceProfessorMode = (currentViewMode === 'professor');
+    }
+
     // Carregar dados
     carregarDadosUsuario().then(async () => {
         const today = new Date();
         const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-        
+
         let roleLabel = 'Painel do Professor';
-        if (currentUser.role === 'gestor') roleLabel = 'Painel do Gestor';
+        if (currentViewMode === 'gestor') roleLabel = 'Painel do Gestor';
 
         document.getElementById('currentDate').textContent = 
             `${today.toLocaleDateString('pt-BR', options)} | Olá, ${currentUser.nome}`;
@@ -49,12 +59,46 @@ async function iniciarApp() {
         const headerTitle = document.querySelector('#appContainer h1');
         if (headerTitle) headerTitle.textContent = `SisProf - ${nomeEscola}`;
 
+        // Injeta o botão de alternância se for Gestor
         if (currentUser.role === 'gestor') {
+            injectGestorToggleButton();
+        }
+
+        // Renderiza conforme o modo de visualização atual
+        if (currentViewMode === 'gestor') {
             renderGestorPanel();
         } else {
             renderProfessorPanel();
         }
     });
+}
+
+// Função para injetar o botão de alternância no header
+function injectGestorToggleButton() {
+    const container = document.getElementById('headerUserArea');
+    if (!container || document.getElementById('btnAlternarModo')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'btnAlternarModo';
+    btn.className = currentViewMode === 'gestor' ? 'btn btn-sm btn-info' : 'btn btn-sm btn-warning';
+    btn.style.marginTop = '5px';
+    btn.style.marginRight = '5px';
+    btn.textContent = currentViewMode === 'gestor' ? '👁️ Ver como Professor' : '🛡️ Voltar para Gestão';
+    btn.onclick = alternarModoGestor;
+
+    // Insere antes do botão Sair
+    const btnSair = container.querySelector('.btn-danger');
+    container.insertBefore(btn, btnSair);
+}
+
+// Função que realiza a troca de contexto
+function alternarModoGestor() {
+    currentViewMode = (currentViewMode === 'gestor') ? 'professor' : 'gestor';
+    
+    // Atualiza o botão
+    const btn = document.getElementById('btnAlternarModo');
+    if (btn) btn.remove(); // Remove para recriar com o estado novo ou apenas atualiza a UI recarregando o app
+    iniciarApp(); // Recarrega a interface com o novo modo
 }
 
 function renderProfessorPanel() {
@@ -127,7 +171,7 @@ async function renderDashboard() {
     dashboardContainer.innerHTML = '';
     
     // 1. VISÃO DO GESTOR
-    if (currentUser && currentUser.role === 'gestor') {
+    if (currentViewMode === 'gestor') {
         // Filtra ocorrências pendentes que NÃO sejam do tipo 'rapida'
         const ocorrencias = (data.ocorrencias || []).filter(o => (o.status || 'pendente') === 'pendente' && o.tipo !== 'rapida');
         const registros = (data.registrosAdministrativos || []);
@@ -389,7 +433,7 @@ function renderTurmas() {
         </div>
     `).join('');
     
-    const btnMassa = (currentUser && currentUser.role === 'gestor') 
+    const btnMassa = (currentViewMode === 'gestor') 
         ? `<div style="margin-bottom: 15px; padding: 10px; background: #ebf8ff; border: 1px solid #bee3f8; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
              <span>📂 Atualização de Estudantes em Massa (Vários CSVs)</span>
              <button class="btn btn-primary" onclick="abrirModalImportacaoMassa()">Importar Arquivos</button>
@@ -406,7 +450,7 @@ async function abrirModalNovaTurma() {
     document.getElementById('tituloModalTurma').textContent = 'Nova Turma';
     
     // Gestor define apenas Ano/Série; Professor define Disciplina
-    if (currentUser && currentUser.role === 'gestor') {
+    if (currentViewMode === 'gestor') {
         document.getElementById('divTurmaDisciplina').style.display = 'none';
         document.getElementById('containerTurmaAnoInput').style.display = 'block';
         document.getElementById('containerTurmaAnoSelect').style.display = 'none';
@@ -442,7 +486,7 @@ function editarTurma(id) {
         document.getElementById('turmaTurno').value = turma.turno;
         document.getElementById('tituloModalTurma').textContent = 'Editar Turma';
         
-        if (currentUser && currentUser.role === 'gestor') {
+        if (currentViewMode === 'gestor') {
             document.getElementById('divTurmaDisciplina').style.display = 'none';
             document.getElementById('containerTurmaAnoInput').style.display = 'block';
             document.getElementById('containerTurmaAnoSelect').style.display = 'none';
@@ -464,7 +508,7 @@ function salvarTurma(e) {
     let nome = '';
     let masterId = null;
 
-    if (currentUser.role === 'gestor') {
+    if (currentViewMode === 'gestor') {
         nome = document.getElementById('turmaAno').value;
     } else {
         // Professor pega do Select
@@ -504,7 +548,7 @@ async function abrirTurma(id) {
 
     // --- SINCRONIZAÇÃO DE ALUNOS (PROFESSOR) ---
     // Se for professor e a turma tiver um vínculo (masterId), atualiza a lista de alunos
-    if (currentUser.role !== 'gestor' && turma.masterId && currentUser.schoolId) {
+    if (currentViewMode !== 'gestor' && turma.masterId && currentUser.schoolId) {
         const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
         const gestorData = await getData('app_data', key);
 
@@ -589,7 +633,7 @@ function showTurmaTab(tab, evt) {
 
 function renderEstudantes() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
-    const isGestor = currentUser && currentUser.role === 'gestor';
+    const isGestor = currentViewMode === 'gestor';
 
     // --- MURAL DE AVISOS (Registros Administrativos) ---
     const registros = data.registrosAdministrativos || [];
@@ -714,7 +758,7 @@ function abrirModalNovoEstudante() {
     statusSelect.value = 'Ativo';
     
     // Apenas gestor pode editar o status; Professor vê travado em 'Ativo'
-    statusSelect.disabled = (currentUser && currentUser.role !== 'gestor');
+    statusSelect.disabled = (currentViewMode !== 'gestor');
     
     showModal('modalNovoEstudante');
 }
@@ -758,7 +802,7 @@ async function renderChamada() {
     const blocosTurma = gradeEscola.filter(g => minhasAulas.some(a => a.id_bloco == g.id));
     const diasPermitidos = [...new Set(blocosTurma.map(g => g.diaSemana))]; // Ex: [1, 3, 5]
 
-    const isGestor = currentUser && currentUser.role === 'gestor';
+    const isGestor = currentViewMode === 'gestor';
 
     // Verifica status da chamada (baseado se há faltas registradas para esta turma nesta data)
     const faltasRegistradas = (data.presencas || []).filter(p => p.data == dataSelecionada && estudantes.some(e => e.id == p.id_estudante));
@@ -975,7 +1019,7 @@ async function renderOcorrencias() {
     
     // Buscar opções de ocorrência rápida
     let opcoesRapidas = [];
-    if (currentUser.role === 'gestor') {
+    if (currentViewMode === 'gestor') {
         opcoesRapidas = data.opcoesOcorrenciaRapida || [];
     } else if (currentUser.schoolId) {
         // Professor busca da escola
@@ -1159,7 +1203,7 @@ async function registrarOcorrenciaNoBanco({ ids, texto, tipo }) {
     await persistirDados();
     
     // Sincroniza com a Gestão (se for professor vinculado)
-    if (currentUser.role !== 'gestor' && currentUser.schoolId) {
+    if (currentViewMode !== 'gestor' && currentUser.schoolId) {
         try {
             const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
             const gestorData = await getData('app_data', key);
@@ -2719,7 +2763,7 @@ function renderEstudanteGeral() {
 
     document.getElementById('estudanteGeralNome').innerHTML = htmlNome;
     
-    const isGestor = currentUser && currentUser.role === 'gestor';
+    const isGestor = currentViewMode === 'gestor';
 
     // LÓGICA DE UNIFICAÇÃO:
     // Encontra TODOS os IDs que esse aluno possui no sistema (em qualquer turma), baseado no Nome Completo.
