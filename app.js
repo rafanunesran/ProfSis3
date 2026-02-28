@@ -1363,6 +1363,70 @@ function removerRegistroAula(id) {
     }
 }
 
+// --- REGISTROS DE AULA (DIÁRIO DE CLASSE) ---
+function renderTurmaRegistros() {
+    // Busca registros específicos de aula (não administrativos)
+    const registros = (data.registrosAula || []).filter(r => r.id_turma == turmaAtual);
+    
+    // Ordena por data (mais recente primeiro)
+    registros.sort((a, b) => new Date(b.data) - new Date(a.data));
+    
+    const html = `
+        <div style="margin-bottom: 20px;">
+            <button class="btn btn-primary" onclick="abrirModalNovoRegistroAula()">+ Novo Registro de Aula</button>
+        </div>
+
+        <h3>Histórico de Aulas</h3>
+        <div class="grid" style="grid-template-columns: 1fr;">
+            ${registros.length > 0 ? registros.map(r => `
+                <div class="card" style="border-left: 4px solid #3182ce; margin-bottom: 10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                        <h4 style="margin:0 0 10px 0; color:#2c5282;">📅 ${formatDate(r.data)}</h4>
+                        <button class="btn btn-sm btn-danger" onclick="removerRegistroAula(${r.id})">🗑️</button>
+                    </div>
+                    <p style="white-space: pre-wrap; margin:0; color:#4a5568;">${r.conteudo}</p>
+                </div>
+            `).join('') : '<p class="empty-state">Nenhum registro de aula encontrado.</p>'}
+        </div>
+    `;
+    document.getElementById('tabRegistros').innerHTML = html;
+}
+
+function abrirModalNovoRegistroAula() {
+    document.getElementById('regAulaData').value = getTodayString();
+    document.getElementById('regAulaConteudo').value = '';
+    showModal('modalNovoRegistroAula');
+}
+
+function salvarRegistroAula(e) {
+    e.preventDefault();
+    const dataReg = document.getElementById('regAulaData').value;
+    const conteudo = document.getElementById('regAulaConteudo').value;
+    
+    if (!dataReg || !conteudo) return alert('Preencha todos os campos.');
+    
+    if (!data.registrosAula) data.registrosAula = [];
+    
+    data.registrosAula.push({
+        id: Date.now(),
+        id_turma: turmaAtual,
+        data: dataReg,
+        conteudo: conteudo
+    });
+    
+    persistirDados();
+    closeModal('modalNovoRegistroAula');
+    renderTurmaRegistros();
+}
+
+function removerRegistroAula(id) {
+    if(confirm('Excluir este registro de aula?')) {
+        data.registrosAula = data.registrosAula.filter(r => r.id !== id);
+        persistirDados();
+        renderTurmaRegistros();
+    }
+}
+
 // --- TRABALHOS ---
 function renderTrabalhos() {
     const trabalhos = (data.trabalhos || []).filter(t => t.id_turma == turmaAtual);
@@ -2440,8 +2504,14 @@ async function imprimirAgendaMensal() {
     });
 
     // 5. Abre Janela de Impressão
+    // Injeta CSS para garantir que a impressão seja exata (cores de fundo e gráficos)
+    const printStyle = doc.createElement('style');
+    printStyle.innerHTML = '@media print { body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } }';
+    doc.head.appendChild(printStyle);
+
     const win = window.open('', '', 'width=1200,height=800');
-    win.document.write('<!DOCTYPE html>' + doc.documentElement.outerHTML);
+    // Removemos o Doctype forçado para manter o modo de renderização original (Quirks vs Standard)
+    win.document.write(doc.documentElement.outerHTML);
     win.document.close();
     
     // Delay para carregar estilos
@@ -2828,6 +2898,25 @@ async function renderMapeamento() {
     const assentosOcupados = Object.values(mapeamento.assentos).map(id => Number(id));
     const estudantesNaoMapeados = estudantes.filter(e => !assentosOcupados.includes(e.id));
 
+    // --- HISTÓRICO DE ALTERAÇÕES ---
+    const historico = mapeamento.historico || [];
+    // Ordena do mais recente para o mais antigo para exibição
+    const historicoExibicao = [...historico].sort((a, b) => b.timestamp - a.timestamp);
+
+    const htmlHistorico = `
+        <div style="margin-top: 30px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
+            <h4 style="color: #2d3748; margin-bottom: 10px;">🕒 Histórico de Alterações</h4>
+            <div style="max-height: 150px; overflow-y: auto; background: #f7fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                ${historicoExibicao.length > 0 ? historicoExibicao.map(h => {
+                    const dataHora = new Date(h.timestamp).toLocaleString('pt-BR');
+                    return `<div style="font-size: 12px; color: #4a5568; margin-bottom: 5px; border-bottom: 1px solid #edf2f7; padding-bottom: 2px;">
+                        <strong>${h.autor}</strong> - ${dataHora} <span style="color: #718096;">(${h.qtd} ações)</span>
+                    </div>`;
+                }).join('') : '<p style="font-size: 12px; color: #a0aec0;">Nenhuma alteração registrada.</p>'}
+            </div>
+        </div>
+    `;
+
     const html = `
         <style>@media print { .no-print { display: none !important; } }</style>
         <style>.is-dragging select { pointer-events: none !important; opacity: 0.5; } .is-dragging .card-assento { border: 2px dashed #3182ce !important; background: #ebf8ff !important; }</style>
@@ -2877,6 +2966,7 @@ async function renderMapeamento() {
                 </div>
             `}
         </div>
+        ${htmlHistorico}
         <style>
             @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
         </style>
@@ -2974,6 +3064,9 @@ async function dropMap(ev, targetCoord) {
             m.assentos[targetCoord] = sourceId;
         }
     }
+
+    // Atualiza histórico
+    atualizarHistoricoMapa(m);
 
     // Salva
     if (currentUser && currentUser.schoolId) {
@@ -3073,6 +3166,9 @@ async function ajustarMapeamento(acao) {
     if (acao === 'addCol') m.colunas++;
     if (acao === 'remCol' && m.colunas > 1) m.colunas--;
     
+    // Atualiza histórico
+    atualizarHistoricoMapa(m);
+
     if (currentUser && currentUser.schoolId) {
         await saveData('app_data', 'maps_school_' + currentUser.schoolId, { list: mapeamentos });
     } else {
@@ -3144,6 +3240,9 @@ async function atribuirLugarMapeamento(coord, idEstudante) {
         }
     }
     
+    // Atualiza histórico
+    atualizarHistoricoMapa(m);
+
     if (currentUser && currentUser.schoolId) {
         await saveData('app_data', 'maps_school_' + currentUser.schoolId, { list: mapeamentos });
     } else {
@@ -3170,6 +3269,9 @@ async function resetarMapeamento() {
     }
 
     mapeamentos = mapeamentos.filter(m => m.id_turma != sharedTurmaId);
+    // Nota: Ao resetar (excluir), o histórico também é perdido pois faz parte do objeto do mapa.
+    // Se quiser manter o histórico mesmo resetando o layout, precisaria salvar o histórico separado ou recriar o objeto mapa vazio mantendo o histórico.
+    // Neste caso, o reset apaga tudo conforme o alerta.
     
     if (currentUser && currentUser.schoolId) {
         await saveData('app_data', 'maps_school_' + currentUser.schoolId, { list: mapeamentos });
@@ -3178,6 +3280,32 @@ async function resetarMapeamento() {
         persistirDados();
     }
     renderMapeamento();
+}
+
+// Função auxiliar para agrupar histórico de alterações no mapa
+function atualizarHistoricoMapa(m) {
+    if (!m.historico) m.historico = [];
+    
+    const now = Date.now();
+    const TEMPO_AULA_MS = 50 * 60 * 1000; // 50 minutos
+    const autor = currentUser.nome;
+    
+    // Pega o último registro (assumindo ordem cronológica de inserção)
+    const last = m.historico.length > 0 ? m.historico[m.historico.length - 1] : null;
+
+    // Verifica se é o mesmo autor e se está dentro do intervalo de tempo
+    if (last && last.autor === autor && (now - last.timestamp) < TEMPO_AULA_MS) {
+        // Agrupa: atualiza o timestamp para o momento atual e incrementa contador
+        last.timestamp = now;
+        last.qtd = (last.qtd || 1) + 1;
+    } else {
+        // Novo registro
+        m.historico.push({
+            autor: autor,
+            timestamp: now,
+            qtd: 1
+        });
+    }
 }
 
 // --- GRADE HORÁRIA (PROFESSOR) ---

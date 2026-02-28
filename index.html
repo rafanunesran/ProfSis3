@@ -133,7 +133,16 @@
                     <div id="tabTrabalhos" class="turma-tab" style="display:none;"></div>
                     <div id="tabCompensacoes" class="turma-tab" style="display:none;"></div>
                     <div id="tabOcorrencias" class="turma-tab" style="display:none;"></div>
-                    <div id="tabMapeamento" class="turma-tab" style="display:none;"></div>
+                    <div id="tabMapeamento" class="turma-tab" style="display:none;">
+                        <!-- Container onde o mapa é renderizado -->
+                        <div id="containerMapaVisual"></div>
+
+                        <!-- Histórico de Alterações -->
+                        <div style="margin-top: 25px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
+                            <h3 style="font-size: 1.1em; color: #4a5568; margin-bottom: 10px;">🕒 Histórico de Alterações do Mapa</h3>
+                            <ul id="listaHistoricoMapeamento" style="list-style: none; padding: 0; max-height: 200px; overflow-y: auto; font-size: 0.9em;"></ul>
+                        </div>
+                    </div>
                     <div id="tabConfiguracoes" class="turma-tab" style="display:none;"></div>
                 </div>
             </div>
