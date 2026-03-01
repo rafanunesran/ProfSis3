@@ -2772,7 +2772,13 @@ async function imprimirAgendaMensal() {
     // 5. Abre Janela de Impressão
     // Injeta CSS para garantir que a impressão seja exata (cores de fundo e gráficos)
     const printStyle = doc.createElement('style');
-    printStyle.innerHTML = '@media print { body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } }';
+    printStyle.innerHTML = `
+        @media print { 
+            body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } 
+        }
+        /* Oculta as grades originais (cabeçalhos A, B, C... 1, 2, 3...) do Google Sheets */
+        .row-headers-background, .column-headers-background { display: none !important; }
+    `;
     doc.head.appendChild(printStyle);
 
     const win = window.open('', '', 'width=1200,height=800');
