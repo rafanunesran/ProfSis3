@@ -2776,10 +2776,29 @@ async function imprimirAgendaMensal() {
         @media print { 
             body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } 
         }
-        /* Oculta as grades originais (cabeçalhos A, B, C... 1, 2, 3...) do Google Sheets */
-        .row-headers-background, .column-headers-background { display: none !important; }
+        /* Oculta os cabeçalhos de linha (1, 2, 3...) removendo-os do fluxo */
+        .row-headers-background { display: none !important; }
+        
+        /* Oculta os cabeçalhos de coluna (A, B, C...) mas MANTÉM a largura para não quebrar a tabela */
+        .column-headers-background { 
+            border: none !important; 
+            background: transparent !important; 
+            color: transparent !important; 
+            height: 0 !important; 
+            line-height: 0 !important; 
+            padding: 0 !important;
+            overflow: hidden !important;
+            font-size: 0 !important;
+        }
     `;
     doc.head.appendChild(printStyle);
+    
+    // Adiciona BASE tag para garantir que CSS/Imagens relativos carreguem na nova janela
+    if (!doc.querySelector('base')) {
+        const base = doc.createElement('base');
+        base.href = window.location.href;
+        doc.head.appendChild(base);
+    }
 
     const win = window.open('', '', 'width=1200,height=800');
     // Removemos o Doctype forçado para manter o modo de renderização original (Quirks vs Standard)
