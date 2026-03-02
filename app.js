@@ -2775,7 +2775,6 @@ async function imprimirAgendaMensal() {
     printStyle.innerHTML = `
         @media print { 
             body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } 
-            @page { size: landscape; margin: 5mm; }
         }
         /* Oculta os cabeçalhos de linha (1, 2, 3...) removendo-os do fluxo */
         .row-headers-background { display: none !important; }
@@ -2791,30 +2790,6 @@ async function imprimirAgendaMensal() {
             overflow: hidden !important;
             font-size: 0 !important;
         }
-
-        /* Ajuste de Largura e Layout Responsivo */
-        .ritz .grid-container { width: 100% !important; }
-        .ritz .waffle { width: 100% !important; table-layout: fixed !important; }
-        .ritz .waffle tr { height: auto !important; }
-        .ritz .waffle td { white-space: normal !important; word-wrap: break-word; overflow: hidden; }
-
-        /* Definição de Colunas (A, C, D, E, F, G, H, I) */
-        /* Col A (Espaço) */
-        .ritz .waffle thead th:nth-child(2) { width: 1% !important; }
-        /* Col C (Rótulos/Aulas) */
-        .ritz .waffle thead th:nth-child(3) { width: 14% !important; }
-        /* Col D-H (Seg-Sex) */
-        .ritz .waffle thead th:nth-child(4),
-        .ritz .waffle thead th:nth-child(5),
-        .ritz .waffle thead th:nth-child(6),
-        .ritz .waffle thead th:nth-child(7),
-        .ritz .waffle thead th:nth-child(8) { width: 14% !important; }
-        /* Col I (Sáb) */
-        .ritz .waffle thead th:nth-child(9) { width: 10% !important; }
-
-        /* Imagens Responsivas */
-        .ritz .waffle td img { max-width: 100% !important; height: auto !important; display: block; margin: auto; }
-        .ritz .waffle td div { width: 100% !important; height: auto !important; }
     `;
     doc.head.appendChild(printStyle);
     
