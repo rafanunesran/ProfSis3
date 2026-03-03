@@ -48,7 +48,7 @@ O conte&uacute;do gerado por IA pode estar incorreto." src="images/image2.png" s
     // 6. Lógica de Preenchimento (Linha a Linha com Datas)
     const table = doc.querySelector('table.c9');
     if (table) {
-        const rows = Array.from(table.querySelectorAll('tr'));
+        let rows = Array.from(table.querySelectorAll('tr'));
         
         // Determina a data da primeira segunda-feira da visualização
         const [monthName, yearStr] = input.split('/');
@@ -56,6 +56,36 @@ O conte&uacute;do gerado por IA pode estar incorreto." src="images/image2.png" s
         const monthIndex = months.findIndex(m => m.toLowerCase() === monthName.toLowerCase());
         
         if (monthIndex === -1) return alert('Mês inválido.');
+
+        // [NOVO] Lógica para clonar e adicionar semanas se o mês for longo
+        let weekHeaderRows = rows.filter(r => r.cells.length > 1 && r.cells[1] && r.cells[1].textContent.toLowerCase().includes('feira'));
+        
+        const firstDay = new Date(year, monthIndex, 1);
+        const lastDay = new Date(year, monthIndex + 1, 0);
+        const firstDayWeekday = (firstDay.getDay() + 6) % 7; // 0=Seg, ..., 6=Dom
+        const weeksNeeded = Math.ceil((lastDay.getDate() + firstDayWeekday) / 7);
+
+        if (weeksNeeded > weekHeaderRows.length) {
+            const blocksToAdd = weeksNeeded - weekHeaderRows.length;
+            const lastHeaderRow = weekHeaderRows[weekHeaderRows.length - 1];
+            const lastHeaderRowIndex = rows.indexOf(lastHeaderRow);
+            
+            // Assumindo que todos os blocos de semana têm o mesmo número de linhas
+            const firstHeaderRowIndex = rows.indexOf(weekHeaderRows[0]);
+            const secondHeaderRowIndex = rows.indexOf(weekHeaderRows[1]);
+            const rowsPerBlock = secondHeaderRowIndex - firstHeaderRowIndex;
+
+            const rowsToClone = rows.slice(lastHeaderRowIndex, lastHeaderRowIndex + rowsPerBlock);
+
+            for (let i = 0; i < blocksToAdd; i++) {
+                rowsToClone.forEach(rowToClone => {
+                    if (rowToClone) table.appendChild(rowToClone.cloneNode(true));
+                });
+            }
+
+            // Re-mapeia tudo para incluir os novos blocos
+            rows = Array.from(table.querySelectorAll('tr'));
+        }
 
         let currentCursorDate = new Date(year, monthIndex, 1);
         const dayOfWeek = currentCursorDate.getDay(); // 0=Dom, 1=Seg
@@ -165,6 +195,22 @@ O conte&uacute;do gerado por IA pode estar incorreto." src="images/image2.png" s
             }
         });
     }
+
+    // [NOVO] 6.1. Normaliza a altura das linhas para corrigir espaçamentos.
+    // Esta abordagem é mais robusta do que editar o HTML diretamente,
+    // pois corrige todas as linhas com alturas inconsistentes.
+    const allRowsInAllTables = doc.querySelectorAll('table.c9 tr');
+    const defaultRowHeight = '20px'; // Altura padrão em pixels, similar a ~15pt.
+
+    allRowsInAllTables.forEach(row => {
+        const isHeaderRow = row.textContent.toLowerCase().includes('feira');
+
+        // Aplica a altura padrão em todas as linhas que não são cabeçalhos de semana.
+        // Isso garante que tanto as linhas de aula quanto as de almoço/intervalo tenham a mesma altura.
+        if (!isHeaderRow) {
+            row.style.height = defaultRowHeight;
+        }
+    });
 
     // 7. Abre a janela de impressão com o documento modificado
     const finalHtml = doc.documentElement.outerHTML;
