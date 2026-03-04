@@ -148,7 +148,7 @@ async function renderListaUsuariosAdmin() {
                     <tr>
                         <td>${u.nome}</td>
                         <td>${u.email}</td>
-                        <td><span class="badge ${u.role === 'gestor' ? 'badge-warning' : 'badge-info'}">${u.role || 'Professor'}</span></td>
+                        <td><span class="badge ${u.role === 'gestor' ? 'badge-warning' : (u.role === 'aee_projeto' ? 'badge-success' : 'badge-info')}">${u.role === 'aee_projeto' ? 'AEE/Projeto' : (u.role || 'Professor')}</span></td>
                         <td>
                             <button class="btn btn-warning btn-sm" onclick="resetarSenhaAuth('${u.email}')" title="Enviar email de redefinição">📧 Senha</button>
                             <button class="btn btn-secondary btn-sm" onclick="editarUsuarioAdmin('${u.id}')" title="Alterar Perfil/Nome">✏️ Perfil</button>
@@ -168,6 +168,13 @@ function abrirModalUsuarioAdmin() {
     document.getElementById('adminUsuarioNome').value = '';
     document.getElementById('adminUsuarioEmail').value = '';
     document.getElementById('adminUsuarioSenha').value = '';
+    
+    const selectRole = document.getElementById('adminUsuarioRole');
+    selectRole.innerHTML = `
+        <option value="professor">Professor</option>
+        <option value="gestor">Gestor</option>
+        <option value="aee_projeto">AEE / Projeto</option>
+    `;
     document.getElementById('adminUsuarioRole').value = 'professor';
     document.getElementById('tituloModalUsuarioAdmin').textContent = 'Novo Usuário';
     alert('A criação de novos usuários deve ser feita pela tela pública de "Cadastro" para garantir a segurança da senha.');
@@ -182,6 +189,13 @@ async function editarUsuarioAdmin(id) {
     const user = users.find(u => u.id == id);
 
     if (user) {
+        const selectRole = document.getElementById('adminUsuarioRole');
+        selectRole.innerHTML = `
+            <option value="professor">Professor</option>
+            <option value="gestor">Gestor</option>
+            <option value="aee_projeto">AEE / Projeto</option>
+        `;
+
         document.getElementById('adminUsuarioId').value = user.id;
         document.getElementById('adminUsuarioNome').value = user.nome;
         document.getElementById('adminUsuarioEmail').value = user.email;
