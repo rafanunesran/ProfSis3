@@ -9,6 +9,7 @@ function renderGestorPanel() {
         <button onclick="showScreen('registrosGestor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('ocorrenciasGestor', event)"><span class="icon">⚠️</span><span class="label">Ocorrências</span></button>
         <button onclick="showScreen('tutoriasGestor', event)"><span class="icon">🎓</span><span class="label">Tutorias</span></button>
+        <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
         <button onclick="showScreen('horariosGestor', event)"><span class="icon">⏰</span><span class="label">Horários</span></button>
     `;
     
@@ -323,17 +324,24 @@ function renderAbaDisciplinares(lista) {
 
                         return `
                             <tr>
-                                <td>${formatDate(o.data)}</td>
-                                <td>${turmaDisplay}</td>
-                                <td>${o.autor || 'Gestão'}</td>
-                                <td>${envolvidos || '-'}</td>
-                                <td>
+                                <td style="border-bottom:none;">${formatDate(o.data)}</td>
+                                <td style="border-bottom:none;">${turmaDisplay}</td>
+                                <td style="border-bottom:none;">${o.autor || 'Gestão'}</td>
+                                <td style="border-bottom:none;">${envolvidos || '-'}</td>
+                                <td style="border-bottom:none;">
                                     <button class="btn btn-sm btn-secondary" onclick="imprimirOcorrenciaGestor(${o.id})">📄 Baixar PDF</button>
                                 </td>
-                                <td>
+                                <td style="border-bottom:none;">
                                     <button class="btn btn-sm ${isPendente ? 'btn-warning' : 'btn-success'}" onclick="toggleStatusOcorrencia(${o.id})">
                                         ${isPendente ? '⏳ Pendente' : '✅ Confirmada'}
                                     </button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td colspan="6" style="padding-top:0; padding-bottom:15px;">
+                                    <div style="background:#f7fafc; padding:10px; border-radius:6px; border:1px solid #edf2f7; font-size:13px; color:#4a5568; white-space: pre-wrap;">
+                                        <strong>📝 Relato:</strong> ${o.relato}
+                                    </div>
                                 </td>
                             </tr>
                         `;

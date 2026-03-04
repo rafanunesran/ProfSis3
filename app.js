@@ -369,6 +369,7 @@ function renderProfessorPanel() {
         <button onclick="showScreen('tutoria', event)"><span class="icon">🎓</span><span class="label">Tutoria</span></button>
         <button onclick="showScreen('agenda', event)"><span class="icon">📅</span><span class="label">Agenda</span></button>
         <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
+        <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
     `;
     renderDashboard();
     showScreen('dashboard');
@@ -381,6 +382,7 @@ function renderAeePanel() {
         <button onclick="showScreen('tutoria', event)"><span class="icon">👥</span><span class="label">Meus Alunos</span></button>
         <button onclick="showScreen('agenda', event)"><span class="icon">📅</span><span class="label">Agenda</span></button>
         <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
+        <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
     `;
     renderDashboard();
     showScreen('dashboard');
@@ -405,6 +407,7 @@ function showScreen(screenId, evt) {
     if (screenId === 'agenda') renderAgenda();
     if (screenId === 'registrosProfessor') renderRegistrosProfessor();
     if (screenId === 'registrosGestor') renderRegistrosGestor();
+    if (screenId === 'aeeVisaoGeral') renderAeeVisaoGeral();
     if (screenId === 'ocorrenciasGestor') renderOcorrenciasGestor();
     if (screenId === 'tutoriasGestor') renderTutoriasGestor();
     if (screenId === 'horariosGestor') renderHorariosGestor();
@@ -1383,6 +1386,7 @@ function copiarTextoFaltas(textoEncoded) {
 
 // --- OCORRÊNCIAS ---
 let tempOcorrenciaIds = []; // Variável temporária para armazenar seleção
+let ocorrenciaEmEdicaoId = null; // Controle de estado para edição
 
 async function renderOcorrencias() {
     const ocorrencias = (data.ocorrencias || []).filter(o => o.id_turma == turmaAtual).sort((a, b) => new Date(b.data) - new Date(a.data));
@@ -1459,7 +1463,27 @@ async function renderOcorrencias() {
             </div>
 
             <textarea id="novaOcorrenciaTexto" placeholder="Descreva a ocorrência..." rows="3" style="width:100%; margin-bottom:10px;">${textoAtual}</textarea>
-            <button class="btn btn-primary" onclick="salvarOcorrencia()">Registrar Ocorrência</button>
+            
+            <div style="margin-bottom: 15px; background: #fffaf0; padding: 10px; border: 1px solid #e2e8f0; border-radius: 5px;">
+                <label style="font-weight:bold; display:block; margin-bottom:5px; font-size:14px;">Classificação (Obrigatório):</label>
+                <div style="display:flex; gap:20px;">
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:5px;">
+                        <input type="radio" name="tipoOcorrencia" value="rapida" id="radioTipoRapida"> 
+                        <span>📝 Registro (Informativo)</span>
+                    </label>
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:5px;">
+                        <input type="radio" name="tipoOcorrencia" value="disciplinar" id="radioTipoDisciplinar"> 
+                        <span>⚠️ Atenção da Gestão</span>
+                    </label>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:10px;">
+                <button class="btn ${ocorrenciaEmEdicaoId ? 'btn-success' : 'btn-primary'}" onclick="salvarOcorrencia()">
+                    ${ocorrenciaEmEdicaoId ? '💾 Salvar Alterações' : 'Registrar Ocorrência'}
+                </button>
+                ${ocorrenciaEmEdicaoId ? `<button class="btn btn-secondary" onclick="cancelarEdicaoOcorrencia()">Cancelar Edição</button>` : ''}
+            </div>
         </div>
 
         <h3>Histórico</h3>
@@ -1477,6 +1501,7 @@ async function renderOcorrencias() {
                 <div style="display:flex; justify-content:space-between;">
                     <small style="font-weight:bold;">${formatDate(o.data)} ${isRapida ? '⚡' : ''}</small>
                     <div>
+                        <button class="btn btn-sm btn-info" onclick="editarOcorrencia(${o.id})">✏️ Editar</button>
                         <button class="btn btn-sm btn-secondary" onclick="imprimirOcorrencia(${o.id})">🖨️ Imprimir</button>
                         <button class="btn btn-sm btn-danger" onclick="removerOcorrencia(${o.id})">🗑️</button>
                     </div>
@@ -1512,6 +1537,36 @@ function removerEstudanteOcorrencia(id) {
     renderOcorrencias();
 }
 
+function editarOcorrencia(id) {
+    const o = data.ocorrencias.find(x => x.id == id);
+    if (!o) return;
+
+    // Carrega dados no estado e no formulário
+    ocorrenciaEmEdicaoId = id;
+    tempOcorrenciaIds = [...(o.ids_estudantes || [])];
+    document.getElementById('novaOcorrenciaTexto').value = o.relato;
+
+    // Marca o radio button correto
+    if (o.tipo === 'rapida') {
+        document.getElementById('radioTipoRapida').checked = true;
+    } else {
+        document.getElementById('radioTipoDisciplinar').checked = true;
+    }
+
+    renderOcorrencias(); // Re-renderiza para mostrar os alunos selecionados e mudar o botão
+    document.getElementById('novaOcorrenciaTexto').focus();
+}
+
+function cancelarEdicaoOcorrencia() {
+    ocorrenciaEmEdicaoId = null;
+    tempOcorrenciaIds = [];
+    document.getElementById('novaOcorrenciaTexto').value = '';
+    // Limpa radios
+    const radios = document.getElementsByName('tipoOcorrencia');
+    radios.forEach(r => r.checked = false);
+    renderOcorrencias();
+}
+
 async function salvarOcorrenciaRapida() {
     const idEstudante = document.getElementById('selEstudanteRapido').value;
     const opcao = document.getElementById('selOpcaoRapida').value;
@@ -1534,22 +1589,28 @@ async function salvarOcorrencia() {
     const texto = document.getElementById('novaOcorrenciaTexto').value;
     const ids = tempOcorrenciaIds;
 
+    const tipoEl = document.querySelector('input[name="tipoOcorrencia"]:checked');
+    if (!tipoEl) return alert('Selecione a classificação: "Registro" ou "Atenção da Gestão".');
+    const tipo = tipoEl.value;
+
     if (!texto) return alert('Descreva a ocorrência.');
     
     await registrarOcorrenciaNoBanco({
         ids: ids,
         texto: texto,
-        tipo: 'disciplinar'
+        tipo: tipo,
+        idToUpdate: ocorrenciaEmEdicaoId // Passa o ID se for edição
     });
     
     // Limpa estado
     tempOcorrenciaIds = [];
+    ocorrenciaEmEdicaoId = null;
     document.getElementById('novaOcorrenciaTexto').value = '';
     renderOcorrencias();
 }
 
 // Função auxiliar para centralizar o salvamento
-async function registrarOcorrenciaNoBanco({ ids, texto, tipo }) {
+async function registrarOcorrenciaNoBanco({ ids, texto, tipo, idToUpdate = null }) {
     // Identifica a turma correta para o contexto (Local vs Gestão)
     const turmaObj = (data.turmas || []).find(t => t.id == turmaAtual);
     const idTurmaGestao = (turmaObj && turmaObj.masterId) ? turmaObj.masterId : turmaAtual;
@@ -1557,7 +1618,7 @@ async function registrarOcorrenciaNoBanco({ ids, texto, tipo }) {
     const disciplina = turmaObj ? turmaObj.disciplina : '';
 
     const novaOcorrencia = {
-        id: Date.now(),
+        id: idToUpdate || Date.now(), // Usa ID existente ou cria novo
         id_turma: turmaAtual,
         data: getTodayString(),
         relato: texto,
@@ -1570,7 +1631,16 @@ async function registrarOcorrenciaNoBanco({ ids, texto, tipo }) {
     };
 
     if (!data.ocorrencias) data.ocorrencias = [];
-    data.ocorrencias.push(novaOcorrencia);
+    
+    if (idToUpdate) {
+        // Atualiza existente
+        const idx = data.ocorrencias.findIndex(o => o.id == idToUpdate);
+        if (idx !== -1) data.ocorrencias[idx] = novaOcorrencia;
+    } else {
+        // Cria nova
+        data.ocorrencias.push(novaOcorrencia);
+    }
+
     await persistirDados();
     
     // Sincroniza com a Gestão (se for professor vinculado)
@@ -1581,8 +1651,17 @@ async function registrarOcorrenciaNoBanco({ ids, texto, tipo }) {
             
             if (gestorData) {
                 if (!gestorData.ocorrencias) gestorData.ocorrencias = [];
-                // Salva com o ID da turma da gestão para que o gestor saiba de qual turma é
-                gestorData.ocorrencias.push({ ...novaOcorrencia, id_turma: idTurmaGestao });
+                
+                // Verifica se já existe lá para atualizar ou adicionar
+                const idxGestor = gestorData.ocorrencias.findIndex(o => o.id == novaOcorrencia.id);
+                const ocorrenciaGestor = { ...novaOcorrencia, id_turma: idTurmaGestao };
+
+                if (idxGestor !== -1) {
+                    gestorData.ocorrencias[idxGestor] = ocorrenciaGestor;
+                } else {
+                    gestorData.ocorrencias.push(ocorrenciaGestor);
+                }
+                
                 await saveData('app_data', key, gestorData);
             }
         } catch (e) {
@@ -2462,7 +2541,23 @@ function abrirFichaTutorado(id) {
         const diagnostico = t.aee_diagnostico || '';
         const relatorio = t.aee_relatorio || '';
 
+        const isDiagnostico = t.aee_categoria_diagnostico || false;
+        const isProjeto = t.aee_categoria_projeto || false;
+
         aeeContainer.innerHTML = `
+            <div style="margin-top:20px; margin-bottom: 20px; background: #f0fff4; padding: 10px; border: 1px solid #c6f6d5; border-radius: 5px;">
+                <label style="font-weight:bold; display:block; margin-bottom:5px; font-size:14px; color:#276749;">Categoria:</label>
+                <div style="display:flex; gap:20px;">
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:5px;">
+                        <input type="checkbox" id="aeeCategoriaDiagnostico" onchange="salvarDadosAee(${t.id})" ${isDiagnostico ? 'checked' : ''}> 
+                        <span>Diagnóstico</span>
+                    </label>
+                    <label style="cursor:pointer; display:flex; align-items:center; gap:5px;">
+                        <input type="checkbox" id="aeeCategoriaProjeto" onchange="salvarDadosAee(${t.id})" ${isProjeto ? 'checked' : ''}> 
+                        <span>Projeto</span>
+                    </label>
+                </div>
+            </div>
             <div style="margin-top:20px;">
                 <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Diagnóstico / Voar</label>
                 <textarea id="aeeDiagnostico" rows="3" style="width:100%; border:1px solid #cbd5e0; padding:10px; border-radius:5px; font-family:inherit;" placeholder="Digite o diagnóstico..." onblur="salvarDadosAee(${t.id})">${diagnostico}</textarea>
@@ -2529,6 +2624,8 @@ function salvarDadosAee(id) {
     
     t.aee_diagnostico = document.getElementById('aeeDiagnostico').value;
     t.aee_relatorio = document.getElementById('aeeRelatorio').value;
+    t.aee_categoria_diagnostico = document.getElementById('aeeCategoriaDiagnostico').checked;
+    t.aee_categoria_projeto = document.getElementById('aeeCategoriaProjeto').checked;
 
     // Sincroniza com o cadastro principal do estudante para aparecer nas listas gerais
     if (t.id_estudante_origem) {
@@ -2536,6 +2633,9 @@ function salvarDadosAee(id) {
         if (est) {
             est.aee_diagnostico = t.aee_diagnostico;
             est.aee_relatorio = t.aee_relatorio;
+            // Sincroniza categorias também
+            est.aee_categoria_diagnostico = t.aee_categoria_diagnostico;
+            est.aee_categoria_projeto = t.aee_categoria_projeto;
         }
     }
 
@@ -4305,6 +4405,89 @@ async function renderRegistrosProfessor() {
         </div>
     `;
     screen.innerHTML = html;
+}
+
+// --- PAINEL AEE GERAL ---
+async function renderAeeVisaoGeral() {
+    // Cria a tela se ela não existir dinamicamente
+    if (!document.getElementById('aeeVisaoGeral')) {
+        const div = document.createElement('div');
+        div.id = 'aeeVisaoGeral';
+        div.className = 'screen';
+        // Encontra o container principal para injetar a nova tela
+        const mainContainer = document.querySelector('#appContainer .container') || document.getElementById('appContainer');
+        mainContainer.appendChild(div);
+    }
+    const container = document.getElementById('aeeVisaoGeral');
+    container.innerHTML = '<div class="card"><p>Carregando estudantes...</p></div>';
+
+    let allStudents = [];
+    let allTurmas = [];
+
+    // Gestor já possui os dados mestre. Outros perfis precisam buscar da fonte do gestor.
+    if (currentUser.role === 'gestor') {
+        allStudents = data.estudantes || [];
+        allTurmas = data.turmas || [];
+    } else if (currentUser.schoolId) {
+         const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+         const gestorData = await getData('app_data', key);
+         if (gestorData) {
+             allStudents = gestorData.estudantes || [];
+             allTurmas = gestorData.turmas || [];
+         }
+    }
+
+    const diagnosticoAlunos = allStudents.filter(e => e.aee_categoria_diagnostico).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
+    const projetoAlunos = allStudents.filter(e => e.aee_categoria_projeto).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
+
+    // Função auxiliar para renderizar as listas e evitar repetição de código
+    const renderStudentList = (alunos, categoria) => {
+        if (alunos.length === 0) {
+            return `<div class="card" style="background:#f7fafc;"><p class="empty-state">Nenhum estudante em ${categoria}.</p></div>`;
+        }
+        return alunos.map(aluno => {
+            const turma = allTurmas.find(t => t.id == aluno.id_turma);
+            const turmaNome = turma ? turma.nome : 'Turma ?';
+            const cardColor = categoria === 'Diagnóstico' ? '#3182ce' : '#38a169';
+            const titleColor = categoria === 'Diagnóstico' ? '#2c5282' : '#2f855a';
+
+            return `
+                <div class="card" style="margin-bottom: 15px; border-left: 4px solid ${cardColor};">
+                    <h4 style="margin:0; color:${titleColor};">
+                        ${aluno.nome_completo} 
+                        <span style="font-weight:normal; font-size:12px; color:#718096;">(${turmaNome})</span>
+                    </h4>
+                    ${aluno.aee_diagnostico ? `<p style="margin:5px 0; font-size:13px;"><strong>Diagnóstico/Voar:</strong> ${aluno.aee_diagnostico}</p>` : ''}
+                    
+                    ${aluno.aee_relatorio ? `
+                        <div style="margin-top:10px; background:#f7fafc; padding:10px; border-radius:6px; border:1px solid #e2e8f0;">
+                            <strong style="font-size:12px; color:#4a5568;">Relatório:</strong>
+                            <p style="white-space: pre-wrap; margin:5px 0 0 0; font-size:13px; color:#2d3748;">${aluno.aee_relatorio}</p>
+                        </div>
+                    ` : '<p style="font-size:12px; color:#a0aec0; margin-top:10px;"><em>Sem relatório preenchido.</em></p>'}
+                </div>
+            `;
+        }).join('');
+    };
+
+    const html = `
+        <div class="card">
+            <h2>🌟 Painel AEE / Projetos</h2>
+            <p style="color:#666; font-size:14px;">Visualização geral dos estudantes em acompanhamento especializado na escola.</p>
+        </div>
+
+        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 20px; align-items: start;">
+            <div>
+                <h3 style="color:#2c5282;">Diagnóstico</h3>
+                ${renderStudentList(diagnosticoAlunos, 'Diagnóstico')}
+            </div>
+            <div>
+                <h3 style="color:#276749;">Projeto</h3>
+                ${renderStudentList(projetoAlunos, 'Projeto')}
+            </div>
+        </div>
+    `;
+    container.innerHTML = html;
 }
 
 // --- AVISOS MURAL (GESTOR) ---
