@@ -40,6 +40,7 @@ async function iniciarApp() {
 
         let roleLabel = 'Painel do Professor';
         if (currentViewMode === 'gestor') roleLabel = 'Painel do Gestor';
+        if (currentViewMode === 'aee_projeto') roleLabel = 'Painel AEE / Projetos';
 
         document.getElementById('currentDate').textContent = 
             `${today.toLocaleDateString('pt-BR', options)} | Olá, ${currentUser.nome}`;
@@ -71,6 +72,8 @@ async function iniciarApp() {
         // Renderiza conforme o modo de visualização atual
         if (currentViewMode === 'gestor') {
             renderGestorPanel();
+        } else if (currentViewMode === 'aee_projeto') {
+            renderAeePanel();
         } else {
             renderProfessorPanel();
         }
@@ -80,19 +83,58 @@ async function iniciarApp() {
 // Função para injetar o botão de alternância no header
 function injectGestorToggleButton() {
     const container = document.getElementById('headerUserArea');
-    if (!container || document.getElementById('btnAlternarModo')) return;
+    // Remove botão antigo se existir para recriar o dropdown
+    const oldBtn = document.getElementById('btnAlternarModo');
+    if (oldBtn) oldBtn.remove();
+    
+    if (!container) return;
 
-    const btn = document.createElement('button');
-    btn.id = 'btnAlternarModo';
-    btn.className = currentViewMode === 'gestor' ? 'btn btn-sm btn-info' : 'btn btn-sm btn-warning';
-    btn.style.marginTop = '5px';
-    btn.style.marginRight = '5px';
-    btn.textContent = currentViewMode === 'gestor' ? '👁️ Ver como Professor' : '🛡️ Voltar para Gestão';
-    btn.onclick = alternarModoGestor;
+    // Cria container do Dropdown
+    const dropdown = document.createElement('div');
+    dropdown.id = 'btnAlternarModo';
+    dropdown.className = 'dropdown';
+    dropdown.style.display = 'inline-block';
+    dropdown.style.position = 'relative';
+    dropdown.style.marginTop = '5px';
+    dropdown.style.marginRight = '5px';
+
+    let btnLabel = '👁️ Alternar Visão ▼';
+    let btnClass = 'btn btn-sm btn-warning';
+    
+    if (currentViewMode === 'gestor') { btnLabel = '🛡️ Modo Gestor ▼'; btnClass = 'btn btn-sm btn-info'; }
+    else if (currentViewMode === 'professor') { btnLabel = '👨‍🏫 Modo Professor ▼'; btnClass = 'btn btn-sm btn-warning'; }
+    else if (currentViewMode === 'aee_projeto') { btnLabel = '🧩 Modo AEE/Projeto ▼'; btnClass = 'btn btn-sm btn-success'; }
+
+    dropdown.innerHTML = `
+        <button class="${btnClass}" onclick="document.getElementById('dropdownModoContent').classList.toggle('show')" style="min-width: 140px;">
+            ${btnLabel}
+        </button>
+        <div id="dropdownModoContent" class="dropdown-content" style="display: none; position: absolute; right: 0; background-color: #f9f9f9; min-width: 160px; box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2); z-index: 1000; border-radius: 4px; overflow: hidden;">
+            <a href="#" onclick="mudarModoVisualizacao('professor')" style="color: black; padding: 12px 16px; text-decoration: none; display: block; border-bottom:1px solid #eee;">👨‍🏫 Professor</a>
+            <a href="#" onclick="mudarModoVisualizacao('gestor')" style="color: black; padding: 12px 16px; text-decoration: none; display: block; border-bottom:1px solid #eee;">🛡️ Gestor</a>
+            <a href="#" onclick="mudarModoVisualizacao('aee_projeto')" style="color: black; padding: 12px 16px; text-decoration: none; display: block;">🧩 AEE / Projeto</a>
+        </div>
+    `;
 
     // Insere antes do botão Sair
     const btnSair = container.querySelector('.btn-danger');
-    container.insertBefore(btn, btnSair);
+    container.insertBefore(dropdown, btnSair);
+
+    // Fecha o dropdown se clicar fora
+    window.onclick = function(event) {
+        if (!event.target.matches('.btn-sm')) {
+            const dropdowns = document.getElementsByClassName("dropdown-content");
+            for (let i = 0; i < dropdowns.length; i++) {
+                if (dropdowns[i].classList.contains('show')) dropdowns[i].classList.remove('show');
+                dropdowns[i].style.display = 'none';
+            }
+        } else if (event.target.matches('.btn-sm') && event.target.parentNode.id === 'btnAlternarModo') {
+             // Toggle manual
+             const content = document.getElementById('dropdownModoContent');
+             content.style.display = content.style.display === 'block' ? 'none' : 'block';
+             content.classList.toggle('show');
+        }
+    }
 }
 
 // Função para injetar o botão de Perfil
@@ -313,13 +355,9 @@ function aplicarTemaSalvo() {
     document.head.appendChild(style);
 }
 
-// Função que realiza a troca de contexto
-function alternarModoGestor() {
-    currentViewMode = (currentViewMode === 'gestor') ? 'professor' : 'gestor';
-    
-    // Atualiza o botão
-    const btn = document.getElementById('btnAlternarModo');
-    if (btn) btn.remove(); // Remove para recriar com o estado novo ou apenas atualiza a UI recarregando o app
+// Função que realiza a troca de contexto (Nova versão com 3 modos)
+function mudarModoVisualizacao(novoModo) {
+    currentViewMode = novoModo;
     iniciarApp(); // Recarrega a interface com o novo modo
 }
 
@@ -329,6 +367,18 @@ function renderProfessorPanel() {
         <button class="active" onclick="showScreen('dashboard', event)"><span class="icon">📊</span><span class="label">Dashboard</span></button>
         <button onclick="showScreen('turmas', event)"><span class="icon">👥</span><span class="label">Turmas</span></button>
         <button onclick="showScreen('tutoria', event)"><span class="icon">🎓</span><span class="label">Tutoria</span></button>
+        <button onclick="showScreen('agenda', event)"><span class="icon">📅</span><span class="label">Agenda</span></button>
+        <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
+    `;
+    renderDashboard();
+    showScreen('dashboard');
+}
+
+function renderAeePanel() {
+    const nav = document.querySelector('nav');
+    nav.innerHTML = `
+        <button class="active" onclick="showScreen('dashboard', event)"><span class="icon">🧩</span><span class="label">Dashboard AEE</span></button>
+        <button onclick="showScreen('tutoria', event)"><span class="icon">👥</span><span class="label">Meus Alunos</span></button>
         <button onclick="showScreen('agenda', event)"><span class="icon">📅</span><span class="label">Agenda</span></button>
         <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
     `;
@@ -351,7 +401,7 @@ function showScreen(screenId, evt) {
 
     if (screenId === 'dashboard') renderDashboard();
     if (screenId === 'turmas') renderTurmas();
-    if (screenId === 'tutoria') renderTutoria();
+    if (screenId === 'tutoria') renderTutoria(); // Reutiliza a tela de Tutoria para "Meus Alunos" do AEE
     if (screenId === 'agenda') renderAgenda();
     if (screenId === 'registrosProfessor') renderRegistrosProfessor();
     if (screenId === 'registrosGestor') renderRegistrosGestor();
@@ -440,9 +490,55 @@ async function renderDashboard() {
         return; // IMPORTANTE: Encerra aqui para não carregar a visão do professor abaixo
     }
 
-    // 2. VISÃO DO PROFESSOR (Padrão)
+    // 2. VISÃO AEE / PROJETO
+    if (currentViewMode === 'aee_projeto') {
+        const tutorados = data.tutorados || [];
+        const agendamentosHoje = (data.agendamentos || []).filter(a => a.data === today && a.tutoradoId);
+        
+        dashboardContainer.innerHTML = `
+            <div class="grid">
+                <div class="card" style="border-left: 4px solid #38a169;">
+                    <h2>🧩 Alunos AEE/Projeto</h2>
+                    <div style="font-size: 24px; font-weight: bold; color: #2f855a;">
+                        ${tutorados.length} <span style="font-size:14px; color:#718096; font-weight:normal;">acompanhados</span>
+                    </div>
+                    <button class="btn btn-sm btn-secondary" onclick="showScreen('tutoria')" style="margin-top:10px;">Gerenciar Alunos</button>
+                </div>
+                <div class="card" style="border-left: 4px solid #3182ce;">
+                    <h2>📅 Atendimentos Hoje</h2>
+                    <div style="font-size: 24px; font-weight: bold; color: #2c5282;">
+                        ${agendamentosHoje.length} <span style="font-size:14px; color:#718096; font-weight:normal;">agendados</span>
+                    </div>
+                    <div id="listaAtendimentosAeeHoje" style="margin-top:10px;"></div>
+                </div>
+            </div>
+            <div class="card" style="margin-top: 20px;">
+                <h2>📢 Quadro de Avisos</h2>
+                <div id="avisosGerais"></div>
+            </div>
+        `;
+        
+        // Renderiza lista rápida de atendimentos
+        const listaAtendimentos = document.getElementById('listaAtendimentosAeeHoje');
+        if (agendamentosHoje.length > 0) {
+            listaAtendimentos.innerHTML = agendamentosHoje.map(a => {
+                const aluno = tutorados.find(t => t.id == a.tutoradoId);
+                return `<div style="padding:5px; border-bottom:1px solid #eee; font-size:13px;">
+                    <strong>${a.inicio}</strong> - ${aluno ? aluno.nome_estudante : 'Aluno removido'}
+                </div>`;
+            }).join('');
+        } else {
+            listaAtendimentos.innerHTML = '<p style="font-size:12px; color:#999;">Nenhum atendimento para hoje.</p>';
+        }
+
+        // Carrega avisos gerais (reutiliza lógica do professor)
+        // ... (continua para carregar avisos abaixo)
+    }
+
+    // 3. VISÃO DO PROFESSOR (Padrão) & AEE (Complemento)
     // Reconstrói a estrutura HTML padrão caso tenha sido alterada
-    dashboardContainer.innerHTML = `
+    if (currentViewMode === 'professor') {
+        dashboardContainer.innerHTML = `
         <div class="grid">
             <div class="card">
                 <h2>📅 Agenda do Dia</h2>
@@ -458,6 +554,7 @@ async function renderDashboard() {
             <div id="avisosGerais"></div>
         </div>
     `;
+    }
 
     // Agenda do Dia (Baseada na Grade)
     let gradeEscola = [];
@@ -853,7 +950,7 @@ function showTurmaTab(tab, evt) {
     if (tab === 'mapeamento') renderMapeamento();
 }
 
-function renderEstudantes() {
+async function renderEstudantes() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
     const isGestor = currentViewMode === 'gestor';
 
@@ -890,6 +987,51 @@ function renderEstudantes() {
         }
         return true; // Faltoso e Observação mostramos sempre (ou poderia filtrar por data recente)
     });
+
+    // --- ALERTA AEE EM TEMPO REAL ---
+    let aeeHtml = '';
+    if (currentUser.schoolId) {
+        try {
+            const keyMap = 'app_data_school_' + currentUser.schoolId + '_aee_map';
+            const mapData = await getData('app_data', keyMap);
+            
+            if (mapData && mapData.entries) {
+                const now = new Date();
+                const diaSemana = now.getDay(); // 0-6 (0=Dom, 1=Seg...)
+                const horaAgora = now.getHours() * 60 + now.getMinutes(); // Minutos desde meia-noite
+                
+                // Filtra atendimentos de hoje para alunos desta turma
+                const alunosIdsTurma = estudantes.map(est => est.id);
+                const aeeHoje = mapData.entries.filter(e => e.diaSemana == diaSemana && alunosIdsTurma.includes(e.alunoId));
+                
+                // Verifica se está acontecendo AGORA
+                const acontecendoAgora = aeeHoje.filter(e => {
+                    const [hI, mI] = e.inicio.split(':').map(Number);
+                    const [hF, mF] = e.fim.split(':').map(Number);
+                    const start = hI * 60 + mI;
+                    const end = hF * 60 + mF;
+                    return horaAgora >= start && horaAgora < end;
+                });
+
+                if (acontecendoAgora.length > 0) {
+                    aeeHtml = `
+                        <div style="margin-bottom: 15px; background: #e6fffa; border: 1px solid #b2f5ea; border-left: 4px solid #38a169; padding: 15px; border-radius: 8px; animation: pulseBorder 2s infinite;">
+                            <h4 style="margin:0 0 10px 0; color: #276749;">🧩 Atendimento AEE em Andamento</h4>
+                            ${acontecendoAgora.map(e => {
+                                const est = estudantes.find(s => s.id == e.alunoId);
+                                const diag = est.aee_diagnostico ? `(${est.aee_diagnostico})` : '';
+                                return `<div style="font-size:14px; color:#22543d; margin-bottom:5px;">
+                                    <strong>${est.nome_completo}</strong> ${diag} está sendo atendido por <strong>${e.profNome}</strong>
+                                    <span style="font-size:12px; color:#4a5568; margin-left:5px;">(${e.inicio} - ${e.fim})</span>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                        <style>@keyframes pulseBorder { 0% { box-shadow: 0 0 0 0 rgba(56, 161, 105, 0.4); } 70% { box-shadow: 0 0 0 6px rgba(56, 161, 105, 0); } 100% { box-shadow: 0 0 0 0 rgba(56, 161, 105, 0); } }</style>
+                    `;
+                }
+            }
+        } catch(e) { console.log('Erro ao carregar AEE map', e); }
+    }
 
     let muralHtml = '';
     if (avisosTurma.length > 0 || avisosMural.length > 0) {
@@ -951,6 +1093,7 @@ function renderEstudantes() {
     }
     
     const html = `
+        ${aeeHtml}
         ${muralHtml}
         ${isGestor ? `
             <div style="display:flex; gap: 10px; margin-bottom: 10px;">
@@ -961,13 +1104,19 @@ function renderEstudantes() {
         <table style="margin-top:10px;">
             <thead><tr><th>Nome</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody>
-                ${estudantes.map(e => `
+                ${estudantes.map(e => {
+                    const diagBadge = e.aee_diagnostico ? `<span style="font-size:11px; background:#e6fffa; color:#276749; padding:2px 6px; border-radius:4px; margin-left:5px; border:1px solid #b2f5ea; display:inline-block;">🧩 ${e.aee_diagnostico}</span>` : '';
+                    
+                    return `
                     <tr>
-                        <td><a href="#" onclick="abrirEstudanteDetalhe(${e.id})" style="font-weight:bold; text-decoration:none; color:#2b6cb0;">${e.nome_completo}</a></td>
+                        <td>
+                            <a href="#" onclick="abrirEstudanteDetalhe(${e.id})" style="font-weight:bold; text-decoration:none; color:#2b6cb0;">${e.nome_completo}</a>
+                            ${diagBadge}
+                        </td>
                         <td><span style="font-size:12px; padding:2px 6px; border-radius:4px; background:#edf2f7;">${e.status || 'Ativo'}</span></td>
                         <td>${isGestor ? `<button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})">🗑️</button>` : '<span style="color:#ccc;">-</span>'}</td>
                     </tr>
-                `).join('')}
+                `}).join('')}
             </tbody>
         </table>
     `;
@@ -1936,98 +2085,126 @@ function removerCompensacao(id) {
 let agendaLimit = 50; // Controle de paginação da agenda (Aumentado para mostrar mais dias)
 
 function renderTutoria() {
+    const screen = document.getElementById('tutoria');
+    const title = screen ? screen.querySelector('h2') : null;
+    const leftPanel = document.getElementById('listaTutorados');
+    const rightPanel = document.getElementById('listaEncontros');
     const tutorados = data.tutorados || [];
-    
-    // 1. Botões Superiores
-    const htmlTop = `
-        <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
-            <button class="btn btn-primary" onclick="abrirModalNovoTutorado()">+ Novo Tutorado</button>
-            <button class="btn btn-secondary" onclick="imprimirListaTutorados()">🖨️ Lista por Turma</button>
-            <button class="btn btn-secondary" onclick="imprimirAgendamentosTutorados()">🖨️ Cartões Agendamento</button>
-            <button class="btn btn-success" onclick="showModal('modalNovoEncontro')">Registrar Encontro</button>
-        </div>
-    `;
 
-    // 2. Lista de Tutorados (Agrupados por Turma e Ordem Alfabética)
+    // Parte comum: listar estudantes/tutorados
     const porTurma = {};
     tutorados.forEach(t => {
         if (!porTurma[t.turma]) porTurma[t.turma] = [];
         porTurma[t.turma].push(t);
     });
-    
     const turmasOrdenadas = Object.keys(porTurma).sort();
-    
-    let htmlTutorados = '';
+    let htmlTutoradosList = '';
     if (turmasOrdenadas.length > 0) {
         turmasOrdenadas.forEach(turma => {
             porTurma[turma].sort((a, b) => a.nome_estudante.localeCompare(b.nome_estudante));
-            
-            htmlTutorados += `<h4 style="margin-top:15px; margin-bottom:5px; color:#2c5282; border-bottom:1px solid #e2e8f0;">${turma}</h4>`;
-            htmlTutorados += `<table style="margin-top:0;"><tbody>`;
-            htmlTutorados += porTurma[turma].map(t => `
+            htmlTutoradosList += `<h4 style="margin-top:15px; margin-bottom:5px; color:#2c5282; border-bottom:1px solid #e2e8f0;">${turma}</h4>`;
+            htmlTutoradosList += `<table style="margin-top:0;"><tbody>`;
+            htmlTutoradosList += porTurma[turma].map(t => `
                     <tr>
                         <td><a href="#" onclick="abrirFichaTutorado(${t.id})">${t.nome_estudante}</a></td>
                     </tr>
             `).join('');
-            htmlTutorados += `</tbody></table>`;
+            htmlTutoradosList += `</tbody></table>`;
         });
     } else {
-        htmlTutorados = '<p class="empty-state">Nenhum tutorado.</p>';
+        htmlTutoradosList = '<p class="empty-state">Nenhum estudante.</p>';
     }
-    
-    document.getElementById('listaTutorados').innerHTML = htmlTop + htmlTutorados;
 
-    // 3. Seção de Agendamento e Controles
-    const agendamentos = (data.agendamentos || []).sort((a,b) => a.data.localeCompare(b.data) || a.inicio.localeCompare(b.inicio));
-    const today = getTodayString();
-    const futuros = agendamentos.filter(a => a.data >= today);
-
-    const htmlAgendaControls = `
-        <div class="card" style="background: #f0fff4; margin-bottom: 15px; border: 1px solid #c6f6d5;">
-            <h3 style="margin-top:0; font-size:16px;">Organização Automática</h3>
-            <p style="font-size:12px; color:#666; margin-bottom:10px;">Limpa agendamentos futuros e reorganiza todos os tutorados nos horários disponíveis.</p>
-            <button class="btn btn-info" onclick="agendarTodosTutorados()">🔄 Reorganizar e Agendar Todos</button>
-        </div>
+    if (currentViewMode === 'aee_projeto') {
+        // Visualização AEE / Projeto
+        if (title) title.textContent = 'AEE / Projeto';
         
-        <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
-            <h3 style="margin:0;">Próximas Janelas</h3>
-        </div>
-    `;
+        const htmlTop = `
+            <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
+                <button class="btn btn-primary" onclick="abrirModalNovoTutorado()">+ Novo Estudante</button>
+                <button class="btn btn-secondary" onclick="imprimirListaTutorados()">🖨️ Lista por Turma</button>
+            </div>
+        `;
+        
+        if (leftPanel) leftPanel.innerHTML = htmlTop + htmlTutoradosList;
+        if (rightPanel) rightPanel.innerHTML = ''; // Limpa o painel direito
 
-    // 4. Lista de Agenda (Limitada com botão Ampliar)
-    const visibleAgenda = futuros.slice(0, agendaLimit);
+        // Ajusta o grid para uma única coluna
+        const gridContainer = screen.querySelector('.grid');
+        if (gridContainer) {
+            gridContainer.style.gridTemplateColumns = '1fr';
+        }
 
-    const htmlAgendaList = visibleAgenda.length > 0 ? `
-        <div style="max-height: 600px; overflow-y: auto;">
-            ${visibleAgenda.map(a => {
-                // Busca nome do tutorado se estiver ocupado
-                let statusLabel = 'Livre';
-                let statusColor = '#718096';
-                let cardBorder = '#cbd5e0';
-                
-                if (a.tutoradoId) {
-                    const t = tutorados.find(x => x.id == a.tutoradoId);
-                    statusLabel = t ? t.nome_estudante : 'Tutorado (Excluído)';
-                    statusColor = '#2f855a';
-                    cardBorder = '#22c55e';
-                }
+    } else {
+        // Visualização Professor (Tutoria) - Lógica Original
+        if (title) title.textContent = 'Tutoria';
 
-                return `
-                <div class="card" style="padding: 10px; margin-bottom: 8px; border-left: 4px solid ${cardBorder}; background: #fff;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <strong>${formatDate(a.data)}</strong> <span style="font-size:12px; color:#666;">${a.inicio} - ${a.fim}</span>
-                            <div style="font-size:14px; font-weight:bold; color:${statusColor}; margin-top:2px;">${statusLabel}</div>
+        // Restaura o grid para duas colunas
+        const gridContainer = screen.querySelector('.grid');
+        if (gridContainer) {
+            gridContainer.style.gridTemplateColumns = '1fr 1fr';
+        }
+
+        const htmlTop = `
+            <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
+                <button class="btn btn-primary" onclick="abrirModalNovoTutorado()">+ Novo Tutorado</button>
+                <button class="btn btn-secondary" onclick="imprimirListaTutorados()">🖨️ Lista por Turma</button>
+                <button class="btn btn-secondary" onclick="imprimirAgendamentosTutorados()">🖨️ Cartões Agendamento</button>
+                <button class="btn btn-success" onclick="showModal('modalNovoEncontro')">Registrar Encontro</button>
+            </div>
+        `;
+        
+        if (leftPanel) leftPanel.innerHTML = htmlTop + htmlTutoradosList;
+
+        // Lógica do painel direito (agendamento)
+        const agendamentos = (data.agendamentos || []).sort((a,b) => a.data.localeCompare(b.data) || a.inicio.localeCompare(b.inicio));
+        const today = getTodayString();
+        const futuros = agendamentos.filter(a => a.data >= today);
+
+        const htmlAgendaControls = `
+            <div class="card" style="background: #f0fff4; margin-bottom: 15px; border: 1px solid #c6f6d5;">
+                <h3 style="margin-top:0; font-size:16px;">Organização Automática</h3>
+                <p style="font-size:12px; color:#666; margin-bottom:10px;">Limpa agendamentos futuros e reorganiza todos os tutorados nos horários disponíveis.</p>
+                <button class="btn btn-info" onclick="agendarTodosTutorados()">🔄 Reorganizar e Agendar Todos</button>
+            </div>
+            
+            <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
+                <h3 style="margin:0;">Próximas Janelas</h3>
+            </div>
+        `;
+
+        const visibleAgenda = futuros.slice(0, agendaLimit);
+        const htmlAgendaList = visibleAgenda.length > 0 ? `
+            <div style="max-height: 600px; overflow-y: auto;">
+                ${visibleAgenda.map(a => {
+                    let statusLabel = 'Livre';
+                    let statusColor = '#718096';
+                    let cardBorder = '#cbd5e0';
+                    
+                    if (a.tutoradoId) {
+                        const t = tutorados.find(x => x.id == a.tutoradoId);
+                        statusLabel = t ? t.nome_estudante : 'Tutorado (Excluído)';
+                        statusColor = '#2f855a';
+                        cardBorder = '#22c55e';
+                    }
+
+                    return `
+                    <div class="card" style="padding: 10px; margin-bottom: 8px; border-left: 4px solid ${cardBorder}; background: #fff;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <strong>${formatDate(a.data)}</strong> <span style="font-size:12px; color:#666;">${a.inicio} - ${a.fim}</span>
+                                <div style="font-size:14px; font-weight:bold; color:${statusColor}; margin-top:2px;">${statusLabel}</div>
+                            </div>
+                            ${!a.tutoradoId ? `<button class="btn btn-sm btn-danger" onclick="removerAgendamento(${a.id})">🗑️</button>` : ''}
                         </div>
-                        ${!a.tutoradoId ? `<button class="btn btn-sm btn-danger" onclick="removerAgendamento(${a.id})">🗑️</button>` : ''}
                     </div>
-                </div>
-            `}).join('')}
-        </div>
-        ${futuros.length > agendaLimit ? `<button class="btn btn-secondary" style="width:100%; margin-top:10px;" onclick="expandirAgendaTutoria()">Ampliar (+10)</button>` : ''}
-    ` : '<p class="empty-state">Nenhuma agenda gerada.</p>';
-    
-    document.getElementById('listaEncontros').innerHTML = htmlAgendaControls + htmlAgendaList;
+                `}).join('')}
+            </div>
+            ${futuros.length > agendaLimit ? `<button class="btn btn-secondary" style="width:100%; margin-top:10px;" onclick="expandirAgendaTutoria()">Ampliar (+10)</button>` : ''}
+        ` : '<p class="empty-state">Nenhuma agenda gerada.</p>';
+        
+        if (rightPanel) rightPanel.innerHTML = htmlAgendaControls + htmlAgendaList;
+    }
 }
 
 function expandirAgendaTutoria() {
@@ -2160,6 +2337,12 @@ async function abrirModalNovoTutorado() {
         }
     }
 
+    // Altera o título do modal conforme a visão
+    const modalTitle = document.querySelector('#modalNovoTutorado h3');
+    if (modalTitle) {
+        modalTitle.textContent = (currentViewMode === 'aee_projeto') ? 'Adicionar Novo Estudante' : 'Adicionar Novo Tutorado';
+    }
+
     // Salva temporariamente no DOM para acesso no onchange
     const modal = document.getElementById('modalNovoTutorado');
     modal.dataset.estudantes = JSON.stringify(estudantesEscola);
@@ -2208,7 +2391,8 @@ function salvarTutorado(e) {
     
     // Evitar duplicidade
     if (data.tutorados.find(t => t.id_estudante_origem == estudanteId)) {
-        return alert('Este estudante já é seu tutorado.');
+        const msg = currentViewMode === 'aee_projeto' ? 'Este estudante já está na sua lista.' : 'Este estudante já é seu tutorado.';
+        return alert(msg);
     }
 
     data.tutorados.push({ 
@@ -2238,31 +2422,124 @@ function abrirFichaTutorado(id) {
         actionContainer.style.marginTop = '10px';
         titleEl.parentNode.insertBefore(actionContainer, titleEl.nextSibling);
     }
-    
-    actionContainer.innerHTML = `
-        <div style="display:flex; gap:10px; flex-wrap:wrap;">
-            <button class="btn btn-primary btn-sm" onclick="imprimirRelatorioTutorado(${t.id}, '${t.nome_estudante}')">🖨️ Relatório Semestral</button>
-            <button class="btn btn-danger btn-sm" onclick="desvincularTutorado(${t.id})">Desvincular Tutorado</button>
-        </div>
-    `;
 
-    // Preencher listas (Agendamentos e Histórico)
-    const agendamentos = (data.agendamentos || []).filter(a => a.tutoradoId == id && a.data >= getTodayString()).sort((a,b) => a.data.localeCompare(b.data));
-    const encontros = (data.encontros || []).filter(e => e.tutoradoId == id).sort((a,b) => b.data.localeCompare(a.data)); // Decrescente
+    if (currentViewMode === 'aee_projeto') {
+        // --- VISÃO AEE / PROJETO ---
+        actionContainer.innerHTML = `
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <button class="btn btn-danger btn-sm" onclick="desvincularTutorado(${t.id})">Desvincular</button>
+            </div>
+        `;
 
-    document.getElementById('tutoradoFichaAgendamentos').innerHTML = agendamentos.length > 0 
-        ? agendamentos.map(a => `<div class="card" style="padding:10px; margin-bottom:5px; border-left:4px solid #3182ce; background:#fff;"><strong>${formatDate(a.data)}</strong> às ${a.inicio}</div>`).join('')
-        : '<p class="empty-state">Nenhum agendamento futuro.</p>';
+        // Oculta seções padrão (Agendamentos e Histórico)
+        const agendamentosDiv = document.getElementById('tutoradoFichaAgendamentos');
+        const historicoDiv = document.getElementById('tutoradoFichaHistorico');
+        
+        // Tenta ocultar os títulos (H3/H4) anteriores aos divs para limpar a tela
+        if (agendamentosDiv) {
+            agendamentosDiv.style.display = 'none';
+            if (agendamentosDiv.previousElementSibling && /^H[1-6]$/.test(agendamentosDiv.previousElementSibling.tagName)) {
+                agendamentosDiv.previousElementSibling.style.display = 'none';
+            }
+        }
+        if (historicoDiv) {
+            historicoDiv.style.display = 'none';
+            if (historicoDiv.previousElementSibling && /^H[1-6]$/.test(historicoDiv.previousElementSibling.tagName)) {
+                historicoDiv.previousElementSibling.style.display = 'none';
+            }
+        }
 
-    document.getElementById('tutoradoFichaHistorico').innerHTML = encontros.length > 0
-        ? encontros.map(e => `
-            <div class="card" style="padding:10px; margin-bottom:5px; background:#f7fafc; border:1px solid #e2e8f0;">
-                <div style="font-weight:bold; color:#2d3748;">${formatDate(e.data)} - ${e.tema}</div>
-                <p style="margin:5px 0 0 0; font-size:13px; color:#4a5568; white-space:pre-wrap;">${e.resumo}</p>
-            </div>`).join('')
-        : '<p class="empty-state">Nenhum encontro registrado.</p>';
+        // Injeta container AEE (Campos de Diagnóstico e Relatório)
+        let aeeContainer = document.getElementById('aeeEstudanteContainer');
+        if (!aeeContainer) {
+            aeeContainer = document.createElement('div');
+            aeeContainer.id = 'aeeEstudanteContainer';
+            // Insere após o container de ações
+            actionContainer.parentNode.insertBefore(aeeContainer, actionContainer.nextSibling);
+        }
+        aeeContainer.style.display = 'block';
+        
+        const diagnostico = t.aee_diagnostico || '';
+        const relatorio = t.aee_relatorio || '';
+
+        aeeContainer.innerHTML = `
+            <div style="margin-top:20px;">
+                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Diagnóstico / Voar</label>
+                <textarea id="aeeDiagnostico" rows="3" style="width:100%; border:1px solid #cbd5e0; padding:10px; border-radius:5px; font-family:inherit;" placeholder="Digite o diagnóstico..." onblur="salvarDadosAee(${t.id})">${diagnostico}</textarea>
+            </div>
+            <div style="margin-top:20px;">
+                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Relatório</label>
+                <textarea id="aeeRelatorio" rows="15" style="width:100%; border:1px solid #cbd5e0; padding:10px; border-radius:5px; font-family:inherit;" placeholder="Digite o relatório..." onblur="salvarDadosAee(${t.id})">${relatorio}</textarea>
+            </div>
+        `;
+
+    } else {
+        // --- VISÃO PADRÃO (PROFESSOR) ---
+        actionContainer.innerHTML = `
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <button class="btn btn-primary btn-sm" onclick="imprimirRelatorioTutorado(${t.id}, '${t.nome_estudante}')">🖨️ Relatório Semestral</button>
+                <button class="btn btn-danger btn-sm" onclick="desvincularTutorado(${t.id})">Desvincular Tutorado</button>
+            </div>
+        `;
+
+        // Restaura seções padrão
+        const agendamentosDiv = document.getElementById('tutoradoFichaAgendamentos');
+        const historicoDiv = document.getElementById('tutoradoFichaHistorico');
+        
+        if (agendamentosDiv) {
+            agendamentosDiv.style.display = 'block';
+            if (agendamentosDiv.previousElementSibling && /^H[1-6]$/.test(agendamentosDiv.previousElementSibling.tagName)) {
+                agendamentosDiv.previousElementSibling.style.display = 'block';
+            }
+        }
+        if (historicoDiv) {
+            historicoDiv.style.display = 'block';
+            if (historicoDiv.previousElementSibling && /^H[1-6]$/.test(historicoDiv.previousElementSibling.tagName)) {
+                historicoDiv.previousElementSibling.style.display = 'block';
+            }
+        }
+        
+        // Oculta container AEE se existir
+        const aeeContainer = document.getElementById('aeeEstudanteContainer');
+        if (aeeContainer) aeeContainer.style.display = 'none';
+
+        // Preencher listas (Agendamentos e Histórico)
+        const agendamentos = (data.agendamentos || []).filter(a => a.tutoradoId == id && a.data >= getTodayString()).sort((a,b) => a.data.localeCompare(b.data));
+        const encontros = (data.encontros || []).filter(e => e.tutoradoId == id).sort((a,b) => b.data.localeCompare(a.data)); // Decrescente
+
+        document.getElementById('tutoradoFichaAgendamentos').innerHTML = agendamentos.length > 0 
+            ? agendamentos.map(a => `<div class="card" style="padding:10px; margin-bottom:5px; border-left:4px solid #3182ce; background:#fff;"><strong>${formatDate(a.data)}</strong> às ${a.inicio}</div>`).join('')
+            : '<p class="empty-state">Nenhum agendamento futuro.</p>';
+
+        document.getElementById('tutoradoFichaHistorico').innerHTML = encontros.length > 0
+            ? encontros.map(e => `
+                <div class="card" style="padding:10px; margin-bottom:5px; background:#f7fafc; border:1px solid #e2e8f0;">
+                    <div style="font-weight:bold; color:#2d3748;">${formatDate(e.data)} - ${e.tema}</div>
+                    <p style="margin:5px 0 0 0; font-size:13px; color:#4a5568; white-space:pre-wrap;">${e.resumo}</p>
+                </div>`).join('')
+            : '<p class="empty-state">Nenhum encontro registrado.</p>';
+    }
 
     showScreen('tutoradoDetalhe');
+}
+
+function salvarDadosAee(id) {
+    const t = data.tutorados.find(x => x.id == id);
+    if (!t) return;
+    
+    t.aee_diagnostico = document.getElementById('aeeDiagnostico').value;
+    t.aee_relatorio = document.getElementById('aeeRelatorio').value;
+
+    // Sincroniza com o cadastro principal do estudante para aparecer nas listas gerais
+    if (t.id_estudante_origem) {
+        const est = data.estudantes.find(e => e.id == t.id_estudante_origem);
+        if (est) {
+            est.aee_diagnostico = t.aee_diagnostico;
+            est.aee_relatorio = t.aee_relatorio;
+        }
+    }
+
+    persistirDados();
 }
 
 function imprimirRelatorioTutorado(id, nome) {
@@ -2364,31 +2641,45 @@ function imprimirListaTutorados() {
     });
 
     const turmasOrdenadas = Object.keys(porTurma).sort();
+    const isAee = currentViewMode === 'aee_projeto';
+    const titulo = isAee ? 'Relatório AEE / Projeto' : 'Lista de Tutorados';
 
     let html = `
         <div style="font-family: Arial, sans-serif; padding: 20px; font-size: 12px;">
-            <h2 style="text-align: center; margin: 0 0 10px 0;">Lista de Tutorados</h2>
-            <p style="text-align: center; margin-bottom: 15px;">Professor: ${currentUser.nome}</p>
-            <div style="column-count: 2; column-gap: 20px;">
+            <h2 style="text-align: center; margin: 0 0 10px 0;">${titulo}</h2>
+            <p style="text-align: center; margin-bottom: 15px;">Responsável: ${currentUser.nome}</p>
+            <div style="${isAee ? '' : 'column-count: 2; column-gap: 20px;'}">
     `;
 
     turmasOrdenadas.forEach(turma => {
         html += `
             <div style="break-inside: avoid; margin-bottom: 15px;">
-                <h3 style="border-bottom: 1px solid #000; padding-bottom: 2px; margin: 0 0 5px 0; font-size: 14px;">${turma}</h3>
-                <ul style="margin: 0; padding-left: 20px;">
+                <h3 style="border-bottom: 2px solid #000; padding-bottom: 2px; margin: 0 0 10px 0; font-size: 14px; background:#f0f0f0;">${turma}</h3>
+                <ul style="margin: 0; padding-left: ${isAee ? '0' : '20px'}; list-style: ${isAee ? 'none' : 'disc'};">
         `;
         
         porTurma[turma].sort((a,b) => a.nome_estudante.localeCompare(b.nome_estudante)).forEach(t => {
-            html += `
-                <li style="margin-bottom: 2px;">${t.nome_estudante}</li>
-            `;
+            if (isAee) {
+                const diag = t.aee_diagnostico ? ` / <span style="color:#2c5282;">${t.aee_diagnostico}</span>` : '';
+                const rel = t.aee_relatorio ? `<div style="margin-top: 5px; padding: 8px; background: #f9f9f9; border: 1px solid #eee; border-radius: 4px; white-space: pre-wrap; color: #444;">${t.aee_relatorio}</div>` : '<div style="margin-top:5px; color:#999; font-style:italic;">Sem relatório.</div>';
+                
+                html += `
+                    <li style="margin-bottom: 15px; border-bottom: 1px dashed #ccc; padding-bottom: 15px;">
+                        <div style="font-size: 13px; font-weight: bold;">👤 ${t.nome_estudante}${diag}</div>
+                        ${rel}
+                    </li>
+                `;
+            } else {
+                html += `
+                    <li style="margin-bottom: 2px;">${t.nome_estudante}</li>
+                `;
+            }
         });
 
         html += `</ul></div>`;
     });
 
-    html += `</div>`;
+    html += `</div></div>`;
 
     const janela = window.open('', '', 'width=800,height=600');
     janela.document.write('<html><head><title>Lista de Tutorados</title></head><body>');
@@ -3004,9 +3295,14 @@ function renderEstudanteGeral() {
     // Verifica se é tutorado do usuário atual
     const tutoradoEntry = (data.tutorados || []).find(t => t.id_estudante_origem == estudanteAtualDetalhe.id);
     
-    const htmlNome = tutoradoEntry 
-        ? `${nome} <div style="font-size: 14px; color: #3182ce; font-weight: normal; margin-top: 4px;">🎓 Tutor: ${currentUser.nome}</div>` 
-        : nome;
+    let htmlNome = nome;
+    if (tutoradoEntry) {
+        if (currentViewMode === 'aee_projeto') {
+            htmlNome = `${nome} <div style="font-size: 14px; color: #38a169; font-weight: normal; margin-top: 4px;">🧩 AEE / Projeto</div>`;
+        } else {
+            htmlNome = `${nome} <div style="font-size: 14px; color: #3182ce; font-weight: normal; margin-top: 4px;">🎓 Tutor: ${currentUser.nome}</div>`;
+        }
+    }
 
     document.getElementById('estudanteGeralNome').innerHTML = htmlNome;
     
@@ -3066,10 +3362,26 @@ function renderEstudanteGeral() {
         </ul>
     ` : '<p style="font-size:13px; color:#718096; margin-bottom:15px;">Nenhum atestado registrado.</p>';
 
+    // Informações AEE (Diagnóstico e Relatório)
+    // Procura em todos os registros do aluno se há alguma info de AEE preenchida
+    const registroAee = todosRegistrosAluno.find(e => e.aee_diagnostico || e.aee_relatorio);
+    const htmlAee = registroAee ? `
+        <div class="card" style="margin-bottom:20px; border-left:4px solid #38a169; background:#f0fff4;">
+            <h4 style="margin-top:0; color:#2f855a;">🧩 AEE / Projeto</h4>
+            ${registroAee.aee_diagnostico ? `<p style="margin-bottom:10px;"><strong>Diagnóstico/Voar:</strong> ${registroAee.aee_diagnostico}</p>` : ''}
+            ${registroAee.aee_relatorio ? `
+                <p><strong>Relatório:</strong></p>
+                <div style="background:white; padding:10px; border:1px solid #c6f6d5; border-radius:5px; font-size:13px; white-space:pre-wrap; color:#2d3748;">${registroAee.aee_relatorio}</div>
+            ` : ''}
+        </div>
+    ` : '';
+
     document.getElementById('estudanteGeralOcorrencias').innerHTML = `
         <p><strong>Histórico de Matrículas:</strong></p>
         <div style="margin-bottom:15px;">${historicoTurmas}</div>
         
+        ${htmlAee}
+
         ${htmlAtestados}
         
         ${ocorrenciasAluno.length > 0 ? `
@@ -3637,6 +3949,7 @@ async function renderGradeHorariaProfessor() {
     const dias = {1: 'Segunda', 2: 'Terça', 3: 'Quarta', 4: 'Quinta', 5: 'Sexta'};
     const turmas = data.turmas || [];
     const minhasAulas = data.horariosAulas || []; // Onde salvamos as escolhas do professor
+    const isAeeMode = currentViewMode === 'aee_projeto';
 
     let html = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
@@ -3654,6 +3967,7 @@ async function renderGradeHorariaProfessor() {
             <div style="padding:10px;">
             ${blocosDia.map(bloco => {
                 const aulaSalva = minhasAulas.find(a => a.id_bloco == bloco.id);
+                const labelDisplay = bloco.label || '';
                 
                 // VERIFICAÇÃO DE BLOCO FIXO (GESTOR)
                 if (bloco.tipo && bloco.tipo !== '') {
@@ -3674,10 +3988,55 @@ async function renderGradeHorariaProfessor() {
                     `;
                 }
                 
+                // --- LÓGICA ESPECÍFICA PARA AEE / PROJETO ---
+                if (isAeeMode) {
+                    const alunosIds = (aulaSalva && aulaSalva.aee_alunos) ? aulaSalva.aee_alunos : [];
+                    const tipoAtual = aulaSalva ? aulaSalva.tipo : '';
+                    const tutorados = data.tutorados || [];
+                    const selecionados = tutorados.filter(t => alunosIds.includes(t.id.toString()) || alunosIds.includes(Number(t.id)));
+                    const isSpecial = ['estudo', 'apcg', 'atpca', 'reuniao', 'almoco', 'cafe', 'ped_presenc', 'eletiva'].includes(tipoAtual);
+
+                    let contentHtml = '';
+                    
+                    if (!isSpecial && selecionados.length > 0) {
+                        contentHtml += `<div style="margin-bottom:5px;">`;
+                        contentHtml += selecionados.map(aluno => `
+                            <div style="font-size:11px; background:#e6fffa; color:#234e52; border:1px solid #b2f5ea; padding:2px 5px; border-radius:4px; margin-bottom:2px; display:flex; justify-content:space-between; align-items:center;">
+                                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:85%;">${aluno.nome_estudante}</span>
+                                <span style="cursor:pointer; font-weight:bold; color:#e53e3e;" onclick="removerAlunoAeeGrade('${bloco.id}', '${aluno.id}')">×</span>
+                            </div>
+                        `).join('');
+                        contentHtml += `</div>`;
+                    }
+
+                    contentHtml += `<select style="width:100%; border:1px solid #e2e8f0; background:#fff; font-size:11px; color:#2d3748; border-radius:4px; padding:2px;" onchange="processarSelecaoAee('${bloco.id}', this.value); this.value='';">
+                        <option value="">${isSpecial ? tipoAtual.toUpperCase() + ' (Alterar...)' : '+ Adicionar Estudante'}</option>
+                        <optgroup label="Meus Alunos">
+                            ${tutorados.map(t => `<option value="aluno_${t.id}">${t.nome_estudante}</option>`).join('')}
+                        </optgroup>
+                        <optgroup label="Outros">
+                            <option value="almoco">Almoço</option>
+                            <option value="reuniao">Reunião</option>
+                            <option value="estudo">Estudo</option>
+                            <option value="atpca">ATPCA</option>
+                            <option value="apcg">APCG</option>
+                            <option value="cafe">Café</option>
+                        </optgroup>
+                    </select>`;
+
+                    if (tipoAtual === 'estudo' || tipoAtual === 'reuniao') {
+                        const descricao = aulaSalva.tema || '';
+                        contentHtml += `<input type="text" placeholder="Detalhes..." value="${descricao}" style="width:100%; margin-top:4px; font-size:11px; padding:2px 0; border:none; border-bottom:1px solid #e2e8f0; background:transparent; outline:none;" onblur="salvarDescricaoAula('${bloco.id}', this.value)">`;
+                    }
+
+                    return `<div style="background: #fff; padding:8px; margin-bottom:8px; border-radius:6px; border-left: 3px solid ${selecionados.length > 0 ? '#38a169' : (isSpecial ? '#3182ce' : 'transparent')}; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;"><div style="font-size:10px; color:#a0aec0; font-weight:600;">${bloco.inicio} - ${bloco.fim}</div>${labelDisplay ? `<div style="font-size:10px; font-weight:bold; color:#4a5568; background:#edf2f7; padding:1px 4px; border-radius:3px;">${labelDisplay}</div>` : ''}</div>
+                        ${contentHtml}
+                    </div>`;
+                }
+
                 // Determina o valor selecionado (ID da turma ou tipo especial)
                 let valorSelecionado = '';
-                // Rótulo: Apenas leitura (Definido pelo Gestor)
-                const labelDisplay = bloco.label || '';
 
                 if (aulaSalva) {
                     valorSelecionado = (['tutoria', 'estudo', 'apcg', 'atpca', 'reuniao', 'almoco', 'cafe', 'ped_presenc', 'eletiva'].includes(aulaSalva.tipo)) ? aulaSalva.tipo : aulaSalva.id_turma;
@@ -3733,6 +4092,59 @@ async function renderGradeHorariaProfessor() {
     container.innerHTML = html;
 }
 
+function processarSelecaoAee(blocoId, valor) {
+    if (!valor) return;
+    if (valor.startsWith('aluno_')) {
+        const alunoId = valor.replace('aluno_', '');
+        adicionarAlunoAeeGrade(blocoId, alunoId);
+    } else {
+        salvarAulaGrade(blocoId, valor);
+    }
+}
+
+async function adicionarAlunoAeeGrade(blocoId, alunoId) {
+    if (!data.horariosAulas) data.horariosAulas = [];
+    let aula = data.horariosAulas.find(a => a.id_bloco == blocoId);
+    
+    if (!aula) {
+        aula = {
+            id: Date.now() + Math.random(),
+            id_bloco: Number(blocoId),
+            tipo: 'atendimento_aee',
+            aee_alunos: []
+        };
+        data.horariosAulas.push(aula);
+    } else {
+        if (aula.tipo !== 'atendimento_aee') {
+            aula.tipo = 'atendimento_aee';
+            aula.aee_alunos = [];
+            aula.id_turma = null;
+            aula.tema = '';
+        }
+    }
+    if (!aula.aee_alunos) aula.aee_alunos = [];
+    if (!aula.aee_alunos.includes(alunoId)) {
+        aula.aee_alunos.push(alunoId);
+        persistirDados();
+        renderGradeHorariaProfessor();
+        
+        // Atualiza mapa compartilhado da escola
+        await atualizarMapaAeeCompartilhado('add', { alunoId, blocoId, profNome: currentUser.nome, profId: currentUser.id });
+    }
+}
+
+async function removerAlunoAeeGrade(blocoId, alunoId) {
+    const aula = data.horariosAulas.find(a => a.id_bloco == blocoId);
+    if (aula && aula.aee_alunos) {
+        aula.aee_alunos = aula.aee_alunos.filter(id => id != alunoId);
+        persistirDados();
+        renderGradeHorariaProfessor();
+        
+        // Remove do mapa compartilhado
+        await atualizarMapaAeeCompartilhado('remove', { alunoId, blocoId, profNome: currentUser.nome, profId: currentUser.id });
+    }
+}
+
 function salvarAulaGrade(blocoId, valor) {
     if (!data.horariosAulas) data.horariosAulas = [];
     
@@ -3767,6 +4179,39 @@ function salvarDescricaoAula(blocoId, texto) {
         aula.tema = texto;
         persistirDados();
     }
+}
+
+// Helper para atualizar o mapa compartilhado de AEE (Visível para todos)
+async function atualizarMapaAeeCompartilhado(acao, { alunoId, blocoId, profNome, profId }) {
+    if (!currentUser.schoolId) return;
+    
+    const keyMap = 'app_data_school_' + currentUser.schoolId + '_aee_map';
+    let mapData = await getData('app_data', keyMap);
+    if (!mapData) mapData = { entries: [] };
+    
+    // Busca detalhes do bloco (Dia/Hora)
+    let grade = await getGradeEscola();
+    const bloco = grade.find(b => b.id == blocoId);
+    
+    if (!bloco) return;
+    
+    if (acao === 'add') {
+        // Remove duplicatas preventivamente
+        mapData.entries = mapData.entries.filter(e => !(e.alunoId == alunoId && e.diaSemana == bloco.diaSemana && e.inicio == bloco.inicio && e.profId == profId));
+        
+        mapData.entries.push({
+            alunoId: Number(alunoId),
+            diaSemana: Number(bloco.diaSemana),
+            inicio: bloco.inicio,
+            fim: bloco.fim,
+            profNome: profNome,
+            profId: profId
+        });
+    } else if (acao === 'remove') {
+        mapData.entries = mapData.entries.filter(e => !(e.alunoId == alunoId && e.diaSemana == bloco.diaSemana && e.inicio == bloco.inicio && e.profId == profId));
+    }
+    
+    await saveData('app_data', keyMap, mapData);
 }
 
 async function renderRegistrosProfessor() {
