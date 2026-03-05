@@ -1281,6 +1281,8 @@ async function verRelatorioTutoriaAluno(profId, profNome, alunoId, alunoNome) {
     const key = 'app_data_' + profId;
     const profData = await getData('app_data', key);
     const encontros = (profData && profData.encontros) ? profData.encontros : []; // Assumindo que encontros são salvos aqui
+    const tutorados = (profData && profData.tutorados) ? profData.tutorados : [];
+    const tutoradoInfo = tutorados.find(t => t.id == alunoId);
     
     // Filtra encontros deste aluno (encontros devem ter id_tutorado ou similar, adaptando conforme app.js)
     // Nota: app.js usa 'encontroTutorado' (value=id) no modal. Vamos assumir que salva como 'tutoradoId' ou similar.
@@ -1291,6 +1293,36 @@ async function verRelatorioTutoriaAluno(profId, profNome, alunoId, alunoNome) {
     // Vamos injetar o HTML base e depois filtrar via JS local para não recarregar tudo
     const currentYear = new Date().getFullYear();
     
+    const calcIdade = (dn) => {
+        if(!dn) return '';
+        const today = new Date();
+        const bd = new Date(dn);
+        let age = today.getFullYear() - bd.getFullYear();
+        const m = today.getMonth() - bd.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
+        return age;
+    };
+
+    const infoHtml = tutoradoInfo ? `
+        <div style="background:#f7fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0; margin-top:15px; font-size:13px;">
+            <table style="width:100%; border-collapse:collapse;">
+                <tr>
+                    <td style="padding-bottom:5px;"><strong>Data Nasc:</strong> ${formatDate(tutoradoInfo.data_nascimento)} (${calcIdade(tutoradoInfo.data_nascimento)} anos)</td>
+                    <td style="padding-bottom:5px;"><strong>Tel. Aluno:</strong> ${tutoradoInfo.telefone_aluno || '-'}</td>
+                </tr>
+                <tr>
+                    <td style="padding-bottom:5px;"><strong>Responsável:</strong> ${tutoradoInfo.nome_responsavel || '-'}</td>
+                    <td style="padding-bottom:5px;"><strong>Tel. Resp:</strong> ${tutoradoInfo.telefone_responsavel || '-'}</td>
+                </tr>
+            </table>
+            <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #cbd5e0;">
+                <p style="margin:3px 0;"><strong>Projeto de Vida:</strong> ${tutoradoInfo.projeto_vida || '-'}</p>
+                <p style="margin:3px 0;"><strong>Clube:</strong> ${tutoradoInfo.clube_1 || '-'} / ${tutoradoInfo.clube_2 || '-'}</p>
+                <p style="margin:3px 0;"><strong>Eletiva:</strong> ${tutoradoInfo.eletiva_1 || '-'} / ${tutoradoInfo.eletiva_2 || '-'}</p>
+            </div>
+        </div>
+    ` : '';
+
     const html = `
         <div class="card">
             <div class="no-print">
@@ -1312,6 +1344,8 @@ async function verRelatorioTutoriaAluno(profId, profNome, alunoId, alunoNome) {
                 </div>
             </div>
 
+            ${infoHtml}
+
             <div id="listaEncontrosRelatorio" style="margin-top: 20px;">
                 <!-- Preenchido via JS -->
             </div>
@@ -1324,6 +1358,7 @@ async function verRelatorioTutoriaAluno(profId, profNome, alunoId, alunoNome) {
     // Filtra encontros onde o ID do tutorado bate (pode ser string ou number, comparamos solto)
     const encontrosAluno = encontros.filter(e => e.tutoradoId == alunoId || e.encontroTutorado == alunoId); 
     container.dataset.encontros = JSON.stringify(encontrosAluno);
+    container.dataset.tutoradoInfo = JSON.stringify(tutoradoInfo || {});
     
     filtrarRelatorioTutoriaUI();
 }
@@ -1365,6 +1400,17 @@ function imprimirRelatorioTutoriaGestorSimplificado(profNome, alunoNome) {
     const container = document.getElementById('tutoriasGestor');
     const semestreVal = document.getElementById('filtroSemestre').value;
     const encontros = JSON.parse(container.dataset.encontros || '[]');
+    const t = JSON.parse(container.dataset.tutoradoInfo || '{}');
+    
+    const calcIdade = (dn) => {
+        if(!dn) return '';
+        const today = new Date();
+        const bd = new Date(dn);
+        let age = today.getFullYear() - bd.getFullYear();
+        const m = today.getMonth() - bd.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
+        return age;
+    };
     
     // Filtra conforme seleção na tela
     const currentYear = new Date().getFullYear();
@@ -1408,8 +1454,23 @@ function imprimirRelatorioTutoriaGestorSimplificado(profNome, alunoNome) {
             </div>
             
             <div class="info">
-                <p style="margin: 5px 0;"><strong>Professor Tutor:</strong> ${profNome}</p>
-                <p style="margin: 5px 0;"><strong>Estudante Tutorado:</strong> ${alunoNome}</p>
+                <table style="width:100%; border-collapse:collapse;">
+                    <tr><td colspan="2"><strong>Professor Tutor:</strong> ${profNome}</td></tr>
+                    <tr><td colspan="2"><strong>Estudante Tutorado:</strong> ${alunoNome}</td></tr>
+                    <tr>
+                        <td><strong>Data Nasc:</strong> ${formatDate(t.data_nascimento)} (${calcIdade(t.data_nascimento)} anos)</td>
+                        <td><strong>Tel. Aluno:</strong> ${t.telefone_aluno || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Responsável:</strong> ${t.nome_responsavel || '-'}</td>
+                        <td><strong>Tel. Resp:</strong> ${t.telefone_responsavel || '-'}</td>
+                    </tr>
+                </table>
+                <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #ccc;">
+                    <p style="margin:2px 0;"><strong>Projeto de Vida:</strong> ${t.projeto_vida || '-'}</p>
+                    <p style="margin:2px 0;"><strong>Clube:</strong> ${t.clube_1 || '-'} / ${t.clube_2 || '-'}</p>
+                    <p style="margin:2px 0;"><strong>Eletiva:</strong> ${t.eletiva_1 || '-'} / ${t.eletiva_2 || '-'}</p>
+                </div>
             </div>
 
             ${filtrados.length > 0 ? filtrados.map(e => `
@@ -1481,6 +1542,16 @@ async function imprimirTodosRelatoriosTutoriaGestor(profId, profNome) {
 
     tutorados.forEach(t => {
         // Filtra encontros do aluno no período
+        const calcIdade = (dn) => {
+            if(!dn) return '';
+            const today = new Date();
+            const bd = new Date(dn);
+            let age = today.getFullYear() - bd.getFullYear();
+            const m = today.getMonth() - bd.getMonth();
+            if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
+            return age;
+        };
+
         const encontrosAluno = encontros.filter(e => {
             if (e.tutoradoId != t.id && e.encontroTutorado != t.id) return false;
             const d = new Date(e.data);
@@ -1492,8 +1563,23 @@ async function imprimirTodosRelatoriosTutoriaGestor(profId, profNome) {
         }).sort((a,b) => new Date(a.data) - new Date(b.data));
 
         html += `<div class="page-break">
-            <div class="header"><h1>${nomeEscola}</h1><div class="sub-header">Relatório de Tutoria - ${semLabel}</div></div>
-            <div class="info"><p style="margin:3px 0;"><strong>Professor:</strong> ${profNome}</p><p style="margin:3px 0;"><strong>Estudante:</strong> ${t.nome_estudante}</p><p style="margin:3px 0;"><strong>Turma:</strong> ${t.turma}</p></div>
+            <div class="header">
+                <h1>${nomeEscola}</h1>
+                <div class="sub-header">Relatório de Tutoria - ${semLabel}</div>
+            </div>
+            <div class="info">
+                <table style="width:100%; border-collapse:collapse;">
+                    <tr><td colspan="2"><strong>Professor Tutor:</strong> ${profNome}</td></tr>
+                    <tr><td colspan="2"><strong>Estudante Tutorado:</strong> ${t.nome_estudante} (${t.turma})</td></tr>
+                    <tr>
+                        <td><strong>Data Nasc:</strong> ${formatDate(t.data_nascimento)} (${calcIdade(t.data_nascimento)} anos)</td>
+                        <td><strong>Tel. Aluno:</strong> ${t.telefone_aluno || '-'}</td>
+                    </tr>
+                </table>
+                <div style="margin-top:5px; padding-top:5px; border-top:1px dashed #ccc;">
+                    <p style="margin:2px 0;"><strong>Projeto de Vida:</strong> ${t.projeto_vida || '-'}</p>
+                </div>
+            </div>
             ${encontrosAluno.length > 0 ? encontrosAluno.map(e => `<div class="registro"><div class="registro-data">📅 ${formatDate(e.data)}</div><div class="registro-titulo">${e.tema || 'Sem Título'}</div><div class="registro-texto">${e.resumo || ''}</div></div>`).join('') : '<p style="text-align:center; font-style:italic; color:#777;">Nenhum registro encontrado neste semestre.</p>'}
             <div style="margin-top:50px; border-top:1px solid #000; width:200px; text-align:center; font-size:10px; padding-top:5px;">Visto da Coordenação</div>
         </div>`;

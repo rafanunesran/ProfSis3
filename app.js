@@ -2714,6 +2714,23 @@ function salvarDadosTutorado(id) {
     t.clube_2 = document.getElementById('tutClube2').value;
     t.eletiva_1 = document.getElementById('tutEletiva1').value;
     t.eletiva_2 = document.getElementById('tutEletiva2').value;
+    
+    // Sincroniza com o cadastro principal do estudante
+    if (t.id_estudante_origem) {
+        const est = data.estudantes.find(e => e.id == t.id_estudante_origem);
+        if (est) {
+            est.data_nascimento = t.data_nascimento;
+            est.telefone_aluno = t.telefone_aluno;
+            est.nome_responsavel = t.nome_responsavel;
+            est.telefone_responsavel = t.telefone_responsavel;
+            est.projeto_vida = t.projeto_vida;
+            est.clube_1 = t.clube_1;
+            est.clube_2 = t.clube_2;
+            est.eletiva_1 = t.eletiva_1;
+            est.eletiva_2 = t.eletiva_2;
+        }
+    }
+
     persistirDados();
 }
 
@@ -3114,6 +3131,22 @@ function salvarFichaRapida() {
     t.eletiva_1 = document.getElementById('frEletiva1').value;
     t.eletiva_2 = document.getElementById('frEletiva2').value;
     
+    // Sincroniza com o cadastro principal do estudante
+    if (t.id_estudante_origem) {
+        const est = data.estudantes.find(e => e.id == t.id_estudante_origem);
+        if (est) {
+            est.data_nascimento = t.data_nascimento;
+            est.telefone_aluno = t.telefone_aluno;
+            est.nome_responsavel = t.nome_responsavel;
+            est.telefone_responsavel = t.telefone_responsavel;
+            est.projeto_vida = t.projeto_vida;
+            est.clube_1 = t.clube_1;
+            est.clube_2 = t.clube_2;
+            est.eletiva_1 = t.eletiva_1;
+            est.eletiva_2 = t.eletiva_2;
+        }
+    }
+
     persistirDados();
     alert('Dados atualizados com sucesso!');
 }
@@ -3743,7 +3776,55 @@ function renderEstudanteGeral() {
         </div>
     ` : '';
 
+    // Ficha de Tutoria (Visualização para todos se houver dados)
+    let htmlTutoriaInfo = '';
+    const dadosTutoria = tutoradoEntry || estudanteAtualDetalhe;
+
+    if (dadosTutoria && (dadosTutoria.data_nascimento || dadosTutoria.projeto_vida || dadosTutoria.telefone_aluno)) {
+        const t = dadosTutoria;
+        const calcIdade = (dn) => {
+            if(!dn) return '';
+            const today = new Date();
+            const bd = new Date(dn);
+            let age = today.getFullYear() - bd.getFullYear();
+            const m = today.getMonth() - bd.getMonth();
+            if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
+            return age;
+        };
+        
+        htmlTutoriaInfo = `
+            <div class="card" style="margin-bottom:20px; border-left:4px solid #3182ce; background:#ebf8ff;">
+                <h4 style="margin-top:0; color:#2c5282;">🎓 Ficha de Tutoria</h4>
+                <table style="width:100%; font-size:13px; margin-bottom:10px;">
+                    <tr>
+                        <td><strong>Data Nasc:</strong> ${formatDate(t.data_nascimento)} (${calcIdade(t.data_nascimento)} anos)</td>
+                        <td><strong>Tel. Aluno:</strong> ${t.telefone_aluno || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Responsável:</strong> ${t.nome_responsavel || '-'}</td>
+                        <td><strong>Tel. Resp:</strong> ${t.telefone_responsavel || '-'}</td>
+                    </tr>
+                </table>
+                <div style="font-size:13px;">
+                    <p style="margin:2px 0;"><strong>Projeto de Vida:</strong> ${t.projeto_vida || '-'}</p>
+                    <p style="margin:2px 0;"><strong>Clube:</strong> ${t.clube_1 || '-'} / ${t.clube_2 || '-'}</p>
+                    <p style="margin:2px 0;"><strong>Eletiva:</strong> ${t.eletiva_1 || '-'} / ${t.eletiva_2 || '-'}</p>
+                </div>
+            </div>
+        `;
+    }
+
+    // Botão de Busca Global para Gestor (caso não tenha encontrado localmente)
+    if (!htmlTutoriaInfo && isGestor) {
+        htmlTutoriaInfo = `
+            <div id="areaBuscaTutoriaGlobal" style="margin-bottom:20px;">
+                <button class="btn btn-sm btn-info" onclick="buscarFichaTutoriaGlobal(${estudanteAtualDetalhe.id})">🔍 Buscar Ficha de Tutoria (Outros Professores)</button>
+            </div>
+        `;
+    }
+
     document.getElementById('estudanteGeralOcorrencias').innerHTML = `
+        ${htmlTutoriaInfo}
         <p><strong>Histórico de Matrículas:</strong></p>
         <div style="margin-bottom:15px;">${historicoTurmas}</div>
         
@@ -3792,6 +3873,79 @@ function renderEstudanteGeral() {
     }
     if (!divComp.innerHTML || divComp.innerHTML.trim() === '') {
         divComp.innerHTML = '<p class="empty-state">Sem compensações.</p>';
+    }
+}
+
+async function buscarFichaTutoriaGlobal(alunoId) {
+    const btn = document.querySelector('#areaBuscaTutoriaGlobal button');
+    if(btn) { btn.disabled = true; btn.textContent = 'Buscando em todos os professores...'; }
+    
+    try {
+        const usersData = await getData('system', 'users_list');
+        const users = (usersData && usersData.list) ? usersData.list : [];
+        
+        let found = null;
+        let tutorName = '';
+
+        for (const u of users) {
+            if (u.role === 'super_admin') continue;
+            if (currentUser.schoolId && u.schoolId && u.schoolId !== currentUser.schoolId) continue;
+
+            // Tenta buscar nos dados do professor
+            // Nota: Assume chave padrão baseada no ID. Se usar UID, precisaria ajustar, mas ID é o fallback comum.
+            const key = 'app_data_' + u.id; 
+            const profData = await getData('app_data', key);
+            
+            if (profData && profData.tutorados) {
+                const match = profData.tutorados.find(t => t.id_estudante_origem == alunoId);
+                if (match) {
+                    found = match;
+                    tutorName = u.nome;
+                    break;
+                }
+            }
+        }
+
+        if (found) {
+            const t = found;
+            const calcIdade = (dn) => {
+                if(!dn) return '';
+                const today = new Date();
+                const bd = new Date(dn);
+                let age = today.getFullYear() - bd.getFullYear();
+                const m = today.getMonth() - bd.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
+                return age;
+            };
+
+            const html = `
+                <div class="card" style="border-left:4px solid #3182ce; background:#ebf8ff;">
+                    <h4 style="margin-top:0; color:#2c5282;">🎓 Ficha de Tutoria (Encontrada)</h4>
+                    <p style="font-size:12px; color:#666; margin-bottom:10px;"><strong>Tutor:</strong> ${tutorName}</p>
+                    <table style="width:100%; font-size:13px; margin-bottom:10px;">
+                        <tr>
+                            <td><strong>Data Nasc:</strong> ${formatDate(t.data_nascimento)} (${calcIdade(t.data_nascimento)} anos)</td>
+                            <td><strong>Tel. Aluno:</strong> ${t.telefone_aluno || '-'}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Responsável:</strong> ${t.nome_responsavel || '-'}</td>
+                            <td><strong>Tel. Resp:</strong> ${t.telefone_responsavel || '-'}</td>
+                        </tr>
+                    </table>
+                    <div style="font-size:13px;">
+                        <p style="margin:2px 0;"><strong>Projeto de Vida:</strong> ${t.projeto_vida || '-'}</p>
+                        <p style="margin:2px 0;"><strong>Clube:</strong> ${t.clube_1 || '-'} / ${t.clube_2 || '-'}</p>
+                        <p style="margin:2px 0;"><strong>Eletiva:</strong> ${t.eletiva_1 || '-'} / ${t.eletiva_2 || '-'}</p>
+                    </div>
+                </div>
+            `;
+            document.getElementById('areaBuscaTutoriaGlobal').innerHTML = html;
+        } else {
+            if(btn) { btn.textContent = 'Nenhuma ficha encontrada com os professores.'; btn.disabled = false; }
+        }
+    } catch (e) {
+        console.error(e);
+        if(btn) { btn.textContent = 'Erro na busca.'; }
     }
 }
 
