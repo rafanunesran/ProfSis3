@@ -1104,7 +1104,7 @@ async function renderTutoriasGestor() {
         const professoresSemVinculo = [];
 
         users.forEach(u => {
-            if (u.role === 'gestor' || u.role === 'super_admin') return;
+            if (u.role === 'super_admin') return;
             
             const uSchoolId = u.schoolId ? String(u.schoolId) : '';
             
@@ -1178,7 +1178,7 @@ async function renderTutoriasGestor() {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${users.filter(u => u.role !== 'gestor' && u.role !== 'super_admin').map(u => {
+                                ${users.filter(u => u.role !== 'super_admin').map(u => {
                                     const uSchoolId = u.schoolId ? String(u.schoolId) : '';
                                     const match = uSchoolId === mySchoolId;
                                     return `
