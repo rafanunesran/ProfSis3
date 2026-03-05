@@ -1140,7 +1140,7 @@ function abrirModalNovoEstudante() {
 function salvarEstudante(e) {
     e.preventDefault();
     const nome = document.getElementById('estudanteNome').value;
-    // Garante que se não for gestor, o status seja semstor') ? document.getElementById('estudanteStatus').value : 'Ativo';
+    const status = (currentViewMode === 'gestor') ? document.getElementById('estudanteStatus').value : 'Ativo';
     
     if (!data.estudantes) data.estudantes = [];
     data.estudantes.push({
@@ -2502,6 +2502,14 @@ function abrirFichaTutorado(id) {
         titleEl.parentNode.insertBefore(actionContainer, titleEl.nextSibling);
     }
 
+    // Container para Info Extra (Professor)
+    let infoContainer = document.getElementById('tutoradoInfoContainer');
+    if (!infoContainer) {
+        infoContainer = document.createElement('div');
+        infoContainer.id = 'tutoradoInfoContainer';
+        actionContainer.parentNode.insertBefore(infoContainer, actionContainer.nextSibling);
+    }
+
     if (currentViewMode === 'aee_projeto') {
         // --- VISÃO AEE / PROJETO ---
         actionContainer.innerHTML = `
@@ -2509,6 +2517,8 @@ function abrirFichaTutorado(id) {
                 <button class="btn btn-danger btn-sm" onclick="desvincularTutorado(${t.id})">Desvincular</button>
             </div>
         `;
+
+        if (infoContainer) infoContainer.style.display = 'none';
 
         // Oculta seções padrão (Agendamentos e Histórico)
         const agendamentosDiv = document.getElementById('tutoradoFichaAgendamentos');
@@ -2598,6 +2608,64 @@ function abrirFichaTutorado(id) {
         const aeeContainer = document.getElementById('aeeEstudanteContainer');
         if (aeeContainer) aeeContainer.style.display = 'none';
 
+        // Exibe container de Info Extra
+        if (infoContainer) {
+            infoContainer.style.display = 'block';
+            const dataNasc = t.data_nascimento || '';
+            
+            let idade = '';
+            if (dataNasc) {
+                const today = new Date();
+                const birthDate = new Date(dataNasc);
+                let age = today.getFullYear() - birthDate.getFullYear();
+                const m = today.getMonth() - birthDate.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+                idade = age;
+            }
+
+            infoContainer.innerHTML = `
+                <div class="card" style="margin-top:15px; background:#fff; border:1px solid #e2e8f0; padding:15px;">
+                    <h4 style="margin-top:0; color:#2c5282; border-bottom:1px solid #eee; padding-bottom:5px; margin-bottom:15px;">📝 Ficha do Estudante</h4>
+                    
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px;">
+                        <div>
+                            <label style="font-size:12px; font-weight:bold; display:block;">Data de Nascimento:</label>
+                            <div style="display:flex; gap:5px;">
+                                <input type="date" id="tutDataNasc" value="${dataNasc}" onchange="calcularIdadeTutorado(); salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">
+                                <input type="text" id="tutIdade" value="${idade}" readonly placeholder="Idade" style="width:60px; padding:5px; background:#f7fafc; color:#718096; border:1px solid #cbd5e0; border-radius:4px; text-align:center;">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:12px; font-weight:bold; display:block;">Telefone do Aluno:</label>
+                            <input type="text" id="tutTelAluno" value="${t.telefone_aluno || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px;">
+                        <div>
+                            <label style="font-size:12px; font-weight:bold; display:block;">Nome do Responsável:</label>
+                            <input type="text" id="tutNomeResp" value="${t.nome_responsavel || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">
+                        </div>
+                        <div>
+                            <label style="font-size:12px; font-weight:bold; display:block;">Telefone do Responsável:</label>
+                            <input type="text" id="tutTelResp" value="${t.telefone_responsavel || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">
+                        </div>
+                    </div>
+                    <div style="margin-bottom:15px;">
+                        <label style="font-size:12px; font-weight:bold; display:block;">Projeto de Vida:</label>
+                        <textarea id="tutProjetoVida" rows="2" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">${t.projeto_vida || ''}</textarea>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px;">
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Clube (1º Semestre):</label><input type="text" id="tutClube1" value="${t.clube_1 || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Clube (2º Semestre):</label><input type="text" id="tutClube2" value="${t.clube_2 || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Eletiva (1º Semestre):</label><input type="text" id="tutEletiva1" value="${t.eletiva_1 || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Eletiva (2º Semestre):</label><input type="text" id="tutEletiva2" value="${t.eletiva_2 || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
+                    </div>
+                </div>
+            `;
+        }
+
         // Preencher listas (Agendamentos e Histórico)
         const agendamentos = (data.agendamentos || []).filter(a => a.tutoradoId == id && a.data >= getTodayString()).sort((a,b) => a.data.localeCompare(b.data));
         const encontros = (data.encontros || []).filter(e => e.tutoradoId == id).sort((a,b) => b.data.localeCompare(a.data)); // Decrescente
@@ -2616,6 +2684,36 @@ function abrirFichaTutorado(id) {
     }
 
     showScreen('tutoradoDetalhe');
+}
+
+function calcularIdadeTutorado() {
+    const dataNasc = document.getElementById('tutDataNasc').value;
+    const idadeInput = document.getElementById('tutIdade');
+    if (!dataNasc) {
+        idadeInput.value = '';
+        return;
+    }
+    const today = new Date();
+    const birthDate = new Date(dataNasc);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    idadeInput.value = age;
+}
+
+function salvarDadosTutorado(id) {
+    const t = data.tutorados.find(x => x.id == id);
+    if (!t) return;
+    t.data_nascimento = document.getElementById('tutDataNasc').value;
+    t.telefone_aluno = document.getElementById('tutTelAluno').value;
+    t.nome_responsavel = document.getElementById('tutNomeResp').value;
+    t.telefone_responsavel = document.getElementById('tutTelResp').value;
+    t.projeto_vida = document.getElementById('tutProjetoVida').value;
+    t.clube_1 = document.getElementById('tutClube1').value;
+    t.clube_2 = document.getElementById('tutClube2').value;
+    t.eletiva_1 = document.getElementById('tutEletiva1').value;
+    t.eletiva_2 = document.getElementById('tutEletiva2').value;
+    persistirDados();
 }
 
 function salvarDadosAee(id) {
@@ -2660,6 +2758,18 @@ function imprimirRelatorioTutorado(id, nome) {
         return alert('Semestre deve ser 1 ou 2, e Ano deve ser válido.');
     }
 
+    // Busca dados completos do tutorado para o relatório
+    const t = data.tutorados.find(x => x.id == id);
+    const calcIdade = (dn) => {
+        if(!dn) return '';
+        const today = new Date();
+        const bd = new Date(dn);
+        let age = today.getFullYear() - bd.getFullYear();
+        const m = today.getMonth() - bd.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < bd.getDate())) age--;
+        return age;
+    };
+
     // Filtra Encontros
     const encontros = (data.encontros || []).filter(e => {
         if (e.tutoradoId != id) return false;
@@ -2700,8 +2810,23 @@ function imprimirRelatorioTutorado(id, nome) {
             </div>
             
             <div class="info">
-                <p style="margin: 5px 0;"><strong>Professor Tutor:</strong> ${currentUser.nome}</p>
-                <p style="margin: 5px 0;"><strong>Estudante Tutorado:</strong> ${nome}</p>
+                <table style="width:100%; border-collapse:collapse;">
+                    <tr><td colspan="2"><strong>Professor Tutor:</strong> ${currentUser.nome}</td></tr>
+                    <tr><td colspan="2"><strong>Estudante Tutorado:</strong> ${nome}</td></tr>
+                    <tr>
+                        <td><strong>Data Nasc:</strong> ${formatDate(t.data_nascimento)} (${calcIdade(t.data_nascimento)} anos)</td>
+                        <td><strong>Tel. Aluno:</strong> ${t.telefone_aluno || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Responsável:</strong> ${t.nome_responsavel || '-'}</td>
+                        <td><strong>Tel. Resp:</strong> ${t.telefone_responsavel || '-'}</td>
+                    </tr>
+                </table>
+                <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #ccc;">
+                    <p style="margin:2px 0;"><strong>Projeto de Vida:</strong> ${t.projeto_vida || '-'}</p>
+                    <p style="margin:2px 0;"><strong>Clube:</strong> ${t.clube_1 || '-'} / ${t.clube_2 || '-'}</p>
+                    <p style="margin:2px 0;"><strong>Eletiva:</strong> ${t.eletiva_1 || '-'} / ${t.eletiva_2 || '-'}</p>
+                </div>
             </div>
 
             ${encontros.map(e => `
