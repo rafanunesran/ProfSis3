@@ -2230,6 +2230,7 @@ function renderTutoria() {
                 <button class="btn btn-secondary" onclick="imprimirListaTutorados()">🖨️ Lista por Turma</button>
                 <button class="btn btn-secondary" onclick="imprimirAgendamentosTutorados()">🖨️ Cartões Agendamento</button>
                 <button class="btn btn-success" onclick="showModal('modalNovoEncontro')">Registrar Encontro</button>
+                <button class="btn btn-info" onclick="abrirModalFichaRapida()">📝 Ficha de Tutoria</button>
             </div>
         `;
         
@@ -2974,6 +2975,147 @@ function imprimirAgendamentosTutorados() {
     janela.document.write('<script>window.print();</script>');
     janela.document.write('</body></html>');
     janela.document.close();
+}
+
+// --- FICHA DE TUTORIA RÁPIDA ---
+function abrirModalFichaRapida() {
+    // Cria o modal se não existir
+    if (!document.getElementById('modalFichaRapida')) {
+        const div = document.createElement('div');
+        div.id = 'modalFichaRapida';
+        div.className = 'modal';
+        div.innerHTML = `
+            <div class="modal-content" style="max-width: 600px;">
+                <h3>📝 Ficha de Tutoria Rápida</h3>
+                <p style="font-size:13px; color:#666;">Selecione um estudante para editar seus dados cadastrais rapidamente.</p>
+                
+                <div style="margin-bottom: 15px; background:#f7fafc; padding:10px; border-radius:6px;">
+                    <label style="font-weight:bold;">Selecione o Tutorado:</label>
+                    <select id="selFichaRapidaTutorado" onchange="carregarDadosFichaRapida()" style="width:100%; padding:8px; margin-top:5px; border:1px solid #cbd5e0; border-radius:4px;">
+                        <option value="">Selecione...</option>
+                    </select>
+                </div>
+                
+                <div id="formFichaRapida" style="display:none;">
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px;">
+                        <div>
+                            <label style="font-size:12px; font-weight:bold; display:block;">Data de Nascimento:</label>
+                            <div style="display:flex; gap:5px;">
+                                <input type="date" id="frDataNasc" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;" onchange="calcIdadeFichaRapida()">
+                                <input type="text" id="frIdade" readonly placeholder="Idade" style="width:60px; padding:5px; background:#f7fafc; color:#718096; border:1px solid #cbd5e0; border-radius:4px; text-align:center;">
+                            </div>
+                        </div>
+                        <div>
+                            <label style="font-size:12px; font-weight:bold; display:block;">Telefone do Aluno:</label>
+                            <input type="text" id="frTelAluno" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">
+                        </div>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px;">
+                        <div>
+                            <label style="font-size:12px; font-weight:bold; display:block;">Nome do Responsável:</label>
+                            <input type="text" id="frNomeResp" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">
+                        </div>
+                        <div>
+                            <label style="font-size:12px; font-weight:bold; display:block;">Telefone do Responsável:</label>
+                            <input type="text" id="frTelResp" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">
+                        </div>
+                    </div>
+                    <div style="margin-bottom:15px;">
+                        <label style="font-size:12px; font-weight:bold; display:block;">Projeto de Vida:</label>
+                        <textarea id="frProjetoVida" rows="2" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></textarea>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px;">
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Clube (1º Semestre):</label><input type="text" id="frClube1" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Clube (2º Semestre):</label><input type="text" id="frClube2" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Eletiva (1º Semestre):</label><input type="text" id="frEletiva1" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Eletiva (2º Semestre):</label><input type="text" id="frEletiva2" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
+                    </div>
+                    
+                    <div style="margin-top:20px; text-align:right; border-top:1px solid #eee; padding-top:15px;">
+                        <button class="btn btn-success" onclick="salvarFichaRapida()">💾 Salvar Dados</button>
+                    </div>
+                </div>
+
+                <div style="margin-top: 10px; text-align: right;">
+                    <button class="btn btn-secondary" onclick="closeModal('modalFichaRapida')">Fechar</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(div);
+    }
+
+    // Popula o Select
+    const select = document.getElementById('selFichaRapidaTutorado');
+    const tutorados = (data.tutorados || []).sort((a,b) => a.nome_estudante.localeCompare(b.nome_estudante));
+    
+    select.innerHTML = '<option value="">Selecione...</option>' + 
+        tutorados.map(t => `<option value="${t.id}">${t.nome_estudante}</option>`).join('');
+    
+    document.getElementById('formFichaRapida').style.display = 'none';
+    showModal('modalFichaRapida');
+}
+
+function carregarDadosFichaRapida() {
+    const id = document.getElementById('selFichaRapidaTutorado').value;
+    const form = document.getElementById('formFichaRapida');
+    
+    if (!id) {
+        form.style.display = 'none';
+        return;
+    }
+    
+    const t = data.tutorados.find(x => x.id == id);
+    if (!t) return;
+
+    document.getElementById('frDataNasc').value = t.data_nascimento || '';
+    document.getElementById('frTelAluno').value = t.telefone_aluno || '';
+    document.getElementById('frNomeResp').value = t.nome_responsavel || '';
+    document.getElementById('frTelResp').value = t.telefone_responsavel || '';
+    document.getElementById('frProjetoVida').value = t.projeto_vida || '';
+    document.getElementById('frClube1').value = t.clube_1 || '';
+    document.getElementById('frClube2').value = t.clube_2 || '';
+    document.getElementById('frEletiva1').value = t.eletiva_1 || '';
+    document.getElementById('frEletiva2').value = t.eletiva_2 || '';
+    
+    calcIdadeFichaRapida();
+    
+    form.style.display = 'block';
+}
+
+function calcIdadeFichaRapida() {
+    const dataNasc = document.getElementById('frDataNasc').value;
+    const idadeInput = document.getElementById('frIdade');
+    if (!dataNasc) {
+        idadeInput.value = '';
+        return;
+    }
+    const today = new Date();
+    const birthDate = new Date(dataNasc);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    idadeInput.value = age;
+}
+
+function salvarFichaRapida() {
+    const id = document.getElementById('selFichaRapidaTutorado').value;
+    const t = data.tutorados.find(x => x.id == id);
+    if (!t) return;
+
+    t.data_nascimento = document.getElementById('frDataNasc').value;
+    t.telefone_aluno = document.getElementById('frTelAluno').value;
+    t.nome_responsavel = document.getElementById('frNomeResp').value;
+    t.telefone_responsavel = document.getElementById('frTelResp').value;
+    t.projeto_vida = document.getElementById('frProjetoVida').value;
+    t.clube_1 = document.getElementById('frClube1').value;
+    t.clube_2 = document.getElementById('frClube2').value;
+    t.eletiva_1 = document.getElementById('frEletiva1').value;
+    t.eletiva_2 = document.getElementById('frEletiva2').value;
+    
+    persistirDados();
+    alert('Dados atualizados com sucesso!');
 }
 
 async function gerarAgendamentosTutoria() {
