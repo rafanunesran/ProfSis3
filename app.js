@@ -35,6 +35,13 @@ async function iniciarApp() {
 
     // Carregar dados
     carregarDadosUsuario().then(async () => {
+        // [SEGURANÇA] Confirma que os dados foram baixados com sucesso.
+        // Isso impede que o sistema salve dados vazios na nuvem se houver erro de conexão na abertura.
+        window.dadosCarregados = true;
+
+        // [AUTO-BACKUP] Verifica e cria backup diário se necessário
+        verificarBackupAutomatico();
+
         const today = new Date();
         const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
 
@@ -487,6 +494,35 @@ async function renderDashboard() {
                 <h2>📊 Resumo da Escola</h2>
                 <p>Total de Turmas: ${(data.turmas || []).length}</p>
                 <p>Total de Estudantes: ${(data.estudantes || []).length}</p>
+            </div>
+
+            <div class="card" style="margin-top: 20px; border-left: 4px solid #718096; background: #f7fafc;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <h3 style="margin:0; color: #2d3748;">⚙️ Backup & Restauração</h3>
+                    <span style="font-size:11px; background:#e2e8f0; padding:2px 6px; border-radius:4px; color:#4a5568;">Auto: Diário</span>
+                </div>
+                
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+                    <!-- Nuvem -->
+                    <div style="background:white; padding:12px; border-radius:6px; border:1px solid #e2e8f0;">
+                        <h4 style="margin:0 0 10px 0; font-size:13px; color:#2b6cb0; border-bottom:1px solid #eee; padding-bottom:5px;">☁️ Nuvem (Automático)</h4>
+                        <div style="display:flex; flex-direction:column; gap:8px;">
+                            <button class="btn btn-sm btn-primary" onclick="criarBackupNuvem()" style="text-align:left;">💾 Criar Backup Agora</button>
+                            <button class="btn btn-sm btn-warning" onclick="restaurarUltimoBackup()" style="text-align:left;">⏮️ Restaurar Último</button>
+                            <button class="btn btn-sm btn-secondary" onclick="abrirGerenciadorBackupsNuvem()" style="text-align:left;">📋 Ver Histórico Completo</button>
+                        </div>
+                    </div>
+
+                    <!-- Local -->
+                    <div style="background:white; padding:12px; border-radius:6px; border:1px solid #e2e8f0;">
+                        <h4 style="margin:0 0 10px 0; font-size:13px; color:#2d3748; border-bottom:1px solid #eee; padding-bottom:5px;">💻 Arquivo Local / Emergência</h4>
+                        <div style="display:flex; flex-direction:column; gap:8px;">
+                            <button class="btn btn-sm btn-info" onclick="baixarBackupCompleto()" style="text-align:left;">⬇️ Baixar Arquivo (JSON)</button>
+                            <button class="btn btn-sm btn-secondary" onclick="abrirModalRestaurarBackup()" style="text-align:left;">⬆️ Restaurar de Arquivo</button>
+                            <button class="btn btn-sm btn-danger" onclick="restaurarBackupLocalParaNuvem()" style="text-align:left;" title="Recuperar dados do cache do navegador">🆘 Recuperar do Cache</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
         
@@ -4966,4 +5002,592 @@ function excluirAviso(id) {
     data.avisosMural = data.avisosMural.filter(a => a.id !== id);
     persistirDados();
     renderDashboard();
+}
+
+// --- FUNÇÕES DE BACKUP E RESTAURAÇÃO ---
+function baixarBackupCompleto() {
+    if (!data) return alert('Sem dados para baixar.');
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", "backup_sisprof_" + new Date().toISOString().slice(0,10) + ".json");
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+}
+
+function abrirModalRestaurarBackup() {
+    let input = document.getElementById('inputBackupRestore');
+    if (!input) {
+        input = document.createElement('input');
+        input.type = 'file';
+        input.id = 'inputBackupRestore';
+        input.accept = '.json';
+        input.style.display = 'none';
+        input.onchange = processarRestauracaoBackup;
+        document.body.appendChild(input);
+    }
+    input.click();
+}
+
+function processarRestauracaoBackup(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const json = JSON.parse(e.target.result);
+            if (json && (json.turmas || json.estudantes || json.ocorrencias)) {
+                if (confirm('⚠️ ATENÇÃO: Isso substituirá TODOS os dados atuais do sistema pelos dados do arquivo de backup.\n\nEssa ação não pode ser desfeita e será sincronizada com o banco de dados (Firestore).\n\nDeseja continuar?')) {
+                    data = json;
+                    await persistirDados(); // Salva no Firebase e LocalStorage
+                    alert('✅ Dados restaurados com sucesso! A página será recarregada.');
+                    location.reload();
+                }
+            } else {
+                alert('❌ O arquivo selecionado não parece ser um backup válido do SisProf.');
+            }
+        } catch (err) {
+            console.error(err);
+            alert('❌ Erro ao ler o arquivo: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
+    event.target.value = ''; // Limpa para permitir selecionar o mesmo arquivo novamente se necessário
+}
+
+// --- PERSISTÊNCIA AUTOMÁTICA (LOCAL + FIREBASE) ---
+async function persistirDados() {
+    // [SEGURANÇA] Não salva se os dados estiverem nulos ou vazios
+    if (!data) return;
+
+    // 1. Salva Localmente (Backup imediato e funcionamento offline)
+    localStorage.setItem('app_data', JSON.stringify(data));
+
+    // 2. Sincroniza com Firebase (Apenas se o carregamento inicial foi bem-sucedido)
+    if (window.dadosCarregados && currentUser && currentUser.id && typeof saveData === 'function') {
+        try {
+            await saveData('app_data', 'app_data_' + currentUser.id, data);
+        } catch (e) {
+            console.warn('Erro ao sincronizar dados com Firebase (Modo Offline ativado):', e);
+        }
+    } else if (!window.dadosCarregados) {
+        console.warn('⚠️ Salvamento na nuvem bloqueado: Dados iniciais não foram carregados corretamente. Seus dados estão salvos apenas neste dispositivo.');
+    }
+}
+
+// --- FUNÇÃO DE EMERGÊNCIA PARA RECUPERAR DADOS DO LOCALSTORAGE PARA O FIREBASE ---
+async function restaurarBackupLocalParaNuvem() {
+    const localJson = localStorage.getItem('app_data');
+    if (!localJson) {
+        return alert('Não há dados salvos neste navegador (Local Storage) para recuperar.');
+    }
+
+    try {
+        const localData = JSON.parse(localJson);
+        const countTurmas = (localData.turmas || []).length;
+        const countEstudantes = (localData.estudantes || []).length;
+
+        if (confirm(`ENCONTRADO BACKUP LOCAL:\n\nTurmas: ${countTurmas}\nEstudantes: ${countEstudantes}\n\nDeseja SOBRESCREVER os dados da nuvem (Firebase) com estes dados locais? Isso corrigirá a perda de dados se este dispositivo tiver a versão correta.`)) {
+            data = localData;
+            window.dadosCarregados = true; // Força a permissão de salvamento
+            await persistirDados(); 
+            await persistirDados(); // Salva no Firebase e LocalStorage
+            alert('✅ Dados restaurados e sincronizados com sucesso! A página será recarregada.');
+            location.reload();
+        }
+    } catch (e) {
+        alert('Erro ao ler dados locais: ' + e.message);
+    }
+}
+
+// --- SISTEMA DE BACKUP NA NUVEM (ROTATIVO - 5 SLOTS) ---
+
+async function abrirGerenciadorBackupsNuvem() {
+    // Cria o modal dinamicamente se não existir
+    if (!document.getElementById('modalBackupsNuvem')) {
+        const div = document.createElement('div');
+        div.id = 'modalBackupsNuvem';
+        div.className = 'modal';
+        div.innerHTML = `
+            <div class="modal-content" style="max-width: 500px;">
+                <h3>☁️ Backups na Nuvem</h3>
+                <p style="font-size:13px; color:#666;">O sistema mantém os 5 backups mais recentes. Ao criar um novo, o mais antigo é substituído.</p>
+                
+                <div style="margin-bottom: 15px; text-align: right;">
+                    <button class="btn btn-primary" onclick="criarBackupNuvem()">+ Criar Novo Backup Agora</button>
+                </div>
+
+                <div id="listaBackupsNuvem" style="max-height: 300px; overflow-y: auto; border: 1px solid #eee; border-radius: 4px;">
+                    <div style="padding:20px; text-align:center;">Carregando...</div>
+                </div>
+
+                <div style="margin-top: 15px; text-align: right;">
+                    <button class="btn btn-secondary" onclick="closeModal('modalBackupsNuvem')">Fechar</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(div);
+    }
+    
+    showModal('modalBackupsNuvem');
+    listarBackupsNuvem();
+}
+
+async function listarBackupsNuvem() {
+    const container = document.getElementById('listaBackupsNuvem');
+    if (!currentUser || !currentUser.id) return;
+
+    try {
+        // Busca o índice de backups
+        const indexData = await getData('app_data', `backup_index_${currentUser.id}`);
+        const backups = (indexData && indexData.slots) ? indexData.slots : [];
+
+        // Ordena do mais recente para o mais antigo
+        backups.sort((a, b) => b.timestamp - a.timestamp);
+
+        if (backups.length === 0) {
+            container.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">Nenhum backup encontrado na nuvem.</div>';
+            return;
+        }
+
+        container.innerHTML = backups.map(b => `
+            <div style="padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="font-weight:bold; color:#2d3748;">${new Date(b.timestamp).toLocaleString('pt-BR')}</div>
+                    <div style="font-size:11px; color:#718096;">${b.label || 'Backup Manual'} • Slot ${b.id}</div>
+                </div>
+                <button class="btn btn-sm btn-warning" onclick="restaurarBackupNuvem(${b.id}, '${new Date(b.timestamp).toLocaleString('pt-BR')}')">Restaurar</button>
+            </div>
+        `).join('');
+
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = '<div style="padding:10px; color:red;">Erro ao listar backups.</div>';
+    }
+}
+
+async function criarBackupNuvem() {
+    if (!confirm('Criar um novo backup na nuvem? Se houver 5 backups, o mais antigo será substituído.')) return;
+async function verificarBackupAutomatico() {
+    if (!currentUser || !currentUser.id) return;
+    
+    try {
+        const indexKey = `backup_index_${currentUser.id}`;
+        let indexData = await getData('app_data', indexKey);
+        
+        if (!indexData) indexData = { slots: [], nextSlot: 1 };
+        
+        const backups = indexData.slots || [];
+        const today = new Date().toDateString();
+        
+        // Verifica se já existe algum backup com a data de hoje
+        const hasBackupToday = backups.some(b => new Date(b.timestamp).toDateString() === today);
+        
+        if (!hasBackupToday) {
+            console.log('Iniciando backup automático diário...');
+            await criarBackupNuvem(true); // true = silencioso
+        }
+    } catch (e) {
+        console.warn('Erro na verificação de backup automático:', e);
+    }
+}
+
+async function criarBackupNuvem(silent = false) {
+    if (!silent && !confirm('Criar um novo backup na nuvem? Se houver 5 backups, o mais antigo será substituído.')) return;
+    
+    try {
+        const indexKey = `backup_index_${currentUser.id}`;
+        let indexData = await getData('app_data', indexKey);
+        
+        if (!indexData) indexData = { slots: [], nextSlot: 1 };
+        
+        // Define qual slot usar (1 a 5)
+        let slotId = indexData.nextSlot;
+        if (slotId > 5) slotId = 1;
+
+        // Salva os dados no slot
+        const backupKey = `backup_${currentUser.id}_slot_${slotId}`;
+        await saveData('app_data', backupKey, data);
+
+        // Atualiza o índice
+        // Remove entrada antiga desse slot se houver
+        indexData.slots = indexData.slots.filter(s => s.id !== slotId);
+        
+        // Adiciona nova entrada
+        indexData.slots.push({ id: slotId, timestamp: Date.now(), label: `Backup ${data.turmas ? data.turmas.length : 0} turmas` });
+        const label = silent ? 'Backup Automático' : `Backup Manual (${data.turmas ? data.turmas.length : 0} turmas)`;
+        indexData.slots.push({ id: slotId, timestamp: Date.now(), label: label });
+        
+        // Prepara próximo slot
+        indexData.nextSlot = slotId + 1;
+
+        await saveData('app_data', indexKey, indexData);
+        
+        alert('Backup criado com sucesso!');
+        listarBackupsNuvem();
+        if (!silent) {
+            alert('Backup criado com sucesso!');
+            listarBackupsNuvem();
+        } else {
+            console.log('Backup automático realizado.');
+        }
+
+    } catch (e) {
+        alert('Erro ao criar backup: ' + e.message);
+        if (!silent) alert('Erro ao criar backup: ' + e.message);
+        else console.error('Erro no backup automático:', e);
+    }
+}
+
+async function restaurarBackupNuvem(slotId, dataBackup) {
+    if (!confirm(`ATENÇÃO: Isso substituirá TODOS os dados atuais pelos dados do backup de ${dataBackup}.\n\nDeseja continuar?`)) return;
+
+    try {
+        const backupKey = `backup_${currentUser.id}_slot_${slotId}`;
+        const backupData = await getData('app_data', backupKey);
+
+        if (backupData) {
+            data = backupData;
+            await persistirDados(); // Salva como dados atuais
+            alert('Dados restaurados com sucesso! A página será recarregada.');
+            location.reload();
+        } else {
+            alert('Erro: Arquivo de backup não encontrado ou vazio.');
+        }
+    } catch (e) {
+        alert('Erro ao restaurar: ' + e.message);
+    }
+}
+
+async function restaurarUltimoBackup() {
+    if (!currentUser || !currentUser.id) return;
+    
+    try {
+        const indexKey = `backup_index_${currentUser.id}`;
+        const indexData = await getData('app_data', indexKey);
+        
+        if (!indexData || !indexData.slots || indexData.slots.length === 0) {
+            return alert('Nenhum backup encontrado na nuvem.');
+        }
+        
+        const backups = indexData.slots.sort((a, b) => b.timestamp - a.timestamp);
+        const latest = backups[0];
+        const dataStr = new Date(latest.timestamp).toLocaleString('pt-BR');
+        
+        restaurarBackupNuvem(latest.id, dataStr);
+    } catch (e) {
+        alert('Erro ao buscar último backup: ' + e.message);
+    }
+}   showModal('modalNovoAviso');
+}
+
+function toggleTodasTurmasAviso(source) {
+    const checkboxes = document.querySelectorAll('.chk-turma-aviso');
+    checkboxes.forEach(cb => cb.checked = source.checked);
+}
+
+function salvarAviso() {
+    const texto = document.getElementById('textoNovoAviso').value;
+    const checkboxes = document.querySelectorAll('.chk-turma-aviso:checked');
+    const todasCheckbox = document.querySelector('input[onchange="toggleTodasTurmasAviso(this)"]');
+    
+    if (!texto) return alert('Digite o aviso.');
+    if (checkboxes.length === 0) return alert('Selecione pelo menos uma turma.');
+
+    const turmasAlvo = todasCheckbox.checked ? ['todas'] : Array.from(checkboxes).map(cb => cb.value);
+
+    if (!data.avisosMural) data.avisosMural = [];
+    data.avisosMural.push({
+        id: Date.now(),
+        texto,
+        data: getTodayString(),
+        turmasAlvo
+    });
+
+    persistirDados();
+    closeModal('modalNovoAviso');
+    renderDashboard(); // Atualiza o card no dashboard
+}
+
+function excluirAviso(id) {
+    if(!confirm('Excluir este aviso?')) return;
+    data.avisosMural = data.avisosMural.filter(a => a.id !== id);
+    persistirDados();
+    renderDashboard();
+}
+
+// --- FUNÇÕES DE BACKUP E RESTAURAÇÃO ---
+function baixarBackupCompleto() {
+    if (!data) return alert('Sem dados para baixar.');
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", "backup_sisprof_" + new Date().toISOString().slice(0,10) + ".json");
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+}
+
+function abrirModalRestaurarBackup() {
+    let input = document.getElementById('inputBackupRestore');
+    if (!input) {
+        input = document.createElement('input');
+        input.type = 'file';
+        input.id = 'inputBackupRestore';
+        input.accept = '.json';
+        input.style.display = 'none';
+        input.onchange = processarRestauracaoBackup;
+        document.body.appendChild(input);
+    }
+    input.click();
+}
+
+function processarRestauracaoBackup(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const json = JSON.parse(e.target.result);
+            if (json && (json.turmas || json.estudantes || json.ocorrencias)) {
+                if (confirm('⚠️ ATENÇÃO: Isso substituirá TODOS os dados atuais do sistema pelos dados do arquivo de backup.\n\nEssa ação não pode ser desfeita e será sincronizada com o banco de dados (Firestore).\n\nDeseja continuar?')) {
+                    data = json;
+                    await persistirDados(); // Salva no Firebase e LocalStorage
+                    alert('✅ Dados restaurados com sucesso! A página será recarregada.');
+                    location.reload();
+                }
+            } else {
+                alert('❌ O arquivo selecionado não parece ser um backup válido do SisProf.');
+            }
+        } catch (err) {
+            console.error(err);
+            alert('❌ Erro ao ler o arquivo: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
+    event.target.value = ''; // Limpa para permitir selecionar o mesmo arquivo novamente se necessário
+}
+
+// --- PERSISTÊNCIA AUTOMÁTICA (LOCAL + FIREBASE) ---
+async function persistirDados() {
+    // [SEGURANÇA] Não salva se os dados estiverem nulos ou vazios
+    if (!data) return;
+
+    // 1. Salva Localmente (Backup imediato e funcionamento offline)
+    localStorage.setItem('app_data', JSON.stringify(data));
+
+    // 2. Sincroniza com Firebase (Apenas se o carregamento inicial foi bem-sucedido)
+    if (window.dadosCarregados && currentUser && currentUser.id && typeof saveData === 'function') {
+        try {
+            await saveData('app_data', 'app_data_' + currentUser.id, data);
+        } catch (e) {
+            console.warn('Erro ao sincronizar dados com Firebase (Modo Offline ativado):', e);
+        }
+    } else if (!window.dadosCarregados) {
+        console.warn('⚠️ Salvamento na nuvem bloqueado: Dados iniciais não foram carregados corretamente. Seus dados estão salvos apenas neste dispositivo.');
+    }
+}
+
+// --- FUNÇÃO DE EMERGÊNCIA PARA RECUPERAR DADOS DO LOCALSTORAGE PARA O FIREBASE ---
+async function restaurarBackupLocalParaNuvem() {
+    const localJson = localStorage.getItem('app_data');
+    if (!localJson) {
+        return alert('Não há dados salvos neste navegador (Local Storage) para recuperar.');
+    }
+
+    try {
+        const localData = JSON.parse(localJson);
+        const countTurmas = (localData.turmas || []).length;
+        const countEstudantes = (localData.estudantes || []).length;
+
+        if (confirm(`ENCONTRADO BACKUP LOCAL:\n\nTurmas: ${countTurmas}\nEstudantes: ${countEstudantes}\n\nDeseja SOBRESCREVER os dados da nuvem (Firebase) com estes dados locais? Isso corrigirá a perda de dados se este dispositivo tiver a versão correta.`)) {
+            data = localData;
+            window.dadosCarregados = true; // Força a permissão de salvamento
+            await persistirDados(); 
+            await persistirDados(); // Salva no Firebase e LocalStorage
+            alert('✅ Dados restaurados e sincronizados com sucesso! A página será recarregada.');
+            location.reload();
+        }
+    } catch (e) {
+        alert('Erro ao ler dados locais: ' + e.message);
+    }
+}
+
+// --- SISTEMA DE BACKUP NA NUVEM (ROTATIVO - 5 SLOTS) ---
+
+async function abrirGerenciadorBackupsNuvem() {
+    // Cria o modal dinamicamente se não existir
+    if (!document.getElementById('modalBackupsNuvem')) {
+        const div = document.createElement('div');
+        div.id = 'modalBackupsNuvem';
+        div.className = 'modal';
+        div.innerHTML = `
+            <div class="modal-content" style="max-width: 500px;">
+                <h3>☁️ Backups na Nuvem</h3>
+                <p style="font-size:13px; color:#666;">O sistema mantém os 5 backups mais recentes. Ao criar um novo, o mais antigo é substituído.</p>
+                
+                <div style="margin-bottom: 15px; text-align: right;">
+                    <button class="btn btn-primary" onclick="criarBackupNuvem()">+ Criar Novo Backup Agora</button>
+                </div>
+
+                <div id="listaBackupsNuvem" style="max-height: 300px; overflow-y: auto; border: 1px solid #eee; border-radius: 4px;">
+                    <div style="padding:20px; text-align:center;">Carregando...</div>
+                </div>
+
+                <div style="margin-top: 15px; text-align: right;">
+                    <button class="btn btn-secondary" onclick="closeModal('modalBackupsNuvem')">Fechar</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(div);
+    }
+    
+    showModal('modalBackupsNuvem');
+    listarBackupsNuvem();
+}
+
+async function listarBackupsNuvem() {
+    const container = document.getElementById('listaBackupsNuvem');
+    if (!currentUser || !currentUser.id) return;
+
+    try {
+        // Busca o índice de backups
+        const indexData = await getData('app_data', `backup_index_${currentUser.id}`);
+        const backups = (indexData && indexData.slots) ? indexData.slots : [];
+
+        // Ordena do mais recente para o mais antigo
+        backups.sort((a, b) => b.timestamp - a.timestamp);
+
+        if (backups.length === 0) {
+            container.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">Nenhum backup encontrado na nuvem.</div>';
+            return;
+        }
+
+        container.innerHTML = backups.map(b => `
+            <div style="padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="font-weight:bold; color:#2d3748;">${new Date(b.timestamp).toLocaleString('pt-BR')}</div>
+                    <div style="font-size:11px; color:#718096;">${b.label || 'Backup Manual'} • Slot ${b.id}</div>
+                </div>
+                <button class="btn btn-sm btn-warning" onclick="restaurarBackupNuvem(${b.id}, '${new Date(b.timestamp).toLocaleString('pt-BR')}')">Restaurar</button>
+            </div>
+        `).join('');
+
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = '<div style="padding:10px; color:red;">Erro ao listar backups.</div>';
+    }
+}
+
+async function verificarBackupAutomatico() {
+    if (!currentUser || !currentUser.id) return;
+    
+    try {
+        const indexKey = `backup_index_${currentUser.id}`;
+        let indexData = await getData('app_data', indexKey);
+        
+        if (!indexData) indexData = { slots: [], nextSlot: 1 };
+        
+        const backups = indexData.slots || [];
+        const today = new Date().toDateString();
+        
+        // Verifica se já existe algum backup com a data de hoje
+        const hasBackupToday = backups.some(b => new Date(b.timestamp).toDateString() === today);
+        
+        if (!hasBackupToday) {
+            console.log('Iniciando backup automático diário...');
+            await criarBackupNuvem(true); // true = silencioso
+        }
+    } catch (e) {
+        console.warn('Erro na verificação de backup automático:', e);
+    }
+}
+
+async function criarBackupNuvem(silent = false) {
+    if (!silent && !confirm('Criar um novo backup na nuvem? Se houver 5 backups, o mais antigo será substituído.')) return;
+    
+    try {
+        const indexKey = `backup_index_${currentUser.id}`;
+        let indexData = await getData('app_data', indexKey);
+        
+        if (!indexData) indexData = { slots: [], nextSlot: 1 };
+        
+        // Define qual slot usar (1 a 5)
+        let slotId = indexData.nextSlot;
+        if (slotId > 5) slotId = 1;
+
+        // Salva os dados no slot
+        const backupKey = `backup_${currentUser.id}_slot_${slotId}`;
+        await saveData('app_data', backupKey, data);
+
+        // Atualiza o índice
+        // Remove entrada antiga desse slot se houver
+        indexData.slots = indexData.slots.filter(s => s.id !== slotId);
+        
+        // Adiciona nova entrada
+        indexData.slots.push({ id: slotId, timestamp: Date.now(), label: `Backup ${data.turmas ? data.turmas.length : 0} turmas` });
+        const label = silent ? 'Backup Automático' : `Backup Manual (${data.turmas ? data.turmas.length : 0} turmas)`;
+        indexData.slots.push({ id: slotId, timestamp: Date.now(), label: label });
+        
+        // Prepara próximo slot
+        indexData.nextSlot = slotId + 1;
+
+        await saveData('app_data', indexKey, indexData);
+        
+        if (!silent) {
+            alert('Backup criado com sucesso!');
+            listarBackupsNuvem();
+        } else {
+            console.log('Backup automático realizado.');
+        }
+
+    } catch (e) {
+        alert('Erro ao criar backup: ' + e.message);
+        if (!silent) alert('Erro ao criar backup: ' + e.message);
+        else console.error('Erro no backup automático:', e);
+    }
+}
+
+async function restaurarBackupNuvem(slotId, dataBackup) {
+    if (!confirm(`ATENÇÃO: Isso substituirá TODOS os dados atuais pelos dados do backup de ${dataBackup}.\n\nDeseja continuar?`)) return;
+
+    try {
+        const backupKey = `backup_${currentUser.id}_slot_${slotId}`;
+        const backupData = await getData('app_data', backupKey);
+
+        if (backupData) {
+            data = backupData;
+            await persistirDados(); // Salva como dados atuais
+            alert('Dados restaurados com sucesso! A página será recarregada.');
+            location.reload();
+        } else {
+            alert('Erro: Arquivo de backup não encontrado ou vazio.');
+        }
+    } catch (e) {
+        alert('Erro ao restaurar: ' + e.message);
+    }
+}
+
+async function restaurarUltimoBackup() {
+    if (!currentUser || !currentUser.id) return;
+    
+    try {
+        const indexKey = `backup_index_${currentUser.id}`;
+        const indexData = await getData('app_data', indexKey);
+        
+        if (!indexData || !indexData.slots || indexData.slots.length === 0) {
+            return alert('Nenhum backup encontrado na nuvem.');
+        }
+        
+        const backups = indexData.slots.sort((a, b) => b.timestamp - a.timestamp);
+        const latest = backups[0];
+        const dataStr = new Date(latest.timestamp).toLocaleString('pt-BR');
+        
+        restaurarBackupNuvem(latest.id, dataStr);
+    } catch (e) {
+        alert('Erro ao buscar último backup: ' + e.message);
+    }
 }
