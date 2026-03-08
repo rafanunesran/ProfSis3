@@ -1259,13 +1259,17 @@ async function renderChamada() {
                         }
                     });
 
+                    // [CORREÇÃO] Verifica se já existe falta registrada para este dia para manter o estado visual correto
+                    const faltaNoDia = (data.presencas || []).some(p => p.id_estudante == e.id && p.data == dataSelecionada && p.status == 'falta');
+                    const isChecked = !faltaNoDia && !badges.includes('Atestado');
+
                     return `
                     <tr>
                         <td>
                             ${e.nome_completo}
                             ${badges}
                         </td>
-                        <td><input type="checkbox" class="presenca-check" data-id="${e.id}" ${badges.includes('Atestado') ? '' : 'checked'}></td>
+                        <td><input type="checkbox" class="presenca-check" data-id="${e.id}" ${isChecked ? 'checked' : ''}></td>
                     </tr>
                 `}).join('')}
             </tbody>
