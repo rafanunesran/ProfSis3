@@ -1206,6 +1206,9 @@ async function renderChamada() {
     // Preserva a data selecionada se já estiver na tela, senão usa hoje
     const dataSelecionada = document.getElementById('chamadaData') ? document.getElementById('chamadaData').value : getTodayString();
     
+    // [NOVO] Busca faltas compartilhadas (outros professores)
+    const sharedAbsences = await getFaltasCompartilhadas(dataSelecionada);
+
     // Validação de Dia de Aula
     const gradeEscola = await getGradeEscola();
     const minhasAulas = (data.horariosAulas || []).filter(a => a.id_turma == turmaAtual);
@@ -1221,7 +1224,10 @@ async function renderChamada() {
     const statusBg = faltasRegistradas.length > 0 ? '#f0fff4' : '#fffaf0';
 
     const html = `
-        <div style="margin-bottom:15px;"><button class="btn btn-info" onclick="renderRelatorioMensalFaltas()">📅 Relatório Mensal de Faltas</button></div>
+        <div style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn btn-info" onclick="renderRelatorioMensalFaltas()">📅 Relatório Mensal de Faltas</button>
+            <button class="btn btn-warning" id="btnSyncHistorico" onclick="sincronizarHistoricoFaltas()">🔄 Sincronizar Histórico com Gestão</button>
+        </div>
         <div class="form-row" style="display:flex; justify-content:space-between; align-items:center;">
             <label>Data: <input type="date" id="chamadaData" value="${dataSelecionada}" onchange="renderChamada()"></label>
             <div style="padding: 5px 10px; border-radius: 6px; background: ${statusBg}; color: ${statusCor}; border: 1px solid ${statusCor}; font-weight: bold; font-size: 13px;">
@@ -1259,22 +1265,33 @@ async function renderChamada() {
                         }
                     });
 
+                    // [NOVO] Lógica de Compartilhamento de Faltas
+                    const reporters = sharedAbsences[e.id] || [];
+                    // Filtra para não contar a si mesmo (embora arrayUnion evite duplicata, é bom para visualização)
+                    const otherReporters = reporters.filter(uid => uid !== currentUser.id);
+                    const countShared = otherReporters.length;
+                    
+                    // Se pelo menos 2 OUTROS professores marcaram falta, sugere falta (desmarca checkbox)
+                    const suggestAbsent = countShared >= 2;
+                    const sharedBadge = countShared > 0 ? `<span style="font-size:10px; color:${suggestAbsent ? '#e53e3e' : '#d69e2e'}; margin-left:5px; font-weight:bold;" title="Faltas registradas por outros professores hoje">⚠️ ${countShared} falta(s) hoje</span>` : '';
+
                     // [CORREÇÃO] Verifica se já existe falta registrada para este dia para manter o estado visual correto
                     const faltaNoDia = (data.presencas || []).some(p => p.id_estudante == e.id && p.data == dataSelecionada && p.status == 'falta');
-                    const isChecked = !faltaNoDia && !badges.includes('Atestado');
+                    const isChecked = !faltaNoDia && !badges.includes('Atestado') && !suggestAbsent;
 
                     return `
                     <tr>
                         <td>
                             ${e.nome_completo}
                             ${badges}
+                            ${sharedBadge}
                         </td>
                         <td><input type="checkbox" class="presenca-check" data-id="${e.id}" ${isChecked ? 'checked' : ''}></td>
                     </tr>
                 `}).join('')}
             </tbody>
         </table>
-        <button class="btn btn-success" id="btnSalvarChamada" onclick="salvarChamadaManual()" style="width:100%; margin-top:15px; padding: 12px; font-size: 16px;">💾 Salvar Chamada</button>
+        <button class="btn btn-success" id="btnSalvarChamada" onclick="salvarChamadaManual()" style="width:100%; margin-top:15px; padding: 12px; font-size: 16px;">💾 Confirmar e Salvar Chamada</button>
     `;
     document.getElementById('tabChamada').innerHTML = html;
     
@@ -1297,16 +1314,20 @@ function validarDataChamada(diasPermitidos) {
     aviso.style.display = bloqueado ? 'block' : 'none';
 }
 
-function salvarChamadaManual() {
+async function salvarChamadaManual() {
     const dataChamada = document.getElementById('chamadaData').value;
     const checks = document.querySelectorAll('.presenca-check');
     
     if (!data.presencas) data.presencas = [];
     
+    const mapSync = {}; // Mapa para sincronização na nuvem { id: isAbsent }
+
     checks.forEach(chk => {
         const estId = parseInt(chk.getAttribute('data-id'));
         const presente = chk.checked;
         
+        mapSync[estId] = !presente; // Se não presente, é falta (true)
+
         // Remove anterior se houver
         data.presencas = data.presencas.filter(p => !(p.id_estudante == estId && p.data == dataChamada));
         
@@ -1320,11 +1341,40 @@ function salvarChamadaManual() {
         }
     });
     
+    // Sincroniza com o banco compartilhado (se online)
+    await sincronizarFaltasCompartilhadas(dataChamada, mapSync);
+
     persistirDados();
     alert('Chamada salva!');
+    renderChamada(); // Atualiza para refletir contagens
 }
 
-function renderRelatorioMensalFaltas() {
+async function sincronizarHistoricoFaltas() {
+    if (!confirm('Isso enviará todo o histórico de faltas desta turma para a nuvem (Gestão/Compartilhado). Use isso para atualizar dados antigos ou criados offline.\n\nContinuar?')) return;
+    
+    const btn = document.getElementById('btnSyncHistorico');
+    if(btn) { btn.disabled = true; btn.textContent = '⏳ Sincronizando...'; }
+
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
+    const presencasTurma = (data.presencas || []).filter(p => estudantes.some(e => e.id == p.id_estudante));
+    
+    // Identifica todas as datas que possuem registro de falta nesta turma
+    const datasUnicas = [...new Set(presencasTurma.map(p => p.data))];
+    
+    for (const dataStr of datasUnicas) {
+        const mapSync = {};
+        estudantes.forEach(e => {
+            const isAbsent = presencasTurma.some(p => p.id_estudante == e.id && p.data == dataStr && p.status == 'falta');
+            mapSync[e.id] = isAbsent;
+        });
+        await sincronizarFaltasCompartilhadas(dataStr, mapSync);
+    }
+    
+    alert(`Sincronização concluída! ${datasUnicas.length} datas processadas.`);
+    if(btn) { btn.disabled = false; btn.textContent = '🔄 Sincronizar Histórico com Gestão'; }
+}
+
+async function renderRelatorioMensalFaltas() {
     const today = new Date();
     const mesInput = document.getElementById('relFaltaMes');
     const anoInput = document.getElementById('relFaltaAno');
@@ -1332,10 +1382,27 @@ function renderRelatorioMensalFaltas() {
     const mesAtual = mesInput ? parseInt(mesInput.value) : today.getMonth();
     const anoAtual = anoInput ? parseInt(anoInput.value) : today.getFullYear();
 
+    const container = document.getElementById('tabChamada');
+    container.innerHTML = '<div class="card"><p>Carregando relatório e dados compartilhados do mês...</p></div>';
+
+    const daysInMonth = new Date(anoAtual, mesAtual + 1, 0).getDate();
+    const allSharedAbsences = {};
+
+    // Apenas busca dados online se o Firebase estiver configurado
+    if (typeof db !== 'undefined' && db && currentUser && currentUser.schoolId) {
+        for (let d = 1; d <= daysInMonth; d++) {
+            const dataStr = `${anoAtual}-${String(mesAtual + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            const sharedData = await getFaltasCompartilhadas(dataStr);
+            if (Object.keys(sharedData).length > 0) {
+                allSharedAbsences[dataStr] = sharedData;
+            }
+        }
+    }
+
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
     const presencas = data.presencas || [];
 
-    const daysInMonth = new Date(anoAtual, mesAtual + 1, 0).getDate();
+    // const daysInMonth = new Date(anoAtual, mesAtual + 1, 0).getDate();
     const diasUteis = [];
     for (let d = 1; d <= daysInMonth; d++) {
         const date = new Date(anoAtual, mesAtual, d);
@@ -1371,8 +1438,30 @@ function renderRelatorioMensalFaltas() {
                             const cols = diasUteis.map(d => {
                                 const dataStr = `${anoAtual}-${String(mesAtual+1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
                                 const falta = presencas.find(p => p.id_estudante == e.id && p.data == dataStr && p.status == 'falta');
-                                if (falta) totalFaltas++;
-                                return `<td style="text-align:center; background: ${falta ? '#fed7d7' : ''}; color: ${falta ? '#c53030' : '#e2e8f0'}; border: 1px solid #e2e8f0; padding: 4px;">${falta ? 'F' : '•'}</td>`;
+                                
+                                const sharedAbsencesOnDay = allSharedAbsences[dataStr] || {};
+                                const reporters = sharedAbsencesOnDay[e.id] || [];
+                                const otherReporters = reporters.filter(uid => uid !== currentUser.id);
+                                const otherReportersCount = otherReporters.length;
+
+                                let cellContent = '<span style="color: #e2e8f0;">•</span>';
+                                let cellStyle = '';
+                                let cellTitle = '';
+
+                                if (falta) {
+                                    totalFaltas++;
+                                    cellContent = 'F';
+                                    cellStyle = 'background: #fed7d7; color: #c53030; font-weight: bold;';
+                                    if (otherReportersCount > 0) {
+                                        cellTitle = `${otherReportersCount} outra(s) falta(s) registrada(s) por outros professores.`;
+                                    }
+                                } else if (otherReportersCount > 0) {
+                                    cellContent = `${otherReportersCount}`;
+                                    cellStyle = 'background: #fffaf0; color: #d69e2e; font-weight: bold; cursor: help;';
+                                    cellTitle = `${otherReportersCount} falta(s) registrada(s) por outros professores neste dia.`;
+                                }
+
+                                return `<td style="text-align:center; border: 1px solid #e2e8f0; padding: 4px; ${cellStyle}" title="${cellTitle}">${cellContent}</td>`;
                             }).join('');
                             return `<tr><td style="position:sticky; left:0; background:#fff; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 8px;">${e.nome_completo}</td>${cols}<td style="text-align:center; font-weight:bold; color: ${totalFaltas > 0 ? '#e53e3e' : '#2d3748'}; border-bottom: 1px solid #e2e8f0;">${totalFaltas}</td></tr>`;
                         }).join('')}
@@ -1381,7 +1470,7 @@ function renderRelatorioMensalFaltas() {
             </div>
         </div>
     `;
-    document.getElementById('tabChamada').innerHTML = html;
+    container.innerHTML = html;
 }
 
 function verFaltasDoDia(dia, mes, ano) {
@@ -5593,5 +5682,50 @@ async function restaurarUltimoBackup() {
         restaurarBackupNuvem(latest.id, dataStr);
     } catch (e) {
         alert('Erro ao buscar último backup: ' + e.message);
+    }
+}
+
+// --- FUNÇÕES DE COMPARTILHAMENTO DE CHAMADA (SYNC) ---
+
+async function getFaltasCompartilhadas(dataStr) {
+    // Verifica se está online e configurado
+    if (typeof db === 'undefined' || !db || !currentUser || !currentUser.schoolId) return {};
+    
+    try {
+        const docId = `school_${currentUser.schoolId}_${dataStr}`;
+        const doc = await db.collection('shared_attendance').doc(docId).get();
+        if (doc.exists) {
+            return doc.data().absences || {};
+        }
+    } catch (e) {
+        console.error("Erro ao buscar faltas compartilhadas:", e);
+    }
+    return {};
+}
+
+async function sincronizarFaltasCompartilhadas(dataStr, mapEstadoFaltas) {
+    if (typeof db === 'undefined' || !db || !currentUser || !currentUser.schoolId) return;
+
+    const docId = `school_${currentUser.schoolId}_${dataStr}`;
+    const docRef = db.collection('shared_attendance').doc(docId);
+
+    try {
+        // Garante que o documento existe (sem sobrescrever se já existir)
+        await docRef.set({ created: true }, { merge: true });
+
+        // Prepara atualizações em lote (usando update com dot notation para chaves dinâmicas)
+        const updates = {};
+        
+        for (const [studentId, isAbsent] of Object.entries(mapEstadoFaltas)) {
+            const fieldPath = `absences.${studentId}`;
+            // Se falta: Adiciona ID do professor. Se presença: Remove ID do professor.
+            updates[fieldPath] = isAbsent 
+                ? firebase.firestore.FieldValue.arrayUnion(currentUser.id)
+                : firebase.firestore.FieldValue.arrayRemove(currentUser.id);
+        }
+        
+        await docRef.update(updates);
+    } catch (e) {
+        console.error("Erro ao sincronizar faltas compartilhadas:", e);
     }
 }
