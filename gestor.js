@@ -1,5 +1,7 @@
 // --- LÓGICA DO GESTOR ---
 
+let currentRegistrosTab = 'administrativos'; // 'administrativos' ou 'busca_ativa'
+
 function renderGestorPanel() {
     // Navegação de Gestor
     const nav = document.querySelector('nav');
@@ -21,14 +23,14 @@ function renderGestorPanel() {
         const reg = document.createElement('div');
         reg.id = 'registrosGestor';
         reg.className = 'screen';
-        container.appendChild(reg);
+        innerContainer.appendChild(reg);
     }
 
     if (!document.getElementById('ocorrenciasGestor')) {
         const oco = document.createElement('div');
         oco.id = 'ocorrenciasGestor';
         oco.className = 'screen';
-        container.appendChild(oco);
+        innerContainer.appendChild(oco);
     }
 
     if (!document.getElementById('tutoriasGestor')) {
@@ -42,7 +44,7 @@ function renderGestorPanel() {
         const hor = document.createElement('div');
         hor.id = 'horariosGestor';
         hor.className = 'screen';
-        container.appendChild(hor);
+        innerContainer.appendChild(hor);
     }
 
     renderDashboard();
@@ -54,7 +56,188 @@ function renderGestorPanel() {
     }
 }
 
-function renderRegistrosGestor(isReadOnly = false) {
+function renderRegistrosGestor() {
+    const html = `
+        <div class="card">
+            <div style="margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 10px;">
+                <button class="btn ${currentRegistrosTab === 'administrativos' ? 'btn-primary' : 'btn-secondary'}" 
+                        onclick="currentRegistrosTab='administrativos'; renderRegistrosGestor()">
+                    📂 Registros Administrativos
+                </button>
+                <button class="btn ${currentRegistrosTab === 'busca_ativa' ? 'btn-primary' : 'btn-secondary'}" 
+                        onclick="currentRegistrosTab='busca_ativa'; renderRegistrosGestor()">
+                    🚨 Alertas Busca Ativa
+                </button>
+            </div>
+
+            <div id="registrosGestorContent">
+                <!-- Content will be injected here -->
+            </div>
+        </div>
+    `;
+    document.getElementById('registrosGestor').innerHTML = html;
+
+    // Agora, chama o renderizador correto para a aba ativa
+    if (currentRegistrosTab === 'administrativos') {
+        renderAbaRegistrosAdministrativos();
+    } else if (currentRegistrosTab === 'busca_ativa') {
+        renderAbaAlertasBuscaAtiva();
+    }
+}
+
+async function renderAbaAlertasBuscaAtiva() {
+    const container = document.getElementById('registrosGestorContent');
+    container.innerHTML = '<div><p>Analisando dados de frequência de toda a escola... Isso pode levar um momento.</p></div>';
+
+    // --- 1. Coleta de Dados ---
+    const allStudents = data.estudantes || [];
+    const allTurmas = data.turmas || [];
+    const schoolId = currentUser.schoolId;
+
+    if (!schoolId) {
+        container.innerHTML = '<p class="empty-state" style="color:red;">Erro: ID da escola não encontrado para o gestor.</p>';
+        return;
+    }
+
+    // [MODIFICADO] Busca dados diretamente dos perfis dos professores para garantir histórico retroativo completo
+    const attendanceData = {}; // { dateStr: { studentId: [teacherId, ...] } }
+    
+    try {
+        const usersData = await getData('system', 'users_list');
+        const users = (usersData && usersData.list) ? usersData.list : [];
+        
+        // Filtra professores da escola
+        const teachers = users.filter(u => u.schoolId === schoolId && u.role !== 'super_admin');
+        
+        // Busca dados de cada professor em paralelo (mais rápido)
+        const promises = teachers.map(async (t) => {
+            // Usa UID se disponível (padrão novo), senão ID
+            const storageKey = (t.uid) ? 'app_data_' + t.uid : 'app_data_' + t.id;
+            const profData = await getData('app_data', storageKey);
+            return { teacherId: t.id, data: profData };
+        });
+
+        const results = await Promise.all(promises);
+
+        results.forEach(res => {
+            if (res.data && res.data.presencas) {
+                res.data.presencas.forEach(p => {
+                    if (p.status === 'falta') {
+                        if (!attendanceData[p.data]) attendanceData[p.data] = {};
+                        if (!attendanceData[p.data][p.id_estudante]) attendanceData[p.data][p.id_estudante] = [];
+                        
+                        // Adiciona ID do professor se ainda não estiver na lista
+                        if (!attendanceData[p.data][p.id_estudante].includes(res.teacherId)) {
+                            attendanceData[p.data][p.id_estudante].push(res.teacherId);
+                        }
+                    }
+                });
+            }
+        });
+    } catch (e) {
+        console.error("Erro ao agregar dados:", e);
+        container.innerHTML = `<p class="empty-state" style="color:red;">Erro ao processar dados: ${e.message}</p>`;
+        return;
+    }
+
+    // Filtra datas para o ano atual e ordena
+    const currentYear = new Date().getFullYear();
+    const sortedDates = Object.keys(attendanceData)
+        .filter(d => d.startsWith(String(currentYear)))
+        .sort();
+
+    // --- 2. Processamento dos Alertas ---
+    const alerts = { consecutive: [], weekly: [], percentage: [] };
+    const MIN_TEACHERS_FOR_ABSENCE = 1;
+
+    const wasAbsent = (studentId, dateStr) => {
+        const dayData = attendanceData[dateStr];
+        if (!dayData || !dayData[studentId]) return false;
+        return dayData[studentId].length >= MIN_TEACHERS_FOR_ABSENCE;
+    };
+
+    const todayForWeek = new Date();
+    const dayOfWeek = todayForWeek.getDay(); // 0=Sun, 1=Mon
+    const lastSunday = new Date(todayForWeek);
+    lastSunday.setDate(todayForWeek.getDate() - dayOfWeek);
+    lastSunday.setHours(0, 0, 0, 0);
+
+    const mondayOfPreviousWeek = new Date(lastSunday);
+    mondayOfPreviousWeek.setDate(lastSunday.getDate() - 7);
+
+    const sundayOfPreviousWeek = new Date(lastSunday);
+    sundayOfPreviousWeek.setDate(lastSunday.getDate() - 1);
+
+    for (const student of allStudents) {
+        if(student.status !== 'Ativo') continue;
+
+        // a) Faltas Consecutivas
+        let consecutiveCount = 0, maxConsecutive = 0;
+        for (const dateStr of sortedDates) {
+            if (wasAbsent(student.id, dateStr)) consecutiveCount++;
+            else { maxConsecutive = Math.max(maxConsecutive, consecutiveCount); consecutiveCount = 0; }
+        }
+        maxConsecutive = Math.max(maxConsecutive, consecutiveCount);
+        if (maxConsecutive >= 3) alerts.consecutive.push({ student, detail: `${maxConsecutive} dias consecutivos` });
+
+        // b) Faltas na Semana Passada
+        let lastWeekAbsences = 0;
+        for (const dateStr of sortedDates) {
+            const d = new Date(dateStr + 'T12:00:00');
+            if (d >= mondayOfPreviousWeek && d <= sundayOfPreviousWeek && wasAbsent(student.id, dateStr)) {
+                lastWeekAbsences++;
+            }
+        }
+        if (lastWeekAbsences >= 3) alerts.weekly.push({ student, detail: `${lastWeekAbsences} faltas na semana passada` });
+
+        // c) Baixa Frequência
+        if (sortedDates.length > 0) {
+            const totalAbsences = sortedDates.filter(dateStr => wasAbsent(student.id, dateStr)).length;
+            const presencePercentage = ((sortedDates.length - totalAbsences) / sortedDates.length) * 100;
+            if (presencePercentage < 70) alerts.percentage.push({ student, detail: `${presencePercentage.toFixed(0)}% de presença` });
+        }
+    }
+
+    // --- 3. Renderização ---
+    const renderAlertList = (alertList, title) => {
+        if (alertList.length === 0) return `<h4>${title}</h4><p class="empty-state">Nenhum alerta.</p>`;
+        const byTurma = {};
+        alertList.forEach(item => {
+            const turma = allTurmas.find(t => t.id == item.student.id_turma);
+            const turmaName = turma ? turma.nome : "Turma Desconhecida";
+            if (!byTurma[turmaName]) byTurma[turmaName] = [];
+            byTurma[turmaName].push(item);
+        });
+
+        let listHtml = `<h4>${title} (${alertList.length})</h4>`;
+        Object.keys(byTurma).sort().forEach(turmaName => {
+            listHtml += `<div class="card" style="margin-bottom:10px; background:white;">
+                <h5 style="margin:0 0 5px 0; padding-bottom:5px; border-bottom:1px solid #eee;">${turmaName}</h5>
+                <ul style="margin:0; padding-left:20px; font-size:13px;">`;
+            byTurma[turmaName].forEach(item => {
+                listHtml += `<li><strong>${item.student.nome_completo}</strong>: ${item.detail}</li>`;
+            });
+            listHtml += `</ul></div>`;
+        });
+        return listHtml;
+    };
+
+    container.innerHTML = `
+        <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 20px; align-items: start;">
+            <div style="background:#fff5f5; padding:15px; border-radius:8px; border:1px solid #feb2b2;">
+                ${renderAlertList(alerts.consecutive, '🚨 Faltas Consecutivas')}
+            </div>
+            <div style="background:#fffaf0; padding:15px; border-radius:8px; border:1px solid #fbd38d;">
+                ${renderAlertList(alerts.weekly, '📅 Faltas na Semana')}
+            </div>
+            <div style="background:#ebf8ff; padding:15px; border-radius:8px; border:1px solid #bee3f8;">
+                ${renderAlertList(alerts.percentage, '📉 Baixa Frequência')}
+            </div>
+        </div>
+    `;
+}
+
+function renderAbaRegistrosAdministrativos() {
     const registros = data.registrosAdministrativos || [];
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -103,8 +286,8 @@ function renderRegistrosGestor(isReadOnly = false) {
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <h2>📂 Registros Administrativos</h2>
                 <div>
-                    ${!isReadOnly ? `<button class="btn btn-secondary" onclick="compartilharRelatorio()">🔗 Compartilhar Online</button>` : ''}
-                    ${!isReadOnly ? `<button class="btn btn-primary" onclick="abrirNovoRegistroGestao()">+ Novo Registro</button>` : ''}
+                    <button class="btn btn-secondary" onclick="compartilharRelatorio()">🔗 Compartilhar Online</button>
+                    <button class="btn btn-primary" onclick="abrirNovoRegistroGestao()">+ Novo Registro</button>
                 </div>
             </div>
             <div style="margin-top: 20px;">
@@ -117,7 +300,7 @@ function renderRegistrosGestor(isReadOnly = false) {
                                     <th>Tipo</th>
                                     <th>Estudante</th>
                                     <th>Data/Detalhes</th>
-                                    ${!isReadOnly ? '<th>Ações</th>' : ''}
+                                    <th>Ações</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -126,11 +309,9 @@ function renderRegistrosGestor(isReadOnly = false) {
                                         <td style="color: ${r.cor}; font-weight: bold;">${r.tipo}</td>
                                         <td>${r.estudanteNome}</td>
                                         <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
-                                        ${!isReadOnly ? `
                                         <td>
                                             <button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})">🗑️</button>
                                         </td>
-                                        ` : ''}
                                     </tr>
                                 `).join('')}
                             </tbody>
@@ -140,7 +321,7 @@ function renderRegistrosGestor(isReadOnly = false) {
             </div>
         </div>
     `;
-    document.getElementById('registrosGestor').innerHTML = html;
+    document.getElementById('registrosGestorContent').innerHTML = html;
 }
 
 function abrirNovoRegistroGestao() {
