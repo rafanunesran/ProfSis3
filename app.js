@@ -1226,7 +1226,6 @@ async function renderChamada() {
     const html = `
         <div style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;">
             <button class="btn btn-info" onclick="renderRelatorioMensalFaltas()">📅 Relatório Mensal de Faltas</button>
-            <button class="btn btn-warning" id="btnSyncHistorico" onclick="sincronizarHistoricoFaltas()">🔄 Sincronizar Histórico com Gestão</button>
         </div>
         <div class="form-row" style="display:flex; justify-content:space-between; align-items:center;">
             <label>Data: <input type="date" id="chamadaData" value="${dataSelecionada}" onchange="renderChamada()"></label>
@@ -1344,34 +1343,9 @@ async function salvarChamadaManual() {
     // Sincroniza com o banco compartilhado (se online)
     await sincronizarFaltasCompartilhadas(dataChamada, mapSync);
 
-    persistirDados();
-    alert('Chamada salva!');
+    await persistirDados();
+    alert('Chamada salva e sincronizada com a gestão!');
     renderChamada(); // Atualiza para refletir contagens
-}
-
-async function sincronizarHistoricoFaltas() {
-    if (!confirm('Isso enviará todo o histórico de faltas desta turma para a nuvem (Gestão/Compartilhado). Use isso para atualizar dados antigos ou criados offline.\n\nContinuar?')) return;
-    
-    const btn = document.getElementById('btnSyncHistorico');
-    if(btn) { btn.disabled = true; btn.textContent = '⏳ Sincronizando...'; }
-
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
-    const presencasTurma = (data.presencas || []).filter(p => estudantes.some(e => e.id == p.id_estudante));
-    
-    // Identifica todas as datas que possuem registro de falta nesta turma
-    const datasUnicas = [...new Set(presencasTurma.map(p => p.data))];
-    
-    for (const dataStr of datasUnicas) {
-        const mapSync = {};
-        estudantes.forEach(e => {
-            const isAbsent = presencasTurma.some(p => p.id_estudante == e.id && p.data == dataStr && p.status == 'falta');
-            mapSync[e.id] = isAbsent;
-        });
-        await sincronizarFaltasCompartilhadas(dataStr, mapSync);
-    }
-    
-    alert(`Sincronização concluída! ${datasUnicas.length} datas processadas.`);
-    if(btn) { btn.disabled = false; btn.textContent = '🔄 Sincronizar Histórico com Gestão'; }
 }
 
 async function renderRelatorioMensalFaltas() {
@@ -1456,9 +1430,15 @@ async function renderRelatorioMensalFaltas() {
                                         cellTitle = `${otherReportersCount} outra(s) falta(s) registrada(s) por outros professores.`;
                                     }
                                 } else if (otherReportersCount > 0) {
-                                    cellContent = `${otherReportersCount}`;
-                                    cellStyle = 'background: #fffaf0; color: #d69e2e; font-weight: bold; cursor: help;';
-                                    cellTitle = `${otherReportersCount} falta(s) registrada(s) por outros professores neste dia.`;
+                                    if (otherReportersCount >= 2) {
+                                        cellContent = '!';
+                                        cellStyle = 'background: #fff5f5; color: #c53030; font-weight: bold; cursor: help;';
+                                        cellTitle = `${otherReportersCount} faltas confirmadas por outros professores.`;
+                                    } else { // Se for 1
+                                        cellContent = '1';
+                                        cellStyle = 'background: #fffaf0; color: #d69e2e; font-weight: bold; cursor: help;';
+                                        cellTitle = '1 falta registrada por outro professor neste dia.';
+                                    }
                                 }
 
                                 return `<td style="text-align:center; border: 1px solid #e2e8f0; padding: 4px; ${cellStyle}" title="${cellTitle}">${cellContent}</td>`;
@@ -5682,50 +5662,5 @@ async function restaurarUltimoBackup() {
         restaurarBackupNuvem(latest.id, dataStr);
     } catch (e) {
         alert('Erro ao buscar último backup: ' + e.message);
-    }
-}
-
-// --- FUNÇÕES DE COMPARTILHAMENTO DE CHAMADA (SYNC) ---
-
-async function getFaltasCompartilhadas(dataStr) {
-    // Verifica se está online e configurado
-    if (typeof db === 'undefined' || !db || !currentUser || !currentUser.schoolId) return {};
-    
-    try {
-        const docId = `school_${currentUser.schoolId}_${dataStr}`;
-        const doc = await db.collection('shared_attendance').doc(docId).get();
-        if (doc.exists) {
-            return doc.data().absences || {};
-        }
-    } catch (e) {
-        console.error("Erro ao buscar faltas compartilhadas:", e);
-    }
-    return {};
-}
-
-async function sincronizarFaltasCompartilhadas(dataStr, mapEstadoFaltas) {
-    if (typeof db === 'undefined' || !db || !currentUser || !currentUser.schoolId) return;
-
-    const docId = `school_${currentUser.schoolId}_${dataStr}`;
-    const docRef = db.collection('shared_attendance').doc(docId);
-
-    try {
-        // Garante que o documento existe (sem sobrescrever se já existir)
-        await docRef.set({ created: true }, { merge: true });
-
-        // Prepara atualizações em lote (usando update com dot notation para chaves dinâmicas)
-        const updates = {};
-        
-        for (const [studentId, isAbsent] of Object.entries(mapEstadoFaltas)) {
-            const fieldPath = `absences.${studentId}`;
-            // Se falta: Adiciona ID do professor. Se presença: Remove ID do professor.
-            updates[fieldPath] = isAbsent 
-                ? firebase.firestore.FieldValue.arrayUnion(currentUser.id)
-                : firebase.firestore.FieldValue.arrayRemove(currentUser.id);
-        }
-        
-        await docRef.update(updates);
-    } catch (e) {
-        console.error("Erro ao sincronizar faltas compartilhadas:", e);
     }
 }
