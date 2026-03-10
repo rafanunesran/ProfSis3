@@ -1359,6 +1359,15 @@ async function renderRelatorioMensalFaltas() {
     const container = document.getElementById('tabChamada');
     container.innerHTML = '<div class="card"><p>Carregando relatório e dados compartilhados do mês...</p></div>';
 
+    // [NOVO] Busca a lista de usuários para mapear IDs de professores para nomes.
+    let allUsers = [];
+    if (typeof db !== 'undefined' && db) {
+        const usersData = await getData('system', 'users_list');
+        if (usersData && usersData.list) {
+            allUsers = usersData.list;
+        }
+    }
+
     const daysInMonth = new Date(anoAtual, mesAtual + 1, 0).getDate();
     const allSharedAbsences = {};
 
@@ -1411,33 +1420,40 @@ async function renderRelatorioMensalFaltas() {
                             let totalFaltas = 0;
                             const cols = diasUteis.map(d => {
                                 const dataStr = `${anoAtual}-${String(mesAtual+1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-                                const falta = presencas.find(p => p.id_estudante == e.id && p.data == dataStr && p.status == 'falta');
                                 
                                 const sharedAbsencesOnDay = allSharedAbsences[dataStr] || {};
                                 const reporters = sharedAbsencesOnDay[e.id] || [];
-                                const otherReporters = reporters.filter(uid => uid !== currentUser.id);
-                                const otherReportersCount = otherReporters.length;
+                                const reporterCount = reporters.length;
+
+                                // [MODIFICADO] Mapeia os IDs dos professores que registraram falta para seus nomes.
+                                const reporterNames = reporters.map(reporterId => {
+                                    // Compara IDs de forma flexível (string vs number)
+                                    const user = allUsers.find(u => u.id == reporterId);
+                                    return user ? user.nome.split(' ')[0] : 'Desconhecido'; // Pega só o primeiro nome
+                                }).join(', ');
 
                                 let cellContent = '<span style="color: #e2e8f0;">•</span>';
                                 let cellStyle = '';
                                 let cellTitle = '';
+                                
+                                // [CORREÇÃO] Lógica unificada para exibir faltas, baseada na fonte de dados da nuvem (reporters).
+                                const iAmAReporter = reporters.includes(currentUser.id) || reporters.includes(String(currentUser.id));
 
-                                if (falta) {
+                                if (iAmAReporter) {
+                                    // Se eu registrei, mostra 'F' e conta no meu total.
                                     totalFaltas++;
                                     cellContent = 'F';
                                     cellStyle = 'background: #fed7d7; color: #c53030; font-weight: bold;';
-                                    if (otherReportersCount > 0) {
-                                        cellTitle = `${otherReportersCount} outra(s) falta(s) registrada(s) por outros professores.`;
-                                    }
-                                } else if (otherReportersCount > 0) {
-                                    if (otherReportersCount >= 2) {
-                                        cellContent = '!';
-                                        cellStyle = 'background: #fff5f5; color: #c53030; font-weight: bold; cursor: help;';
-                                        cellTitle = `${otherReportersCount} faltas confirmadas por outros professores.`;
-                                    } else { // Se for 1
-                                        cellContent = '1';
-                                        cellStyle = 'background: #fffaf0; color: #d69e2e; font-weight: bold; cursor: help;';
-                                        cellTitle = '1 falta registrada por outro professor neste dia.';
+                                    cellTitle = `Você registrou. Total de ${reporterCount} registro(s) por: ${reporterNames}`;
+                                } else if (reporterCount > 0) {
+                                    // Se não registrei, mas outros sim, mostra '!' ou '1'.
+                                    cellContent = reporterCount >= 2 ? '!' : '1';
+                                    cellStyle = `background: ${reporterCount >= 2 ? '#fff5f5' : '#fffaf0'}; color: ${reporterCount >= 2 ? '#c53030' : '#d69e2e'}; font-weight: bold; cursor: help;`;
+                                    cellTitle = `${reporterCount} falta(s) registrada(s) por: ${reporterNames}`;
+                                    
+                                    // Para o gestor, o total de faltas do aluno considera qualquer registro.
+                                    if (currentViewMode === 'gestor') {
+                                        totalFaltas++;
                                     }
                                 }
 
@@ -5446,21 +5462,25 @@ function processarRestauracaoBackup(event) {
 
 // --- PERSISTÊNCIA AUTOMÁTICA (LOCAL + FIREBASE) ---
 async function persistirDados() {
-    // [SEGURANÇA] Não salva se os dados estiverem nulos ou vazios
-    if (!data) return;
-
-    // 1. Salva Localmente (Backup imediato e funcionamento offline)
-    localStorage.setItem('app_data', JSON.stringify(data));
-
-    // 2. Sincroniza com Firebase (Apenas se o carregamento inicial foi bem-sucedido)
-    if (window.dadosCarregados && currentUser && currentUser.id && typeof saveData === 'function') {
-        try {
-            await saveData('app_data', 'app_data_' + currentUser.id, data);
-        } catch (e) {
-            console.warn('Erro ao sincronizar dados com Firebase (Modo Offline ativado):', e);
+    // [SEGURANÇA] Não salva se os dados estiverem nulos, vazios ou não carregados.
+    if (!data || !window.dadosCarregados) {
+        if (!window.dadosCarregados) {
+            console.warn('⚠️ Salvamento na nuvem bloqueado: Dados iniciais não foram carregados corretamente. Seus dados estão salvos apenas neste dispositivo.');
         }
-    } else if (!window.dadosCarregados) {
-        console.warn('⚠️ Salvamento na nuvem bloqueado: Dados iniciais não foram carregados corretamente. Seus dados estão salvos apenas neste dispositivo.');
+        return;
+    }
+    if (!currentUser) return;
+
+    // [CORREÇÃO DEFINITIVA] Usa a chave correta baseada no modo (Professor vs Gestor) para evitar sobreescrever dados.
+    const key = getStorageKey(currentUser);
+
+    // A função saveData em core.js já lida com o salvamento no Firebase (se online) ou no LocalStorage (se offline) usando a chave correta.
+    if (typeof saveData === 'function') {
+        try {
+            await saveData('app_data', key, data);
+        } catch (e) {
+            console.warn(`Erro ao sincronizar dados com Firebase no modo ${currentViewMode}:`, e);
+        }
     }
 }
 
@@ -5524,11 +5544,12 @@ async function abrirGerenciadorBackupsNuvem() {
 
 async function listarBackupsNuvem() {
     const container = document.getElementById('listaBackupsNuvem');
-    if (!currentUser || !currentUser.id) return;
+    if (!currentUser) return;
 
     try {
         // Busca o índice de backups
-        const indexData = await getData('app_data', `backup_index_${currentUser.id}`);
+        const userIdentifier = currentUser.uid || currentUser.id;
+        const indexData = await getData('app_data', `backup_index_${userIdentifier}`);
         const backups = (indexData && indexData.slots) ? indexData.slots : [];
 
         // Ordena do mais recente para o mais antigo
@@ -5556,10 +5577,11 @@ async function listarBackupsNuvem() {
 }
 
 async function verificarBackupAutomatico() {
-    if (!currentUser || !currentUser.id) return;
+    if (!currentUser) return;
     
     try {
-        const indexKey = `backup_index_${currentUser.id}`;
+        const userIdentifier = currentUser.uid || currentUser.id;
+        const indexKey = `backup_index_${userIdentifier}`;
         let indexData = await getData('app_data', indexKey);
         
         if (!indexData) indexData = { slots: [], nextSlot: 1 };
@@ -5583,7 +5605,8 @@ async function criarBackupNuvem(silent = false) {
     if (!silent && !confirm('Criar um novo backup na nuvem? Se houver 5 backups, o mais antigo será substituído.')) return;
     
     try {
-        const indexKey = `backup_index_${currentUser.id}`;
+        const userIdentifier = currentUser.uid || currentUser.id;
+        const indexKey = `backup_index_${userIdentifier}`;
         let indexData = await getData('app_data', indexKey);
         
         if (!indexData) indexData = { slots: [], nextSlot: 1 };
@@ -5593,15 +5616,12 @@ async function criarBackupNuvem(silent = false) {
         if (slotId > 5) slotId = 1;
 
         // Salva os dados no slot
-        const backupKey = `backup_${currentUser.id}_slot_${slotId}`;
+        const backupKey = `backup_${userIdentifier}_slot_${slotId}`;
         await saveData('app_data', backupKey, data);
 
         // Atualiza o índice
-        // Remove entrada antiga desse slot se houver
         indexData.slots = indexData.slots.filter(s => s.id !== slotId);
         
-        // Adiciona nova entrada
-        indexData.slots.push({ id: slotId, timestamp: Date.now(), label: `Backup ${data.turmas ? data.turmas.length : 0} turmas` });
         const label = silent ? 'Backup Automático' : `Backup Manual (${data.turmas ? data.turmas.length : 0} turmas)`;
         indexData.slots.push({ id: slotId, timestamp: Date.now(), label: label });
         
@@ -5618,7 +5638,6 @@ async function criarBackupNuvem(silent = false) {
         }
 
     } catch (e) {
-        alert('Erro ao criar backup: ' + e.message);
         if (!silent) alert('Erro ao criar backup: ' + e.message);
         else console.error('Erro no backup automático:', e);
     }
@@ -5628,7 +5647,8 @@ async function restaurarBackupNuvem(slotId, dataBackup) {
     if (!confirm(`ATENÇÃO: Isso substituirá TODOS os dados atuais pelos dados do backup de ${dataBackup}.\n\nDeseja continuar?`)) return;
 
     try {
-        const backupKey = `backup_${currentUser.id}_slot_${slotId}`;
+        const userIdentifier = currentUser.uid || currentUser.id;
+        const backupKey = `backup_${userIdentifier}_slot_${slotId}`;
         const backupData = await getData('app_data', backupKey);
 
         if (backupData) {
@@ -5645,10 +5665,11 @@ async function restaurarBackupNuvem(slotId, dataBackup) {
 }
 
 async function restaurarUltimoBackup() {
-    if (!currentUser || !currentUser.id) return;
+    if (!currentUser) return;
     
     try {
-        const indexKey = `backup_index_${currentUser.id}`;
+        const userIdentifier = currentUser.uid || currentUser.id;
+        const indexKey = `backup_index_${userIdentifier}`;
         const indexData = await getData('app_data', indexKey);
         
         if (!indexData || !indexData.slots || indexData.slots.length === 0) {
