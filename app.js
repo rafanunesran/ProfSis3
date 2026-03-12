@@ -2471,7 +2471,10 @@ async function agendarTodosTutorados() {
 
     while (cursor <= dataFim) {
         const dataStr = cursor.toISOString().split('T')[0];
-        const diaSemana = cursor.getDay();
+        // [CORREÇÃO] Usa UTC para obter o dia da semana, evitando bugs de fuso horário.
+        // new Date(dataStr) pode interpretar a data como local. Adicionar T12:00:00Z força a interpretação como UTC.
+        const dateForDay = new Date(dataStr + 'T12:00:00Z');
+        const diaSemana = dateForDay.getUTCDay(); // 0=Dom, 1=Seg...
         const excecaoDoDia = excecoesGrade.find(e => e.data === dataStr);
         
         let blocosDeTutoriaParaHoje = [];
