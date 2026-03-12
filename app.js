@@ -71,6 +71,7 @@ async function iniciarApp() {
         // Injeta botão de Perfil e aplica tema
         injectProfileButton();
         aplicarTemaSalvo();
+        inicializarModalDocx(); // Garante que o modal do visualizador de documentos existe
 
         // Renderiza conforme o modo de visualização atual
         if (currentViewMode === 'gestor') {
@@ -2668,6 +2669,7 @@ function abrirFichaTutorado(id) {
                     ${reportUrl ? `
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <a href="${reportUrl}" target="_blank" style="font-weight:bold; color:#3182ce;">Ver Relatório Atual</a>
+                            <button class="btn btn-sm btn-info" onclick="visualizarDocumentoWord('${reportUrl}', ${JSON.stringify('Relatório de ' + t.nome_estudante)})">👁️ Visualizar Relatório</button>
                             <button class="btn btn-sm btn-danger" onclick="deleteAeeReport(${t.id})">🗑️ Excluir</button>
                         </div>
                     ` : `
@@ -3906,7 +3908,8 @@ function renderEstudanteGeral() {
 
     // Informações AEE (Diagnóstico e Relatório)
     // Procura em todos os registros do aluno se há alguma info de AEE preenchida
-    const registroAee = todosRegistrosAluno.find(e => e.aee_diagnostico || e.aee_relatorio);
+    const registroAee = todosRegistrosAluno.find(e => e.aee_diagnostico || e.aee_relatorio) || 
+                        ((estudanteAtualDetalhe.aee_diagnostico || estudanteAtualDetalhe.aee_relatorio) ? estudanteAtualDetalhe : null);
     const htmlAee = registroAee ? `
         <div class="card" style="margin-bottom:20px; border-left:4px solid #38a169; background:#f0fff4;">
             <h4 style="margin-top:0; color:#2f855a;">🧩 AEE / Projeto</h4>
@@ -4982,75 +4985,227 @@ async function renderAeeVisaoGeral() {
         mainContainer.appendChild(div);
     }
     const container = document.getElementById('aeeVisaoGeral');
-    container.innerHTML = '<div class="card"><p>Carregando estudantes...</p></div>';
+    container.innerHTML = '<div class="card"><p>Carregando dados do perfil AEE...</p></div>';
 
-    let allStudents = [];
-    let allTurmas = [];
-
-    // Gestor já possui os dados mestre. Outros perfis precisam buscar da fonte do gestor.
-    if (currentUser.role === 'gestor') {
-        allStudents = data.estudantes || [];
-        allTurmas = data.turmas || [];
-    } else if (currentUser.schoolId) {
-         const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
-         const gestorData = await getData('app_data', key);
-         if (gestorData) {
-             allStudents = gestorData.estudantes || [];
-             allTurmas = gestorData.turmas || [];
-         }
+    if (!currentUser.schoolId) {
+        container.innerHTML = '<div class="card"><p class="empty-state" style="color:red;">Erro: Usuário não vinculado a uma escola.</p></div>';
+        return;
     }
 
-    const diagnosticoAlunos = allStudents.filter(e => e.aee_categoria_diagnostico).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
-    const projetoAlunos = allStudents.filter(e => e.aee_categoria_projeto).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
+    try {
+        // 1. Fetch AEE data
+        const schoolId = currentUser.schoolId;
+        const aeeKey = `app_data_school_${schoolId}_aee`;
+        const aeeData = await getData('app_data', aeeKey);
 
-    // Função auxiliar para renderizar as listas e evitar repetição de código
-    const renderStudentList = (alunos, categoria) => {
-        if (alunos.length === 0) {
-            return `<div class="card" style="background:#f7fafc;"><p class="empty-state">Nenhum estudante em ${categoria}.</p></div>`;
+        const tutorados = (aeeData && aeeData.tutorados) ? aeeData.tutorados : [];
+
+        // Group by 'turma'
+        const porTurma = {};
+        tutorados.forEach(t => {
+            if (!porTurma[t.turma]) porTurma[t.turma] = [];
+            porTurma[t.turma].push(t);
+        });
+        const turmasOrdenadas = Object.keys(porTurma).sort();
+
+        let htmlTutoradosList = '';
+        if (turmasOrdenadas.length > 0) {
+            turmasOrdenadas.forEach(turma => {
+                porTurma[turma].sort((a, b) => a.nome_estudante.localeCompare(b.nome_estudante));
+                htmlTutoradosList += `<h4 style="margin-top:15px; margin-bottom:5px; color:#2c5282; border-bottom:1px solid #e2e8f0;">${turma}</h4>`;
+                htmlTutoradosList += `<table style="margin-top:0;"><tbody>`;
+                htmlTutoradosList += porTurma[turma].map(t => `
+                        <tr>
+                            <td><a href="#" onclick="abrirFichaAeeReadOnly(${t.id})">${t.nome_estudante}</a></td>
+                        </tr>
+                `).join('');
+                htmlTutoradosList += `</tbody></table>`;
+            });
+        } else {
+            htmlTutoradosList = '<p class="empty-state">Nenhum estudante no perfil AEE.</p>';
         }
-        return alunos.map(aluno => {
-            const turma = allTurmas.find(t => t.id == aluno.id_turma);
-            const turmaNome = turma ? turma.nome : 'Turma ?';
-            const cardColor = categoria === 'Diagnóstico' ? '#3182ce' : '#38a169';
-            const titleColor = categoria === 'Diagnóstico' ? '#2c5282' : '#2f855a';
+        
+        // Store data for the modal/details view
+        container.dataset.aeeTutorados = JSON.stringify(tutorados);
 
-            return `
-                <div class="card" style="margin-bottom: 15px; border-left: 4px solid ${cardColor};">
-                    <h4 style="margin:0; color:${titleColor};">
-                        ${aluno.nome_completo} 
-                        <span style="font-weight:normal; font-size:12px; color:#718096;">(${turmaNome})</span>
-                    </h4>
-                    ${aluno.aee_diagnostico ? `<p style="margin:5px 0; font-size:13px;"><strong>Diagnóstico/Voar:</strong> ${aluno.aee_diagnostico}</p>` : ''}
-                    
-                    ${aluno.aee_relatorio ? `
-                        <div style="margin-top:10px; background:#f7fafc; padding:10px; border-radius:6px; border:1px solid #e2e8f0;">
-                            <strong style="font-size:12px; color:#4a5568;">Relatório:</strong>
-                            <p style="white-space: pre-wrap; margin:5px 0 0 0; font-size:13px; color:#2d3748;">${aluno.aee_relatorio}</p>
-                        </div>
-                    ` : '<p style="font-size:12px; color:#a0aec0; margin-top:10px;"><em>Sem relatório preenchido.</em></p>'}
-                </div>
-            `;
-        }).join('');
-    };
-
-    const html = `
-        <div class="card">
-            <h2>🌟 Painel AEE / Projetos</h2>
-            <p style="color:#666; font-size:14px;">Visualização geral dos estudantes em acompanhamento especializado na escola.</p>
-        </div>
-
-        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 20px; align-items: start;">
-            <div>
-                <h3 style="color:#2c5282;">Diagnóstico</h3>
-                ${renderStudentList(diagnosticoAlunos, 'Diagnóstico')}
+        const html = `
+            <div class="card">
+                <h2>🌟 Painel AEE (Visualização)</h2>
+                <p style="color:#666; font-size:14px;">Visualização da lista de estudantes acompanhados pelo AEE.</p>
             </div>
-            <div>
-                <h3 style="color:#276749;">Projeto</h3>
-                ${renderStudentList(projetoAlunos, 'Projeto')}
+            <div class="card" style="margin-top:20px;">
+                ${htmlTutoradosList}
+            </div>
+        `;
+        container.innerHTML = html;
+
+    } catch (error) {
+        console.error("Erro ao renderizar Painel AEE:", error);
+        container.innerHTML = `<div class="card"><p class="empty-state" style="color:red;">Erro ao carregar dados: ${error.message}</p></div>`;
+    }
+}
+
+async function abrirFichaAeeReadOnly(tutoradoId) {
+    const container = document.getElementById('aeeVisaoGeral');
+    const tutorados = JSON.parse(container.dataset.aeeTutorados || '[]');
+    const t = tutorados.find(x => x.id == tutoradoId);
+
+    if (!t) {
+        alert('Erro: Não foi possível encontrar os dados do estudante.');
+        return;
+    }
+
+    const titleEl = document.getElementById('tutoradoFichaNome');
+    titleEl.textContent = t.nome_estudante;
+    
+    let actionContainer = document.getElementById('tutoradoAcoesContainer');
+    if (!actionContainer) {
+        actionContainer = document.createElement('div');
+        actionContainer.id = 'tutoradoAcoesContainer';
+        actionContainer.style.marginTop = '10px';
+        titleEl.parentNode.insertBefore(actionContainer, titleEl.nextSibling);
+    }
+    actionContainer.innerHTML = ''; // No actions
+
+    let infoContainer = document.getElementById('tutoradoInfoContainer');
+    if (!infoContainer) {
+        infoContainer = document.createElement('div');
+        infoContainer.id = 'tutoradoInfoContainer';
+        actionContainer.parentNode.insertBefore(infoContainer, actionContainer.nextSibling);
+    }
+    infoContainer.style.display = 'none';
+
+    const agendamentosDiv = document.getElementById('tutoradoFichaAgendamentos');
+    const historicoDiv = document.getElementById('tutoradoFichaHistorico');
+    
+    if (agendamentosDiv) {
+        agendamentosDiv.style.display = 'none';
+        if (agendamentosDiv.previousElementSibling && /^H[1-6]$/.test(agendamentosDiv.previousElementSibling.tagName)) {
+            agendamentosDiv.previousElementSibling.style.display = 'none';
+        };
+    }
+    if (historicoDiv) {
+        historicoDiv.style.display = 'none';
+        if (historicoDiv.previousElementSibling && /^H[1-6]$/.test(historicoDiv.previousElementSibling.tagName)) {
+            historicoDiv.previousElementSibling.style.display = 'none';
+        }
+    }
+
+    let aeeContainer = document.getElementById('aeeEstudanteContainer');
+    if (!aeeContainer) {
+        aeeContainer = document.createElement('div');
+        aeeContainer.id = 'aeeEstudanteContainer';
+        actionContainer.parentNode.insertBefore(aeeContainer, actionContainer.nextSibling);
+    }
+    aeeContainer.style.display = 'block';
+    
+    const diagnostico = t.aee_diagnostico || '';
+    const relatorio = t.aee_relatorio || '';
+    const reportUrl = t.aee_report_url || '';
+
+    const fileHtml = `
+        <div style="margin-top:20px;">
+            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Arquivo de Relatório</label>
+            <div style="background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                ${reportUrl ? `
+                    <a href="${reportUrl}" target="_blank" style="font-weight:bold; color:#3182ce;">Ver Relatório Atual</a>
+                    <button class="btn btn-sm btn-info" onclick="visualizarDocumentoWord('${reportUrl}', ${JSON.stringify('Relatório de ' + t.nome_estudante)})">👁️ Visualizar Relatório</button>
+                ` : `
+                    <p style="margin:0; font-size:13px; color:#718096;">Nenhum arquivo enviado.</p>
+                `}
             </div>
         </div>
     `;
-    container.innerHTML = html;
+
+    const isDiagnostico = t.aee_categoria_diagnostico || false;
+    const isProjeto = t.aee_categoria_projeto || false;
+
+    aeeContainer.innerHTML = `
+        <div style="margin-top:20px; margin-bottom: 20px; background: #f0fff4; padding: 10px; border: 1px solid #c6f6d5; border-radius: 5px;">
+            <label style="font-weight:bold; display:block; margin-bottom:5px; font-size:14px; color:#276749;">Categoria:</label>
+            <div style="display:flex; gap:20px;">
+                <label style="cursor:default; display:flex; align-items:center; gap:5px;">
+                    <input type="checkbox" disabled ${isDiagnostico ? 'checked' : ''}> 
+                    <span>Diagnóstico</span>
+                </label>
+                <label style="cursor:default; display:flex; align-items:center; gap:5px;">
+                    <input type="checkbox" disabled ${isProjeto ? 'checked' : ''}> 
+                    <span>Projeto</span>
+                </label>
+            </div>
+        </div>
+        <div style="margin-top:20px;">
+            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Diagnóstico / Voar</label>
+            <textarea readonly rows="3" style="width:100%; border:1px solid #cbd5e0; padding:10px; border-radius:5px; font-family:inherit; background-color:#f7fafc;">${diagnostico}</textarea>
+        </div>
+        <div style="margin-top:20px;">
+            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Relatório</label>
+            <textarea readonly rows="15" style="width:100%; border:1px solid #cbd5e0; padding:10px; border-radius:5px; font-family:inherit; background-color:#f7fafc;">${relatorio}</textarea>
+        </div>
+        ${fileHtml}
+    `;
+
+    showScreen('tutoradoDetalhe');
+}
+
+// --- VISUALIZADOR DE DOCUMENTOS WORD (.DOCX) ---
+
+function inicializarModalDocx() {
+    if (document.getElementById('modalDocxViewer')) return;
+    const div = document.createElement('div');
+    div.id = 'modalDocxViewer';
+    div.className = 'modal';
+    div.innerHTML = `
+        <div class="modal-content" style="max-width: 800px; height: 90vh; display: flex; flex-direction: column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:10px; margin-bottom:10px; flex-shrink: 0;">
+                <h3 id="docxViewerTitle" style="margin:0;">Visualizador de Documento</h3>
+                <button class="btn btn-secondary" onclick="closeModal('modalDocxViewer')">Fechar</button>
+            </div>
+            <div id="docxViewerContent" style="overflow-y: auto; flex-grow: 1; background: #fdfdfd; padding: 20px; border: 1px solid #eee; border-radius: 5px;">
+                <p>Carregando documento...</p>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(div);
+}
+
+async function visualizarDocumentoWord(url, nomeDocumento = 'Relatório') {
+    // Garante que o mammoth.js está carregado
+    if (typeof mammoth === 'undefined') {
+        alert('A biblioteca de visualização de documentos (mammoth.js) não está carregada. Adicione-a ao seu projeto.');
+        return;
+    }
+
+    const titleEl = document.getElementById('docxViewerTitle');
+    const contentEl = document.getElementById('docxViewerContent');
+
+    titleEl.textContent = nomeDocumento;
+    contentEl.innerHTML = '<p>Carregando e convertendo o documento... Isso pode levar um momento.</p>';
+    showModal('modalDocxViewer');
+
+    try {
+        // Fetching the docx file.
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Falha ao buscar o arquivo: ${response.statusText}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+
+        // Convert to HTML
+        const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
+        contentEl.innerHTML = result.value; // The generated HTML
+
+    } catch (error) {
+        console.error('Erro ao visualizar documento Word:', error);
+        contentEl.innerHTML = `
+            <div style="color: red; text-align: center; padding: 20px;">
+                <h3>Erro ao carregar o documento</h3>
+                <p>Não foi possível converter o arquivo. Verifique se é um arquivo .docx válido e se a configuração de CORS do armazenamento permite o acesso.</p>
+                <p style="font-size: 12px; color: #666;">Detalhe do erro: ${error.message}</p>
+                <a href="${url}" target="_blank" class="btn btn-primary" style="margin-top:10px;">Tentar abrir em nova aba</a>
+            </div>
+        `;
+    }
 }
 
 // --- AVISOS MURAL (GESTOR) ---
