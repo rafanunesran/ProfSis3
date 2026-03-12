@@ -2440,22 +2440,18 @@ async function agendarTodosTutorados() {
     while (cursor <= dataFim) {
         const diaSemana = cursor.getDay(); // 0=Dom, 1=Seg...
         
-        // Se for dia útil (1-5)
-        if (diaSemana >= 1 && diaSemana <= 5) {
-            const blocosDoDia = blocosTutoria.filter(b => b.diaSemana == diaSemana);
+        // Encontra os blocos de tutoria definidos para este dia da semana
+        const blocosDoDia = blocosTutoria.filter(b => b.diaSemana == diaSemana);
+
+        // Se houver algum bloco de tutoria para este dia, gera os agendamentos
+        if (blocosDoDia.length > 0) {
             const dataStr = cursor.toISOString().split('T')[0];
 
             blocosDoDia.forEach(b => {
                 // Verifica se já existe o slot
                 const existe = data.agendamentos.find(a => a.data === dataStr && a.inicio === b.inicio);
                 if (!existe) {
-                    data.agendamentos.push({
-                        id: Date.now() + Math.random(),
-                        data: dataStr,
-                        inicio: b.inicio,
-                        fim: b.fim,
-                        tutoradoId: null
-                    });
+                    data.agendamentos.push({ id: Date.now() + Math.random(), data: dataStr, inicio: b.inicio, fim: b.fim, tutoradoId: null });
                 }
             });
         }
