@@ -2428,12 +2428,8 @@ async function agendarTodosTutorados() {
     if (!data.agendamentos) data.agendamentos = [];
     const today = getTodayString();
 
-    // 3. Limpar atribuições futuras (mantendo os slots, mas esvaziando o aluno para reorganizar)
-    data.agendamentos.forEach(a => {
-        if (a.data >= today) {
-            a.tutoradoId = null;
-        }
-    });
+    // 3. Limpar agendamentos futuros para recriar do zero
+    data.agendamentos = data.agendamentos.filter(a => a.data < today);
 
     // 4. Gerar Slots até o fim do semestre
     let cursor = new Date();
