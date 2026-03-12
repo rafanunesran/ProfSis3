@@ -132,7 +132,7 @@ async function renderListaUsuariosAdmin() {
     const data = await getData('system', 'users_list');
     const users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
     const usersEscola = users.filter(u => u.schoolId == escolaAtualAdmin);
-
+    
     const html = usersEscola.length > 0 ? `
         <table>
             <thead>
@@ -144,18 +144,26 @@ async function renderListaUsuariosAdmin() {
                 </tr>
             </thead>
             <tbody>
-                ${usersEscola.map(u => `
+                ${usersEscola.map(u => {
+                    const roleMap = {
+                        'gestor': { label: 'Gestor', class: 'badge-warning' },
+                        'aee': { label: 'AEE', class: 'badge-success' },
+                        'projeto': { label: 'Projeto', class: 'badge-info' },
+                        'professor': { label: 'Professor', class: 'badge-info' }
+                    };
+                    const roleInfo = roleMap[u.role] || roleMap['professor'];
+                    return `
                     <tr>
                         <td>${u.nome}</td>
                         <td>${u.email}</td>
-                        <td><span class="badge ${u.role === 'gestor' ? 'badge-warning' : (u.role === 'aee_projeto' ? 'badge-success' : 'badge-info')}">${u.role === 'aee_projeto' ? 'AEE/Projeto' : (u.role || 'Professor')}</span></td>
+                        <td><span class="badge ${roleInfo.class}">${roleInfo.label}</span></td>
                         <td>
                             <button class="btn btn-warning btn-sm" onclick="resetarSenhaAuth('${u.email}')" title="Enviar email de redefinição">📧 Senha</button>
                             <button class="btn btn-secondary btn-sm" onclick="editarUsuarioAdmin('${u.id}')" title="Alterar Perfil/Nome">✏️ Perfil</button>
                             <button class="btn btn-danger btn-sm" onclick="excluirUsuarioAdmin(${u.id})">🗑️</button>
                         </td>
                     </tr>
-                `).join('')}
+                `}).join('')}
             </tbody>
         </table>
     ` : '<p class="empty-state">Nenhum usuário vinculado a esta escola.</p>';
@@ -173,7 +181,8 @@ function abrirModalUsuarioAdmin() {
     selectRole.innerHTML = `
         <option value="professor">Professor</option>
         <option value="gestor">Gestor</option>
-        <option value="aee_projeto">AEE / Projeto</option>
+        <option value="aee">AEE</option>
+        <option value="projeto">Projeto</option>
     `;
     document.getElementById('adminUsuarioRole').value = 'professor';
     document.getElementById('tituloModalUsuarioAdmin').textContent = 'Novo Usuário';
@@ -193,7 +202,8 @@ async function editarUsuarioAdmin(id) {
         selectRole.innerHTML = `
             <option value="professor">Professor</option>
             <option value="gestor">Gestor</option>
-            <option value="aee_projeto">AEE / Projeto</option>
+            <option value="aee">AEE</option>
+            <option value="projeto">Projeto</option>
         `;
 
         document.getElementById('adminUsuarioId').value = user.id;
@@ -373,9 +383,14 @@ function renderBackupOptions() {
 
                     <div style="flex: 1; background: #fffaf0; padding: 15px; border-radius: 8px; border: 1px solid #fbd38d;">
                         <h3>3. Migração Auth</h3>
-                        <h3>3. Migração Inicial</h3>
                         <p style="font-size: 13px; color: #666;">Cria usuários no Firebase Auth baseados na lista atual.</p>
                         <button class="btn btn-warning" onclick="migrarUsuariosParaFirebase()">🚀 Migrar Usuários para Auth</button>
+                    </div>
+
+                    <div style="flex: 1; background: #ebf8ff; padding: 15px; border-radius: 8px; border: 1px solid #bee3f8;">
+                        <h3>4. Migração de Dados (Perfis)</h3>
+                        <p style="font-size: 13px; color: #666;">Recupera listas de alunos de perfis AEE/Projeto que foram salvas individualmente antes da mudança para o modo compartilhado.</p>
+                        <button class="btn btn-info" onclick="migrarDadosAEECompartilhado()">🚀 Migrar Dados AEE/Projeto</button>
                     </div>
                 </div>
             </div>
@@ -445,4 +460,59 @@ async function importarDadosSistema() {
         }
     };
     reader.readAsText(file);
+}
+
+async function migrarDadosAEECompartilhado() {
+    if (!confirm('Isso irá buscar as listas de "Meus Alunos" antigas de cada usuário AEE/Projeto e adicioná-las à nova lista compartilhada da escola. Deseja continuar?')) return;
+
+    console.log('Iniciando migração de dados AEE/Projeto...');
+    let totalMigrados = 0;
+    let perfisProcessados = 0;
+
+    try {
+        const usersData = await getData('system', 'users_list');
+        const users = (usersData && usersData.list) ? usersData.list : [];
+
+        const aeeUsers = users.filter(u => u.role === 'aee' || u.role === 'projeto');
+
+        for (const user of aeeUsers) {
+            if (!user.uid || !user.schoolId) {
+                console.warn(`Pulando ${user.nome} (sem UID ou ID da escola).`);
+                continue;
+            }
+
+            const oldKey = `app_data_${user.uid}`;
+            const newKey = `app_data_school_${user.schoolId}_${user.role}`;
+
+            const oldData = await getData('app_data', oldKey);
+
+            if (oldData && oldData.tutorados && oldData.tutorados.length > 0) {
+                console.log(`Encontrados ${oldData.tutorados.length} alunos para ${user.nome} no perfil ${user.role}.`);
+                perfisProcessados++;
+
+                let sharedData = await getData('app_data', newKey);
+                if (!sharedData) sharedData = { tutorados: [] };
+                if (!sharedData.tutorados) sharedData.tutorados = [];
+
+                let migradosNestePerfil = 0;
+                oldData.tutorados.forEach(alunoAntigo => {
+                    const jaExiste = sharedData.tutorados.some(a => a.id_estudante_origem == alunoAntigo.id_estudante_origem);
+                    if (!jaExiste) {
+                        sharedData.tutorados.push(alunoAntigo);
+                        migradosNestePerfil++;
+                    }
+                });
+
+                if (migradosNestePerfil > 0) {
+                    console.log(`Migrando ${migradosNestePerfil} novos alunos para o repositório compartilhado '${user.role}' da escola ${user.schoolId}.`);
+                    await saveData('app_data', newKey, sharedData);
+                    totalMigrados += migradosNestePerfil;
+                }
+            }
+        }
+        alert(`Migração concluída!\n\nPerfis com dados encontrados: ${perfisProcessados}\nTotal de alunos novos migrados: ${totalMigrados}`);
+    } catch (e) {
+        console.error("Erro durante a migração AEE/Projeto:", e);
+        alert('Ocorreu um erro durante a migração. Verifique o console (F12).');
+    }
 }
