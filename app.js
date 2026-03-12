@@ -2417,8 +2417,10 @@ async function agendarTodosTutorados() {
     
     // Filtra blocos de Tutoria (Fixos ou Definidos pelo Professor)
     const blocosTutoria = gradeEscola.filter(g => 
-        (g.tipo === 'tutoria') || 
-        meusHorarios.some(a => a.id_bloco == g.id && a.tipo === 'tutoria')
+        // Se o gestor definiu como tutoria, é um bloco de tutoria
+        (g.tipo === 'tutoria') ||
+        // Se o gestor deixou livre (sem tipo) E o professor definiu como tutoria
+        ((!g.tipo || g.tipo === '') && meusHorarios.some(a => a.id_bloco == g.id && a.tipo === 'tutoria'))
     );
 
     if (blocosTutoria.length === 0) return alert('Não há horários de Tutoria definidos na sua Agenda (Grade). Configure-os primeiro na tela de Agenda.');
@@ -3240,8 +3242,10 @@ async function gerarAgendamentosTutoria() {
     
     // Filtra blocos onde o professor marcou 'tutoria'
     const blocosTutoria = gradeEscola.filter(g => 
-        (g.tipo === 'tutoria') || // Definido pelo Gestor (Fixo)
-        meusHorarios.some(a => a.id_bloco == g.id && a.tipo === 'tutoria') // Definido pelo Professor
+        // Se o gestor definiu como tutoria, é um bloco de tutoria
+        (g.tipo === 'tutoria') ||
+        // Se o gestor deixou livre (sem tipo) E o professor definiu como tutoria
+        ((!g.tipo || g.tipo === '') && meusHorarios.some(a => a.id_bloco == g.id && a.tipo === 'tutoria'))
     );
 
     if (blocosTutoria.length === 0) {
