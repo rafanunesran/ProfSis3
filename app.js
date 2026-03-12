@@ -28,11 +28,6 @@ async function iniciarApp() {
     // Define o modo inicial se ainda não estiver definido
     if (!currentViewMode && currentUser) currentViewMode = currentUser.role;
 
-    // Configura flag para carregar dados pessoais se um Gestor estiver no modo Professor
-    if (currentUser && currentUser.role === 'gestor') {
-        currentUser.forceProfessorMode = (currentViewMode === 'professor');
-    }
-
     // Carregar dados
     carregarDadosUsuario().then(async () => {
         // [SEGURANÇA] Confirma que os dados foram baixados com sucesso.
@@ -46,8 +41,9 @@ async function iniciarApp() {
         const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
 
         let roleLabel = 'Painel do Professor';
-        if (currentViewMode === 'gestor') roleLabel = 'Painel do Gestor';
-        if (currentViewMode === 'aee_projeto') roleLabel = 'Painel AEE / Projetos';
+        if (currentViewMode === 'gestor') { roleLabel = 'Painel do Gestor'; }
+        if (currentViewMode === 'aee') { roleLabel = 'Painel AEE'; }
+        if (currentViewMode === 'projeto') { roleLabel = 'Painel de Projetos'; }
 
         document.getElementById('currentDate').textContent = 
             `${today.toLocaleDateString('pt-BR', options)} | Olá, ${currentUser.nome}`;
@@ -79,8 +75,10 @@ async function iniciarApp() {
         // Renderiza conforme o modo de visualização atual
         if (currentViewMode === 'gestor') {
             renderGestorPanel();
-        } else if (currentViewMode === 'aee_projeto') {
+        } else if (currentViewMode === 'aee') {
             renderAeePanel();
+        } else if (currentViewMode === 'projeto') {
+            renderProjetoPanel();
         } else {
             renderProfessorPanel();
         }
@@ -110,7 +108,8 @@ function injectGestorToggleButton() {
     
     if (currentViewMode === 'gestor') { btnLabel = '🛡️ Modo Gestor ▼'; btnClass = 'btn btn-sm btn-info'; }
     else if (currentViewMode === 'professor') { btnLabel = '👨‍🏫 Modo Professor ▼'; btnClass = 'btn btn-sm btn-warning'; }
-    else if (currentViewMode === 'aee_projeto') { btnLabel = '🧩 Modo AEE/Projeto ▼'; btnClass = 'btn btn-sm btn-success'; }
+    else if (currentViewMode === 'aee') { btnLabel = '🧩 Modo AEE ▼'; btnClass = 'btn btn-sm btn-success'; }
+    else if (currentViewMode === 'projeto') { btnLabel = '🚀 Modo Projeto ▼'; btnClass = 'btn btn-sm btn-info'; }
 
     dropdown.innerHTML = `
         <button class="${btnClass}" onclick="document.getElementById('dropdownModoContent').classList.toggle('show')" style="min-width: 140px;">
@@ -119,7 +118,8 @@ function injectGestorToggleButton() {
         <div id="dropdownModoContent" class="dropdown-content" style="display: none; position: absolute; right: 0; background-color: #f9f9f9; min-width: 160px; box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2); z-index: 1000; border-radius: 4px; overflow: hidden;">
             <a href="#" onclick="mudarModoVisualizacao('professor')" style="color: black; padding: 12px 16px; text-decoration: none; display: block; border-bottom:1px solid #eee;">👨‍🏫 Professor</a>
             <a href="#" onclick="mudarModoVisualizacao('gestor')" style="color: black; padding: 12px 16px; text-decoration: none; display: block; border-bottom:1px solid #eee;">🛡️ Gestor</a>
-            <a href="#" onclick="mudarModoVisualizacao('aee_projeto')" style="color: black; padding: 12px 16px; text-decoration: none; display: block;">🧩 AEE / Projeto</a>
+            <a href="#" onclick="mudarModoVisualizacao('aee')" style="color: black; padding: 12px 16px; text-decoration: none; display: block; border-bottom:1px solid #eee;">🧩 AEE</a>
+            <a href="#" onclick="mudarModoVisualizacao('projeto')" style="color: black; padding: 12px 16px; text-decoration: none; display: block;">🚀 Projeto</a>
         </div>
     `;
 
@@ -395,6 +395,20 @@ function renderAeePanel() {
     showScreen('dashboard');
 }
 
+function renderProjetoPanel() {
+    const nav = document.querySelector('nav');
+    nav.innerHTML = `
+        <button class="active" onclick="showScreen('dashboard', event)"><span class="icon">🚀</span><span class="label">Dashboard Projeto</span></button>
+        <button onclick="showScreen('turmas', event)"><span class="icon">👥</span><span class="label">Turmas</span></button>
+        <button onclick="showScreen('tutoria', event)"><span class="icon">🎓</span><span class="label">Meus Alunos</span></button>
+        <button onclick="showScreen('agenda', event)"><span class="icon">📅</span><span class="label">Agenda</span></button>
+        <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
+        <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
+    `;
+    renderDashboard();
+    showScreen('dashboard');
+}
+
 function showScreen(screenId, evt) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     const screen = document.getElementById(screenId);
@@ -530,15 +544,19 @@ async function renderDashboard() {
     }
 
     // 2. VISÃO AEE / PROJETO
-    if (currentViewMode === 'aee_projeto') {
+    if (currentViewMode === 'aee' || currentViewMode === 'projeto') {
         const tutorados = data.tutorados || [];
         const agendamentosHoje = (data.agendamentos || []).filter(a => a.data === today && a.tutoradoId);
+        const isAEE = currentViewMode === 'aee';
+        const title = isAEE ? '🧩 Alunos AEE' : '🚀 Alunos de Projeto';
+        const cardColor = isAEE ? '#38a169' : '#805ad5';
+        const textColor = isAEE ? '#2f855a' : '#553c9a';
         
         dashboardContainer.innerHTML = `
             <div class="grid">
-                <div class="card" style="border-left: 4px solid #38a169;">
-                    <h2>🧩 Alunos AEE/Projeto</h2>
-                    <div style="font-size: 24px; font-weight: bold; color: #2f855a;">
+                <div class="card" style="border-left: 4px solid ${cardColor};">
+                    <h2>${title}</h2>
+                    <div style="font-size: 24px; font-weight: bold; color: ${textColor};">
                         ${tutorados.length} <span style="font-size:14px; color:#718096; font-weight:normal;">acompanhados</span>
                     </div>
                     <button class="btn btn-sm btn-secondary" onclick="showScreen('tutoria')" style="margin-top:10px;">Gerenciar Alunos</button>
@@ -569,9 +587,6 @@ async function renderDashboard() {
         } else {
             listaAtendimentos.innerHTML = '<p style="font-size:12px; color:#999;">Nenhum atendimento para hoje.</p>';
         }
-
-        // Carrega avisos gerais (reutiliza lógica do professor)
-        // ... (continua para carregar avisos abaixo)
     }
 
     // 3. VISÃO DO PROFESSOR (Padrão) & AEE (Complemento)
@@ -595,6 +610,10 @@ async function renderDashboard() {
     `;
     }
 
+    // A lógica a seguir é específica para o dashboard do professor.
+    // A parte de "Avisos Gerais" no final é comum a todos os perfis não-gestores.
+
+    if (currentViewMode === 'professor') {
     // Agenda do Dia (Baseada na Grade)
     let gradeEscola = [];
     let excecoesGrade = [];
@@ -610,7 +629,7 @@ async function renderDashboard() {
             if (gestorData.registrosAdministrativos) data.registrosAdministrativos = gestorData.registrosAdministrativos;
         }
     } else { gradeEscola = await getGradeEscola(); }
-
+    
     const diaSemanaHoje = new Date().getDay(); // 0=Dom, 1=Seg...
     
     // LÓGICA DE EXCEÇÃO (DIA ATÍPICO)
@@ -682,6 +701,7 @@ async function renderDashboard() {
     }).join('') : '<p class="empty-state">Nenhum agendamento de tutoria para hoje.</p>';
 
     document.getElementById('tutoriasHoje').innerHTML = htmlTutorias;
+    }
 
     // --- AVISOS E ALERTAS POR TURMA ---
     const turmas = data.turmas || [];
@@ -1982,70 +2002,6 @@ function removerRegistroAula(id) {
     }
 }
 
-// --- REGISTROS DE AULA (DIÁRIO DE CLASSE) ---
-function renderTurmaRegistros() {
-    // Busca registros específicos de aula (não administrativos)
-    const registros = (data.registrosAula || []).filter(r => r.id_turma == turmaAtual);
-    
-    // Ordena por data (mais recente primeiro)
-    registros.sort((a, b) => new Date(b.data) - new Date(a.data));
-    
-    const html = `
-        <div style="margin-bottom: 20px;">
-            <button class="btn btn-primary" onclick="abrirModalNovoRegistroAula()">+ Novo Registro de Aula</button>
-        </div>
-
-        <h3>Histórico de Aulas</h3>
-        <div class="grid" style="grid-template-columns: 1fr;">
-            ${registros.length > 0 ? registros.map(r => `
-                <div class="card" style="border-left: 4px solid #3182ce; margin-bottom: 10px;">
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                        <h4 style="margin:0 0 10px 0; color:#2c5282;">📅 ${formatDate(r.data)}</h4>
-                        <button class="btn btn-sm btn-danger" onclick="removerRegistroAula(${r.id})">🗑️</button>
-                    </div>
-                    <p style="white-space: pre-wrap; margin:0; color:#4a5568;">${r.conteudo}</p>
-                </div>
-            `).join('') : '<p class="empty-state">Nenhum registro de aula encontrado.</p>'}
-        </div>
-    `;
-    document.getElementById('tabRegistros').innerHTML = html;
-}
-
-function abrirModalNovoRegistroAula() {
-    document.getElementById('regAulaData').value = getTodayString();
-    document.getElementById('regAulaConteudo').value = '';
-    showModal('modalNovoRegistroAula');
-}
-
-function salvarRegistroAula(e) {
-    e.preventDefault();
-    const dataReg = document.getElementById('regAulaData').value;
-    const conteudo = document.getElementById('regAulaConteudo').value;
-    
-    if (!dataReg || !conteudo) return alert('Preencha todos os campos.');
-    
-    if (!data.registrosAula) data.registrosAula = [];
-    
-    data.registrosAula.push({
-        id: Date.now(),
-        id_turma: turmaAtual,
-        data: dataReg,
-        conteudo: conteudo
-    });
-    
-    persistirDados();
-    closeModal('modalNovoRegistroAula');
-    renderTurmaRegistros();
-}
-
-function removerRegistroAula(id) {
-    if(confirm('Excluir este registro de aula?')) {
-        data.registrosAula = data.registrosAula.filter(r => r.id !== id);
-        persistirDados();
-        renderTurmaRegistros();
-    }
-}
-
 // --- TRABALHOS ---
 function renderTrabalhos() {
     const trabalhos = (data.trabalhos || []).filter(t => t.id_turma == turmaAtual);
@@ -2295,7 +2251,7 @@ function renderTutoria() {
     const rightPanel = document.getElementById('listaEncontros');
     const tutorados = data.tutorados || [];
 
-    // Parte comum: listar estudantes/tutorados
+    // Parte comum: listar estudantes/tutorados/alunos
     const porTurma = {};
     tutorados.forEach(t => {
         if (!porTurma[t.turma]) porTurma[t.turma] = [];
@@ -2319,9 +2275,9 @@ function renderTutoria() {
         htmlTutoradosList = '<p class="empty-state">Nenhum estudante.</p>';
     }
 
-    if (currentViewMode === 'aee_projeto') {
-        // Visualização AEE / Projeto
-        if (title) title.textContent = 'AEE / Projeto';
+    if (currentViewMode === 'aee' || currentViewMode === 'projeto') {
+        // Visualização AEE ou Projeto
+        if (title) title.textContent = currentViewMode === 'aee' ? 'AEE' : 'Projeto';
         
         const htmlTop = `
             <div style="display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap;">
@@ -2544,8 +2500,10 @@ async function abrirModalNovoTutorado() {
 
     // Altera o título do modal conforme a visão
     const modalTitle = document.querySelector('#modalNovoTutorado h3');
-    if (modalTitle) {
-        modalTitle.textContent = (currentViewMode === 'aee_projeto') ? 'Adicionar Novo Estudante' : 'Adicionar Novo Tutorado';
+    if (modalTitle) { // Este seletor pode não existir, então verificamos
+        if (currentViewMode === 'aee') modalTitle.textContent = 'Adicionar Novo Estudante (AEE)';
+        else if (currentViewMode === 'projeto') modalTitle.textContent = 'Adicionar Novo Estudante (Projeto)';
+        else modalTitle.textContent = 'Adicionar Novo Tutorado';
     }
 
     // Salva temporariamente no DOM para acesso no onchange
@@ -2596,7 +2554,9 @@ function salvarTutorado(e) {
     
     // Evitar duplicidade
     if (data.tutorados.find(t => t.id_estudante_origem == estudanteId)) {
-        const msg = currentViewMode === 'aee_projeto' ? 'Este estudante já está na sua lista.' : 'Este estudante já é seu tutorado.';
+        let msg = 'Este estudante já é seu tutorado.';
+        if (currentViewMode === 'aee') msg = 'Este estudante já está na sua lista de AEE.';
+        if (currentViewMode === 'projeto') msg = 'Este estudante já está na sua lista de Projeto.';
         return alert(msg);
     }
 
@@ -2636,7 +2596,7 @@ function abrirFichaTutorado(id) {
         actionContainer.parentNode.insertBefore(infoContainer, actionContainer.nextSibling);
     }
 
-    if (currentViewMode === 'aee_projeto') {
+    if (currentViewMode === 'aee' || currentViewMode === 'projeto') {
         // --- VISÃO AEE / PROJETO ---
         actionContainer.innerHTML = `
             <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -3009,25 +2969,25 @@ function imprimirListaTutorados() {
     });
 
     const turmasOrdenadas = Object.keys(porTurma).sort();
-    const isAee = currentViewMode === 'aee_projeto';
-    const titulo = isAee ? 'Relatório AEE / Projeto' : 'Lista de Tutorados';
+    const isAeeOrProjeto = (currentViewMode === 'aee' || currentViewMode === 'projeto');
+    const titulo = isAeeOrProjeto ? (currentViewMode === 'aee' ? 'Relatório AEE' : 'Relatório de Projeto') : 'Lista de Tutorados';
 
     let html = `
         <div style="font-family: Arial, sans-serif; padding: 20px; font-size: 12px;">
             <h2 style="text-align: center; margin: 0 0 10px 0;">${titulo}</h2>
             <p style="text-align: center; margin-bottom: 15px;">Responsável: ${currentUser.nome}</p>
-            <div style="${isAee ? '' : 'column-count: 2; column-gap: 20px;'}">
+            <div style="${isAeeOrProjeto ? '' : 'column-count: 2; column-gap: 20px;'}">
     `;
 
     turmasOrdenadas.forEach(turma => {
         html += `
             <div style="break-inside: avoid; margin-bottom: 15px;">
                 <h3 style="border-bottom: 2px solid #000; padding-bottom: 2px; margin: 0 0 10px 0; font-size: 14px; background:#f0f0f0;">${turma}</h3>
-                <ul style="margin: 0; padding-left: ${isAee ? '0' : '20px'}; list-style: ${isAee ? 'none' : 'disc'};">
+                <ul style="margin: 0; padding-left: ${isAeeOrProjeto ? '0' : '20px'}; list-style: ${isAeeOrProjeto ? 'none' : 'disc'};">
         `;
         
         porTurma[turma].sort((a,b) => a.nome_estudante.localeCompare(b.nome_estudante)).forEach(t => {
-            if (isAee) {
+            if (isAeeOrProjeto) {
                 const diag = t.aee_diagnostico ? ` / <span style="color:#2c5282;">${t.aee_diagnostico}</span>` : '';
                 const rel = t.aee_relatorio ? `<div style="margin-top: 5px; padding: 8px; background: #f9f9f9; border: 1px solid #eee; border-radius: 4px; white-space: pre-wrap; color: #444;">${t.aee_relatorio}</div>` : '<div style="margin-top:5px; color:#999; font-style:italic;">Sem relatório.</div>';
                 
@@ -3821,12 +3781,16 @@ function renderEstudanteGeral() {
     const tutoradoEntry = (data.tutorados || []).find(t => t.id_estudante_origem == estudanteAtualDetalhe.id);
     
     let htmlNome = nome;
-    if (tutoradoEntry) {
-        if (currentViewMode === 'aee_projeto') {
-            htmlNome = `${nome} <div style="font-size: 14px; color: #38a169; font-weight: normal; margin-top: 4px;">🧩 AEE / Projeto</div>`;
-        } else {
+    if (tutoradoEntry) { // Se o aluno é acompanhado pelo usuário atual
+        // A badge muda conforme o modo de visualização ATUAL do usuário
+        if (currentViewMode === 'aee') {
+            htmlNome = `${nome} <div style="font-size: 14px; color: #38a169; font-weight: normal; margin-top: 4px;">🧩 AEE</div>`;
+        } else if (currentViewMode === 'projeto') {
+            htmlNome = `${nome} <div style="font-size: 14px; color: #805ad5; font-weight: normal; margin-top: 4px;">🚀 Projeto</div>`;
+        } else if (currentViewMode === 'professor') {
             htmlNome = `${nome} <div style="font-size: 14px; color: #3182ce; font-weight: normal; margin-top: 4px;">🎓 Tutor: ${currentUser.nome}</div>`;
         }
+        // Gestor não tem badge de tutoria direta, então não precisa de 'else'
     }
 
     document.getElementById('estudanteGeralNome').innerHTML = htmlNome;
@@ -4595,7 +4559,7 @@ async function renderGradeHorariaProfessor() {
     const dias = {1: 'Segunda', 2: 'Terça', 3: 'Quarta', 4: 'Quinta', 5: 'Sexta'};
     const turmas = data.turmas || [];
     const minhasAulas = data.horariosAulas || []; // Onde salvamos as escolhas do professor
-    const isAeeMode = currentViewMode === 'aee_projeto';
+    const isAeeMode = currentViewMode === 'aee';
 
     let html = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
@@ -5148,21 +5112,25 @@ function processarRestauracaoBackup(event) {
 
 // --- PERSISTÊNCIA AUTOMÁTICA (LOCAL + FIREBASE) ---
 async function persistirDados() {
-    // [SEGURANÇA] Não salva se os dados estiverem nulos ou vazios
-    if (!data) return;
-
-    // 1. Salva Localmente (Backup imediato e funcionamento offline)
-    localStorage.setItem('app_data', JSON.stringify(data));
-
-    // 2. Sincroniza com Firebase (Apenas se o carregamento inicial foi bem-sucedido)
-    if (window.dadosCarregados && currentUser && currentUser.id && typeof saveData === 'function') {
-        try {
-            await saveData('app_data', 'app_data_' + currentUser.id, data);
-        } catch (e) {
-            console.warn('Erro ao sincronizar dados com Firebase (Modo Offline ativado):', e);
+    // [SEGURANÇA] Não salva se os dados estiverem nulos, vazios ou não carregados.
+    if (!data || !window.dadosCarregados) {
+        if (!window.dadosCarregados) {
+            console.warn('⚠️ Salvamento na nuvem bloqueado: Dados iniciais não foram carregados corretamente. Seus dados estão salvos apenas neste dispositivo.');
         }
-    } else if (!window.dadosCarregados) {
-        console.warn('⚠️ Salvamento na nuvem bloqueado: Dados iniciais não foram carregados corretamente. Seus dados estão salvos apenas neste dispositivo.');
+        return;
+    }
+    if (!currentUser) return;
+
+    // [CORREÇÃO DEFINITIVA] Usa a chave correta baseada no modo (Professor vs Gestor) para evitar sobreescrever dados.
+    const key = getStorageKey(currentUser);
+
+    // A função saveData em core.js já lida com o salvamento no Firebase (se online) ou no LocalStorage (se offline) usando a chave correta.
+    if (typeof saveData === 'function') {
+        try {
+            await saveData('app_data', key, data);
+        } catch (e) {
+            console.warn(`Erro ao sincronizar dados com Firebase no modo ${currentViewMode}:`, e);
+        }
     }
 }
 
@@ -5193,72 +5161,6 @@ async function restaurarBackupLocalParaNuvem() {
 
 // --- SISTEMA DE BACKUP NA NUVEM (ROTATIVO - 5 SLOTS) ---
 
-async function abrirGerenciadorBackupsNuvem() {
-    // Cria o modal dinamicamente se não existir
-    if (!document.getElementById('modalBackupsNuvem')) {
-        const div = document.createElement('div');
-        div.id = 'modalBackupsNuvem';
-        div.className = 'modal';
-        div.innerHTML = `
-            <div class="modal-content" style="max-width: 500px;">
-                <h3>☁️ Backups na Nuvem</h3>
-                <p style="font-size:13px; color:#666;">O sistema mantém os 5 backups mais recentes. Ao criar um novo, o mais antigo é substituído.</p>
-                
-                <div style="margin-bottom: 15px; text-align: right;">
-                    <button class="btn btn-primary" onclick="criarBackupNuvem()">+ Criar Novo Backup Agora</button>
-                </div>
-
-                <div id="listaBackupsNuvem" style="max-height: 300px; overflow-y: auto; border: 1px solid #eee; border-radius: 4px;">
-                    <div style="padding:20px; text-align:center;">Carregando...</div>
-                </div>
-
-                <div style="margin-top: 15px; text-align: right;">
-                    <button class="btn btn-secondary" onclick="closeModal('modalBackupsNuvem')">Fechar</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(div);
-    }
-    
-    showModal('modalBackupsNuvem');
-    listarBackupsNuvem();
-}
-
-async function listarBackupsNuvem() {
-    const container = document.getElementById('listaBackupsNuvem');
-    if (!currentUser || !currentUser.id) return;
-
-    try {
-        // Busca o índice de backups
-        const indexData = await getData('app_data', `backup_index_${currentUser.id}`);
-        const backups = (indexData && indexData.slots) ? indexData.slots : [];
-
-        // Ordena do mais recente para o mais antigo
-        backups.sort((a, b) => b.timestamp - a.timestamp);
-
-        if (backups.length === 0) {
-            container.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">Nenhum backup encontrado na nuvem.</div>';
-            return;
-        }
-
-        container.innerHTML = backups.map(b => `
-            <div style="padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <div style="font-weight:bold; color:#2d3748;">${new Date(b.timestamp).toLocaleString('pt-BR')}</div>
-                    <div style="font-size:11px; color:#718096;">${b.label || 'Backup Manual'} • Slot ${b.id}</div>
-                </div>
-                <button class="btn btn-sm btn-warning" onclick="restaurarBackupNuvem(${b.id}, '${new Date(b.timestamp).toLocaleString('pt-BR')}')">Restaurar</button>
-            </div>
-        `).join('');
-
-    } catch (e) {
-        console.error(e);
-        container.innerHTML = '<div style="padding:10px; color:red;">Erro ao listar backups.</div>';
-    }
-}
-
-async function criarBackupNuvem() {
-    if (!confirm('Criar um novo backup na nuvem? Se houver 5 backups, o mais antigo será substituído.')) return;
 async function verificarBackupAutomatico() {
     if (!currentUser || !currentUser.id) return;
     
@@ -5355,321 +5257,6 @@ async function restaurarUltimoBackup() {
     
     try {
         const indexKey = `backup_index_${currentUser.id}`;
-        const indexData = await getData('app_data', indexKey);
-        
-        if (!indexData || !indexData.slots || indexData.slots.length === 0) {
-            return alert('Nenhum backup encontrado na nuvem.');
-        }
-        
-        const backups = indexData.slots.sort((a, b) => b.timestamp - a.timestamp);
-        const latest = backups[0];
-        const dataStr = new Date(latest.timestamp).toLocaleString('pt-BR');
-        
-        restaurarBackupNuvem(latest.id, dataStr);
-    } catch (e) {
-        alert('Erro ao buscar último backup: ' + e.message);
-    }
-}   showModal('modalNovoAviso');
-}
-
-function toggleTodasTurmasAviso(source) {
-    const checkboxes = document.querySelectorAll('.chk-turma-aviso');
-    checkboxes.forEach(cb => cb.checked = source.checked);
-}
-
-function salvarAviso() {
-    const texto = document.getElementById('textoNovoAviso').value;
-    const checkboxes = document.querySelectorAll('.chk-turma-aviso:checked');
-    const todasCheckbox = document.querySelector('input[onchange="toggleTodasTurmasAviso(this)"]');
-    
-    if (!texto) return alert('Digite o aviso.');
-    if (checkboxes.length === 0) return alert('Selecione pelo menos uma turma.');
-
-    const turmasAlvo = todasCheckbox.checked ? ['todas'] : Array.from(checkboxes).map(cb => cb.value);
-
-    if (!data.avisosMural) data.avisosMural = [];
-    data.avisosMural.push({
-        id: Date.now(),
-        texto,
-        data: getTodayString(),
-        turmasAlvo
-    });
-
-    persistirDados();
-    closeModal('modalNovoAviso');
-    renderDashboard(); // Atualiza o card no dashboard
-}
-
-function excluirAviso(id) {
-    if(!confirm('Excluir este aviso?')) return;
-    data.avisosMural = data.avisosMural.filter(a => a.id !== id);
-    persistirDados();
-    renderDashboard();
-}
-
-// --- FUNÇÕES DE BACKUP E RESTAURAÇÃO ---
-function baixarBackupCompleto() {
-    if (!data) return alert('Sem dados para baixar.');
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", "backup_sisprof_" + new Date().toISOString().slice(0,10) + ".json");
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
-}
-
-function abrirModalRestaurarBackup() {
-    let input = document.getElementById('inputBackupRestore');
-    if (!input) {
-        input = document.createElement('input');
-        input.type = 'file';
-        input.id = 'inputBackupRestore';
-        input.accept = '.json';
-        input.style.display = 'none';
-        input.onchange = processarRestauracaoBackup;
-        document.body.appendChild(input);
-    }
-    input.click();
-}
-
-function processarRestauracaoBackup(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async function(e) {
-        try {
-            const json = JSON.parse(e.target.result);
-            if (json && (json.turmas || json.estudantes || json.ocorrencias)) {
-                if (confirm('⚠️ ATENÇÃO: Isso substituirá TODOS os dados atuais do sistema pelos dados do arquivo de backup.\n\nEssa ação não pode ser desfeita e será sincronizada com o banco de dados (Firestore).\n\nDeseja continuar?')) {
-                    data = json;
-                    await persistirDados(); // Salva no Firebase e LocalStorage
-                    alert('✅ Dados restaurados com sucesso! A página será recarregada.');
-                    location.reload();
-                }
-            } else {
-                alert('❌ O arquivo selecionado não parece ser um backup válido do SisProf.');
-            }
-        } catch (err) {
-            console.error(err);
-            alert('❌ Erro ao ler o arquivo: ' + err.message);
-        }
-    };
-    reader.readAsText(file);
-    event.target.value = ''; // Limpa para permitir selecionar o mesmo arquivo novamente se necessário
-}
-
-// --- PERSISTÊNCIA AUTOMÁTICA (LOCAL + FIREBASE) ---
-async function persistirDados() {
-    // [SEGURANÇA] Não salva se os dados estiverem nulos, vazios ou não carregados.
-    if (!data || !window.dadosCarregados) {
-        if (!window.dadosCarregados) {
-            console.warn('⚠️ Salvamento na nuvem bloqueado: Dados iniciais não foram carregados corretamente. Seus dados estão salvos apenas neste dispositivo.');
-        }
-        return;
-    }
-    if (!currentUser) return;
-
-    // [CORREÇÃO DEFINITIVA] Usa a chave correta baseada no modo (Professor vs Gestor) para evitar sobreescrever dados.
-    const key = getStorageKey(currentUser);
-
-    // A função saveData em core.js já lida com o salvamento no Firebase (se online) ou no LocalStorage (se offline) usando a chave correta.
-    if (typeof saveData === 'function') {
-        try {
-            await saveData('app_data', key, data);
-        } catch (e) {
-            console.warn(`Erro ao sincronizar dados com Firebase no modo ${currentViewMode}:`, e);
-        }
-    }
-}
-
-// --- FUNÇÃO DE EMERGÊNCIA PARA RECUPERAR DADOS DO LOCALSTORAGE PARA O FIREBASE ---
-async function restaurarBackupLocalParaNuvem() {
-    const localJson = localStorage.getItem('app_data');
-    if (!localJson) {
-        return alert('Não há dados salvos neste navegador (Local Storage) para recuperar.');
-    }
-
-    try {
-        const localData = JSON.parse(localJson);
-        const countTurmas = (localData.turmas || []).length;
-        const countEstudantes = (localData.estudantes || []).length;
-
-        if (confirm(`ENCONTRADO BACKUP LOCAL:\n\nTurmas: ${countTurmas}\nEstudantes: ${countEstudantes}\n\nDeseja SOBRESCREVER os dados da nuvem (Firebase) com estes dados locais? Isso corrigirá a perda de dados se este dispositivo tiver a versão correta.`)) {
-            data = localData;
-            window.dadosCarregados = true; // Força a permissão de salvamento
-            await persistirDados(); 
-            await persistirDados(); // Salva no Firebase e LocalStorage
-            alert('✅ Dados restaurados e sincronizados com sucesso! A página será recarregada.');
-            location.reload();
-        }
-    } catch (e) {
-        alert('Erro ao ler dados locais: ' + e.message);
-    }
-}
-
-// --- SISTEMA DE BACKUP NA NUVEM (ROTATIVO - 5 SLOTS) ---
-
-async function abrirGerenciadorBackupsNuvem() {
-    // Cria o modal dinamicamente se não existir
-    if (!document.getElementById('modalBackupsNuvem')) {
-        const div = document.createElement('div');
-        div.id = 'modalBackupsNuvem';
-        div.className = 'modal';
-        div.innerHTML = `
-            <div class="modal-content" style="max-width: 500px;">
-                <h3>☁️ Backups na Nuvem</h3>
-                <p style="font-size:13px; color:#666;">O sistema mantém os 5 backups mais recentes. Ao criar um novo, o mais antigo é substituído.</p>
-                
-                <div style="margin-bottom: 15px; text-align: right;">
-                    <button class="btn btn-primary" onclick="criarBackupNuvem()">+ Criar Novo Backup Agora</button>
-                </div>
-
-                <div id="listaBackupsNuvem" style="max-height: 300px; overflow-y: auto; border: 1px solid #eee; border-radius: 4px;">
-                    <div style="padding:20px; text-align:center;">Carregando...</div>
-                </div>
-
-                <div style="margin-top: 15px; text-align: right;">
-                    <button class="btn btn-secondary" onclick="closeModal('modalBackupsNuvem')">Fechar</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(div);
-    }
-    
-    showModal('modalBackupsNuvem');
-    listarBackupsNuvem();
-}
-
-async function listarBackupsNuvem() {
-    const container = document.getElementById('listaBackupsNuvem');
-    if (!currentUser) return;
-
-    try {
-        // Busca o índice de backups
-        const userIdentifier = currentUser.uid || currentUser.id;
-        const indexData = await getData('app_data', `backup_index_${userIdentifier}`);
-        const backups = (indexData && indexData.slots) ? indexData.slots : [];
-
-        // Ordena do mais recente para o mais antigo
-        backups.sort((a, b) => b.timestamp - a.timestamp);
-
-        if (backups.length === 0) {
-            container.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">Nenhum backup encontrado na nuvem.</div>';
-            return;
-        }
-
-        container.innerHTML = backups.map(b => `
-            <div style="padding: 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <div style="font-weight:bold; color:#2d3748;">${new Date(b.timestamp).toLocaleString('pt-BR')}</div>
-                    <div style="font-size:11px; color:#718096;">${b.label || 'Backup Manual'} • Slot ${b.id}</div>
-                </div>
-                <button class="btn btn-sm btn-warning" onclick="restaurarBackupNuvem(${b.id}, '${new Date(b.timestamp).toLocaleString('pt-BR')}')">Restaurar</button>
-            </div>
-        `).join('');
-
-    } catch (e) {
-        console.error(e);
-        container.innerHTML = '<div style="padding:10px; color:red;">Erro ao listar backups.</div>';
-    }
-}
-
-async function verificarBackupAutomatico() {
-    if (!currentUser) return;
-    
-    try {
-        const userIdentifier = currentUser.uid || currentUser.id;
-        const indexKey = `backup_index_${userIdentifier}`;
-        let indexData = await getData('app_data', indexKey);
-        
-        if (!indexData) indexData = { slots: [], nextSlot: 1 };
-        
-        const backups = indexData.slots || [];
-        const today = new Date().toDateString();
-        
-        // Verifica se já existe algum backup com a data de hoje
-        const hasBackupToday = backups.some(b => new Date(b.timestamp).toDateString() === today);
-        
-        if (!hasBackupToday) {
-            console.log('Iniciando backup automático diário...');
-            await criarBackupNuvem(true); // true = silencioso
-        }
-    } catch (e) {
-        console.warn('Erro na verificação de backup automático:', e);
-    }
-}
-
-async function criarBackupNuvem(silent = false) {
-    if (!silent && !confirm('Criar um novo backup na nuvem? Se houver 5 backups, o mais antigo será substituído.')) return;
-    
-    try {
-        const userIdentifier = currentUser.uid || currentUser.id;
-        const indexKey = `backup_index_${userIdentifier}`;
-        let indexData = await getData('app_data', indexKey);
-        
-        if (!indexData) indexData = { slots: [], nextSlot: 1 };
-        
-        // Define qual slot usar (1 a 5)
-        let slotId = indexData.nextSlot;
-        if (slotId > 5) slotId = 1;
-
-        // Salva os dados no slot
-        const backupKey = `backup_${userIdentifier}_slot_${slotId}`;
-        await saveData('app_data', backupKey, data);
-
-        // Atualiza o índice
-        indexData.slots = indexData.slots.filter(s => s.id !== slotId);
-        
-        const label = silent ? 'Backup Automático' : `Backup Manual (${data.turmas ? data.turmas.length : 0} turmas)`;
-        indexData.slots.push({ id: slotId, timestamp: Date.now(), label: label });
-        
-        // Prepara próximo slot
-        indexData.nextSlot = slotId + 1;
-
-        await saveData('app_data', indexKey, indexData);
-        
-        if (!silent) {
-            alert('Backup criado com sucesso!');
-            listarBackupsNuvem();
-        } else {
-            console.log('Backup automático realizado.');
-        }
-
-    } catch (e) {
-        if (!silent) alert('Erro ao criar backup: ' + e.message);
-        else console.error('Erro no backup automático:', e);
-    }
-}
-
-async function restaurarBackupNuvem(slotId, dataBackup) {
-    if (!confirm(`ATENÇÃO: Isso substituirá TODOS os dados atuais pelos dados do backup de ${dataBackup}.\n\nDeseja continuar?`)) return;
-
-    try {
-        const userIdentifier = currentUser.uid || currentUser.id;
-        const backupKey = `backup_${userIdentifier}_slot_${slotId}`;
-        const backupData = await getData('app_data', backupKey);
-
-        if (backupData) {
-            data = backupData;
-            await persistirDados(); // Salva como dados atuais
-            alert('Dados restaurados com sucesso! A página será recarregada.');
-            location.reload();
-        } else {
-            alert('Erro: Arquivo de backup não encontrado ou vazio.');
-        }
-    } catch (e) {
-        alert('Erro ao restaurar: ' + e.message);
-    }
-}
-
-async function restaurarUltimoBackup() {
-    if (!currentUser) return;
-    
-    try {
-        const userIdentifier = currentUser.uid || currentUser.id;
-        const indexKey = `backup_index_${userIdentifier}`;
         const indexData = await getData('app_data', indexKey);
         
         if (!indexData || !indexData.slots || indexData.slots.length === 0) {

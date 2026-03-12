@@ -70,14 +70,26 @@ function logout() {
 }
 
 function getStorageKey(user) {
-    if (user && user.role === 'gestor' && !user.forceProfessorMode) {
+    // A variável global `currentViewMode` é definida em app.js e reflete o painel que o usuário está vendo.
+    const effectiveRole = (typeof currentViewMode !== 'undefined' && currentViewMode) ? currentViewMode : (user ? user.role : null);
+
+    // Se o usuário for um gestor e estiver no modo gestor, usa a chave de gestor.
+    if (effectiveRole === 'gestor') {
         return 'app_data_school_' + (user.schoolId || 'default') + '_gestor';
     }
-    // Prioriza o UID para segurança. Se não existir (modo local/antigo), usa o ID numérico.
+
+    // Se a visualização for de AEE ou Projeto (seja por um gestor ou pelo próprio perfil), usa a chave compartilhada.
+    if (effectiveRole === 'aee' || effectiveRole === 'projeto') {
+        return `app_data_school_${user.schoolId || 'default'}_${effectiveRole}`;
+    }
+
+    // Para todos os outros casos (incluindo um gestor vendo como professor, ou um professor normal),
+    // usa a chave pessoal do usuário, baseada no seu UID seguro.
     if (user && user.uid) {
         return 'app_data_' + user.uid;
     }
-    return 'app_data_' + (user ? user.id : 'temp'); // Fallback
+    
+    return 'app_data_' + (user ? user.id : 'temp'); // Fallback para usuários antigos/locais sem UID
 }
 
 function getInitialData() {
