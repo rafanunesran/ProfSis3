@@ -2414,16 +2414,26 @@ async function agendarTodosTutorados() {
     // 2. Obter Grade de Horários (Tutoria)
     const gradeEscola = await getGradeEscola();
     const meusHorarios = data.horariosAulas || [];
+
+    // [NOVO] Carregar exceções da grade para evitar agendar em feriados/dias atípicos
+    let excecoesGrade = [];
+    if (currentUser && currentUser.schoolId) {
+        const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+        const gestorData = await getData('app_data', key);
+        if (gestorData && gestorData.gradeHorariaExcecoes) {
+            excecoesGrade = gestorData.gradeHorariaExcecoes;
+        }
+    }
     
-    // Filtra blocos de Tutoria (Fixos ou Definidos pelo Professor)
-    const blocosTutoria = gradeEscola.filter(g => 
+    // Filtra blocos de Tutoria para dias NORMAIS (não exceções)
+    const blocosTutoriaNormais = gradeEscola.filter(g => 
         // Se o gestor definiu como tutoria, é um bloco de tutoria
         (g.tipo === 'tutoria') ||
         // Se o gestor deixou livre (sem tipo) E o professor definiu como tutoria
         ((!g.tipo || g.tipo === '') && meusHorarios.some(a => a.id_bloco == g.id && a.tipo === 'tutoria'))
     );
 
-    if (blocosTutoria.length === 0) return alert('Não há horários de Tutoria definidos na sua Agenda (Grade). Configure-os primeiro na tela de Agenda.');
+    if (blocosTutoriaNormais.length === 0) return alert('Não há horários de Tutoria definidos na sua Agenda (Grade). Configure-os primeiro na tela de Agenda.');
 
     if (!data.agendamentos) data.agendamentos = [];
     const today = getTodayString();
@@ -2436,16 +2446,23 @@ async function agendarTodosTutorados() {
     cursor.setDate(cursor.getDate() + 1); // Começa amanhã
 
     while (cursor <= dataFim) {
-        const diaSemana = cursor.getDay(); // 0=Dom, 1=Seg...
+        const dataStr = cursor.toISOString().split('T')[0];
+        const diaSemana = cursor.getDay();
+        const excecaoDoDia = excecoesGrade.find(e => e.data === dataStr);
         
-        // Encontra os blocos de tutoria definidos para este dia da semana
-        const blocosDoDia = blocosTutoria.filter(b => b.diaSemana == diaSemana);
+        let blocosDeTutoriaParaHoje = [];
+
+        if (excecaoDoDia) {
+            // Dia Atípico: Apenas blocos que o GESTOR marcou como 'tutoria' na exceção são válidos.
+            blocosDeTutoriaParaHoje = excecaoDoDia.blocos.filter(b => b.tipo === 'tutoria');
+        } else if (diaSemana >= 1 && diaSemana <= 5) { // Dia útil normal (Seg-Sex)
+            // Dia Normal: Usa a lógica padrão com a grade semanal.
+            blocosDeTutoriaParaHoje = blocosTutoriaNormais.filter(b => b.diaSemana == diaSemana);
+        }
 
         // Se houver algum bloco de tutoria para este dia, gera os agendamentos
-        if (blocosDoDia.length > 0) {
-            const dataStr = cursor.toISOString().split('T')[0];
-
-            blocosDoDia.forEach(b => {
+        if (blocosDeTutoriaParaHoje.length > 0) {
+            blocosDeTutoriaParaHoje.forEach(b => {
                 // Verifica se já existe o slot
                 const existe = data.agendamentos.find(a => a.data === dataStr && a.inicio === b.inicio);
                 if (!existe) {
@@ -2631,6 +2648,29 @@ function abrirFichaTutorado(id) {
         const diagnostico = t.aee_diagnostico || '';
         const relatorio = t.aee_relatorio || '';
 
+        // Seção de Upload de Arquivo
+        const reportUrl = t.aee_report_url || '';
+        const fileHtml = `
+            <div style="margin-top:20px;">
+                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Arquivo de Relatório</label>
+                <div style="background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                    ${reportUrl ? `
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <a href="${reportUrl}" target="_blank" style="font-weight:bold; color:#3182ce;">Ver Relatório Atual</a>
+                            <button class="btn btn-sm btn-danger" onclick="deleteAeeReport(${t.id})">🗑️ Excluir</button>
+                        </div>
+                    ` : `
+                        <p style="margin:0; font-size:13px; color:#718096;">Nenhum arquivo enviado.</p>
+                    `}
+                    <div style="margin-top:15px; border-top:1px dashed #cbd5e0; padding-top:15px;">
+                        <label for="aeeReportFile_${t.id}" class="btn btn-sm btn-primary">📤 Enviar Novo Arquivo</label>
+                        <input type="file" id="aeeReportFile_${t.id}" style="display:none;" onchange="uploadAeeReport(${t.id})">
+                        <span id="uploadStatus_${t.id}" style="margin-left:10px; font-size:12px; color:#4a5568;"></span>
+                    </div>
+                </div>
+            </div>
+        `;
+
         const isDiagnostico = t.aee_categoria_diagnostico || false;
         const isProjeto = t.aee_categoria_projeto || false;
 
@@ -2656,6 +2696,7 @@ function abrirFichaTutorado(id) {
                 <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Relatório</label>
                 <textarea id="aeeRelatorio" rows="15" style="width:100%; border:1px solid #cbd5e0; padding:10px; border-radius:5px; font-family:inherit;" placeholder="Digite o relatório..." onblur="salvarDadosAee(${t.id})">${relatorio}</textarea>
             </div>
+            ${fileHtml}
         `;
 
     } else {
@@ -2831,6 +2872,11 @@ function salvarDadosAee(id) {
             // Sincroniza categorias também
             est.aee_categoria_diagnostico = t.aee_categoria_diagnostico;
             est.aee_categoria_projeto = t.aee_categoria_projeto;
+            // Preserva info de arquivo
+            if (t.aee_report_url) est.aee_report_url = t.aee_report_url;
+            else delete est.aee_report_url;
+            if (t.aee_report_path) est.aee_report_path = t.aee_report_path;
+            else delete est.aee_report_path;
         }
     }
 
@@ -5267,4 +5313,91 @@ async function restaurarUltimoBackup() {
     } catch (e) {
         alert('Erro ao buscar último backup: ' + e.message);
     }
+}
+
+// --- UPLOAD/DELETE DE ARQUIVOS AEE ---
+
+async function uploadAeeReport(tutoradoId) {
+    if (typeof firebase === 'undefined' || !USE_FIREBASE) {
+        return alert('A função de upload de arquivos requer conexão com a internet (Firebase).');
+    }
+
+    const fileInput = document.getElementById(`aeeReportFile_${tutoradoId}`);
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const statusEl = document.getElementById(`uploadStatus_${tutoradoId}`);
+    statusEl.textContent = 'Enviando...';
+
+    const t = data.tutorados.find(x => x.id == tutoradoId);
+    if (!t || !t.id_estudante_origem || !currentUser.schoolId) {
+        statusEl.textContent = 'Erro: Dados do aluno ou escola não encontrados.';
+        return;
+    }
+
+    // Se já existe um arquivo, apaga o antigo primeiro
+    if (t.aee_report_path) {
+        try {
+            const oldStorageRef = firebase.storage().ref(t.aee_report_path);
+            await oldStorageRef.delete();
+        } catch (e) {
+            console.warn('Erro ao remover arquivo antigo (pode não existir mais):', e);
+        }
+    }
+
+    const filePath = `aee_reports/${currentUser.schoolId}/${t.id_estudante_origem}/${file.name}`;
+    const storageRef = firebase.storage().ref(filePath);
+
+    try {
+        const snapshot = await storageRef.put(file);
+        const downloadURL = await snapshot.ref.getDownloadURL();
+
+        t.aee_report_url = downloadURL;
+        t.aee_report_path = filePath;
+
+        const est = data.estudantes.find(e => e.id == t.id_estudante_origem);
+        if (est) {
+            est.aee_report_url = downloadURL;
+            est.aee_report_path = filePath;
+        }
+
+        await persistirDados();
+        statusEl.textContent = '✅ Enviado!';
+        alert('Arquivo enviado com sucesso!');
+        abrirFichaTutorado(tutoradoId);
+
+    } catch (error) {
+        console.error("Erro no upload:", error);
+        statusEl.textContent = '❌ Erro no envio.';
+        alert('Erro ao enviar arquivo: ' + error.message);
+    }
+}
+
+async function deleteAeeReport(tutoradoId) {
+    if (typeof firebase === 'undefined' || !USE_FIREBASE) {
+        return alert('A função de exclusão de arquivos requer conexão com a internet (Firebase).');
+    }
+
+    if (!confirm('Tem certeza que deseja excluir o arquivo de relatório deste estudante?')) return;
+
+    const t = data.tutorados.find(x => x.id == tutoradoId);
+    if (!t || !t.aee_report_path) return alert('Nenhum arquivo para excluir.');
+
+    const storageRef = firebase.storage().ref(t.aee_report_path);
+
+    try {
+        await storageRef.delete();
+    } catch (error) {
+        console.error("Erro ao excluir:", error);
+        if (error.code !== 'storage/object-not-found') {
+            return alert('Erro ao excluir arquivo: ' + error.message);
+        }
+        // Se não encontrou, continua para limpar a referência local
+    }
+
+    delete t.aee_report_url;
+    delete t.aee_report_path;
+    await salvarDadosAee(tutoradoId); // Usa a função existente para garantir a sincronia
+    alert('Arquivo excluído com sucesso!');
+    abrirFichaTutorado(tutoradoId);
 }
