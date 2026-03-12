@@ -2323,6 +2323,12 @@ function renderTutoria() {
         const futuros = agendamentos.filter(a => a.data >= today);
 
         const htmlAgendaControls = `
+            <div class="card" style="background: #fff5f5; margin-bottom: 15px; border: 1px solid #feb2b2;">
+                <h3 style="margin-top:0; font-size:16px; color: #c53030;">🗑️ Limpeza Manual</h3>
+                <p style="font-size:12px; color:#666; margin-bottom:10px;">Use este botão se a agenda não estiver atualizando. Ele apagará todos os agendamentos futuros para recomeçar.</p>
+                <button class="btn btn-danger" onclick="limparAgendamentosFuturos()">Apagar Agendamentos Futuros</button>
+            </div>
+            
             <div class="card" style="background: #f0fff4; margin-bottom: 15px; border: 1px solid #c6f6d5;">
                 <h3 style="margin-top:0; font-size:16px;">Organização Automática</h3>
                 <p style="font-size:12px; color:#666; margin-bottom:10px;">Limpa agendamentos futuros e reorganiza todos os tutorados nos horários disponíveis.</p>
@@ -2371,6 +2377,24 @@ function renderTutoria() {
 function expandirAgendaTutoria() {
     agendaLimit += 10;
     renderTutoria();
+}
+
+async function limparAgendamentosFuturos() {
+    if (!confirm('ATENÇÃO: Isso apagará TODOS os agendamentos de tutoria futuros (de hoje em diante) para TODOS os seus tutorados.\n\nEsta ação não pode ser desfeita. Deseja continuar?')) return;
+
+    if (!data.agendamentos) data.agendamentos = [];
+    const today = getTodayString();
+    const agendamentosAntes = data.agendamentos.length;
+
+    // Filtra, mantendo apenas os agendamentos passados.
+    data.agendamentos = data.agendamentos.filter(a => a.data < today);
+
+    const agendamentosDepois = data.agendamentos.length;
+    const removidos = agendamentosAntes - agendamentosDepois;
+
+    await persistirDados();
+    alert(`${removidos} agendamentos futuros foram removidos com sucesso!`);
+    renderTutoria(); // Re-renderiza a tela para mostrar a lista de agendamentos vazia.
 }
 
 function agendarProximoTutorado() {
