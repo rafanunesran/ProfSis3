@@ -71,7 +71,6 @@ async function iniciarApp() {
         // Injeta botão de Perfil e aplica tema
         injectProfileButton();
         aplicarTemaSalvo();
-        inicializarModalDocx(); // Garante que o modal do visualizador de documentos existe
 
         // Renderiza conforme o modo de visualização atual
         if (currentViewMode === 'gestor') {
@@ -2668,9 +2667,8 @@ function abrirFichaTutorado(id) {
                 <div style="background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
                     ${reportUrl ? `
                         <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <a href="${reportUrl}" target="_blank" style="font-weight:bold; color:#3182ce;">Ver Relatório Atual</a>
-                            <button class="btn btn-sm btn-info" onclick="visualizarDocumentoWord('${reportUrl}', ${JSON.stringify('Relatório de ' + t.nome_estudante)})">👁️ Visualizar Relatório</button>
-                            <button class="btn btn-sm btn-danger" onclick="deleteAeeReport(${t.id})">🗑️ Excluir</button>
+                            <button class="btn btn-sm btn-info" onclick="visualizarDocumentoWord('${reportUrl}', ${JSON.stringify('Relatório de ' + t.nome_estudante)})">👁️ Visualizar</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteAeeReport(${t.id})">🗑️ Excluir do Drive</button>
                         </div>
                     ` : `
                         <p style="margin:0; font-size:13px; color:#718096;">Nenhum arquivo enviado.</p>
@@ -5109,7 +5107,6 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
             <div style="background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
                 ${reportUrl ? `
                     <a href="${reportUrl}" target="_blank" style="font-weight:bold; color:#3182ce;">Ver Relatório Atual</a>
-                    <button class="btn btn-sm btn-info" onclick="visualizarDocumentoWord('${reportUrl}', ${JSON.stringify('Relatório de ' + t.nome_estudante)})">👁️ Visualizar Relatório</button>
                 ` : `
                     <p style="margin:0; font-size:13px; color:#718096;">Nenhum arquivo enviado.</p>
                 `}
@@ -5146,66 +5143,6 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
     `;
 
     showScreen('tutoradoDetalhe');
-}
-
-// --- VISUALIZADOR DE DOCUMENTOS WORD (.DOCX) ---
-
-function inicializarModalDocx() {
-    if (document.getElementById('modalDocxViewer')) return;
-    const div = document.createElement('div');
-    div.id = 'modalDocxViewer';
-    div.className = 'modal';
-    div.innerHTML = `
-        <div class="modal-content" style="max-width: 800px; height: 90vh; display: flex; flex-direction: column;">
-            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:10px; margin-bottom:10px; flex-shrink: 0;">
-                <h3 id="docxViewerTitle" style="margin:0;">Visualizador de Documento</h3>
-                <button class="btn btn-secondary" onclick="closeModal('modalDocxViewer')">Fechar</button>
-            </div>
-            <div id="docxViewerContent" style="overflow-y: auto; flex-grow: 1; background: #fdfdfd; padding: 20px; border: 1px solid #eee; border-radius: 5px;">
-                <p>Carregando documento...</p>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(div);
-}
-
-async function visualizarDocumentoWord(url, nomeDocumento = 'Relatório') {
-    // Garante que o mammoth.js está carregado
-    if (typeof mammoth === 'undefined') {
-        alert('A biblioteca de visualização de documentos (mammoth.js) não está carregada. Adicione-a ao seu projeto.');
-        return;
-    }
-
-    const titleEl = document.getElementById('docxViewerTitle');
-    const contentEl = document.getElementById('docxViewerContent');
-
-    titleEl.textContent = nomeDocumento;
-    contentEl.innerHTML = '<p>Carregando e convertendo o documento... Isso pode levar um momento.</p>';
-    showModal('modalDocxViewer');
-
-    try {
-        // Fetching the docx file.
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`Falha ao buscar o arquivo: ${response.statusText}`);
-        }
-        const arrayBuffer = await response.arrayBuffer();
-
-        // Convert to HTML
-        const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
-        contentEl.innerHTML = result.value; // The generated HTML
-
-    } catch (error) {
-        console.error('Erro ao visualizar documento Word:', error);
-        contentEl.innerHTML = `
-            <div style="color: red; text-align: center; padding: 20px;">
-                <h3>Erro ao carregar o documento</h3>
-                <p>Não foi possível converter o arquivo. Verifique se é um arquivo .docx válido e se a configuração de CORS do armazenamento permite o acesso.</p>
-                <p style="font-size: 12px; color: #666;">Detalhe do erro: ${error.message}</p>
-                <a href="${url}" target="_blank" class="btn btn-primary" style="margin-top:10px;">Tentar abrir em nova aba</a>
-            </div>
-        `;
-    }
 }
 
 // --- AVISOS MURAL (GESTOR) ---
@@ -5484,86 +5421,122 @@ async function restaurarUltimoBackup() {
 // --- UPLOAD/DELETE DE ARQUIVOS AEE ---
 
 async function uploadAeeReport(tutoradoId) {
-    if (typeof firebase === 'undefined' || !USE_FIREBASE) {
-        return alert('A função de upload de arquivos requer conexão com a internet (Firebase).');
-    }
+    // !!! IMPORTANTE: URL do script publicado !!!
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzN3BOYAFsBPZXx2CN9_QD-7ng-5ac7UZwEkdiEI5o9vEnSgXX2r0jMIaBLXhP6gvut/exec";
 
     const fileInput = document.getElementById(`aeeReportFile_${tutoradoId}`);
     const file = fileInput.files[0];
     if (!file) return;
 
     const statusEl = document.getElementById(`uploadStatus_${tutoradoId}`);
-    statusEl.textContent = 'Enviando...';
+    statusEl.textContent = 'Enviando para o Google Drive...';
 
     const t = data.tutorados.find(x => x.id == tutoradoId);
-    if (!t || !t.id_estudante_origem || !currentUser.schoolId) {
-        statusEl.textContent = 'Erro: Dados do aluno ou escola não encontrados.';
+    if (!t) {
+        statusEl.textContent = 'Erro: Dados do aluno não encontrados.';
         return;
     }
 
     // Se já existe um arquivo, apaga o antigo primeiro
-    if (t.aee_report_path) {
+    if (t.aee_report_url) {
+        await deleteAeeReport(tutoradoId, true); // true para modo silencioso
+    }
+
+    // Converte arquivo para Base64
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = async () => {
+        const fileData = reader.result;
+        
         try {
-            const oldStorageRef = firebase.storage().ref(t.aee_report_path);
-            await oldStorageRef.delete();
-        } catch (e) {
-            console.warn('Erro ao remover arquivo antigo (pode não existir mais):', e);
+            const response = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'text/plain;charset=utf-8', // Requisito do Apps Script
+                },
+                body: JSON.stringify({
+                    fileName: file.name,
+                    contentType: file.type,
+                    fileData: fileData
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.status === 'error') {
+                throw new Error(result.message);
+            }
+
+            // Salva a URL de download direto retornada pelo script
+            t.aee_report_url = result.downloadUrl;
+            // Salva o ID do arquivo para facilitar a exclusão
+            t.aee_report_path = result.fileId; 
+
+            // Sincroniza com o cadastro principal do estudante
+            const est = data.estudantes.find(e => e.id == t.id_estudante_origem);
+            if (est) {
+                est.aee_report_url = result.downloadUrl;
+                est.aee_report_path = result.fileId;
+            }
+
+            await persistirDados();
+            statusEl.textContent = '✅ Enviado!';
+            alert('Arquivo enviado com sucesso para o Google Drive!');
+            abrirFichaTutorado(tutoradoId);
+
+        } catch (error) {
+            console.error("Erro no upload para o Drive:", error);
+            statusEl.textContent = '❌ Erro no envio.';
+            alert('Erro ao enviar arquivo para o Drive: ' + error.message);
         }
-    }
-
-    const filePath = `aee_reports/${currentUser.schoolId}/${t.id_estudante_origem}/${file.name}`;
-    const storageRef = firebase.storage().ref(filePath);
-
-    try {
-        const snapshot = await storageRef.put(file);
-        const downloadURL = await snapshot.ref.getDownloadURL();
-
-        t.aee_report_url = downloadURL;
-        t.aee_report_path = filePath;
-
-        const est = data.estudantes.find(e => e.id == t.id_estudante_origem);
-        if (est) {
-            est.aee_report_url = downloadURL;
-            est.aee_report_path = filePath;
-        }
-
-        await persistirDados();
-        statusEl.textContent = '✅ Enviado!';
-        alert('Arquivo enviado com sucesso!');
-        abrirFichaTutorado(tutoradoId);
-
-    } catch (error) {
-        console.error("Erro no upload:", error);
-        statusEl.textContent = '❌ Erro no envio.';
-        alert('Erro ao enviar arquivo: ' + error.message);
-    }
+    };
+    reader.onerror = () => {
+        statusEl.textContent = '❌ Erro ao ler o arquivo.';
+        alert('Não foi possível ler o arquivo selecionado.');
+    };
 }
 
-async function deleteAeeReport(tutoradoId) {
-    if (typeof firebase === 'undefined' || !USE_FIREBASE) {
-        return alert('A função de exclusão de arquivos requer conexão com a internet (Firebase).');
-    }
+async function deleteAeeReport(tutoradoId, silent = false) {
+    // !!! IMPORTANTE: URL do script publicado !!!
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzN3BOYAFsBPZXx2CN9_QD-7ng-5ac7UZwEkdiEI5o9vEnSgXX2r0jMIaBLXhP6gvut/exec";
 
-    if (!confirm('Tem certeza que deseja excluir o arquivo de relatório deste estudante?')) return;
+    if (!silent && !confirm('Tem certeza que deseja excluir o arquivo de relatório do Google Drive?')) return;
 
     const t = data.tutorados.find(x => x.id == tutoradoId);
-    if (!t || !t.aee_report_path) return alert('Nenhum arquivo para excluir.');
+    if (!t || !t.aee_report_path) {
+        if (!silent) alert('Nenhum arquivo vinculado para excluir.');
+        // Limpa a referência local mesmo se não houver path, por segurança
+        delete t.aee_report_url;
+        delete t.aee_report_path;
+        await salvarDadosAee(tutoradoId);
+        if (!silent) abrirFichaTutorado(tutoradoId);
+        return;
+    }
 
-    const storageRef = firebase.storage().ref(t.aee_report_path);
+    const fileId = t.aee_report_path; // Usamos o ID salvo diretamente
 
     try {
-        await storageRef.delete();
-    } catch (error) {
-        console.error("Erro ao excluir:", error);
-        if (error.code !== 'storage/object-not-found') {
-            return alert('Erro ao excluir arquivo: ' + error.message);
+        // Faz a requisição para o script de exclusão
+        const response = await fetch(`${SCRIPT_URL}?action=delete&fileId=${fileId}`);
+        const result = await response.json();
+
+        if (result.status === 'error') {
+            // Mesmo com erro (ex: arquivo já deletado no Drive), limpa a referência local
+            console.warn(`Erro no script ao deletar (pode já ter sido removido): ${result.message}`);
         }
-        // Se não encontrou, continua para limpar a referência local
+
+    } catch (error) {
+        console.error("Erro ao contatar script de exclusão:", error);
+        if (!silent) alert('Erro ao contatar o serviço de exclusão: ' + error.message);
+        // Continua para limpar a referência local mesmo com erro de rede
     }
 
     delete t.aee_report_url;
     delete t.aee_report_path;
     await salvarDadosAee(tutoradoId); // Usa a função existente para garantir a sincronia
-    alert('Arquivo excluído com sucesso!');
-    abrirFichaTutorado(tutoradoId);
+    
+    if (!silent) {
+        alert('Arquivo excluído com sucesso do Google Drive!');
+        abrirFichaTutorado(tutoradoId); // Atualiza a UI
+    }
 }
