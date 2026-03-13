@@ -5189,8 +5189,16 @@ async function visualizarDocumentoWord(fileId, nomeDocumento = 'Relatório') {
         const resultProxy = await response.json();
         if (resultProxy.status === 'error') throw new Error(resultProxy.message);
 
-        const base64Response = await fetch(resultProxy.fileData);
-        const arrayBuffer = await base64Response.arrayBuffer();
+        // Converte a string base64 (retornada como um data URL) para um ArrayBuffer
+        // O método fetch(dataURL) pode ser inconsistente entre navegadores.
+        const base64 = resultProxy.fileData.split(',')[1];
+        const binary_string = window.atob(base64);
+        const len = binary_string.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binary_string.charCodeAt(i);
+        }
+        const arrayBuffer = bytes.buffer;
 
         const resultMammoth = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
         contentEl.innerHTML = resultMammoth.value;
