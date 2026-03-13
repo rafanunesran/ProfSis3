@@ -71,6 +71,7 @@ async function iniciarApp() {
         // Injeta botão de Perfil e aplica tema
         injectProfileButton();
         aplicarTemaSalvo();
+        inicializarModalDocx(); // Garante que o modal do visualizador de documentos existe
 
         // Renderiza conforme o modo de visualização atual
         if (currentViewMode === 'gestor') {
@@ -2667,8 +2668,8 @@ function abrirFichaTutorado(id) {
                 <div style="background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
                     ${reportUrl ? `
                         <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <button class="btn btn-sm btn-info" onclick="visualizarDocumentoWord('${reportUrl}', ${JSON.stringify('Relatório de ' + t.nome_estudante)})">👁️ Visualizar</button>
-                            <button class="btn btn-sm btn-danger" onclick="deleteAeeReport(${t.id})">🗑️ Excluir do Drive</button>
+                            <button class="btn btn-sm btn-info" onclick="visualizarDocumentoWord('${t.aee_report_path}', ${JSON.stringify('Relatório de ' + t.nome_estudante)})">👁️ Visualizar</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteAeeReport(${t.id})">🗑️ Excluir</button>
                         </div>
                     ` : `
                         <p style="margin:0; font-size:13px; color:#718096;">Nenhum arquivo enviado.</p>
@@ -5106,7 +5107,7 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
             <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Arquivo de Relatório</label>
             <div style="background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
                 ${reportUrl ? `
-                    <a href="${reportUrl}" target="_blank" style="font-weight:bold; color:#3182ce;">Ver Relatório Atual</a>
+                    <button class="btn btn-sm btn-info" onclick="visualizarDocumentoWord('${t.aee_report_path}', ${JSON.stringify('Relatório de ' + t.nome_estudante)})">👁️ Visualizar Relatório</button>
                 ` : `
                     <p style="margin:0; font-size:13px; color:#718096;">Nenhum arquivo enviado.</p>
                 `}
@@ -5143,6 +5144,61 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
     `;
 
     showScreen('tutoradoDetalhe');
+}
+
+// --- VISUALIZADOR DE DOCUMENTOS WORD (.DOCX) ---
+
+function inicializarModalDocx() {
+    if (document.getElementById('modalDocxViewer')) return;
+    const div = document.createElement('div');
+    div.id = 'modalDocxViewer';
+    div.className = 'modal';
+    div.innerHTML = `
+        <div class="modal-content" style="max-width: 800px; height: 90vh; display: flex; flex-direction: column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:10px; margin-bottom:10px; flex-shrink: 0;">
+                <h3 id="docxViewerTitle" style="margin:0;">Visualizador de Documento</h3>
+                <button class="btn btn-secondary" onclick="closeModal('modalDocxViewer')">Fechar</button>
+            </div>
+            <div id="docxViewerContent" style="overflow-y: auto; flex-grow: 1; background: #fdfdfd; padding: 20px; border: 1px solid #eee; border-radius: 5px;">
+                <p>Carregando documento...</p>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(div);
+}
+
+async function visualizarDocumentoWord(fileId, nomeDocumento = 'Relatório') {
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzN3BOYAFsBPZXx2CN9_QD-7ng-5ac7UZwEkdiEI5o9vEnSgXX2r0jMIaBLXhP6gvut/exec";
+
+    if (typeof mammoth === 'undefined') {
+        alert('A biblioteca de visualização de documentos (mammoth.js) não está carregada.');
+        return;
+    }
+
+    const titleEl = document.getElementById('docxViewerTitle');
+    const contentEl = document.getElementById('docxViewerContent');
+
+    titleEl.textContent = nomeDocumento;
+    contentEl.innerHTML = '<p>Buscando e convertendo o documento do Google Drive... Isso pode levar um momento.</p>';
+    showModal('modalDocxViewer');
+
+    try {
+        const response = await fetch(`${SCRIPT_URL}?action=getFileContent&fileId=${fileId}`);
+        if (!response.ok) throw new Error(`Falha ao contatar o servidor de arquivos: ${response.statusText}`);
+        
+        const resultProxy = await response.json();
+        if (resultProxy.status === 'error') throw new Error(resultProxy.message);
+
+        const base64Response = await fetch(resultProxy.fileData);
+        const arrayBuffer = await base64Response.arrayBuffer();
+
+        const resultMammoth = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
+        contentEl.innerHTML = resultMammoth.value;
+
+    } catch (error) {
+        console.error('Erro ao visualizar documento Word:', error);
+        contentEl.innerHTML = `<div style="color: red; text-align: center; padding: 20px;"><h3>Erro ao carregar o documento</h3><p>Não foi possível converter o arquivo. Verifique se é um arquivo .docx válido e se o Apps Script está implantado corretamente.</p><p style="font-size: 12px; color: #666;">Detalhe do erro: ${error.message}</p></div>`;
+    }
 }
 
 // --- AVISOS MURAL (GESTOR) ---
