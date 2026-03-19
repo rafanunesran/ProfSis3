@@ -376,7 +376,9 @@ function carregarEstudantesRegGestao() {
         return;
     }
 
-    const estudantes = data.estudantes.filter(e => e.id_turma == turmaId);
+    const estudantes = data.estudantes
+        .filter(e => e.id_turma == turmaId && e.status === 'Ativo')
+        .sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     select.innerHTML = `<option value="">Selecione...</option>` + 
         estudantes.map(e => `<option value="${e.id}">${e.nome_completo}</option>`).join('');
     select.disabled = false;

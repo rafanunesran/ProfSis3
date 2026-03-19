@@ -1535,7 +1535,11 @@ let ocorrenciaEmEdicaoId = null; // Controle de estado para edição
 
 async function renderOcorrencias() {
     const ocorrencias = (data.ocorrencias || []).filter(o => o.id_turma == turmaAtual).sort((a, b) => new Date(b.data) - new Date(a.data));
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
+    const todosEstudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
+    
+    const estudantesAtivos = todosEstudantes
+        .filter(e => e.status === 'Ativo')
+        .sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     
     // Buscar opções de ocorrência rápida
     let opcoesRapidas = [];
@@ -1553,8 +1557,8 @@ async function renderOcorrencias() {
     }
 
     // Filtra estudantes disponíveis e selecionados
-    const disponiveis = estudantes.filter(e => !tempOcorrenciaIds.includes(e.id));
-    const selecionados = estudantes.filter(e => tempOcorrenciaIds.includes(e.id));
+    const disponiveis = estudantesAtivos.filter(e => !tempOcorrenciaIds.includes(e.id));
+    const selecionados = todosEstudantes.filter(e => tempOcorrenciaIds.includes(e.id));
 
     // Preserva o texto digitado caso haja re-renderização
     const textoAtual = document.getElementById('novaOcorrenciaTexto') ? document.getElementById('novaOcorrenciaTexto').value : '';
@@ -1568,7 +1572,7 @@ async function renderOcorrencias() {
                 <label style="flex-grow:1;">Estudante:
                     <select id="selEstudanteRapido">
                         <option value="">Selecione...</option>
-                        ${estudantes.map(e => `<option value="${e.id}">${e.nome_completo}</option>`).join('')}
+                        ${estudantesAtivos.map(e => `<option value="${e.id}">${e.nome_completo}</option>`).join('')}
                     </select>
                 </label>
                 <label style="flex-grow:1;">Ocorrência:
@@ -1634,7 +1638,7 @@ async function renderOcorrencias() {
         <h3>Histórico</h3>
         ${ocorrencias.map(o => {
             const nomes = (o.ids_estudantes || []).map(id => {
-                const est = estudantes.find(e => e.id == id);
+                const est = todosEstudantes.find(e => e.id == id);
                 return est ? est.nome_completo : 'Excluído';
             }).join(', ');
             
@@ -1860,7 +1864,10 @@ function imprimirOcorrencia(id) {
 
 // --- ATRASOS ---
 function renderAtrasos() {
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
+    const todosEstudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
+    const estudantesAtivos = todosEstudantes
+        .filter(e => e.status === 'Ativo')
+        .sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     
     // Filtro de Meses
     const currentYear = new Date().getFullYear();
@@ -1882,7 +1889,7 @@ function renderAtrasos() {
                 <label style="flex-grow:1;">Estudante:
                     <select id="atrasoEstudante">
                         <option value="">Selecione...</option>
-                        ${estudantes.map(e => `<option value="${e.id}">${e.nome_completo}</option>`).join('')}
+                        ${estudantesAtivos.map(e => `<option value="${e.id}">${e.nome_completo}</option>`).join('')}
                     </select>
                 </label>
                 <button class="btn btn-warning" onclick="salvarAtraso()">Registrar</button>
@@ -1899,7 +1906,7 @@ function renderAtrasos() {
             <thead><tr><th>Data</th><th>Estudante</th><th>Ações</th></tr></thead>
             <tbody>
                 ${atrasos.length > 0 ? atrasos.map(a => {
-                    const est = estudantes.find(e => e.id == a.id_estudante);
+                    const est = todosEstudantes.find(e => e.id == a.id_estudante);
                     return `
                         <tr>
                             <td>${formatDate(a.data)}</td>
@@ -2555,7 +2562,9 @@ function carregarEstudantesTutorado() {
         return;
     }
 
-    const filtrados = estudantesEscola.filter(e => e.id_turma == turmaId);
+    const filtrados = estudantesEscola
+        .filter(e => e.id_turma == turmaId && e.status === 'Ativo')
+        .sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     selectEstudante.innerHTML = '<option value="">Selecione o Estudante...</option>' + 
         filtrados.map(e => `<option value="${e.id}">${e.nome_completo}</option>`).join('');
     selectEstudante.disabled = false;
