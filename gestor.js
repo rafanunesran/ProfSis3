@@ -449,6 +449,29 @@ function renderOcorrenciasGestor() {
     document.getElementById('ocorrenciasGestor').innerHTML = html;
 }
 
+function abrirModalDevolutiva(ocorrenciaId) {
+    const ocorrencia = data.ocorrencias.find(o => o.id == ocorrenciaId);
+    if (ocorrencia) {
+        document.getElementById('devolutivaOcorrenciaId').value = ocorrenciaId;
+        document.getElementById('devolutivaTexto').value = ocorrencia.devolutiva || '';
+        showModal('modalDevolutiva');
+    }
+}
+
+function salvarDevolutiva(e) {
+    e.preventDefault();
+    const ocorrenciaId = document.getElementById('devolutivaOcorrenciaId').value;
+    const texto = document.getElementById('devolutivaTexto').value;
+
+    const ocorrencia = data.ocorrencias.find(o => o.id == ocorrenciaId);
+    if (ocorrencia) {
+        ocorrencia.devolutiva = texto;
+        persistirDados();
+        closeModal('modalDevolutiva');
+        renderOcorrenciasGestor();
+    }
+}
+
 function renderAbaDisciplinares(lista) {
     // Filtro de Status
     let filtro = 'pendente';
@@ -503,6 +526,22 @@ function renderAbaDisciplinares(lista) {
 
                         const isPendente = (o.status || 'pendente') === 'pendente';
 
+                        // DEVOLUTIVA HTML
+                        let devolutivaHtml = '';
+                        if (o.devolutiva) {
+                            devolutivaHtml = `
+                                <div style="background:#f0fff4; padding:10px; border-radius:6px; border:1px solid #c6f6d5; font-size:13px; color:#276749; white-space: pre-wrap; margin-top:10px; position:relative;">
+                                    <strong>✅ Devolutiva da Gestão:</strong> ${o.devolutiva}
+                                    <button class="btn btn-sm btn-secondary" style="position:absolute; top:5px; right:5px; padding: 2px 6px;" onclick="abrirModalDevolutiva(${o.id})">✏️</button>
+                                </div>
+                            `;
+                        } else {
+                            devolutivaHtml = `
+                                <div style="margin-top:10px; text-align:right;">
+                                    <button class="btn btn-sm btn-info" onclick="abrirModalDevolutiva(${o.id})">➕ Adicionar Devolutiva</button>
+                                </div>
+                            `;
+                        }
                         return `
                             <tr>
                                 <td style="border-bottom:none;">${formatDate(o.data)}</td>
@@ -523,6 +562,7 @@ function renderAbaDisciplinares(lista) {
                                     <div style="background:#f7fafc; padding:10px; border-radius:6px; border:1px solid #edf2f7; font-size:13px; color:#4a5568; white-space: pre-wrap;">
                                         <strong>📝 Relato:</strong> ${o.relato}
                                     </div>
+                                    ${devolutivaHtml}
                                 </td>
                             </tr>
                         `;
@@ -633,6 +673,12 @@ function imprimirOcorrenciaGestor(id) {
         return est ? est.nome_completo : 'Excluído';
     }).join(', ');
 
+    const devolutivaHtml = o.devolutiva ? `
+        <hr>
+        <h3>Devolutiva da Gestão:</h3>
+        <p style="white-space: pre-wrap; background: #f0fff4; padding: 15px; border: 1px solid #c6f6d5; color: #2f855a; border-radius: 5px;">${o.devolutiva}</p>
+    ` : '';
+
     const conteudo = `
         <div style="font-family: Arial, sans-serif; padding: 40px;">
             <h1 style="text-align: center;">Registro de Ocorrência</h1>
@@ -644,7 +690,8 @@ function imprimirOcorrenciaGestor(id) {
             <p><strong>Status:</strong> ${o.status ? o.status.toUpperCase() : 'PENDENTE'}</p>
             <hr>
             <h3>Relato:</h3>
-            <p style="white-space: pre-wrap; background: #f9f9f9; padding: 15px; border: 1px solid #ddd;">${o.relato}</p>
+            <p style="white-space: pre-wrap; background: #f9f9f9; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">${o.relato}</p>
+            ${devolutivaHtml}
             <br><br><br>
             <div style="display: flex; justify-content: space-between; margin-top: 50px;">
                 <div style="border-top: 1px solid #000; width: 40%; text-align: center; padding-top: 5px;">Assinatura do Responsável</div>

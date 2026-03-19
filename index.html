@@ -263,6 +263,18 @@
         </div>
     </div>
 
+    <div id="modalDevolutiva" class="modal">
+        <div class="modal-content">
+            <div class="modal-header"><h2>Devolutiva da Ocorrência</h2><button class="close-btn" onclick="closeModal('modalDevolutiva')">×</button></div>
+            <form onsubmit="salvarDevolutiva(event)">
+                <input type="hidden" id="devolutivaOcorrenciaId">
+                <label>Ação Tomada / Encaminhamento:</label>
+                <textarea id="devolutivaTexto" rows="5" required></textarea>
+                <button type="submit" class="btn btn-primary">Salvar Devolutiva</button>
+            </form>
+        </div>
+    </div>
+
     <div id="modalDetalheFaltasDia" class="modal"><div class="modal-content"><div class="modal-header" style="display:none;"></div><button class="close-btn" onclick="closeModal('modalDetalheFaltasDia')" style="position:absolute; right:15px; top:15px;">×</button><div id="conteudoDetalheFaltasDia" style="margin-top:10px;"></div></div></div>
 
     <!-- Modal Novo Registro de Aula (Professor) -->
