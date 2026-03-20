@@ -5437,12 +5437,19 @@ async function uploadAeeReport(tutoradoId) {
     const file = fileInput.files[0];
     if (!file) return;
 
+    // [NOVO] Verificação de Tamanho (Limite de 5MB para evitar erros silenciosos do Apps Script)
+    if (file.size > 5 * 1024 * 1024) {
+        alert(`O arquivo é muito grande (${(file.size / 1024 / 1024).toFixed(1)}MB).\nO limite para upload pelo sistema é de 5MB.\n\nPor favor, envie um arquivo menor ou faça o upload diretamente no Google Drive.`);
+        fileInput.value = '';
+        return;
+    }
+
     const statusEl = document.getElementById(`uploadStatus_${tutoradoId}`);
-    statusEl.textContent = 'Enviando para o Google Drive...';
+    if (statusEl) statusEl.textContent = 'Enviando para o Google Drive...';
 
     const t = data.tutorados.find(x => x.id == tutoradoId);
     if (!t) {
-        statusEl.textContent = 'Erro: Dados do aluno não encontrados.';
+        if (statusEl) statusEl.textContent = 'Erro: Dados do aluno não encontrados.';
         return;
     }
 
@@ -5489,18 +5496,24 @@ async function uploadAeeReport(tutoradoId) {
             }
 
             await persistirDados();
-            statusEl.textContent = '✅ Enviado!';
+            if (statusEl) statusEl.textContent = '✅ Enviado!';
             alert('Arquivo enviado com sucesso para o Google Drive!');
             abrirFichaTutorado(tutoradoId);
 
         } catch (error) {
-            console.error("Erro no upload para o Drive:", error);
-            statusEl.textContent = '❌ Erro no envio.';
-            alert('Erro ao enviar arquivo para o Drive: ' + error.message);
+            console.error("Erro no upload:", error);
+            if (statusEl) statusEl.textContent = '❌ Erro no envio.';
+            
+            let msg = 'Erro ao enviar arquivo: ' + error.message;
+            // Diagnóstico específico para o erro de permissão de "Outro Usuário"
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                msg = 'Erro de Conexão com o Google Drive.\n\nCausa provável: Permissão do Script.\nSolução: O dono do sistema deve acessar o Apps Script e implantar como "Executar como: Eu" e "Quem tem acesso: Qualquer pessoa".';
+            }
+            alert(msg);
         }
     };
     reader.onerror = () => {
-        statusEl.textContent = '❌ Erro ao ler o arquivo.';
+        if (statusEl) statusEl.textContent = '❌ Erro ao ler o arquivo.';
         alert('Não foi possível ler o arquivo selecionado.');
     };
 }
