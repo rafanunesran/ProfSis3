@@ -1253,7 +1253,7 @@ async function renderChamada() {
                 Status: ${statusTexto}
             </div>
         </div>
-        <div id="avisoChamada" style="color:#e53e3e; display:none; margin-bottom:10px; font-weight:bold;">⚠️ Esta turma não tem aula agendada para este dia da semana.</div>
+        <div id="avisoChamada" style="display:none; margin-bottom:10px; font-weight:bold;"></div>
         <table>
             <thead><tr><th>Estudante</th><th>Presença</th></tr></thead>
             <tbody>
@@ -1326,11 +1326,19 @@ function validarDataChamada(diasPermitidos) {
     const btn = document.getElementById('btnSalvarChamada');
     const aviso = document.getElementById('avisoChamada');
     
-    // Se diasPermitidos estiver vazio, assume que não foi configurado e libera. Se tiver, valida.
-    const bloqueado = diasPermitidos.length > 0 && !diasPermitidos.includes(diaSemana);
+    // Verifica se o dia selecionado está fora da grade de horários configurada
+    const foraDaGrade = diasPermitidos.length > 0 && !diasPermitidos.includes(diaSemana);
     
-    btn.disabled = bloqueado;
-    aviso.style.display = bloqueado ? 'block' : 'none';
+    // O botão agora fica sempre habilitado para permitir a chamada em qualquer dia
+    btn.disabled = false;
+    
+    if (foraDaGrade) {
+        aviso.style.display = 'block';
+        aviso.style.color = '#3182ce'; // Azul informativo em vez de vermelho de erro
+        aviso.innerHTML = 'ℹ️ Não há aula prevista na grade para este dia da semana, mas o registro de chamada está liberado.';
+    } else {
+        aviso.style.display = 'none';
+    }
 }
 
 async function salvarChamadaManual() {
