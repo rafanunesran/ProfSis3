@@ -1,6 +1,6 @@
 // --- LÓGICA DO GESTOR ---
 
-let currentRegistrosTab = 'administrativos'; // 'administrativos' ou 'busca_ativa'
+let currentRegistrosTab = 'administrativos'; // 'administrativos', 'busca_ativa', 'bimestres' ou 'arquivados'
 
 function renderGestorPanel() {
     // Navegação de Gestor
@@ -62,11 +62,19 @@ function renderRegistrosGestor() {
             <div style="margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 10px;">
                 <button class="btn ${currentRegistrosTab === 'administrativos' ? 'btn-primary' : 'btn-secondary'}" 
                         onclick="currentRegistrosTab='administrativos'; renderRegistrosGestor()">
-                    📂 Registros Administrativos
+                    📂 Vigentes
+                </button>
+                <button class="btn ${currentRegistrosTab === 'arquivados' ? 'btn-primary' : 'btn-secondary'}" 
+                        onclick="currentRegistrosTab='arquivados'; renderRegistrosGestor()">
+                    🗄️ Arquivados
                 </button>
                 <button class="btn ${currentRegistrosTab === 'busca_ativa' ? 'btn-primary' : 'btn-secondary'}" 
                         onclick="currentRegistrosTab='busca_ativa'; renderRegistrosGestor()">
                     🚨 Alertas Busca Ativa
+                </button>
+                <button class="btn ${currentRegistrosTab === 'bimestres' ? 'btn-primary' : 'btn-secondary'}" 
+                        onclick="currentRegistrosTab='bimestres'; renderRegistrosGestor()">
+                    📅 Config. Bimestres
                 </button>
             </div>
 
@@ -82,7 +90,155 @@ function renderRegistrosGestor() {
         renderAbaRegistrosAdministrativos();
     } else if (currentRegistrosTab === 'busca_ativa') {
         renderAbaAlertasBuscaAtiva();
+    } else if (currentRegistrosTab === 'bimestres') {
+        renderAbaConfigBimestres();
+    } else if (currentRegistrosTab === 'arquivados') {
+        renderAbaRegistrosArquivados();
     }
+}
+
+function renderAbaRegistrosArquivados() {
+    const registros = data.registrosAdministrativos || [];
+    const configBimestres = data.configBimestres || [];
+    
+    // Filtro de Bimestre (Padrão: Todos)
+    const selBim = document.getElementById('filtroArqBimestre') ? parseInt(document.getElementById('filtroArqBimestre').value) : 0; 
+
+    const getBimestreParaData = (dataStr) => {
+        const match = configBimestres.find(c => dataStr >= c.inicio && dataStr <= c.fim);
+        return match ? match.bim : null;
+    };
+
+    // Processar todos os dados (incluindo vencidos)
+    let lista = registros.map(r => {
+        const estudante = data.estudantes.find(e => e.id == r.estudanteId) || { nome_completo: 'Desconhecido' };
+        const turma = data.turmas.find(t => t.id == r.turmaId) || { nome: '?' };
+        const bim = getBimestreParaData(r.data);
+        
+        let status = 'Ativo';
+        let cor = '#22c55e';
+
+        if (r.tipo === 'Atestado') {
+            const parts = r.data.split('-');
+            const dataInicio = new Date(parts[0], parts[1]-1, parts[2]);
+            const dataFim = new Date(dataInicio);
+            dataFim.setDate(dataFim.getDate() + (parseInt(r.dias) || 1) - 1);
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            
+            if (today > dataFim) {
+                status = 'Vencido';
+                cor = '#718096';
+            } else {
+                cor = '#3182ce';
+            }
+        } else if (r.tipo === 'Faltoso') {
+            cor = '#ef4444';
+        }
+
+        return { ...r, estudanteNome: estudante.nome_completo, turmaNome: turma.nome, status, cor, bim };
+    });
+
+    if (selBim > 0) lista = lista.filter(item => item.bim === selBim);
+
+    // Agrupar por Bimestre e depois por Turma
+    const grupos = {};
+    lista.forEach(item => {
+        const key = item.bim ? `${item.bim}º Bimestre` : 'Sem Bimestre / Férias';
+        if (!grupos[key]) grupos[key] = {};
+        if (!grupos[key][item.turmaNome]) grupos[key][item.turmaNome] = [];
+        grupos[key][item.turmaNome].push(item);
+    });
+
+    const bimestresOrdenados = Object.keys(grupos).sort();
+
+    const html = `
+        <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>🗄️ Arquivo Histórico de Registros</h2>
+                <div>
+                    <label style="font-size:14px; font-weight:bold;">Filtrar Bimestre: </label>
+                    <select id="filtroArqBimestre" onchange="renderAbaRegistrosArquivados()" style="padding: 5px; border-radius: 4px;">
+                        <option value="0" ${selBim === 0 ? 'selected' : ''}>Todos</option>
+                        <option value="1" ${selBim === 1 ? 'selected' : ''}>1º Bimestre</option>
+                        <option value="2" ${selBim === 2 ? 'selected' : ''}>2º Bimestre</option>
+                        <option value="3" ${selBim === 3 ? 'selected' : ''}>3º Bimestre</option>
+                        <option value="4" ${selBim === 4 ? 'selected' : ''}>4º Bimestre</option>
+                    </select>
+                </div>
+            </div>
+            ${bimestresOrdenados.length > 0 ? bimestresOrdenados.map(bimKey => `
+                <h3 style="margin-top: 20px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: #2d3748;">${bimKey}</h3>
+                ${Object.keys(grupos[bimKey]).sort().map(turmaNome => `
+                    <h4 style="margin-top: 15px; color: #4a5568; background: #edf2f7; padding: 5px 10px; border-radius: 4px;">${turmaNome}</h4>
+                    <table>
+                        <thead><tr><th>Tipo</th><th>Status</th><th>Estudante</th><th>Data/Detalhes</th><th>Ações</th></tr></thead>
+                        <tbody>
+                            ${grupos[bimKey][turmaNome].map(r => `
+                                <tr>
+                                    <td style="color: ${r.cor}; font-weight: bold;">${r.tipo}</td>
+                                    <td><span class="badge" style="background:${r.status === 'Vencido' ? '#e2e8f0' : '#ebf8ff'}; color:${r.cor}; font-size:10px;">${r.status}</span></td>
+                                    <td>${r.estudanteNome}</td>
+                                    <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
+                                    <td><button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})">🗑️</button></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `).join('')}
+            `).join('') : '<p class="empty-state">Nenhum registro histórico encontrado.</p>'}
+        </div>
+    `;
+    document.getElementById('registrosGestorContent').innerHTML = html;
+}
+
+function renderAbaConfigBimestres() {
+    // Inicializa com valores padrão se não houver configuração salva
+    const config = data.configBimestres || [
+        { bim: 1, inicio: '', fim: '' },
+        { bim: 2, inicio: '', fim: '' },
+        { bim: 3, inicio: '', fim: '' },
+        { bim: 4, inicio: '', fim: '' }
+    ];
+
+    const html = `
+        <div>
+            <h2>📅 Configuração de Períodos Bimestrais</h2>
+            <p style="color:#666; font-size:14px; margin-bottom:20px;">Defina as datas de início e fim de cada bimestre. Isso será usado pelos professores para o cálculo de atestados e relatórios.</p>
+            
+            <form onsubmit="salvarConfigBimestres(event)">
+                <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+                    ${config.map((c, i) => `
+                        <div class="card" style="padding:15px; background:#f8fafc; border:1px solid #e2e8f0;">
+                            <h4 style="margin-top:0; color:#2c5282;">${c.bim}º Bimestre</h4>
+                            <label style="font-size:12px; font-weight:bold;">Início:</label>
+                            <input type="date" class="bim-inicio" data-idx="${i}" value="${c.inicio}" required style="width:100%; margin-bottom:10px;">
+                            <label style="font-size:12px; font-weight:bold;">Fim:</label>
+                            <input type="date" class="bim-fim" data-idx="${i}" value="${c.fim}" required style="width:100%;">
+                        </div>
+                    `).join('')}
+                </div>
+                <button type="submit" class="btn btn-primary" style="margin-top:20px; width:100%; padding:12px;">💾 Salvar Calendário Escolar</button>
+            </form>
+        </div>
+    `;
+    document.getElementById('registrosGestorContent').innerHTML = html;
+}
+
+function salvarConfigBimestres(e) {
+    e.preventDefault();
+    const inits = document.querySelectorAll('.bim-inicio');
+    const ends = document.querySelectorAll('.bim-fim');
+    
+    data.configBimestres = Array.from(inits).map((el, i) => ({
+        bim: i + 1,
+        inicio: el.value,
+        fim: ends[i].value
+    }));
+
+    persistirDados();
+    alert('Calendário atualizado! Os professores já podem visualizar as métricas baseadas nestas datas.');
+    renderRegistrosGestor();
 }
 
 async function renderAbaAlertasBuscaAtiva() {

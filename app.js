@@ -952,6 +952,9 @@ async function abrirTurma(id) {
             if (gestorData.avisosMural) {
                 data.avisosMural = gestorData.avisosMural;
             }
+            if (gestorData.configBimestres) {
+                data.configBimestres = gestorData.configBimestres;
+            }
             
             persistirDados(); // Salva a atualização localmente
         }
@@ -1222,11 +1225,24 @@ function removerEstudante(id) {
 // --- CHAMADA ---
 async function renderChamada() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     
     // Preserva a data selecionada se já estiver na tela, senão usa hoje
     const dataSelecionada = document.getElementById('chamadaData') ? document.getElementById('chamadaData').value : getTodayString();
     
+    // Configurações para cálculo de atestados no bimestre
+    const dataRef = new Date(dataSelecionada + 'T12:00:00');
+    const umMesAtras = new Date(dataRef);
+    umMesAtras.setMonth(umMesAtras.setMonth() - 1);
+
+    const configBimestres = data.configBimestres || [];
+    const getBimestre = (d) => {
+        const dStr = d.toISOString().split('T')[0];
+        const match = configBimestres.find(c => dStr >= c.inicio && dStr <= c.fim);
+        return match ? match.bim : 0;
+    };
+    const bimestreAtual = getBimestre(dataRef);
+    const configAtual = configBimestres.find(c => c.bim === bimestreAtual);
+
     // [NOVO] Busca faltas compartilhadas (outros professores)
     const sharedAbsences = await getFaltasCompartilhadas(dataSelecionada);
 
@@ -1269,6 +1285,8 @@ async function renderChamada() {
                     regsAluno.forEach(r => {
                         if (r.tipo === 'Faltoso') {
                             badges += `<span style="background:#fed7d7; color:#c53030; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold;">Faltoso</span>`;
+                        } else if (r.tipo === 'Observacao') {
+                            badges += `<span style="background:#fffaf0; color:#d69e2e; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #fbd38d;" title="${r.descricao || ''}">Obs</span>`;
                         } else if (r.tipo === 'Atestado') {
                             // Verifica se a data da chamada cai dentro do período do atestado
                             const parts = r.data.split('-');
@@ -1284,6 +1302,24 @@ async function renderChamada() {
                             }
                         }
                     });
+
+                    // [NOVA LÓGICA] Soma de dias de atestado no bimestre se teve algum no último mês
+                    const registrosGeral = data.registrosAdministrativos || [];
+                    const atestadosEstudante = registrosGeral.filter(r => r.estudanteId == e.id && r.tipo === 'Atestado');
+                    const teveAtestadoRecente = atestadosEstudante.some(r => {
+                        const dReg = new Date(r.data + 'T12:00:00');
+                        return dReg >= umMesAtras && dReg <= dataRef;
+                    });
+
+                    let badgeBimestre = '';
+                    if (teveAtestadoRecente && bimestreAtual > 0) {
+                        const totalDiasBim = atestadosEstudante
+                            .filter(r => r.data >= configAtual.inicio && r.data <= configAtual.fim)
+                            .reduce((acc, r) => acc + (parseInt(r.dias) || 0), 0);
+                        if (totalDiasBim > 0) {
+                            badgeBimestre = `<span style="background:#e2e8f0; color:#4a5568; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #cbd5e0;" title="Total de dias de atestado acumulados no ${bimestreAtual}º bimestre">Bimestre: ${totalDiasBim}d</span>`;
+                        }
+                    }
 
                     // [NOVO] Lógica de Compartilhamento de Faltas
                     const reporters = sharedAbsences[e.id] || [];
@@ -1304,6 +1340,7 @@ async function renderChamada() {
                         <td>
                             ${e.nome_completo}
                             ${badges}
+                            ${badgeBimestre}
                             ${sharedBadge}
                         </td>
                         <td><input type="checkbox" class="presenca-check" data-id="${e.id}" ${isChecked ? 'checked' : ''}></td>
