@@ -1221,7 +1221,8 @@ function removerEstudante(id) {
 
 // --- CHAMADA ---
 async function renderChamada() {
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     
     // Preserva a data selecionada se já estiver na tela, senão usa hoje
     const dataSelecionada = document.getElementById('chamadaData') ? document.getElementById('chamadaData').value : getTodayString();
