@@ -1,6 +1,6 @@
 // --- LÓGICA DO GESTOR ---
 
-let currentRegistrosTab = 'administrativos'; // 'administrativos', 'busca_ativa', 'bimestres' ou 'arquivados'
+let currentRegistrosTab = 'administrativos'; // 'administrativos', 'busca_ativa', 'bimestres', 'arquivados' ou 'limpeza'
 
 function renderGestorPanel() {
     // Navegação de Gestor
@@ -76,6 +76,10 @@ function renderRegistrosGestor() {
                         onclick="currentRegistrosTab='bimestres'; renderRegistrosGestor()">
                     📅 Config. Bimestres
                 </button>
+                <button class="btn ${currentRegistrosTab === 'limpeza' ? 'btn-primary' : 'btn-secondary'}" 
+                        onclick="currentRegistrosTab='limpeza'; renderRegistrosGestor()">
+                    🧹 Limpeza de Duplicados
+                </button>
             </div>
 
             <div id="registrosGestorContent">
@@ -94,6 +98,8 @@ function renderRegistrosGestor() {
         renderAbaConfigBimestres();
     } else if (currentRegistrosTab === 'arquivados') {
         renderAbaRegistrosArquivados();
+    } else if (currentRegistrosTab === 'limpeza') {
+        renderAbaLimpezaDados();
     }
 }
 
@@ -990,6 +996,141 @@ async function carregarVistaCompartilhada(shareId) {
     }
 }
 
+// --- FERRAMENTA DE LIMPEZA DE DUPLICADOS ---
+
+function renderAbaLimpezaDados() {
+    const estudantes = data.estudantes || [];
+    const histograma = {};
+    
+    // Agrupa por nome normalizado (sem espaços extras e em caixa alta)
+    estudantes.forEach(e => {
+        const nomeNorm = e.nome_completo.trim().toUpperCase();
+        if (!histograma[nomeNorm]) histograma[nomeNorm] = [];
+        histograma[nomeNorm].push(e);
+    });
+
+    const duplicados = Object.entries(histograma).filter(([nome, lista]) => lista.length > 1);
+
+    const html = `
+        <div>
+            <h2>🧹 Ferramenta de Limpeza de Duplicados</h2>
+            <p style="color:#666; font-size:14px; margin-bottom:20px;">
+                Esta ferramenta identifica estudantes com o mesmo nome completo e unifica seus registros (faltas, ocorrências, etc) em um único ID. 
+                Isso resolve problemas causados por atualizações via CSV onde nomes idênticos acabaram gerando IDs diferentes.
+            </p>
+
+            ${duplicados.length > 0 ? `
+                <div class="alert alert-warning" style="margin-bottom:20px; background:#fffaf0; padding:15px; border-radius:8px; border:1px solid #fbd38d;">
+                    <strong>⚠️ Atenção:</strong> Foram encontrados <strong>${duplicados.length}</strong> nomes com duplicidade de registro.
+                </div>
+                <table style="width:100%;">
+                    <thead>
+                        <tr>
+                            <th>Nome Completo</th>
+                            <th>Registros no Banco</th>
+                            <th>Turmas Detectadas</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${duplicados.map(([nome, lista]) => {
+                            const turmas = lista.map(e => {
+                                const t = data.turmas.find(turma => turma.id == e.id_turma);
+                                return t ? t.nome : '?';
+                            }).join(', ');
+                            return `
+                                <tr>
+                                    <td><strong>${nome}</strong></td>
+                                    <td>${lista.length} registros</td>
+                                    <td><small>${turmas}</small></td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+                <button class="btn btn-primary" style="margin-top:20px; width:100%; padding:15px; font-weight:bold;" onclick="executarLimpezaDuplicados()">
+                    🚀 Unificar Estudantes e Corrigir Histórico
+                </button>
+            ` : `
+                <p class="empty-state">✅ Nenhum estudante duplicado encontrado. Seu banco de dados está limpo!</p>
+            `}
+        </div>
+    `;
+    document.getElementById('registrosGestorContent').innerHTML = html;
+}
+
+async function executarLimpezaDuplicados() {
+    if (!confirm('Este processo irá fundir todos os estudantes duplicados. O primeiro ID encontrado para cada nome será mantido e todos os outros registros (faltas, ocorrências, tutorias, etc) serão transferidos para ele. Deseja continuar?')) return;
+
+    const estudantes = data.estudantes || [];
+    const histograma = {};
+    
+    estudantes.forEach(e => {
+        const nomeNorm = e.nome_completo.trim().toUpperCase();
+        if (!histograma[nomeNorm]) histograma[nomeNorm] = [];
+        histograma[nomeNorm].push(e);
+    });
+
+    let totalUnificados = 0;
+    const novosEstudantes = [];
+
+    for (const [nome, lista] of Object.entries(histograma)) {
+        if (lista.length === 1) {
+            novosEstudantes.push(lista[0]);
+            continue;
+        }
+
+        // Temos duplicados: Master é o primeiro da lista
+        const master = lista[0];
+        const masterId = master.id;
+        const idsDuplicados = lista.slice(1).map(e => e.id);
+        
+        // Função auxiliar para atualizar referências
+        const atualizarRef = (listaDados, campoId) => {
+            if (listaDados && Array.isArray(listaDados)) {
+                listaDados.forEach(item => {
+                    if (idsDuplicados.includes(item[campoId])) item[campoId] = masterId;
+                });
+            }
+        };
+
+        atualizarRef(data.presencas, 'id_estudante');
+        atualizarRef(data.atrasos, 'id_estudante');
+        atualizarRef(data.registrosAdministrativos, 'estudanteId');
+        atualizarRef(data.compensacoes, 'id_estudante');
+        atualizarRef(data.tutorados, 'id_estudante_origem');
+
+        // Ocorrências (ids_estudantes é um array de envolvidos)
+        if (data.ocorrencias) {
+            data.ocorrencias.forEach(o => {
+                if (o.ids_estudantes) {
+                    o.ids_estudantes = o.ids_estudantes.map(id => idsDuplicados.includes(id) ? masterId : id);
+                    o.ids_estudantes = [...new Set(o.ids_estudantes)]; // Remove duplicatas no array
+                }
+            });
+        }
+
+        novosEstudantes.push(master);
+        totalUnificados += idsDuplicados.length;
+    }
+
+    data.estudantes = novosEstudantes;
+    
+    // Deduplicação de Presenças (Evita múltiplas entradas para o mesmo dia após o merge)
+    if (data.presencas) {
+        const seen = new Set();
+        data.presencas = data.presencas.filter(p => {
+            const key = `${p.id_estudante}-${p.data}-${p.status}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
+
+    await persistirDados();
+    alert(`Limpeza concluída!\n\nRegistros de estudantes unificados: ${totalUnificados}`);
+    renderRegistrosGestor();
+}
+
 // --- GRADE DE HORÁRIOS (GESTOR) ---
 
 function renderHorariosGestor() {
@@ -1433,7 +1574,7 @@ async function processarImportacaoMassa() {
             const status = (idxStatus !== -1 && parts.length > idxStatus) ? parts[idxStatus].trim() : 'Ativo';
 
             // LÓGICA DE UPSERT / REMANEJAMENTO
-            const estudanteExistente = data.estudantes.find(e => e.nome_completo.toUpperCase() === nome);
+            const estudanteExistente = data.estudantes.find(e => e.nome_completo.trim().toUpperCase() === nome);
 
             if (estudanteExistente) {
                 // Evita duplicidade/atualização se não houve mudança
