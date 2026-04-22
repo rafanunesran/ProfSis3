@@ -347,10 +347,7 @@ async function fazerCadastro(e) {
     }
 
     const newUser = {
-        id: Date.now(),
-        id: userAuth ? userAuth.uid : Date.now(), // Usa UID como ID principal
-        uid: userAuth ? userAuth.uid : null,      // Armazena o UID seguro
-        nome,
+        id: userAuth ? userAuth.uid : Date.now(),
         email,
         senha,
         schoolId: escolaId,

@@ -1022,6 +1022,9 @@ async function renderEstudantes() {
     today.setHours(0,0,0,0);
     
     // Busca Avisos Gerais para esta turma
+    const configBimestres = data.configBimestres || [];
+    const registrosGeral = data.registrosAdministrativos || [];
+
     const turmaObj = (data.turmas || []).find(t => t.id == turmaAtual);
     const masterId = turmaObj ? turmaObj.masterId : null;
 
@@ -1169,11 +1172,30 @@ async function renderEstudantes() {
                 ${estudantes.map(e => {
                     const diagBadge = e.aee_diagnostico ? `<span style="font-size:11px; background:#e6fffa; color:#276749; padding:2px 6px; border-radius:4px; margin-left:5px; border:1px solid #b2f5ea; display:inline-block;">🧩 ${e.aee_diagnostico}</span>` : '';
                     
+                    // [NOVO] Lógica para exibir atestados por bimestre
+                    let badgeBimestre = '';
+                    const atestadosEstudante = registrosGeral.filter(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Atestado');
+                    
+                    const resumoBimestres = [];
+                    configBimestres.forEach(c => {
+                        if (!c.inicio || !c.fim) return;
+                        const totalDias = atestadosEstudante
+                            .filter(r => r.data >= c.inicio && r.data <= c.fim)
+                            .reduce((acc, r) => acc + (Math.abs(parseInt(r.dias)) || 0), 0);
+                        
+                        if (totalDias > 0) resumoBimestres.push(`${c.bim}B: ${totalDias}d`);
+                    });
+
+                    if (resumoBimestres.length > 0) {
+                        badgeBimestre = `<span style="background:#e2e8f0; color:#4a5568; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #cbd5e0;" title="Atestados acumulados por bimestre">${resumoBimestres.join(' / ')}</span>`;
+                    }
+
                     return `
                     <tr>
                         <td>
                             <a href="#" onclick="abrirEstudanteDetalhe(${e.id})" style="font-weight:bold; text-decoration:none; color:#2b6cb0;">${e.nome_completo}</a>
                             ${diagBadge}
+                            ${badgeBimestre}
                         </td>
                         <td><span style="font-size:12px; padding:2px 6px; border-radius:4px; background:#edf2f7;">${e.status || 'Ativo'}</span></td>
                         <td>${isGestor ? `<button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})">🗑️</button>` : '<span style="color:#ccc;">-</span>'}</td>
@@ -1230,18 +1252,9 @@ async function renderChamada() {
     const dataSelecionada = document.getElementById('chamadaData') ? document.getElementById('chamadaData').value : getTodayString();
     
     // Configurações para cálculo de atestados no bimestre
-    const dataRef = new Date(dataSelecionada + 'T12:00:00');
-    const umMesAtras = new Date(dataRef);
-    umMesAtras.setMonth(umMesAtras.setMonth() - 1);
-
     const configBimestres = data.configBimestres || [];
-    const getBimestre = (d) => {
-        const dStr = d.toISOString().split('T')[0];
-        const match = configBimestres.find(c => dStr >= c.inicio && dStr <= c.fim);
-        return match ? match.bim : 0;
-    };
-    const bimestreAtual = getBimestre(dataRef);
-    const configAtual = configBimestres.find(c => c.bim === bimestreAtual);
+    const configAtual = configBimestres.find(c => dataSelecionada >= c.inicio && dataSelecionada <= c.fim);
+    const bimestreAtual = configAtual ? configAtual.bim : 0;
 
     // [NOVO] Busca faltas compartilhadas (outros professores)
     const sharedAbsences = await getFaltasCompartilhadas(dataSelecionada);
@@ -1303,22 +1316,23 @@ async function renderChamada() {
                         }
                     });
 
-                    // [NOVA LÓGICA] Soma de dias de atestado no bimestre se teve algum no último mês
+                    // [ATUALIZAÇÃO] Soma de todos os dias de atestado (ativos e inativos) por bimestre
+                    let badgeBimestre = '';
                     const registrosGeral = data.registrosAdministrativos || [];
-                    const atestadosEstudante = registrosGeral.filter(r => r.estudanteId == e.id && r.tipo === 'Atestado');
-                    const teveAtestadoRecente = atestadosEstudante.some(r => {
-                        const dReg = new Date(r.data + 'T12:00:00');
-                        return dReg >= umMesAtras && dReg <= dataRef;
+                    const atestadosEstudante = registrosGeral.filter(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Atestado');
+                    
+                    const resumoBimestres = [];
+                    configBimestres.forEach(c => {
+                        if (!c.inicio || !c.fim) return;
+                        const totalDias = atestadosEstudante
+                            .filter(r => r.data >= c.inicio && r.data <= c.fim)
+                            .reduce((acc, r) => acc + (Math.abs(parseInt(r.dias)) || 0), 0);
+                        
+                        if (totalDias > 0) resumoBimestres.push(`${c.bim}B: ${totalDias}d`);
                     });
 
-                    let badgeBimestre = '';
-                    if (teveAtestadoRecente && bimestreAtual > 0) {
-                        const totalDiasBim = atestadosEstudante
-                            .filter(r => r.data >= configAtual.inicio && r.data <= configAtual.fim)
-                            .reduce((acc, r) => acc + (parseInt(r.dias) || 0), 0);
-                        if (totalDiasBim > 0) {
-                            badgeBimestre = `<span style="background:#e2e8f0; color:#4a5568; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #cbd5e0;" title="Total de dias de atestado acumulados no ${bimestreAtual}º bimestre">Bimestre: ${totalDiasBim}d</span>`;
-                        }
+                    if (resumoBimestres.length > 0) {
+                        badgeBimestre = `<span style="background:#e2e8f0; color:#4a5568; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #cbd5e0;" title="Atestados acumulados por bimestre">${resumoBimestres.join(' / ')}</span>`;
                     }
 
                     // [NOVO] Lógica de Compartilhamento de Faltas
@@ -3908,7 +3922,8 @@ function renderEstudanteGeral() {
     // LÓGICA DE UNIFICAÇÃO:
     // Encontra TODOS os IDs que esse aluno possui no sistema (em qualquer turma), baseado no Nome Completo.
     // Isso permite que registros de quando ele era "Remanejado" em outra turma apareçam aqui.
-    const todosRegistrosAluno = data.estudantes.filter(e => e.nome_completo === nome);
+    const nomeNorm = nome.trim().toUpperCase();
+    const todosRegistrosAluno = data.estudantes.filter(e => e.nome_completo.trim().toUpperCase() === nomeNorm);
     const todosIds = todosRegistrosAluno.map(e => e.id);
 
     // 1. Frequência (Soma de todas as turmas)
