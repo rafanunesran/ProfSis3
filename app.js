@@ -2078,7 +2078,7 @@ function renderTrabalhos() {
     const notas = data.notas || [];
 
     const html = `
-        <div style="margin-bottom: 15px; display: flex; gap: 5px; background: #f1f5f9; padding: 5px; border-radius: 8px;">
+        <div style="margin-bottom: 15px; display: flex; gap: 5px; background: #f1f5f9; padding: 5px; border-radius: 8px;" class="no-print">
             ${[1, 2, 3, 4].map(b => `
                 <button class="btn btn-sm ${currentBimestreTrabalhos === b ? 'btn-primary' : 'btn-secondary'}" 
                         style="flex:1; font-weight:bold;"
@@ -2090,7 +2090,7 @@ function renderTrabalhos() {
 
         <div style="margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
             <h3 style="margin:0;">📊 Planilha de Notas - ${currentBimestreTrabalhos}º Bimestre</h3>
-            <button class="btn btn-primary btn-sm" onclick="showModal('modalNovoTrabalho')">+ Criar Nova Atividade</button>
+            <button class="btn btn-primary btn-sm no-print" onclick="showModal('modalNovoTrabalho')">+ Criar Nova Atividade</button>
         </div>
         
         <div style="overflow-x:auto; background: white; border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
@@ -2101,37 +2101,58 @@ function renderTrabalhos() {
                         ${trabalhos.map(t => `
                             <th style="text-align:center; min-width: 100px; border-bottom:2px solid #cbd5e0; padding: 10px; background: #f8fafc;">
                                 <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
-                                    <span title="${t.titulo} (Peso: ${t.peso})" style="white-space: nowrap; font-weight: bold; color: #2d3748;">${t.titulo.substring(0,12)}${t.titulo.length > 12 ? '...' : ''}</span>
+                                    <span title="${t.titulo}" style="white-space: nowrap; font-weight: bold; color: #2d3748;">${t.titulo.substring(0,12)}</span>
                                     <span style="font-size: 10px; color: #718096; font-weight: normal;">Peso: ${t.peso}</span>
-                                    <button class="btn btn-xs btn-danger" style="padding:0 5px; font-size:10px; border-radius: 50%; opacity: 0.6;" onclick="removerTrabalho(${t.id})" title="Excluir Atividade">×</button>
+                                    <button class="btn btn-xs btn-danger no-print" style="padding:0 5px; font-size:10px; border-radius: 50%; opacity: 0.6;" onclick="removerTrabalho(${t.id})" title="Excluir Atividade">×</button>
                                 </div>
                             </th>
                         `).join('')}
+                        <th style="text-align:center; min-width: 90px; border-bottom:2px solid #cbd5e0; padding: 10px; background: #edf2f7; color: #2d3748; font-weight: bold; position: sticky; right: 0; z-index: 10; border-left: 2px solid #cbd5e0;">MÉDIA</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${estudantes.map(e => `
-                        <tr onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='transparent'">
-                            <td style="position:sticky; left:0; background:inherit; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cbd5e0; z-index: 5;">${e.nome_completo}</td>
-                            ${trabalhos.map(t => {
-                                const nota = notas.find(n => n.id_trabalho == t.id && n.id_estudante == e.id);
-                                const valor = nota ? nota.valor : '';
-                                return `
-                                    <td style="text-align:center; border: 1px solid #e2e8f0; padding: 0;">
-                                        <input type="text" value="${valor}" 
-                                            style="width:100%; border:none; text-align:center; padding: 12px 0; background:transparent; font-size:13px; outline: none; transition: background 0.2s;"
-                                            placeholder="-"
-                                            onfocus="this.parentElement.style.background='#ebf8ff'; this.style.fontWeight='bold';"
-                                            onblur="this.parentElement.style.background='transparent'; this.style.fontWeight='normal'; salvarNota(${t.id}, ${e.id}, this.value)">
-                                    </td>
-                                `;
-                            }).join('')}
-                        </tr>
-                    `).join('')}
+                    ${estudantes.map(e => {
+                        let somaPesos = 0;
+                        let somaProdutos = 0;
+                        
+                        const gradeCells = trabalhos.map(t => {
+                            const nota = notas.find(n => n.id_trabalho == t.id && n.id_estudante == e.id);
+                            const valor = nota ? nota.valor : '';
+                            const peso = parseFloat(t.peso) || 0;
+                            
+                            if (valor !== '') {
+                                somaProdutos += (parseFloat(valor.toString().replace(',', '.')) || 0) * peso;
+                                somaPesos += peso;
+                            }
+
+                            return `
+                                <td style="text-align:center; border: 1px solid #e2e8f0; padding: 0;">
+                                    <input type="text" value="${valor}" 
+                                        style="width:100%; border:none; text-align:center; padding: 12px 0; background:transparent; font-size:13px; outline: none;"
+                                        placeholder="-"
+                                        onfocus="this.parentElement.style.background='#ebf8ff';"
+                                        onblur="this.parentElement.style.background='transparent'; salvarNota(${t.id}, ${e.id}, this.value)">
+                                </td>
+                            `;
+                        }).join('');
+
+                        const media = somaPesos > 0 ? (somaProdutos / somaPesos).toFixed(1) : '-';
+                        const corMedia = (media !== '-' && parseFloat(media) < 5) ? '#e53e3e' : '#2d3748';
+
+                        return `
+                            <tr onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='transparent'">
+                                <td style="position:sticky; left:0; background:inherit; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cbd5e0; z-index: 5;">${e.nome_completo}</td>
+                                ${gradeCells}
+                                <td id="media-est-current-${e.id}" style="text-align:center; font-weight:bold; color: ${corMedia}; background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; right: 0; z-index: 5; border-left: 2px solid #cbd5e0;">
+                                    ${media}
+                                </td>
+                            </tr>
+                        `;
+                    }).join('')}
                 </tbody>
             </table>
         </div>
-        ${trabalhos.length === 0 ? '<p class="empty-state">Crie uma atividade (Ex: Prova, Simulado) para começar a lançar notas.</p>' : ''}
+        ${trabalhos.length === 0 ? '<p class="empty-state">Crie uma atividade para começar a lançar notas.</p>' : ''}
     `;
     document.getElementById('tabTrabalhos').innerHTML = html;
 }
@@ -2140,14 +2161,35 @@ async function salvarNota(trabalhoId, estudanteId, valor) {
     if (!data.notas) data.notas = [];
     let nota = data.notas.find(n => n.id_trabalho == trabalhoId && n.id_estudante == estudanteId);
     if (nota) {
-        if (String(nota.valor) === String(valor)) return; // Evita salvamento se não houver mudança
+        if (String(nota.valor) === String(valor)) return;
         nota.valor = valor;
     } else {
-        if (!valor) return; // Não cria registro se estiver vazio
+        if (!valor) return;
         data.notas.push({ id: Date.now() + Math.random(), id_trabalho: trabalhoId, id_estudante: estudanteId, valor: valor });
     }
     await persistirDados();
-    console.log(`Nota salva: ${estudanteId} -> ${valor}`);
+    // Atualiza apenas a média do estudante no DOM para não perder o foco no input
+    recalcularMediaUI(estudanteId);
+}
+
+function recalcularMediaUI(estudanteId) {
+    const trabalhos = (data.trabalhos || []).filter(t => t.id_turma == turmaAtual && (t.bimestre == currentBimestreTrabalhos || (!t.bimestre && currentBimestreTrabalhos == 1)));
+    const notas = data.notas || [];
+    let somaPesos = 0, somaProdutos = 0;
+    trabalhos.forEach(t => {
+        const n = notas.find(nota => nota.id_trabalho == t.id && nota.id_estudante == estudanteId);
+        const peso = parseFloat(t.peso) || 0;
+        if (n && n.valor !== '') {
+            somaProdutos += (parseFloat(n.valor.toString().replace(',', '.')) || 0) * peso;
+            somaPesos += peso;
+        }
+    });
+    const media = somaPesos > 0 ? (somaProdutos / somaPesos).toFixed(1) : '-';
+    const el = document.getElementById(`media-est-current-${estudanteId}`);
+    if (el) {
+        el.textContent = media;
+        el.style.color = (media !== '-' && parseFloat(media) < 5) ? '#e53e3e' : '#2d3748';
+    }
 }
 
 function removerTrabalho(id) {
