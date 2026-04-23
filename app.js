@@ -2116,6 +2116,28 @@ function renderTrabalhos() {
                         let somaPesos = 0;
                         let somaProdutos = 0;
                         
+                        const registrosGeral = data.registrosAdministrativos || [];
+
+                        // [NOVO] Lógica para exibir tag Faltoso
+                        const isFaltoso = registrosGeral.some(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Faltoso');
+                        const tagFaltoso = isFaltoso ? `<span style="background:#fed7d7; color:#c53030; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #feb2b2;" title="Aluno com alerta de Faltoso na Gestão">Faltoso</span>` : '';
+
+                        // [NOVO] Lógica para exibir atestados no bimestre atual
+                        let badgeAtestadosBimestre = '';
+                        const atestadosEstudante = registrosGeral.filter(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Atestado');
+
+                        const configAtualBimestre = data.configBimestres.find(c => c.bim === currentBimestreTrabalhos);
+
+                        if (configAtualBimestre) {
+                            const totalDiasAtestado = atestadosEstudante
+                                .filter(r => r.data >= configAtualBimestre.inicio && r.data <= configAtualBimestre.fim)
+                                .reduce((acc, r) => acc + (Math.abs(parseInt(r.dias)) || 0), 0);
+
+                            if (totalDiasAtestado > 0) {
+                                badgeAtestadosBimestre = `<span style="background:#ffebee; color:#e53e3e; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #fbd38d;" title="Total de dias de atestado acumulados no ${currentBimestreTrabalhos}º bimestre">Atestados: ${totalDiasAtestado}d</span>`;
+                            }
+                        }
+
                         const gradeCells = trabalhos.map(t => {
                             const nota = notas.find(n => n.id_trabalho == t.id && n.id_estudante == e.id);
                             const valor = nota ? nota.valor : '';
@@ -2163,10 +2185,10 @@ function renderTrabalhos() {
 
                         return `
                             <tr onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='transparent'">
-                                <td style="position:sticky; left:0; background:inherit; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cbd5e0; z-index: 5;">${e.nome_completo}</td>
+                                <td style="position:sticky; left:0; background:inherit; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cbd5e0; z-index: 5;">${e.nome_completo} ${tagFaltoso}</td>
                                 ${gradeCells}
-                                <td id="media-est-current-${e.id}" style="text-align:center; font-weight:bold; color: ${corMedia}; background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; right: 0; z-index: 5; border-left: 2px solid #cbd5e0;">
-                                    ${media}
+                                <td id="media-est-current-${e.id}" style="text-align:center; font-weight:bold; color: ${corMedia}; background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; right: 0; z-index: 5; border-left: 2px solid #cbd5e0; display:flex; align-items:center; justify-content:center;">
+                                    ${media} ${badgeAtestadosBimestre}
                                 </td>
                             </tr>
                         `;
@@ -2363,6 +2385,7 @@ async function atualizarNotasRubricaPosEdicao(trabalhoId) {
     });
 }
 
+// Função auxiliar para recalcular e atualizar a média e o badge de atestados na UI
 function recalcularMediaUI(estudanteId) {
     const trabalhos = (data.trabalhos || []).filter(t => t.id_turma == turmaAtual && (t.bimestre == currentBimestreTrabalhos || (!t.bimestre && currentBimestreTrabalhos == 1)));
     const notas = data.notas || [];
@@ -2377,8 +2400,26 @@ function recalcularMediaUI(estudanteId) {
     });
     const media = somaPesos > 0 ? (somaProdutos / somaPesos).toFixed(1) : '-';
     const el = document.getElementById(`media-est-current-${estudanteId}`);
+
+    // [NOVO] Lógica para exibir atestados no bimestre atual
+    let badgeAtestadosBimestre = '';
+    const registrosGeral = data.registrosAdministrativos || [];
+    const atestadosEstudante = registrosGeral.filter(r => String(r.estudanteId) === String(estudanteId) && r.tipo === 'Atestado');
+
+    const configAtualBimestre = data.configBimestres.find(c => c.bim === currentBimestreTrabalhos);
+
+    if (configAtualBimestre) {
+        const totalDiasAtestado = atestadosEstudante
+            .filter(r => r.data >= configAtualBimestre.inicio && r.data <= configAtualBimestre.fim)
+            .reduce((acc, r) => acc + (Math.abs(parseInt(r.dias)) || 0), 0);
+
+        if (totalDiasAtestado > 0) {
+            badgeAtestadosBimestre = `<span style="background:#ffebee; color:#e53e3e; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #fbd38d;" title="Total de dias de atestado acumulados no ${currentBimestreTrabalhos}º bimestre">Atestados: ${totalDiasAtestado}d</span>`;
+        }
+    }
+
     if (el) {
-        el.textContent = media;
+        el.innerHTML = `${media} ${badgeAtestadosBimestre}`; // Use innerHTML to inject the span
         el.style.color = (media !== '-' && parseFloat(media) < 5) ? '#e53e3e' : '#2d3748';
     }
 }
