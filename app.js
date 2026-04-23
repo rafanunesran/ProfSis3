@@ -2090,7 +2090,7 @@ function renderTrabalhos() {
 
         <div style="margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
             <h3 style="margin:0;">📊 Planilha de Notas - ${currentBimestreTrabalhos}º Bimestre</h3>
-            <button class="btn btn-primary btn-sm no-print" onclick="showModal('modalNovoTrabalho')">+ Criar Nova Atividade</button>
+            <button class="btn btn-primary btn-sm no-print" onclick="abrirModalNovoTrabalho()">+ Criar Nova Atividade</button>
         </div>
         
         <div style="overflow-x:auto; background: white; border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
@@ -2099,8 +2099,9 @@ function renderTrabalhos() {
                     <tr>
                         <th style="text-align:left; min-width: 220px; position:sticky; left:0; background:#f8fafc; z-index:10; border-bottom:2px solid #cbd5e0; padding: 12px 15px; border-right: 2px solid #cbd5e0;">Estudante</th>
                         ${trabalhos.map(t => `
-                            <th style="text-align:center; min-width: 100px; border-bottom:2px solid #cbd5e0; padding: 10px; background: #f8fafc;">
+                            <th style="text-align:center; min-width: ${t.tipo === 'rubrica' ? (t.rubricas.length * 35 + 60) : 100}px; border-bottom:2px solid #cbd5e0; padding: 10px; background: #f8fafc;">
                                 <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
+                                    <button class="btn btn-xs btn-secondary no-print" style="padding:0 5px; font-size:10px; opacity: 0.6;" onclick="abrirModalNovoTrabalho(${t.id})" title="Editar Atividade">✏️</button>
                                     <span title="${t.titulo}" style="white-space: nowrap; font-weight: bold; color: #2d3748;">${t.titulo.substring(0,12)}</span>
                                     <span style="font-size: 10px; color: #718096; font-weight: normal;">Peso: ${t.peso}</span>
                                     <button class="btn btn-xs btn-danger no-print" style="padding:0 5px; font-size:10px; border-radius: 50%; opacity: 0.6;" onclick="removerTrabalho(${t.id})" title="Excluir Atividade">×</button>
@@ -2123,6 +2124,27 @@ function renderTrabalhos() {
                             if (valor !== '') {
                                 somaProdutos += (parseFloat(valor.toString().replace(',', '.')) || 0) * peso;
                                 somaPesos += peso;
+                            }
+
+                            if (t.tipo === 'rubrica') {
+                                const rubricas = t.rubricas || [];
+                                const marcadas = (nota && nota.rubricas_marcadas) ? nota.rubricas_marcadas.map(id => Number(id)) : [];
+                                const totalRub = nota ? (parseFloat(nota.valor) || 0) : 0;
+                                return `
+                                    <td style="text-align:center; border: 1px solid #e2e8f0; padding: 5px;">
+                                        <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
+                                            <div style="display:flex; gap:5px;">
+                                                ${t.rubricas.map(r => `
+                                                    <label style="display:flex; flex-direction:column; align-items:center; cursor:pointer;" title="${r.nome} (Peso: ${r.peso})">
+                                                        <input type="checkbox" onchange="toggleRubrica(${t.id}, ${e.id}, ${r.id}, this.checked)" ${marcadas.includes(r.id) ? 'checked' : ''}>
+                                                        <span style="font-size:9px; color:#a0aec0;">${r.id}</span>
+                                                    </label>
+                                                `).join('')}
+                                            </div>
+                                            <div id="rub-total-${t.id}-${e.id}" style="font-weight:bold; color:#3182ce; border-left:1px solid #e2e8f0; padding-left:8px; min-width:25px;">${totalRub > 0 ? totalRub.toFixed(1).replace('.0', '') : '-'}</div>
+                                        </div>
+                                    </td>
+                                `;
                             }
 
                             return `
@@ -2170,6 +2192,175 @@ async function salvarNota(trabalhoId, estudanteId, valor) {
     await persistirDados();
     // Atualiza apenas a média do estudante no DOM para não perder o foco no input
     recalcularMediaUI(estudanteId);
+}
+
+function abrirModalNovoTrabalho(trabalhoId = null) {
+    const modal = document.getElementById('modalNovoTrabalho');
+    const t = trabalhoId ? data.trabalhos.find(x => x.id == trabalhoId) : null;
+
+    modal.querySelector('.modal-content').innerHTML = `
+        <h3>${t ? 'Editar Atividade' : 'Nova Atividade'}</h3>
+        <form onsubmit="salvarTrabalho(event)">
+            <input type="hidden" id="trabalhoIdEdit" value="${trabalhoId || ''}">
+            <label>Título da Atividade:
+                <input type="text" id="trabalhoTitulo" required value="${t ? t.titulo : ''}" placeholder="Ex: Prova Mensal">
+            </label>
+            
+            <label>Tipo de Avaliação:
+                <select id="trabalhoTipo" onchange="toggleCamposRubrica(this.value)" ${t ? 'disabled' : ''}>
+                    <option value="comum" ${t?.tipo === 'comum' ? 'selected' : ''}>Comum (Nota Direta)</option>
+                    <option value="rubrica" ${t?.tipo === 'rubrica' ? 'selected' : ''}>Rubrica (Critérios Ponderados)</option>
+                </select>
+            </label>
+
+            <div id="campoPesoComum">
+                <label>Peso Total (Valor):
+                    <input type="number" id="trabalhoPeso" step="0.1" value="${t ? t.peso : '10'}">
+                </label>
+            </div>
+
+            <div id="camposRubrica" style="display:none; margin-top:15px; background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">
+                <p style="font-size:12px; color:#4a5568; margin-bottom:10px;">Defina os critérios e seus pesos. A nota final será a soma das rubricas marcadas.</p>
+                <div id="listaRubricasInputs"></div>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="adicionarRubricaInput()">+ Adicionar Critério</button>
+            </div>
+
+            <div style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('modalNovoTrabalho')">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Salvar Atividade</button>
+            </div>
+        </form>
+    `;
+
+    if (t && t.tipo === 'rubrica') {
+        toggleCamposRubrica('rubrica');
+        const container = document.getElementById('listaRubricasInputs');
+        container.innerHTML = '';
+        t.rubricas.forEach(r => adicionarRubricaInput(r.nome, r.peso));
+    } else if (!t) {
+        toggleCamposRubrica('comum');
+    }
+
+    showModal('modalNovoTrabalho');
+}
+
+function toggleCamposRubrica(tipo) {
+    document.getElementById('campoPesoComum').style.display = tipo === 'rubrica' ? 'none' : 'block';
+    document.getElementById('camposRubrica').style.display = tipo === 'rubrica' ? 'block' : 'none';
+    if (tipo === 'rubrica' && document.getElementById('listaRubricasInputs').children.length === 0) {
+        adicionarRubricaInput();
+    }
+}
+
+function adicionarRubricaInput(nome = '', peso = '') {
+    const container = document.getElementById('listaRubricasInputs');
+    const id = container.children.length + 1;
+    const div = document.createElement('div');
+    div.style = "display:flex; gap:10px; margin-bottom:8px; align-items:center;";
+    div.innerHTML = `
+        <span style="font-weight:bold; color:#718096; width:20px;">${id}.</span>
+        <input type="text" class="rubrica-nome" placeholder="Nome do critério" value="${nome}" style="flex:2; padding:5px; font-size:13px;">
+        <input type="number" class="rubrica-peso" placeholder="Peso" step="0.1" value="${peso}" style="flex:1; padding:5px; font-size:13px;">
+        <button type="button" class="btn btn-xs btn-danger" onclick="this.parentElement.remove()" style="padding:0 8px;">×</button>
+    `;
+    container.appendChild(div);
+}
+
+async function salvarTrabalho(e) {
+    e.preventDefault();
+    const idEdit = document.getElementById('trabalhoIdEdit').value;
+    const titulo = document.getElementById('trabalhoTitulo').value;
+    const tipo = document.getElementById('trabalhoTipo').value;
+    
+    let pesoTotal = 0;
+    let rubricas = [];
+
+    if (tipo === 'rubrica') {
+        const nomes = document.querySelectorAll('.rubrica-nome');
+        const pesos = document.querySelectorAll('.rubrica-peso');
+        nomes.forEach((input, i) => {
+            if (input.value) {
+                const w = parseFloat(pesos[i].value) || 0;
+                rubricas.push({ id: i + 1, nome: input.value, peso: w });
+                pesoTotal += w;
+            }
+        });
+    } else {
+        pesoTotal = parseFloat(document.getElementById('trabalhoPeso').value) || 0;
+    }
+
+    if (!data.trabalhos) data.trabalhos = [];
+
+    if (idEdit) {
+        const t = data.trabalhos.find(x => x.id == idEdit);
+        if (t) {
+            t.titulo = titulo;
+            t.peso = pesoTotal;
+            if (t.tipo === 'rubrica') t.rubricas = rubricas;
+            // Recalcula notas de todos os alunos se for rubrica
+            if (t.tipo === 'rubrica') atualizarNotasRubricaPosEdicao(t.id);
+        }
+    } else {
+        data.trabalhos.push({
+            id: Date.now(),
+            id_turma: turmaAtual,
+            titulo: titulo,
+            tipo: tipo,
+            peso: pesoTotal,
+            rubricas: rubricas,
+            bimestre: currentBimestreTrabalhos
+        });
+    }
+    
+    await persistirDados();
+    closeModal('modalNovoTrabalho');
+    renderTrabalhos();
+}
+
+async function toggleRubrica(trabalhoId, estudanteId, rubricId, isChecked) {
+    if (!data.notas) data.notas = [];
+    let nota = data.notas.find(n => n.id_trabalho == trabalhoId && n.id_estudante == estudanteId);
+    const trabalho = data.trabalhos.find(t => t.id == trabalhoId);
+    
+    if (!nota) {
+        nota = { id: Date.now() + Math.random(), id_trabalho: trabalhoId, id_estudante: estudanteId, valor: 0, rubricas_marcadas: [] };
+        data.notas.push(nota);
+    }
+    
+    if (!nota.rubricas_marcadas) nota.rubricas_marcadas = [];
+    
+    if (isChecked) {
+        if (!nota.rubricas_marcadas.includes(rubricId)) nota.rubricas_marcadas.push(rubricId);
+    } else {
+        nota.rubricas_marcadas = nota.rubricas_marcadas.filter(id => id != rubricId);
+    }
+    
+    let total = 0;
+    trabalho.rubricas.forEach(r => { if (nota.rubricas_marcadas.includes(r.id)) total += parseFloat(String(r.peso).replace(',', '.')) || 0; });
+    nota.valor = total;
+
+    const totalEl = document.getElementById(`rub-total-${trabalhoId}-${estudanteId}`);
+    if (totalEl) totalEl.textContent = total > 0 ? total.toFixed(1).replace('.0', '') : '-';
+
+    await persistirDados();
+    recalcularMediaUI(estudanteId);
+}
+
+async function atualizarNotasRubricaPosEdicao(trabalhoId) {
+    const trabalho = data.trabalhos.find(t => t.id == trabalhoId);
+    if (!trabalho || trabalho.tipo !== 'rubrica') return;
+    
+    (data.notas || []).forEach(nota => {
+        if (nota.id_trabalho == trabalhoId && nota.rubricas_marcadas) {
+            let novoTotal = 0;
+            trabalho.rubricas.forEach(r => {
+                if (nota.rubricas_marcadas.includes(r.id)) {
+                    novoTotal += parseFloat(String(r.peso).replace(',', '.')) || 0;
+                }
+            });
+            nota.valor = novoTotal;
+        }
+    });
 }
 
 function recalcularMediaUI(estudanteId) {
@@ -3949,26 +4140,6 @@ function registrarEncontroAtalho(tutoradoId) {
     const select = document.getElementById('encontroTutorado');
     if (select) select.value = tutoradoId;
     document.getElementById('encontroData').value = getTodayString();
-}
-
-function salvarTrabalho(e) {
-    e.preventDefault();
-    const titulo = document.getElementById('trabalhoTitulo').value;
-    const peso = document.getElementById('trabalhoPeso').value;
-
-    if (!data.trabalhos) data.trabalhos = [];
-    data.trabalhos.push({
-        id: Date.now(),
-        id_turma: turmaAtual,
-        titulo: titulo,
-        peso: peso,
-        bimestre: currentBimestreTrabalhos
-    });
-    
-    persistirDados();
-    closeModal('modalNovoTrabalho');
-    renderTrabalhos();
-    e.target.reset();
 }
 
 function salvarDetalhesEvento(e) {
