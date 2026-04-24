@@ -1953,13 +1953,27 @@ function renderAtrasos() {
     
     // Filtro de Meses
     const currentYear = new Date().getFullYear();
-    const mesInicio = document.getElementById('filtroAtrasoMesInicio') ? parseInt(document.getElementById('filtroAtrasoMesInicio').value) : 0; // Jan
-    const mesFim = document.getElementById('filtroAtrasoMesFim') ? parseInt(document.getElementById('filtroAtrasoMesFim').value) : 11; // Dez
+    const mesInicio = document.getElementById('filtroAtrasoMesInicio') ? parseInt(document.getElementById('filtroAtrasoMesInicio').value) : 0;
+    const mesFim = document.getElementById('filtroAtrasoMesFim') ? parseInt(document.getElementById('filtroAtrasoMesFim').value) : 11;
 
     let atrasos = (data.atrasos || []).filter(a => a.id_turma == turmaAtual);
     atrasos = atrasos.filter(a => {
-        const d = new Date(a.data);
+        const d = new Date(a.data + 'T12:00:00');
         return d.getMonth() >= mesInicio && d.getMonth() <= mesFim && d.getFullYear() === currentYear;
+    });
+
+    // Agrupamento por Estudante
+    const agrupado = {};
+    atrasos.forEach(a => {
+        if (!agrupado[a.id_estudante]) agrupado[a.id_estudante] = [];
+        agrupado[a.id_estudante].push(a);
+    });
+
+    // Ordenação dos IDs pelo nome do estudante
+    const idsOrdenados = Object.keys(agrupado).sort((a, b) => {
+        const estA = todosEstudantes.find(e => e.id == a)?.nome_completo || '';
+        const estB = todosEstudantes.find(e => e.id == b)?.nome_completo || '';
+        return estA.localeCompare(estB);
     });
 
     const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -1978,25 +1992,42 @@ function renderAtrasos() {
             </div>
         </div>
 
-        <h3>Histórico de Atrasos</h3>
-        <div style="margin-bottom: 10px; display: flex; gap: 10px; align-items: center;">
-            <label>De: <select id="filtroAtrasoMesInicio" onchange="renderAtrasos()">${meses.map((m, i) => `<option value="${i}" ${i === mesInicio ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
-            <label>Até: <select id="filtroAtrasoMesFim" onchange="renderAtrasos()">${meses.map((m, i) => `<option value="${i}" ${i === mesFim ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <h3 style="margin:0;">Histórico de Atrasos</h3>
+            <div style="display: flex; gap: 10px; align-items: center; font-size:13px;">
+                <label>De: <select id="filtroAtrasoMesInicio" onchange="renderAtrasos()">${meses.map((m, i) => `<option value="${i}" ${i === mesInicio ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+                <label>Até: <select id="filtroAtrasoMesFim" onchange="renderAtrasos()">${meses.map((m, i) => `<option value="${i}" ${i === mesFim ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+            </div>
         </div>
 
         <table>
-            <thead><tr><th>Data</th><th>Estudante</th><th>Ações</th></tr></thead>
+            <thead>
+                <tr>
+                    <th style="width:250px;">Estudante</th>
+                    <th>Datas de Atraso</th>
+                    <th style="text-align:center; width:60px;">Total</th>
+                </tr>
+            </thead>
             <tbody>
-                ${atrasos.length > 0 ? atrasos.map(a => {
-                    const est = todosEstudantes.find(e => e.id == a.id_estudante);
+                ${idsOrdenados.length > 0 ? idsOrdenados.map(estId => {
+                    const est = todosEstudantes.find(e => e.id == estId);
+                    const lista = agrupado[estId].sort((a,b) => b.data.localeCompare(a.data));
+                    
+                    const tagsHtml = lista.map(a => `
+                        <span style="display:inline-flex; align-items:center; background:#edf2f7; border:1px solid #cbd5e0; padding:2px 8px; border-radius:12px; font-size:11px; margin:2px; color:#4a5568;">
+                            ${formatDate(a.data)}
+                            <span onclick="removerAtraso(${a.id})" style="margin-left:6px; cursor:pointer; color:#e53e3e; font-weight:bold; font-size:14px; line-height:1;" title="Remover este registro">×</span>
+                        </span>
+                    `).join('');
+
                     return `
                         <tr>
-                            <td>${formatDate(a.data)}</td>
-                            <td>${est ? est.nome_completo : 'Excluído'}</td>
-                            <td><button class="btn btn-danger btn-sm" onclick="removerAtraso(${a.id})">🗑️</button></td>
+                            <td><strong>${est ? est.nome_completo : 'Excluído'}</strong></td>
+                            <td><div style="display:flex; flex-wrap:wrap;">${tagsHtml}</div></td>
+                            <td style="text-align:center; font-weight:bold; font-size:14px; color:#d69e2e;">${lista.length}</td>
                         </tr>
                     `;
-                }).join('') : '<tr><td colspan="3" style="text-align:center; color:#999;">Nenhum atraso registrado neste período.</td></tr>'}
+                }).join('') : '<tr><td colspan="3" style="text-align:center; color:#999; padding:20px;">Nenhum atraso registrado neste período.</td></tr>'}
             </tbody>
         </table>
     `;
