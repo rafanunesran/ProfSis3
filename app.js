@@ -2129,21 +2129,54 @@ function getNotaCompensacao(estudanteId, bimestre) {
     const config = (data.configBimestres || []).find(c => c.bim === bimestre);
     if (!config || !config.inicio || !config.fim) return 10;
 
+    // 1. Total de faltas do estudante no bimestre
+    const faltasEstudanteNoBimestre = (data.presencas || []).filter(p => 
+        String(p.id_estudante) === String(estudanteId) && 
+        p.status === 'falta' &&
+        p.data >= config.inicio && p.data <= config.fim
+    ).length;
+
+    if (faltasEstudanteNoBimestre === 0) return 10;
+
+    // 2. Cálculo da Base (Total de aulas dadas)
+    // Tenta primeiro contar os dias únicos registrados no "Diário de Classe" (registrosAula)
+    const datasDiario = new Set((data.registrosAula || [])
+        .filter(r => r.id_turma == turmaAtual && r.data >= config.inicio && r.data <= config.fim)
+        .map(r => r.data)
+    );
+    
+    let totalAulas = datasDiario.size;
+
+    // Fallback: Se não houver registros de aula, usa os dias em que houve qualquer falta na turma
+    if (totalAulas === 0) {
+        const idsTurma = new Set((data.estudantes || []).filter(e => e.id_turma == turmaAtual).map(e => String(e.id)));
+        totalAulas = new Set((data.presencas || [])
+            .filter(p => p.data >= config.inicio && p.data <= config.fim && idsTurma.has(String(p.id_estudante)))
+            .map(p => p.data)
+        ).size;
+    }
+
+    // 3. Verificação do limite de 30%
+    if (totalAulas > 0 && (faltasEstudanteNoBimestre / totalAulas) * 100 > 30) {
+        return 0;
+    }
+
+    // 4. Nota Base 5 + Proporção de Compensações entregues
+    let notaFinal = 5;
+
     const comps = (data.compensacoes || []).filter(c => {
         if (String(c.id_estudante) !== String(estudanteId)) return false;
-        // Consideramos o dia 15 do mês de referência para verificar se cai no bimestre
-        const refDate = new Date(c.ano_referencia, c.mes_referencia, 15).toISOString().split('T')[0];
+        const refDate = `${c.ano_referencia}-${String(c.mes_referencia + 1).padStart(2, '0')}-15`;
         return refDate >= config.inicio && refDate <= config.fim;
     });
 
-    if (comps.length === 0) return 10;
+    if (comps.length > 0) {
+        const entregues = comps.filter(c => c.status === 'entregue').length;
+        const proporcao = entregues / comps.length;
+        notaFinal = parseFloat((5 + (5 * proporcao)).toFixed(1));
+    }
 
-    const entregues = comps.filter(c => c.status === 'entregue').length;
-    if (entregues === 0) return 0;
-
-    const proporcao = entregues / comps.length;
-    // Escala: 5 pontos fixos pelo esforço inicial + 5 pontos proporcionais ao volume entregue
-    return parseFloat((5 + (5 * proporcao)).toFixed(1));
+    return notaFinal;
 }
 
 function getNotaCaderno(estudanteId, bimestre) {
@@ -2282,9 +2315,12 @@ function renderTrabalhos() {
                                 `;
                             }
 
+                            // Formata o valor para exibição (usa vírgula se for número)
+                            const displayValor = (typeof valor === 'number') ? valor.toFixed(1).replace('.', ',').replace(',0', '') : valor;
+
                             return `
                                 <td style="text-align:center; border: 1px solid #e2e8f0; padding: 0;">
-                                    <input type="text" value="${valor}" 
+                                    <input type="text" value="${displayValor}" 
                                         style="width:100%; border:none; text-align:center; padding: 12px 0; background:transparent; font-size:13px; outline: none;"
                                         placeholder="-"
                                         onfocus="this.parentElement.style.background='#ebf8ff';"
