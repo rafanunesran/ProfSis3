@@ -2079,6 +2079,27 @@ function removerRegistroAula(id) {
 // --- TRABALHOS ---
 let currentBimestreTrabalhos = 1;
 
+function getNotaCompensacao(estudanteId, bimestre) {
+    const config = (data.configBimestres || []).find(c => c.bim === bimestre);
+    if (!config || !config.inicio || !config.fim) return 10;
+
+    const comps = (data.compensacoes || []).filter(c => {
+        if (String(c.id_estudante) !== String(estudanteId)) return false;
+        // Consideramos o dia 15 do mês de referência para verificar se cai no bimestre
+        const refDate = new Date(c.ano_referencia, c.mes_referencia, 15).toISOString().split('T')[0];
+        return refDate >= config.inicio && refDate <= config.fim;
+    });
+
+    if (comps.length === 0) return 10;
+
+    const entregues = comps.filter(c => c.status === 'entregue').length;
+    if (entregues === 0) return 0;
+
+    const proporcao = entregues / comps.length;
+    // Escala: 5 pontos fixos pelo esforço inicial + 5 pontos proporcionais ao volume entregue
+    return parseFloat((5 + (5 * proporcao)).toFixed(1));
+}
+
 function renderTrabalhos() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
     const trabalhos = (data.trabalhos || []).filter(t => t.id_turma == turmaAtual && (t.bimestre == currentBimestreTrabalhos || (!t.bimestre && currentBimestreTrabalhos == 1)));
@@ -2115,7 +2136,8 @@ function renderTrabalhos() {
                                 </div>
                             </th>
                         `).join('')}
-                        <th style="text-align:center; min-width: 90px; border-bottom:2px solid #cbd5e0; padding: 10px; background: #edf2f7; color: #2d3748; font-weight: bold; position: sticky; right: 0; z-index: 10; border-left: 2px solid #cbd5e0;">MÉDIA</th>
+                        <th style="text-align:center; min-width: 90px; border-bottom:2px solid #cbd5e0; padding: 10px; background: #edf2f7; color: #2d3748; font-weight: bold; position: sticky; right: 80px; z-index: 10; border-left: 2px solid #cbd5e0;">MÉDIA</th>
+                        <th style="text-align:center; min-width: 80px; border-bottom:2px solid #cbd5e0; padding: 10px; background: #edf2f7; color: #2d3748; font-weight: bold; position: sticky; right: 0; z-index: 10; border-left: 1px solid #cbd5e0;">FALTAS/AT.</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -2123,33 +2145,53 @@ function renderTrabalhos() {
                         let somaPesos = 0;
                         let somaProdutos = 0;
                         
+                        // Lógica para exibir tag Faltoso e Atestados
                         const registrosGeral = data.registrosAdministrativos || [];
-
-                        // [NOVO] Lógica para exibir tag Faltoso
                         const isFaltoso = registrosGeral.some(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Faltoso');
                         const tagFaltoso = isFaltoso ? `<span style="background:#fed7d7; color:#c53030; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #feb2b2;" title="Aluno com alerta de Faltoso na Gestão">Faltoso</span>` : '';
 
-                        // [NOVO] Lógica para exibir atestados no bimestre atual
-                        let badgeAtestadosBimestre = '';
-                        const atestadosEstudante = registrosGeral.filter(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Atestado');
-
+                        // [CORREÇÃO] Lógica robusta para exibir atestados e faltas no bimestre atual
                         const configAtualBimestre = data.configBimestres.find(c => c.bim === currentBimestreTrabalhos);
+                        let totalDiasAtestado = 0;
+                        let totalFaltasBimestre = 0;
 
                         if (configAtualBimestre) {
-                            const totalDiasAtestado = atestadosEstudante
-                                .filter(r => r.data >= configAtualBimestre.inicio && r.data <= configAtualBimestre.fim)
-                                .reduce((acc, r) => acc + (Math.abs(parseInt(r.dias)) || 0), 0);
+                            // Calcula dias de atestado considerando sobreposição com o período do bimestre
+                            const atestadosEstudante = registrosGeral.filter(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Atestado');
+                            
+                            const bStart = new Date(configAtualBimestre.inicio + 'T12:00:00');
+                            const bEnd = new Date(configAtualBimestre.fim + 'T12:00:00');
 
-                            if (totalDiasAtestado > 0) {
-                                badgeAtestadosBimestre = `<span style="background:#ffebee; color:#e53e3e; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #fbd38d;" title="Total de dias de atestado acumulados no ${currentBimestreTrabalhos}º bimestre">Atestados: ${totalDiasAtestado}d</span>`;
-                            }
+                            totalDiasAtestado = atestadosEstudante.reduce((acc, r) => {
+                                const cStart = new Date(r.data + 'T12:00:00');
+                                const cEnd = new Date(cStart);
+                                cEnd.setDate(cEnd.getDate() + (parseInt(r.dias) || 1) - 1);
+
+                                // Intersecção entre período do atestado e do bimestre
+                                const start = cStart > bStart ? cStart : bStart;
+                                const end = cEnd < bEnd ? cEnd : bEnd;
+
+                                if (start <= end) {
+                                    const diffDays = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+                                    return acc + diffDays;
+                                }
+                                return acc;
+                            }, 0);
+                            
+                            // Conta faltas no intervalo
+                            totalFaltasBimestre = (data.presencas || []).filter(p => p.id_estudante == e.id && p.status === 'falta' && p.data >= configAtualBimestre.inicio && p.data <= configAtualBimestre.fim).length;
                         }
 
                         const gradeCells = trabalhos.map(t => {
                             const nota = notas.find(n => n.id_trabalho == t.id && n.id_estudante == e.id);
-                            const valor = nota ? nota.valor : '';
+                            let valor = nota ? nota.valor : '';
                             const peso = parseFloat(t.peso) || 0;
                             
+                            // Se for do tipo compensação, calcula o valor dinamicamente
+                            if (t.tipo === 'compensacao') {
+                                valor = getNotaCompensacao(e.id, currentBimestreTrabalhos);
+                            }
+
                             const valorNum = (valor !== '') ? (parseFloat(valor.toString().replace(',', '.')) || 0) : 0;
                             somaProdutos += valorNum * peso;
                             somaPesos += peso;
@@ -2175,6 +2217,14 @@ function renderTrabalhos() {
                                 `;
                             }
 
+                            if (t.tipo === 'compensacao') {
+                                return `
+                                    <td style="text-align:center; border: 1px solid #e2e8f0; font-size: 12px; color: ${valorNum < 10 ? '#e53e3e' : '#2f855a'}; font-weight: bold; background: #fdfdfd;">
+                                        ${valorNum.toString().replace('.', ',')}
+                                    </td>
+                                `;
+                            }
+
                             return `
                                 <td style="text-align:center; border: 1px solid #e2e8f0; padding: 0;">
                                     <input type="text" value="${valor}" 
@@ -2192,9 +2242,13 @@ function renderTrabalhos() {
                         return `
                             <tr onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='transparent'">
                                 <td style="position:sticky; left:0; background:inherit; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cbd5e0; z-index: 5;">${e.nome_completo} ${tagFaltoso}</td>
-                                ${gradeCells}
-                                <td id="media-est-current-${e.id}" style="text-align:center; font-weight:bold; color: ${corMedia}; background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; right: 0; z-index: 5; border-left: 2px solid #cbd5e0; display:flex; align-items:center; justify-content:center;">
-                                    ${media} ${badgeAtestadosBimestre}
+                                ${gradeCells}                                
+                                <td id="media-est-current-${e.id}" style="text-align:center; font-weight:bold; color: ${corMedia}; background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; right: 80px; z-index: 5; border-left: 2px solid #cbd5e0;">
+                                    ${media}
+                                </td>
+                                <td style="text-align:center; background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; right: 0; z-index: 5; border-left: 1px solid #cbd5e0; font-size: 12px; color: #4a5568;">
+                                    <span style="color: ${totalFaltasBimestre > 0 ? '#e53e3e' : 'inherit'}; font-weight: bold;">${totalFaltasBimestre}</span>
+                                    <span style="color: #718096; font-size: 10px;">(${totalDiasAtestado}d)</span>
                                 </td>
                             </tr>
                         `;
@@ -2235,9 +2289,10 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
             </label>
             
             <label>Tipo de Avaliação:
-                <select id="trabalhoTipo" onchange="toggleCamposRubrica(this.value)" ${t ? 'disabled' : ''}>
+                <select id="trabalhoTipo" onchange="toggleCamposTrabalho(this.value)" ${t ? 'disabled' : ''}>
                     <option value="comum" ${t?.tipo === 'comum' ? 'selected' : ''}>Comum (Nota Direta)</option>
                     <option value="rubrica" ${t?.tipo === 'rubrica' ? 'selected' : ''}>Rubrica (Critérios Ponderados)</option>
+                    <option value="compensacao" ${t?.tipo === 'compensacao' ? 'selected' : ''}>Compensação de Faltas</option>
                 </select>
             </label>
 
@@ -2252,6 +2307,10 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
                 <div id="listaRubricasInputs"></div>
                 <button type="button" class="btn btn-sm btn-secondary" onclick="adicionarRubricaInput()">+ Adicionar Critério</button>
             </div>
+            
+            <div id="infoCompensacao" style="display:none; margin-top:15px; background:#ebf8ff; padding:15px; border-radius:8px; border:1px solid #bee3f8;">
+                <p style="font-size:12px; color:#2c5282; margin:0;">Esta atividade terá peso 10. A nota será calculada automaticamente com base nas entregas de compensação do bimestre.</p>
+            </div>
 
             <div style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('modalNovoTrabalho')">Cancelar</button>
@@ -2259,22 +2318,30 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
             </div>
         </form>
     `;
-
     if (t && t.tipo === 'rubrica') {
-        toggleCamposRubrica('rubrica');
+        toggleCamposTrabalho('rubrica');
         const container = document.getElementById('listaRubricasInputs');
         container.innerHTML = '';
         t.rubricas.forEach(r => adicionarRubricaInput(r.nome, r.peso));
+    } else if (t && t.tipo === 'compensacao') {
+        toggleCamposTrabalho('compensacao');
     } else if (!t) {
-        toggleCamposRubrica('comum');
+        toggleCamposTrabalho('comum');
+    }
+
+    // Se estiver editando uma compensação, o tipo não pode ser alterado
+    if (t && t.tipo === 'compensacao') {
+        document.getElementById('trabalhoTipo').disabled = true;
     }
 
     showModal('modalNovoTrabalho');
 }
 
-function toggleCamposRubrica(tipo) {
+function toggleCamposTrabalho(tipo) {
     document.getElementById('campoPesoComum').style.display = tipo === 'rubrica' ? 'none' : 'block';
     document.getElementById('camposRubrica').style.display = tipo === 'rubrica' ? 'block' : 'none';
+    document.getElementById('infoCompensacao').style.display = tipo === 'compensacao' ? 'block' : 'none';
+
     if (tipo === 'rubrica' && document.getElementById('listaRubricasInputs').children.length === 0) {
         adicionarRubricaInput();
     }
@@ -2299,6 +2366,7 @@ async function salvarTrabalho(e) {
     const idEdit = document.getElementById('trabalhoIdEdit').value;
     const titulo = document.getElementById('trabalhoTitulo').value;
     const tipo = document.getElementById('trabalhoTipo').value;
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
     
     let pesoTotal = 0;
     let rubricas = [];
@@ -2313,6 +2381,9 @@ async function salvarTrabalho(e) {
                 pesoTotal += w;
             }
         });
+    } else if (tipo === 'compensacao') {
+        pesoTotal = 10; // Peso fixo para compensação
+        rubricas = []; // Sem rubricas para compensação
     } else {
         pesoTotal = parseFloat(document.getElementById('trabalhoPeso').value) || 0;
     }
@@ -2323,13 +2394,15 @@ async function salvarTrabalho(e) {
         const t = data.trabalhos.find(x => x.id == idEdit);
         if (t) {
             t.titulo = titulo;
-            t.peso = pesoTotal;
-            if (t.tipo === 'rubrica') t.rubricas = rubricas;
-            // Recalcula notas de todos os alunos se for rubrica
-            if (t.tipo === 'rubrica') atualizarNotasRubricaPosEdicao(t.id);
+            t.peso = pesoTotal; // Atualiza peso (será 10 para compensação)
+            t.rubricas = rubricas; // Atualiza rubricas (vazio para compensação)
+
+            if (t.tipo === 'rubrica') {
+                atualizarNotasRubricaPosEdicao(t.id);
+            }
         }
-    } else {
-        data.trabalhos.push({
+    } else { // Nova atividade
+        const novoTrabalho = {
             id: Date.now(),
             id_turma: turmaAtual,
             titulo: titulo,
@@ -2337,7 +2410,8 @@ async function salvarTrabalho(e) {
             peso: pesoTotal,
             rubricas: rubricas,
             bimestre: currentBimestreTrabalhos
-        });
+        };
+        data.trabalhos.push(novoTrabalho);
     }
     
     await persistirDados();
@@ -2396,10 +2470,17 @@ function recalcularMediaUI(estudanteId) {
     const trabalhos = (data.trabalhos || []).filter(t => t.id_turma == turmaAtual && (t.bimestre == currentBimestreTrabalhos || (!t.bimestre && currentBimestreTrabalhos == 1)));
     const notas = data.notas || [];
     let somaPesos = 0, somaProdutos = 0;
+
     trabalhos.forEach(t => {
         const n = notas.find(nota => nota.id_trabalho == t.id && nota.id_estudante == estudanteId);
+        let valor = n ? n.valor : '';
+        
+        // Considera nota de compensação dinâmica no recálculo da média
+        if (t.tipo === 'compensacao') {
+            valor = getNotaCompensacao(estudanteId, currentBimestreTrabalhos);
+        }
+
         const peso = parseFloat(t.peso) || 0;
-        const valor = n ? n.valor : '';
         const valorNum = (valor !== '') ? (parseFloat(valor.toString().replace(',', '.')) || 0) : 0;
         somaProdutos += valorNum * peso;
         somaPesos += peso;
@@ -2407,25 +2488,8 @@ function recalcularMediaUI(estudanteId) {
     const media = somaPesos > 0 ? (somaProdutos / somaPesos).toFixed(1) : '-';
     const el = document.getElementById(`media-est-current-${estudanteId}`);
 
-    // [NOVO] Lógica para exibir atestados no bimestre atual
-    let badgeAtestadosBimestre = '';
-    const registrosGeral = data.registrosAdministrativos || [];
-    const atestadosEstudante = registrosGeral.filter(r => String(r.estudanteId) === String(estudanteId) && r.tipo === 'Atestado');
-
-    const configAtualBimestre = data.configBimestres.find(c => c.bim === currentBimestreTrabalhos);
-
-    if (configAtualBimestre) {
-        const totalDiasAtestado = atestadosEstudante
-            .filter(r => r.data >= configAtualBimestre.inicio && r.data <= configAtualBimestre.fim)
-            .reduce((acc, r) => acc + (Math.abs(parseInt(r.dias)) || 0), 0);
-
-        if (totalDiasAtestado > 0) {
-            badgeAtestadosBimestre = `<span style="background:#ffebee; color:#e53e3e; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #fbd38d;" title="Total de dias de atestado acumulados no ${currentBimestreTrabalhos}º bimestre">Atestados: ${totalDiasAtestado}d</span>`;
-        }
-    }
-
     if (el) {
-        el.innerHTML = `${media} ${badgeAtestadosBimestre}`; // Use innerHTML to inject the span
+        el.textContent = media;
         el.style.color = (media !== '-' && parseFloat(media) < 5) ? '#e53e3e' : '#2d3748';
     }
 }
