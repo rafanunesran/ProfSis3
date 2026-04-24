@@ -98,6 +98,7 @@ function getInitialData() {
         presencas: [], atrasos: [], trabalhos: [], notas: [],
         compensacoes: [], tutorados: [], encontros: [], eventos: [],
         ocorrencias: [], gradeHoraria: [], agendamentos: [],
-        registrosAdministrativos: [], mapeamentos: []
+        registrosAdministrativos: [], mapeamentos: [],
+        caderno: []
     };
 }

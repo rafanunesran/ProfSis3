@@ -986,6 +986,7 @@ async function abrirTurma(id) {
         <button class="turma-nav-btn" onclick="showTurmaTab('atrasos', event)"><span class="icon">⏰</span><span class="label">Atrasos</span></button>
         <button class="turma-nav-btn" onclick="showTurmaTab('trabalhos', event)"><span class="icon">📝</span><span class="label">Trabalhos</span></button>
         <button class="turma-nav-btn" onclick="showTurmaTab('compensacoes', event)"><span class="icon">⚖️</span><span class="label">Compensações</span></button>
+        <button class="turma-nav-btn" onclick="showTurmaTab('caderno', event)"><span class="icon">📖</span><span class="label">Caderno</span></button>
         <button class="turma-nav-btn" onclick="showTurmaTab('ocorrencias', event)"><span class="icon">⚠️</span><span class="label">Ocorrências</span></button>
         <button class="turma-nav-btn" onclick="showTurmaTab('mapeamento', event)"><span class="icon">🗺️</span><span class="label">Mapeamento</span></button>
     `;
@@ -995,8 +996,21 @@ async function abrirTurma(id) {
 }
 
 function showTurmaTab(tab, evt) {
+    const tabId = 'tab' + tab.charAt(0).toUpperCase() + tab.slice(1);
+    let tabEl = document.getElementById(tabId);
+
+    // [CORREÇÃO] Cria o container da aba dinamicamente se ele não existir no HTML
+    if (!tabEl) {
+        tabEl = document.createElement('div');
+        tabEl.id = tabId;
+        tabEl.className = 'turma-tab';
+        tabEl.style.display = 'none';
+        const container = document.querySelector('#turmaDetalhe .container') || document.getElementById('turmaDetalhe');
+        if (container) container.appendChild(tabEl);
+    }
+
     document.querySelectorAll('.turma-tab').forEach(t => t.style.display = 'none');
-    document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).style.display = 'block';
+    if (tabEl) tabEl.style.display = 'block';
     
     if (evt) {
         document.querySelectorAll('#turmaDetalhe nav .turma-nav-btn').forEach(b => b.classList.remove('active'));
@@ -1013,6 +1027,7 @@ function showTurmaTab(tab, evt) {
     if (tab === 'atrasos') renderAtrasos();
     if (tab === 'trabalhos') renderTrabalhos();
     if (tab === 'compensacoes') renderCompensacoes();
+    if (tab === 'caderno') renderCaderno();
     if (tab === 'mapeamento') renderMapeamento();
 }
 
@@ -2708,6 +2723,147 @@ function removerCompensacao(id) {
         persistirDados();
         renderCompensacoes();
     }
+}
+
+// --- CADERNO (DIÁRIO DE ATIVIDADES) ---
+function renderCaderno() {
+    const container = document.getElementById('tabCaderno');
+    if (!container) return; // Proteção contra erro de container ausente
+
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
+    const dataSelecionada = container.querySelector('#cadernoData') ? container.querySelector('#cadernoData').value : getTodayString();
+
+    const html = `
+        <div style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn btn-info" onclick="renderRelatorioMensalCaderno()">📅 Resumo Mensal do Caderno</button>
+        </div>
+        <div class="form-row">
+            <label>Data da Atividade: <input type="date" id="cadernoData" value="${dataSelecionada}" onchange="renderCaderno()"></label>
+        </div>
+        <table style="margin-top:10px;">
+            <thead>
+                <tr>
+                    <th>Estudante</th>
+                    <th style="text-align:center;">Situação da Atividade</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${estudantes.map(e => {
+                    const reg = (data.caderno || []).find(c => c.id_estudante == e.id && c.data == dataSelecionada);
+                    const status = reg ? reg.status : 'completo'; // Padrão: Completo
+
+                    return `
+                    <tr>
+                        <td>${e.nome_completo}</td>
+                        <td style="text-align:center;">
+                            <div style="display:flex; justify-content:center; gap:15px;">
+                                <label style="font-size:12px; cursor:pointer;"><input type="radio" name="status_${e.id}" value="completo" ${status === 'completo' ? 'checked' : ''}> C</label>
+                                <label style="font-size:12px; cursor:pointer; color:#d69e2e;"><input type="radio" name="status_${e.id}" value="incompleto" ${status === 'incompleto' ? 'checked' : ''}> I</label>
+                                <label style="font-size:12px; cursor:pointer; color:#e53e3e;"><input type="radio" name="status_${e.id}" value="nao_realizou" ${status === 'nao_realizou' ? 'checked' : ''}> N</label>
+                            </div>
+                        </td>
+                    </tr>
+                `}).join('')}
+            </tbody>
+        </table>
+        <button class="btn btn-success" onclick="salvarCadernoManual()" style="width:100%; margin-top:15px; padding: 12px;">💾 Salvar Registro do Caderno</button>
+    `;
+    container.innerHTML = html;
+}
+
+async function salvarCadernoManual() {
+    const dataReg = document.getElementById('cadernoData').value;
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
+    
+    if (!data.caderno) data.caderno = [];
+
+    estudantes.forEach(e => {
+        const radio = document.querySelector(`input[name="status_${e.id}"]:checked`);
+        const status = radio ? radio.value : 'completo';
+
+        // Remove registro anterior para evitar duplicidade
+        data.caderno = data.caderno.filter(c => !(c.id_estudante == e.id && c.data == dataReg));
+        
+        // Salva apenas se for diferente de 'completo' para economizar espaço, 
+        // ou salva tudo se preferir um log exato de quem foi avaliado.
+        // Aqui salvaremos todos para garantir a integridade do "diário".
+        data.caderno.push({
+            id: Date.now() + Math.random(),
+            id_estudante: e.id,
+            id_turma: turmaAtual,
+            data: dataReg,
+            status: status
+        });
+    });
+
+    await persistirDados();
+    alert('Registros do caderno salvos com sucesso!');
+    renderCaderno();
+}
+
+async function renderRelatorioMensalCaderno() {
+    const today = new Date();
+    const mesInput = document.getElementById('relCadernoMes');
+    const mesAtual = mesInput ? parseInt(mesInput.value) : today.getMonth();
+    const anoAtual = today.getFullYear();
+
+    const container = document.getElementById('tabCaderno');
+    if (!container) return;
+
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
+    const registros = data.caderno || [];
+
+    const daysInMonth = new Date(anoAtual, mesAtual + 1, 0).getDate();
+    const diasUteis = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+        const date = new Date(anoAtual, mesAtual, d);
+        if (date.getDay() !== 0 && date.getDay() !== 6) diasUteis.push(d);
+    }
+
+    const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+    const html = `
+        <button class="btn btn-secondary" style="margin-bottom:15px;" onclick="renderCaderno()">← Voltar para Lançamento</button>
+        <div class="card">
+            <h3>Resumo Mensal do Caderno</h3>
+            <div class="form-row" style="background:#f7fafc; padding:10px; border-radius:8px; margin-bottom:15px;">
+                <label>Mês: <select id="relCadernoMes" onchange="renderRelatorioMensalCaderno()">${meses.map((m, i) => `<option value="${i}" ${i === mesAtual ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+                <span style="font-size:12px; margin-left:15px;">Legenda: <strong>C</strong> (OK), <strong style="color:#d69e2e;">I</strong> (Incomp.), <strong style="color:#e53e3e;">N</strong> (Não fez)</span>
+            </div>
+            <div style="overflow-x:auto;">
+                <table style="font-size: 11px; border-collapse: collapse; width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="text-align:left; min-width: 150px; position:sticky; left:0; background:#fff; z-index:10;">Estudante</th>
+                            ${diasUteis.map(d => `<th style="text-align:center; width:20px; padding:2px;">${d}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${estudantes.map(e => {
+                            const cols = diasUteis.map(d => {
+                                const dataStr = `${anoAtual}-${String(mesAtual+1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                                const reg = registros.find(c => c.id_estudante == e.id && c.data == dataStr);
+                                
+                                let char = 'C';
+                                let style = 'color: #cbd5e0;'; // Cinza claro se for o padrão "automático"
+                                
+                                if (reg) {
+                                    style = 'font-weight:bold;';
+                                    if (reg.status === 'incompleto') { char = 'I'; style += 'color:#d69e2e;'; }
+                                    else if (reg.status === 'nao_realizou') { char = 'N'; style += 'color:#e53e3e;'; }
+                                    else { style += 'color:#2f855a;'; }
+                                }
+
+                                return `<td style="text-align:center; border: 1px solid #e2e8f0; padding: 2px; ${style}">${char}</td>`;
+                            }).join('');
+                            return `<tr><td style="position:sticky; left:0; background:#fff; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 4px;">${e.nome_completo}</td>${cols}</tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+    container.innerHTML = html;
 }
 
 // --- TUTORIA ---
