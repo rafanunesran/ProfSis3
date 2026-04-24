@@ -97,7 +97,7 @@ function getInitialData() {
         turmas: [], estudantes: [], horariosAulas: [], aulas: [],
         presencas: [], atrasos: [], trabalhos: [], notas: [],
         compensacoes: [], tutorados: [], encontros: [], eventos: [],
-        ocorrencias: [], gradeHoraria: [], agendamentos: [],
+        ocorrencias: [], gradeHoraria: [], agendamentos: [], registrosAula: [],
         registrosAdministrativos: [], mapeamentos: [],
         caderno: []
     };
