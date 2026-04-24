@@ -1484,7 +1484,7 @@ async function renderRelatorioMensalFaltas() {
         }
     }
 
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     const presencas = data.presencas || [];
 
     // const daysInMonth = new Date(anoAtual, mesAtual + 1, 0).getDate();
@@ -2115,6 +2115,24 @@ function getNotaCompensacao(estudanteId, bimestre) {
     return parseFloat((5 + (5 * proporcao)).toFixed(1));
 }
 
+function getNotaCaderno(estudanteId, bimestre) {
+    const config = (data.configBimestres || []).find(c => c.bim === bimestre);
+    if (!config || !config.inicio || !config.fim) return 10;
+
+    const registros = (data.caderno || []).filter(c => 
+        String(c.id_estudante) === String(estudanteId) && 
+        c.data >= config.inicio && c.data <= config.fim
+    );
+
+    let penalidade = 0;
+    registros.forEach(r => {
+        if (r.status === 'nao_realizou') penalidade += 1.0;
+        else if (r.status === 'incompleto') penalidade += 0.5;
+    });
+
+    return Math.max(0, parseFloat((10 - penalidade).toFixed(1)));
+}
+
 function renderTrabalhos() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
     const trabalhos = (data.trabalhos || []).filter(t => t.id_turma == turmaAtual && (t.bimestre == currentBimestreTrabalhos || (!t.bimestre && currentBimestreTrabalhos == 1)));
@@ -2199,14 +2217,15 @@ function renderTrabalhos() {
 
                         const gradeCells = trabalhos.map(t => {
                             const nota = notas.find(n => n.id_trabalho == t.id && n.id_estudante == e.id);
-                            let valor = nota ? nota.valor : '';
-                            const peso = parseFloat(t.peso) || 0;
+                            let valor = (nota && nota.valor !== undefined) ? nota.valor : '';
                             
-                            // Se for do tipo compensação, calcula o valor dinamicamente
-                            if (t.tipo === 'compensacao') {
-                                valor = getNotaCompensacao(e.id, currentBimestreTrabalhos);
+                            // [NOVO] Sugestão dinâmica: Se estiver vazio e for automático, sugere o cálculo
+                            if (valor === '') {
+                                if (t.tipo === 'compensacao') valor = getNotaCompensacao(e.id, currentBimestreTrabalhos);
+                                if (t.tipo === 'caderno_auto') valor = getNotaCaderno(e.id, currentBimestreTrabalhos);
                             }
 
+                            const peso = parseFloat(t.peso) || 0;
                             const valorNum = (valor !== '') ? (parseFloat(valor.toString().replace(',', '.')) || 0) : 0;
                             somaProdutos += valorNum * peso;
                             somaPesos += peso;
@@ -2228,14 +2247,6 @@ function renderTrabalhos() {
                                             </div>
                                             <div id="rub-total-${t.id}-${e.id}" style="font-weight:bold; color:#3182ce; border-left:1px solid #e2e8f0; padding-left:8px; min-width:25px;">${totalRub > 0 ? totalRub.toFixed(1).replace('.0', '') : '-'}</div>
                                         </div>
-                                    </td>
-                                `;
-                            }
-
-                            if (t.tipo === 'compensacao') {
-                                return `
-                                    <td style="text-align:center; border: 1px solid #e2e8f0; font-size: 12px; color: ${valorNum < 10 ? '#e53e3e' : '#2f855a'}; font-weight: bold; background: #fdfdfd;">
-                                        ${valorNum.toString().replace('.', ',')}
                                     </td>
                                 `;
                             }
@@ -2308,6 +2319,7 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
                     <option value="comum" ${t?.tipo === 'comum' ? 'selected' : ''}>Comum (Nota Direta)</option>
                     <option value="rubrica" ${t?.tipo === 'rubrica' ? 'selected' : ''}>Rubrica (Critérios Ponderados)</option>
                     <option value="compensacao" ${t?.tipo === 'compensacao' ? 'selected' : ''}>Compensação de Faltas</option>
+                    <option value="caderno_auto" ${t?.tipo === 'caderno_auto' ? 'selected' : ''}>Caderno (Automático)</option>
                 </select>
             </label>
 
@@ -2327,6 +2339,18 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
                 <p style="font-size:12px; color:#2c5282; margin:0;">Esta atividade terá peso 10. A nota será calculada automaticamente com base nas entregas de compensação do bimestre.</p>
             </div>
 
+            <div id="infoCadernoAuto" style="display:none; margin-top:15px; background:#f0fff4; padding:15px; border-radius:8px; border:1px solid #c6f6d5;">
+                <p style="font-size:12px; color:#276749; margin:0;">A nota será calculada com base nos registros da aba "Caderno": inicia em 10, -1 por "Não Realizou" e -0,5 por "Incompleto".</p>
+            </div>
+
+            ${(t && (t.tipo === 'compensacao' || t.tipo === 'caderno_auto')) ? `
+                <div style="margin-top:15px; padding:12px; background:#fff5f5; border:1px solid #feb2b2; border-radius:8px; text-align:center;">
+                    <p style="font-size:11px; color:#c53030; margin-bottom:10px; font-weight:bold;">⚠️ Ajustes manuais detectados?</p>
+                    <p style="font-size:10px; color:#742a2a; margin-bottom:10px;">Clique abaixo para apagar suas edições manuais e voltar a seguir o cálculo dinâmico do sistema.</p>
+                    <button type="button" class="btn btn-sm btn-danger" onclick="recalcularNotasAtividade(${t.id})">🔄 Restaurar Cálculo Automático</button>
+                </div>
+            ` : ''}
+
             <div style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('modalNovoTrabalho')">Cancelar</button>
                 <button type="submit" class="btn btn-primary">Salvar Atividade</button>
@@ -2340,12 +2364,14 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
         t.rubricas.forEach(r => adicionarRubricaInput(r.nome, r.peso));
     } else if (t && t.tipo === 'compensacao') {
         toggleCamposTrabalho('compensacao');
+    } else if (t && t.tipo === 'caderno_auto') {
+        toggleCamposTrabalho('caderno_auto');
     } else if (!t) {
         toggleCamposTrabalho('comum');
     }
 
     // Se estiver editando uma compensação, o tipo não pode ser alterado
-    if (t && t.tipo === 'compensacao') {
+    if (t && (t.tipo === 'compensacao' || t.tipo === 'caderno_auto')) {
         document.getElementById('trabalhoTipo').disabled = true;
     }
 
@@ -2353,9 +2379,10 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
 }
 
 function toggleCamposTrabalho(tipo) {
-    document.getElementById('campoPesoComum').style.display = tipo === 'rubrica' ? 'none' : 'block';
+    document.getElementById('campoPesoComum').style.display = (tipo === 'rubrica' || tipo === 'compensacao' || tipo === 'caderno_auto') ? 'none' : 'block';
     document.getElementById('camposRubrica').style.display = tipo === 'rubrica' ? 'block' : 'none';
     document.getElementById('infoCompensacao').style.display = tipo === 'compensacao' ? 'block' : 'none';
+    document.getElementById('infoCadernoAuto').style.display = tipo === 'caderno_auto' ? 'block' : 'none';
 
     if (tipo === 'rubrica' && document.getElementById('listaRubricasInputs').children.length === 0) {
         adicionarRubricaInput();
@@ -2396,7 +2423,7 @@ async function salvarTrabalho(e) {
                 pesoTotal += w;
             }
         });
-    } else if (tipo === 'compensacao') {
+    } else if (tipo === 'compensacao' || tipo === 'caderno_auto') {
         pesoTotal = 10; // Peso fixo para compensação
         rubricas = []; // Sem rubricas para compensação
     } else {
@@ -2488,11 +2515,12 @@ function recalcularMediaUI(estudanteId) {
 
     trabalhos.forEach(t => {
         const n = notas.find(nota => nota.id_trabalho == t.id && nota.id_estudante == estudanteId);
-        let valor = n ? n.valor : '';
+        let valor = (n && n.valor !== undefined) ? n.valor : '';
         
-        // Considera nota de compensação dinâmica no recálculo da média
-        if (t.tipo === 'compensacao') {
-            valor = getNotaCompensacao(estudanteId, currentBimestreTrabalhos);
+        // Aplica a mesma lógica de sugestão dinâmica na média
+        if (valor === '') {
+            if (t.tipo === 'compensacao') valor = getNotaCompensacao(estudanteId, currentBimestreTrabalhos);
+            if (t.tipo === 'caderno_auto') valor = getNotaCaderno(estudanteId, currentBimestreTrabalhos);
         }
 
         const peso = parseFloat(t.peso) || 0;
@@ -2507,6 +2535,20 @@ function recalcularMediaUI(estudanteId) {
         el.textContent = media;
         el.style.color = (media !== '-' && parseFloat(media) < 5) ? '#e53e3e' : '#2d3748';
     }
+}
+
+async function recalcularNotasAtividade(trabalhoId) {
+    if (!confirm('Deseja remover todos os ajustes manuais desta atividade? Ela voltará a ser calculada automaticamente com base nas entregas e faltas.')) return;
+    
+    if (data.notas) {
+        // Remove as notas salvas para este trabalho, forçando o sistema a usar o cálculo dinâmico novamente
+        data.notas = data.notas.filter(n => n.id_trabalho != trabalhoId);
+        await persistirDados();
+    }
+    
+    closeModal('modalNovoTrabalho');
+    renderTrabalhos();
+    alert('Notas restauradas para o modo automático!');
 }
 
 function removerTrabalho(id) {
@@ -2757,48 +2799,38 @@ function renderCaderno() {
                         <td>${e.nome_completo}</td>
                         <td style="text-align:center;">
                             <div style="display:flex; justify-content:center; gap:15px;">
-                                <label style="font-size:12px; cursor:pointer;"><input type="radio" name="status_${e.id}" value="completo" ${status === 'completo' ? 'checked' : ''}> C</label>
-                                <label style="font-size:12px; cursor:pointer; color:#d69e2e;"><input type="radio" name="status_${e.id}" value="incompleto" ${status === 'incompleto' ? 'checked' : ''}> I</label>
-                                <label style="font-size:12px; cursor:pointer; color:#e53e3e;"><input type="radio" name="status_${e.id}" value="nao_realizou" ${status === 'nao_realizou' ? 'checked' : ''}> N</label>
+                                <label style="font-size:12px; cursor:pointer;"><input type="radio" name="status_${e.id}" value="completo" onchange="salvarStatusCaderno(${e.id}, this.value)" ${status === 'completo' ? 'checked' : ''}> C</label>
+                                <label style="font-size:12px; cursor:pointer; color:#d69e2e;"><input type="radio" name="status_${e.id}" value="incompleto" onchange="salvarStatusCaderno(${e.id}, this.value)" ${status === 'incompleto' ? 'checked' : ''}> I</label>
+                                <label style="font-size:12px; cursor:pointer; color:#e53e3e;"><input type="radio" name="status_${e.id}" value="nao_realizou" onchange="salvarStatusCaderno(${e.id}, this.value)" ${status === 'nao_realizou' ? 'checked' : ''}> N</label>
                             </div>
                         </td>
                     </tr>
                 `}).join('')}
             </tbody>
         </table>
-        <button class="btn btn-success" onclick="salvarCadernoManual()" style="width:100%; margin-top:15px; padding: 12px;">💾 Salvar Registro do Caderno</button>
     `;
     container.innerHTML = html;
 }
 
-async function salvarCadernoManual() {
-    const dataReg = document.getElementById('cadernoData').value;
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
+async function salvarStatusCaderno(estudanteId, status) {
+    const container = document.getElementById('tabCaderno');
+    const dataReg = container.querySelector('#cadernoData').value;
     
     if (!data.caderno) data.caderno = [];
 
-    estudantes.forEach(e => {
-        const radio = document.querySelector(`input[name="status_${e.id}"]:checked`);
-        const status = radio ? radio.value : 'completo';
-
-        // Remove registro anterior para evitar duplicidade
-        data.caderno = data.caderno.filter(c => !(c.id_estudante == e.id && c.data == dataReg));
-        
-        // Salva apenas se for diferente de 'completo' para economizar espaço, 
-        // ou salva tudo se preferir um log exato de quem foi avaliado.
-        // Aqui salvaremos todos para garantir a integridade do "diário".
-        data.caderno.push({
-            id: Date.now() + Math.random(),
-            id_estudante: e.id,
-            id_turma: turmaAtual,
-            data: dataReg,
-            status: status
-        });
+    // Remove registro anterior para evitar duplicidade
+    data.caderno = data.caderno.filter(c => !(c.id_estudante == estudanteId && c.data == dataReg));
+    
+    data.caderno.push({
+        id: Date.now() + Math.random(),
+        id_estudante: estudanteId,
+        id_turma: turmaAtual,
+        data: dataReg,
+        status: status
     });
 
     await persistirDados();
-    alert('Registros do caderno salvos com sucesso!');
-    renderCaderno();
+    // Salvamento automático e silencioso
 }
 
 async function renderRelatorioMensalCaderno() {
@@ -2810,7 +2842,7 @@ async function renderRelatorioMensalCaderno() {
     const container = document.getElementById('tabCaderno');
     if (!container) return;
 
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     const registros = data.caderno || [];
 
     const daysInMonth = new Date(anoAtual, mesAtual + 1, 0).getDate();
