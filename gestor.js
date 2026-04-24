@@ -140,6 +140,10 @@ function renderAbaRegistrosArquivados() {
             }
         } else if (r.tipo === 'Faltoso') {
             cor = '#ef4444';
+            if (estudante.status && estudante.status !== 'Ativo') {
+                status = `Arquivado (${estudante.status})`;
+                cor = '#718096';
+            }
         }
 
         return { ...r, estudanteNome: estudante.nome_completo, turmaNome: turma.nome, status, cor, bim };
@@ -428,7 +432,10 @@ function renderAbaRegistrosAdministrativos() {
             }
         } else if (r.tipo === 'Faltoso') {
             cor = '#ef4444';
-            // Faltosos aparecem indeterminadamente (não retorna null)
+            // [MODIFICADO] Faltosos caem para o arquivo se o estudante não estiver Ativo
+            if (estudante.status && estudante.status !== 'Ativo') {
+                return null;
+            }
         }
 
         return { ...r, estudanteNome: estudante.nome_completo, turmaNome: turma.nome, status, cor };

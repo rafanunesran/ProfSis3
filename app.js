@@ -762,6 +762,10 @@ async function renderDashboard() {
         );
         
         const ativos = registrosTurma.filter(r => {
+            // Verifica se o estudante ainda está ativo para exibir este alerta
+            const est = (data.estudantes || []).find(e => e.id == r.estudanteId);
+            if (est && est.status && est.status !== 'Ativo') return false;
+
             if (r.tipo === 'Atestado') {
                 const parts = r.data.split('-');
                 const fim = new Date(parts[0], parts[1]-1, parts[2]);
@@ -1041,6 +1045,9 @@ async function renderEstudantes() {
         // Verifica se o aluno pertence a esta turma (pelo ID do aluno na lista filtrada acima)
         const alunoNaTurma = estudantes.find(e => e.id == r.estudanteId);
         if (!alunoNaTurma) return false;
+
+        // [MODIFICADO] Se o estudante não estiver Ativo, o alerta administrativo não aparece nos vigentes
+        if (alunoNaTurma.status && alunoNaTurma.status !== 'Ativo') return false;
 
         // Lógica de validade (Atestados vencidos não aparecem, Faltosos e Observações aparecem sempre ou por um tempo)
         if (r.tipo === 'Atestado') {
@@ -2143,10 +2150,9 @@ function renderTrabalhos() {
                             const valor = nota ? nota.valor : '';
                             const peso = parseFloat(t.peso) || 0;
                             
-                            if (valor !== '') {
-                                somaProdutos += (parseFloat(valor.toString().replace(',', '.')) || 0) * peso;
-                                somaPesos += peso;
-                            }
+                            const valorNum = (valor !== '') ? (parseFloat(valor.toString().replace(',', '.')) || 0) : 0;
+                            somaProdutos += valorNum * peso;
+                            somaPesos += peso;
 
                             if (t.tipo === 'rubrica') {
                                 const rubricas = t.rubricas || [];
@@ -2393,10 +2399,10 @@ function recalcularMediaUI(estudanteId) {
     trabalhos.forEach(t => {
         const n = notas.find(nota => nota.id_trabalho == t.id && nota.id_estudante == estudanteId);
         const peso = parseFloat(t.peso) || 0;
-        if (n && n.valor !== '') {
-            somaProdutos += (parseFloat(n.valor.toString().replace(',', '.')) || 0) * peso;
-            somaPesos += peso;
-        }
+        const valor = n ? n.valor : '';
+        const valorNum = (valor !== '') ? (parseFloat(valor.toString().replace(',', '.')) || 0) : 0;
+        somaProdutos += valorNum * peso;
+        somaPesos += peso;
     });
     const media = somaPesos > 0 ? (somaProdutos / somaPesos).toFixed(1) : '-';
     const el = document.getElementById(`media-est-current-${estudanteId}`);
