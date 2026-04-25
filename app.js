@@ -2139,22 +2139,24 @@ function getNotaCompensacao(estudanteId, bimestre) {
     if (faltasEstudanteNoBimestre === 0) return 10;
 
     // 2. Cálculo da Base (Total de aulas dadas)
-    // Tenta primeiro contar os dias únicos registrados no "Diário de Classe" (registrosAula)
-    const datasDiario = new Set((data.registrosAula || [])
-        .filter(r => r.id_turma == turmaAtual && r.data >= config.inicio && r.data <= config.fim)
-        .map(r => r.data)
-    );
-    
-    let totalAulas = datasDiario.size;
+    // Deve considerar a UNIÃO dos dias em que houve lançamento efetivo (seja no Diário ou na Chamada)
+    // Isso evita o erro de considerar dias sem aula ou dias sem lançamento para o cálculo da porcentagem.
+    const idsTurmaSet = new Set((data.estudantes || []).filter(e => e.id_turma == turmaAtual).map(e => String(e.id)));
+    const diasComLancamento = new Set();
 
-    // Fallback: Se não houver registros de aula, usa os dias em que houve qualquer falta na turma
-    if (totalAulas === 0) {
-        const idsTurma = new Set((data.estudantes || []).filter(e => e.id_turma == turmaAtual).map(e => String(e.id)));
-        totalAulas = new Set((data.presencas || [])
-            .filter(p => p.data >= config.inicio && p.data <= config.fim && idsTurma.has(String(p.id_estudante)))
-            .map(p => p.data)
-        ).size;
-    }
+    // Adiciona dias com registro no Diário de Classe desta turma
+    (data.registrosAula || []).forEach(r => {
+        if (r.id_turma == turmaAtual && r.data >= config.inicio && r.data <= config.fim) diasComLancamento.add(r.data);
+    });
+
+    // Adiciona dias onde houve chamada com registro de faltas para esta turma
+    (data.presencas || []).forEach(p => {
+        if (p.data >= config.inicio && p.data <= config.fim && idsTurmaSet.has(String(p.id_estudante))) {
+            diasComLancamento.add(p.data);
+        }
+    });
+
+    const totalAulas = diasComLancamento.size;
 
     // 3. Verificação do limite de 30%
     if (totalAulas > 0 && (faltasEstudanteNoBimestre / totalAulas) * 100 > 30) {
@@ -2195,6 +2197,49 @@ function getNotaCaderno(estudanteId, bimestre) {
     });
 
     return Math.max(0, parseFloat((10 - penalidade).toFixed(1)));
+}
+
+function getNotaParticipacao(estudanteId, bimestre) {
+    const config = (data.configBimestres || []).find(c => c.bim === bimestre);
+    if (!config || !config.inicio || !config.fim) return 10;
+
+    // 1. Cálculo da Frequência na Turma Atual
+    const faltasEstudante = (data.presencas || []).filter(p => 
+        String(p.id_estudante) === String(estudanteId) && 
+        p.status === 'falta' &&
+        p.data >= config.inicio && p.data <= config.fim
+    ).length;
+
+    const idsTurmaSet = new Set((data.estudantes || []).filter(e => e.id_turma == turmaAtual).map(e => String(e.id)));
+    const diasComLancamento = new Set();
+    (data.registrosAula || []).forEach(r => {
+        if (r.id_turma == turmaAtual && r.data >= config.inicio && r.data <= config.fim) diasComLancamento.add(r.data);
+    });
+    (data.presencas || []).forEach(p => {
+        if (p.data >= config.inicio && p.data <= config.fim && idsTurmaSet.has(String(p.id_estudante))) {
+            diasComLancamento.add(p.data);
+        }
+    });
+
+    const totalAulas = diasComLancamento.size;
+    let notaInicial = 10;
+
+    if (totalAulas > 0 && (faltasEstudante / totalAulas) * 100 > 30) {
+        notaInicial = 5;
+    }
+
+    // 2. Penalidade por Ocorrências (Filtradas pela Turma Atual)
+    const penalidade = (data.ocorrencias || []).filter(o => 
+        o.id_turma == turmaAtual &&
+        o.data >= config.inicio && o.data <= config.fim && 
+        (o.ids_estudantes || []).map(id => String(id)).includes(String(estudanteId))
+    ).reduce((acc, o) => {
+        if (o.tipo === 'rapida') return acc + 2;
+        if (o.tipo === 'disciplinar') return acc + 3;
+        return acc;
+    }, 0);
+
+    return Math.max(0, notaInicial - penalidade);
 }
 
 function renderTrabalhos() {
@@ -2287,6 +2332,7 @@ function renderTrabalhos() {
                             if (valor === '') {
                                 if (t.tipo === 'compensacao') valor = getNotaCompensacao(e.id, currentBimestreTrabalhos);
                                 if (t.tipo === 'caderno_auto') valor = getNotaCaderno(e.id, currentBimestreTrabalhos);
+                                if (t.tipo === 'participacao') valor = getNotaParticipacao(e.id, currentBimestreTrabalhos);
                             }
 
                             const peso = parseFloat(t.peso) || 0;
@@ -2387,6 +2433,7 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
                     <option value="rubrica" ${t?.tipo === 'rubrica' ? 'selected' : ''}>Rubrica (Critérios Ponderados)</option>
                     <option value="compensacao" ${t?.tipo === 'compensacao' ? 'selected' : ''}>Compensação de Faltas</option>
                     <option value="caderno_auto" ${t?.tipo === 'caderno_auto' ? 'selected' : ''}>Caderno (Automático)</option>
+                    <option value="participacao" ${t?.tipo === 'participacao' ? 'selected' : ''}>Participação (Automático)</option>
                 </select>
             </label>
 
@@ -2410,7 +2457,11 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
                 <p style="font-size:12px; color:#276749; margin:0;">A nota será calculada com base nos registros da aba "Caderno": inicia em 10, -1 por "Não Realizou" e -0,5 por "Incompleto".</p>
             </div>
 
-            ${(t && (t.tipo === 'compensacao' || t.tipo === 'caderno_auto')) ? `
+            <div id="infoParticipacao" style="display:none; margin-top:15px; background:#fff5f5; padding:15px; border-radius:8px; border:1px solid #feb2b2;">
+                <p style="font-size:12px; color:#c53030; margin:0;">Inicia em 10. Queda para 5 se faltas > 30%. Deduções: -2 por Ocorrência Rápida e -3 por Disciplinar.</p>
+            </div>
+
+            ${(t && (t.tipo === 'compensacao' || t.tipo === 'caderno_auto' || t.tipo === 'participacao')) ? `
                 <div style="margin-top:15px; padding:12px; background:#fff5f5; border:1px solid #feb2b2; border-radius:8px; text-align:center;">
                     <p style="font-size:11px; color:#c53030; margin-bottom:10px; font-weight:bold;">⚠️ Ajustes manuais detectados?</p>
                     <p style="font-size:10px; color:#742a2a; margin-bottom:10px;">Clique abaixo para apagar suas edições manuais e voltar a seguir o cálculo dinâmico do sistema.</p>
@@ -2433,12 +2484,14 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
         toggleCamposTrabalho('compensacao');
     } else if (t && t.tipo === 'caderno_auto') {
         toggleCamposTrabalho('caderno_auto');
+    } else if (t && t.tipo === 'participacao') {
+        toggleCamposTrabalho('participacao');
     } else if (!t) {
         toggleCamposTrabalho('comum');
     }
 
     // Se estiver editando uma compensação, o tipo não pode ser alterado
-    if (t && (t.tipo === 'compensacao' || t.tipo === 'caderno_auto')) {
+    if (t && (t.tipo === 'compensacao' || t.tipo === 'caderno_auto' || t.tipo === 'participacao')) {
         document.getElementById('trabalhoTipo').disabled = true;
     }
 
@@ -2446,10 +2499,11 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
 }
 
 function toggleCamposTrabalho(tipo) {
-    document.getElementById('campoPesoComum').style.display = (tipo === 'rubrica' || tipo === 'compensacao' || tipo === 'caderno_auto') ? 'none' : 'block';
+    document.getElementById('campoPesoComum').style.display = (tipo === 'rubrica' || tipo === 'compensacao' || tipo === 'caderno_auto' || tipo === 'participacao') ? 'none' : 'block';
     document.getElementById('camposRubrica').style.display = tipo === 'rubrica' ? 'block' : 'none';
     document.getElementById('infoCompensacao').style.display = tipo === 'compensacao' ? 'block' : 'none';
     document.getElementById('infoCadernoAuto').style.display = tipo === 'caderno_auto' ? 'block' : 'none';
+    document.getElementById('infoParticipacao').style.display = tipo === 'participacao' ? 'block' : 'none';
 
     if (tipo === 'rubrica' && document.getElementById('listaRubricasInputs').children.length === 0) {
         adicionarRubricaInput();
@@ -2490,7 +2544,7 @@ async function salvarTrabalho(e) {
                 pesoTotal += w;
             }
         });
-    } else if (tipo === 'compensacao' || tipo === 'caderno_auto') {
+    } else if (tipo === 'compensacao' || tipo === 'caderno_auto' || tipo === 'participacao') {
         pesoTotal = 10; // Peso fixo para compensação
         rubricas = []; // Sem rubricas para compensação
     } else {
@@ -2588,6 +2642,7 @@ function recalcularMediaUI(estudanteId) {
         if (valor === '') {
             if (t.tipo === 'compensacao') valor = getNotaCompensacao(estudanteId, currentBimestreTrabalhos);
             if (t.tipo === 'caderno_auto') valor = getNotaCaderno(estudanteId, currentBimestreTrabalhos);
+            if (t.tipo === 'participacao') valor = getNotaParticipacao(estudanteId, currentBimestreTrabalhos);
         }
 
         const peso = parseFloat(t.peso) || 0;
@@ -5981,6 +6036,12 @@ async function persistirDados() {
     if (typeof saveData === 'function') {
         try {
             await saveData('app_data', key, data);
+
+            // [NOVO] Atualização automática do link compartilhado para Gestores
+            if (currentViewMode === 'gestor' && typeof atualizarLinkCompartilhamentoGestor === 'function') {
+                // Faz o update de forma silenciosa e sem aguardar (para não lentificar a UI)
+                atualizarLinkCompartilhamentoGestor().catch(err => console.warn('Erro ao atualizar visão compartilhada:', err));
+            }
         } catch (e) {
             console.warn(`Erro ao sincronizar dados com Firebase no modo ${currentViewMode}:`, e);
         }
