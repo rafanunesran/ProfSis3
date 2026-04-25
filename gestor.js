@@ -880,34 +880,47 @@ function imprimirOcorrenciaGestor(id) {
 }
 
 async function compartilharRelatorio() {
-    if (typeof USE_FIREBASE === 'undefined' || !USE_FIREBASE) {
+    if (typeof db === 'undefined' || !db) {
         alert('O compartilhamento requer que o sistema esteja ONLINE (Firebase).');
         return;
     }
 
-    const confirmacao = confirm('Isso criará um link público de leitura para estes registros. Deseja continuar?');
+    const confirmacao = confirm('Isso ativará um link permanente de leitura para estes registros. Ele será atualizado automaticamente toda vez que você realizar um lançamento.\n\nDeseja continuar?');
     if (!confirmacao) return;
 
-    // Prepara os dados para salvar (Snapshot do momento)
-    const payload = {
-        criadoEm: new Date().toISOString(),
-        escolaId: (currentUser && currentUser.schoolId) ? currentUser.schoolId : 'default',
-        dados: {
-            registrosAdministrativos: data.registrosAdministrativos || [],
-            estudantes: (data.estudantes || []).map(e => ({id: e.id, nome_completo: e.nome_completo})), // Minifica dados
-            turmas: (data.turmas || []).map(t => ({id: t.id, nome: t.nome})) // Minifica dados
-        }
-    };
+    const schoolId = (currentUser && currentUser.schoolId) ? String(currentUser.schoolId) : 'default';
+    const shareId = `live_${schoolId}`;
+    const link = `${window.location.origin}${window.location.pathname}?share=${shareId}`;
 
     try {
-        const docRef = await db.collection('shared_views').add(payload);
-        const link = `${window.location.origin}${window.location.pathname}?share=${docRef.id}`;
-        
-        prompt("Link gerado com sucesso! Copie e envie para os professores:", link);
+        await atualizarLinkCompartilhamentoGestor();
+        prompt("Link permanente ativado/atualizado com sucesso! Copie e envie para os professores:", link);
     } catch (error) {
         console.error("Erro ao compartilhar:", error);
         alert("Erro ao gerar link.");
     }
+}
+
+async function atualizarLinkCompartilhamentoGestor() {
+    // Verifica se está online e se é gestor
+    if (typeof db === 'undefined' || !db || !currentUser || !currentUser.schoolId || currentViewMode !== 'gestor') return;
+
+    const schoolId = String(currentUser.schoolId);
+    const shareId = `live_${schoolId}`;
+    
+    // Prepara dados minificados para o relatório (Snapshot do estado atual)
+    const payload = {
+        criadoEm: new Date().toISOString(),
+        escolaId: schoolId,
+        isLive: true,
+        dados: {
+            registrosAdministrativos: data.registrosAdministrativos || [],
+            estudantes: (data.estudantes || []).map(e => ({id: e.id, nome_completo: e.nome_completo})),
+            turmas: (data.turmas || []).map(t => ({id: t.id, nome: t.nome}))
+        }
+    };
+
+    await db.collection('shared_views').doc(shareId).set(payload);
 }
 
 async function carregarVistaCompartilhada(shareId) {
@@ -978,7 +991,8 @@ async function carregarVistaCompartilhada(shareId) {
         // Construção do HTML do Relatório
         let html = `
             <h1>Relatório de Registros Administrativos</h1>
-            <div class="meta-info">Gerado em: ${new Date(docData.criadoEm).toLocaleDateString('pt-BR')} às ${new Date(docData.criadoEm).toLocaleTimeString('pt-BR')}</div>
+            ${docData.isLive ? '<div style="text-align:center; margin-top:-10px; margin-bottom:10px;"><span class="badge" style="background:#f0fff4; color:#276749; font-size:10px; border:1px solid #c6f6d5;">🔄 ATUALIZAÇÃO EM TEMPO REAL</span></div>' : ''}
+            <div class="meta-info">${docData.isLive ? 'Última atualização' : 'Gerado em'}: ${new Date(docData.criadoEm).toLocaleDateString('pt-BR')} às ${new Date(docData.criadoEm).toLocaleTimeString('pt-BR')}</div>
         `;
 
         if (lista.length > 0) {
