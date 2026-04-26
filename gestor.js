@@ -1084,14 +1084,18 @@ function renderAbaLimpezaDados() {
         histograma[nomeNorm].push(e);
     });
 
-    const duplicados = Object.entries(histograma).filter(([nome, lista]) => lista.length > 1);
+    // [MODIFICADO] Identifica duplicados apenas se houver mais de um registro 'Ativo' para o mesmo nome
+    const duplicados = Object.entries(histograma).filter(([nome, lista]) => {
+        const ativos = lista.filter(e => e.status === 'Ativo');
+        return ativos.length > 1;
+    });
 
     const html = `
         <div>
             <h2>🧹 Ferramenta de Limpeza de Duplicados</h2>
             <p style="color:#666; font-size:14px; margin-bottom:20px;">
-                Esta ferramenta identifica estudantes com o mesmo nome completo e unifica seus registros (faltas, ocorrências, etc) em um único ID. 
-                Isso resolve problemas causados por atualizações via CSV onde nomes idênticos acabaram gerando IDs diferentes.
+                Esta ferramenta identifica estudantes com o mesmo nome completo que aparecem como <strong>Ativo</strong> em mais de um registro. 
+                Alunos que mudaram de turma (com status Remanejado ou Transferido) são preservados e não são considerados duplicados para unificação, garantindo a integridade do histórico de movimentação.
             </p>
 
             ${duplicados.length > 0 ? `
@@ -1110,12 +1114,13 @@ function renderAbaLimpezaDados() {
                         ${duplicados.map(([nome, lista]) => {
                             const turmas = lista.map(e => {
                                 const t = data.turmas.find(turma => turma.id == e.id_turma);
-                                return t ? t.nome : '?';
+                                const statusLabel = e.status === 'Ativo' ? `<strong>${e.status}</strong>` : e.status;
+                                return t ? `${t.nome} (${statusLabel})` : '?';
                             }).join(', ');
                             return `
                                 <tr>
                                     <td><strong>${nome}</strong></td>
-                                    <td>${lista.length} registros</td>
+                                    <td>${lista.length} registros (${lista.filter(x => x.status === 'Ativo').length} ativos)</td>
                                     <td><small>${turmas}</small></td>
                                 </tr>
                             `;
@@ -1123,7 +1128,7 @@ function renderAbaLimpezaDados() {
                     </tbody>
                 </table>
                 <button class="btn btn-primary" style="margin-top:20px; width:100%; padding:15px; font-weight:bold;" onclick="executarLimpezaDuplicados()">
-                    🚀 Unificar Estudantes e Corrigir Histórico
+                    🚀 Unificar Registros Ativos e Corrigir Histórico
                 </button>
             ` : `
                 <p class="empty-state">✅ Nenhum estudante duplicado encontrado. Seu banco de dados está limpo!</p>
@@ -1134,7 +1139,7 @@ function renderAbaLimpezaDados() {
 }
 
 async function executarLimpezaDuplicados() {
-    if (!confirm('Este processo irá fundir todos os estudantes duplicados. O primeiro ID encontrado para cada nome será mantido e todos os outros registros (faltas, ocorrências, tutorias, etc) serão transferidos para ele. Deseja continuar?')) return;
+    if (!confirm('Este processo irá fundir os registros de estudantes que possuem mais de um status "Ativo". O primeiro ID ativo encontrado para cada nome será o mestre. Registros históricos de remanejamento serão mantidos se não houver conflito de ativos. Deseja continuar?')) return;
 
     const estudantes = data.estudantes || [];
     const histograma = {};
@@ -1149,15 +1154,20 @@ async function executarLimpezaDuplicados() {
     const novosEstudantes = [];
 
     for (const [nome, lista] of Object.entries(histograma)) {
-        if (lista.length === 1) {
-            novosEstudantes.push(lista[0]);
+        const ativos = lista.filter(e => e.status === 'Ativo');
+
+        // [MODIFICADO] Se não houver duplicidade de "Ativos", mantém os registros como estão (incluindo remanejados)
+        if (ativos.length <= 1) {
+            lista.forEach(e => novosEstudantes.push(e));
             continue;
         }
 
-        // Temos duplicados: Master é o primeiro da lista
-        const master = lista[0];
+        // Temos duplicados REAIS (Mais de um Ativo): Master é o primeiro Ativo da lista
+        const master = ativos[0];
         const masterId = master.id;
-        const idsDuplicados = lista.slice(1).map(e => e.id);
+        
+        // Os IDs que serão fundidos no Master (outros Ativos e eventuais históricos deste mesmo nome)
+        const idsDuplicados = lista.filter(e => e.id !== masterId).map(e => e.id);
         
         // Função auxiliar para atualizar referências
         const atualizarRef = (listaDados, campoId) => {
