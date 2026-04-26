@@ -1,6 +1,7 @@
 // --- LÓGICA DO GESTOR ---
 
 let currentRegistrosTab = 'administrativos'; // 'administrativos', 'busca_ativa', 'bimestres', 'arquivados' ou 'limpeza'
+let currentBuscaAtivaSubTab = 'consecutive'; // 'consecutive', 'weekly', 'percentage'
 
 function renderGestorPanel() {
     // Navegação de Gestor
@@ -267,6 +268,7 @@ async function renderAbaAlertasBuscaAtiva() {
 
     // [MODIFICADO] Busca dados diretamente dos perfis dos professores para garantir histórico retroativo completo
     const attendanceData = {}; // { dateStr: { studentId: [teacherId, ...] } }
+    const daysByTurma = {}; // { masterTurmaId: Set(dateStr) }
     
     try {
         const usersData = await getData('system', 'users_list');
@@ -286,8 +288,31 @@ async function renderAbaAlertasBuscaAtiva() {
         const results = await Promise.all(promises);
 
         results.forEach(res => {
-            if (res.data && res.data.presencas) {
+            if (!res.data) return;
+
+            // 1. Identifica dias com lançamento (qualquer lançamento conta como dia de aula para a turma)
+            if (res.data.registrosAula) {
+                res.data.registrosAula.forEach(r => {
+                    const tProf = (res.data.turmas || []).find(t => t.id == r.id_turma);
+                    const masterId = tProf ? tProf.masterId : null;
+                    if (masterId) {
+                        if (!daysByTurma[masterId]) daysByTurma[masterId] = new Set();
+                        daysByTurma[masterId].add(r.data);
+                    }
+                });
+            }
+
+            if (res.data.presencas) {
                 res.data.presencas.forEach(p => {
+                    // Encontra a turma do estudante na lista do gestor para agrupar datas por turma física
+                    const studentMaster = allStudents.find(s => s.id == p.id_estudante);
+                    const masterId = studentMaster ? studentMaster.id_turma : null;
+                    
+                    if (masterId) {
+                        if (!daysByTurma[masterId]) daysByTurma[masterId] = new Set();
+                        daysByTurma[masterId].add(p.data);
+                    }
+
                     if (p.status === 'falta') {
                         if (!attendanceData[p.data]) attendanceData[p.data] = {};
                         if (!attendanceData[p.data][p.id_estudante]) attendanceData[p.data][p.id_estudante] = [];
@@ -306,11 +331,7 @@ async function renderAbaAlertasBuscaAtiva() {
         return;
     }
 
-    // Filtra datas para o ano atual e ordena
     const currentYear = new Date().getFullYear();
-    const sortedDates = Object.keys(attendanceData)
-        .filter(d => d.startsWith(String(currentYear)))
-        .sort();
 
     // --- 2. Processamento dos Alertas ---
     const alerts = { consecutive: [], weekly: [], percentage: [] };
@@ -337,9 +358,16 @@ async function renderAbaAlertasBuscaAtiva() {
     for (const student of allStudents) {
         if(student.status !== 'Ativo') continue;
 
+        // [MODIFICADO] Considera apenas dias onde houve lançamento (chamada ou diário) para a turma do estudante
+        const studentDates = Array.from(daysByTurma[student.id_turma] || [])
+            .filter(d => d.startsWith(String(currentYear)))
+            .sort();
+
+        if (studentDates.length === 0) continue;
+
         // a) Faltas Consecutivas
         let consecutiveCount = 0, maxConsecutive = 0;
-        for (const dateStr of sortedDates) {
+        for (const dateStr of studentDates) {
             if (wasAbsent(student.id, dateStr)) consecutiveCount++;
             else { maxConsecutive = Math.max(maxConsecutive, consecutiveCount); consecutiveCount = 0; }
         }
@@ -348,7 +376,7 @@ async function renderAbaAlertasBuscaAtiva() {
 
         // b) Faltas na Semana Passada
         let lastWeekAbsences = 0;
-        for (const dateStr of sortedDates) {
+        for (const dateStr of studentDates) {
             const d = new Date(dateStr + 'T12:00:00');
             if (d >= mondayOfPreviousWeek && d <= sundayOfPreviousWeek && wasAbsent(student.id, dateStr)) {
                 lastWeekAbsences++;
@@ -357,16 +385,14 @@ async function renderAbaAlertasBuscaAtiva() {
         if (lastWeekAbsences >= 3) alerts.weekly.push({ student, detail: `${lastWeekAbsences} faltas na semana passada` });
 
         // c) Baixa Frequência
-        if (sortedDates.length > 0) {
-            const totalAbsences = sortedDates.filter(dateStr => wasAbsent(student.id, dateStr)).length;
-            const presencePercentage = ((sortedDates.length - totalAbsences) / sortedDates.length) * 100;
-            if (presencePercentage < 70) alerts.percentage.push({ student, detail: `${presencePercentage.toFixed(0)}% de presença` });
-        }
+        const totalAbsences = studentDates.filter(dateStr => wasAbsent(student.id, dateStr)).length;
+        const presencePercentage = ((studentDates.length - totalAbsences) / studentDates.length) * 100;
+        if (presencePercentage < 70) alerts.percentage.push({ student, detail: `${presencePercentage.toFixed(0)}% de presença` });
     }
 
-    // --- 3. Renderização ---
+    // --- 3. Renderização (Visão em Abas) ---
     const renderAlertList = (alertList, title) => {
-        if (alertList.length === 0) return `<h4>${title}</h4><p class="empty-state">Nenhum alerta.</p>`;
+        if (alertList.length === 0) return `<p class="empty-state">Nenhum estudante encontrado com este alerta no momento.</p>`;
         const byTurma = {};
         alertList.forEach(item => {
             const turma = allTurmas.find(t => t.id == item.student.id_turma);
@@ -375,7 +401,7 @@ async function renderAbaAlertasBuscaAtiva() {
             byTurma[turmaName].push(item);
         });
 
-        let listHtml = `<h4>${title} (${alertList.length})</h4>`;
+        let listHtml = `<h4 style="margin-top:0;">${title} (${alertList.length})</h4>`;
         Object.keys(byTurma).sort().forEach(turmaName => {
             listHtml += `<div class="card" style="margin-bottom:10px; background:white;">
                 <h5 style="margin:0 0 5px 0; padding-bottom:5px; border-bottom:1px solid #eee;">${turmaName}</h5>
@@ -388,16 +414,44 @@ async function renderAbaAlertasBuscaAtiva() {
         return listHtml;
     };
 
+    const subTabs = `
+        <div style="display: flex; gap: 5px; margin-bottom: 0px; border-bottom: 2px solid #e2e8f0; position: relative; z-index: 1;">
+            <button class="btn btn-sm ${currentBuscaAtivaSubTab === 'consecutive' ? 'btn-primary' : 'btn-secondary'}" 
+                    style="border-radius: 8px 8px 0 0; padding: 10px 20px; border-bottom: none; font-weight: bold; margin-bottom: -2px;"
+                    onclick="currentBuscaAtivaSubTab='consecutive'; renderAbaAlertasBuscaAtiva()">
+                🚨 Consecutivas (${alerts.consecutive.length})
+            </button>
+            <button class="btn btn-sm ${currentBuscaAtivaSubTab === 'weekly' ? 'btn-primary' : 'btn-secondary'}" 
+                    style="border-radius: 8px 8px 0 0; padding: 10px 20px; border-bottom: none; font-weight: bold; margin-bottom: -2px;"
+                    onclick="currentBuscaAtivaSubTab='weekly'; renderAbaAlertasBuscaAtiva()">
+                📅 Semana Passada (${alerts.weekly.length})
+            </button>
+            <button class="btn btn-sm ${currentBuscaAtivaSubTab === 'percentage' ? 'btn-primary' : 'btn-secondary'}" 
+                    style="border-radius: 8px 8px 0 0; padding: 10px 20px; border-bottom: none; font-weight: bold; margin-bottom: -2px;"
+                    onclick="currentBuscaAtivaSubTab='percentage'; renderAbaAlertasBuscaAtiva()">
+                📉 Baixa Frequência (${alerts.percentage.length})
+            </button>
+        </div>
+    `;
+
+    let activeContent = '';
+    let activeStyle = '';
+    if (currentBuscaAtivaSubTab === 'consecutive') {
+        activeContent = renderAlertList(alerts.consecutive, 'Faltas Consecutivas (3 ou mais dias seguidos)');
+        activeStyle = 'background:#fff5f5; border:1px solid #feb2b2;';
+    } else if (currentBuscaAtivaSubTab === 'weekly') {
+        activeContent = renderAlertList(alerts.weekly, 'Faltas na Semana Anterior (3 ou mais no total)');
+        activeStyle = 'background:#fffaf0; border:1px solid #fbd38d;';
+    } else {
+        activeContent = renderAlertList(alerts.percentage, 'Baixa Frequência (Menos de 70% de presença total)');
+        activeStyle = 'background:#ebf8ff; border:1px solid #bee3f8;';
+    }
+
     container.innerHTML = `
-        <div class="grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 20px; align-items: start;">
-            <div style="background:#fff5f5; padding:15px; border-radius:8px; border:1px solid #feb2b2;">
-                ${renderAlertList(alerts.consecutive, '🚨 Faltas Consecutivas')}
-            </div>
-            <div style="background:#fffaf0; padding:15px; border-radius:8px; border:1px solid #fbd38d;">
-                ${renderAlertList(alerts.weekly, '📅 Faltas na Semana')}
-            </div>
-            <div style="background:#ebf8ff; padding:15px; border-radius:8px; border:1px solid #bee3f8;">
-                ${renderAlertList(alerts.percentage, '📉 Baixa Frequência')}
+        <div style="margin-top: 10px;">
+            ${subTabs}
+            <div style="padding:25px; border-radius:0 0 8px 8px; min-height: 300px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); ${activeStyle}">
+                ${activeContent}
             </div>
         </div>
     `;
