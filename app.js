@@ -980,7 +980,7 @@ let turmaAtual = null;
 async function abrirTurma(id) {
     turmaAtual = id;
     const turma = data.turmas.find(t => t.id == id);
-    document.getElementById('turmaDetalheTitulo').textContent = turma.nome;
+    document.getElementById('turmaDetalheTitulo').textContent = turma.disciplina ? `${turma.nome} - ${turma.disciplina}` : turma.nome;
 
     // --- SINCRONIZAÇÃO DE ALUNOS (PROFESSOR) ---
     // Se for professor e a turma tiver um vínculo (masterId), atualiza a lista de alunos
