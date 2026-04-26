@@ -2407,6 +2407,17 @@ function getNotaParticipacao(estudanteId, bimestre) {
     }, 0);
 
     return Math.max(0, notaInicial - penalidade);
+    // 3. Penalidade por Engajamento (TMN) - M: -0.5, N: -1.0
+    const penalidadeEngajamento = (data.caderno || []).filter(c => 
+        String(c.id_estudante) === String(estudanteId) && 
+        c.data >= config.inicio && c.data <= config.fim
+    ).reduce((acc, reg) => {
+        if (reg.engajamento === 'medio') return acc + 0.5;
+        if (reg.engajamento === 'nada') return acc + 1.0;
+        return acc;
+    }, 0);
+
+    return Math.max(0, parseFloat((notaInicial - penalidade - penalidadeEngajamento).toFixed(1)));
 }
 
 function renderTrabalhos() {
@@ -2633,6 +2644,7 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
 
             <div id="infoParticipacao" style="display:none; margin-top:15px; background:#fff5f5; padding:15px; border-radius:8px; border:1px solid #feb2b2;">
                 <p style="font-size:12px; color:#c53030; margin:0;">Inicia em 10. Queda para 5 se faltas > 30%. Deduções: -2 por Ocorrência Rápida e -3 por Disciplinar.</p>
+                <p style="font-size:12px; color:#c53030; margin:0;">Inicia em 10. Queda para 5 se faltas > 30%. Deduções: -2 por Ocorrência Rápida, -3 por Disciplinar, -0,5 por Engajamento Médio (M) e -1 por Não desenvolveu (N).</p>
             </div>
 
             ${(t && (t.tipo === 'compensacao' || t.tipo === 'caderno_auto' || t.tipo === 'participacao')) ? `
@@ -3074,6 +3086,7 @@ function renderCaderno() {
     const html = `
         <div style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;">
             <button class="btn btn-info" onclick="renderRelatorioMensalCaderno()">📅 Resumo Mensal do Caderno</button>
+            <button class="btn btn-info" onclick="renderRelatorioMensalParticipacao()">📊 Resumo Mensal Participação</button>
         </div>
         <div class="form-row">
             <label>Data da Atividade: <input type="date" id="cadernoData" value="${dataSelecionada}" onchange="renderCaderno()"></label>
@@ -3082,22 +3095,31 @@ function renderCaderno() {
             <thead>
                 <tr>
                     <th>Estudante</th>
-                    <th style="text-align:center;">Situação da Atividade</th>
+                    <th style="text-align:center;">Situação Caderno (CIN)</th>
+                    <th style="text-align:center;">Engajamento (TMN)</th>
                 </tr>
             </thead>
             <tbody>
                 ${estudantes.map(e => {
                     const reg = (data.caderno || []).find(c => c.id_estudante == e.id && c.data == dataSelecionada);
                     const status = reg ? reg.status : 'completo'; // Padrão: Completo
+                    const engajamento = (reg && reg.engajamento) ? reg.engajamento : 'total';
 
                     return `
                     <tr>
                         <td>${getAeePrefix(e)}${e.nome_completo}</td>
                         <td style="text-align:center;">
                             <div style="display:flex; justify-content:center; gap:15px;">
-                                <label style="font-size:12px; cursor:pointer;"><input type="radio" name="status_${e.id}" value="completo" onchange="salvarStatusCaderno(${e.id}, this.value)" ${status === 'completo' ? 'checked' : ''}> C</label>
-                                <label style="font-size:12px; cursor:pointer; color:#d69e2e;"><input type="radio" name="status_${e.id}" value="incompleto" onchange="salvarStatusCaderno(${e.id}, this.value)" ${status === 'incompleto' ? 'checked' : ''}> I</label>
-                                <label style="font-size:12px; cursor:pointer; color:#e53e3e;"><input type="radio" name="status_${e.id}" value="nao_realizou" onchange="salvarStatusCaderno(${e.id}, this.value)" ${status === 'nao_realizou' ? 'checked' : ''}> N</label>
+                                <label style="font-size:12px; cursor:pointer;"><input type="radio" name="status_${e.id}" value="completo" onchange="salvarStatusCaderno(${e.id}, this.value, 'status')" ${status === 'completo' ? 'checked' : ''}> C</label>
+                                <label style="font-size:12px; cursor:pointer; color:#d69e2e;"><input type="radio" name="status_${e.id}" value="incompleto" onchange="salvarStatusCaderno(${e.id}, this.value, 'status')" ${status === 'incompleto' ? 'checked' : ''}> I</label>
+                                <label style="font-size:12px; cursor:pointer; color:#e53e3e;"><input type="radio" name="status_${e.id}" value="nao_realizou" onchange="salvarStatusCaderno(${e.id}, this.value, 'status')" ${status === 'nao_realizou' ? 'checked' : ''}> N</label>
+                            </div>
+                        </td>
+                        <td style="text-align:center;">
+                            <div style="display:flex; justify-content:center; gap:15px;">
+                                <label style="font-size:12px; cursor:pointer;"><input type="radio" name="eng_${e.id}" value="total" onchange="salvarStatusCaderno(${e.id}, this.value, 'engajamento')" ${engajamento === 'total' ? 'checked' : ''}> T</label>
+                                <label style="font-size:12px; cursor:pointer; color:#d69e2e;"><input type="radio" name="eng_${e.id}" value="medio" onchange="salvarStatusCaderno(${e.id}, this.value, 'engajamento')" ${engajamento === 'medio' ? 'checked' : ''}> M</label>
+                                <label style="font-size:12px; cursor:pointer; color:#e53e3e;"><input type="radio" name="eng_${e.id}" value="nada" onchange="salvarStatusCaderno(${e.id}, this.value, 'engajamento')" ${engajamento === 'nada' ? 'checked' : ''}> N</label>
                             </div>
                         </td>
                     </tr>
@@ -3108,22 +3130,27 @@ function renderCaderno() {
     container.innerHTML = html;
 }
 
-async function salvarStatusCaderno(estudanteId, status) {
+async function salvarStatusCaderno(estudanteId, valor, campo) {
     const container = document.getElementById('tabCaderno');
     const dataReg = container.querySelector('#cadernoData').value;
     
     if (!data.caderno) data.caderno = [];
 
-    // Remove registro anterior para evitar duplicidade
-    data.caderno = data.caderno.filter(c => !(c.id_estudante == estudanteId && c.data == dataReg));
+    let reg = data.caderno.find(c => c.id_estudante == estudanteId && c.data == dataReg);
     
-    data.caderno.push({
-        id: Date.now() + Math.random(),
-        id_estudante: estudanteId,
-        id_turma: turmaAtual,
-        data: dataReg,
-        status: status
-    });
+    if (reg) {
+        reg[campo] = valor;
+    } else {
+        const novo = {
+            id: Date.now() + Math.random(),
+            id_estudante: estudanteId,
+            id_turma: turmaAtual,
+            data: dataReg,
+            status: campo === 'status' ? valor : 'completo',
+            engajamento: campo === 'engajamento' ? valor : 'total'
+        };
+        data.caderno.push(novo);
+    }
 
     await persistirDados();
     // Salvamento automático e silencioso
@@ -3194,6 +3221,70 @@ async function renderRelatorioMensalCaderno() {
     container.innerHTML = html;
 }
 
+async function renderRelatorioMensalParticipacao() {
+    const today = new Date();
+    const mesInput = document.getElementById('relParticipacaoMes');
+    const mesAtual = mesInput ? parseInt(mesInput.value) : today.getMonth();
+    const anoAtual = today.getFullYear();
+
+    const container = document.getElementById('tabCaderno');
+    if (!container) return;
+
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
+    const registros = data.caderno || [];
+
+    const daysInMonth = new Date(anoAtual, mesAtual + 1, 0).getDate();
+    const diasUteis = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+        const date = new Date(anoAtual, mesAtual, d);
+        if (date.getDay() !== 0 && date.getDay() !== 6) diasUteis.push(d);
+    }
+
+    const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+    const html = `
+        <button class="btn btn-secondary" style="margin-bottom:15px;" onclick="renderCaderno()">← Voltar para Lançamento</button>
+        <div class="card">
+            <h3>Resumo Mensal Participação (TMN)</h3>
+            <div class="form-row" style="background:#f7fafc; padding:10px; border-radius:8px; margin-bottom:15px;">
+                <label>Mês: <select id="relParticipacaoMes" onchange="renderRelatorioMensalParticipacao()">${meses.map((m, i) => `<option value="${i}" ${i === mesAtual ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+                <span style="font-size:12px; margin-left:15px;">Legenda: <strong>T</strong> (Total), <strong style="color:#d69e2e;">M</strong> (Médio), <strong style="color:#e53e3e;">N</strong> (Não desenvolveu)</span>
+            </div>
+            <div style="overflow-x:auto;">
+                <table style="font-size: 11px; border-collapse: collapse; width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="text-align:left; min-width: 150px; position:sticky; left:0; background:#fff; z-index:10;">Estudante</th>
+                            ${diasUteis.map(d => `<th style="text-align:center; width:20px; padding:2px;">${d}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${estudantes.map(e => {
+                            const cols = diasUteis.map(d => {
+                                const dataStr = `${anoAtual}-${String(mesAtual+1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                                const reg = registros.find(c => c.id_estudante == e.id && c.data == dataStr);
+                                
+                                let char = 'T';
+                                let style = 'color: #cbd5e0;'; 
+                                
+                                if (reg && reg.engajamento) {
+                                    style = 'font-weight:bold;';
+                                    if (reg.engajamento === 'medio') { char = 'M'; style += 'color:#d69e2e;'; }
+                                    else if (reg.engajamento === 'nada') { char = 'N'; style += 'color:#e53e3e;'; }
+                                    else { char = 'T'; style += 'color:#2f855a;'; }
+                                }
+
+                                return `<td style="text-align:center; border: 1px solid #e2e8f0; padding: 2px; ${style}">${char}</td>`;
+                            }).join('');
+                            return `<tr><td style="position:sticky; left:0; background:#fff; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 4px;">${getAeePrefix(e)}${e.nome_completo}</td>${cols}</tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+    container.innerHTML = html;
+}
 // --- TUTORIA ---
 let agendaLimit = 50; // Controle de paginação da agenda (Aumentado para mostrar mais dias)
 
