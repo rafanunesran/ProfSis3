@@ -188,7 +188,7 @@ function renderAbaRegistrosArquivados() {
                                 <tr>
                                     <td style="color: ${r.cor}; font-weight: bold;">${r.tipo}</td>
                                     <td><span class="badge" style="background:${r.status === 'Vencido' ? '#e2e8f0' : '#ebf8ff'}; color:${r.cor}; font-size:10px;">${r.status}</span></td>
-                                    <td>${r.estudanteNome}</td>
+                                    <td>${getAeePrefix(data.estudantes.find(e => e.id == r.estudanteId))}${r.estudanteNome}</td>
                                     <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
                                     <td><button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})">🗑️</button></td>
                                 </tr>
@@ -381,7 +381,7 @@ async function renderAbaAlertasBuscaAtiva() {
                 <h5 style="margin:0 0 5px 0; padding-bottom:5px; border-bottom:1px solid #eee;">${turmaName}</h5>
                 <ul style="margin:0; padding-left:20px; font-size:13px;">`;
             byTurma[turmaName].forEach(item => {
-                listHtml += `<li><strong>${item.student.nome_completo}</strong>: ${item.detail}</li>`;
+                listHtml += `<li>${getAeePrefix(item.student)}<strong>${item.student.nome_completo}</strong>: ${item.detail}</li>`;
             });
             listHtml += `</ul></div>`;
         });
@@ -476,7 +476,7 @@ function renderAbaRegistrosAdministrativos() {
                                 ${grupos[turmaNome].map(r => `
                                     <tr>
                                         <td style="color: ${r.cor}; font-weight: bold;">${r.tipo}</td>
-                                        <td>${r.estudanteNome}</td>
+                                        <td>${getAeePrefix(data.estudantes.find(e => e.id == r.estudanteId))}${r.estudanteNome}</td>
                                         <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
                                         <td>
                                             <button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})">🗑️</button>
@@ -692,7 +692,7 @@ function renderAbaDisciplinares(lista) {
                         
                         const envolvidos = (o.ids_estudantes || []).map(id => {
                             const est = (data.estudantes || []).find(e => e.id == id);
-                            return est ? est.nome_completo : '?';
+                            return est ? (getAeePrefix(est) + est.nome_completo) : '?';
                         }).join(', ');
 
                         const isPendente = (o.status || 'pendente') === 'pendente';
@@ -764,7 +764,7 @@ function renderAbaRapidas(lista) {
                     ${lista.length > 0 ? lista.map(o => {
                         const envolvidos = (o.ids_estudantes || []).map(id => {
                             const est = (data.estudantes || []).find(e => e.id == id);
-                            return est ? est.nome_completo : '?';
+                            return est ? (getAeePrefix(est) + est.nome_completo) : '?';
                         }).join(', ');
 
                         return `
@@ -1805,7 +1805,7 @@ async function verTutoradosProfessor(profId, profNome) {
                     <tbody>
                         ${tutorados.map(t => `
                             <tr>
-                                <td><strong>${t.nome_estudante}</strong></td>
+                                <td>${getAeePrefix(t)}<strong>${t.nome_estudante}</strong></td>
                                 <td>${t.turma}</td>
                                 <td>
                                     <button class="btn btn-info btn-sm" onclick="verRelatorioTutoriaAluno('${profId}', '${profNome}', '${t.id}', '${t.nome_estudante}')">📄 Ver Relatório</button>
