@@ -2219,6 +2219,8 @@ function removerAtraso(id) {
 }
 
 // --- REGISTROS DE AULA (DIÁRIO DE CLASSE) ---
+let registroAulaEmEdicaoId = null;
+
 function renderTurmaRegistros() {
     // Busca registros específicos de aula (não administrativos)
     const registros = (data.registrosAula || []).filter(r => r.id_turma == turmaAtual);
@@ -2237,7 +2239,10 @@ function renderTurmaRegistros() {
                 <div class="card" style="border-left: 4px solid #3182ce; margin-bottom: 10px;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                         <h4 style="margin:0 0 10px 0; color:#2c5282;">📅 ${formatDate(r.data)}</h4>
-                        <button class="btn btn-sm btn-danger" onclick="removerRegistroAula(${r.id})">🗑️</button>
+                        <div>
+                            <button class="btn btn-sm btn-secondary" onclick="abrirModalNovoRegistroAula(${r.id})" title="Editar">✏️</button>
+                            <button class="btn btn-sm btn-danger" onclick="removerRegistroAula(${r.id})">🗑️</button>
+                        </div>
                     </div>
                     <p style="white-space: pre-wrap; margin:0; color:#4a5568;">${r.conteudo}</p>
                 </div>
@@ -2247,13 +2252,26 @@ function renderTurmaRegistros() {
     document.getElementById('tabRegistros').innerHTML = html;
 }
 
-function abrirModalNovoRegistroAula() {
-    document.getElementById('regAulaData').value = getTodayString();
-    document.getElementById('regAulaConteudo').value = '';
+function abrirModalNovoRegistroAula(id = null) {
+    registroAulaEmEdicaoId = id;
+    const h3 = document.querySelector('#modalNovoRegistroAula h3');
+
+    if (id) {
+        const r = (data.registrosAula || []).find(x => x.id == id);
+        if (r) {
+            document.getElementById('regAulaData').value = r.data;
+            document.getElementById('regAulaConteudo').value = r.conteudo;
+            if (h3) h3.textContent = '✏️ Editar Registro de Aula';
+        }
+    } else {
+        document.getElementById('regAulaData').value = getTodayString();
+        document.getElementById('regAulaConteudo').value = '';
+        if (h3) h3.textContent = '+ Novo Registro de Aula';
+    }
     showModal('modalNovoRegistroAula');
 }
 
-function salvarRegistroAula(e) {
+async function salvarRegistroAula(e) {
     e.preventDefault();
     const dataReg = document.getElementById('regAulaData').value;
     const conteudo = document.getElementById('regAulaConteudo').value;
@@ -2262,14 +2280,23 @@ function salvarRegistroAula(e) {
     
     if (!data.registrosAula) data.registrosAula = [];
     
-    data.registrosAula.push({
-        id: Date.now(),
-        id_turma: turmaAtual,
-        data: dataReg,
-        conteudo: conteudo
-    });
+    if (registroAulaEmEdicaoId) {
+        const idx = data.registrosAula.findIndex(r => r.id == registroAulaEmEdicaoId);
+        if (idx !== -1) {
+            data.registrosAula[idx].data = dataReg;
+            data.registrosAula[idx].conteudo = conteudo;
+        }
+    } else {
+        data.registrosAula.push({
+            id: Date.now(),
+            id_turma: turmaAtual,
+            data: dataReg,
+            conteudo: conteudo
+        });
+    }
     
-    persistirDados();
+    await persistirDados();
+    registroAulaEmEdicaoId = null;
     closeModal('modalNovoRegistroAula');
     renderTurmaRegistros();
 }
