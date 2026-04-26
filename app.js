@@ -1033,6 +1033,21 @@ async function abrirTurma(id) {
             if (gestorData.configBimestres) {
                 data.configBimestres = gestorData.configBimestres;
             }
+            
+            // [NOVO] Sincroniza Status e Devolutivas das Ocorrências
+            if (gestorData.ocorrencias) {
+                if (!data.ocorrencias) data.ocorrencias = [];
+                gestorData.ocorrencias.forEach(oG => {
+                    // Encontra a ocorrência correspondente na base do professor pelo ID único
+                    const oP = data.ocorrencias.find(x => x.id == oG.id);
+                    if (oP) {
+                        // Atualiza as informações que o gestor modificou
+                        oP.status = oG.status || 'pendente';
+                        oP.devolutiva = oG.devolutiva || '';
+                    }
+                });
+            }
+
             // [MODIFICAÇÃO] Sincroniza grade da escola para cálculos de frequência
             if (gestorData.gradeHoraria) {
                 data.schoolGrade = gestorData.gradeHoraria;
