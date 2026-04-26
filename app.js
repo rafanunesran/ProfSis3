@@ -1695,9 +1695,25 @@ function copiarTextoFaltas(textoEncoded) {
 // --- OCORRÊNCIAS ---
 let tempOcorrenciaIds = []; // Variável temporária para armazenar seleção
 let ocorrenciaEmEdicaoId = null; // Controle de estado para edição
+let currentTurmaOcorrenciaTab = 'disciplinares'; // 'disciplinares' ou 'rapidas'
+let currentTurmaOcorrenciaFiltro = 'pendente'; // 'pendente', 'confirmada' ou 'todas'
 
 async function renderOcorrencias() {
-    const ocorrencias = (data.ocorrencias || []).filter(o => o.id_turma == turmaAtual).sort((a, b) => new Date(b.data) - new Date(a.data));
+    const todasOcorrencias = (data.ocorrencias || []).filter(o => o.id_turma == turmaAtual).sort((a, b) => new Date(b.data) - new Date(a.data));
+    
+    // Separa por tipo para os contadores das abas
+    const disciplinares = todasOcorrencias.filter(o => o.tipo !== 'rapida');
+    const rapidas = todasOcorrencias.filter(o => o.tipo === 'rapida');
+
+    // Filtra disciplinares pelo status selecionado no filtro
+    const disciplinaresFiltradas = disciplinares.filter(o => {
+        if (currentTurmaOcorrenciaFiltro === 'todas') return true;
+        const status = o.status || 'pendente';
+        return status === currentTurmaOcorrenciaFiltro;
+    });
+
+    const listaExibir = currentTurmaOcorrenciaTab === 'disciplinares' ? disciplinaresFiltradas : rapidas;
+
     const todosEstudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
     
     const estudantesAtivos = todosEstudantes
@@ -1798,30 +1814,78 @@ async function renderOcorrencias() {
             </div>
         </div>
 
-        <h3>Histórico</h3>
-        ${ocorrencias.map(o => {
-            const nomes = (o.ids_estudantes || []).map(id => {
-                const est = todosEstudantes.find(e => e.id == id);
-                return est ? est.nome_completo : 'Excluído';
-            }).join(', ');
-            
-            const isRapida = o.tipo === 'rapida';
-            const cardStyle = isRapida ? 'background:#ebf8ff; border-left:4px solid #3182ce;' : 'background:#fff5f5; border-left:4px solid #e53e3e;';
+        <div style="margin-top: 30px;">
+            <div style="margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 5px;">
+                <button class="btn btn-sm ${currentTurmaOcorrenciaTab === 'disciplinares' ? 'btn-primary' : 'btn-secondary'}" 
+                        style="border-radius: 8px 8px 0 0; padding: 10px 20px; border-bottom: none; font-weight: bold;"
+                        onclick="currentTurmaOcorrenciaTab='disciplinares'; renderOcorrencias()">
+                    ⚠️ Disciplinares (${disciplinares.length})
+                </button>
+                <button class="btn btn-sm ${currentTurmaOcorrenciaTab === 'rapidas' ? 'btn-primary' : 'btn-secondary'}" 
+                        style="border-radius: 8px 8px 0 0; padding: 10px 20px; border-bottom: none; font-weight: bold;"
+                        onclick="currentTurmaOcorrenciaTab='rapidas'; renderOcorrencias()">
+                    ⚡ Registros Rápidos (${rapidas.length})
+                </button>
+            </div>
 
-            return `
-            <div class="card" style="${cardStyle} margin-bottom:5px; padding:10px;">
-                <div style="display:flex; justify-content:space-between;">
-                    <small style="font-weight:bold;">${formatDate(o.data)} ${isRapida ? '⚡' : ''}</small>
-                    <div>
-                        <button class="btn btn-sm btn-info" onclick="editarOcorrencia(${o.id})">✏️ Editar</button>
-                        <button class="btn btn-sm btn-secondary" onclick="imprimirOcorrencia(${o.id})">🖨️ Imprimir</button>
-                        <button class="btn btn-sm btn-danger" onclick="removerOcorrencia(${o.id})">🗑️</button>
+            ${currentTurmaOcorrenciaTab === 'disciplinares' ? `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
+                    <h3 style="margin:0; font-size:18px;">📋 Histórico Disciplinar</h3>
+                    <div style="background: #edf2f7; padding: 5px 12px; border-radius: 20px; display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 11px; font-weight: bold; color: #4a5568; text-transform: uppercase;">Filtro:</span>
+                        <label style="font-size: 12px; cursor:pointer; display:flex; align-items:center; gap:4px;">
+                            <input type="radio" name="filtroTurmaOco" value="pendente" onclick="currentTurmaOcorrenciaFiltro='pendente'; renderOcorrencias()" ${currentTurmaOcorrenciaFiltro === 'pendente' ? 'checked' : ''}> Pendentes
+                        </label>
+                        <label style="font-size: 12px; cursor:pointer; display:flex; align-items:center; gap:4px;">
+                            <input type="radio" name="filtroTurmaOco" value="confirmada" onclick="currentTurmaOcorrenciaFiltro='confirmada'; renderOcorrencias()" ${currentTurmaOcorrenciaFiltro === 'confirmada' ? 'checked' : ''}> Confirmadas
+                        </label>
+                        <label style="font-size: 12px; cursor:pointer; display:flex; align-items:center; gap:4px;">
+                            <input type="radio" name="filtroTurmaOco" value="todas" onclick="currentTurmaOcorrenciaFiltro='todas'; renderOcorrencias()" ${currentTurmaOcorrenciaFiltro === 'todas' ? 'checked' : ''}> Todas
+                        </label>
                     </div>
                 </div>
-                <p style="margin: 5px 0; font-size: 13px; color: ${isRapida ? '#2c5282' : '#c53030'};"><strong>Envolvidos:</strong> ${nomes || 'Nenhum selecionado'}</p>
-                <p>${o.relato}</p>
+            ` : `<h3 style="margin-bottom:15px; font-size:18px;">⚡ Histórico de Registros Rápidos</h3>`}
+
+            <div id="listaOcorrenciasTurma">
+                ${listaExibir.map(o => {
+                    const nomes = (o.ids_estudantes || []).map(id => {
+                        const est = todosEstudantes.find(e => e.id == id);
+                        return est ? (getAeePrefix(est) + est.nome_completo) : 'Excluído';
+                    }).join(', ');
+                    
+                    const isRapida = o.tipo === 'rapida';
+                    const status = o.status || 'pendente';
+                    // Estilos baseados no tipo e status
+                    const cardStyle = isRapida ? 'background:#ebf8ff; border-left:4px solid #3182ce;' : (status === 'pendente' ? 'background:#fff5f5; border-left:4px solid #e53e3e;' : 'background:#f0fff4; border-left:4px solid #38a169;');
+                    const statusLabel = !isRapida ? `<span class="badge ${status === 'pendente' ? 'badge-warning' : 'badge-success'}" style="font-size:10px; margin-left:10px; padding: 2px 8px; border-radius: 10px;">${status === 'pendente' ? '⏳ Pendente' : '✅ Confirmada'}</span>` : '';
+
+                    return `
+                    <div class="card" style="${cardStyle} margin-bottom:12px; padding:15px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                            <div>
+                                <small style="font-weight:bold; color:#718096; text-transform: uppercase; font-size: 10px;">📅 ${formatDate(o.data)} ${isRapida ? '• REGISTRO RÁPIDO' : ''}</small>
+                                ${statusLabel}
+                            </div>
+                            <div class="no-print">
+                                <button class="btn btn-sm btn-secondary" onclick="editarOcorrencia(${o.id})" title="Editar" style="padding: 2px 6px;">✏️</button>
+                                <button class="btn btn-sm btn-secondary" onclick="imprimirOcorrencia(${o.id})" title="Imprimir" style="padding: 2px 6px;">🖨️</button>
+                                <button class="btn btn-sm btn-danger" onclick="removerOcorrencia(${o.id})" title="Excluir" style="padding: 2px 6px;">🗑️</button>
+                            </div>
+                        </div>
+                        <p style="margin: 10px 0; font-size: 13px; color: #2d3748;"><strong>Envolvidos:</strong> ${nomes || 'Nenhum selecionado'}</p>
+                        <div style="background:rgba(255,255,255,0.6); padding:12px; border-radius:6px; font-size:14px; color:#4a5568; white-space:pre-wrap; border:1px solid rgba(0,0,0,0.05); line-height: 1.4;">${o.relato}</div>
+                        
+                        ${o.devolutiva ? `
+                            <div style="margin-top:12px; padding:12px; background:#fff; border:1px solid #c6f6d5; border-radius:6px; font-size:13px; color:#276749; box-shadow: inset 0 1px 2px rgba(0,0,0,0.02);">
+                                <strong style="display:flex; align-items:center; gap:5px;"><span style="font-size:16px;">✅</span> Devolutiva da Gestão:</strong>
+                                <div style="margin-top:5px; white-space:pre-wrap;">${o.devolutiva}</div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `}).join('')}
+                ${listaExibir.length === 0 ? `<p class="empty-state" style="padding: 40px;">Nenhum registro encontrado nesta categoria.</p>` : ''}
             </div>
-        `}).join('')}
+        </div>
     `;
     document.getElementById('tabOcorrencias').innerHTML = html;
 
