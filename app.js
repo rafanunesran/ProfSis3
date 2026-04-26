@@ -72,6 +72,9 @@ async function iniciarApp() {
         injectProfileButton();
         aplicarTemaSalvo();
 
+        // Sincroniza marcadores AEE de toda a escola para a equipe
+        await mergeAeeFlagsGlobais();
+
         // Renderiza conforme o modo de visualização atual
         if (currentViewMode === 'gestor') {
             renderGestorPanel();
@@ -83,6 +86,54 @@ async function iniciarApp() {
             renderProfessorPanel();
         }
     });
+}
+
+// Função para buscar e mesclar flags AEE de toda a escola na lista local de estudantes
+async function mergeAeeFlagsGlobais() {
+    if (!currentUser || !currentUser.schoolId) return;
+    try {
+        // Busca dados de ambos os pools compartilhados da escola
+        const schoolId = currentUser.schoolId;
+        const [aeeData, projData] = await Promise.all([
+            getData('app_data', `app_data_school_${schoolId}_aee`),
+            getData('app_data', `app_data_school_${schoolId}_projeto`)
+        ]);
+
+        const tutoradosAee = (aeeData && aeeData.tutorados) ? aeeData.tutorados : [];
+        const tutoradosProj = (projData && projData.tutorados) ? projData.tutorados : [];
+        const todosTutorados = [...tutoradosAee, ...tutoradosProj];
+        
+        const mergeInfo = (lista, isEstudanteList) => {
+            return lista.map(item => {
+                const searchId = isEstudanteList ? item.id : item.id_estudante_origem;
+                const searchName = isEstudanteList ? item.nome_completo : item.nome_estudante;
+                
+                if (!searchId && !searchName) return item;
+
+                // Busca por ID (flexível) ou por Nome Completo (Normalizado) para alunos antigos
+                const info = todosTutorados.find(t => 
+                    (t.id_estudante_origem && String(t.id_estudante_origem) === String(searchId)) ||
+                    (String(t.id) === String(searchId)) ||
+                    (t.nome_estudante && searchName && t.nome_estudante.trim().toUpperCase() === searchName.trim().toUpperCase())
+                );
+
+                if (info) {
+                    return { ...item, 
+                        is_aee_mapped: true,
+                        aee_diagnostico: info.aee_diagnostico || item.aee_diagnostico, 
+                        aee_categoria_diagnostico: info.aee_categoria_diagnostico || item.aee_categoria_diagnostico,
+                        aee_categoria_projeto: info.aee_categoria_projeto || item.aee_categoria_projeto
+                    };
+                }
+                return item;
+            });
+        };
+
+        if (data.estudantes && todosTutorados.length > 0) data.estudantes = mergeInfo(data.estudantes, true);
+        if (data.tutorados && todosTutorados.length > 0) data.tutorados = mergeInfo(data.tutorados, false);
+    } catch (e) { 
+        console.warn('Erro ao mesclar flags AEE globais:', e); 
+    }
 }
 
 // Função para injetar o botão de alternância no header
@@ -786,7 +837,7 @@ async function renderDashboard() {
                         const est = (data.estudantes || []).find(e => e.id == r.estudanteId);
                         const nomeEst = est ? est.nome_completo : 'Estudante';
                         let icon = r.tipo === 'Atestado' ? '🔵' : (r.tipo === 'Faltoso' ? '🔴' : '📝');
-                        return `<li>${icon} <strong>${nomeEst}</strong>: ${r.tipo}</li>`;
+                        return `<li>${icon} ${getAeePrefix(est)} <strong>${nomeEst}</strong>: ${r.tipo}</li>`;
                     }).join('')}</ul></div>
                 </div>
             `;
@@ -934,6 +985,12 @@ async function abrirTurma(id) {
         const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
         const gestorData = await getData('app_data', key);
 
+        const schoolId = currentUser.schoolId;
+        const [aeeData, projData] = await Promise.all([
+            getData('app_data', `app_data_school_${schoolId}_aee`),
+            getData('app_data', `app_data_school_${schoolId}_projeto`)
+        ]);
+
         if (gestorData && gestorData.estudantes) {
             // 1. Pega os alunos da turma original do gestor
             const alunosGestor = gestorData.estudantes.filter(e => e.id_turma == turma.masterId);
@@ -944,8 +1001,22 @@ async function abrirTurma(id) {
 
             // 3. Adiciona os alunos atualizados (mantendo o ID original do aluno para preservar notas/presença)
             alunosGestor.forEach(alunoMaster => {
+                const tutorados = [...((aeeData && aeeData.tutorados) || []), ...((projData && projData.tutorados) || [])];
+                
+                // Busca reforçada por ID ou Nome
+                const infoAee = tutorados.find(t => 
+                    String(t.id_estudante_origem) === String(alunoMaster.id) || 
+                    (t.nome_estudante && alunoMaster.nome_completo && t.nome_estudante.trim().toUpperCase() === alunoMaster.nome_completo.trim().toUpperCase())
+                );
+
                 // Clona o aluno e ajusta o id_turma para o ID da turma do professor
                 const alunoLocal = { ...alunoMaster, id_turma: turmaAtual };
+                if (infoAee) {
+                    alunoLocal.is_aee_mapped = true;
+                    alunoLocal.aee_diagnostico = infoAee.aee_diagnostico || alunoLocal.aee_diagnostico;
+                    alunoLocal.aee_categoria_diagnostico = infoAee.aee_categoria_diagnostico || alunoLocal.aee_categoria_diagnostico;
+                    alunoLocal.aee_categoria_projeto = infoAee.aee_categoria_projeto || alunoLocal.aee_categoria_projeto;
+                }
                 data.estudantes.push(alunoLocal);
             });
 
@@ -1215,7 +1286,7 @@ async function renderEstudantes() {
                     return `
                     <tr>
                         <td>
-                            <a href="#" onclick="abrirEstudanteDetalhe(${e.id})" style="font-weight:bold; text-decoration:none; color:#2b6cb0;">${e.nome_completo}</a>
+                            ${getAeePrefix(e)} <a href="#" onclick="abrirEstudanteDetalhe(${e.id})" style="font-weight:bold; text-decoration:none; color:#2b6cb0;">${e.nome_completo}</a>
                             ${diagBadge}
                             ${badgeBimestre}
                         </td>
@@ -1374,7 +1445,7 @@ async function renderChamada() {
                     return `
                     <tr>
                         <td>
-                            ${e.nome_completo}
+                            ${getAeePrefix(e)}${e.nome_completo}
                             ${badges}
                             ${badgeBimestre}
                             ${sharedBadge}
@@ -1561,7 +1632,7 @@ async function renderRelatorioMensalFaltas() {
 
                                 return `<td style="text-align:center; border: 1px solid #e2e8f0; padding: 4px; ${cellStyle}" title="${cellTitle}">${cellContent}</td>`;
                             }).join('');
-                            return `<tr><td style="position:sticky; left:0; background:#fff; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 8px;">${e.nome_completo}</td>${cols}<td style="text-align:center; font-weight:bold; color: ${totalFaltas > 0 ? '#e53e3e' : '#2d3748'}; border-bottom: 1px solid #e2e8f0;">${totalFaltas}</td></tr>`;
+                            return `<tr><td style="position:sticky; left:0; background:#fff; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 8px;">${getAeePrefix(e)}${e.nome_completo}</td>${cols}<td style="text-align:center; font-weight:bold; color: ${totalFaltas > 0 ? '#e53e3e' : '#2d3748'}; border-bottom: 1px solid #e2e8f0;">${totalFaltas}</td></tr>`;
                         }).join('')}
                     </tbody>
                 </table>
@@ -2022,7 +2093,7 @@ function renderAtrasos() {
 
                     return `
                         <tr>
-                            <td><strong>${est ? est.nome_completo : 'Excluído'}</strong></td>
+                            <td>${getAeePrefix(est)}<strong>${est ? est.nome_completo : 'Excluído'}</strong></td>
                             <td><div style="display:flex; flex-wrap:wrap;">${tagsHtml}</div></td>
                             <td style="text-align:center; font-weight:bold; font-size:14px; color:#d69e2e;">${lista.length}</td>
                         </tr>
@@ -2380,7 +2451,7 @@ function renderTrabalhos() {
 
                         return `
                             <tr onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='transparent'">
-                                <td style="position:sticky; left:0; background:inherit; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cbd5e0; z-index: 5;">${e.nome_completo} ${tagFaltoso}</td>
+                                <td style="position:sticky; left:0; background:inherit; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cbd5e0; z-index: 5;">${getAeePrefix(e)}${e.nome_completo} ${tagFaltoso}</td>
                                 ${gradeCells}                                
                                 <td id="media-est-current-${e.id}" style="text-align:center; font-weight:bold; color: ${corMedia}; background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; right: 80px; z-index: 5; border-left: 2px solid #cbd5e0;">
                                     ${media}
@@ -2774,7 +2845,7 @@ function renderCompensacoes() {
                         return `
                             <tr>
                                 <td>
-                                    <strong>${nomeEst}</strong>
+                                    ${getAeePrefix(est)}<strong>${nomeEst}</strong>
                                     <div style="font-size:10px; color:#718096; margin-top:2px;">${logMinimizado}</div>
                                 </td>
                                 <td style="font-size:12px;">${meses[c.mes_referencia]}/${c.ano_referencia}</td>
@@ -2918,7 +2989,7 @@ function renderCaderno() {
 
                     return `
                     <tr>
-                        <td>${e.nome_completo}</td>
+                        <td>${getAeePrefix(e)}${e.nome_completo}</td>
                         <td style="text-align:center;">
                             <div style="display:flex; justify-content:center; gap:15px;">
                                 <label style="font-size:12px; cursor:pointer;"><input type="radio" name="status_${e.id}" value="completo" onchange="salvarStatusCaderno(${e.id}, this.value)" ${status === 'completo' ? 'checked' : ''}> C</label>
@@ -3010,7 +3081,7 @@ async function renderRelatorioMensalCaderno() {
 
                                 return `<td style="text-align:center; border: 1px solid #e2e8f0; padding: 2px; ${style}">${char}</td>`;
                             }).join('');
-                            return `<tr><td style="position:sticky; left:0; background:#fff; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 4px;">${e.nome_completo}</td>${cols}</tr>`;
+                            return `<tr><td style="position:sticky; left:0; background:#fff; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 4px;">${getAeePrefix(e)}${e.nome_completo}</td>${cols}</tr>`;
                         }).join('')}
                     </tbody>
                 </table>
@@ -3045,7 +3116,7 @@ function renderTutoria() {
             htmlTutoradosList += `<table style="margin-top:0;"><tbody>`;
             htmlTutoradosList += porTurma[turma].map(t => `
                     <tr>
-                        <td><a href="#" onclick="abrirFichaTutorado(${t.id})">${t.nome_estudante}</a></td>
+                        <td>${getAeePrefix(t)}<a href="#" onclick="abrirFichaTutorado(${t.id})">${t.nome_estudante}</a></td>
                     </tr>
             `).join('');
             htmlTutoradosList += `</tbody></table>`;
@@ -5753,6 +5824,9 @@ async function renderAeeVisaoGeral() {
         return;
     }
 
+    // Força uma atualização das flags globais para garantir que o marcador apareça nesta lista também
+    await mergeAeeFlagsGlobais();
+
     try {
         // 1. Fetch AEE data
         const schoolId = currentUser.schoolId;
@@ -5777,7 +5851,7 @@ async function renderAeeVisaoGeral() {
                 htmlTutoradosList += `<table style="margin-top:0;"><tbody>`;
                 htmlTutoradosList += porTurma[turma].map(t => `
                         <tr>
-                            <td><a href="#" onclick="abrirFichaAeeReadOnly(${t.id})">${t.nome_estudante}</a></td>
+                            <td>${getAeePrefix(t)}<a href="#" onclick="abrirFichaAeeReadOnly(${t.id})">${t.nome_estudante}</a></td>
                         </tr>
                 `).join('');
                 htmlTutoradosList += `</tbody></table>`;

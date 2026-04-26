@@ -14,6 +14,13 @@ function getNextId(array) {
     return array && array.length > 0 ? Math.max(...array.map(i => i.id)) + 1 : 1;
 }
 
+function getAeePrefix(e) {
+    if (e && (e.aee_categoria_diagnostico || e.aee_diagnostico || e.aee_categoria_projeto || e.is_aee_mapped)) {
+        return `<span style="background:#e6fffa; color:#276749; font-size:11px; padding:2px 6px; border-radius:4px; font-weight:bold; border:1px solid #b2f5ea; margin-right:5px;" title="Estudante acompanhado pelo AEE">AEE</span>`;
+    }
+    return '';
+}
+
 function getStatusColor(status) {
     const cores = {
         'pendente': '#ffc107',
