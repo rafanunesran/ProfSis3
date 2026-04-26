@@ -676,6 +676,9 @@ async function renderDashboard() {
         if (gestorData) {
             gradeEscola = gestorData.gradeHoraria || [];
             excecoesGrade = gestorData.gradeHorariaExcecoes || [];
+            // [MODIFICAÇÃO] Armazena globalmente para cálculos de nota síncronos
+            data.schoolGrade = gradeEscola;
+            data.schoolExceptions = excecoesGrade;
             if (gestorData.avisosMural) data.avisosMural = gestorData.avisosMural;
             if (gestorData.registrosAdministrativos) data.registrosAdministrativos = gestorData.registrosAdministrativos;
         }
@@ -1029,6 +1032,13 @@ async function abrirTurma(id) {
             }
             if (gestorData.configBimestres) {
                 data.configBimestres = gestorData.configBimestres;
+            }
+            // [MODIFICAÇÃO] Sincroniza grade da escola para cálculos de frequência
+            if (gestorData.gradeHoraria) {
+                data.schoolGrade = gestorData.gradeHoraria;
+            }
+            if (gestorData.gradeHorariaExcecoes) {
+                data.schoolExceptions = gestorData.gradeHorariaExcecoes;
             }
             
             persistirDados(); // Salva a atualização localmente
@@ -2196,6 +2206,40 @@ function removerRegistroAula(id) {
 // --- TRABALHOS ---
 let currentBimestreTrabalhos = 1;
 
+// [NOVO] Helper para calcular o total de aulas previstas no período baseado na agenda do professor e grade da escola
+function calcularTotalAulasPrevistas(turmaId, inicio, fim) {
+    if (!inicio || !fim) return 0;
+    
+    // Tenta pegar da cache da escola (injetada no login/abertura de turma) ou dos dados locais se for gestor
+    const gradeEscola = data.schoolGrade || data.gradeHoraria || [];
+    const excecoesGrade = data.schoolExceptions || data.gradeHorariaExcecoes || [];
+    const minhasAulas = data.horariosAulas || [];
+
+    let totalAulas = 0;
+    let d = new Date(inicio + 'T12:00:00');
+    const dFim = new Date(fim + 'T12:00:00');
+
+    while (d <= dFim) {
+        const dataStr = d.toISOString().split('T')[0];
+        const diaSemana = d.getDay(); // 0=Dom, 1=Seg...
+
+        if (diaSemana >= 1 && diaSemana <= 5) { // Apenas dias úteis
+            const excecao = excecoesGrade.find(e => e.data === dataStr);
+            const blocosHoje = excecao ? (excecao.blocos || []) : gradeEscola.filter(g => g.diaSemana == diaSemana);
+
+            blocosHoje.forEach(bloco => {
+                const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
+                // Verifica se este bloco de horário está destinado à turma/disciplina atual
+                if (aula && aula.tipo === 'aula' && String(aula.id_turma) === String(turmaId)) {
+                    totalAulas++;
+                }
+            });
+        }
+        d.setDate(d.getDate() + 1);
+    }
+    return totalAulas;
+}
+
 function getNotaCompensacao(estudanteId, bimestre) {
     const config = (data.configBimestres || []).find(c => c.bim === bimestre);
     if (!config || !config.inicio || !config.fim) return 10;
@@ -2209,25 +2253,8 @@ function getNotaCompensacao(estudanteId, bimestre) {
 
     if (faltasEstudanteNoBimestre === 0) return 10;
 
-    // 2. Cálculo da Base (Total de aulas dadas)
-    // Deve considerar a UNIÃO dos dias em que houve lançamento efetivo (seja no Diário ou na Chamada)
-    // Isso evita o erro de considerar dias sem aula ou dias sem lançamento para o cálculo da porcentagem.
-    const idsTurmaSet = new Set((data.estudantes || []).filter(e => e.id_turma == turmaAtual).map(e => String(e.id)));
-    const diasComLancamento = new Set();
-
-    // Adiciona dias com registro no Diário de Classe desta turma
-    (data.registrosAula || []).forEach(r => {
-        if (r.id_turma == turmaAtual && r.data >= config.inicio && r.data <= config.fim) diasComLancamento.add(r.data);
-    });
-
-    // Adiciona dias onde houve chamada com registro de faltas para esta turma
-    (data.presencas || []).forEach(p => {
-        if (p.data >= config.inicio && p.data <= config.fim && idsTurmaSet.has(String(p.id_estudante))) {
-            diasComLancamento.add(p.data);
-        }
-    });
-
-    const totalAulas = diasComLancamento.size;
+    // 2. Cálculo da Base (Total de aulas previstas conforme a Agenda)
+    const totalAulas = calcularTotalAulasPrevistas(turmaAtual, config.inicio, config.fim);
 
     // 3. Verificação do limite de 30%
     if (totalAulas > 0 && (faltasEstudanteNoBimestre / totalAulas) * 100 > 30) {
@@ -2281,18 +2308,8 @@ function getNotaParticipacao(estudanteId, bimestre) {
         p.data >= config.inicio && p.data <= config.fim
     ).length;
 
-    const idsTurmaSet = new Set((data.estudantes || []).filter(e => e.id_turma == turmaAtual).map(e => String(e.id)));
-    const diasComLancamento = new Set();
-    (data.registrosAula || []).forEach(r => {
-        if (r.id_turma == turmaAtual && r.data >= config.inicio && r.data <= config.fim) diasComLancamento.add(r.data);
-    });
-    (data.presencas || []).forEach(p => {
-        if (p.data >= config.inicio && p.data <= config.fim && idsTurmaSet.has(String(p.id_estudante))) {
-            diasComLancamento.add(p.data);
-        }
-    });
-
-    const totalAulas = diasComLancamento.size;
+    // [MODIFICAÇÃO] Cálculo da Base baseado na Agenda Prevista
+    const totalAulas = calcularTotalAulasPrevistas(turmaAtual, config.inicio, config.fim);
     let notaInicial = 10;
 
     if (totalAulas > 0 && (faltasEstudante / totalAulas) * 100 > 30) {
@@ -2318,6 +2335,10 @@ function renderTrabalhos() {
     const trabalhos = (data.trabalhos || []).filter(t => t.id_turma == turmaAtual && (t.bimestre == currentBimestreTrabalhos || (!t.bimestre && currentBimestreTrabalhos == 1)));
     const notas = data.notas || [];
 
+    // [NOVO] Cálculo do total de aulas para exibição no cabeçalho
+    const configBim = (data.configBimestres || []).find(c => c.bim === currentBimestreTrabalhos);
+    const totalAulasBim = configBim ? calcularTotalAulasPrevistas(turmaAtual, configBim.inicio, configBim.fim) : 0;
+
     const html = `
         <div style="margin-bottom: 15px; display: flex; gap: 5px; background: #f1f5f9; padding: 5px; border-radius: 8px;" class="no-print">
             ${[1, 2, 3, 4].map(b => `
@@ -2330,7 +2351,10 @@ function renderTrabalhos() {
         </div>
 
         <div style="margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
-            <h3 style="margin:0;">📊 Planilha de Notas - ${currentBimestreTrabalhos}º Bimestre</h3>
+            <div>
+                <h3 style="margin:0;">📊 Planilha de Notas - ${currentBimestreTrabalhos}º Bimestre</h3>
+                ${totalAulasBim > 0 ? `<div style="font-size:12px; color:#718096; margin-top:2px;">📅 Total de aulas previstas no período: <strong>${totalAulasBim}</strong></div>` : ''}
+            </div>
             <button class="btn btn-primary btn-sm no-print" onclick="abrirModalNovoTrabalho()">+ Criar Nova Atividade</button>
         </div>
         
