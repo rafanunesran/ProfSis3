@@ -6372,10 +6372,12 @@ async function restaurarBackupLocalParaNuvem() {
 // --- SISTEMA DE BACKUP NA NUVEM (ROTATIVO - 5 SLOTS) ---
 
 async function verificarBackupAutomatico() {
-    if (!currentUser || !currentUser.id) return;
+    if (!currentUser) return;
+    const userId = currentUser.uid || currentUser.id;
+    if (!userId) return;
     
     try {
-        const indexKey = `backup_index_${currentUser.id}`;
+        const indexKey = `backup_index_${userId}`;
         let indexData = await getData('app_data', indexKey);
         
         if (!indexData) indexData = { slots: [], nextSlot: 1 };
@@ -6399,7 +6401,8 @@ async function criarBackupNuvem(silent = false) {
     if (!silent && !confirm('Criar um novo backup na nuvem? Se houver 5 backups, o mais antigo será substituído.')) return;
     
     try {
-        const indexKey = `backup_index_${currentUser.id}`;
+        const userId = currentUser.uid || currentUser.id;
+        const indexKey = `backup_index_${userId}`;
         let indexData = await getData('app_data', indexKey);
         
         if (!indexData) indexData = { slots: [], nextSlot: 1 };
@@ -6409,7 +6412,7 @@ async function criarBackupNuvem(silent = false) {
         if (slotId > 5) slotId = 1;
 
         // Salva os dados no slot
-        const backupKey = `backup_${currentUser.id}_slot_${slotId}`;
+        const backupKey = `backup_${userId}_slot_${slotId}`;
         await saveData('app_data', backupKey, data);
 
         // Atualiza o índice
@@ -6438,17 +6441,33 @@ async function criarBackupNuvem(silent = false) {
 }
 
 async function listarBackupsNuvem() {
-    if (!currentUser || !currentUser.id) return;
+    if (!currentUser) return;
+    const userId = currentUser.uid || currentUser.id;
     
     try {
-        const indexKey = `backup_index_${currentUser.id}`;
+        const indexKey = `backup_index_${userId}`;
         const indexData = await getData('app_data', indexKey);
         
         if (!indexData || !indexData.slots || indexData.slots.length === 0) {
-            return alert('Nenhum backup encontrado na nuvem.');
+            // Tenta buscar pelo ID antigo caso o UID falhe (retrocompatibilidade)
+            if (currentUser.uid && currentUser.id !== currentUser.uid) {
+                 const oldIndexKey = `backup_index_${currentUser.id}`;
+                 const oldIndexData = await getData('app_data', oldIndexKey);
+                 if (oldIndexData && oldIndexData.slots) {
+                     return exibirModalBackups(oldIndexData.slots, currentUser.id);
+                 }
+            }
+            return alert('Nenhum backup encontrado na nuvem para esta conta.');
         }
 
-        const backups = indexData.slots.sort((a, b) => b.timestamp - a.timestamp);
+        exibirModalBackups(indexData.slots, userId);
+    } catch (e) {
+        alert('Erro ao carregar lista de backups: ' + e.message);
+    }
+}
+
+function exibirModalBackups(slots, userId) {
+    const backups = slots.sort((a, b) => b.timestamp - a.timestamp);
         
         const html = `
             <div id="modalBackupsNuvem" class="modal active">
@@ -6466,8 +6485,8 @@ async function listarBackupsNuvem() {
                                     <div style="font-size:12px; color:#718096;">${b.label}</div>
                                 </div>
                                 <div style="display:flex; gap:5px;">
-                                    <button class="btn btn-sm btn-info" onclick="mesclarBackupNuvem(${b.id}, '${new Date(b.timestamp).toLocaleString('pt-BR')}')" title="Recupera notas de domingo sem apagar as chamadas de hoje">🧩 Mesclar</button>
-                                    <button class="btn btn-sm btn-warning" onclick="restaurarBackupNuvem(${b.id}, '${new Date(b.timestamp).toLocaleString('pt-BR')}')" title="Sobrescreve tudo com a versão de domingo">⚠️ Substituir</button>
+                                    <button class="btn btn-sm btn-info" onclick="mesclarBackupNuvem(${b.id}, '${new Date(b.timestamp).toLocaleString('pt-BR')}', '${userId}')" title="Recupera notas de domingo sem apagar as chamadas de hoje">🧩 Mesclar</button>
+                                    <button class="btn btn-sm btn-warning" onclick="restaurarBackupNuvem(${b.id}, '${new Date(b.timestamp).toLocaleString('pt-BR')}', '${userId}')" title="Sobrescreve tudo com a versão de domingo">⚠️ Substituir</button>
                                 </div>
                             </div>
                         `).join('')}
@@ -6480,17 +6499,14 @@ async function listarBackupsNuvem() {
         const oldModal = document.getElementById('modalBackupsNuvem');
         if (oldModal) oldModal.remove();
         document.body.insertAdjacentHTML('beforeend', html);
-        
-    } catch (e) {
-        alert('Erro ao carregar lista de backups: ' + e.message);
-    }
 }
 
-async function restaurarBackupNuvem(slotId, dataBackup) {
+async function restaurarBackupNuvem(slotId, dataBackup, userId) {
+    const uId = userId || currentUser.uid || currentUser.id;
     if (!confirm(`ATENÇÃO: Isso substituirá TODOS os dados atuais pelos dados do backup de ${dataBackup}.\n\nDeseja continuar?`)) return;
 
     try {
-        const backupKey = `backup_${currentUser.id}_slot_${slotId}`;
+        const backupKey = `backup_${uId}_slot_${slotId}`;
         const backupData = await getData('app_data', backupKey);
 
         if (backupData) {
@@ -6506,11 +6522,12 @@ async function restaurarBackupNuvem(slotId, dataBackup) {
     }
 }
 
-async function mesclarBackupNuvem(slotId, dataLabel) {
+async function mesclarBackupNuvem(slotId, dataLabel, userId) {
+    const uId = userId || currentUser.uid || currentUser.id;
     if (!confirm(`MODO DE RECUPERAÇÃO INTELIGENTE:\n\nO sistema buscará as notas de ${dataLabel} e as adicionará ao trabalho de hoje.\n\nAs chamadas e ações que o professor lançou hoje SERÃO MANTIDAS.\n\nDeseja continuar?`)) return;
 
     try {
-        const backupKey = `backup_${currentUser.id}_slot_${slotId}`;
+        const backupKey = `backup_${uId}_slot_${slotId}`;
         const backupData = await getData('app_data', backupKey);
 
         if (!backupData) return alert('Erro: Backup não encontrado.');
@@ -6575,10 +6592,11 @@ async function mesclarBackupNuvem(slotId, dataLabel) {
 }
 
 async function restaurarUltimoBackup() {
-    if (!currentUser || !currentUser.id) return;
+    if (!currentUser) return;
+    const userId = currentUser.uid || currentUser.id;
     
     try {
-        const indexKey = `backup_index_${currentUser.id}`;
+        const indexKey = `backup_index_${userId}`;
         const indexData = await getData('app_data', indexKey);
         
         if (!indexData || !indexData.slots || indexData.slots.length === 0) {
