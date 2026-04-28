@@ -257,7 +257,7 @@ function abrirModalPerfil() {
     }
     recoveryArea.innerHTML = `
         <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #feb2b2;">
-            <h4 style="color:#c53030; margin-bottom:5px; font-size:14px;">🆘 Notas de domingo sumiram?</h4>
+            <h4 style="color:#c53030; margin-bottom:5px; font-size:14px;">🆘 Backup Pessoal</h4>
             <p style="font-size:11px; color:#718096; margin-bottom:10px;">A busca avançada tentará localizar backups ocultos vinculados a IDs antigos ou slots que não aparecem na lista comum.</p>
             <button class="btn btn-sm btn-danger" onclick="abrirPainelRecuperacaoAvancada()" style="width:100%; font-weight:bold;">🔍 Localizar Backups Perdidos</button>
         </div>
