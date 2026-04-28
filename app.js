@@ -37,6 +37,11 @@ async function iniciarApp() {
         // [AUTO-BACKUP] Verifica e cria backup diário se necessário
         verificarBackupAutomatico();
 
+        // [NOVO] Configura verificação recorrente a cada 2 horas enquanto o sistema estiver aberto
+        if (!window.intervaloBackupAuto) {
+            window.intervaloBackupAuto = setInterval(verificarBackupAutomatico, 2 * 60 * 60 * 1000);
+        }
+
         const today = new Date();
         const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
 
@@ -6516,14 +6521,22 @@ async function verificarBackupAutomatico() {
         if (!indexData) indexData = { slots: [], nextSlot: 1 };
         
         const backups = indexData.slots || [];
-        const today = new Date().toDateString();
-        
-        // Verifica se já existe algum backup com a data de hoje
-        const hasBackupToday = backups.some(b => new Date(b.timestamp).toDateString() === today);
-        
-        if (!hasBackupToday) {
-            console.log('Iniciando backup automático diário...');
-            await criarBackupNuvem(true); // true = silencioso
+
+        // Caso seja o primeiro backup da conta ou o intervalo de 2h tenha passado
+        if (backups.length === 0) {
+            console.log('Iniciando backup de segurança inicial...');
+            await criarBackupNuvem(true);
+            return;
+        }
+
+        // Pega o timestamp do último backup realizado (em qualquer slot)
+        const ultimoTs = Math.max(...backups.map(b => b.timestamp));
+        const agora = Date.now();
+        const duasHorasEmMs = 2 * 60 * 60 * 1000;
+
+        if (agora - ultimoTs >= duasHorasEmMs) {
+            console.log('Intervalo de 2h atingido. Executando backup automático silencioso...');
+            await criarBackupNuvem(true);
         }
     } catch (e) {
         console.warn('Erro na verificação de backup automático:', e);
