@@ -228,12 +228,43 @@ const TEMAS_APP = {
     'dark': { nome: 'Modo Escuro', cor: '#63b3ed', bgHeader: 'linear-gradient(135deg, #2d3748, #1a202c)', bgBody: '#1a202c', isDark: true }
 };
 
-function abrirModalPerfil() {
+async function abrirModalPerfil() {
     if (!currentUser) return;
 
     document.getElementById('perfilNome').textContent = currentUser.nome;
     document.getElementById('perfilEmail').textContent = currentUser.email;
     document.getElementById('perfilRole').textContent = (currentUser.role || 'Professor').toUpperCase();
+
+    // [NOVO] Turma de Coordenação (Apenas para Professores)
+    let coordArea = document.getElementById('secaoCoordPerfil');
+    if (!coordArea && currentUser.role === 'professor') {
+        coordArea = document.createElement('div');
+        coordArea.id = 'secaoCoordPerfil';
+        const listaTemas = document.getElementById('listaTemas');
+        listaTemas.parentNode.insertBefore(coordArea, listaTemas);
+    }
+
+    if (coordArea && currentUser.role === 'professor') {
+        let classesHtml = '<option value="">Nenhuma Selecionada</option>';
+        if (currentUser.schoolId) {
+            const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+            const gestorData = await getData('app_data', key);
+            if (gestorData && gestorData.turmas) {
+                classesHtml += gestorData.turmas.map(t => 
+                    `<option value="${t.id}" ${currentUser.turmaCoordenacao == t.id ? 'selected' : ''}>${t.nome} (${t.turno})</option>`
+                ).join('');
+            }
+        }
+        coordArea.innerHTML = `
+            <div style="margin-bottom: 20px; padding: 12px; background: #ebf8ff; border-radius: 8px; border-left: 4px solid #3182ce;">
+                <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:5px; color:#2c5282;">📍 Turma de Coordenação:</label>
+                <select id="selTurmaCoord" onchange="salvarTurmaCoordenacao(this.value)" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                    ${classesHtml}
+                </select>
+                <p style="font-size:10px; color:#718096; margin-top:5px; line-height:1.2;">Ao selecionar, você terá acesso a todas as ocorrências e devolutivas desta turma, como um gestor.</p>
+            </div>
+        `;
+    }
     
     const containerTemas = document.getElementById('listaTemas');
     const temaAtual = (currentUser && currentUser.theme) ? currentUser.theme : (localStorage.getItem('app_theme') || 'padrao');
@@ -271,6 +302,32 @@ function abrirModalPerfil() {
     `;
 
     showModal('modalPerfilUsuario');
+}
+
+async function salvarTurmaCoordenacao(idTurma) {
+    if (!currentUser) return;
+    
+    // 1. Atualiza Localmente
+    currentUser.turmaCoordenacao = idTurma;
+    localStorage.setItem('app_current_user', JSON.stringify(currentUser));
+    
+    // 2. Salva Online no Perfil do Usuário
+    if (currentUser.email) {
+        try {
+            const usersData = await getData('system', 'users_list');
+            const users = (usersData && usersData.list) ? usersData.list : [];
+            const idx = users.findIndex(u => u.email === currentUser.email);
+            
+            if (idx !== -1) {
+                users[idx].turmaCoordenacao = idTurma;
+                await saveData('system', 'users_list', { list: users });
+            }
+            console.log('Turma de coordenação salva:', idTurma);
+        } catch (e) {
+            console.error("Erro ao salvar turma de coordenação:", e);
+            alert('Erro ao salvar configuração.');
+        }
+    }
 }
 
 async function mudarTema(temaKey) {
@@ -1084,13 +1141,22 @@ async function abrirTurma(id) {
             // [NOVO] Sincroniza Status e Devolutivas das Ocorrências
             if (gestorData.ocorrencias) {
                 if (!data.ocorrencias) data.ocorrencias = [];
+                
+                // Verifica se o professor é coordenador desta turma
+                const isCoord = (currentUser.turmaCoordenacao == turma.masterId);
+                
                 gestorData.ocorrencias.forEach(oG => {
-                    // Encontra a ocorrência correspondente na base do professor pelo ID único
-                    const oP = data.ocorrencias.find(x => x.id == oG.id);
-                    if (oP) {
-                        // Atualiza as informações que o gestor modificou
-                        oP.status = oG.status || 'pendente';
-                        oP.devolutiva = oG.devolutiva || '';
+                    // Filtra ocorrências desta turma específica no pool da escola
+                    if (oG.id_turma != turma.masterId) return;
+
+                    const oPIdx = data.ocorrencias.findIndex(x => x.id == oG.id);
+                    if (oPIdx !== -1) {
+                        // Atualiza status e devolutiva se o prof já tinha o registro
+                        data.ocorrencias[oPIdx].status = oG.status || 'pendente';
+                        data.ocorrencias[oPIdx].devolutiva = oG.devolutiva || '';
+                    } else if (isCoord) {
+                        // Importa ocorrências de outros professores se for o coordenador
+                        data.ocorrencias.push(oG);
                     }
                 });
             }
@@ -5074,8 +5140,13 @@ function renderEstudanteGeral() {
     });
 
     // Filtro por Perfil: Professor vê apenas as suas; Gestor vê todas
-    if (!isGestor) {
-        ocorrenciasAluno = ocorrenciasAluno.filter(o => o.autor === currentUser.nome);
+    if (!isGestor && currentUser) {
+        const tEst = (data.turmas || []).find(t => t.id == estudanteAtualDetalhe.id_turma);
+        const isCoord = (tEst && tEst.masterId == currentUser.turmaCoordenacao);
+        
+        if (!isCoord) {
+            ocorrenciasAluno = ocorrenciasAluno.filter(o => o.autor === currentUser.nome);
+        }
     }
     
     ocorrenciasAluno.sort((a,b) => new Date(b.data) - new Date(a.data));
@@ -5176,7 +5247,10 @@ function renderEstudanteGeral() {
                         <tr style="${o.tipo === 'rapida' ? 'background:#ebf8ff;' : 'background:#fff5f5;'}">
                             <td>${formatDate(o.data)}</td>
                             <td>${o.tipo === 'rapida' ? '⚡ Rápida' : '⚠️ Disciplinar'}</td>
-                            <td>${o.relato}</td>
+                            <td>
+                                <div>${o.relato}</div>
+                                ${o.devolutiva ? `<div style="margin-top:5px; font-size:11px; color:#276749; background:#f0fff4; padding:4px; border-radius:4px; border:1px solid #c6f6d5;"><strong>✅ Devolutiva:</strong> ${o.devolutiva}</div>` : ''}
+                            </td>
                             <td>${o.autor || '-'}</td>
                         </tr>
                     `).join('')}
