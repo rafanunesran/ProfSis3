@@ -1999,7 +1999,7 @@ async function renderOcorrencias() {
                     <div class="card" style="${cardStyle} margin-bottom:12px; padding:15px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                             <div>
-                                <small style="font-weight:bold; color:#718096; text-transform: uppercase; font-size: 10px;">📅 ${formatDate(o.data)} ${isRapida ? '• REGISTRO RÁPIDO' : ''}</small>
+                                <small style="font-weight:bold; color:#718096; text-transform: uppercase; font-size: 10px;">📅 ${formatDate(o.data)} ${isRapida ? '• REGISTRO RÁPIDO' : ''} ${o.autor ? ` • PROF: ${o.autor}` : ''}</small>
                                 ${statusLabel}
                             </div>
                             <div class="no-print">
