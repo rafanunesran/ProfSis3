@@ -2285,21 +2285,31 @@ function imprimirOcorrencia(id) {
     const o = data.ocorrencias.find(x => x.id == id);
     if (!o) return;
 
-    const turma = data.turmas.find(t => t.id == o.id_turma);
+    // Usa o autor e o snapshot da turma salvos na ocorrência
+    const autorOcorrencia = o.autor || 'Professor Desconhecido';
+    const turmaDisplay = o.turma_snapshot || 'Turma Desconhecida';
+
     const estudantes = (data.estudantes || []).filter(e => (o.ids_estudantes || []).includes(e.id));
     const nomes = estudantes.map(e => e.nome_completo).join(', ');
+
+    const devolutivaHtml = o.devolutiva ? `
+        <hr style="margin-top: 20px;">
+        <h3 style="color:#276749;">Devolutiva da Gestão:</h3>
+        <p style="white-space: pre-wrap; background: #f0fff4; padding: 15px; border: 1px solid #c6f6d5; color: #2f855a; border-radius: 5px;">${o.devolutiva}</p>
+    ` : '';
 
     const conteudo = `
         <div style="font-family: Arial, sans-serif; padding: 40px;">
             <h1 style="text-align: center;">Registro de Ocorrência</h1>
             <hr>
             <p><strong>Data:</strong> ${formatDate(o.data)}</p>
-            <p><strong>Professor:</strong> ${currentUser.nome}</p>
-            <p><strong>Turma:</strong> ${turma ? turma.nome : '?'}</p>
+            <p><strong>Professor/Autor:</strong> ${autorOcorrencia}</p>
+            <p><strong>Turma/Disciplina:</strong> ${turmaDisplay}</p>
             <p><strong>Estudantes Envolvidos:</strong> ${nomes}</p>
             <hr>
             <h3>Relato:</h3>
             <p style="white-space: pre-wrap;">${o.relato}</p>
+            ${devolutivaHtml}
             <br><br><br>
             <div style="display: flex; justify-content: space-between; margin-top: 50px;">
                 <div style="border-top: 1px solid #000; width: 40%; text-align: center; padding-top: 5px;">Assinatura do Professor</div>
