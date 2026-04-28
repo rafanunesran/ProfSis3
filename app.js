@@ -574,7 +574,7 @@ async function renderDashboard() {
                         <div style="display:flex; flex-direction:column; gap:8px;">
                             <button class="btn btn-sm btn-primary" onclick="criarBackupNuvem()" style="text-align:left;">💾 Criar Backup Agora</button>
                             <button class="btn btn-sm btn-warning" onclick="restaurarUltimoBackup()" style="text-align:left;">⏮️ Restaurar Último</button>
-                            <button class="btn btn-sm btn-secondary" onclick="abrirGerenciadorBackupsNuvem()" style="text-align:left;">📋 Ver Histórico Completo</button>
+                            <button class="btn btn-sm btn-secondary" onclick="listarBackupsNuvem()" style="text-align:left;">📋 Ver Histórico Completo</button>
                         </div>
                     </div>
 
@@ -6345,7 +6345,8 @@ async function persistirDados() {
 
 // --- FUNÇÃO DE EMERGÊNCIA PARA RECUPERAR DADOS DO LOCALSTORAGE PARA O FIREBASE ---
 async function restaurarBackupLocalParaNuvem() {
-    const localJson = localStorage.getItem('app_data');
+    const key = getStorageKey(currentUser);
+    const localJson = localStorage.getItem(key);
     if (!localJson) {
         return alert('Não há dados salvos neste navegador (Local Storage) para recuperar.');
     }
@@ -6415,8 +6416,6 @@ async function criarBackupNuvem(silent = false) {
         // Remove entrada antiga desse slot se houver
         indexData.slots = indexData.slots.filter(s => s.id !== slotId);
         
-        // Adiciona nova entrada
-        indexData.slots.push({ id: slotId, timestamp: Date.now(), label: `Backup ${data.turmas ? data.turmas.length : 0} turmas` });
         const label = silent ? 'Backup Automático' : `Backup Manual (${data.turmas ? data.turmas.length : 0} turmas)`;
         indexData.slots.push({ id: slotId, timestamp: Date.now(), label: label });
         
@@ -6425,8 +6424,6 @@ async function criarBackupNuvem(silent = false) {
 
         await saveData('app_data', indexKey, indexData);
         
-        alert('Backup criado com sucesso!');
-        listarBackupsNuvem();
         if (!silent) {
             alert('Backup criado com sucesso!');
             listarBackupsNuvem();
@@ -6435,9 +6432,57 @@ async function criarBackupNuvem(silent = false) {
         }
 
     } catch (e) {
-        alert('Erro ao criar backup: ' + e.message);
         if (!silent) alert('Erro ao criar backup: ' + e.message);
         else console.error('Erro no backup automático:', e);
+    }
+}
+
+async function listarBackupsNuvem() {
+    if (!currentUser || !currentUser.id) return;
+    
+    try {
+        const indexKey = `backup_index_${currentUser.id}`;
+        const indexData = await getData('app_data', indexKey);
+        
+        if (!indexData || !indexData.slots || indexData.slots.length === 0) {
+            return alert('Nenhum backup encontrado na nuvem.');
+        }
+
+        const backups = indexData.slots.sort((a, b) => b.timestamp - a.timestamp);
+        
+        const html = `
+            <div id="modalBackupsNuvem" class="modal active">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>📋 Histórico de Backups na Nuvem</h2>
+                        <button class="close-btn" onclick="this.closest('.modal').remove()">×</button>
+                    </div>
+                    <p style="font-size:13px; color:#666; margin-bottom:15px;">Estes são os últimos 5 estados salvos da sua conta. Escolha um para restaurar.</p>
+                    <div style="display:flex; flex-direction:column; gap:10px;">
+                        ${backups.map(b => `
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
+                                <div>
+                                    <div style="font-weight:bold; color:#2d3748;">${new Date(b.timestamp).toLocaleString('pt-BR')}</div>
+                                    <div style="font-size:12px; color:#718096;">${b.label}</div>
+                                </div>
+                                <div style="display:flex; gap:5px;">
+                                    <button class="btn btn-sm btn-info" onclick="mesclarBackupNuvem(${b.id}, '${new Date(b.timestamp).toLocaleString('pt-BR')}')" title="Recupera notas de domingo sem apagar as chamadas de hoje">🧩 Mesclar</button>
+                                    <button class="btn btn-sm btn-warning" onclick="restaurarBackupNuvem(${b.id}, '${new Date(b.timestamp).toLocaleString('pt-BR')}')" title="Sobrescreve tudo com a versão de domingo">⚠️ Substituir</button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <button class="btn btn-secondary" style="width:100%; margin-top:20px;" onclick="this.closest('.modal').remove()">Fechar</button>
+                </div>
+            </div>
+        `;
+        
+        const oldModal = document.getElementById('modalBackupsNuvem');
+        if (oldModal) oldModal.remove();
+        document.body.insertAdjacentHTML('beforeend', html);
+        
+    } catch (e) {
+        alert('Erro ao carregar lista de backups: ' + e.message);
     }
 }
 
@@ -6458,6 +6503,74 @@ async function restaurarBackupNuvem(slotId, dataBackup) {
         }
     } catch (e) {
         alert('Erro ao restaurar: ' + e.message);
+    }
+}
+
+async function mesclarBackupNuvem(slotId, dataLabel) {
+    if (!confirm(`MODO DE RECUPERAÇÃO INTELIGENTE:\n\nO sistema buscará as notas de ${dataLabel} e as adicionará ao trabalho de hoje.\n\nAs chamadas e ações que o professor lançou hoje SERÃO MANTIDAS.\n\nDeseja continuar?`)) return;
+
+    try {
+        const backupKey = `backup_${currentUser.id}_slot_${slotId}`;
+        const backupData = await getData('app_data', backupKey);
+
+        if (!backupData) return alert('Erro: Backup não encontrado.');
+
+        // 1. Recuperar Trabalhos (Atividades) que não existem hoje
+        if (backupData.trabalhos) {
+            if (!data.trabalhos) data.trabalhos = [];
+            backupData.trabalhos.forEach(tOld => {
+                if (!data.trabalhos.find(tNew => tNew.id == tOld.id)) {
+                    data.trabalhos.push(tOld);
+                }
+            });
+        }
+
+        // 2. Recuperar Notas (o ponto principal)
+        if (backupData.notas) {
+            if (!data.notas) data.notas = [];
+            let notasRecuperadas = 0;
+            backupData.notas.forEach(nOld => {
+                // Só adiciona se o estudante não tiver nota para aquele trabalho hoje
+                const existe = data.notas.find(nNew => nNew.id_trabalho == nOld.id_trabalho && nNew.id_estudante == nOld.id_estudante);
+                if (!existe) {
+                    data.notas.push(nOld);
+                    notasRecuperadas++;
+                }
+            });
+            console.log(`Mesclagem: ${notasRecuperadas} notas recuperadas.`);
+        }
+
+        // 3. Recuperar Estudantes/Turmas (caso algum tenha sido deletado por erro)
+        ['estudantes', 'turmas', 'tutorados'].forEach(key => {
+            if (backupData[key]) {
+                if (!data[key]) data[key] = [];
+                backupData[key].forEach(itemOld => {
+                    if (!data[key].find(itemNew => itemNew.id == itemOld.id)) {
+                        data[key].push(itemOld);
+                    }
+                });
+            }
+        });
+        
+        // 4. Recuperar Ocorrências de domingo que não estão aqui
+        if (backupData.ocorrencias) {
+            if (!data.ocorrencias) data.ocorrencias = [];
+            backupData.ocorrencias.forEach(oOld => {
+                if (!data.ocorrencias.find(oNew => oNew.id == oOld.id)) {
+                    data.ocorrencias.push(oOld);
+                }
+            });
+        }
+
+        // Salva o estado mesclado
+        await persistirDados();
+        
+        alert('✅ Recuperação concluída!\n\nAs notas de domingo foram mescladas com os lançamentos de hoje.\nA página será atualizada.');
+        location.reload();
+
+    } catch (e) {
+        console.error(e);
+        alert('Erro ao mesclar dados: ' + e.message);
     }
 }
 
