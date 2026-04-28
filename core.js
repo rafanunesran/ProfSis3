@@ -115,6 +115,9 @@ async function saveData(collectionName, docId, dataObj) {
             
             console.log(`Salvando no Firebase: ${collectionName}/${docId}`);
             await db.collection(collectionName).doc(String(docId)).set(cleanData);
+            
+            // [SEGURANÇA] Também salva localmente como redundância
+            localStorage.setItem(String(docId), JSON.stringify(cleanData));
         } catch (error) {
             console.error("Erro ao salvar no Firebase:", error);
             alert(`Erro ao salvar dados online: ${error.message}\nVerifique se as Regras do Firestore permitem escrita.`);
