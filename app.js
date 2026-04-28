@@ -248,6 +248,21 @@ function abrirModalPerfil() {
         </button>
     `).join('');
 
+    // [REPARAÇÃO] Injeta seção de busca de backups perdidos no perfil do professor
+    let recoveryArea = document.getElementById('secaoRecuperacaoPerfil');
+    if (!recoveryArea) {
+        recoveryArea = document.createElement('div');
+        recoveryArea.id = 'secaoRecuperacaoPerfil';
+        containerTemas.parentNode.appendChild(recoveryArea);
+    }
+    recoveryArea.innerHTML = `
+        <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #feb2b2;">
+            <h4 style="color:#c53030; margin-bottom:5px; font-size:14px;">🆘 Notas de domingo sumiram?</h4>
+            <p style="font-size:11px; color:#718096; margin-bottom:10px;">A busca avançada tentará localizar backups ocultos vinculados a IDs antigos ou slots que não aparecem na lista comum.</p>
+            <button class="btn btn-sm btn-danger" onclick="abrirPainelRecuperacaoAvancada()" style="width:100%; font-weight:bold;">🔍 Localizar Backups Perdidos</button>
+        </div>
+    `;
+
     showModal('modalPerfilUsuario');
 }
 
@@ -1911,6 +1926,97 @@ async function renderOcorrencias() {
             txt.focus();
             txt.setSelectionRange(txt.value.length, txt.value.length);
         }
+    }
+}
+
+// --- SISTEMA DE RECUPERAÇÃO AVANÇADA (VARREDURA POR IDENTIFICADORES) ---
+async function abrirPainelRecuperacaoAvancada() {
+    closeModal('modalPerfilUsuario');
+    
+    // Coleta todos os IDs possíveis do usuário para a varredura
+    const uidsParaTestar = [...new Set([currentUser.uid, currentUser.id, String(currentUser.id)])].filter(x => x);
+    
+    const html = `
+        <div id="modalRecuperacaoAvancada" class="modal active">
+            <div class="modal-content" style="max-width: 500px;">
+                <div class="modal-header">
+                    <h2>🔍 Busca Avançada de Backups</h2>
+                    <button class="close-btn" onclick="this.closest('.modal').remove()">×</button>
+                </div>
+                <p style="font-size:12px; color:#666; margin-bottom:15px;">Vasculhando o banco de dados por arquivos vinculados aos seus identificadores antigos e novos...</p>
+                <div id="statusBuscaBackups" style="padding:15px; text-align:center; background:#f7fafc; border-radius:8px; margin-bottom:15px;">
+                    <p id="msgStatusBusca">Iniciando varredura...</p>
+                </div>
+                <div id="resultadoBuscaBackups" style="max-height: 300px; overflow-y:auto; display:none; border: 1px solid #e2e8f0; border-radius:8px;"></div>
+                <div style="margin-top:20px; display:flex; gap:10px;">
+                    <button class="btn btn-secondary" style="flex:1;" onclick="this.closest('.modal').remove()">Fechar</button>
+                    <button class="btn btn-info" style="flex:1;" onclick="pedirIDAntigoBusca()">Outro ID...</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    const oldModal = document.getElementById('modalRecuperacaoAvancada');
+    if (oldModal) oldModal.remove();
+    document.body.insertAdjacentHTML('beforeend', html);
+    
+    const resDiv = document.getElementById('resultadoBuscaBackups');
+    const statusMsg = document.getElementById('msgStatusBusca');
+    
+    let encontrados = [];
+
+    for (const id of uidsParaTestar) {
+        statusMsg.textContent = `Buscando rastros do ID: ${id}...`;
+        
+        // 1. Tenta pelo índice oficial primeiro
+        try {
+            const index = await getData('app_data', `backup_index_${id}`);
+            if (index && index.slots) {
+                index.slots.forEach(s => encontrados.push({...s, ownerId: id}));
+            }
+        } catch(e) {}
+        
+        // 2. Varredura de Força Bruta nos 5 slots (ignora o índice)
+        for (let i = 1; i <= 5; i++) {
+            try {
+                const bKey = `backup_${id}_slot_${i}`;
+                const bData = await getData('app_data', bKey);
+                if (bData && bData.turmas && bData.turmas.length > 0) {
+                    const jaTem = encontrados.some(e => e.ownerId == id && e.id == i);
+                    if (!jaTem) {
+                        encontrados.push({
+                            id: i, ownerId: id, timestamp: Date.now(), 
+                            label: `Rastro recuperado no Slot ${i} (${bData.turmas.length} turmas)`
+                        });
+                    }
+                }
+            } catch(e) {}
+        }
+    }
+
+    if (encontrados.length > 0) {
+        statusMsg.innerHTML = `<span style="color:green; font-weight:bold;">✅ Localizamos ${encontrados.length} arquivos possíveis!</span>`;
+        resDiv.style.display = 'block';
+        resDiv.innerHTML = encontrados.map(b => `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid #edf2f7; background:white;">
+                <div>
+                    <div style="font-size:12px; font-weight:bold; color:#2d3748;">${b.label}</div>
+                    <div style="font-size:10px; color:#718096;">ID: ${b.ownerId}</div>
+                </div>
+                <button class="btn btn-sm btn-info" onclick="mesclarBackupNuvem(${b.id}, 'Recuperação', '${b.ownerId}')">🧩 Mesclar</button>
+            </div>
+        `).join('');
+    } else {
+        statusMsg.innerHTML = `<span style="color:#e53e3e; font-weight:bold;">❌ Nenhum backup localizado. Tente o botão "Outro ID".</span>`;
+    }
+}
+
+function pedirIDAntigoBusca() {
+    const idManual = prompt("Se você usava o sistema antes da migração, pode ter um ID numérico antigo. Digite-o se souber:");
+    if (idManual) {
+        const original = currentUser;
+        currentUser = { ...currentUser, id: idManual, uid: idManual };
+        abrirPainelRecuperacaoAvancada().then(() => currentUser = original);
     }
 }
 
