@@ -257,9 +257,11 @@ function abrirModalPerfil() {
     }
     recoveryArea.innerHTML = `
         <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #feb2b2;">
-            <h4 style="color:#c53030; margin-bottom:5px; font-size:14px;">🆘 Backup Pessoal</h4>
-            <p style="font-size:11px; color:#718096; margin-bottom:10px;">A busca avançada tentará localizar backups ocultos vinculados a IDs antigos ou slots que não aparecem na lista comum.</p>
-            <button class="btn btn-sm btn-danger" onclick="abrirPainelRecuperacaoAvancada()" style="width:100%; font-weight:bold;">🔍 Localizar Backups Perdidos</button>
+            <h4 style="color:#c53030; margin-bottom:5px; font-size:14px;">🆘 Backup e Segurança</h4>
+            <p style="font-size:11px; color:#718096; margin-bottom:10px;">Baixe uma cópia completa dos seus dados ou gerencie versões na nuvem.</p>
+            <button class="btn btn-sm btn-primary" onclick="baixarBackupCompleto()" style="width:100%; margin-bottom:5px;">💾 Baixar Backup Total (JSON)</button>
+            <button class="btn btn-sm btn-info" onclick="listarBackupsNuvem()" style="width:100%; margin-bottom:5px;">☁️ Histórico na Nuvem</button>
+            <button class="btn btn-sm btn-danger" onclick="abrirPainelRecuperacaoAvancada()" style="width:100%; font-weight:bold;">🔍 Busca de Backups Antigos</button>
         </div>
     `;
 
@@ -528,6 +530,8 @@ async function getGradeEscola() {
 async function renderDashboard() {
     const today = getTodayString();
     const dashboardContainer = document.getElementById('dashboard');
+    const ultimoBackup = await getUltimoBackupInfo();
+    const infoBackupStr = ultimoBackup ? `<span style="font-size:11px; color:#718096; font-weight:normal;">(Último: ${ultimoBackup})</span>` : '';
     
     // Limpa o conteúdo atual para evitar sobreposição ou duplicidade
     dashboardContainer.innerHTML = '';
@@ -597,7 +601,7 @@ async function renderDashboard() {
                     <div style="background:white; padding:12px; border-radius:6px; border:1px solid #e2e8f0;">
                         <h4 style="margin:0 0 10px 0; font-size:13px; color:#2d3748; border-bottom:1px solid #eee; padding-bottom:5px;">💻 Arquivo Local / Emergência</h4>
                         <div style="display:flex; flex-direction:column; gap:8px;">
-                            <button class="btn btn-sm btn-info" onclick="baixarBackupCompleto()" style="text-align:left;">⬇️ Baixar Arquivo (JSON)</button>
+                            <button class="btn btn-sm btn-info" onclick="baixarBackupCompleto()" style="text-align:left;">⬇️ Baixar Backup Total (JSON)</button>
                             <button class="btn btn-sm btn-secondary" onclick="abrirModalRestaurarBackup()" style="text-align:left;">⬆️ Restaurar de Arquivo</button>
                             <button class="btn btn-sm btn-danger" onclick="restaurarBackupLocalParaNuvem()" style="text-align:left;" title="Recuperar dados do cache do navegador">🆘 Recuperar do Cache</button>
                         </div>
@@ -635,6 +639,17 @@ async function renderDashboard() {
                     <div id="listaAtendimentosAeeHoje" style="margin-top:10px;"></div>
                 </div>
             </div>
+
+            <div class="card" style="margin-top: 20px; border-left: 4px solid #718096; background: #f7fafc;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <h3 style="margin:0; color: #2d3748;">⚙️ Backup & Segurança ${infoBackupStr}</h3>
+                </div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+                    <button class="btn btn-sm btn-primary" onclick="criarBackupNuvem()" style="text-align:left;">💾 Salvar na Nuvem Agora</button>
+                    <button class="btn btn-sm btn-info" onclick="baixarBackupCompleto()" style="text-align:left;">⬇️ Baixar Backup Total (JSON)</button>
+                </div>
+            </div>
+
             <div class="card" style="margin-top: 20px;">
                 <h2>📢 Quadro de Avisos</h2>
                 <div id="avisosGerais"></div>
@@ -669,6 +684,18 @@ async function renderDashboard() {
                 <div id="tutoriasHoje"></div>
             </div>
         </div>
+
+        <div class="card" style="margin-top: 20px; border-left: 4px solid #718096; background: #f7fafc;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <h3 style="margin:0; color: #2d3748;">⚙️ Meus Backups e Segurança ${infoBackupStr}</h3>
+                <span style="font-size:11px; background:#e2e8f0; padding:2px 6px; border-radius:4px; color:#4a5568;">Auto: Diário</span>
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+                <button class="btn btn-sm btn-primary" onclick="criarBackupNuvem()" style="text-align:left;">💾 Sincronizar Nuvem Agora</button>
+                <button class="btn btn-sm btn-info" onclick="baixarBackupCompleto()" style="text-align:left;">⬇️ Baixar Backup Total (JSON)</button>
+            </div>
+        </div>
+
         <div class="card" style="margin-top: 20px;">
             <h2>📢 Quadro de Avisos</h2>
             <div id="avisosGerais"></div>
@@ -6853,4 +6880,18 @@ async function deleteAeeReport(tutoradoId, silent = false) {
         alert('Arquivo excluído com sucesso do Google Drive!');
         abrirFichaTutorado(tutoradoId); // Atualiza a UI
     }
+}
+
+// Função para obter a data do último backup realizado pelo usuário
+async function getUltimoBackupInfo() {
+    if (!currentUser) return null;
+    const userId = currentUser.uid || currentUser.id;
+    try {
+        const indexData = await getData('app_data', `backup_index_${userId}`);
+        if (indexData && indexData.slots && indexData.slots.length > 0) {
+            const latest = indexData.slots.sort((a, b) => b.timestamp - a.timestamp)[0];
+            return new Date(latest.timestamp).toLocaleString('pt-BR');
+        }
+    } catch (e) {}
+    return null;
 }
