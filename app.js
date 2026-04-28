@@ -1151,11 +1151,14 @@ async function abrirTurma(id) {
 
                     const oPIdx = data.ocorrencias.findIndex(x => x.id == oG.id);
                     if (oPIdx !== -1) {
-                        // Atualiza status e devolutiva se o prof já tinha o registro
+                        // Sincroniza dados completos (caso a gestão ou outro prof tenha editado o relato)
+                        data.ocorrencias[oPIdx].relato = oG.relato || data.ocorrencias[oPIdx].relato;
+                        data.ocorrencias[oPIdx].ids_estudantes = oG.ids_estudantes || data.ocorrencias[oPIdx].ids_estudantes;
+                        data.ocorrencias[oPIdx].data = oG.data || data.ocorrencias[oPIdx].data;
                         data.ocorrencias[oPIdx].status = oG.status || 'pendente';
                         data.ocorrencias[oPIdx].devolutiva = oG.devolutiva || '';
                     } else if (isCoord) {
-                        // Importa ocorrências de outros professores se for o coordenador
+                        // Importa ocorrências retroativas e de outros professores para o coordenador
                         data.ocorrencias.push(oG);
                     }
                 });
@@ -1827,7 +1830,12 @@ let currentTurmaOcorrenciaTab = 'disciplinares'; // 'disciplinares' ou 'rapidas'
 let currentTurmaOcorrenciaFiltro = 'pendente'; // 'pendente', 'confirmada' ou 'todas'
 
 async function renderOcorrencias() {
-    const todasOcorrencias = (data.ocorrencias || []).filter(o => o.id_turma == turmaAtual).sort((a, b) => new Date(b.data) - new Date(a.data));
+    const turma = (data.turmas || []).find(t => t.id == turmaAtual);
+    const isCoord = (turma && currentUser && currentUser.turmaCoordenacao == turma.masterId);
+    
+    const todasOcorrencias = (data.ocorrencias || []).filter(o => 
+        o.id_turma == turmaAtual || (isCoord && o.id_turma == turma.masterId)
+    ).sort((a, b) => new Date(b.data) - new Date(a.data));
     
     // Separa por tipo para os contadores das abas
     const disciplinares = todasOcorrencias.filter(o => o.tipo !== 'rapida');
