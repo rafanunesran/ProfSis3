@@ -2293,8 +2293,8 @@ function imprimirOcorrencia(id) {
     const nomes = estudantes.map(e => e.nome_completo).join(', ');
 
     const devolutivaHtml = o.devolutiva ? `
-        <hr style="margin-top: 20px;">
-        <h3 style="color:#276749;">Devolutiva da Gestão:</h3>
+        <hr>
+        <h3>Devolutiva da Gestão:</h3>
         <p style="white-space: pre-wrap; background: #f0fff4; padding: 15px; border: 1px solid #c6f6d5; color: #2f855a; border-radius: 5px;">${o.devolutiva}</p>
     ` : '';
 
@@ -2306,13 +2306,14 @@ function imprimirOcorrencia(id) {
             <p><strong>Professor/Autor:</strong> ${autorOcorrencia}</p>
             <p><strong>Turma/Disciplina:</strong> ${turmaDisplay}</p>
             <p><strong>Estudantes Envolvidos:</strong> ${nomes}</p>
+            <p><strong>Status:</strong> ${o.status ? o.status.toUpperCase() : 'PENDENTE'}</p>
             <hr>
             <h3>Relato:</h3>
-            <p style="white-space: pre-wrap;">${o.relato}</p>
+            <p style="white-space: pre-wrap; background: #f9f9f9; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">${o.relato}</p>
             ${devolutivaHtml}
             <br><br><br>
             <div style="display: flex; justify-content: space-between; margin-top: 50px;">
-                <div style="border-top: 1px solid #000; width: 40%; text-align: center; padding-top: 5px;">Assinatura do Professor</div>
+                <div style="border-top: 1px solid #000; width: 40%; text-align: center; padding-top: 5px;">Assinatura do Responsável</div>
                 <div style="border-top: 1px solid #000; width: 40%; text-align: center; padding-top: 5px;">Assinatura da Coordenação</div>
             </div>
         </div>
