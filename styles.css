@@ -454,3 +454,13 @@ label {
 .auth-link:hover {
     text-decoration: underline;
 }
+
+.manual-sort-item:active {
+    opacity: 0.5;
+    background: #ebf8ff !important;
+}
+
+.btn-xs {
+    padding: 2px 8px;
+    font-size: 11px;
+}

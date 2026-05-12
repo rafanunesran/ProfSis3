@@ -27,7 +27,8 @@ function getStatusColor(status) {
         'notificado': '#3182ce',
         'entregue': '#22c55e',
         'entregue_atraso': '#f59e0b',
-        'nao_entregue': '#ef4444'
+        'nao_entregue': '#ef4444',
+        'nao_fez_folha': '#718096'
     };
     return cores[status] || '#718096';
 }
