@@ -236,11 +236,35 @@
 
     <div id="modalNovoTutorado" class="modal"><div class="modal-content"><div class="modal-header"><h2>Novo Tutorado</h2><button class="close-btn" onclick="closeModal('modalNovoTutorado')">×</button></div><form onsubmit="salvarTutorado(event)"><label>Turma:<select id="tutoradoTurmaSelect" onchange="carregarEstudantesTutorado()" required></select></label><label>Estudante:<select id="tutoradoEstudanteSelect" required disabled></select></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
 
-    <div id="modalNovoEncontro" class="modal"><div class="modal-content"><div class="modal-header"><h2>Registrar Encontro</h2><button class="close-btn" onclick="closeModal('modalNovoEncontro')">×</button></div><form onsubmit="salvarEncontro(event)"><label>Tutorado:<select id="encontroTutorado" required></select></label><label>Data:<input type="date" id="encontroData" required></label><label>Tema:<input type="text" id="encontroTema" required></label><label>Resumo:<textarea id="encontroResumo" required></textarea></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
+    <div id="modalNovoEncontro" class="modal"><div class="modal-content"><div class="modal-header"><h2 id="tituloModalEncontro">Registrar Encontro</h2><button class="close-btn" onclick="closeModal('modalNovoEncontro')">×</button></div><form onsubmit="salvarEncontro(event)"><input type="hidden" id="encontroId"><label>Tutorado:<select id="encontroTutorado" required></select></label><label>Data:<input type="date" id="encontroData" required></label><label>Tema:<input type="text" id="encontroTema" required></label><label>Resumo:<textarea id="encontroResumo" required></textarea></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
 
     <div id="modalGerarAgendamento" class="modal"><div class="modal-content"><div class="modal-header"><h2>Agendamento Automático</h2><button class="close-btn" onclick="closeModal('modalGerarAgendamento')">×</button></div><form onsubmit="previewHorariosAuto(event)"><label>Início:<input type="date" id="agendamentoInicio" required></label><label>Hora Início (se manual):<input type="time" id="agendamentoHoraInicio"></label><label>Duração (min):<input type="number" id="agendamentoDuracao" value="20"></label><label>Recorrência:<select id="agendamentoRecorrenciaTipo" onchange="toggleAgendamentoRecorrenciaUI()"><option value="nao">Apenas uma vez</option><option value="semanal">Semanal</option><option value="mensal">Mensal</option><option value="personalizado">Dias Específicos</option></select></label><div id="divAgendamentoRecorrenciaFim" style="display:none;"><label>Até:<input type="date" id="agendamentoRecorrenciaFim"></label></div><div id="divAgendamentoRecorrenciaPersonalizada" style="display:none;"><label>Dias:</label><div style="display:flex; gap:5px;"><label><input type="checkbox" name="diaAgendamento" value="1"> Seg</label><label><input type="checkbox" name="diaAgendamento" value="2"> Ter</label><label><input type="checkbox" name="diaAgendamento" value="3"> Qua</label><label><input type="checkbox" name="diaAgendamento" value="4"> Qui</label><label><input type="checkbox" name="diaAgendamento" value="5"> Sex</label></div></div><label><input type="checkbox" id="usarGradeTutoria"> Usar Grade de Tutoria da Escola</label><button type="submit" class="btn btn-secondary">Gerar Preview</button></form><div id="areaPreviewAgendamento" style="display:none; margin-top:15px;"><div style="display:flex; justify-content:space-between;"><h4>Preview (<span id="qtdHorariosGerados">0</span> horários)</h4><div><button onclick="mudarSemanaPreview(-1)">←</button><span id="previewSemanaTexto" style="font-size:12px;"></span><button onclick="mudarSemanaPreview(1)">→</button></div></div><div id="listaHorariosPreview" style="max-height:150px; overflow-y:auto; border:1px solid #eee;"></div><button class="btn btn-primary" style="width:100%; margin-top:10px;" onclick="confirmarDistribuicaoAuto()">Confirmar Agendamento</button></div></div></div>
 
     <div id="modalListaAgendamentos" class="modal"><div class="modal-content"><div class="modal-header"><h2>Agendamentos Futuros</h2><button class="close-btn" onclick="closeModal('modalListaAgendamentos')">×</button></div><div id="listaAgendamentosConteudo"></div></div></div>
+
+    <!-- Modal Opções de Ordenação -->
+    <div id="modalOpcoesAgendamento" class="modal">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-header"><h2>⚙️ Ordenar Agendamento</h2><button class="close-btn" onclick="closeModal('modalOpcoesAgendamento')">×</button></div>
+            <p style="font-size:13px; color:#666; margin-bottom:20px;">Como você deseja organizar a fila de alunos para os novos horários?</p>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                <button class="btn btn-secondary" style="justify-content:flex-start;" onclick="prepararAgendamentoAuto('alfabetica')">🔤 Ordem Alfabética</button>
+                <button class="btn btn-secondary" style="justify-content:flex-start;" onclick="prepararAgendamentoAuto('turma')">👥 Por Turma / Série</button>
+                <button class="btn btn-secondary" style="justify-content:flex-start;" onclick="prepararAgendamentoAuto('atencao')" title="Prioriza quem tem menos tutorias registradas">⚠️ Atenção (Foco em quem falta)</button>
+                <button class="btn btn-secondary" style="justify-content:flex-start;" onclick="prepararAgendamentoAuto('manual')">🖱️ Manual (Arrastar e Soltar)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Ordenação Manual -->
+    <div id="modalOrdenacaoManual" class="modal">
+        <div class="modal-content">
+            <div class="modal-header"><h2>🖱️ Reordenar Fila de Tutoria</h2><button class="close-btn" onclick="closeModal('modalOrdenacaoManual')">×</button></div>
+            <p style="font-size:12px; color:#666; margin-bottom:15px;">Arraste os nomes para definir a prioridade de agendamento.</p>
+            <div id="listaManualTutorados" style="max-height:400px; overflow-y:auto; border:1px solid #eee; padding:10px; border-radius:8px; background:#f8fafc;"></div>
+            <button class="btn btn-primary" style="width:100%; margin-top:20px;" onclick="confirmarAgendamentoManual()">Confirmar e Agendar</button>
+        </div>
+    </div>
 
     <div id="modalRelatorioFaltas" class="modal"><div class="modal-content"><div class="modal-header"><h2>Relatório de Faltas</h2><button class="close-btn" onclick="closeModal('modalRelatorioFaltas')">×</button></div><div id="conteudoRelatorioFaltas"></div></div></div>
 

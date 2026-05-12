@@ -569,7 +569,7 @@ function showModal(modalId) {
     if (modalId === 'modalNovoEncontro') {
         const select = document.getElementById('encontroTutorado');
         select.innerHTML = (data.tutorados || []).map(t => 
-            `<option value="${t.id}">${t.nome_estudante}</option>`
+            `<option value="${t.id}">${t.nome_estudante} (${t.turma})</option>`
         ).join('');
     }
 }
@@ -2600,8 +2600,12 @@ function getNotaCompensacao(estudanteId, bimestre) {
     });
 
     if (comps.length > 0) {
-        const entregues = comps.filter(c => c.status === 'entregue').length;
-        const proporcao = entregues / comps.length;
+        const pontuacao = comps.reduce((acc, c) => {
+            if (c.status === 'entregue') return acc + 1;
+            if (c.status === 'entregue_atraso') return acc + 0.5; // Conta metade da pontuação se entregue com atraso
+            return acc;
+        }, 0);
+        const proporcao = pontuacao / comps.length;
         notaFinal = parseFloat((5 + (5 * proporcao)).toFixed(1));
     }
 
@@ -3193,17 +3197,25 @@ function renderCompensacoes() {
                             'pendente': { label: '⏳ Pendente', color: '#d69e2e', bg: '#fffaf0' },
                             'notificado': { label: '📩 Notificado', color: '#3182ce', bg: '#ebf8ff' },
                             'entregue': { label: '✅ Entregue', color: '#2f855a', bg: '#f0fff4' },
-                            'nao_entregue': { label: '❌ Não Entregue', color: '#e53e3e', bg: '#fff5f5' }
+                            'entregue_atraso': { label: '⏰ Entregue c/ Atraso', color: '#f59e0b', bg: '#fffaf0' },
+                            'nao_entregue': { label: '❌ Não Entregue', color: '#e53e3e', bg: '#fff5f5' },
+                            'nao_fez_folha': { label: '📄 Não Fez / S. Folha', color: '#718096', bg: '#edf2f7' }
                         };
                         const st = statusMap[c.status] || statusMap['pendente'];
 
-                        // Gera o log minimizado (Ex: A 12/1 Notf 14/1)
-                        const logMinimizado = (c.historico || []).map(h => {
+                        // [AJUSTE] Mantém Pendente e Notificado visíveis, mas sobrepõe os estados de entrega/finalização
+                        const finalStatuses = ['entregue', 'entregue_atraso', 'nao_entregue', 'nao_fez_folha'];
+                        const hist = c.historico || [];
+                        const lastFinalIdx = hist.map(h => finalStatuses.includes(h.status)).lastIndexOf(true);
+
+                        const logMinimizado = hist.filter((h, idx) => 
+                            h.status === 'pendente' || h.status === 'notificado' || idx === lastFinalIdx
+                        ).map(h => {
                             if (!h.data) return '';
                             const d = new Date(h.data);
                             const dia = d.getDate();
                             const mes = d.getMonth() + 1;
-                            const mapSigla = { 'pendente': 'A', 'notificado': 'Notf', 'entregue': 'E', 'nao_entregue': 'X' };
+                            const mapSigla = { 'pendente': 'A', 'notificado': 'Notf', 'entregue': 'E', 'entregue_atraso': 'EA', 'nao_entregue': 'X', 'nao_fez_folha': 'NF' };
                             return `<span style="margin-right:4px;">${mapSigla[h.status] || '?'} ${dia}/${mes}</span>`;
                         }).join('');
 
@@ -3303,7 +3315,7 @@ function toggleStatusCompensacao(id) {
     const comp = data.compensacoes.find(c => c.id == id);
     if (!comp) return;
 
-    const ciclo = ['pendente', 'notificado', 'entregue', 'nao_entregue'];
+    const ciclo = ['pendente', 'notificado', 'entregue', 'entregue_atraso', 'nao_entregue', 'nao_fez_folha'];
     const atualIdx = ciclo.indexOf(comp.status);
     const proximoIdx = (atualIdx + 1) % ciclo.length;
     
@@ -3626,7 +3638,7 @@ function renderTutoria() {
             <div class="card" style="background: #f0fff4; margin-bottom: 15px; border: 1px solid #c6f6d5;">
                 <h3 style="margin-top:0; font-size:16px;">Organização Automática</h3>
                 <p style="font-size:12px; color:#666; margin-bottom:10px;">Limpa agendamentos futuros e reorganiza todos os tutorados nos horários disponíveis.</p>
-                <button class="btn btn-info" onclick="agendarTodosTutorados()">🔄 Reorganizar e Agendar Todos</button>
+                <button class="btn btn-info" onclick="showModal('modalOpcoesAgendamento')">🔄 Reorganizar e Agendar Todos</button>
             </div>
             
             <div style="margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
@@ -3711,10 +3723,125 @@ function agendarProximoTutorado() {
     }
 }
 
-async function agendarTodosTutorados() {
-    if (!confirm('ATENÇÃO: O sistema irá APAGAR e REFAZER completamente a agenda de tutorias futuras, baseando-se na sua Grade de Horários atual.\n\nEssa ação é definitiva. Deseja continuar?')) return;
+// --- NOVO SISTEMA DE ORDENAÇÃO DE AGENDAMENTO ---
 
-    const tutorados = data.tutorados || [];
+async function prepararAgendamentoAuto(criterio) {
+    let lista = [...(data.tutorados || [])];
+    if (lista.length === 0) return alert('Você não possui tutorados cadastrados.');
+
+    closeModal('modalOpcoesAgendamento');
+
+    if (criterio === 'alfabetica') {
+        lista.sort((a, b) => a.nome_estudante.localeCompare(b.nome_estudante));
+    } else if (criterio === 'turma') {
+        lista.sort((a, b) => a.turma.localeCompare(b.turma) || a.nome_estudante.localeCompare(b.nome_estudante));
+    } else if (criterio === 'atencao') {
+        // Conta encontros realizados para cada tutorado
+        const contagem = {};
+        (data.encontros || []).forEach(e => {
+            contagem[e.tutoradoId] = (contagem[e.tutoradoId] || 0) + 1;
+        });
+        
+        lista.sort((a, b) => {
+            const countA = contagem[a.id] || 0;
+            const countB = contagem[b.id] || 0;
+            return countA - countB || a.nome_estudante.localeCompare(b.nome_estudante);
+        });
+    } else if (criterio === 'manual') {
+        return abrirModalOrdenacaoManual();
+    }
+
+    agendarTodosTutorados(lista);
+}
+
+function abrirModalOrdenacaoManual() {
+    const container = document.getElementById('listaManualTutorados');
+    const lista = [...(data.tutorados || [])].sort((a, b) => a.nome_estudante.localeCompare(b.nome_estudante));
+    
+    container.innerHTML = lista.map(t => `
+        <div class="manual-sort-item" draggable="true" data-id="${t.id}" 
+             ondragstart="dragStartSort(event)" ondragover="allowDropMap(event)" ondrop="dropSort(event)"
+             style="background:white; padding:10px; margin-bottom:5px; border:1px solid #ddd; border-radius:5px; cursor:move; display:flex; align-items:center; gap:10px;">
+            <span style="color:#cbd5e0;">☰</span>
+            <div style="flex-grow:1;">
+                <strong>${t.nome_estudante}</strong>
+                <div style="font-size:11px; color:#718096;">${t.turma}</div>
+            </div>
+        </div>
+    `).join('');
+    
+    showModal('modalOrdenacaoManual');
+}
+
+let draggedItem = null;
+function dragStartSort(e) {
+    draggedItem = e.currentTarget;
+    e.dataTransfer.effectAllowed = 'move';
+}
+
+function dropSort(e) {
+    e.preventDefault();
+    const target = e.currentTarget;
+    if (draggedItem && draggedItem !== target) {
+        const container = document.getElementById('listaManualTutorados');
+        const allItems = [...container.querySelectorAll('.manual-sort-item')];
+        const draggedIdx = allItems.indexOf(draggedItem);
+        const targetIdx = allItems.indexOf(target);
+
+        if (draggedIdx < targetIdx) {
+            target.after(draggedItem);
+        } else {
+            target.before(draggedItem);
+        }
+    }
+}
+
+function confirmarAgendamentoManual() {
+    const container = document.getElementById('listaManualTutorados');
+    const ids = Array.from(container.querySelectorAll('.manual-sort-item')).map(el => el.dataset.id);
+    
+    const listaOrdenada = ids.map(id => data.tutorados.find(t => t.id == id));
+    
+    closeModal('modalOrdenacaoManual');
+    agendarTodosTutorados(listaOrdenada);
+}
+
+// --- ENCONTROS: EDIÇÃO E EXCLUSÃO ---
+
+function editarEncontro(id) {
+    const e = (data.encontros || []).find(x => x.id == id);
+    if (!e) return;
+
+    document.getElementById('encontroId').value = e.id;
+    document.getElementById('encontroTutorado').value = e.tutoradoId;
+    document.getElementById('encontroData').value = e.data;
+    document.getElementById('encontroTema').value = e.tema;
+    document.getElementById('encontroResumo').value = e.resumo;
+    
+    document.getElementById('tituloModalEncontro').textContent = '✏️ Editar Encontro';
+    showModal('modalNovoEncontro');
+}
+
+function removerEncontro(id) {
+    if (!confirm('Excluir permanentemente este registro de encontro?')) return;
+    
+    data.encontros = (data.encontros || []).filter(e => e.id != id);
+    persistirDados();
+    
+    // Se estiver na ficha do aluno, atualiza a lista
+    const currentFichaId = document.getElementById('tutoradoFichaNome').dataset.tutoradoId;
+    if (currentFichaId) abrirFichaTutorado(currentFichaId);
+}
+
+async function agendarTodosTutorados(listaOrdenada = null) {
+    if (!listaOrdenada) {
+        if (!confirm('Deseja refazer completamente a agenda usando a ordem alfabética padrão?')) return;
+        listaOrdenada = [...(data.tutorados || [])].sort((a, b) => a.nome_estudante.localeCompare(b.nome_estudante));
+    } else {
+         if (!confirm('ATENÇÃO: O sistema irá APAGAR e REFAZER completamente a agenda de tutorias futuras para todos os tutorados baseando-se na ordem selecionada.\n\nDeseja continuar?')) return;
+    }
+
+    const tutorados = listaOrdenada;
     if (tutorados.length === 0) return alert('Você não possui tutorados cadastrados.');
 
     // 1. Definir Fim do Semestre (USANDO UTC para robustez)
@@ -3896,6 +4023,7 @@ function abrirFichaTutorado(id) {
     
     const titleEl = document.getElementById('tutoradoFichaNome');
     titleEl.textContent = t.nome_estudante;
+    titleEl.dataset.tutoradoId = id; // Armazena para recarregamento dinâmico
     
     // Injeta botão de desvincular se não existir
     let actionContainer = document.getElementById('tutoradoAcoesContainer');
@@ -4104,9 +4232,15 @@ function abrirFichaTutorado(id) {
 
         document.getElementById('tutoradoFichaHistorico').innerHTML = encontros.length > 0
             ? encontros.map(e => `
-                <div class="card" style="padding:10px; margin-bottom:5px; background:#f7fafc; border:1px solid #e2e8f0;">
-                    <div style="font-weight:bold; color:#2d3748;">${formatDate(e.data)} - ${e.tema}</div>
-                    <p style="margin:5px 0 0 0; font-size:13px; color:#4a5568; white-space:pre-wrap;">${e.resumo}</p>
+                <div class="card" style="padding:15px; margin-bottom:10px; background:#f7fafc; border:1px solid #e2e8f0; position:relative;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+                        <div style="font-weight:bold; color:#2d3748;">📅 ${formatDate(e.data)} - ${e.tema}</div>
+                        <div class="no-print">
+                            <button class="btn btn-xs btn-secondary" onclick="editarEncontro(${e.id})" style="padding:2px 6px; font-size:10px;">✏️</button>
+                            <button class="btn btn-xs btn-danger" onclick="removerEncontro(${e.id})" style="padding:2px 6px; font-size:10px;">🗑️</button>
+                        </div>
+                    </div>
+                    <p style="margin:0; font-size:13px; color:#4a5568; white-space:pre-wrap;">${e.resumo}</p>
                 </div>`).join('')
             : '<p class="empty-state">Nenhum encontro registrado.</p>';
     }
@@ -5050,25 +5184,42 @@ function importarEstudantes(e) {
     reader.readAsText(file);
 }
 
-function salvarEncontro(e) {
+async function salvarEncontro(e) {
     e.preventDefault();
+    const id = document.getElementById('encontroId').value;
     const tutoradoId = document.getElementById('encontroTutorado').value;
     const dataEncontro = document.getElementById('encontroData').value;
     const tema = document.getElementById('encontroTema').value;
     const resumo = document.getElementById('encontroResumo').value;
 
     if (!data.encontros) data.encontros = [];
-    data.encontros.push({
-        id: Date.now(),
-        tutoradoId: tutoradoId,
-        data: dataEncontro,
-        tema: tema,
-        resumo: resumo
-    });
+
+    if (id) {
+        const idx = data.encontros.findIndex(x => x.id == id);
+        if (idx !== -1) {
+            data.encontros[idx] = { ...data.encontros[idx], tutoradoId, data: dataEncontro, tema, resumo };
+        }
+    } else {
+        data.encontros.push({
+            id: Date.now(),
+            tutoradoId: tutoradoId,
+            data: dataEncontro,
+            tema: tema,
+            resumo: resumo
+        });
+    }
     
-    persistirDados();
-    alert('Encontro registrado com sucesso!');
+    await persistirDados();
+    alert('Encontro salvo com sucesso!');
     closeModal('modalNovoEncontro');
+    
+    // Limpa campos para o próximo
+    document.getElementById('encontroId').value = '';
+    document.getElementById('tituloModalEncontro').textContent = 'Registrar Encontro';
+
+    // Atualiza a ficha se estiver aberta
+    const currentFichaId = document.getElementById('tutoradoFichaNome').dataset.tutoradoId;
+    if (currentFichaId) abrirFichaTutorado(currentFichaId);
 }
 
 function registrarEncontroAtalho(tutoradoId) {
