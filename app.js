@@ -2559,6 +2559,7 @@ function calcularTotalAulasPrevistas(turmaId, inicio, fim) {
             blocosHoje.forEach(bloco => {
                 const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
                 // Verifica se este bloco de horário está destinado à turma/disciplina atual
+                // [REGRA] Apenas aulas da mesma turma/disciplina (filtrado por ID único)
                 if (aula && aula.tipo === 'aula' && String(aula.id_turma) === String(turmaId)) {
                     totalAulas++;
                 }
@@ -2569,47 +2570,69 @@ function calcularTotalAulasPrevistas(turmaId, inicio, fim) {
     return totalAulas;
 }
 
+// [NOVO] Helper para verificar peso da falta (1 para simples, 2 para dobradinha)
+// [NOVO] Helper para verificar peso da falta (1 para simples, 2 para dobradinha)
+function getAulasNoDia(turmaId, dataStr) {
+    const parts = dataStr.split('-');
+    const d = new Date(parts[0], parts[1]-1, parts[2]);
+    const diaSemana = d.getDay(); 
+
+    const gradeEscola = data.schoolGrade || data.gradeHoraria || [];
+    const excecoesGrade = data.schoolExceptions || data.gradeHorariaExcecoes || [];
+    const minhasAulas = data.horariosAulas || [];
+
+    const excecao = excecoesGrade.find(e => e.data === dataStr);
+    const blocosHoje = excecao ? (excecao.blocos || []) : gradeEscola.filter(g => g.diaSemana == diaSemana);
+
+    // [REGRA] Dobradinha = 2 aulas da mesma TURMA e DISCIPLINA no mesmo dia.
+    // O filtro por id_turma (ID único do professor) garante que disciplinas 
+    // diferentes na mesma turma física sejam contadas como aulas separadas (peso 1).
+    return blocosHoje.filter(bloco => {
+        const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
+        return (aula && aula.tipo === 'aula' && String(aula.id_turma) === String(turmaId));
+    }).length;
+}
+
 function getNotaCompensacao(estudanteId, bimestre) {
     const config = (data.configBimestres || []).find(c => c.bim === bimestre);
     if (!config || !config.inicio || !config.fim) return 10;
 
-    // 1. Total de faltas do estudante no bimestre
-    const faltasEstudanteNoBimestre = (data.presencas || []).filter(p => 
+    let notaFinal = 10;
+
+    // 1. Identifica todas as faltas e calcula a perda total (Peso 1 ou 2 por falta)
+    const presencasNoBimestre = (data.presencas || []).filter(p => 
         String(p.id_estudante) === String(estudanteId) && 
         p.status === 'falta' &&
         p.data >= config.inicio && p.data <= config.fim
-    ).length;
+    );
 
-    if (faltasEstudanteNoBimestre === 0) return 10;
+    let perdaPorFaltas = 0;
+    presencasNoBimestre.forEach(p => {
+        perdaPorFaltas += getAulasNoDia(turmaAtual, p.data);
+    });
+    
+    notaFinal -= perdaPorFaltas;
 
-    // 2. Cálculo da Base (Total de aulas previstas conforme a Agenda)
-    const totalAulas = calcularTotalAulasPrevistas(turmaAtual, config.inicio, config.fim);
-
-    // 3. Verificação do limite de 30%
-    if (totalAulas > 0 && (faltasEstudanteNoBimestre / totalAulas) * 100 > 30) {
-        return 0;
-    }
-
-    // 4. Nota Base 5 + Proporção de Compensações entregues
-    let notaFinal = 5;
-
+    // 2. Calcula recuperação e penalidades por compensações do bimestre
     const comps = (data.compensacoes || []).filter(c => {
         if (String(c.id_estudante) !== String(estudanteId)) return false;
         const refDate = `${c.ano_referencia}-${String(c.mes_referencia + 1).padStart(2, '0')}-15`;
         return refDate >= config.inicio && refDate <= config.fim;
     });
 
-    if (comps.length > 0) {
-        const pontuacao = comps.reduce((acc, c) => {
-            if (c.status === 'entregue') return acc + 1;
-            if (c.status === 'entregue_atraso') return acc + 0.5; // Conta metade da pontuação se entregue com atraso
-            return acc;
-        }, 0);
-        const proporcao = pontuacao / comps.length;
-        notaFinal = parseFloat((5 + (5 * proporcao)).toFixed(1));
-    }
+    comps.forEach(c => {
+        const valorRecuperavel = c.peso_faltas || c.qtd_faltas || 0; 
+        
+        if (c.status === 'entregue') {
+            notaFinal += valorRecuperavel;
+        } else if (c.status === 'entregue_atraso') {
+            notaFinal += (valorRecuperavel * 0.5);
+        } else if (c.status === 'nao_fez_folha') {
+            notaFinal -= 1; // Penalidade extra por não fazer nem entregar folha
+        }
+    });
 
-    return notaFinal;
+    return Math.max(0, Math.min(10, parseFloat(notaFinal.toFixed(1))));
 }
 
 function getNotaCaderno(estudanteId, bimestre) {
@@ -3226,7 +3249,7 @@ function renderCompensacoes() {
                                     <div style="font-size:10px; color:#718096; margin-top:2px;">${logMinimizado}</div>
                                 </td>
                                 <td style="font-size:12px;">${meses[c.mes_referencia]}/${c.ano_referencia}</td>
-                                <td>${c.atividade} <br><span style="font-size:10px; color:#666;">Faltas: ${c.qtd_faltas}</span></td>
+                                <td>${c.atividade} <br><span style="font-size:10px; color:#666;">Aulas comp.: ${c.peso_faltas || c.qtd_faltas}</span></td>
                                 <td>
                                     <button onclick="toggleStatusCompensacao(${c.id})" style="border:1px solid ${st.color}; background:${st.bg}; color:${st.color}; padding:5px 10px; border-radius:15px; font-weight:bold; cursor:pointer; width: 130px;">
                                         ${st.label}
@@ -3258,18 +3281,19 @@ function gerarCompensacoesAutomatico() {
         return d.getMonth() === mes && d.getFullYear() === ano && p.status === 'falta';
     });
 
-    // Agrupa por estudante
-    const contagem = {};
+    // Agrupa por estudante calculando quantidade e peso (dobradinhas)
+    const mapaFaltas = {};
     presencas.forEach(p => {
-        if (!contagem[p.id_estudante]) contagem[p.id_estudante] = 0;
-        contagem[p.id_estudante]++;
+        if (!mapaFaltas[p.id_estudante]) mapaFaltas[p.id_estudante] = { qtd: 0, peso: 0 };
+        mapaFaltas[p.id_estudante].qtd++;
+        mapaFaltas[p.id_estudante].peso += getAulasNoDia(turmaAtual, p.data);
     });
 
     // Filtra estudantes da turma atual que têm faltas
     const estudantesComFalta = (data.estudantes || [])
-        .filter(e => e.id_turma == turmaAtual && contagem[e.id] > 0)
-        .map(e => ({ ...e, faltas: contagem[e.id] }))
-        .sort((a,b) => b.faltas - a.faltas);
+        .filter(e => e.id_turma == turmaAtual && mapaFaltas[e.id])
+        .map(e => ({ ...e, faltas: mapaFaltas[e.id].qtd, peso: mapaFaltas[e.id].peso }))
+        .sort((a,b) => b.peso - a.peso);
 
     if (estudantesComFalta.length === 0) {
         return alert('Nenhuma falta registrada para esta turma neste mês.');
@@ -3299,6 +3323,7 @@ function gerarCompensacoesAutomatico() {
             ano_referencia: ano,
             atividade: atividade,
             qtd_faltas: e.faltas,
+            peso_faltas: e.peso, // Armazena o valor total em pontos para recuperação
             status: 'pendente', // pendente -> notificado -> entregue -> nao_entregue
             data_criacao: getTodayString(),
             historico: [{ status: 'pendente', data: getTodayString() }] // Log inicial
