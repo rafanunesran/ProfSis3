@@ -1133,9 +1133,74 @@ function renderAbaLimpezaDados() {
             ` : `
                 <p class="empty-state">✅ Nenhum estudante duplicado encontrado. Seu banco de dados está limpo!</p>
             `}
+
+            <div id="containerDiagnosticoOrfaos" style="margin-top: 40px; border-top: 2px dashed #cbd5e0; padding-top: 20px;">
+                <h3 style="color: #c53030;">🔍 Busca por Dados Órfãos (Vestígios)</h3>
+                <p style="font-size:13px; color:#666; margin-bottom:15px;">Esta ferramenta verifica se existem notas, faltas ou ocorrências "perdidas" que ficaram no banco de dados após um aluno ser apagado ou unificado incorretamente no passado.</p>
+                <button class="btn btn-secondary" onclick="executarDiagnosticoOrfaos()">Executar Varredura de Diagnóstico</button>
+                <div id="resultadoDiagnosticoOrfaos" style="margin-top:15px;"></div>
+            </div>
         </div>
     `;
     document.getElementById('registrosGestorContent').innerHTML = html;
+}
+
+async function executarDiagnosticoOrfaos() {
+    const resDiv = document.getElementById('resultadoDiagnosticoOrfaos');
+    resDiv.innerHTML = '<p style="color:#3182ce; font-weight:bold;">⏳ Analisando integridade do banco de dados...</p>';
+
+    const validIds = new Set((data.estudantes || []).map(e => Number(e.id)));
+    const relatorio = [];
+    
+    const checkOrphans = (lista, campoId, nomeTabela) => {
+        if (!lista || !Array.isArray(lista)) return;
+        const orfaos = lista.filter(item => {
+            const id = Number(item[campoId]);
+            return id && !validIds.has(id);
+        });
+        if (orfaos.length > 0) {
+            relatorio.push({ tabela: nomeTabela, qtd: orfaos.length });
+        }
+    };
+
+    // Varredura em todas as tabelas sensíveis
+    checkOrphans(data.presencas, 'id_estudante', 'Faltas/Chamadas');
+    checkOrphans(data.atrasos, 'id_estudante', 'Registros de Atraso');
+    checkOrphans(data.registrosAdministrativos, 'estudanteId', 'Atestados/Observações');
+    checkOrphans(data.compensacoes, 'id_estudante', 'Atividades de Compensação');
+    checkOrphans(data.notas, 'id_estudante', 'Avaliações e Notas');
+    checkOrphans(data.caderno, 'id_estudante', 'Vistos de Caderno');
+    checkOrphans(data.tutorados, 'id_estudante_origem', 'Controle de Tutoria');
+
+    // Ocorrências (Lógica específica para array de envolvidos)
+    const oOrfaos = (data.ocorrencias || []).filter(o => 
+        o.ids_estudantes && o.ids_estudantes.some(id => !validIds.has(Number(id)))
+    );
+    if (oOrfaos.length > 0) relatorio.push({ tabela: 'Ocorrências Disciplinares', qtd: oOrfaos.length });
+
+    if (relatorio.length === 0) {
+        resDiv.innerHTML = `
+            <div style="background: #f0fff4; border: 1px solid #9ae6b4; padding: 15px; border-radius: 8px; color: #2f855a;">
+                <strong>✅ Integridade Confirmada!</strong><br>
+                Não encontramos vestígios de dados órfãos. Todos os registros estão devidamente vinculados aos alunos atuais.
+            </div>`;
+    } else {
+        let html = `
+            <div style="background: #fff5f5; border: 1px solid #feb2b2; padding: 15px; border-radius: 8px;">
+                <h4 style="margin-top:0; color:#c53030;">⚠️ Foram encontrados dados sem vínculo (órfãos):</h4>
+                <table style="width:100%; font-size:12px; margin-top:10px;">
+                    <thead><tr style="text-align:left;"><th>Categoria</th><th>Registros Perdidos</th></tr></thead>
+                    <tbody>
+                        ${relatorio.map(r => `<tr><td>${r.tabela}</td><td><strong>${r.qtd}</strong></td></tr>`).join('')}
+                    </tbody>
+                </table>
+                <p style="margin-top:15px; font-size:11px; color:#742a2a;">
+                    <strong>Por que isso aconteceu?</strong> Provavelmente alguns alunos foram apagados manualmente ou unificados antes da correção que fizemos na função de limpeza. <br>
+                    <strong>Nota:</strong> Se você notar que faltam notas de um aluno específico, esses números acima confirmam que os dados ainda estão no banco, mas "escondidos" por falta de um ID válido.
+                </p>
+            </div>`;
+        resDiv.innerHTML = html;
+    }
 }
 
 async function executarLimpezaDuplicados() {
