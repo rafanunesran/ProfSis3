@@ -1182,6 +1182,8 @@ async function executarLimpezaDuplicados() {
         atualizarRef(data.atrasos, 'id_estudante');
         atualizarRef(data.registrosAdministrativos, 'estudanteId');
         atualizarRef(data.compensacoes, 'id_estudante');
+        atualizarRef(data.notas, 'id_estudante');
+        atualizarRef(data.caderno, 'id_estudante');
         atualizarRef(data.tutorados, 'id_estudante_origem');
 
         // Ocorrências (ids_estudantes é um array de envolvidos)
