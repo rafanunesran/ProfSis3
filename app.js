@@ -2645,12 +2645,14 @@ function getNotaCaderno(estudanteId, bimestre) {
     );
 
     let penalidade = 0;
+    let extra = 0;
     registros.forEach(r => {
         if (r.status === 'nao_realizou') penalidade += 1.0;
         else if (r.status === 'incompleto') penalidade += 0.5;
+        if (r.extra_caderno) extra += 1.0;
     });
 
-    return parseFloat((10 - penalidade).toFixed(1));
+    return parseFloat((10 - penalidade + extra).toFixed(1));
 }
 
 function getNotaParticipacao(estudanteId, bimestre) {
@@ -2683,18 +2685,21 @@ function getNotaParticipacao(estudanteId, bimestre) {
         return acc;
     }, 0);
 
-    // return Math.max(0, notaInicial - penalidade); // Original line, now modified below
-    // 3. Penalidade por Engajamento (TMN) - M: -0.5, N: -1.0
-    const penalidadeEngajamento = (data.caderno || []).filter(c => 
+    const registrosBim = (data.caderno || []).filter(c => 
         String(c.id_estudante) === String(estudanteId) && 
         c.data >= config.inicio && c.data <= config.fim
-    ).reduce((acc, reg) => {
-        if (reg.engajamento === 'medio') return acc + 0.5;
-        if (reg.engajamento === 'nada') return acc + 1.0;
-        return acc;
-    }, 0);
+    );
 
-    return parseFloat((notaInicial - penalidade - penalidadeEngajamento).toFixed(1));
+    let penalidadeEngajamento = 0;
+    let extraPrat = 0;
+
+    registrosBim.forEach(reg => {
+        if (reg.engajamento === 'medio') penalidadeEngajamento += 0.5;
+        else if (reg.engajamento === 'nada') penalidadeEngajamento += 1.0;
+        if (reg.extra_pratica) extraPrat += 1.0;
+    });
+
+    return parseFloat((notaInicial - penalidade - penalidadeEngajamento + extraPrat).toFixed(1));
 }
 
 function renderTrabalhos() {
@@ -3387,6 +3392,7 @@ function renderCaderno() {
                     <th>Estudante</th>
                     <th style="text-align:center;">Situação Caderno (CIN)</th>
                     <th style="text-align:center;">Engajamento (TMN)</th>
+                    <th style="text-align:center;">Ponto Extra (+1)</th>
                 </tr>
             </thead>
             <tbody>
@@ -3394,6 +3400,8 @@ function renderCaderno() {
                     const reg = (data.caderno || []).find(c => c.id_estudante == e.id && c.data == dataSelecionada);
                     const status = reg ? reg.status : 'completo'; // Padrão: Completo
                     const engajamento = (reg && reg.engajamento) ? reg.engajamento : 'total';
+                    const extraCad = reg ? reg.extra_caderno : false;
+                    const extraPrat = reg ? reg.extra_pratica : false;
 
                     return `
                     <tr>
@@ -3410,6 +3418,12 @@ function renderCaderno() {
                                 <label style="font-size:12px; cursor:pointer;"><input type="radio" name="eng_${e.id}" value="total" onchange="salvarStatusCaderno(${e.id}, this.value, 'engajamento')" ${engajamento === 'total' ? 'checked' : ''}> T</label>
                                 <label style="font-size:12px; cursor:pointer; color:#d69e2e;"><input type="radio" name="eng_${e.id}" value="medio" onchange="salvarStatusCaderno(${e.id}, this.value, 'engajamento')" ${engajamento === 'medio' ? 'checked' : ''}> M</label>
                                 <label style="font-size:12px; cursor:pointer; color:#e53e3e;"><input type="radio" name="eng_${e.id}" value="nada" onchange="salvarStatusCaderno(${e.id}, this.value, 'engajamento')" ${engajamento === 'nada' ? 'checked' : ''}> N</label>
+                            </div>
+                        </td>
+                        <td style="text-align:center;">
+                            <div style="display:flex; justify-content:center; gap:10px;">
+                                <label style="font-size:11px; cursor:pointer; color:#3182ce;"><input type="checkbox" onchange="salvarStatusCaderno(${e.id}, this.checked, 'extra_caderno')" ${extraCad ? 'checked' : ''}> Cad.</label>
+                                <label style="font-size:11px; cursor:pointer; color:#38a169;"><input type="checkbox" onchange="salvarStatusCaderno(${e.id}, this.checked, 'extra_pratica')" ${extraPrat ? 'checked' : ''}> Prat.</label>
                             </div>
                         </td>
                     </tr>
@@ -3437,7 +3451,9 @@ async function salvarStatusCaderno(estudanteId, valor, campo) {
             id_turma: turmaAtual,
             data: dataReg,
             status: campo === 'status' ? valor : 'completo',
-            engajamento: campo === 'engajamento' ? valor : 'total'
+            engajamento: campo === 'engajamento' ? valor : 'total',
+            extra_caderno: campo === 'extra_caderno' ? valor : false,
+            extra_pratica: campo === 'extra_pratica' ? valor : false
         };
         data.caderno.push(novo);
     }
