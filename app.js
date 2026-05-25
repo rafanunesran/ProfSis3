@@ -2632,7 +2632,7 @@ function getNotaCompensacao(estudanteId, bimestre) {
         }
     });
 
-    return Math.max(0, Math.min(10, parseFloat(notaFinal.toFixed(1))));
+    return Math.min(10, parseFloat(notaFinal.toFixed(1)));
 }
 
 function getNotaCaderno(estudanteId, bimestre) {
@@ -2650,7 +2650,7 @@ function getNotaCaderno(estudanteId, bimestre) {
         else if (r.status === 'incompleto') penalidade += 0.5;
     });
 
-    return Math.max(0, parseFloat((10 - penalidade).toFixed(1)));
+    return parseFloat((10 - penalidade).toFixed(1));
 }
 
 function getNotaParticipacao(estudanteId, bimestre) {
@@ -2683,7 +2683,7 @@ function getNotaParticipacao(estudanteId, bimestre) {
         return acc;
     }, 0);
 
-    return Math.max(0, notaInicial - penalidade);
+    // return Math.max(0, notaInicial - penalidade); // Original line, now modified below
     // 3. Penalidade por Engajamento (TMN) - M: -0.5, N: -1.0
     const penalidadeEngajamento = (data.caderno || []).filter(c => 
         String(c.id_estudante) === String(estudanteId) && 
@@ -2694,7 +2694,7 @@ function getNotaParticipacao(estudanteId, bimestre) {
         return acc;
     }, 0);
 
-    return Math.max(0, parseFloat((notaInicial - penalidade - penalidadeEngajamento).toFixed(1)));
+    return parseFloat((notaInicial - penalidade - penalidadeEngajamento).toFixed(1));
 }
 
 function renderTrabalhos() {
@@ -2798,14 +2798,16 @@ function renderTrabalhos() {
                             }
 
                             const peso = parseFloat(t.peso) || 0;
-                            const valorNum = (valor !== '') ? (parseFloat(valor.toString().replace(',', '.')) || 0) : 0;
+                            const parsed = parseFloat(valor.toString().replace(',', '.'));
+                            const valorNum = (!isNaN(parsed)) ? parsed : 0;
                             somaProdutos += valorNum * peso;
                             somaPesos += peso;
 
                             if (t.tipo === 'rubrica') {
                                 const rubricas = t.rubricas || [];
                                 const marcadas = (nota && nota.rubricas_marcadas) ? nota.rubricas_marcadas.map(id => Number(id)) : [];
-                                const totalRub = nota ? (parseFloat(nota.valor) || 0) : 0;
+                                const hasValue = (nota && nota.valor !== undefined && nota.valor !== "");
+                                const displayRub = hasValue ? parseFloat(nota.valor).toFixed(1).replace('.0', '').replace('.', ',') : '-';
                                 return `
                                     <td style="text-align:center; border: 1px solid #e2e8f0; padding: 5px;">
                                         <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
@@ -2817,7 +2819,7 @@ function renderTrabalhos() {
                                                     </label>
                                                 `).join('')}
                                             </div>
-                                            <div id="rub-total-${t.id}-${e.id}" style="font-weight:bold; color:#3182ce; border-left:1px solid #e2e8f0; padding-left:8px; min-width:25px;">${totalRub > 0 ? totalRub.toFixed(1).replace('.0', '') : '-'}</div>
+                                            <div id="rub-total-${t.id}-${e.id}" style="font-weight:bold; color:#3182ce; border-left:1px solid #e2e8f0; padding-left:8px; min-width:25px;">${displayRub}</div>
                                         </div>
                                     </td>
                                 `;
@@ -2866,11 +2868,11 @@ async function salvarNota(trabalhoId, estudanteId, valor) {
     if (!data.notas) data.notas = [];
     let nota = data.notas.find(n => n.id_trabalho == trabalhoId && n.id_estudante == estudanteId);
     if (nota) {
-        if (String(nota.valor) === String(valor)) return;
-        nota.valor = valor;
+        if (String(nota.valor) === String(valor).trim()) return;
+        nota.valor = String(valor).trim();
     } else {
-        if (!valor) return;
-        data.notas.push({ id: Date.now() + Math.random(), id_trabalho: trabalhoId, id_estudante: estudanteId, valor: valor });
+        if (valor === "" || valor === null || valor === undefined) return;
+        data.notas.push({ id: Date.now() + Math.random(), id_trabalho: trabalhoId, id_estudante: estudanteId, valor: String(valor).trim() });
     }
     await persistirDados();
     // Atualiza apenas a média do estudante no DOM para não perder o foco no input
@@ -3068,7 +3070,7 @@ async function toggleRubrica(trabalhoId, estudanteId, rubricId, isChecked) {
     nota.valor = total;
 
     const totalEl = document.getElementById(`rub-total-${trabalhoId}-${estudanteId}`);
-    if (totalEl) totalEl.textContent = total > 0 ? total.toFixed(1).replace('.0', '') : '-';
+    if (totalEl) totalEl.textContent = total.toFixed(1).replace('.0', '').replace('.', ',');
 
     await persistirDados();
     recalcularMediaUI(estudanteId);
@@ -3109,7 +3111,8 @@ function recalcularMediaUI(estudanteId) {
         }
 
         const peso = parseFloat(t.peso) || 0;
-        const valorNum = (valor !== '') ? (parseFloat(valor.toString().replace(',', '.')) || 0) : 0;
+        const parsed = parseFloat(valor.toString().replace(',', '.'));
+        const valorNum = (!isNaN(parsed)) ? parsed : 0;
         somaProdutos += valorNum * peso;
         somaPesos += peso;
     });
