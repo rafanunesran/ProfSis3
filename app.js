@@ -979,8 +979,15 @@ function renderTurmas() {
              <button class="btn btn-primary" onclick="abrirModalImportacaoMassa()">Importar Arquivos</button>
            </div>` 
         : '';
+        
+    const btnSyncEstado = (currentViewMode !== 'gestor') 
+        ? `<div style="margin-bottom: 15px; padding: 10px; background: #fffaf0; border: 1px solid #fbd38d; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+             <span>🤖 Mapeamento Sala do Futuro (SED)</span>
+             <button class="btn btn-warning" onclick="abrirModalMapeamentoTurmasEstado()">Vincular Turmas</button>
+           </div>` 
+        : '';
 
-    document.getElementById('listaTurmas').innerHTML = btnMassa + (html || '<p class="empty-state">Nenhuma turma.</p>');
+    document.getElementById('listaTurmas').innerHTML = btnMassa + btnSyncEstado + (html || '<p class="empty-state">Nenhuma turma.</p>');
 }
 
 async function abrirModalNovaTurma() {
@@ -1507,6 +1514,10 @@ async function renderChamada() {
     const statusCor = faltasRegistradas.length > 0 ? '#2f855a' : '#d69e2e'; // Verde escuro vs Laranja escuro
     const statusBg = faltasRegistradas.length > 0 ? '#f0fff4' : '#fffaf0';
 
+    // Recupera o registro da aula, caso já exista
+    const registroExistente = (data.registrosAula || []).find(r => r.id_turma == turmaAtual && r.data == dataSelecionada);
+    const conteudoRegistro = registroExistente ? registroExistente.conteudo : '';
+
     const html = `
         <div style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;">
             <button class="btn btn-info" onclick="renderRelatorioMensalFaltas()">📅 Relatório Mensal de Faltas</button>
@@ -1596,7 +1607,14 @@ async function renderChamada() {
                 `}).join('')}
             </tbody>
         </table>
+        
+        <div style="margin-top: 15px; margin-bottom: 15px;">
+            <label style="font-weight: bold; display: block; margin-bottom: 5px; color: #2d3748;">📝 Registro da Aula (Diário de Classe):</label>
+            <textarea id="chamadaRegistroAula" rows="3" style="width: 100%; border: 1px solid #cbd5e0; padding: 10px; border-radius: 5px; font-family: inherit;" placeholder="Descreva o conteúdo ou as atividades da aula de hoje...">${conteudoRegistro}</textarea>
+        </div>
+
         <button class="btn btn-success" id="btnSalvarChamada" onclick="salvarChamadaManual()" style="width:100%; margin-top:15px; padding: 12px; font-size: 16px;">💾 Confirmar e Salvar Chamada</button>
+        <button class="btn btn-warning" id="btnSyncSalaFuturo" onclick="sincronizarSalaDoFuturo()" style="width:100%; margin-top:10px; padding: 12px; font-size: 16px;">🤖 Sincronizar com Sala do Futuro (RPA)</button>
     `;
     document.getElementById('tabChamada').innerHTML = html;
     
@@ -1630,6 +1648,7 @@ function validarDataChamada(diasPermitidos) {
 async function salvarChamadaManual() {
     const dataChamada = document.getElementById('chamadaData').value;
     const checks = document.querySelectorAll('.presenca-check');
+    const registroAulaConteudo = document.getElementById('chamadaRegistroAula').value;
     
     if (!data.presencas) data.presencas = [];
     
@@ -1654,12 +1673,107 @@ async function salvarChamadaManual() {
         }
     });
     
+    // Salva o Registro da Aula
+    if (registroAulaConteudo.trim() !== '') {
+        if (!data.registrosAula) data.registrosAula = [];
+        const idxRegistro = data.registrosAula.findIndex(r => r.id_turma == turmaAtual && r.data == dataChamada);
+        if (idxRegistro !== -1) {
+            data.registrosAula[idxRegistro].conteudo = registroAulaConteudo;
+        } else {
+            data.registrosAula.push({
+                id: Date.now() + Math.random(),
+                id_turma: turmaAtual,
+                data: dataChamada,
+                conteudo: registroAulaConteudo
+            });
+        }
+    } else {
+        // Remove localmente se a caixa de texto foi apagada
+        if (data.registrosAula) {
+             data.registrosAula = data.registrosAula.filter(r => !(r.id_turma == turmaAtual && r.data == dataChamada));
+        }
+    }
+
     // Sincroniza com o banco compartilhado (se online)
     await sincronizarFaltasCompartilhadas(dataChamada, mapSync);
 
     await persistirDados();
     alert('Chamada salva e sincronizada com a gestão!');
     renderChamada(); // Atualiza para refletir contagens
+}
+
+async function sincronizarSalaDoFuturo() {
+    const dataChamada = document.getElementById('chamadaData').value;
+    const checks = document.querySelectorAll('.presenca-check');
+    const registroAulaConteudo = document.getElementById('chamadaRegistroAula').value;
+    
+    const alunos = [];
+    checks.forEach(chk => {
+        alunos.push({
+            id_estudante: parseInt(chk.getAttribute('data-id')),
+            presente: chk.checked
+        });
+    });
+
+    // Salva o Registro da Aula localmente antes de sincronizar
+    if (registroAulaConteudo.trim() !== '') {
+        if (!data.registrosAula) data.registrosAula = [];
+        const idxRegistro = data.registrosAula.findIndex(r => r.id_turma == turmaAtual && r.data == dataChamada);
+        if (idxRegistro !== -1) {
+            data.registrosAula[idxRegistro].conteudo = registroAulaConteudo;
+        } else {
+            data.registrosAula.push({
+                id: Date.now() + Math.random(),
+                id_turma: turmaAtual,
+                data: dataChamada,
+                conteudo: registroAulaConteudo
+            });
+        }
+        await persistirDados();
+    } else if (data.registrosAula) {
+        data.registrosAula = data.registrosAula.filter(r => !(r.id_turma == turmaAtual && r.data == dataChamada));
+        await persistirDados();
+    }
+
+    try {
+        // URL do servidor Node.js (RPA) que fará o trabalho pesado
+        const rpaServerUrl = 'http://localhost:3000/api/sync-chamada'; 
+        
+        const btn = document.getElementById('btnSyncSalaFuturo');
+        btn.innerHTML = '⏳ Sincronizando (Aguarde o Robô)...';
+        btn.disabled = true;
+
+        const response = await fetch(rpaServerUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                professorId: currentUser.id,
+                dataChamada: dataChamada,
+                turmaId: turmaAtual,
+                alunos: alunos,
+                registroAula: registroAulaConteudo
+            })
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('✅ Chamada sincronizada com sucesso na Sala do Futuro!');
+        } else if (result.needsLogin) {
+            alert('⚠️ A sessão expirou ou não foi salva.\nVocê precisa refazer o login no Gov.br/SED para que o robô obtenha o acesso.');
+            // Abre uma aba popup conectada ao servidor para renovar o acesso (Cookies)
+            window.open(`http://localhost:3000/api/login-govbr?profId=${currentUser.id}`, 'LoginSED', 'width=500,height=600');
+        } else {
+            alert('❌ Erro na sincronização: ' + result.error);
+        }
+    } catch (error) {
+        console.error("Erro no RPA:", error);
+        alert('❌ Erro ao conectar com o servidor RPA.\nVerifique se o backend Node.js está rodando (localhost:3000).');
+    } finally {
+        const btn = document.getElementById('btnSyncSalaFuturo');
+        btn.innerHTML = '🤖 Sincronizar com Sala do Futuro (RPA)';
+        btn.disabled = false;
+    }
 }
 
 async function renderRelatorioMensalFaltas() {
@@ -4472,6 +4586,130 @@ function imprimirRelatorioTutorado(id, nome) {
     const win = window.open('', '', 'width=900,height=800');
     win.document.write(html);
     win.document.close();
+}
+
+// --- MAPEAMENTO DE TURMAS (RPA ESTADO) ---
+function abrirModalMapeamentoTurmasEstado() {
+    if (!document.getElementById('modalMapeamentoTurmas')) {
+        const div = document.createElement('div');
+        div.id = 'modalMapeamentoTurmas';
+        div.className = 'modal';
+        document.body.appendChild(div);
+    }
+    
+    const turmasLocais = data.turmas || [];
+    if (turmasLocais.length === 0) return alert('Você não tem turmas cadastradas.');
+
+    document.getElementById('modalMapeamentoTurmas').innerHTML = `
+        <div class="modal-content" style="max-width: 700px;">
+            <h3>Mapeamento de Turmas: ProfSis3 ↔ Sala do Futuro</h3>
+            <p style="font-size:13px; color:#666;">Vincule suas turmas locais com as turmas do portal do Governo (SED).</p>
+            
+            <button class="btn btn-primary" id="btnBuscarTurmasRpa" onclick="buscarTurmasDoEstadoRpa()">
+                🔍 Buscar Turmas do Estado (RPA)
+            </button>
+            
+            <div id="areaMapeamentoRpa" style="margin-top: 20px; display: none;">
+                <table style="width:100%;">
+                    <thead>
+                        <tr>
+                            <th>Sua Turma (ProfSis3)</th>
+                            <th>Turma Externa (Portal SED)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="listaMapeamentoRpa"></tbody>
+                </table>
+                <div style="margin-top:20px; text-align:right;">
+                    <button class="btn btn-secondary" onclick="closeModal('modalMapeamentoTurmas')">Cancelar</button>
+                    <button class="btn btn-success" onclick="salvarMapeamentoTurmasEstado()">💾 Salvar Vínculos</button>
+                </div>
+            </div>
+        </div>
+    `;
+    showModal('modalMapeamentoTurmas');
+}
+
+async function buscarTurmasDoEstadoRpa() {
+    const btn = document.getElementById('btnBuscarTurmasRpa');
+    btn.disabled = true;
+    btn.innerHTML = '⏳ O Robô está buscando... (Aguarde)';
+
+    try {
+        const response = await fetch('http://localhost:3000/api/fetch-turmas-estado', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ professorId: currentUser.id })
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            renderSelectsMapeamentoRpa(result.turmas);
+        } else if (result.needsLogin) {
+            alert('⚠️ Sua sessão expirou. Você precisa re-autenticar o robô no Gov.br.');
+            window.open(`http://localhost:3000/api/login-govbr?profId=${currentUser.id}`, 'LoginSED', 'width=500,height=600');
+        } else {
+            alert('❌ Erro: ' + result.error);
+        }
+    } catch (error) {
+        console.error(error);
+        alert('Falha de conexão com o backend RPA (localhost:3000). O servidor está rodando?');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '🔍 Buscar Turmas do Estado (RPA)';
+    }
+}
+
+function renderSelectsMapeamentoRpa(turmasEstado) {
+    document.getElementById('areaMapeamentoRpa').style.display = 'block';
+    const turmasLocais = data.turmas || [];
+    const tbody = document.getElementById('listaMapeamentoRpa');
+    
+    let optionsHtml = '<option value="">-- Ignorar ou Não Vinculada --</option>';
+    turmasEstado.forEach(te => {
+        optionsHtml += `<option value="${te.id_sala_do_futuro}">${te.nome_sala_do_futuro}</option>`;
+    });
+
+    tbody.innerHTML = turmasLocais.map(t => {
+        const vinculado = t.integracao_estado ? t.integracao_estado.id_sala_do_futuro : '';
+        return `
+        <tr>
+            <td>${t.nome} ${t.disciplina ? '- ' + t.disciplina : ''}</td>
+            <td>
+                <select class="sel-mapeamento-estado" data-id-local="${t.id}" style="width:100%; padding:5px; border-radius:4px;">
+                    ${optionsHtml.replace(`value="${vinculado}"`, `value="${vinculado}" selected`)}
+                </select>
+            </td>
+        </tr>
+    `}).join('');
+}
+
+async function salvarMapeamentoTurmasEstado() {
+    const selects = document.querySelectorAll('.sel-mapeamento-estado');
+    let vinculadas = 0;
+
+    selects.forEach(sel => {
+        const idLocal = sel.getAttribute('data-id-local');
+        const idEstado = sel.value;
+        const turma = data.turmas.find(t => t.id == idLocal);
+        
+        if (turma) {
+            if (idEstado) {
+                const nomeEstado = sel.options[sel.selectedIndex].text;
+                turma.integracao_estado = {
+                    sincronizado: true,
+                    id_sala_do_futuro: idEstado,
+                    nome_sala_do_futuro: nomeEstado
+                };
+                vinculadas++;
+            } else {
+                delete turma.integracao_estado;
+            }
+        }
+    });
+
+    await persistirDados();
+    alert(`✅ Mapeamento salvo! ${vinculadas} turmas vinculadas ao Estado.`);
+    closeModal('modalMapeamentoTurmas');
 }
 
 function desvincularTutorado(id) {
