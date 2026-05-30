@@ -1,5 +1,8 @@
 // --- LÓGICA PRINCIPAL (PROFESSOR/APP) ---
 
+// URL do seu servidor backend RPA. Troque o link abaixo pela URL real do seu deploy
+const RPA_SERVER_URL = typeof isLocalhost !== 'undefined' && isLocalhost ? 'http://localhost:3000' : 'https://profsis-rpa.onrender.com';
+
 let currentViewMode = null; // Controle de estado: 'gestor' ou 'professor'
 
 async function iniciarApp() {
@@ -1737,7 +1740,7 @@ async function sincronizarSalaDoFuturo() {
 
     try {
         // URL do servidor Node.js (RPA) que fará o trabalho pesado
-        const rpaServerUrl = 'http://localhost:3000/api/sync-chamada'; 
+        const rpaServerUrl = `${RPA_SERVER_URL}/api/sync-chamada`; 
         
         const btn = document.getElementById('btnSyncSalaFuturo');
         btn.innerHTML = '⏳ Sincronizando (Aguarde o Robô)...';
@@ -1760,15 +1763,15 @@ async function sincronizarSalaDoFuturo() {
         if (result.success) {
             alert('✅ Chamada sincronizada com sucesso na Sala do Futuro!');
         } else if (result.needsLogin) {
-            alert('⚠️ A sessão expirou ou não foi salva.\nVocê precisa refazer o login no Gov.br/SED para que o robô obtenha o acesso.');
+            alert(`⚠️ A sessão expirou ou não foi salva.\nVocê precisa refazer o login no Gov.br/SED para que o robô obtenha o acesso.`);
             // Abre uma aba popup conectada ao servidor para renovar o acesso (Cookies)
-            window.open(`http://localhost:3000/api/login-govbr?profId=${currentUser.id}`, 'LoginSED', 'width=500,height=600');
+            window.open(`${RPA_SERVER_URL}/api/login-govbr?profId=${currentUser.id}`, 'LoginSED', 'width=500,height=600');
         } else {
             alert('❌ Erro na sincronização: ' + result.error);
         }
     } catch (error) {
         console.error("Erro no RPA:", error);
-        alert('❌ Erro ao conectar com o servidor RPA.\nVerifique se o backend Node.js está rodando (localhost:3000).');
+        alert(`❌ Erro ao conectar com o servidor RPA.\nVerifique se a URL do backend (${RPA_SERVER_URL}) está correta e online.`);
     } finally {
         const btn = document.getElementById('btnSyncSalaFuturo');
         btn.innerHTML = '🤖 Sincronizar com Sala do Futuro (RPA)';
@@ -4635,7 +4638,7 @@ async function buscarTurmasDoEstadoRpa() {
     btn.innerHTML = '⏳ O Robô está buscando... (Aguarde)';
 
     try {
-        const response = await fetch('http://localhost:3000/api/fetch-turmas-estado', {
+        const response = await fetch(`${RPA_SERVER_URL}/api/fetch-turmas-estado`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ professorId: currentUser.id })
@@ -4646,13 +4649,13 @@ async function buscarTurmasDoEstadoRpa() {
             renderSelectsMapeamentoRpa(result.turmas);
         } else if (result.needsLogin) {
             alert('⚠️ Sua sessão expirou. Você precisa re-autenticar o robô no Gov.br.');
-            window.open(`http://localhost:3000/api/login-govbr?profId=${currentUser.id}`, 'LoginSED', 'width=500,height=600');
+            window.open(`${RPA_SERVER_URL}/api/login-govbr?profId=${currentUser.id}`, 'LoginSED', 'width=500,height=600');
         } else {
             alert('❌ Erro: ' + result.error);
         }
     } catch (error) {
         console.error(error);
-        alert('Falha de conexão com o backend RPA (localhost:3000). O servidor está rodando?');
+        alert(`Falha de conexão com o backend RPA (${RPA_SERVER_URL}). O servidor está rodando e online?`);
     } finally {
         btn.disabled = false;
         btn.innerHTML = '🔍 Buscar Turmas do Estado (RPA)';
