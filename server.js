@@ -34,10 +34,11 @@ app.post('/api/sync-chamada', async (req, res) => {
         const page = await context.newPage();
         
         // 1. Acessar a Sala do Futuro
-        await page.goto('https://saladofuturo.educacao.sp.gov.br/');
+        await page.goto('https://saladofuturo.educacao.sp.gov.br/', { waitUntil: 'networkidle' });
 
-        // Segurança: Se redirecionar para a página de login, os cookies expiraram
-        if (page.url().includes('login')) {
+        // Segurança: Se a página pedir senha ou tiver 'logon' na URL, os cookies expiraram
+        const isLoginPage = await page.locator('input[type="password"]').isVisible();
+        if (isLoginPage || page.url().toLowerCase().includes('logon')) {
             delete sessionsDb[professorId];
             await browser.close();
             return res.json({ success: false, needsLogin: true });
@@ -113,33 +114,37 @@ app.post('/api/login-rpa', async (req, res) => {
         
         await page.goto('https://saladofuturo.educacao.sp.gov.br/');
 
-        // Aguarda os campos de login (fallback abrangente para seletores da Prodesp)
-        await page.waitForSelector('input[name="name"], input[name="login"], input#name', { timeout: 15000 });
+        // Usando Locators robustos que não geram conflito caso a tela demore a carregar
+        const userInput = page.locator('input[name="name"], input[name="login"], input#name, input[type="text"]').first();
+        const passInput = page.locator('input[name="senha"], input#senha, input[type="password"]').first();
+        const btnLogin = page.locator('button#btnEntrar, button:has-text("Acessar"), input#btnEntrar, button[type="submit"]').first();
         
-        const userInput = await page.$('input[name="name"], input[name="login"], input#name');
-        if (userInput) await userInput.fill(usuarioSED);
+        await userInput.waitFor({ state: 'visible', timeout: 15000 });
+        await userInput.fill(usuarioSED);
+        await passInput.fill(senhaSED);
         
-        const passInput = await page.$('input[name="senha"], input#senha, input[type="password"]');
-        if (passInput) await passInput.fill(senhaSED);
-        
-        const btnLogin = await page.$('button#btnEntrar, button:has-text("Acessar"), input#btnEntrar, button[type="submit"]');
-        if (btnLogin) {
+        if (await btnLogin.isVisible()) {
             await btnLogin.click();
         } else {
             await passInput.press('Enter');
         }
 
-        // Aguarda mudança de URL (saída do login) ou erro na tela
+        // Aguarda a tela de login sumir OU um alerta de erro aparecer
         await page.waitForFunction(() => {
-            return !window.location.href.includes('login') || document.querySelector('.alert-danger, .toast-error, .mensagem-erro, #erroLogin');
+            const hasPasswordInput = document.querySelector('input[type="password"], input[name="senha"]');
+            const hasError = document.querySelector('.alert-danger, .toast-error, .mensagem-erro, #erroLogin');
+            return !hasPasswordInput || hasError;
         }, { timeout: 15000 }).catch(() => { throw new Error('Tempo limite. O portal pode estar lento.'); });
 
-        if (page.url().includes('login')) {
-            const errorDiv = await page.$('.alert-danger, .toast-error, .mensagem-erro, #erroLogin');
-            throw new Error(errorDiv ? await errorDiv.innerText() : 'Usuário ou senha incorretos.');
+        // Verifica se ainda estamos na tela de login (ou seja, deu erro)
+        if (await passInput.isVisible()) {
+            const errorDiv = page.locator('.alert-danger, .toast-error, .mensagem-erro, #erroLogin').first();
+            const errorText = await errorDiv.isVisible() ? await errorDiv.innerText() : 'Usuário ou senha incorretos.';
+            throw new Error(errorText);
         }
 
-        // Sucesso: captura os cookies validados da sessão real
+        // Sucesso: Aguarda a página principal carregar antes de pegar os cookies
+        await page.waitForLoadState('domcontentloaded');
         console.log(`✅ Login realizado com sucesso para ${professorId}!`);
         sessionsDb[professorId] = await context.cookies();
 
@@ -170,9 +175,11 @@ app.post('/api/fetch-turmas-estado', async (req, res) => {
         await context.addCookies(cookies);
         
         const page = await context.newPage();
-        await page.goto('https://saladofuturo.educacao.sp.gov.br/');
+        await page.goto('https://saladofuturo.educacao.sp.gov.br/', { waitUntil: 'networkidle' });
         
-        if (page.url().includes('login')) {
+        // Segurança: Verifica bloqueio de sessão por tempo
+        const isLoginPage = await page.locator('input[type="password"]').isVisible();
+        if (isLoginPage || page.url().toLowerCase().includes('logon')) {
             delete sessionsDb[professorId];
             await browser.close();
             return res.status(401).json({ success: false, needsLogin: true });
