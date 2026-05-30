@@ -642,7 +642,7 @@ async function renderDashboard() {
             <div class="card" style="margin-top: 20px;">
                 <h2>📊 Resumo da Escola</h2>
                 <p>Total de Turmas: ${(data.turmas || []).length}</p>
-                <p>Total de Estudantes: ${(data.estudantes || []).length}</p>
+                <p>Total de Estudantes: ${(data.estudantes || []).filter(e => !e.status || e.status === 'Ativo').length}</p>
             </div>
 
             <div class="card" style="margin-top: 20px; border-left: 4px solid #718096; background: #f7fafc;">
@@ -1254,7 +1254,7 @@ function showTurmaTab(tab, evt) {
 }
 
 async function renderEstudantes() {
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual).sort((a, b) => (a.nome_completo || '').localeCompare(b.nome_completo || ''));
     const isGestor = currentViewMode === 'gestor';
 
     // --- MURAL DE AVISOS (Registros Administrativos) ---
