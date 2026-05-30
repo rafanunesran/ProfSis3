@@ -33,8 +33,8 @@ app.post('/api/sync-chamada', async (req, res) => {
 
         const page = await context.newPage();
         
-        // 1. Acessar a Secretaria Escolar Digital (SED) / Sala do Futuro
-        await page.goto('https://sed.educacao.sp.gov.br/');
+        // 1. Acessar a Sala do Futuro
+        await page.goto('https://saladofuturo.educacao.sp.gov.br/');
 
         // Segurança: Se redirecionar para a página de login, os cookies expiraram
         if (page.url().includes('login')) {
@@ -96,34 +96,61 @@ app.post('/api/sync-chamada', async (req, res) => {
     }
 });
 
-// Rota que cria uma interface para o professor logar e nós "sequestrarmos" a sessão
-app.get('/api/login-govbr', (req, res) => {
-    const { profId } = req.query;
-    
-    res.send(`
-        <html lang="pt-BR">
-            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-                <h2>Renovação de Acesso SED / Gov.br</h2>
-                <p>Nesta página o professor faria o login real na plataforma do Estado. Assim que ele passasse pelo CAPTCHA, nós salvaríamos os cookies e fecharíamos a aba.</p>
-                
-                <button style="padding: 10px 20px; font-size: 16px; background: #3182ce; color: white; border: none; border-radius: 5px; cursor: pointer;" onclick="simularCapturaCookies()">Simular Login no Estado e Salvar Sessão</button>
-                
-                <script>
-                    function simularCapturaCookies() {
-                        fetch('/api/save-cookies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profId: '${profId}', cookies: [{ name: 'JSESSIONID_SED', value: 'token-ficticio-12345', domain: 'sed.educacao.sp.gov.br', path: '/' }] }) }).then(() => {
-                            alert('Acesso concedido e cookies gravados! Você pode fechar esta aba e clicar novamente em Sincronizar na janela principal.');
-                        });
-                    }
-                </script>
-            </body>
-        </html>
-    `);
-});
+// Rota para realizar o login REAL do professor na SED usando credenciais
+app.post('/api/login-rpa', async (req, res) => {
+    const { professorId, usuarioSED, senhaSED } = req.body;
 
-app.post('/api/save-cookies', (req, res) => {
-    const { profId, cookies } = req.body;
-    sessionsDb[profId] = cookies; // Grava os cookies
-    res.json({ success: true });
+    if (!professorId || !usuarioSED || !senhaSED) {
+        return res.status(400).json({ success: false, error: 'Usuário ou senha ausentes.' });
+    }
+
+    let browser;
+    try {
+        console.log(`🤖 Iniciando login real na SED para o professor ${professorId}...`);
+        browser = await chromium.launch({ headless: true });
+        const context = await browser.newContext();
+        const page = await context.newPage();
+        
+        await page.goto('https://saladofuturo.educacao.sp.gov.br/');
+
+        // Aguarda os campos de login (fallback abrangente para seletores da Prodesp)
+        await page.waitForSelector('input[name="name"], input[name="login"], input#name', { timeout: 15000 });
+        
+        const userInput = await page.$('input[name="name"], input[name="login"], input#name');
+        if (userInput) await userInput.fill(usuarioSED);
+        
+        const passInput = await page.$('input[name="senha"], input#senha, input[type="password"]');
+        if (passInput) await passInput.fill(senhaSED);
+        
+        const btnLogin = await page.$('button#btnEntrar, button:has-text("Acessar"), input#btnEntrar, button[type="submit"]');
+        if (btnLogin) {
+            await btnLogin.click();
+        } else {
+            await passInput.press('Enter');
+        }
+
+        // Aguarda mudança de URL (saída do login) ou erro na tela
+        await page.waitForFunction(() => {
+            return !window.location.href.includes('login') || document.querySelector('.alert-danger, .toast-error, .mensagem-erro, #erroLogin');
+        }, { timeout: 15000 }).catch(() => { throw new Error('Tempo limite. O portal pode estar lento.'); });
+
+        if (page.url().includes('login')) {
+            const errorDiv = await page.$('.alert-danger, .toast-error, .mensagem-erro, #erroLogin');
+            throw new Error(errorDiv ? await errorDiv.innerText() : 'Usuário ou senha incorretos.');
+        }
+
+        // Sucesso: captura os cookies validados da sessão real
+        console.log(`✅ Login realizado com sucesso para ${professorId}!`);
+        sessionsDb[professorId] = await context.cookies();
+
+        await browser.close();
+        res.json({ success: true });
+
+    } catch (error) {
+        console.error("❌ Erro ao logar na SED:", error);
+        if (browser) await browser.close();
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 // Nova Rota RPA: Buscar Turmas do Estado (Mapeamento)
@@ -143,7 +170,7 @@ app.post('/api/fetch-turmas-estado', async (req, res) => {
         await context.addCookies(cookies);
         
         const page = await context.newPage();
-        await page.goto('https://sed.educacao.sp.gov.br/');
+        await page.goto('https://saladofuturo.educacao.sp.gov.br/');
         
         if (page.url().includes('login')) {
             delete sessionsDb[professorId];

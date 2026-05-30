@@ -35,7 +35,7 @@ app.post('/api/fetch-turmas-estado', async (req: Request, res: Response) => {
     const page = await context.newPage();
     
     // Acessa o portal e confere se a sessão expirou redirecionando pro login
-    await page.goto('https://sed.educacao.sp.gov.br/');
+    await page.goto('https://saladofuturo.educacao.sp.gov.br/');
     if (page.url().includes('login')) {
        delete sessionsDb[professorId];
        return res.status(401).json({ success: false, needsLogin: true, error: 'Sessão expirada.' });

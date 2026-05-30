@@ -1763,9 +1763,8 @@ async function sincronizarSalaDoFuturo() {
         if (result.success) {
             alert('✅ Chamada sincronizada com sucesso na Sala do Futuro!');
         } else if (result.needsLogin) {
-            alert(`⚠️ A sessão expirou ou não foi salva.\nVocê precisa refazer o login no Gov.br/SED para que o robô obtenha o acesso.`);
-            // Abre uma aba popup conectada ao servidor para renovar o acesso (Cookies)
-            window.open(`${RPA_SERVER_URL}/api/login-govbr?profId=${currentUser.id}`, 'LoginSED', 'width=500,height=600');
+            alert(`⚠️ A sessão expirou ou não foi iniciada.\nO robô precisa autenticar no Estado com suas credenciais.`);
+            autenticarRoboRpa(sincronizarSalaDoFuturo);
         } else {
             alert('❌ Erro na sincronização: ' + result.error);
         }
@@ -4648,8 +4647,8 @@ async function buscarTurmasDoEstadoRpa() {
         if (result.success) {
             renderSelectsMapeamentoRpa(result.turmas);
         } else if (result.needsLogin) {
-            alert('⚠️ Sua sessão expirou. Você precisa re-autenticar o robô no Gov.br.');
-            window.open(`${RPA_SERVER_URL}/api/login-govbr?profId=${currentUser.id}`, 'LoginSED', 'width=500,height=600');
+            alert('⚠️ Sua sessão expirou. O robô precisa autenticar no Estado.');
+            autenticarRoboRpa(buscarTurmasDoEstadoRpa);
         } else {
             alert('❌ Erro: ' + result.error);
         }
@@ -4713,6 +4712,43 @@ async function salvarMapeamentoTurmasEstado() {
     await persistirDados();
     alert(`✅ Mapeamento salvo! ${vinculadas} turmas vinculadas ao Estado.`);
     closeModal('modalMapeamentoTurmas');
+}
+
+async function autenticarRoboRpa(callbackSucesso) {
+    const usuario = prompt('🤖 Acesso ao Robô SED / Sala do Futuro\n\nDigite seu Usuário da SED (Ex: rg123456sp ou CPF):');
+    if (!usuario) return;
+    const senha = prompt('Digite sua Senha da SED:');
+    if (!senha) return;
+
+    try {
+        const btns = document.querySelectorAll('#btnSyncSalaFuturo, #btnBuscarTurmasRpa');
+        btns.forEach(b => { b.dataset.originalText = b.innerHTML; b.innerHTML = '⏳ Autenticando (Aguarde)...'; b.disabled = true; });
+
+        const response = await fetch(`${RPA_SERVER_URL}/api/login-rpa`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                professorId: currentUser.id,
+                usuarioSED: usuario,
+                senhaSED: senha
+            })
+        });
+        const result = await response.json();
+        
+        btns.forEach(b => { b.innerHTML = b.dataset.originalText; b.disabled = false; });
+
+        if (result.success) {
+            alert('✅ Robô conectado com sucesso ao Estado!');
+            if (callbackSucesso) callbackSucesso(); // Retoma a ação (Chamada ou Turmas) automaticamente
+        } else {
+            alert('❌ Falha ao logar na SED:\n' + (result.error || 'Verifique se o usuário e senha estão corretos.'));
+        }
+    } catch (e) {
+        console.error(e);
+        alert('❌ Erro de conexão com o servidor RPA.');
+        const btns = document.querySelectorAll('#btnSyncSalaFuturo, #btnBuscarTurmasRpa');
+        btns.forEach(b => { if(b.dataset.originalText) { b.innerHTML = b.dataset.originalText; b.disabled = false; } });
+    }
 }
 
 function desvincularTutorado(id) {
