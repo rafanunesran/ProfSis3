@@ -178,6 +178,6 @@ app.post('/api/fetch-turmas-estado', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(\`🤖 Servidor RPA rodando em http://localhost:\${PORT}\`);
+    console.log(`🤖 Servidor RPA rodando na porta ${PORT}`);
     console.log('Lembre-se de verificar o mapeamento dos seletores do site da Secretaria Escolar.');
 });
