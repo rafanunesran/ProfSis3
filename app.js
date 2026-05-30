@@ -78,6 +78,7 @@ async function iniciarApp() {
 
         // Injeta botão de Perfil e aplica tema
         injectProfileButton();
+        injectSyncLoteButton(); // [NOVO] Injeta o botão de Sincronização em Lote
         aplicarTemaSalvo();
 
         // Sincroniza marcadores AEE de toda a escola para a equipe
@@ -219,6 +220,34 @@ function injectProfileButton() {
     // Insere antes do botão Sair (e depois do botão de Gestor se houver)
     const btnSair = container.querySelector('.btn-danger');
     container.insertBefore(btn, btnSair);
+}
+
+// Função para injetar o botão de Sync em Lote ABAIXO do menu atual
+function injectSyncLoteButton() {
+    // Gestor não tem diário de classe na SED, ocultamos o botão
+    if (currentViewMode === 'gestor') return; 
+    
+    // Pega o elemento <header> inteiro para colocar a barra de sincronização logo abaixo dele
+    const header = document.querySelector('header');
+    if (!header || document.getElementById('btnSyncLoteContainer')) return;
+
+    const wrapper = document.createElement('div');
+    wrapper.id = 'btnSyncLoteContainer';
+    wrapper.style.textAlign = 'right';
+    wrapper.style.padding = '8px 20px';
+    wrapper.style.backgroundColor = '#fffaf0'; // Fundo levemente alaranjado para destaque
+    wrapper.style.borderBottom = '1px solid #e2e8f0';
+
+    const btn = document.createElement('button');
+    btn.id = 'btnSyncLote';
+    btn.className = 'btn btn-sm btn-warning';
+    btn.style.fontWeight = 'bold';
+    btn.innerHTML = '🤖 Sincronizar SED (Últimos 7 dias)';
+    btn.onclick = sincronizarLoteSED;
+
+    wrapper.appendChild(btn);
+    // Insere o wrapper logo APÓS o header, criando uma faixa exclusiva para o botão
+    header.parentNode.insertBefore(wrapper, header.nextSibling);
 }
 
 // --- SISTEMA DE TEMAS ---
@@ -1774,6 +1803,122 @@ async function sincronizarSalaDoFuturo() {
     } finally {
         const btn = document.getElementById('btnSyncSalaFuturo');
         btn.innerHTML = '🤖 Sincronizar com Sala do Futuro (RPA)';
+        btn.disabled = false;
+    }
+}
+
+async function sincronizarLoteSED() {
+    if (!currentUser || currentViewMode === 'gestor') return alert('Ação apenas para professores.');
+
+    // Encontrar os pacotes não sincronizados dos últimos 7 dias
+    const hoje = new Date();
+    hoje.setHours(0,0,0,0);
+    const limiteDias = new Date(hoje);
+    limiteDias.setDate(limiteDias.getDate() - 7);
+
+    const pacotesMap = {}; 
+
+    // 1. Agrupar presenças pendentes
+    (data.presencas || []).forEach(p => {
+        if (p.sincronizadoSED) return;
+        
+        const parts = p.data.split('-');
+        const dData = new Date(parts[0], parts[1]-1, parts[2]);
+        
+        if (dData >= limiteDias && dData <= hoje) {
+            const est = (data.estudantes || []).find(e => e.id == p.id_estudante);
+            if (!est) return;
+            
+            const turmaId = est.id_turma;
+            const key = `${turmaId}_${p.data}`;
+            
+            if (!pacotesMap[key]) pacotesMap[key] = { turmaId, dataChamada: p.data, alunos: [], registroAula: '', idsPresencas: [] };
+            pacotesMap[key].idsPresencas.push(p.id);
+        }
+    });
+
+    // 2. Agrupar Registros de Aula pendentes
+    (data.registrosAula || []).forEach(r => {
+        if (r.sincronizadoSED) return;
+        
+        const parts = r.data.split('-');
+        const dData = new Date(parts[0], parts[1]-1, parts[2]);
+        
+        if (dData >= limiteDias && dData <= hoje) {
+            const key = `${r.id_turma}_${r.data}`;
+            if (!pacotesMap[key]) pacotesMap[key] = { turmaId: r.id_turma, dataChamada: r.data, alunos: [], registroAula: r.conteudo, idsPresencas: [], idsRegistros: [] };
+            else pacotesMap[key].registroAula = r.conteudo;
+
+            if (!pacotesMap[key].idsRegistros) pacotesMap[key].idsRegistros = [];
+            pacotesMap[key].idsRegistros.push(r.id);
+        }
+    });
+
+    const pacotesDeChamada = Object.values(pacotesMap);
+
+    if (pacotesDeChamada.length === 0) {
+        return alert('✅ Não há chamadas ou registros pendentes de envio para a SED nos últimos 7 dias.');
+    }
+
+    // 3. Construir lista cruzada de alunos para o Playwright (Presentes vs Faltas)
+    pacotesDeChamada.forEach(pacote => {
+        const estudantesDaTurma = (data.estudantes || []).filter(e => e.id_turma == pacote.turmaId && (!e.status || e.status === 'Ativo'));
+        const faltasDoDia = (data.presencas || []).filter(p => p.data === pacote.dataChamada && p.status === 'falta');
+
+        pacote.alunos = estudantesDaTurma.map(e => {
+            const isFalta = faltasDoDia.some(f => f.id_estudante == e.id);
+            return {
+                id_estudante: e.id,
+                nome_completo: e.nome_completo, // Robô usará isso na linha da tabela da SED
+                presente: !isFalta
+            };
+        });
+    });
+
+    // UX de Loading
+    const btn = document.getElementById('btnSyncLote');
+    const oldText = btn.innerHTML;
+    btn.innerHTML = '⏳ Sincronizando Dias... (Aguarde)';
+    btn.disabled = true;
+
+    try {
+        const rpaServerUrl = `${RPA_SERVER_URL}/api/sync-lote`; 
+        const response = await fetch(rpaServerUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ professorId: currentUser.id, pacotesDeChamada })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            // Marca como sincronizado localmente os registros que tiveram sucesso
+            result.detalhes.forEach(resPacote => {
+                if (resPacote.success) {
+                    const chave = `${resPacote.turma}_${resPacote.data}`;
+                    const pacoteOriginal = pacotesMap[chave];
+                    if (pacoteOriginal) {
+                        (pacoteOriginal.idsPresencas || []).forEach(id => { const p = data.presencas.find(x => x.id == id); if (p) p.sincronizadoSED = true; });
+                        (pacoteOriginal.idsRegistros || []).forEach(id => { const r = data.registrosAula.find(x => x.id == id); if (r) r.sincronizadoSED = true; });
+                    }
+                }
+            });
+            await persistirDados();
+            
+            const falhas = result.detalhes.filter(d => !d.success);
+            if (falhas.length > 0) alert(`⚠️ Sincronização concluída com avisos!\n${falhas.length} pacotes falharam (talvez a chamada já estava fechada na SED).`);
+            else alert('✅ Toda a semana foi sincronizada com sucesso na Sala do Futuro!');
+        } else if (result.needsLogin) {
+            alert('⚠️ A sessão expirou ou não foi iniciada. O robô precisa de autenticação.');
+            if (typeof autenticarRoboRpa === 'function') autenticarRoboRpa(sincronizarLoteSED);
+        } else {
+            alert('❌ Erro na sincronização: ' + result.error);
+        }
+    } catch (error) {
+        console.error("Erro no RPA Lote:", error);
+        alert(`❌ Erro ao conectar com o servidor RPA (${RPA_SERVER_URL}). O servidor está online?`);
+    } finally {
+        btn.innerHTML = oldText;
         btn.disabled = false;
     }
 }
