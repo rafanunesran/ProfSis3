@@ -99,52 +99,68 @@ app.post('/api/sync-chamada', async (req, res) => {
 
 // Rota para realizar o login REAL do professor na SED usando credenciais
 app.post('/api/login-rpa', async (req, res) => {
-    const { professorId, usuarioSED, senhaSED } = req.body;
+    const { professorId, usuarioSED, senhaSED, modoInterativo } = req.body;
 
-    if (!professorId || !usuarioSED || !senhaSED) {
-        return res.status(400).json({ success: false, error: 'Usuário ou senha ausentes.' });
+    if (!professorId) {
+        return res.status(400).json({ success: false, error: 'ID do professor ausente.' });
     }
 
     let browser;
     try {
         console.log(`🤖 Iniciando login real na SED para o professor ${professorId}...`);
-        browser = await chromium.launch({ headless: true });
+        // Se for interativo, a janela do navegador abre visível para o humano operar
+        browser = await chromium.launch({ headless: !modoInterativo });
         const context = await browser.newContext();
         const page = await context.newPage();
         
         await page.goto('https://saladofuturo.educacao.sp.gov.br/');
 
-        // Usando Locators robustos que não geram conflito caso a tela demore a carregar
-        const userInput = page.locator('input[name="name"], input[name="login"], input#name, input[type="text"]').first();
-        const passInput = page.locator('input[name="senha"], input#senha, input[type="password"]').first();
-        const btnLogin = page.locator('button#btnEntrar, button:has-text("Acessar"), input#btnEntrar, button[type="submit"]').first();
-        
-        await userInput.waitFor({ state: 'visible', timeout: 15000 });
-        await userInput.fill(usuarioSED);
-        await passInput.fill(senhaSED);
-        
-        if (await btnLogin.isVisible()) {
-            await btnLogin.click();
+        if (modoInterativo) {
+            console.log(`⏳ Aguardando o professor logar manualmente na janela aberta...`);
+            
+            // Dá até 3 minutos para preencher Gov.br, 2FA, etc...
+            await page.waitForFunction(() => {
+                return !window.location.href.includes('login') && !window.location.href.includes('logon');
+            }, { timeout: 180000 }).catch(() => { throw new Error('Tempo esgotado para o login manual (3 minutos).'); });
+            
+            // Espera uns segundos adicionais para garantir que os cookies da sessão firmaram
+            await page.waitForTimeout(3000);
         } else {
-            await passInput.press('Enter');
+            if (!usuarioSED || !senhaSED) throw new Error('Credenciais ausentes para login automático.');
+            
+            // Usando Locators robustos que não geram conflito caso a tela demore a carregar
+            const userInput = page.locator('input[name="name"], input[name="login"], input#name, input[type="text"]').first();
+            const passInput = page.locator('input[name="senha"], input#senha, input[type="password"]').first();
+            const btnLogin = page.locator('button#btnEntrar, button:has-text("Acessar"), input#btnEntrar, button[type="submit"]').first();
+            
+            await userInput.waitFor({ state: 'visible', timeout: 15000 });
+            await userInput.fill(usuarioSED);
+            await passInput.fill(senhaSED);
+            
+            if (await btnLogin.isVisible()) {
+                await btnLogin.click();
+            } else {
+                await passInput.press('Enter');
+            }
+
+            // Aguarda a tela de login sumir OU um alerta de erro aparecer
+            await page.waitForFunction(() => {
+                const hasPasswordInput = document.querySelector('input[type="password"], input[name="senha"]');
+                const hasError = document.querySelector('.alert-danger, .toast-error, .mensagem-erro, #erroLogin');
+                return !hasPasswordInput || hasError;
+            }, { timeout: 15000 }).catch(() => { throw new Error('Tempo limite. O portal pode estar lento.'); });
+
+            // Verifica se ainda estamos na tela de login (ou seja, deu erro)
+            if (await passInput.isVisible()) {
+                const errorDiv = page.locator('.alert-danger, .toast-error, .mensagem-erro, #erroLogin').first();
+                const errorText = await errorDiv.isVisible() ? await errorDiv.innerText() : 'Usuário ou senha incorretos.';
+                throw new Error(errorText);
+            }
+            
+            // Sucesso: Aguarda a página principal carregar antes de pegar os cookies
+            await page.waitForLoadState('domcontentloaded');
         }
 
-        // Aguarda a tela de login sumir OU um alerta de erro aparecer
-        await page.waitForFunction(() => {
-            const hasPasswordInput = document.querySelector('input[type="password"], input[name="senha"]');
-            const hasError = document.querySelector('.alert-danger, .toast-error, .mensagem-erro, #erroLogin');
-            return !hasPasswordInput || hasError;
-        }, { timeout: 15000 }).catch(() => { throw new Error('Tempo limite. O portal pode estar lento.'); });
-
-        // Verifica se ainda estamos na tela de login (ou seja, deu erro)
-        if (await passInput.isVisible()) {
-            const errorDiv = page.locator('.alert-danger, .toast-error, .mensagem-erro, #erroLogin').first();
-            const errorText = await errorDiv.isVisible() ? await errorDiv.innerText() : 'Usuário ou senha incorretos.';
-            throw new Error(errorText);
-        }
-
-        // Sucesso: Aguarda a página principal carregar antes de pegar os cookies
-        await page.waitForLoadState('domcontentloaded');
         console.log(`✅ Login realizado com sucesso para ${professorId}!`);
         sessionsDb[professorId] = await context.cookies();
 

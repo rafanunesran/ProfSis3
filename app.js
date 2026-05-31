@@ -242,7 +242,7 @@ function injectSyncLoteButton() {
     btn.id = 'btnSyncLote';
     btn.className = 'btn btn-sm btn-warning';
     btn.style.fontWeight = 'bold';
-    btn.innerHTML = '🤖 Sincronizar SED (Últimos 7 dias)';
+    btn.innerHTML = '🤖 Sincronizar Sala Sem futuro (Últimos 7 dias)';
     btn.onclick = sincronizarLoteSED;
 
     wrapper.appendChild(btn);
@@ -1014,7 +1014,7 @@ function renderTurmas() {
         
     const btnSyncEstado = (currentViewMode !== 'gestor') 
         ? `<div style="margin-bottom: 15px; padding: 10px; background: #fffaf0; border: 1px solid #fbd38d; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-             <span>🤖 Mapeamento Sala do Futuro (SED)</span>
+             <span>🤖 Mapeamento Sala Sem futuro</span>
              <button class="btn btn-warning" onclick="abrirModalMapeamentoTurmasEstado()">Vincular Turmas</button>
            </div>` 
         : '';
@@ -1646,7 +1646,7 @@ async function renderChamada() {
         </div>
 
         <button class="btn btn-success" id="btnSalvarChamada" onclick="salvarChamadaManual()" style="width:100%; margin-top:15px; padding: 12px; font-size: 16px;">💾 Confirmar e Salvar Chamada</button>
-        <button class="btn btn-warning" id="btnSyncSalaFuturo" onclick="sincronizarSalaDoFuturo()" style="width:100%; margin-top:10px; padding: 12px; font-size: 16px;">🤖 Sincronizar com Sala do Futuro (RPA)</button>
+        <button class="btn btn-warning" id="btnSyncSalaFuturo" onclick="sincronizarSalaDoFuturo()" style="width:100%; margin-top:10px; padding: 12px; font-size: 16px;">🤖 Sincronizar com Sala Sem futuro</button>
     `;
     document.getElementById('tabChamada').innerHTML = html;
     
@@ -1790,7 +1790,7 @@ async function sincronizarSalaDoFuturo() {
         const result = await response.json();
         
         if (result.success) {
-            alert('✅ Chamada sincronizada com sucesso na Sala do Futuro!');
+            alert('✅ Chamada sincronizada com sucesso na Sala Sem futuro!');
         } else if (result.needsLogin) {
             alert(`⚠️ A sessão expirou ou não foi iniciada.\nO robô precisa autenticar no Estado com suas credenciais.`);
             autenticarRoboRpa(sincronizarSalaDoFuturo);
@@ -1802,7 +1802,7 @@ async function sincronizarSalaDoFuturo() {
         alert(`❌ Erro ao conectar com o servidor RPA.\nVerifique se a URL do backend (${RPA_SERVER_URL}) está correta e online.`);
     } finally {
         const btn = document.getElementById('btnSyncSalaFuturo');
-        btn.innerHTML = '🤖 Sincronizar com Sala do Futuro (RPA)';
+        btn.innerHTML = '🤖 Sincronizar com Sala Sem futuro';
         btn.disabled = false;
     }
 }
@@ -1907,7 +1907,7 @@ async function sincronizarLoteSED() {
             
             const falhas = result.detalhes.filter(d => !d.success);
             if (falhas.length > 0) alert(`⚠️ Sincronização concluída com avisos!\n${falhas.length} pacotes falharam (talvez a chamada já estava fechada na SED).`);
-            else alert('✅ Toda a semana foi sincronizada com sucesso na Sala do Futuro!');
+            else alert('✅ Toda a semana foi sincronizada com sucesso na Sala Sem futuro!');
         } else if (result.needsLogin) {
             alert('⚠️ A sessão expirou ou não foi iniciada. O robô precisa de autenticação.');
             if (typeof autenticarRoboRpa === 'function') autenticarRoboRpa(sincronizarLoteSED);
@@ -4749,8 +4749,8 @@ function abrirModalMapeamentoTurmasEstado() {
 
     document.getElementById('modalMapeamentoTurmas').innerHTML = `
         <div class="modal-content" style="max-width: 700px;">
-            <h3>Mapeamento de Turmas: ProfSis3 ↔ Sala do Futuro</h3>
-            <p style="font-size:13px; color:#666;">Vincule suas turmas locais com as turmas do portal do Governo (SED).</p>
+            <h3>Mapeamento de Turmas: ProfSis3 ↔ Sala Sem futuro</h3>
+            <p style="font-size:13px; color:#666;">Vincule suas turmas locais com as turmas do portal do Governo.</p>
             
             <button class="btn btn-primary" id="btnBuscarTurmasRpa" onclick="buscarTurmasDoEstadoRpa()">
                 🔍 Buscar Turmas do Estado (RPA)
@@ -4860,22 +4860,19 @@ async function salvarMapeamentoTurmasEstado() {
 }
 
 async function autenticarRoboRpa(callbackSucesso) {
-    const usuario = prompt('🤖 Acesso ao Robô SED / Sala do Futuro\n\nDigite seu Usuário da SED (Ex: rg123456sp ou CPF):');
-    if (!usuario) return;
-    const senha = prompt('Digite sua Senha da SED:');
-    if (!senha) return;
+    const confirmacao = confirm('🤖 Acesso ao Robô Sala Sem futuro\n\nUma nova janela do navegador será aberta para você fazer o login manualmente (via Gov.br ou SED). Após você logar e a página inicial carregar, a janela fechará sozinha e o robô salvará sua sessão.\n\nDeseja continuar?');
+    if (!confirmacao) return;
 
     try {
         const btns = document.querySelectorAll('#btnSyncSalaFuturo, #btnBuscarTurmasRpa');
-        btns.forEach(b => { b.dataset.originalText = b.innerHTML; b.innerHTML = '⏳ Autenticando (Aguarde)...'; b.disabled = true; });
+        btns.forEach(b => { b.dataset.originalText = b.innerHTML; b.innerHTML = '⏳ Aguardando seu login na outra janela...'; b.disabled = true; });
 
         const response = await fetch(`${RPA_SERVER_URL}/api/login-rpa`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 professorId: currentUser.id,
-                usuarioSED: usuario,
-                senhaSED: senha
+                modoInterativo: true
             })
         });
         const result = await response.json();
@@ -4886,11 +4883,11 @@ async function autenticarRoboRpa(callbackSucesso) {
             alert('✅ Robô conectado com sucesso ao Estado!');
             if (callbackSucesso) callbackSucesso(); // Retoma a ação (Chamada ou Turmas) automaticamente
         } else {
-            alert('❌ Falha ao logar na SED:\n' + (result.error || 'Verifique se o usuário e senha estão corretos.'));
+            alert('❌ Falha na autenticação:\n' + (result.error || 'Tempo esgotado ou janela fechada antes do login.'));
         }
     } catch (e) {
         console.error(e);
-        alert('❌ Erro de conexão com o servidor RPA.');
+        alert('❌ Erro de conexão com o servidor RPA.\nVerifique se o servidor está rodando localmente, pois o modo interativo requer o servidor na sua máquina.');
         const btns = document.querySelectorAll('#btnSyncSalaFuturo, #btnBuscarTurmasRpa');
         btns.forEach(b => { if(b.dataset.originalText) { b.innerHTML = b.dataset.originalText; b.disabled = false; } });
     }

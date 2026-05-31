@@ -98,45 +98,57 @@ app.post('/api/sync-chamada', async (req, res) => {
 
 // Rota para realizar o login REAL do professor na SED usando credenciais
 app.post('/api/login-rpa', async (req, res) => {
-    const { professorId, usuarioSED, senhaSED } = req.body;
+    const { professorId, usuarioSED, senhaSED, modoInterativo } = req.body;
 
-    if (!professorId || !usuarioSED || !senhaSED) {
-        return res.status(400).json({ success: false, error: 'Usuário ou senha ausentes.' });
+    if (!professorId) {
+        return res.status(400).json({ success: false, error: 'ID do professor ausente.' });
     }
 
     let browser;
     try {
         console.log(`🤖 Iniciando login real na SED para o professor ${professorId}...`);
-        browser = await chromium.launch({ headless: true });
+        browser = await chromium.launch({ headless: !modoInterativo });
         const context = await browser.newContext();
         const page = await context.newPage();
         
         await page.goto('https://saladofuturo.educacao.sp.gov.br/');
 
-        // Aguarda os campos de login (fallback abrangente para seletores da Prodesp)
-        await page.waitForSelector('input[name="name"], input[name="login"], input#name', { timeout: 15000 });
-        
-        const userInput = await page.$('input[name="name"], input[name="login"], input#name');
-        if (userInput) await userInput.fill(usuarioSED);
-        
-        const passInput = await page.$('input[name="senha"], input#senha, input[type="password"]');
-        if (passInput) await passInput.fill(senhaSED);
-        
-        const btnLogin = await page.$('button#btnEntrar, button:has-text("Acessar"), input#btnEntrar, button[type="submit"]');
-        if (btnLogin) {
-            await btnLogin.click();
+        if (modoInterativo) {
+            console.log(`⏳ Aguardando o professor logar manualmente na janela aberta...`);
+            
+            await page.waitForFunction(() => {
+                return !window.location.href.includes('login') && !window.location.href.includes('logon');
+            }, { timeout: 180000 }).catch(() => { throw new Error('Tempo esgotado para o login manual (3 minutos).'); });
+            
+            await page.waitForTimeout(3000);
         } else {
-            await passInput.press('Enter');
-        }
+            if (!usuarioSED || !senhaSED) throw new Error('Credenciais ausentes para login automático.');
+            
+            // Aguarda os campos de login (fallback abrangente para seletores da Prodesp)
+            await page.waitForSelector('input[name="name"], input[name="login"], input#name', { timeout: 15000 });
+            
+            const userInput = await page.$('input[name="name"], input[name="login"], input#name');
+            if (userInput) await userInput.fill(usuarioSED);
+            
+            const passInput = await page.$('input[name="senha"], input#senha, input[type="password"]');
+            if (passInput) await passInput.fill(senhaSED);
+            
+            const btnLogin = await page.$('button#btnEntrar, button:has-text("Acessar"), input#btnEntrar, button[type="submit"]');
+            if (btnLogin) {
+                await btnLogin.click();
+            } else {
+                await passInput.press('Enter');
+            }
 
-        // Aguarda mudança de URL (saída do login) ou erro na tela
-        await page.waitForFunction(() => {
-            return !window.location.href.includes('login') || document.querySelector('.alert-danger, .toast-error, .mensagem-erro, #erroLogin');
-        }, { timeout: 15000 }).catch(() => { throw new Error('Tempo limite. O portal pode estar lento.'); });
+            // Aguarda mudança de URL (saída do login) ou erro na tela
+            await page.waitForFunction(() => {
+                return !window.location.href.includes('login') || document.querySelector('.alert-danger, .toast-error, .mensagem-erro, #erroLogin');
+            }, { timeout: 15000 }).catch(() => { throw new Error('Tempo limite. O portal pode estar lento.'); });
 
-        if (page.url().includes('login')) {
-            const errorDiv = await page.$('.alert-danger, .toast-error, .mensagem-erro, #erroLogin');
-            throw new Error(errorDiv ? await errorDiv.innerText() : 'Usuário ou senha incorretos.');
+            if (page.url().includes('login')) {
+                const errorDiv = await page.$('.alert-danger, .toast-error, .mensagem-erro, #erroLogin');
+                throw new Error(errorDiv ? await errorDiv.innerText() : 'Usuário ou senha incorretos.');
+            }
         }
 
         // Sucesso: captura os cookies validados da sessão real
