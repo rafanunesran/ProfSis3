@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "ProfSis3 RPA - Sala do Futuro",
+  "version": "1.0",
+  "description": "Automatiza a integração e o preenchimento de diários na Secretaria Digital de SP.",
+  "permissions": [
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://saladofuturo.educacao.sp.gov.br/*",
+    "https://*.educacao.sp.gov.br/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost/*", "https://*.profsis3.com/*", "https://*.web.app/*", "https://*.firebaseapp.com/*"],
+      "js": ["content_profsis.js"]
+    },
+    {
+      "matches": ["https://saladofuturo.educacao.sp.gov.br/*"],
+      "js": ["content_sed.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
