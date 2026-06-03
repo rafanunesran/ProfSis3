@@ -1,8 +1,5 @@
 // --- LÓGICA PRINCIPAL (PROFESSOR/APP) ---
 
-// URL do seu servidor backend RPA. Troque o link abaixo pela URL real do seu deploy
-const RPA_SERVER_URL = typeof isLocalhost !== 'undefined' && isLocalhost ? 'http://localhost:3000' : 'https://profsis-rpa.onrender.com';
-
 let currentViewMode = null; // Controle de estado: 'gestor' ou 'professor'
 
 async function iniciarApp() {
@@ -78,7 +75,6 @@ async function iniciarApp() {
 
         // Injeta botão de Perfil e aplica tema
         injectProfileButton();
-        injectSyncLoteButton(); // [NOVO] Injeta o botão de Sincronização em Lote
         aplicarTemaSalvo();
 
         // Sincroniza marcadores AEE de toda a escola para a equipe
@@ -220,34 +216,6 @@ function injectProfileButton() {
     // Insere antes do botão Sair (e depois do botão de Gestor se houver)
     const btnSair = container.querySelector('.btn-danger');
     container.insertBefore(btn, btnSair);
-}
-
-// Função para injetar o botão de Sync em Lote ABAIXO do menu atual
-function injectSyncLoteButton() {
-    // Gestor não tem diário de classe na SED, ocultamos o botão
-    if (currentViewMode === 'gestor') return; 
-    
-    // Pega o elemento <header> inteiro para colocar a barra de sincronização logo abaixo dele
-    const header = document.querySelector('header');
-    if (!header || document.getElementById('btnSyncLoteContainer')) return;
-
-    const wrapper = document.createElement('div');
-    wrapper.id = 'btnSyncLoteContainer';
-    wrapper.style.textAlign = 'right';
-    wrapper.style.padding = '8px 20px';
-    wrapper.style.backgroundColor = '#fffaf0'; // Fundo levemente alaranjado para destaque
-    wrapper.style.borderBottom = '1px solid #e2e8f0';
-
-    const btn = document.createElement('button');
-    btn.id = 'btnSyncLote';
-    btn.className = 'btn btn-sm btn-warning';
-    btn.style.fontWeight = 'bold';
-    btn.innerHTML = '🤖 Sincronizar Sala Sem futuro (Últimos 7 dias)';
-    btn.onclick = sincronizarLoteSED;
-
-    wrapper.appendChild(btn);
-    // Insere o wrapper logo APÓS o header, criando uma faixa exclusiva para o botão
-    header.parentNode.insertBefore(wrapper, header.nextSibling);
 }
 
 // --- SISTEMA DE TEMAS ---
@@ -1012,14 +980,7 @@ function renderTurmas() {
            </div>` 
         : '';
         
-    const btnSyncEstado = (currentViewMode !== 'gestor') 
-        ? `<div style="margin-bottom: 15px; padding: 10px; background: #fffaf0; border: 1px solid #fbd38d; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-             <span>🤖 Mapeamento Sala Sem futuro</span>
-             <button class="btn btn-warning" onclick="abrirModalMapeamentoTurmasEstado()">Vincular Turmas</button>
-           </div>` 
-        : '';
-
-    document.getElementById('listaTurmas').innerHTML = btnMassa + btnSyncEstado + (html || '<p class="empty-state">Nenhuma turma.</p>');
+    document.getElementById('listaTurmas').innerHTML = btnMassa + (html || '<p class="empty-state">Nenhuma turma.</p>');
 }
 
 async function abrirModalNovaTurma() {
@@ -1646,7 +1607,6 @@ async function renderChamada() {
         </div>
 
         <button class="btn btn-success" id="btnSalvarChamada" onclick="salvarChamadaManual()" style="width:100%; margin-top:15px; padding: 12px; font-size: 16px;">💾 Confirmar e Salvar Chamada</button>
-        <button class="btn btn-warning" id="btnSyncSalaFuturo" onclick="sincronizarSalaDoFuturo()" style="width:100%; margin-top:10px; padding: 12px; font-size: 16px;">🤖 Sincronizar com Sala Sem futuro</button>
     `;
     document.getElementById('tabChamada').innerHTML = html;
     
@@ -1732,195 +1692,6 @@ async function salvarChamadaManual() {
     await persistirDados();
     alert('Chamada salva e sincronizada com a gestão!');
     renderChamada(); // Atualiza para refletir contagens
-}
-
-async function sincronizarSalaDoFuturo() {
-    const dataChamada = document.getElementById('chamadaData').value;
-    const checks = document.querySelectorAll('.presenca-check');
-    const registroAulaConteudo = document.getElementById('chamadaRegistroAula').value;
-    
-    const alunos = [];
-    checks.forEach(chk => {
-        alunos.push({
-            id_estudante: parseInt(chk.getAttribute('data-id')),
-            presente: chk.checked
-        });
-    });
-
-    // Salva o Registro da Aula localmente antes de sincronizar
-    if (registroAulaConteudo.trim() !== '') {
-        if (!data.registrosAula) data.registrosAula = [];
-        const idxRegistro = data.registrosAula.findIndex(r => r.id_turma == turmaAtual && r.data == dataChamada);
-        if (idxRegistro !== -1) {
-            data.registrosAula[idxRegistro].conteudo = registroAulaConteudo;
-        } else {
-            data.registrosAula.push({
-                id: Date.now() + Math.random(),
-                id_turma: turmaAtual,
-                data: dataChamada,
-                conteudo: registroAulaConteudo
-            });
-        }
-        await persistirDados();
-    } else if (data.registrosAula) {
-        data.registrosAula = data.registrosAula.filter(r => !(r.id_turma == turmaAtual && r.data == dataChamada));
-        await persistirDados();
-    }
-
-    try {
-        // URL do servidor Node.js (RPA) que fará o trabalho pesado
-        const rpaServerUrl = `${RPA_SERVER_URL}/api/sync-chamada`; 
-        
-        const btn = document.getElementById('btnSyncSalaFuturo');
-        btn.innerHTML = '⏳ Sincronizando (Aguarde o Robô)...';
-        btn.disabled = true;
-
-        const response = await fetch(rpaServerUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                professorId: currentUser.id,
-                dataChamada: dataChamada,
-                turmaId: turmaAtual,
-                alunos: alunos,
-                registroAula: registroAulaConteudo
-            })
-        });
-
-        const result = await response.json();
-        
-        if (result.success) {
-            alert('✅ Chamada sincronizada com sucesso na Sala Sem futuro!');
-        } else if (result.needsLogin) {
-            alert(`⚠️ A sessão expirou ou não foi iniciada.\nO robô precisa autenticar no Estado com suas credenciais.`);
-            autenticarRoboRpa(sincronizarSalaDoFuturo);
-        } else {
-            alert('❌ Erro na sincronização: ' + result.error);
-        }
-    } catch (error) {
-        console.error("Erro no RPA:", error);
-        alert(`❌ Erro ao conectar com o servidor RPA.\nVerifique se a URL do backend (${RPA_SERVER_URL}) está correta e online.`);
-    } finally {
-        const btn = document.getElementById('btnSyncSalaFuturo');
-        btn.innerHTML = '🤖 Sincronizar com Sala Sem futuro';
-        btn.disabled = false;
-    }
-}
-
-async function sincronizarLoteSED() {
-    if (!currentUser || currentViewMode === 'gestor') return alert('Ação apenas para professores.');
-
-    // Encontrar os pacotes não sincronizados dos últimos 7 dias
-    const hoje = new Date();
-    hoje.setHours(0,0,0,0);
-    const limiteDias = new Date(hoje);
-    limiteDias.setDate(limiteDias.getDate() - 7);
-
-    const pacotesMap = {}; 
-
-    // 1. Agrupar presenças pendentes
-    (data.presencas || []).forEach(p => {
-        if (p.sincronizadoSED) return;
-        
-        const parts = p.data.split('-');
-        const dData = new Date(parts[0], parts[1]-1, parts[2]);
-        
-        if (dData >= limiteDias && dData <= hoje) {
-            const est = (data.estudantes || []).find(e => e.id == p.id_estudante);
-            if (!est) return;
-            
-            const turmaId = est.id_turma;
-            const key = `${turmaId}_${p.data}`;
-            
-            if (!pacotesMap[key]) pacotesMap[key] = { turmaId, dataChamada: p.data, alunos: [], registroAula: '', idsPresencas: [] };
-            pacotesMap[key].idsPresencas.push(p.id);
-        }
-    });
-
-    // 2. Agrupar Registros de Aula pendentes
-    (data.registrosAula || []).forEach(r => {
-        if (r.sincronizadoSED) return;
-        
-        const parts = r.data.split('-');
-        const dData = new Date(parts[0], parts[1]-1, parts[2]);
-        
-        if (dData >= limiteDias && dData <= hoje) {
-            const key = `${r.id_turma}_${r.data}`;
-            if (!pacotesMap[key]) pacotesMap[key] = { turmaId: r.id_turma, dataChamada: r.data, alunos: [], registroAula: r.conteudo, idsPresencas: [], idsRegistros: [] };
-            else pacotesMap[key].registroAula = r.conteudo;
-
-            if (!pacotesMap[key].idsRegistros) pacotesMap[key].idsRegistros = [];
-            pacotesMap[key].idsRegistros.push(r.id);
-        }
-    });
-
-    const pacotesDeChamada = Object.values(pacotesMap);
-
-    if (pacotesDeChamada.length === 0) {
-        return alert('✅ Não há chamadas ou registros pendentes de envio para a SED nos últimos 7 dias.');
-    }
-
-    // 3. Construir lista cruzada de alunos para o Playwright (Presentes vs Faltas)
-    pacotesDeChamada.forEach(pacote => {
-        const estudantesDaTurma = (data.estudantes || []).filter(e => e.id_turma == pacote.turmaId && (!e.status || e.status === 'Ativo'));
-        const faltasDoDia = (data.presencas || []).filter(p => p.data === pacote.dataChamada && p.status === 'falta');
-
-        pacote.alunos = estudantesDaTurma.map(e => {
-            const isFalta = faltasDoDia.some(f => f.id_estudante == e.id);
-            return {
-                id_estudante: e.id,
-                nome_completo: e.nome_completo, // Robô usará isso na linha da tabela da SED
-                presente: !isFalta
-            };
-        });
-    });
-
-    // UX de Loading
-    const btn = document.getElementById('btnSyncLote');
-    const oldText = btn.innerHTML;
-    btn.innerHTML = '⏳ Sincronizando Dias... (Aguarde)';
-    btn.disabled = true;
-
-    try {
-        const rpaServerUrl = `${RPA_SERVER_URL}/api/sync-lote`; 
-        const response = await fetch(rpaServerUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ professorId: currentUser.id, pacotesDeChamada })
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-            // Marca como sincronizado localmente os registros que tiveram sucesso
-            result.detalhes.forEach(resPacote => {
-                if (resPacote.success) {
-                    const chave = `${resPacote.turma}_${resPacote.data}`;
-                    const pacoteOriginal = pacotesMap[chave];
-                    if (pacoteOriginal) {
-                        (pacoteOriginal.idsPresencas || []).forEach(id => { const p = data.presencas.find(x => x.id == id); if (p) p.sincronizadoSED = true; });
-                        (pacoteOriginal.idsRegistros || []).forEach(id => { const r = data.registrosAula.find(x => x.id == id); if (r) r.sincronizadoSED = true; });
-                    }
-                }
-            });
-            await persistirDados();
-            
-            const falhas = result.detalhes.filter(d => !d.success);
-            if (falhas.length > 0) alert(`⚠️ Sincronização concluída com avisos!\n${falhas.length} pacotes falharam (talvez a chamada já estava fechada na SED).`);
-            else alert('✅ Toda a semana foi sincronizada com sucesso na Sala Sem futuro!');
-        } else if (result.needsLogin) {
-            alert('⚠️ A sessão expirou ou não foi iniciada. O robô precisa de autenticação.');
-            if (typeof autenticarRoboRpa === 'function') autenticarRoboRpa(sincronizarLoteSED);
-        } else {
-            alert('❌ Erro na sincronização: ' + result.error);
-        }
-    } catch (error) {
-        console.error("Erro no RPA Lote:", error);
-        alert(`❌ Erro ao conectar com o servidor RPA (${RPA_SERVER_URL}). O servidor está online?`);
-    } finally {
-        btn.innerHTML = oldText;
-        btn.disabled = false;
-    }
 }
 
 async function renderRelatorioMensalFaltas() {
@@ -4733,164 +4504,6 @@ function imprimirRelatorioTutorado(id, nome) {
     const win = window.open('', '', 'width=900,height=800');
     win.document.write(html);
     win.document.close();
-}
-
-// --- MAPEAMENTO DE TURMAS (RPA ESTADO) ---
-function abrirModalMapeamentoTurmasEstado() {
-    if (!document.getElementById('modalMapeamentoTurmas')) {
-        const div = document.createElement('div');
-        div.id = 'modalMapeamentoTurmas';
-        div.className = 'modal';
-        document.body.appendChild(div);
-    }
-    
-    const turmasLocais = data.turmas || [];
-    if (turmasLocais.length === 0) return alert('Você não tem turmas cadastradas.');
-
-    document.getElementById('modalMapeamentoTurmas').innerHTML = `
-        <div class="modal-content" style="max-width: 700px;">
-            <h3>Mapeamento de Turmas: ProfSis3 ↔ Sala Sem futuro</h3>
-            <p style="font-size:13px; color:#666;">Vincule suas turmas locais com as turmas do portal do Governo.</p>
-            
-            <button class="btn btn-primary" id="btnBuscarTurmasRpa" onclick="buscarTurmasDoEstadoRpa()">
-                🔍 Buscar Turmas do Estado (RPA)
-            </button>
-            
-            <div id="areaMapeamentoRpa" style="margin-top: 20px; display: none;">
-                <table style="width:100%;">
-                    <thead>
-                        <tr>
-                            <th>Sua Turma (ProfSis3)</th>
-                            <th>Turma Externa (Portal SED)</th>
-                        </tr>
-                    </thead>
-                    <tbody id="listaMapeamentoRpa"></tbody>
-                </table>
-                <div style="margin-top:20px; text-align:right;">
-                    <button class="btn btn-secondary" onclick="closeModal('modalMapeamentoTurmas')">Cancelar</button>
-                    <button class="btn btn-success" onclick="salvarMapeamentoTurmasEstado()">💾 Salvar Vínculos</button>
-                </div>
-            </div>
-        </div>
-    `;
-    showModal('modalMapeamentoTurmas');
-}
-
-async function buscarTurmasDoEstadoRpa() {
-    const btn = document.getElementById('btnBuscarTurmasRpa');
-    btn.disabled = true;
-    btn.innerHTML = '⏳ O Robô está buscando... (Aguarde)';
-
-    try {
-        const response = await fetch(`${RPA_SERVER_URL}/api/fetch-turmas-estado`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ professorId: currentUser.id })
-        });
-        const result = await response.json();
-
-        if (result.success) {
-            renderSelectsMapeamentoRpa(result.turmas);
-        } else if (result.needsLogin) {
-            alert('⚠️ Sua sessão expirou. O robô precisa autenticar no Estado.');
-            autenticarRoboRpa(buscarTurmasDoEstadoRpa);
-        } else {
-            alert('❌ Erro: ' + result.error);
-        }
-    } catch (error) {
-        console.error(error);
-        alert(`Falha de conexão com o backend RPA (${RPA_SERVER_URL}). O servidor está rodando e online?`);
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '🔍 Buscar Turmas do Estado (RPA)';
-    }
-}
-
-function renderSelectsMapeamentoRpa(turmasEstado) {
-    document.getElementById('areaMapeamentoRpa').style.display = 'block';
-    const turmasLocais = data.turmas || [];
-    const tbody = document.getElementById('listaMapeamentoRpa');
-    
-    let optionsHtml = '<option value="">-- Ignorar ou Não Vinculada --</option>';
-    turmasEstado.forEach(te => {
-        optionsHtml += `<option value="${te.id_sala_do_futuro}">${te.nome_sala_do_futuro}</option>`;
-    });
-
-    tbody.innerHTML = turmasLocais.map(t => {
-        const vinculado = t.integracao_estado ? t.integracao_estado.id_sala_do_futuro : '';
-        return `
-        <tr>
-            <td>${t.nome} ${t.disciplina ? '- ' + t.disciplina : ''}</td>
-            <td>
-                <select class="sel-mapeamento-estado" data-id-local="${t.id}" style="width:100%; padding:5px; border-radius:4px;">
-                    ${optionsHtml.replace(`value="${vinculado}"`, `value="${vinculado}" selected`)}
-                </select>
-            </td>
-        </tr>
-    `}).join('');
-}
-
-async function salvarMapeamentoTurmasEstado() {
-    const selects = document.querySelectorAll('.sel-mapeamento-estado');
-    let vinculadas = 0;
-
-    selects.forEach(sel => {
-        const idLocal = sel.getAttribute('data-id-local');
-        const idEstado = sel.value;
-        const turma = data.turmas.find(t => t.id == idLocal);
-        
-        if (turma) {
-            if (idEstado) {
-                const nomeEstado = sel.options[sel.selectedIndex].text;
-                turma.integracao_estado = {
-                    sincronizado: true,
-                    id_sala_do_futuro: idEstado,
-                    nome_sala_do_futuro: nomeEstado
-                };
-                vinculadas++;
-            } else {
-                delete turma.integracao_estado;
-            }
-        }
-    });
-
-    await persistirDados();
-    alert(`✅ Mapeamento salvo! ${vinculadas} turmas vinculadas ao Estado.`);
-    closeModal('modalMapeamentoTurmas');
-}
-
-async function autenticarRoboRpa(callbackSucesso) {
-    const confirmacao = confirm('🤖 Acesso ao Robô Sala Sem futuro\n\nUma nova janela do navegador será aberta para você fazer o login manualmente (via Gov.br ou SED). Após você logar e a página inicial carregar, a janela fechará sozinha e o robô salvará sua sessão.\n\nDeseja continuar?');
-    if (!confirmacao) return;
-
-    try {
-        const btns = document.querySelectorAll('#btnSyncSalaFuturo, #btnBuscarTurmasRpa');
-        btns.forEach(b => { b.dataset.originalText = b.innerHTML; b.innerHTML = '⏳ Aguardando seu login na outra janela...'; b.disabled = true; });
-
-        const response = await fetch(`${RPA_SERVER_URL}/api/login-rpa`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                professorId: currentUser.id,
-                modoInterativo: true
-            })
-        });
-        const result = await response.json();
-        
-        btns.forEach(b => { b.innerHTML = b.dataset.originalText; b.disabled = false; });
-
-        if (result.success) {
-            alert('✅ Robô conectado com sucesso ao Estado!');
-            if (callbackSucesso) callbackSucesso(); // Retoma a ação (Chamada ou Turmas) automaticamente
-        } else {
-            alert('❌ Falha na autenticação:\n' + (result.error || 'Tempo esgotado ou janela fechada antes do login.'));
-        }
-    } catch (e) {
-        console.error(e);
-        alert('❌ Erro de conexão com o servidor RPA.\nVerifique se o servidor está rodando localmente, pois o modo interativo requer o servidor na sua máquina.');
-        const btns = document.querySelectorAll('#btnSyncSalaFuturo, #btnBuscarTurmasRpa');
-        btns.forEach(b => { if(b.dataset.originalText) { b.innerHTML = b.dataset.originalText; b.disabled = false; } });
-    }
 }
 
 function desvincularTutorado(id) {
