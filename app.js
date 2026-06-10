@@ -6165,7 +6165,10 @@ async function renderGradeHorariaProfessor() {
     let html = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
             <p style="color:#718096; font-size:14px; margin:0;">Configure sua disponibilidade semanal.</p>
-            <button class="btn btn-secondary" onclick="imprimirAgendaMensal()">🖨️ Imprimir Agenda Mensal</button>
+            <div style="display:flex; gap:10px;">
+                <button class="btn btn-info" onclick="abrirModalGerarDocumentoIA()">✨ Gerar documento</button>
+                <button class="btn btn-secondary" onclick="imprimirAgendaMensal()">🖨️ Imprimir Agenda Mensal</button>
+            </div>
         </div>
         <div class="grid" style="grid-template-columns: repeat(5, 1fr); gap: 15px; align-items: start;">
     `;
@@ -6301,6 +6304,318 @@ async function renderGradeHorariaProfessor() {
     }
     html += '</div>';
     container.innerHTML = html;
+}
+
+function abrirModalGerarDocumentoIA() {
+    // Extrai nomes de série de forma inteligente, ignorando formatos colados ou separados (ex: "7º Ano A", "7A", "7ºA" -> "7º Ano", "7", "7º")
+    const getSerieNome = (nome) => {
+        if (!nome) return '';
+        let n = nome.trim();
+        n = n.replace(/[\s-]+[A-Za-z]$/i, '');   // Remove letra com espaço/hífen (ex: "7º Ano A", "7 - B")
+        n = n.replace(/(\d)[A-Za-z]$/i, '$1');   // Remove letra colada em número (ex: "7A" -> "7")
+        n = n.replace(/([ºª])[A-Za-z]$/i, '$1'); // Remove letra colada em símbolo ordinal (ex: "7ºA" -> "7º")
+        return n.trim();
+    };
+    const seriesUnicas = [...new Set((data.turmas || []).map(t => getSerieNome(t.ano_serie || t.nome)))].filter(Boolean);
+    const disciplinasUnicas = [...new Set((data.turmas || []).map(t => t.disciplina))].filter(Boolean);
+
+    // Calcula a próxima semana de segunda a sexta
+    const hoje = new Date();
+    const proximaSegunda = new Date(hoje);
+    proximaSegunda.setDate(hoje.getDate() + ((1 + 7 - hoje.getDay()) % 7 || 7));
+    const proximaSexta = new Date(proximaSegunda);
+    proximaSexta.setDate(proximaSegunda.getDate() + 4);
+    const formatData = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const semanaSugerida = `${formatData(proximaSegunda)} a ${formatData(proximaSexta)}`;
+
+    if (!document.getElementById('modalGerarDocumentoIA')) {
+        const div = document.createElement('div');
+        div.id = 'modalGerarDocumentoIA';
+        div.className = 'modal';
+        div.innerHTML = `
+            <div class="modal-content" style="max-width: 500px;">
+                <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
+                    <h2 style="margin: 0;">✨ Gerar Documento</h2>
+                    <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalGerarDocumentoIA')">×</button>
+                </div>
+                <p style="font-size:13px; color:#666; margin-bottom:15px;">Preencha os dados abaixo para gerar a estrutura do documento.</p>
+                
+                <div style="margin-bottom: 15px;">
+                    <label style="font-weight:bold; display:block; margin-bottom:5px;">Tipo de Documento:</label>
+                    <select id="iaDocTipo" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                        <option value="plano_aula">Plano de Aula</option>
+                    </select>
+                </div>
+                
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom: 15px;">
+                    <div>
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Série / Ano:</label>
+                        <select id="iaDocSerie" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <option value="">Selecione...</option>
+                            ${seriesUnicas.map(s => `<option value="${s}">${s}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Disciplina:</label>
+                        <select id="iaDocDisciplina" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <option value="">Selecione...</option>
+                            ${disciplinasUnicas.map(d => `<option value="${d}">${d}</option>`).join('')}
+                        </select>
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 15px;">
+                    <label style="font-weight:bold; display:block; margin-bottom:5px;">Tema / Assunto:</label>
+                    <input type="text" id="iaDocTema" placeholder="Ex: Revolução Francesa" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label style="font-weight:bold; display:block; margin-bottom:5px;">Semana Vigente:</label>
+                    <input type="text" id="iaDocSemana" value="${semanaSugerida}" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                </div>
+                
+                <div style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
+                    <button class="btn btn-secondary" onclick="closeModal('modalGerarDocumentoIA')">Cancelar</button>
+                    <button class="btn btn-primary" onclick="gerarDocumentoIA()">Gerar Estrutura</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(div);
+    } else {
+        // Atualiza os dropdowns caso o professor tenha adicionado/removido turmas
+        const selSerie = document.getElementById('iaDocSerie');
+        if(selSerie) selSerie.innerHTML = '<option value="">Selecione...</option>' + seriesUnicas.map(s => `<option value="${s}">${s}</option>`).join('');
+        
+        const selDisc = document.getElementById('iaDocDisciplina');
+        if(selDisc) selDisc.innerHTML = '<option value="">Selecione...</option>' + disciplinasUnicas.map(d => `<option value="${d}">${d}</option>`).join('');
+    }
+    
+    const docTema = document.getElementById('iaDocTema');
+    if (docTema) docTema.value = '';
+    const docSerie = document.getElementById('iaDocSerie');
+    if (docSerie) docSerie.value = '';
+    const docDisciplina = document.getElementById('iaDocDisciplina');
+    if (docDisciplina) docDisciplina.value = '';
+    const docSemana = document.getElementById('iaDocSemana');
+    if (docSemana) docSemana.value = semanaSugerida;
+    
+    showModal('modalGerarDocumentoIA');
+}
+
+async function gerarDocumentoIA() {
+    const tipo = document.getElementById('iaDocTipo').value;
+    const tema = document.getElementById('iaDocTema').value;
+    const serie = document.getElementById('iaDocSerie') ? document.getElementById('iaDocSerie').value : '';
+    const disciplina = document.getElementById('iaDocDisciplina') ? document.getElementById('iaDocDisciplina').value : '';
+    const semana = document.getElementById('iaDocSemana') ? document.getElementById('iaDocSemana').value : '';
+    
+    if (!serie || !disciplina) return alert('Por favor, selecione a série e a disciplina.');
+    if (!tema) return alert('Por favor, informe o tema/assunto.');
+
+    const btn = document.querySelector('#modalGerarDocumentoIA .btn-primary');
+    const originalText = btn.textContent;
+    btn.textContent = 'Gerando estrutura... ⏳';
+    btn.disabled = true;
+
+    // Extrai turmas e duração
+    const getSerieNome = (nome) => {
+        if (!nome) return '';
+        let n = nome.trim();
+        n = n.replace(/[\s-]+[A-Za-z]$/i, '');
+        n = n.replace(/(\d)[A-Za-z]$/i, '$1');
+        n = n.replace(/([ºª])[A-Za-z]$/i, '$1');
+        return n.trim();
+    };
+
+    const turmasMatch = (data.turmas || []).filter(t => getSerieNome(t.ano_serie || t.nome) === serie && t.disciplina === disciplina);
+    const turmasNomesStr = turmasMatch.length > 0 ? turmasMatch.map(t => t.nome).join(', ') : 'Não detectada';
+
+    let duracaoAulas = 0;
+    if (turmasMatch.length > 0) {
+        const idPrimeiraTurma = turmasMatch[0].id;
+        const minhasAulas = data.horariosAulas || [];
+        duracaoAulas = minhasAulas.filter(a => a.id_turma == idPrimeiraTurma && a.tipo === 'aula').length;
+    }
+
+    // Usa a chave da API fixa fornecida
+    const apiKey = 'AIzaSyCnObYpnV4fZrwEbLpyRWmaW98eKLes2-M';
+
+    try {
+        let dadosEstruturados = {};
+        let promptText = '';
+
+        if (tipo === 'plano_aula') {
+            promptText = `Você é um professor/coordenador pedagógico experiente. Crie a estrutura de um Plano de Aula de ${disciplina} para a série/ano ${serie} sobre o tema: "${tema}".
+Retorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:
+{"aprendizagem_essencial": "Sugestão de habilidade central da BNCC ou Currículo", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades cognitivas a desenvolver", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
+        }
+
+        // Chamada real à API do Gemini
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: promptText }] }],
+                generationConfig: { temperature: 0.7, response_mime_type: "application/json" }
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Erro na API: ${response.statusText}`);
+        }
+
+        const apiData = await response.json();
+        const respostaTexto = apiData.candidates[0].content.parts[0].text;
+        
+        // Limpa potenciais blocos markdown que a IA possa enviar por teimosia e converte para objeto
+        const jsonLimpo = respostaTexto.replace(/```json/g, '').replace(/```/g, '').trim();
+        dadosEstruturados = JSON.parse(jsonLimpo);
+
+        closeModal('modalGerarDocumentoIA');
+        abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasNomesStr, duracaoAulas, dadosEstruturados);
+
+    } catch (e) {
+        console.error(e);
+        alert('Erro ao gerar documento com IA:\\nVerifique sua chave de API ou tente novamente.\\n\\nDetalhes: ' + e.message);
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
+function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasStr, duracaoAulas, dados) {
+    if (!document.getElementById('modalRevisaoDocumento')) {
+        const div = document.createElement('div');
+        div.id = 'modalRevisaoDocumento';
+        div.className = 'modal';
+        document.body.appendChild(div);
+    }
+
+    // Salvar meta-dados no modal invisivelmente para uso na exportação final
+    const modal = document.getElementById('modalRevisaoDocumento');
+    modal.dataset.tipo = tipo;
+    modal.dataset.serie = serie;
+    modal.dataset.disciplina = disciplina;
+    modal.dataset.tema = tema;
+    modal.dataset.semana = semana;
+    modal.dataset.turmasStr = turmasStr;
+    modal.dataset.duracaoAulas = duracaoAulas;
+
+    let formHtml = '';
+    if (tipo === 'plano_aula') {
+        formHtml = `
+            <div style="max-height: 50vh; overflow-y: auto; padding-right: 10px;">
+                <div style="margin-bottom: 15px;">
+                    <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Aprendizagem Essencial (AE):</label>
+                    <textarea id="revDocAE" rows="2" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados.aprendizagem_essencial || ''}</textarea>
+                </div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom: 15px;">
+                    <div>
+                        <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Conteúdos:</label>
+                        <textarea id="revDocConteudos" rows="3" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados.conteudos || ''}</textarea>
+                    </div>
+                    <div>
+                        <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Habilidades:</label>
+                        <textarea id="revDocHabilidades" rows="3" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados.habilidades || ''}</textarea>
+                    </div>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Objetivos da Aula:</label>
+                    <textarea id="revDocObjetivos" rows="2" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados.objetivos || ''}</textarea>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Desenvolvimento / Metodologia:</label>
+                    <textarea id="revDocDesenvolvimento" rows="5" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados.desenvolvimento || ''}</textarea>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Materiais e Recursos:</label>
+                    <textarea id="revDocMateriais" rows="2" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados.materiais || ''}</textarea>
+                </div>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Avaliação:</label>
+                <textarea id="revDocAvaliacao" rows="3" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados.avaliacao || ''}</textarea>
+            </div>
+        `;
+    }
+
+    document.getElementById('modalRevisaoDocumento').innerHTML = `
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
+                <h2 style="margin: 0;">📝 Revisar e Editar Documento</h2>
+                <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalRevisaoDocumento')">×</button>
+            </div>
+            <div style="background:#ebf8ff; border:1px solid #bee3f8; padding:12px; border-radius:6px; margin-bottom:20px; font-size:14px;">
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:5px;">
+                    <div><strong style="color:#2b6cb0;">Professor:</strong> <span>${currentUser.nome}</span></div>
+                    <div><strong style="color:#2b6cb0;">Disciplina:</strong> <span>${disciplina}</span></div>
+                    <div><strong style="color:#2b6cb0;">Turmas:</strong> <span style="font-size:12px;">${turmasStr}</span></div>
+                    <div><strong style="color:#2b6cb0;">Duração Prevista:</strong> <span>${duracaoAulas} aulas na semana</span></div>
+                </div>
+                <div style="border-top:1px dashed #bee3f8; margin-top:5px; padding-top:5px;">
+                    <strong style="color:#2b6cb0;">Semana:</strong> <span>${semana}</span> | <strong style="color:#2b6cb0;">Tema:</strong> <span>${tema}</span>
+                </div>
+            </div>
+            <p style="font-size:13px; color:#666; margin-bottom:15px;">Abaixo está a estrutura pré-gerada. Fique à vontade para ajustar o texto antes de exportar o arquivo final.</p>
+            ${formHtml}
+            <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
+                <button class="btn btn-secondary" onclick="closeModal('modalRevisaoDocumento'); showModal('modalGerarDocumentoIA')">← Voltar</button>
+                <button class="btn btn-success" onclick="exportarDocumentoFinal('${tipo}')" id="btnExportarDoc">💾 Gerar PDF Final</button>
+            </div>
+        </div>
+    `;
+    showModal('modalRevisaoDocumento');
+}
+
+async function exportarDocumentoFinal(tipo) {
+    // COLE AQUI A URL DO SEU APP DA WEB (Google Apps Script)
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwjtuTv69ZatCsFkpccQc4NJscgpozZiKs0qhrCk6sESdL3RPuEz_nP_l1jcfCgfTnYzg/exec';
+
+    if (SCRIPT_URL.includes('COLE_AQUI')) return alert('Por favor, configure a URL do seu Apps Script no arquivo app.js!');
+
+    const btn = document.getElementById('btnExportarDoc');
+    const originalText = btn.textContent;
+    btn.textContent = 'Gerando Documento... ⏳';
+    btn.disabled = true;
+
+    const modal = document.getElementById('modalRevisaoDocumento');
+    const payload = {
+        tipo: modal.dataset.tipo,
+        professor: currentUser.nome,
+        disciplina: modal.dataset.disciplina,
+        serie: modal.dataset.serie,
+        turmasStr: modal.dataset.turmasStr,
+        semana: modal.dataset.semana,
+        tema: modal.dataset.tema,
+        duracaoAulas: modal.dataset.duracaoAulas,
+        dados: {
+            aprendizagem_essencial: document.getElementById('revDocAE') ? document.getElementById('revDocAE').value : '',
+            conteudos: document.getElementById('revDocConteudos') ? document.getElementById('revDocConteudos').value : '',
+            habilidades: document.getElementById('revDocHabilidades') ? document.getElementById('revDocHabilidades').value : '',
+            objetivos: document.getElementById('revDocObjetivos') ? document.getElementById('revDocObjetivos').value : '',
+            desenvolvimento: document.getElementById('revDocDesenvolvimento') ? document.getElementById('revDocDesenvolvimento').value : '',
+            materiais: document.getElementById('revDocMateriais') ? document.getElementById('revDocMateriais').value : '',
+            avaliacao: document.getElementById('revDocAvaliacao') ? document.getElementById('revDocAvaliacao').value : ''
+        }
+    };
+
+    try {
+        // Envia como "text/plain" para evitar problemas com CORS no Apps Script
+        const response = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
+        const result = await response.json();
+        
+        if (result.success) {
+            window.open(result.pdfUrl, '_blank'); // Abre o download do PDF automaticamente!
+            closeModal('modalRevisaoDocumento');
+        } else {
+            throw new Error(result.error);
+        }
+    } catch (e) {
+        alert('Erro ao gerar documento no Google Drive: ' + e.message);
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
 }
 
 function processarSelecaoAee(blocoId, valor) {
