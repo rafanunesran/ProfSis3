@@ -116,8 +116,15 @@ async function saveData(collectionName, docId, dataObj) {
             console.log(`Salvando no Firebase: ${collectionName}/${docId}`);
             await db.collection(collectionName).doc(String(docId)).set(cleanData);
             
-            // [SEGURANÇA] Também salva localmente como redundância
-            localStorage.setItem(String(docId), JSON.stringify(cleanData));
+            try {
+                // [SEGURANÇA] Também salva localmente como redundância
+                // Evita salvar arquivos pesados de backup para não estourar o limite de ~5MB do navegador
+                if (!String(docId).startsWith('backup_')) {
+                    localStorage.setItem(String(docId), JSON.stringify(cleanData));
+                }
+            } catch (localError) {
+                console.warn("Aviso: Redundância local falhou (Cota de armazenamento excedida?)", localError);
+            }
         } catch (error) {
             console.error("Erro ao salvar no Firebase:", error);
             alert(`Erro ao salvar dados online: ${error.message}\nVerifique se as Regras do Firestore permitem escrita.`);
@@ -127,7 +134,11 @@ async function saveData(collectionName, docId, dataObj) {
         let key = docId;
         if (docId === 'users_list') key = 'app_users';
         if (docId === 'schools_list') key = 'app_schools';
-        localStorage.setItem(key, JSON.stringify(dataObj));
+        try {
+            localStorage.setItem(key, JSON.stringify(dataObj));
+        } catch (e) {
+            alert("Erro de armazenamento local: Limite de cota excedido (aprox. 5MB).\n\nA memória do navegador está cheia.");
+        }
     }
 }
 
