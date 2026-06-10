@@ -2421,6 +2421,7 @@ function renderAtrasos() {
                     <th style="width:250px;">Estudante</th>
                     <th>Datas de Atraso</th>
                     <th style="text-align:center; width:60px;">Total</th>
+                    <th style="text-align:center; width:80px;">Ações</th>
                 </tr>
             </thead>
             <tbody>
@@ -2440,9 +2441,12 @@ function renderAtrasos() {
                             <td>${getAeePrefix(est)}<strong>${est ? est.nome_completo : 'Excluído'}</strong></td>
                             <td><div style="display:flex; flex-wrap:wrap;">${tagsHtml}</div></td>
                             <td style="text-align:center; font-weight:bold; font-size:14px; color:#d69e2e;">${lista.length}</td>
+                            <td style="text-align:center;">
+                                <button class="btn btn-sm btn-primary" style="padding:2px 8px; font-size:11px;" onclick="gerarOcorrenciaAtraso(${estId})" title="Gerar ocorrência de atrasos">⚠️ Gerar</button>
+                            </td>
                         </tr>
                     `;
-                }).join('') : '<tr><td colspan="3" style="text-align:center; color:#999; padding:20px;">Nenhum atraso registrado neste período.</td></tr>'}
+                }).join('') : '<tr><td colspan="4" style="text-align:center; color:#999; padding:20px;">Nenhum atraso registrado neste período.</td></tr>'}
             </tbody>
         </table>
     `;
@@ -2471,6 +2475,36 @@ function removerAtraso(id) {
         persistirDados();
         renderAtrasos();
     }
+}
+
+async function gerarOcorrenciaAtraso(estudanteId) {
+    const estudante = (data.estudantes || []).find(e => e.id == estudanteId);
+    if (!estudante) return;
+    
+    const currentYear = new Date().getFullYear();
+    const mesInicio = document.getElementById('filtroAtrasoMesInicio') ? parseInt(document.getElementById('filtroAtrasoMesInicio').value) : 0;
+    const mesFim = document.getElementById('filtroAtrasoMesFim') ? parseInt(document.getElementById('filtroAtrasoMesFim').value) : 11;
+
+    let atrasos = (data.atrasos || []).filter(a => a.id_turma == turmaAtual && a.id_estudante == estudanteId);
+    atrasos = atrasos.filter(a => {
+        const d = new Date(a.data + 'T12:00:00');
+        return d.getMonth() >= mesInicio && d.getMonth() <= mesFim && d.getFullYear() === currentYear;
+    }).sort((a,b) => a.data.localeCompare(b.data));
+
+    if (atrasos.length === 0) return alert('Nenhum atraso para gerar ocorrência neste período.');
+
+    const datasStr = atrasos.map(a => formatDate(a.data)).join(', ');
+    const relato = `Estudante apresentou ${atrasos.length} atraso(s) nas seguintes datas: ${datasStr}.\n\nSolicitamos o comparecimento do responsável à escola para ciência e providências.`;
+    
+    if (!confirm(`Deseja gerar a seguinte ocorrência disciplinar para ${estudante.nome_completo}?\n\n"${relato}"`)) return;
+
+    await registrarOcorrenciaNoBanco({
+        ids: [estudanteId],
+        texto: relato,
+        tipo: 'disciplinar'
+    });
+    
+    alert('Ocorrência de atraso gerada com sucesso!');
 }
 
 // --- REGISTROS DE AULA (DIÁRIO DE CLASSE) ---
