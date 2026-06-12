@@ -58,15 +58,25 @@ async function iniciarApp() {
 
         // Atualiza o título com o nome da escola
         let nomeEscola = 'Escola';
+        let logoEscola = '';
         if (currentUser && currentUser.schoolId) {
             const sData = await getData('system', 'schools_list');
             const schools = (sData && sData.list) ? sData.list : [];
             
             const escola = schools.find(s => s.id == currentUser.schoolId);
-            if (escola) nomeEscola = escola.nome;
+            if (escola) {
+                nomeEscola = escola.nome;
+                logoEscola = escola.logoEscola || '';
+            }
         }
         const headerTitle = document.querySelector('#appContainer h1');
-        if (headerTitle) headerTitle.textContent = `SisProf - ${nomeEscola}`;
+        if (headerTitle) {
+            if (logoEscola) {
+                headerTitle.innerHTML = `<img src="${logoEscola}" style="height: 40px; vertical-align: middle; margin-right: 10px; border-radius: 4px;"> SisProf - ${nomeEscola}`;
+            } else {
+                headerTitle.textContent = `SisProf - ${nomeEscola}`;
+            }
+        }
 
         // Injeta o botão de alternância se for Gestor
         if (currentUser.role === 'gestor') {
@@ -6644,8 +6654,32 @@ async function exportarDocumentoFinal(tipo) {
         }
         let templateHtml = await response.text();
 
+        // Busca configurações globais e da escola
+        let configSistema = {};
+        let configEscola = {};
+        try {
+            configSistema = await getData('system', 'config_sistema') || {};
+            if (currentUser && currentUser.schoolId) {
+                const sData = await getData('system', 'schools_list');
+                const schools = (sData && sData.list) ? sData.list : [];
+                configEscola = schools.find(s => s.id == currentUser.schoolId) || {};
+            }
+        } catch(e) { console.warn("Erro ao buscar configs da escola", e); }
+
+        const fallbackLogo = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+        const regiao = configSistema.regiao || 'REGIÃO NÃO CONFIGURADA';
+        const logoEstado = configSistema.logoEstado || fallbackLogo;
+        const nomeCompletoEscola = configEscola.nomeCompleto || configEscola.nome || 'ESCOLA NÃO CONFIGURADA';
+        const logoEscola = configEscola.logoEscola || fallbackLogo;
+        const tipoDoc = payload.tipo === 'plano_aula' ? 'PLANO DE AULA' : payload.tipo.toUpperCase().replace('_', ' ');
+
         // Substitui todos os marcadores (placeholders) pelos dados reais globalmente (/g)
         let htmlFinal = templateHtml
+            .replace(/{{REGIÃO}}/g, regiao)
+            .replace(/{{NOME COMPLETO DA ESCOLA}}/g, nomeCompletoEscola)
+            .replace(/{{TIPO DE DOC}}/g, tipoDoc)
+            .replace(/{{LOGO_ESTADO}}/g, logoEstado)
+            .replace(/{{LOGO_ESCOLA}}/g, logoEscola)
             .replace(/{{PROFESSOR}}/g, payload.professor || '')
             .replace(/{{DISCIPLINA}}/g, payload.disciplina || '')
             .replace(/{{SERIE}}/g, payload.serie || '')
