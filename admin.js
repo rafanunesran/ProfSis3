@@ -24,7 +24,13 @@ async function renderAdminEscolas() {
     document.getElementById('adminEscolaDetalheScreen').style.display = 'none';
     document.getElementById('adminBackupScreen').style.display = 'none';
 
-    const html = escolas.length > 0 ? `
+    let html = `
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom: 15px;">
+            <button class="btn btn-info" onclick="abrirModalConfigGerais()">⚙️ Config. Globais (Estado/Região)</button>
+        </div>
+    `;
+
+    html += escolas.length > 0 ? `
         <table>
             <thead>
                 <tr>
@@ -52,21 +58,128 @@ async function renderAdminEscolas() {
     document.getElementById('listaEscolasAdmin').innerHTML = html;
 }
 
+function garantirCamposEscola() {
+    const form = document.querySelector('#modalAdminEscola form');
+    if (form && !document.getElementById('adminEscolaNomeCompleto')) {
+        const btnSubmit = form.querySelector('button[type="submit"]');
+        if (btnSubmit) {
+            const extras = document.createElement('div');
+            extras.innerHTML = `
+                <label>Nome Completo da Escola (Para Documentos):
+                    <input type="text" id="adminEscolaNomeCompleto" style="width:100%; padding:8px; margin-bottom:10px;" placeholder="Ex: E.E. PEI PROFESSORA FRANCISCA LISBOA PERALTA">
+                </label>
+                <label>Logo da Escola (Cabeçalho e Docs):
+                    <input type="file" accept="image/*" style="width:100%; margin-bottom:10px;" onchange="converterImagemBase64(this, 'adminEscolaLogoBase64', 'previewLogoEscola')">
+                    <input type="hidden" id="adminEscolaLogoBase64">
+                    <div style="margin-bottom:10px;">
+                        <img id="previewLogoEscola" style="max-height:80px; display:none; border-radius: 4px;">
+                    </div>
+                </label>
+            `;
+            form.insertBefore(extras, btnSubmit);
+        }
+    }
+}
+
+function converterImagemBase64(input, hiddenId, previewId) {
+    if (input.files && input.files[0]) {
+        if (input.files[0].size > 2 * 1024 * 1024) {
+            alert('A imagem é muito grande. Escolha uma imagem de até 2MB.');
+            input.value = '';
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const hiddenField = document.getElementById(hiddenId);
+            if(hiddenField) hiddenField.value = e.target.result;
+            const preview = document.getElementById(previewId);
+            if (preview) {
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+            }
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+async function abrirModalConfigGerais() {
+    const configData = await getData('system', 'config_sistema') || {};
+    
+    if (!document.getElementById('modalConfigGerais')) {
+        const div = document.createElement('div');
+        div.id = 'modalConfigGerais';
+        div.className = 'modal';
+        document.body.appendChild(div);
+    }
+    
+    document.getElementById('modalConfigGerais').innerHTML = `
+        <div class="modal-content" style="max-width: 500px;">
+            <h3>⚙️ Configurações Globais (Estado/Região)</h3>
+            <p style="font-size:12px; color:#666;">Estas configurações aparecem no cabeçalho dos documentos gerados (ex: Planos de Aula).</p>
+            <form onsubmit="salvarConfigGerais(event)">
+                <label>Região (Ex: REGIÃO OSASCO):
+                    <input type="text" id="configRegiao" value="${configData.regiao || ''}" style="width:100%; padding:8px; margin-bottom:10px;">
+                </label>
+                <label>Logo do Estado/Governo:
+                    <input type="file" accept="image/*" style="width:100%; margin-bottom:10px;" onchange="converterImagemBase64(this, 'configLogoEstadoBase64', 'previewLogoEstado')">
+                    <input type="hidden" id="configLogoEstadoBase64" value="${configData.logoEstado || ''}">
+                    <div style="margin-bottom:10px;">
+                        <img id="previewLogoEstado" src="${configData.logoEstado || ''}" style="max-height:80px; ${configData.logoEstado ? 'display:block;' : 'display:none;'} border-radius: 4px;">
+                    </div>
+                </label>
+                <div style="display:flex; justify-content:flex-end; gap:10px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('modalConfigGerais')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    `;
+    showModal('modalConfigGerais');
+}
+
+async function salvarConfigGerais(e) {
+    e.preventDefault();
+    const configData = await getData('system', 'config_sistema') || {};
+    configData.regiao = document.getElementById('configRegiao').value;
+    configData.logoEstado = document.getElementById('configLogoEstadoBase64').value;
+    
+    await saveData('system', 'config_sistema', configData);
+    alert('Configurações globais salvas com sucesso!');
+    closeModal('modalConfigGerais');
+}
+
 function abrirModalEscola() {
+    garantirCamposEscola();
     document.getElementById('adminEscolaId').value = '';
     document.getElementById('adminEscolaNome').value = '';
     document.getElementById('adminEscolaEndereco').value = '';
+    document.getElementById('adminEscolaNomeCompleto').value = '';
+    document.getElementById('adminEscolaLogoBase64').value = '';
+    const preview = document.getElementById('previewLogoEscola');
+    if (preview) preview.style.display = 'none';
     document.getElementById('tituloModalEscola').textContent = 'Nova Escola';
     showModal('modalAdminEscola');
 }
 
 async function editarEscola(id) {
+    garantirCamposEscola();
     const escolas = await fetchEscolas();
     const escola = escolas.find(e => e.id == id);
     if (escola) {
         document.getElementById('adminEscolaId').value = escola.id;
         document.getElementById('adminEscolaNome').value = escola.nome;
         document.getElementById('adminEscolaEndereco').value = escola.endereco || '';
+        document.getElementById('adminEscolaNomeCompleto').value = escola.nomeCompleto || '';
+        document.getElementById('adminEscolaLogoBase64').value = escola.logoEscola || '';
+        const preview = document.getElementById('previewLogoEscola');
+        if (preview) {
+            if (escola.logoEscola) {
+                preview.src = escola.logoEscola;
+                preview.style.display = 'block';
+            } else {
+                preview.style.display = 'none';
+            }
+        }
         document.getElementById('tituloModalEscola').textContent = 'Editar Escola';
         showModal('modalAdminEscola');
     }
@@ -77,6 +190,8 @@ async function salvarEscola(e) {
     const id = document.getElementById('adminEscolaId').value;
     const nome = document.getElementById('adminEscolaNome').value;
     const endereco = document.getElementById('adminEscolaEndereco').value;
+    const nomeCompleto = document.getElementById('adminEscolaNomeCompleto').value;
+    const logoEscola = document.getElementById('adminEscolaLogoBase64').value;
     let escolas = await fetchEscolas();
 
     if (id) {
@@ -84,9 +199,11 @@ async function salvarEscola(e) {
         if (escola) {
             escola.nome = nome;
             escola.endereco = endereco;
+            escola.nomeCompleto = nomeCompleto;
+            escola.logoEscola = logoEscola;
         }
     } else {
-        escolas.push({ id: Date.now(), nome, endereco });
+        escolas.push({ id: Date.now(), nome, endereco, nomeCompleto, logoEscola });
     }
     await saveEscolasData(escolas);
     closeModal('modalAdminEscola');
