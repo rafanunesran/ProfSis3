@@ -598,6 +598,18 @@ async function getGradeEscola() {
     return [];
 }
 
+// Helpers de Faltas do Dia
+function isEstudanteFalta(estudanteId, dateStr) {
+    if (!estudanteId) return false;
+    return (data.presencas || []).some(p => p.id_estudante == estudanteId && p.data == dateStr && p.status === 'falta');
+}
+function getFaltaBadgeHtml(estudanteId, dateStr) {
+    if (isEstudanteFalta(estudanteId, dateStr)) {
+        return `<span style="color:#e53e3e; font-weight:bold; margin-right:4px;" title="Falta registrada neste dia">F</span>`;
+    }
+    return '';
+}
+
 // --- DASHBOARD ---
 async function renderDashboard() {
     const today = getTodayString();
@@ -1256,6 +1268,7 @@ function showTurmaTab(tab, evt) {
 async function renderEstudantes() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual).sort((a, b) => (a.nome_completo || '').localeCompare(b.nome_completo || ''));
     const isGestor = currentViewMode === 'gestor';
+    const todayStr = getTodayString();
 
     // --- MURAL DE AVISOS (Registros Administrativos) ---
     const registros = data.registrosAdministrativos || [];
@@ -1437,7 +1450,7 @@ async function renderEstudantes() {
                     return `
                     <tr>
                         <td>
-                            ${getAeePrefix(e)} <a href="#" onclick="abrirEstudanteDetalhe(${e.id})" style="font-weight:bold; text-decoration:none; color:#2b6cb0;">${e.nome_completo}</a>
+                            ${getFaltaBadgeHtml(e.id, todayStr)}${getAeePrefix(e)} <a href="#" onclick="abrirEstudanteDetalhe(${e.id})" style="font-weight:bold; text-decoration:none; color:#2b6cb0;">${e.nome_completo}</a>
                             ${diagBadge}
                             ${badgeBimestre}
                         </td>
@@ -1919,6 +1932,7 @@ async function renderOcorrencias() {
 
     // Preserva o texto digitado caso haja re-renderização
     const textoAtual = document.getElementById('novaOcorrenciaTexto') ? document.getElementById('novaOcorrenciaTexto').value : '';
+    const todayStr = getTodayString();
 
     const html = `
         <!-- OCORRÊNCIA RÁPIDA -->
@@ -1929,7 +1943,7 @@ async function renderOcorrencias() {
                 <label style="flex-grow:1;">Estudante:
                     <select id="selEstudanteRapido">
                         <option value="">Selecione...</option>
-                        ${estudantesAtivos.map(e => `<option value="${e.id}">${e.nome_completo}</option>`).join('')}
+                        ${estudantesAtivos.map(e => `<option value="${e.id}">${isEstudanteFalta(e.id, todayStr) ? '(F) ' : ''}${e.nome_completo}</option>`).join('')}
                     </select>
                 </label>
                 <label style="flex-grow:1;">Ocorrência:
@@ -1951,7 +1965,7 @@ async function renderOcorrencias() {
                 <div style="display:flex; gap:5px;">
                     <select id="selEstudanteOcorrencia" style="flex-grow:1;">
                         <option value="">Selecione...</option>
-                        ${disponiveis.map(e => `<option value="${e.id}">${e.nome_completo}</option>`).join('')}
+                        ${disponiveis.map(e => `<option value="${e.id}">${isEstudanteFalta(e.id, todayStr) ? '(F) ' : ''}${e.nome_completo}</option>`).join('')}
                     </select>
                     <button class="btn btn-secondary" onclick="adicionarEstudanteOcorrencia()">Adicionar</button>
                 </div>
@@ -1962,7 +1976,7 @@ async function renderOcorrencias() {
                 <div style="background: #f7fafc; padding: 10px; border-radius: 4px; border: 1px solid #e2e8f0; min-height: 40px;">
                     ${selecionados.length > 0 ? selecionados.map(e => `
                         <div style="display:inline-block; background:white; padding:2px 8px; border-radius:12px; border:1px solid #cbd5e0; margin-right:5px; margin-bottom:5px; font-size:12px;">
-                            ${e.nome_completo} <span style="cursor:pointer; color:red; font-weight:bold; margin-left:5px;" onclick="removerEstudanteOcorrencia(${e.id})">×</span>
+                            ${isEstudanteFalta(e.id, todayStr) ? '<strong style="color:#e53e3e;">F</strong> ' : ''}${e.nome_completo} <span style="cursor:pointer; color:red; font-weight:bold; margin-left:5px;" onclick="removerEstudanteOcorrencia(${e.id})">×</span>
                         </div>
                     `).join('') : '<span style="color:#a0aec0; font-size:12px;">Nenhum estudante selecionado.</span>'}
                 </div>
@@ -2402,6 +2416,7 @@ function renderAtrasos() {
     });
 
     const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    const todayStr = getTodayString();
     
     const html = `
         <div class="card" style="background: #fffaf0; margin-bottom: 20px;">
@@ -2410,7 +2425,7 @@ function renderAtrasos() {
                 <label style="flex-grow:1;">Estudante:
                     <select id="atrasoEstudante">
                         <option value="">Selecione...</option>
-                        ${estudantesAtivos.map(e => `<option value="${e.id}">${e.nome_completo}</option>`).join('')}
+                        ${estudantesAtivos.map(e => `<option value="${e.id}">${isEstudanteFalta(e.id, todayStr) ? '(F) ' : ''}${e.nome_completo}</option>`).join('')}
                     </select>
                 </label>
                 <button class="btn btn-warning" onclick="salvarAtraso()">Registrar</button>
@@ -2786,6 +2801,7 @@ function renderTrabalhos() {
     // [NOVO] Cálculo do total de aulas para exibição no cabeçalho
     const configBim = (data.configBimestres || []).find(c => c.bim === currentBimestreTrabalhos);
     const totalAulasBim = configBim ? calcularTotalAulasPrevistas(turmaAtual, configBim.inicio, configBim.fim) : 0;
+    const todayStr = getTodayString();
 
     const html = `
         <div style="margin-bottom: 15px; display: flex; gap: 5px; background: #f1f5f9; padding: 5px; border-radius: 8px;" class="no-print">
@@ -2925,7 +2941,7 @@ function renderTrabalhos() {
 
                         return `
                             <tr onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='transparent'">
-                                <td style="position:sticky; left:0; background:inherit; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cbd5e0; z-index: 5;">${getAeePrefix(e)}${e.nome_completo} ${tagFaltoso}</td>
+                            <td style="position:sticky; left:0; background:inherit; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cbd5e0; z-index: 5;">${getFaltaBadgeHtml(e.id, todayStr)}${getAeePrefix(e)}${e.nome_completo} ${tagFaltoso}</td>
                                 ${gradeCells}                                
                                 <td id="media-est-current-${e.id}" style="text-align:center; font-weight:bold; color: ${corMedia}; background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; right: 80px; z-index: 5; border-left: 2px solid #cbd5e0;">
                                     ${media}
@@ -3329,7 +3345,7 @@ function renderCompensacoes() {
                         return `
                             <tr>
                                 <td>
-                                    ${getAeePrefix(est)}<strong>${nomeEst}</strong>
+                                    ${getFaltaBadgeHtml(est ? est.id : null, todayStr)}${getAeePrefix(est)}<strong>${nomeEst}</strong>
                                     <div style="font-size:10px; color:#718096; margin-top:2px;">${logMinimizado}</div>
                                 </td>
                                 <td style="font-size:12px;">${meses[c.mes_referencia]}/${c.ano_referencia}</td>
@@ -3481,7 +3497,7 @@ function renderCaderno() {
 
                     return `
                     <tr>
-                        <td>${getAeePrefix(e)}${e.nome_completo}</td>
+                        <td>${getFaltaBadgeHtml(e.id, dataSelecionada)}${getAeePrefix(e)}${e.nome_completo}</td>
                         <td style="text-align:center;">
                             <div style="display:flex; justify-content:center; gap:15px;">
                                 <label style="font-size:12px; cursor:pointer;"><input type="radio" name="status_${e.id}" value="completo" onchange="salvarStatusCaderno(${e.id}, this.value, 'status')" ${status === 'completo' ? 'checked' : ''}> C</label>
@@ -3685,6 +3701,7 @@ function renderTutoria() {
     });
     const turmasOrdenadas = Object.keys(porTurma).sort();
     let htmlTutoradosList = '';
+    const todayStr = getTodayString();
     if (turmasOrdenadas.length > 0) {
         turmasOrdenadas.forEach(turma => {
             porTurma[turma].sort((a, b) => a.nome_estudante.localeCompare(b.nome_estudante));
@@ -3692,7 +3709,7 @@ function renderTutoria() {
             htmlTutoradosList += `<table style="margin-top:0;"><tbody>`;
             htmlTutoradosList += porTurma[turma].map(t => `
                     <tr>
-                        <td>${getAeePrefix(t)}<a href="#" onclick="abrirFichaTutorado(${t.id})">${t.nome_estudante}</a></td>
+                        <td>${getFaltaBadgeHtml(t.id_estudante_origem, todayStr)}${getAeePrefix(t)}<a href="#" onclick="abrirFichaTutorado(${t.id})">${t.nome_estudante}</a></td>
                     </tr>
             `).join('');
             htmlTutoradosList += `</tbody></table>`;
@@ -5684,6 +5701,7 @@ async function renderMapeamento() {
     }
 
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
+    const todayStr = getTodayString();
 
     // Grid de Carteiras
     // Nota: "Fileiras" geralmente são colunas verticais na sala de aula.
@@ -5702,12 +5720,13 @@ async function renderMapeamento() {
             
             // Botão para limpar carteira (já que removemos o select com opção vazio)
             const btnLimpar = estudanteId ? `<div onclick="atribuirLugarMapeamento('${key}', null); event.stopPropagation();" style="position:absolute; top:2px; right:2px; cursor:pointer; color:#e53e3e; font-weight:bold; font-size:12px; line-height:1; padding:2px; z-index:10;" title="Remover aluno">×</div>` : '';
+            const faltaHtml = estudante && isEstudanteFalta(estudante.id, todayStr) ? '<span style="color:#e53e3e; font-weight:bold; margin-right:2px;" title="Faltou hoje">F</span> ' : '';
             
             gridHtml += `
                 <div class="card-assento" ${dragAttr} ${dropAttr} onclick="clicarAssentoMap('${key}', event)" style="background:white; border:1px solid #cbd5e0; padding:5px; border-radius:6px; text-align:center; min-height:60px; display:flex; flex-direction:column; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05); position:relative; ${cursorStyle}">
                     ${btnLimpar}
                     <div style="font-size:11px; font-weight:${estudante ? 'bold' : 'normal'}; color:${estudante ? '#2d3748' : '#a0aec0'}; pointer-events:none; user-select:none; padding: 0 5px;">
-                        ${estudante ? estudante.nome_completo : '<span style="color:#e2e8f0;">(Vazio)</span>'}
+                        ${estudante ? faltaHtml + estudante.nome_completo : '<span style="color:#e2e8f0;">(Vazio)</span>'}
                     </div>
                     <!-- Overlay para capturar clique quando houver seleção -->
                     ${estudanteSelecionadoMap ? `<div style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:5;"></div>` : ''}
