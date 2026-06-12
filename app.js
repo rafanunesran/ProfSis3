@@ -73,6 +73,15 @@ async function iniciarApp() {
         if (headerTitle) {
             if (logoEscola) {
                 headerTitle.innerHTML = `<img src="${logoEscola}" style="height: 40px; vertical-align: middle; margin-right: 10px; border-radius: 4px;"> SisProf - ${nomeEscola}`;
+                
+                // Adiciona o logo da escola como miniatura (favicon) da aba do navegador
+                let favicon = document.querySelector("link[rel~='icon']");
+                if (!favicon) {
+                    favicon = document.createElement('link');
+                    favicon.rel = 'icon';
+                    document.head.appendChild(favicon);
+                }
+                favicon.href = logoEscola;
             } else {
                 headerTitle.textContent = `SisProf - ${nomeEscola}`;
             }
@@ -6196,7 +6205,7 @@ async function renderGradeHorariaProfessor() {
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
             <p style="color:#718096; font-size:14px; margin:0;">Configure sua disponibilidade semanal.</p>
             <div style="display:flex; gap:10px;">
-                <button class="btn btn-info" onclick="abrirModalGerarDocumentoIA()">✨ Gerar documento</button>
+                <button class="btn btn-info" onclick="abrirModalGerarDocumentoIA()">✨ Estagiário</button>
                 <button class="btn btn-secondary" onclick="imprimirAgendaMensal()">🖨️ Imprimir Agenda Mensal</button>
             </div>
         </div>
@@ -6368,7 +6377,7 @@ function abrirModalGerarDocumentoIA() {
         div.innerHTML = `
             <div class="modal-content" style="max-width: 600px;">
                 <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
-                    <h2 style="margin: 0;">✨ Gerar Documento</h2>
+                    <h2 style="margin: 0;">✨ Estagiário</h2>
                     <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalGerarDocumentoIA')">×</button>
                 </div>
                 
@@ -6409,10 +6418,10 @@ function abrirModalGerarDocumentoIA() {
 
                 <div style="margin-bottom: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
-                        <label style="font-weight:bold; margin:0;">Prompt da IA (Personalizável):</label>
+                        <label style="font-weight:bold; margin:0;">Comando do Estagiário:</label>
                         <button class="btn btn-sm btn-secondary" style="font-size:10px; padding:2px 5px;" onclick="restaurarPromptPadraoIA()">Restaurar Padrão</button>
                     </div>
-                    <p style="font-size:11px; color:#718096; margin-bottom:5px;">Você pode usar as tags <b>{{disciplina}}</b>, <b>{{serie}}</b> e <b>{{tema}}</b> no seu texto, ou simplesmente colar o seu próprio prompt. O sistema adicionará as configurações selecionadas e a formatação de forma invisível para garantir o funcionamento.</p>
+                    <p style="font-size:11px; color:#718096; margin-bottom:5px;">voce pode modificar com seu prompt pessoal ou usar o nativo</p>
                     <textarea id="iaDocPrompt" rows="6" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; font-family:monospace; font-size:11px; line-height:1.4;" onchange="localStorage.setItem('ia_prompt_template', this.value)"></textarea>
                 </div>
 
