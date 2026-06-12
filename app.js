@@ -6498,37 +6498,95 @@ Retorne APENAS um objeto JSON válido (sem marcações markdown e escape correta
 {"aprendizagem_essencial": "Habilidade central do Currículo Paulista", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades cognitivas a desenvolver com os códigos do Currículo Paulista", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
         }
 
-        let apiData = null;
         let success = false;
         let lastError = '';
+        let respostaTexto = '';
 
-        // Tenta fazer a requisição com repetição automática (retry) em caso de sobrecarga
         let tentativas = 3; // Tenta até 3 vezes
+        const modelosFallback = ['gemini-1.5-flash-latest', 'gemini-1.5-pro-latest', 'gemini-1.5-flash'];
         
         for (let i = 0; i < tentativas && !success; i++) {
+            const modeloAtual = modelosFallback[i % modelosFallback.length];
+            
             for (const currentKey of apiKeys) {
                 try {
-                    // Atualizado para o modelo mais recente e suportado 'gemini-2.0-flash'
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${currentKey}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: promptText }] }],
-                            generationConfig: { temperature: 0.7, response_mime_type: "application/json" }
-                        })
-                    });
+                    btn.textContent = `Gerando estrutura... ⏳ (Tentativa ${i+1}/3)`;
+                    
+                    // Implementa limite de tempo (20 segundos) para evitar congelamento da tela
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 20000);
 
-                    if (!response.ok) {
-                        const errorObj = await response.json();
-                        throw new Error(errorObj.error ? errorObj.error.message : response.statusText);
+                    // --- ROTEADOR MULTI-IA AUTOMÁTICO ---
+                    if (currentKey.startsWith('sk-') && !currentKey.startsWith('sk-ant-')) {
+                        // 1. OPENAI (ChatGPT - GPT-4o-mini)
+                        const response = await fetch(`https://api.openai.com/v1/chat/completions`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentKey}` },
+                            body: JSON.stringify({
+                                model: 'gpt-4o-mini',
+                                messages: [
+                                    { role: 'system', content: 'Você deve retornar APENAS um JSON válido. Nenhuma formatação markdown.' },
+                                    { role: 'user', content: promptText }
+                                ],
+                                temperature: 0.7,
+                                response_format: { type: "json_object" }
+                            }),
+                            signal: controller.signal
+                        });
+                        clearTimeout(timeoutId);
+                        if (!response.ok) throw new Error(`OpenAI Erro: ${response.statusText}`);
+                        const apiDataObj = await response.json();
+                        respostaTexto = apiDataObj.choices[0].message.content;
+
+                    } else if (currentKey.startsWith('gsk_')) {
+                        // 2. GROQ (Llama-3 - Super Rápido)
+                        const response = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentKey}` },
+                            body: JSON.stringify({
+                                model: 'llama-3.3-70b-versatile',
+                                messages: [
+                                    { role: 'system', content: 'Você deve retornar APENAS um JSON válido. Nenhuma formatação markdown.' },
+                                    { role: 'user', content: promptText }
+                                ],
+                                temperature: 0.7,
+                                response_format: { type: "json_object" }
+                            }),
+                            signal: controller.signal
+                        });
+                        clearTimeout(timeoutId);
+                        if (!response.ok) throw new Error(`Groq Erro: ${response.statusText}`);
+                        const apiDataObj = await response.json();
+                        respostaTexto = apiDataObj.choices[0].message.content;
+
+                    } else {
+                        // 3. GOOGLE GEMINI (Padrão)
+                        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modeloAtual}:generateContent?key=${currentKey}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents: [{ parts: [{ text: promptText }] }],
+                                generationConfig: { temperature: 0.7, response_mime_type: "application/json" }
+                            }),
+                            signal: controller.signal
+                        });
+                        clearTimeout(timeoutId);
+                        if (!response.ok) {
+                            const errorObj = await response.json();
+                            throw new Error(errorObj.error ? errorObj.error.message : response.statusText);
+                        }
+                        const apiDataObj = await response.json();
+                        if (!apiDataObj.candidates || apiDataObj.candidates.length === 0 || !apiDataObj.candidates[0].content) {
+                            throw new Error('A IA não retornou um conteúdo válido.');
+                        }
+                        respostaTexto = apiDataObj.candidates[0].content.parts[0].text;
                     }
-
-                    apiData = await response.json();
+                    
                     success = true;
                     break; // Sucesso, sai do loop de chaves
                 } catch (err) {
-                    lastError = err.message;
-                    console.warn(`⚠️ Falha com uma chave API (Tentativa ${i+1}):`, err.message);
+                    lastError = err.name === 'AbortError' ? 'Tempo de resposta esgotado.' : err.message;
+                    console.warn(`⚠️ Falha na API (Tentativa ${i+1}):`, lastError);
                 }
             }
             if (!success && i < tentativas - 1) {
@@ -6538,11 +6596,9 @@ Retorne APENAS um objeto JSON válido (sem marcações markdown e escape correta
         }
 
         if (!success) {
-            throw new Error(`Google Gemini rejeitou o pedido.\\nMotivo: ${lastError}`);
+            throw new Error(`A Inteligência Artificial falhou ou rejeitou o pedido.\\nMotivo: ${lastError}`);
         }
 
-        const respostaTexto = apiData.candidates[0].content.parts[0].text;
-        
         // Limpa potenciais blocos markdown que a IA possa enviar por teimosia e converte para objeto
         const jsonLimpo = respostaTexto.replace(/```json/g, '').replace(/```/g, '').trim();
         dadosEstruturados = JSON.parse(jsonLimpo);
