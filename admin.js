@@ -392,6 +392,12 @@ function renderBackupOptions() {
                         <p style="font-size: 13px; color: #666;">Recupera listas de alunos de perfis AEE/Projeto que foram salvas individualmente antes da mudança para o modo compartilhado.</p>
                         <button class="btn btn-info" onclick="migrarDadosAEECompartilhado()">🚀 Migrar Dados AEE/Projeto</button>
                     </div>
+
+                    <div style="flex: 1; background: #faf5ff; padding: 15px; border-radius: 8px; border: 1px solid #d6bcfa;">
+                        <h3>🤖 Chave de IA (Gemini)</h3>
+                        <p style="font-size: 13px; color: #666;">Configure a chave da API para evitar vazamentos no GitHub.</p>
+                        <button class="btn btn-primary" onclick="configurarChaveIA()">🔑 Configurar Chave</button>
+                    </div>
                 </div>
             </div>
         `;
@@ -514,5 +520,18 @@ async function migrarDadosAEECompartilhado() {
     } catch (e) {
         console.error("Erro durante a migração AEE/Projeto:", e);
         alert('Ocorreu um erro durante a migração. Verifique o console (F12).');
+    }
+}
+
+async function configurarChaveIA() {
+    const configData = await getData('system', 'config_ia') || {};
+    const chaveAtual = configData.apiKey || '';
+    
+    const novaChave = prompt("Insira a chave da API do Google Gemini:\n(Se quiser adicionar mais de uma, separe por vírgula)", chaveAtual);
+    
+    if (novaChave !== null) {
+        configData.apiKey = novaChave.trim();
+        await saveData('system', 'config_ia', configData);
+        alert('Chave de API salva com segurança no banco de dados!');
     }
 }
