@@ -3262,6 +3262,7 @@ function renderCompensacoes() {
     const selAnoFiltro = document.getElementById('filtroCompAno') ? parseInt(document.getElementById('filtroCompAno').value) : defaultAno;
 
     const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    const todayStr = getTodayString();
 
     // 1. Buscar Compensações Já Criadas para esta turma
     let compensacoes = (data.compensacoes || []).filter(c => c.id_turma == turmaAtual);
