@@ -6358,25 +6358,33 @@ function abrirModalGerarDocumentoIA() {
     const formatData = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
     const semanaSugerida = `${formatData(proximaSegunda)} a ${formatData(proximaSexta)}`;
 
+    const defaultPromptTemplate = `Você é um professor/coordenador pedagógico experiente do Estado de São Paulo. Crie a estrutura de um Plano de Aula de {{disciplina}} para a série/ano {{serie}} sobre o tema: "{{tema}}".\nUtilize seus profundos conhecimentos sobre o Currículo Paulista e os Materiais de Apoio (Caderno do Aluno/Professor) da SEDUC-SP.\nAs habilidades devem seguir estritamente o código e formato do Currículo Paulista específicos da disciplina de {{disciplina}} (ex: se for Matemática, use EF...MA..., se for Arte, EF...AR..., etc.).\nA Aprendizagem Essencial deve ser compatível com os documentos curriculares oficiais da disciplina.\nRetorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:\n{"aprendizagem_essencial": "Habilidade central do Currículo Paulista", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades cognitivas a desenvolver com os códigos do Currículo Paulista da disciplina solicitada", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
+    const savedPrompt = localStorage.getItem('ia_prompt_template') || defaultPromptTemplate;
+
     if (!document.getElementById('modalGerarDocumentoIA')) {
         const div = document.createElement('div');
         div.id = 'modalGerarDocumentoIA';
         div.className = 'modal';
         div.innerHTML = `
-            <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-content" style="max-width: 600px;">
                 <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
                     <h2 style="margin: 0;">✨ Gerar Documento</h2>
                     <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalGerarDocumentoIA')">×</button>
                 </div>
-                <p style="font-size:13px; color:#666; margin-bottom:15px;">Preencha os dados abaixo para gerar a estrutura do documento.</p>
                 
-                <div style="margin-bottom: 15px;">
-                    <label style="font-weight:bold; display:block; margin-bottom:5px;">Tipo de Documento:</label>
-                    <select id="iaDocTipo" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
-                        <option value="plano_aula">Plano de Aula</option>
-                    </select>
+                <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                    <div style="flex: 1;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Tipo de Documento:</label>
+                        <select id="iaDocTipo" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <option value="plano_aula">Plano de Aula</option>
+                        </select>
+                    </div>
+                    <div style="flex: 1;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Semana Vigente:</label>
+                        <input type="text" id="iaDocSemana" value="${semanaSugerida}" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                    </div>
                 </div>
-                
+
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom: 15px;">
                     <div>
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Série / Ano:</label>
@@ -6399,9 +6407,13 @@ function abrirModalGerarDocumentoIA() {
                     <input type="text" id="iaDocTema" placeholder="Ex: Revolução Francesa" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
                 </div>
 
-                <div style="margin-bottom: 15px;">
-                    <label style="font-weight:bold; display:block; margin-bottom:5px;">Semana Vigente:</label>
-                    <input type="text" id="iaDocSemana" value="${semanaSugerida}" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                <div style="margin-bottom: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                        <label style="font-weight:bold; margin:0;">Prompt da IA (Personalizável):</label>
+                        <button class="btn btn-sm btn-secondary" style="font-size:10px; padding:2px 5px;" onclick="restaurarPromptPadraoIA()">Restaurar Padrão</button>
+                    </div>
+                    <p style="font-size:11px; color:#718096; margin-bottom:5px;">Você pode usar as tags <b>{{disciplina}}</b>, <b>{{serie}}</b> e <b>{{tema}}</b> no seu texto, ou simplesmente colar o seu próprio prompt. O sistema adicionará as configurações selecionadas e a formatação de forma invisível para garantir o funcionamento.</p>
+                    <textarea id="iaDocPrompt" rows="6" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; font-family:monospace; font-size:11px; line-height:1.4;" onchange="localStorage.setItem('ia_prompt_template', this.value)"></textarea>
                 </div>
 
                 <div style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
@@ -6429,7 +6441,19 @@ function abrirModalGerarDocumentoIA() {
     const docSemana = document.getElementById('iaDocSemana');
     if (docSemana) docSemana.value = semanaSugerida;
     
+    const docPrompt = document.getElementById('iaDocPrompt');
+    if (docPrompt) docPrompt.value = savedPrompt;
+
     showModal('modalGerarDocumentoIA');
+}
+
+function restaurarPromptPadraoIA() {
+    const defaultPromptTemplate = `Você é um professor/coordenador pedagógico experiente do Estado de São Paulo. Crie a estrutura de um Plano de Aula de {{disciplina}} para a série/ano {{serie}} sobre o tema: "{{tema}}".\nUtilize seus profundos conhecimentos sobre o Currículo Paulista e os Materiais de Apoio (Caderno do Aluno/Professor) da SEDUC-SP.\nAs habilidades devem seguir estritamente o código e formato do Currículo Paulista específicos da disciplina de {{disciplina}} (ex: se for Matemática, use EF...MA..., se for Arte, EF...AR..., etc.).\nA Aprendizagem Essencial deve ser compatível com os documentos curriculares oficiais da disciplina.\nRetorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:\n{"aprendizagem_essencial": "Habilidade central do Currículo Paulista", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades cognitivas a desenvolver com os códigos do Currículo Paulista da disciplina solicitada", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
+    const txt = document.getElementById('iaDocPrompt');
+    if (txt) {
+        txt.value = defaultPromptTemplate;
+        localStorage.setItem('ia_prompt_template', defaultPromptTemplate);
+    }
 }
 
 async function gerarDocumentoIA() {
@@ -6491,12 +6515,27 @@ async function gerarDocumentoIA() {
         let promptText = '';
 
         if (tipo === 'plano_aula') {
-            promptText = `Você é um professor/coordenador pedagógico experiente do Estado de São Paulo. Crie a estrutura de um Plano de Aula de ${disciplina} para a série/ano ${serie} sobre o tema: "${tema}".
-Utilize seus profundos conhecimentos sobre o Currículo Paulista e os Materiais de Apoio (Caderno do Aluno/Professor) da SEDUC-SP.
-As habilidades devem seguir estritamente o código e formato do Currículo Paulista (ex: EF69AR05 - Descrição da habilidade...).
-A Aprendizagem Essencial deve ser compatível com os documentos curriculares oficiais da disciplina.
-Retorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:
-{"aprendizagem_essencial": "Habilidade central do Currículo Paulista", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades cognitivas a desenvolver com os códigos do Currículo Paulista", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
+            let templateBase = document.getElementById('iaDocPrompt') ? document.getElementById('iaDocPrompt').value : '';
+            if (!templateBase || templateBase.trim() === '') {
+                templateBase = `Você é um professor/coordenador pedagógico experiente do Estado de São Paulo. Crie a estrutura de um Plano de Aula de {{disciplina}} para a série/ano {{serie}} sobre o tema: "{{tema}}".\nUtilize seus profundos conhecimentos sobre o Currículo Paulista e os Materiais de Apoio (Caderno do Aluno/Professor) da SEDUC-SP.\nAs habilidades devem seguir estritamente o código e formato do Currículo Paulista específicos da disciplina de {{disciplina}} (ex: se for Matemática, use EF...MA..., se for Arte, EF...AR..., etc.).\nA Aprendizagem Essencial deve ser compatível com os documentos curriculares oficiais da disciplina.\nRetorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:\n{"aprendizagem_essencial": "Habilidade central do Currículo Paulista", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades cognitivas a desenvolver com os códigos do Currículo Paulista da disciplina solicitada", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
+            }
+
+            promptText = templateBase
+                .replace(/{{disciplina}}/g, disciplina)
+                .replace(/{{serie}}/g, serie)
+                .replace(/{{tema}}/g, tema);
+                
+            // Verifica se o usuário colou um prompt externo que não contém os marcadores ou a estrutura JSON necessária
+            const faltaMarcador = !templateBase.includes('{{disciplina}}') || !templateBase.includes('{{serie}}') || !templateBase.includes('{{tema}}');
+            const faltaEstruturaJson = !templateBase.includes('{"aprendizagem_essencial"');
+
+            // Injeta as diretrizes obrigatórias de forma invisível caso o prompt colado não as tenha
+            if (faltaMarcador) {
+                promptText += `\\n\\n[DADOS OBRIGATÓRIOS]\\nO plano de aula DEVE ser sobre a disciplina de ${disciplina}, para a série/ano ${serie}, com o tema "${tema}".\\nAs habilidades devem seguir o código e formato do Currículo Paulista específicos da disciplina de ${disciplina} (ex: se for Matemática, use EF...MA..., se for Arte, EF...AR...).`;
+            }
+            if (faltaEstruturaJson) {
+                promptText += `\\n\\n[FORMATO DE SAÍDA OBRIGATÓRIO]\\nRetorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:\\n{"aprendizagem_essencial": "Habilidade central", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades com códigos", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
+            }
         }
 
         let success = false;
