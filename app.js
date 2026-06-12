@@ -6502,29 +6502,38 @@ Retorne APENAS um objeto JSON válido (sem marcações markdown e escape correta
         let success = false;
         let lastError = '';
 
-        // Tenta fazer a requisição alternando entre as chaves caso uma atinja o limite ou falhe
-        for (const currentKey of apiKeys) {
-            try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${currentKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: promptText }] }],
-                        generationConfig: { temperature: 0.7, response_mime_type: "application/json" }
-                    })
-                });
+        // Tenta fazer a requisição com repetição automática (retry) em caso de sobrecarga
+        let tentativas = 3; // Tenta até 3 vezes
+        
+        for (let i = 0; i < tentativas && !success; i++) {
+            for (const currentKey of apiKeys) {
+                try {
+                    // Corrigido para o modelo oficial 'gemini-1.5-flash'
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${currentKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: promptText }] }],
+                            generationConfig: { temperature: 0.7, response_mime_type: "application/json" }
+                        })
+                    });
 
-                if (!response.ok) {
-                    const errorObj = await response.json();
-                    throw new Error(errorObj.error ? errorObj.error.message : response.statusText);
+                    if (!response.ok) {
+                        const errorObj = await response.json();
+                        throw new Error(errorObj.error ? errorObj.error.message : response.statusText);
+                    }
+
+                    apiData = await response.json();
+                    success = true;
+                    break; // Sucesso, sai do loop de chaves
+                } catch (err) {
+                    lastError = err.message;
+                    console.warn(`⚠️ Falha com uma chave API (Tentativa ${i+1}):`, err.message);
                 }
-
-                apiData = await response.json();
-                success = true;
-                break; // Sucesso, sai do loop
-            } catch (err) {
-                lastError = err.message;
-                console.warn('⚠️ Falha com uma chave API, tentando a próxima...', err.message);
+            }
+            if (!success && i < tentativas - 1) {
+                // Aguarda 2 segundos (2000ms) antes de tentar novamente, para dar tempo da API desafogar
+                await new Promise(resolve => setTimeout(resolve, 2000));
             }
         }
 
