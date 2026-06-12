@@ -337,6 +337,22 @@ async function renderAbaAlertasBuscaAtiva() {
     const alerts = { consecutive: [], weekly: [], percentage: [] };
     const MIN_TEACHERS_FOR_ABSENCE = 1;
 
+    const allAtestados = (data.registrosAdministrativos || []).filter(r => r.tipo === 'Atestado');
+    const allFaltosos = (data.registrosAdministrativos || []).filter(r => r.tipo === 'Faltoso');
+    
+    const hasAtestadoOnDate = (studentId, dateStr) => {
+        const studentAtestados = allAtestados.filter(r => r.estudanteId == studentId);
+        const checkDate = new Date(dateStr + 'T12:00:00');
+        for (const ates of studentAtestados) {
+            const parts = ates.data.split('-');
+            const inicio = new Date(parts[0], parts[1]-1, parts[2]);
+            const fim = new Date(inicio);
+            fim.setDate(fim.getDate() + (parseInt(ates.dias) || 1) - 1);
+            if (checkDate >= inicio && checkDate <= fim) return true;
+        }
+        return false;
+    };
+
     const wasAbsent = (studentId, dateStr) => {
         const dayData = attendanceData[dateStr];
         if (!dayData || !dayData[studentId]) return false;
@@ -365,6 +381,21 @@ async function renderAbaAlertasBuscaAtiva() {
 
         if (studentDates.length === 0) continue;
 
+        const atestadosDoAluno = allAtestados.filter(r => r.estudanteId == student.id);
+        const atestadosCount = atestadosDoAluno.length;
+        const diasAtestadoTotal = atestadosDoAluno.reduce((acc, curr) => acc + (parseInt(curr.dias) || 1), 0);
+        const isFaltosoFlag = allFaltosos.some(r => r.estudanteId == student.id);
+        
+        const absencesList = studentDates.filter(dateStr => wasAbsent(student.id, dateStr));
+        const totalAbsences = absencesList.length;
+        const presencePercentage = studentDates.length > 0 ? ((studentDates.length - totalAbsences) / studentDates.length) * 100 : 100;
+        
+        const absencesWithoutAtestado = absencesList.filter(dateStr => !hasAtestadoOnDate(student.id, dateStr)).length;
+        const adjustedPresencePercentage = studentDates.length > 0 ? ((studentDates.length - absencesWithoutAtestado) / studentDates.length) * 100 : 100;
+
+        const atestadosInfo = atestadosCount > 0 ? `🏥 ${atestadosCount} atestado(s) (${diasAtestadoTotal} dias)` : '';
+        const percInfo = `<span title="Presença Bruta: ${presencePercentage.toFixed(0)}%">${adjustedPresencePercentage.toFixed(0)}% presença (s/ atestado)</span>`;
+
         // a) Faltas Consecutivas
         let consecutiveCount = 0, maxConsecutive = 0;
         for (const dateStr of studentDates) {
@@ -372,7 +403,7 @@ async function renderAbaAlertasBuscaAtiva() {
             else { maxConsecutive = Math.max(maxConsecutive, consecutiveCount); consecutiveCount = 0; }
         }
         maxConsecutive = Math.max(maxConsecutive, consecutiveCount);
-        if (maxConsecutive >= 3) alerts.consecutive.push({ student, detail: `${maxConsecutive} dias consecutivos` });
+        if (maxConsecutive >= 3) alerts.consecutive.push({ student, detail: `${maxConsecutive} dias consecutivos`, atestadosInfo, percInfo, isFaltoso: isFaltosoFlag });
 
         // b) Faltas na Semana Passada
         let lastWeekAbsences = 0;
@@ -382,12 +413,10 @@ async function renderAbaAlertasBuscaAtiva() {
                 lastWeekAbsences++;
             }
         }
-        if (lastWeekAbsences >= 3) alerts.weekly.push({ student, detail: `${lastWeekAbsences} faltas na semana passada` });
+        if (lastWeekAbsences >= 3) alerts.weekly.push({ student, detail: `${lastWeekAbsences} faltas na semana passada`, atestadosInfo, percInfo, isFaltoso: isFaltosoFlag });
 
         // c) Baixa Frequência
-        const totalAbsences = studentDates.filter(dateStr => wasAbsent(student.id, dateStr)).length;
-        const presencePercentage = ((studentDates.length - totalAbsences) / studentDates.length) * 100;
-        if (presencePercentage < 70) alerts.percentage.push({ student, detail: `${presencePercentage.toFixed(0)}% de presença` });
+        if (presencePercentage < 70) alerts.percentage.push({ student, detail: `${presencePercentage.toFixed(0)}% de presença bruta`, atestadosInfo, percInfo, isFaltoso: isFaltosoFlag });
     }
 
     // --- 3. Renderização (Visão em Abas) ---
@@ -405,9 +434,17 @@ async function renderAbaAlertasBuscaAtiva() {
         Object.keys(byTurma).sort().forEach(turmaName => {
             listHtml += `<div class="card" style="margin-bottom:10px; background:white;">
                 <h5 style="margin:0 0 5px 0; padding-bottom:5px; border-bottom:1px solid #eee;">${turmaName}</h5>
-                <ul style="margin:0; padding-left:20px; font-size:13px;">`;
+                <ul style="margin:0; padding-left:10px; font-size:13px; list-style-type:none;">`;
             byTurma[turmaName].forEach(item => {
-                listHtml += `<li>${getAeePrefix(item.student)}<strong>${item.student.nome_completo}</strong>: ${item.detail}</li>`;
+                const faltosoBadge = item.isFaltoso ? `<span style="background:#fed7d7; color:#c53030; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold;">🚨 Faltoso</span>` : `<button class="btn btn-danger" style="margin-left:8px; padding:2px 8px; font-size:10px; border-radius:4px;" onclick="marcarComoFaltosoBuscaAtiva(${item.student.id}, ${item.student.id_turma})">+ Marcar Faltoso</button>`;
+                
+                listHtml += `<li style="margin-bottom:8px; display:flex; align-items:center; flex-wrap:wrap; gap:5px; border-bottom:1px dashed #edf2f7; padding-bottom:5px;">
+                    ${getAeePrefix(item.student)}<strong>${item.student.nome_completo}</strong>: 
+                    <span style="color:#4a5568;">${item.detail}</span> 
+                    | <strong style="color:#2c5282;">${item.percInfo}</strong>
+                    ${item.atestadosInfo ? ` | <span style="color:#d69e2e; font-size:12px;">${item.atestadosInfo}</span>` : ''}
+                    ${faltosoBadge}
+                </li>`;
             });
             listHtml += `</ul></div>`;
         });
@@ -457,6 +494,31 @@ async function renderAbaAlertasBuscaAtiva() {
     `;
 }
 
+function marcarComoFaltosoBuscaAtiva(estudanteId, turmaId) {
+    if(!confirm('Deseja registrar este aluno como "Faltoso" no painel administrativo?')) return;
+    
+    if (!data.registrosAdministrativos) data.registrosAdministrativos = [];
+    
+    const exists = data.registrosAdministrativos.some(r => r.estudanteId == estudanteId && r.tipo === 'Faltoso');
+    if (exists) {
+        alert('Este aluno já está marcado como faltoso.');
+        return;
+    }
+
+    data.registrosAdministrativos.push({
+        id: Date.now(),
+        turmaId: parseInt(turmaId),
+        estudanteId: parseInt(estudanteId),
+        tipo: 'Faltoso',
+        data: getTodayString(),
+        dias: 0,
+        descricao: 'Marcado via Busca Ativa'
+    });
+    
+    persistirDados();
+    renderAbaAlertasBuscaAtiva();
+}
+
 function renderAbaRegistrosAdministrativos() {
     const registros = data.registrosAdministrativos || [];
     const today = new Date();
@@ -466,6 +528,11 @@ function renderAbaRegistrosAdministrativos() {
     let lista = registros.map(r => {
         // Simulação de busca de estudante (em produção buscaria do banco)
         const estudante = data.estudantes.find(e => e.id == r.estudanteId) || { nome_completo: 'Desconhecido' };
+        
+        if (estudante.status && estudante.status !== 'Ativo') {
+            return null;
+        }
+        
         const turma = data.turmas.find(t => t.id == r.turmaId) || { nome: '?' };
         
         let status = 'Ativo';
@@ -486,10 +553,6 @@ function renderAbaRegistrosAdministrativos() {
             }
         } else if (r.tipo === 'Faltoso') {
             cor = '#ef4444';
-            // [MODIFICADO] Faltosos caem para o arquivo se o estudante não estiver Ativo
-            if (estudante.status && estudante.status !== 'Ativo') {
-                return null;
-            }
         }
 
         return { ...r, estudanteNome: estudante.nome_completo, turmaNome: turma.nome, status, cor };
