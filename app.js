@@ -6449,15 +6449,24 @@ async function gerarDocumentoIA() {
         const minhasAulas = data.horariosAulas || [];
         duracaoAulas = minhasAulas.filter(a => a.id_turma == idPrimeiraTurma && a.tipo === 'aula').length;
     }
+    const duracaoAulasStr = duracaoAulas > 0 ? `${duracaoAulas} aula(s) (${duracaoAulas * 50} min)` : 'Não definida';
+
+    const hoje = getTodayString();
+    const configBimestres = data.configBimestres || [];
+    const configAtual = configBimestres.find(c => hoje >= c.inicio && hoje <= c.fim);
+    const bimestreAtual = configAtual ? `${configAtual.bim}º BIMESTRE` : 'BIMESTRE VIGENTE';
 
     try {
         let dadosEstruturados = {};
         let promptText = '';
 
         if (tipo === 'plano_aula') {
-            promptText = `Você é um professor/coordenador pedagógico experiente. Crie a estrutura de um Plano de Aula de ${disciplina} para a série/ano ${serie} sobre o tema: "${tema}".
+            promptText = `Você é um professor/coordenador pedagógico experiente do Estado de São Paulo. Crie a estrutura de um Plano de Aula de ${disciplina} para a série/ano ${serie} sobre o tema: "${tema}".
+Utilize seus profundos conhecimentos sobre o Currículo Paulista e os Materiais de Apoio (Caderno do Aluno/Professor) da SEDUC-SP.
+As habilidades devem seguir estritamente o código e formato do Currículo Paulista (ex: EF69AR05 - Descrição da habilidade...).
+A Aprendizagem Essencial deve ser compatível com os documentos curriculares oficiais da disciplina.
 Retorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:
-{"aprendizagem_essencial": "Sugestão de habilidade central da BNCC ou Currículo", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades cognitivas a desenvolver", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
+{"aprendizagem_essencial": "Habilidade central do Currículo Paulista", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades cognitivas a desenvolver com os códigos do Currículo Paulista", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
         }
 
         let apiData = null;
@@ -6501,7 +6510,7 @@ Retorne APENAS um objeto JSON válido (sem marcações markdown e escape correta
         dadosEstruturados = JSON.parse(jsonLimpo);
 
         closeModal('modalGerarDocumentoIA');
-        abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasNomesStr, duracaoAulas, dadosEstruturados);
+        abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasNomesStr, duracaoAulasStr, bimestreAtual, dadosEstruturados);
 
     } catch (e) {
         console.error(e);
@@ -6512,7 +6521,7 @@ Retorne APENAS um objeto JSON válido (sem marcações markdown e escape correta
     }
 }
 
-function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasStr, duracaoAulas, dados) {
+function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasStr, duracaoAulas, bimestreAtual, dados) {
     if (!document.getElementById('modalRevisaoDocumento')) {
         const div = document.createElement('div');
         div.id = 'modalRevisaoDocumento';
@@ -6529,6 +6538,7 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
     modal.dataset.semana = semana;
     modal.dataset.turmasStr = turmasStr;
     modal.dataset.duracaoAulas = duracaoAulas;
+    modal.dataset.bimestre = bimestreAtual;
 
     let formHtml = '';
     if (tipo === 'plano_aula') {
@@ -6579,10 +6589,10 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
                     <div><strong style="color:#2b6cb0;">Professor:</strong> <span>${currentUser.nome}</span></div>
                     <div><strong style="color:#2b6cb0;">Disciplina:</strong> <span>${disciplina}</span></div>
                     <div><strong style="color:#2b6cb0;">Turmas:</strong> <span style="font-size:12px;">${turmasStr}</span></div>
-                    <div><strong style="color:#2b6cb0;">Duração Prevista:</strong> <span>${duracaoAulas} aulas na semana</span></div>
+                    <div><strong style="color:#2b6cb0;">Duração Prevista:</strong> <span>${duracaoAulas}</span></div>
                 </div>
                 <div style="border-top:1px dashed #bee3f8; margin-top:5px; padding-top:5px;">
-                    <strong style="color:#2b6cb0;">Semana:</strong> <span>${semana}</span> | <strong style="color:#2b6cb0;">Tema:</strong> <span>${tema}</span>
+                    <strong style="color:#2b6cb0;">Semana:</strong> <span>${semana}</span> | <strong style="color:#2b6cb0;">Tema:</strong> <span>${tema}</span> | <strong style="color:#2b6cb0;">Bimestre:</strong> <span>${bimestreAtual}</span>
                 </div>
             </div>
             <p style="font-size:13px; color:#666; margin-bottom:15px;">Abaixo está a estrutura pré-gerada. Fique à vontade para ajustar o texto antes de exportar o arquivo final.</p>
@@ -6613,6 +6623,7 @@ async function exportarDocumentoFinal(tipo) {
         semana: modal.dataset.semana,
         tema: modal.dataset.tema,
         duracaoAulas: modal.dataset.duracaoAulas,
+        bimestre: modal.dataset.bimestre,
         dados: {
             aprendizagem_essencial: document.getElementById('revDocAE') ? document.getElementById('revDocAE').value : '',
             conteudos: document.getElementById('revDocConteudos') ? document.getElementById('revDocConteudos').value : '',
@@ -6642,6 +6653,7 @@ async function exportarDocumentoFinal(tipo) {
             .replace(/{{TEMA}}/g, payload.tema || '')
             .replace(/{{SEMANA}}/g, payload.semana || '')
             .replace(/{{DURACAO}}/g, payload.duracaoAulas || '')
+            .replace(/{{BIMESTRE}}/g, payload.bimestre || '')
             .replace(/{{APRENDIZAGEM_ESSENCIAL}}/g, payload.dados.aprendizagem_essencial || '')
             .replace(/{{OBJETIVOS}}/g, payload.dados.objetivos || '')
             .replace(/{{CONTEUDOS}}/g, payload.dados.conteudos || '')
