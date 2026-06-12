@@ -6508,8 +6508,8 @@ Retorne APENAS um objeto JSON válido (sem marcações markdown e escape correta
         for (let i = 0; i < tentativas && !success; i++) {
             for (const currentKey of apiKeys) {
                 try {
-                    // Corrigido para o modelo oficial 'gemini-1.5-flash'
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${currentKey}`, {
+                    // Atualizado para o modelo mais recente e suportado 'gemini-2.0-flash'
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${currentKey}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
