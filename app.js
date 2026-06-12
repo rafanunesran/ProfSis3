@@ -6373,7 +6373,7 @@ function abrirModalGerarDocumentoIA() {
                     <label style="font-weight:bold; display:block; margin-bottom:5px;">Semana Vigente:</label>
                     <input type="text" id="iaDocSemana" value="${semanaSugerida}" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
                 </div>
-                
+
                 <div style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
                     <button class="btn btn-secondary" onclick="closeModal('modalGerarDocumentoIA')">Cancelar</button>
                     <button class="btn btn-primary" onclick="gerarDocumentoIA()">Gerar Estrutura</button>
@@ -6412,6 +6412,19 @@ async function gerarDocumentoIA() {
     if (!serie || !disciplina) return alert('Por favor, selecione a série e a disciplina.');
     if (!tema) return alert('Por favor, informe o tema/assunto.');
 
+    // Busca a chave da API configurada com segurança no banco de dados
+    let apiKeys = [];
+    try {
+        const configData = await getData('system', 'config_ia');
+        if (configData && configData.apiKey) {
+            apiKeys = configData.apiKey.split(',').map(k => k.trim()).filter(k => k);
+        }
+    } catch(e) {
+        console.warn('Erro ao buscar chave da IA:', e);
+    }
+
+    if (apiKeys.length === 0) return alert('⚠️ A chave da API não foi configurada. Peça ao Administrador para entrar no painel Super Admin e adicioná-la na aba Migração.');
+
     const btn = document.querySelector('#modalGerarDocumentoIA .btn-primary');
     const originalText = btn.textContent;
     btn.textContent = 'Gerando estrutura... ⏳';
@@ -6437,9 +6450,6 @@ async function gerarDocumentoIA() {
         duracaoAulas = minhasAulas.filter(a => a.id_turma == idPrimeiraTurma && a.tipo === 'aula').length;
     }
 
-    // Usa a chave da API fixa fornecida
-    const apiKey = 'AIzaSyCnObYpnV4fZrwEbLpyRWmaW98eKLes2-M';
-
     try {
         let dadosEstruturados = {};
         let promptText = '';
@@ -6450,21 +6460,40 @@ Retorne APENAS um objeto JSON válido (sem marcações markdown e escape correta
 {"aprendizagem_essencial": "Sugestão de habilidade central da BNCC ou Currículo", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades cognitivas a desenvolver", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
         }
 
-        // Chamada real à API do Gemini
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: promptText }] }],
-                generationConfig: { temperature: 0.7, response_mime_type: "application/json" }
-            })
-        });
+        let apiData = null;
+        let success = false;
+        let lastError = '';
 
-        if (!response.ok) {
-            throw new Error(`Erro na API: ${response.statusText}`);
+        // Tenta fazer a requisição alternando entre as chaves caso uma atinja o limite ou falhe
+        for (const currentKey of apiKeys) {
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${currentKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: promptText }] }],
+                        generationConfig: { temperature: 0.7, response_mime_type: "application/json" }
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorObj = await response.json();
+                    throw new Error(errorObj.error ? errorObj.error.message : response.statusText);
+                }
+
+                apiData = await response.json();
+                success = true;
+                break; // Sucesso, sai do loop
+            } catch (err) {
+                lastError = err.message;
+                console.warn('⚠️ Falha com uma chave API, tentando a próxima...', err.message);
+            }
         }
 
-        const apiData = await response.json();
+        if (!success) {
+            throw new Error(`Google Gemini rejeitou o pedido.\\nMotivo: ${lastError}`);
+        }
+
         const respostaTexto = apiData.candidates[0].content.parts[0].text;
         
         // Limpa potenciais blocos markdown que a IA possa enviar por teimosia e converte para objeto
@@ -6568,10 +6597,6 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
 }
 
 async function exportarDocumentoFinal(tipo) {
-    // COLE AQUI A URL DO SEU APP DA WEB (Google Apps Script)
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwjtuTv69ZatCsFkpccQc4NJscgpozZiKs0qhrCk6sESdL3RPuEz_nP_l1jcfCgfTnYzg/exec';
-
-    if (SCRIPT_URL.includes('COLE_AQUI')) return alert('Por favor, configure a URL do seu Apps Script no arquivo app.js!');
 
     const btn = document.getElementById('btnExportarDoc');
     const originalText = btn.textContent;
@@ -6600,18 +6625,44 @@ async function exportarDocumentoFinal(tipo) {
     };
 
     try {
-        // Envia como "text/plain" para evitar problemas com CORS no Apps Script
-        const response = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
-        const result = await response.json();
-        
-        if (result.success) {
-            window.open(result.pdfUrl, '_blank'); // Abre o download do PDF automaticamente!
-            closeModal('modalRevisaoDocumento');
-        } else {
-            throw new Error(result.error);
+        // Nova Abordagem: Carregar o layout externo da pasta Docs
+        // Certifique-se de que a extensão do arquivo seja a mesma (.html, .txt, etc)
+        const response = await fetch('Docs/Base_Plano_Aula.html');
+        if (!response.ok) {
+            throw new Error('Não foi possível carregar o arquivo Docs/Base_Plano_Aula.html. Verifique o caminho e a extensão!');
         }
+        let templateHtml = await response.text();
+
+        // Substitui todos os marcadores (placeholders) pelos dados reais globalmente (/g)
+        let htmlFinal = templateHtml
+            .replace(/{{PROFESSOR}}/g, payload.professor || '')
+            .replace(/{{DISCIPLINA}}/g, payload.disciplina || '')
+            .replace(/{{SERIE}}/g, payload.serie || '')
+            .replace(/{{TURMAS}}/g, payload.turmasStr || '')
+            .replace(/{{TEMA}}/g, payload.tema || '')
+            .replace(/{{SEMANA}}/g, payload.semana || '')
+            .replace(/{{DURACAO}}/g, payload.duracaoAulas || '')
+            .replace(/{{APRENDIZAGEM_ESSENCIAL}}/g, payload.dados.aprendizagem_essencial || '')
+            .replace(/{{OBJETIVOS}}/g, payload.dados.objetivos || '')
+            .replace(/{{CONTEUDOS}}/g, payload.dados.conteudos || '')
+            .replace(/{{HABILIDADES}}/g, payload.dados.habilidades || '')
+            .replace(/{{DESENVOLVIMENTO}}/g, payload.dados.desenvolvimento || '')
+            .replace(/{{MATERIAIS}}/g, payload.dados.materiais || '')
+            .replace(/{{AVALIACAO}}/g, payload.dados.avaliacao || '');
+
+        // Injeta o script de auto-imprimir se ele não existir no seu arquivo base
+        if (!htmlFinal.includes('window.print')) {
+            htmlFinal += '<script>window.onload = function() { setTimeout(function(){ window.print(); }, 500); }</script>';
+        }
+
+        const win = window.open('', '', 'width=900,height=800');
+        win.document.write(htmlFinal);
+        win.document.close();
+        
+        closeModal('modalRevisaoDocumento');
+
     } catch (e) {
-        alert('Erro ao gerar documento no Google Drive: ' + e.message);
+        alert('Erro ao formatar o documento: ' + e.message);
     } finally {
         btn.textContent = originalText;
         btn.disabled = false;

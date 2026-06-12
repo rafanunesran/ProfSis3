@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Planos de Aula Semanais</title>
+<style>
+    @page { size: landscape; margin: 10mm; }
+    body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 0; }
+    .page-break { page-break-after: always; margin-bottom: 30px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    th, td { border: 1px solid black; padding: 6px; text-align: left; vertical-align: top; }
+    .header-table { border: none; width: 100%; margin-bottom: 10px; }
+    .header-table td { border: none; text-align: center; vertical-align: middle; }
+    .header-left { text-align: left; width: 250px; }
+    .header-right { text-align: right; width: 150px; }
+    .header-center { font-weight: bold; font-size: 14px; }
+    .subtitle { text-align: center; font-weight: bold; margin-bottom: 10px; font-size: 13px; }
+    .gray-bg { background-color: #f2f2f2; font-weight: bold; text-align: center; }
+    .center { text-align: center; }
+    .no-border { border: none; }
+    ul { margin: 0; padding-left: 15px; }
+    .filename { font-weight: bold; color: #333; margin-bottom: 5px; font-size: 12px; }
+</style>
+</head>
+<body>
+
+
+<div class="page-break">
+    <table class="header-table">
+        <tr>
+            <td class="header-left"><img src="Imagem 1.jpeg" style="max-width: 220px;"></td>
+            <td class="header-center">UNIDADE REGIONAL DE ENSINO - REGIÃO OSASCO<br>E.E. PEI PROFESSORA FRANCISCA LISBOA PERALTA<br>PLANO DE AULA</td>
+            <td class="header-right"><img src="Imagem 2.jpeg" style="max-width: 120px;"></td>
+        </tr>
+    </table>
+    <div class="subtitle">{{BIMESTRE}}</div>
+    
+    <table>
+        <tr>
+            <td colspan="4"><b>PROFESSOR:</b> {{PROFESSOR}}</td>
+            <td colspan="3"><b>DISCIPLINA:</b> {{DISCIPLINA}}</td>
+        </tr>
+        <tr>
+            <td colspan="4"><b>ANO:</b>{{SERIE}} {{TURMAS}}</td>
+            <td colspan="3"><b>DATA:</b> {{SEMANA}}</td>
+        </tr>
+        <tr>
+            <td colspan="4"><b>TEMA DA AULA:</b> {{TEMA}}</td>
+            <td colspan="3"><b>Aprendizagem essencial:</b> {{APRENDIZAGEM_ESSENCIAL}}</td>
+        </tr>
+        <tr class="gray-bg">
+            <td width="12%">CONTEÚDOS</td>
+            <td width="15%">HABILIDADES</td>
+            <td width="13%">OBJETIVOS</td>
+            <td width="30%">DESENVOLVIMENTO</td>
+            <td width="10%">MATERIAIS</td>
+            <td width="10%">AVALIAÇÃO</td>
+            <td width="10%">DURAÇÃO</td>
+        </tr>
+        <tr>
+            <td>{{CONTEUDOS}}</td>
+            <td>{{HABILIDADES}}</td>
+            <td>{{OBJETIVOS}}</td>
+            <td>
+                {{DESENVOLVIMENTO}}
+            </td>
+            <td>{{MATERIAIS}}</td>
+            <td>{{AVALIACAO}}</td>
+            <td class="center"><b>{{DURACAO}}</b></td>
+        </tr>
+        <tr>
+            <td colspan="7" style="height: 60px;">
+                <b>* OBSERVAÇÃO DO CGPG:</b><br><br>
+                <b>CIÊNCIA DO PROFESSOR:</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>CIÊNCIA DO CGPG:</b>
+            </td>
+        </tr>
+    </table>
+</div>
+
+</body>
+</html>
