@@ -462,7 +462,6 @@ function toggleSenha(id, btn) {
 // Carregamento de Dados
 async function carregarDadosUsuario() {
     if (!currentUser) return;
-    // getStorageKey e getInitialData vêm de shared.js
     const key = typeof getStorageKey === 'function' ? getStorageKey(currentUser) : 'app_data_' + currentUser.id;
     
     // CORREÇÃO: Usar getData para buscar do Firebase quando online, ou LocalStorage quando offline
@@ -475,13 +474,6 @@ async function carregarDadosUsuario() {
     } else {
         data = initial;
     }
-}
-
-async function persistirDados() {
-    if (!currentUser) return;
-    const key = typeof getStorageKey === 'function' ? getStorageKey(currentUser) : 'app_data_' + currentUser.id;
-    // CORREÇÃO: Usar saveData unificado para garantir persistência no local correto (Firebase ou Local)
-    await saveData('app_data', key, data);
 }
 
 // [NOVO] Função de Migração (Pode ser chamada pelo console ou botão de Admin)

@@ -63,6 +63,7 @@ function checkAuth(requiredRole) {
 function logout() {
     localStorage.removeItem('app_current_user');
     localStorage.removeItem('app_last_access');
+    sessionStorage.removeItem('app_view_mode');
     
     // Se o Firebase estiver ativo, desloga dele também para evitar login automático ao recarregar
     if (typeof firebase !== 'undefined' && firebase.auth) {
