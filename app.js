@@ -26,7 +26,12 @@ async function iniciarApp() {
     }
 
     // Define o modo inicial se ainda não estiver definido
-    if (!currentViewMode && currentUser) currentViewMode = currentUser.role;
+    const savedMode = sessionStorage.getItem('app_view_mode');
+    if (savedMode) {
+        currentViewMode = savedMode;
+    } else if (!currentViewMode && currentUser) {
+        currentViewMode = currentUser.role;
+    }
 
     // Carregar dados
     carregarDadosUsuario().then(async () => {
@@ -514,7 +519,8 @@ function aplicarTemaSalvo() {
 // Função que realiza a troca de contexto (Nova versão com 3 modos)
 function mudarModoVisualizacao(novoModo) {
     currentViewMode = novoModo;
-    iniciarApp(); // Recarrega a interface com o novo modo
+    sessionStorage.setItem('app_view_mode', novoModo);
+    location.reload(); // Recarregamento forçado para garantir isolamento total de memória e dados
 }
 
 function renderProfessorPanel() {
