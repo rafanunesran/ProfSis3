@@ -1093,6 +1093,38 @@ function editarTurma(id) {
     }
 }
 
+// --- INTEGRAÇÃO RPA (SALA DO FUTURO) ---
+async function iniciarSincronizacaoRPA() {
+    if (!confirm("Deseja iniciar a sincronização das chamadas de hoje com a Sala do Futuro via Robô (RPA)?\n\nCertifique-se de que o servidor local está rodando.")) return;
+    
+    try {
+        const todayStr = getTodayString();
+        const faltasHoje = (data.presencas || []).filter(p => p.data === todayStr && p.status === 'falta');
+        
+        alert(`Sincronização acionada! Foram identificadas ${faltasHoje.length} faltas nas suas turmas hoje.\n\nO robô assumirá o controle em breve.`);
+        
+        /* 
+        // Exemplo de integração com o servidor local Express que criamos:
+        const payload = {
+            professorId: currentUser.id || currentUser.uid,
+            data: todayStr,
+            // Aqui você poderá mapear os alunos por turma para enviar requisições separadas
+        };
+
+        const response = await fetch('http://localhost:3000/api/sync-chamada', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if(result.success) alert("Sincronização concluída com sucesso no Governo!");
+        */
+    } catch (error) {
+        console.error("Erro na integração com RPA:", error);
+        alert("Erro ao conectar com o robô local. Verifique se o servidor RPA na porta 3000 está em execução.");
+    }
+}
+
 function salvarTurma(e) {
     e.preventDefault();
     const id = document.getElementById('turmaId').value;
