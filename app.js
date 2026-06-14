@@ -4082,7 +4082,6 @@ async function agendarTodosTutorados(listaOrdenada = null) {
     if (slotsLivres.length === 0) return alert('Nenhum horário disponível gerado.');
 
     let tIndex = 0;
-    tutorados.sort((a,b) => a.nome_estudante.localeCompare(b.nome_estudante));
 
     slotsLivres.forEach(slot => {
         slot.tutoradoId = tutorados[tIndex].id;
