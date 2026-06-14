@@ -87,6 +87,23 @@ async function iniciarApp() {
                     document.head.appendChild(favicon);
                 }
                 favicon.href = logoEscola;
+                
+                // Adiciona também para a barra de favoritos e atalhos de celular
+                let shortcutIcon = document.querySelector("link[rel='shortcut icon']");
+                if (!shortcutIcon) {
+                    shortcutIcon = document.createElement('link');
+                    shortcutIcon.rel = 'shortcut icon';
+                    document.head.appendChild(shortcutIcon);
+                }
+                shortcutIcon.href = logoEscola;
+
+                let appleIcon = document.querySelector("link[rel='apple-touch-icon']");
+                if (!appleIcon) {
+                    appleIcon = document.createElement('link');
+                    appleIcon.rel = 'apple-touch-icon';
+                    document.head.appendChild(appleIcon);
+                }
+                appleIcon.href = logoEscola;
             } else {
                 headerTitle.textContent = `SisProf - ${nomeEscola}`;
             }
