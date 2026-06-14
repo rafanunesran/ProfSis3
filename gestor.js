@@ -2,6 +2,10 @@
 
 let currentRegistrosTab = 'administrativos'; // 'administrativos', 'busca_ativa', 'bimestres', 'arquivados' ou 'limpeza'
 let currentBuscaAtivaSubTab = 'consecutive'; // 'consecutive', 'weekly', 'percentage'
+let cacheBuscaAtiva = null;
+let stateArqBimestre = 0;
+let stateArqTurma = 0;
+let stateArqNome = '';
 
 function renderGestorPanel() {
     // Navegação de Gestor
@@ -105,11 +109,57 @@ function renderRegistrosGestor() {
 }
 
 function renderAbaRegistrosArquivados() {
+    const container = document.getElementById('registrosGestorContent');
+    container.innerHTML = `
+        <div id="arquivadosContainer">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+                <h2 style="margin: 0;">🗄️ Arquivo Histórico de Registros</h2>
+                <button class="btn btn-primary" onclick="abrirNovoRegistroGestao()">+ Novo Registro</button>
+            </div>
+            
+            <div class="card" style="background: #f8fafc; border: 1px solid #e2e8f0; margin-bottom: 20px; padding: 15px;">
+                <h4 style="margin-top: 0; color: #2c5282; margin-bottom: 10px;">Filtros</h4>
+                <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
+                    <label style="flex: 1; min-width: 150px;">
+                        <span style="font-size: 12px; font-weight: bold;">Bimestre:</span><br>
+                        <select id="filtroArqBimestre" onchange="atualizarFiltrosArquivados()" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #cbd5e0;">
+                            <option value="0" ${stateArqBimestre === 0 ? 'selected' : ''}>Todos</option>
+                            <option value="1" ${stateArqBimestre === 1 ? 'selected' : ''}>1º Bimestre</option>
+                            <option value="2" ${stateArqBimestre === 2 ? 'selected' : ''}>2º Bimestre</option>
+                            <option value="3" ${stateArqBimestre === 3 ? 'selected' : ''}>3º Bimestre</option>
+                            <option value="4" ${stateArqBimestre === 4 ? 'selected' : ''}>4º Bimestre</option>
+                        </select>
+                    </label>
+                    <label style="flex: 1; min-width: 150px;">
+                        <span style="font-size: 12px; font-weight: bold;">Turma:</span><br>
+                        <select id="filtroArqTurma" onchange="atualizarFiltrosArquivados()" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #cbd5e0;">
+                            <option value="0" ${stateArqTurma === 0 ? 'selected' : ''}>Todas</option>
+                            ${(data.turmas || []).map(t => `<option value="${t.id}" ${stateArqTurma == t.id ? 'selected' : ''}>${t.nome}</option>`).join('')}
+                        </select>
+                    </label>
+                    <label style="flex: 2; min-width: 200px;">
+                        <span style="font-size: 12px; font-weight: bold;">Buscar por Nome:</span><br>
+                        <input type="text" id="filtroArqNome" value="${stateArqNome}" oninput="atualizarFiltrosArquivados()" placeholder="Digite o nome do estudante..." style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #cbd5e0;">
+                    </label>
+                </div>
+            </div>
+            
+            <div id="listaArquivadosContent"></div>
+        </div>
+    `;
+    renderListaArquivados();
+}
+
+function atualizarFiltrosArquivados() {
+    stateArqBimestre = parseInt(document.getElementById('filtroArqBimestre').value) || 0;
+    stateArqTurma = parseInt(document.getElementById('filtroArqTurma').value) || 0;
+    stateArqNome = document.getElementById('filtroArqNome').value.toLowerCase();
+    renderListaArquivados();
+}
+
+function renderListaArquivados() {
     const registros = data.registrosAdministrativos || [];
     const configBimestres = data.configBimestres || [];
-    
-    // Filtro de Bimestre (Padrão: Todos)
-    const selBim = document.getElementById('filtroArqBimestre') ? parseInt(document.getElementById('filtroArqBimestre').value) : 0; 
 
     const getBimestreParaData = (dataStr) => {
         const match = configBimestres.find(c => dataStr >= c.inicio && dataStr <= c.fim);
@@ -118,8 +168,8 @@ function renderAbaRegistrosArquivados() {
 
     // Processar todos os dados (incluindo vencidos)
     let lista = registros.map(r => {
-        const estudante = data.estudantes.find(e => e.id == r.estudanteId) || { nome_completo: 'Desconhecido' };
-        const turma = data.turmas.find(t => t.id == r.turmaId) || { nome: '?' };
+        const estudante = (data.estudantes || []).find(e => e.id == r.estudanteId) || { nome_completo: 'Desconhecido' };
+        const turma = (data.turmas || []).find(t => t.id == r.turmaId) || { nome: '?' };
         const bim = getBimestreParaData(r.data);
         
         let status = 'Ativo';
@@ -150,7 +200,9 @@ function renderAbaRegistrosArquivados() {
         return { ...r, estudanteNome: estudante.nome_completo, turmaNome: turma.nome, status, cor, bim };
     });
 
-    if (selBim > 0) lista = lista.filter(item => item.bim === selBim);
+    if (stateArqBimestre > 0) lista = lista.filter(item => item.bim === stateArqBimestre);
+    if (stateArqTurma > 0) lista = lista.filter(item => item.turmaId === stateArqTurma);
+    if (stateArqNome) lista = lista.filter(item => item.estudanteNome.toLowerCase().includes(stateArqNome));
 
     // Agrupar por Bimestre e depois por Turma
     const grupos = {};
@@ -163,22 +215,7 @@ function renderAbaRegistrosArquivados() {
 
     const bimestresOrdenados = Object.keys(grupos).sort();
 
-    const html = `
-        <div>
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h2>🗄️ Arquivo Histórico de Registros</h2>
-                <div>
-                    <label style="font-size:14px; font-weight:bold;">Filtrar Bimestre: </label>
-                    <select id="filtroArqBimestre" onchange="renderAbaRegistrosArquivados()" style="padding: 5px; border-radius: 4px;">
-                        <option value="0" ${selBim === 0 ? 'selected' : ''}>Todos</option>
-                        <option value="1" ${selBim === 1 ? 'selected' : ''}>1º Bimestre</option>
-                        <option value="2" ${selBim === 2 ? 'selected' : ''}>2º Bimestre</option>
-                        <option value="3" ${selBim === 3 ? 'selected' : ''}>3º Bimestre</option>
-                        <option value="4" ${selBim === 4 ? 'selected' : ''}>4º Bimestre</option>
-                    </select>
-                </div>
-            </div>
-            ${bimestresOrdenados.length > 0 ? bimestresOrdenados.map(bimKey => `
+    const html = bimestresOrdenados.length > 0 ? bimestresOrdenados.map(bimKey => `
                 <h3 style="margin-top: 20px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: #2d3748;">${bimKey}</h3>
                 ${Object.keys(grupos[bimKey]).sort().map(turmaNome => `
                     <h4 style="margin-top: 15px; color: #4a5568; background: #edf2f7; padding: 5px 10px; border-radius: 4px;">${turmaNome}</h4>
@@ -189,7 +226,7 @@ function renderAbaRegistrosArquivados() {
                                 <tr>
                                     <td style="color: ${r.cor}; font-weight: bold;">${r.tipo}</td>
                                     <td><span class="badge" style="background:${r.status === 'Vencido' ? '#e2e8f0' : '#ebf8ff'}; color:${r.cor}; font-size:10px;">${r.status}</span></td>
-                                    <td>${getAeePrefix(data.estudantes.find(e => e.id == r.estudanteId))}${r.estudanteNome}</td>
+                                    <td>${getAeePrefix((data.estudantes || []).find(e => e.id == r.estudanteId))}${r.estudanteNome}</td>
                                     <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
                                     <td><button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})">🗑️</button></td>
                                 </tr>
@@ -197,10 +234,8 @@ function renderAbaRegistrosArquivados() {
                         </tbody>
                     </table>
                 `).join('')}
-            `).join('') : '<p class="empty-state">Nenhum registro histórico encontrado.</p>'}
-        </div>
-    `;
-    document.getElementById('registrosGestorContent').innerHTML = html;
+            `).join('') : '<p class="empty-state">Nenhum registro histórico encontrado.</p>';
+    document.getElementById('listaArquivadosContent').innerHTML = html;
 }
 
 function renderAbaConfigBimestres() {
@@ -252,94 +287,142 @@ function salvarConfigBimestres(e) {
     renderRegistrosGestor();
 }
 
-async function renderAbaAlertasBuscaAtiva() {
+async function renderAbaAlertasBuscaAtiva(forceRefresh = false) {
     const container = document.getElementById('registrosGestorContent');
-    container.innerHTML = '<div><p>Analisando dados de frequência de toda a escola... Isso pode levar um momento.</p></div>';
-
-    // --- 1. Coleta de Dados ---
-    const allStudents = data.estudantes || [];
-    const allTurmas = data.turmas || [];
-    const schoolId = currentUser.schoolId;
-
-    if (!schoolId) {
-        container.innerHTML = '<p class="empty-state" style="color:red;">Erro: ID da escola não encontrado para o gestor.</p>';
-        return;
-    }
-
-    // [MODIFICADO] Busca dados diretamente dos perfis dos professores para garantir histórico retroativo completo
-    const attendanceData = {}; // { dateStr: { studentId: [teacherId, ...] } }
-    const daysByTurma = {}; // { masterTurmaId: Set(dateStr) }
     
-    try {
-        const usersData = await getData('system', 'users_list');
-        const users = (usersData && usersData.list) ? usersData.list : [];
-        
-        // Filtra professores da escola
-        const teachers = users.filter(u => u.schoolId === schoolId && u.role !== 'super_admin');
-        
-        // Busca dados de cada professor em paralelo (mais rápido)
-        const promises = teachers.map(async (t) => {
-            // Usa UID se disponível (padrão novo), senão ID
-            const storageKey = (t.uid) ? 'app_data_' + t.uid : 'app_data_' + t.id;
-            const profData = await getData('app_data', storageKey);
-            return { teacherId: t.id, data: profData };
-        });
-
-        const results = await Promise.all(promises);
-
-        results.forEach(res => {
-            if (!res.data) return;
-
-            // 1. Identifica dias com lançamento (qualquer lançamento conta como dia de aula para a turma)
-            if (res.data.registrosAula) {
-                res.data.registrosAula.forEach(r => {
-                    const tProf = (res.data.turmas || []).find(t => t.id == r.id_turma);
-                    const masterId = tProf ? tProf.masterId : null;
-                    if (masterId) {
-                        if (!daysByTurma[masterId]) daysByTurma[masterId] = new Set();
-                        daysByTurma[masterId].add(r.data);
-                    }
-                });
-            }
-
-            if (res.data.presencas) {
-                res.data.presencas.forEach(p => {
-                    // Encontra a turma do estudante na lista do gestor para agrupar datas por turma física
-                    const studentMaster = allStudents.find(s => s.id == p.id_estudante);
-                    const masterId = studentMaster ? studentMaster.id_turma : null;
-                    
-                    if (masterId) {
-                        if (!daysByTurma[masterId]) daysByTurma[masterId] = new Set();
-                        daysByTurma[masterId].add(p.data);
-                    }
-
-                    if (p.status === 'falta') {
-                        if (!attendanceData[p.data]) attendanceData[p.data] = {};
-                        if (!attendanceData[p.data][p.id_estudante]) attendanceData[p.data][p.id_estudante] = [];
-                        
-                        // Adiciona ID do professor se ainda não estiver na lista
-                        if (!attendanceData[p.data][p.id_estudante].includes(res.teacherId)) {
-                            attendanceData[p.data][p.id_estudante].push(res.teacherId);
-                        }
-                    }
-                });
-            }
-        });
-    } catch (e) {
-        console.error("Erro ao agregar dados:", e);
-        container.innerHTML = `<p class="empty-state" style="color:red;">Erro ao processar dados: ${e.message}</p>`;
-        return;
+    if (forceRefresh || !document.getElementById('resultadoBuscaAtiva')) {
+        container.innerHTML = `
+            <div class="card" style="margin-bottom: 15px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 15px;">
+                <h4 style="margin-top: 0; color: #2c5282; margin-bottom: 15px;">Filtros de Busca Ativa</h4>
+                <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
+                    <label>
+                        <span style="font-size: 12px; font-weight: bold;">Vigência:</span><br>
+                        <select id="filtroVigenciaBA" onchange="processarAlertasBuscaAtiva()" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e0;">
+                            <option value="total">Total (Ano Letivo)</option>
+                            <option value="1">1º Bimestre</option>
+                            <option value="2">2º Bimestre</option>
+                            <option value="3">3º Bimestre</option>
+                            <option value="4">4º Bimestre</option>
+                        </select>
+                    </label>
+                    <label>
+                        <span style="font-size: 12px; font-weight: bold;">Porcentagem Limite (Baixa Freq.):</span><br>
+                        <input type="number" id="filtroPorcentagemBA" value="70" max="100" min="0" onchange="processarAlertasBuscaAtiva()" style="padding: 6px; width: 80px; border-radius: 4px; border: 1px solid #cbd5e0;"> %
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; padding-bottom: 6px;">
+                        <input type="checkbox" id="filtroOcultarFaltososBA" onchange="processarAlertasBuscaAtiva()">
+                        <span style="font-size: 13px; font-weight: bold; color: #4a5568;">Ocultar alunos já marcados como Faltosos</span>
+                    </label>
+                    <button class="btn btn-sm btn-secondary" onclick="renderAbaAlertasBuscaAtiva(true)">🔄 Atualizar Dados</button>
+                </div>
+            </div>
+            <div id="resultadoBuscaAtiva">
+                <p>Analisando dados de frequência de toda a escola... Isso pode levar um momento.</p>
+            </div>
+        `;
     }
+
+    const resultadoDiv = document.getElementById('resultadoBuscaAtiva');
+
+    if (forceRefresh || !cacheBuscaAtiva) {
+        resultadoDiv.innerHTML = '<p>Analisando dados de frequência de toda a escola... Isso pode levar um momento.</p>';
+        
+        const allStudents = data.estudantes || [];
+        const allTurmas = data.turmas || [];
+        const schoolId = currentUser.schoolId;
+
+        if (!schoolId) {
+            resultadoDiv.innerHTML = '<p class="empty-state" style="color:red;">Erro: ID da escola não encontrado para o gestor.</p>';
+            return;
+        }
+
+        const attendanceData = {}; 
+        const daysByTurma = {}; 
+        
+        try {
+            const usersData = await getData('system', 'users_list');
+            const users = (usersData && usersData.list) ? usersData.list : [];
+            const teachers = users.filter(u => u.schoolId === schoolId && u.role !== 'super_admin');
+            
+            const promises = teachers.map(async (t) => {
+                const storageKey = (t.uid) ? 'app_data_' + t.uid : 'app_data_' + t.id;
+                const profData = await getData('app_data', storageKey);
+                return { teacherId: t.id, data: profData };
+            });
+
+            const results = await Promise.all(promises);
+
+            results.forEach(res => {
+                if (!res.data) return;
+
+                if (res.data.registrosAula) {
+                    res.data.registrosAula.forEach(r => {
+                        const tProf = (res.data.turmas || []).find(t => t.id == r.id_turma);
+                        const masterId = tProf ? tProf.masterId : null;
+                        if (masterId) {
+                            if (!daysByTurma[masterId]) daysByTurma[masterId] = new Set();
+                            daysByTurma[masterId].add(r.data);
+                        }
+                    });
+                }
+
+                if (res.data.presencas) {
+                    res.data.presencas.forEach(p => {
+                        const studentMaster = allStudents.find(s => s.id == p.id_estudante);
+                        const masterId = studentMaster ? studentMaster.id_turma : null;
+                        
+                        if (masterId) {
+                            if (!daysByTurma[masterId]) daysByTurma[masterId] = new Set();
+                            daysByTurma[masterId].add(p.data);
+                        }
+
+                        if (p.status === 'falta') {
+                            if (!attendanceData[p.data]) attendanceData[p.data] = {};
+                            if (!attendanceData[p.data][p.id_estudante]) attendanceData[p.data][p.id_estudante] = [];
+                            
+                            if (!attendanceData[p.data][p.id_estudante].includes(res.teacherId)) {
+                                attendanceData[p.data][p.id_estudante].push(res.teacherId);
+                            }
+                        }
+                    });
+                }
+            });
+
+            cacheBuscaAtiva = {
+                allStudents,
+                allTurmas,
+                attendanceData,
+                daysByTurma
+            };
+
+        } catch (e) {
+            console.error("Erro ao agregar dados:", e);
+            resultadoDiv.innerHTML = `<p class="empty-state" style="color:red;">Erro ao processar dados: ${e.message}</p>`;
+            return;
+        }
+    }
+
+    processarAlertasBuscaAtiva();
+}
+
+function processarAlertasBuscaAtiva() {
+    if (!cacheBuscaAtiva) return;
+
+    const { allStudents, allTurmas, attendanceData, daysByTurma } = cacheBuscaAtiva;
+    const resultadoDiv = document.getElementById('resultadoBuscaAtiva');
+
+    const vigencia = document.getElementById('filtroVigenciaBA') ? document.getElementById('filtroVigenciaBA').value : 'total';
+    const percentLimit = document.getElementById('filtroPorcentagemBA') ? parseFloat(document.getElementById('filtroPorcentagemBA').value) : 70;
+    const ocultarFaltosos = document.getElementById('filtroOcultarFaltososBA') ? document.getElementById('filtroOcultarFaltososBA').checked : false;
 
     const currentYear = new Date().getFullYear();
-
-    // --- 2. Processamento dos Alertas ---
     const alerts = { consecutive: [], weekly: [], percentage: [] };
     const MIN_TEACHERS_FOR_ABSENCE = 1;
 
     const allAtestados = (data.registrosAdministrativos || []).filter(r => r.tipo === 'Atestado');
     const allFaltosos = (data.registrosAdministrativos || []).filter(r => r.tipo === 'Faltoso');
-    
+    const configBimestres = data.configBimestres || [];
+
     const hasAtestadoOnDate = (studentId, dateStr) => {
         const studentAtestados = allAtestados.filter(r => r.estudanteId == studentId);
         const checkDate = new Date(dateStr + 'T12:00:00');
@@ -360,7 +443,7 @@ async function renderAbaAlertasBuscaAtiva() {
     };
 
     const todayForWeek = new Date();
-    const dayOfWeek = todayForWeek.getDay(); // 0=Sun, 1=Mon
+    const dayOfWeek = todayForWeek.getDay();
     const lastSunday = new Date(todayForWeek);
     lastSunday.setDate(todayForWeek.getDate() - dayOfWeek);
     lastSunday.setHours(0, 0, 0, 0);
@@ -371,20 +454,70 @@ async function renderAbaAlertasBuscaAtiva() {
     const sundayOfPreviousWeek = new Date(lastSunday);
     sundayOfPreviousWeek.setDate(lastSunday.getDate() - 1);
 
+    let dataInicioVigencia = null;
+    let dataFimVigencia = null;
+
+    if (vigencia !== 'total') {
+        const bimestre = configBimestres.find(b => b.bim == parseInt(vigencia));
+        if (bimestre && bimestre.inicio && bimestre.fim) {
+            dataInicioVigencia = bimestre.inicio;
+            dataFimVigencia = bimestre.fim;
+        }
+    }
+
     for (const student of allStudents) {
         if(student.status !== 'Ativo') continue;
 
-        // [MODIFICADO] Considera apenas dias onde houve lançamento (chamada ou diário) para a turma do estudante
-        const studentDates = Array.from(daysByTurma[student.id_turma] || [])
+        const isFaltosoFlag = allFaltosos.some(r => r.estudanteId == student.id);
+        
+        if (ocultarFaltosos && isFaltosoFlag) continue;
+
+        let studentDates = Array.from(daysByTurma[student.id_turma] || [])
             .filter(d => d.startsWith(String(currentYear)))
             .sort();
 
+        if (dataInicioVigencia && dataFimVigencia) {
+            studentDates = studentDates.filter(d => d >= dataInicioVigencia && d <= dataFimVigencia);
+        }
+
         if (studentDates.length === 0) continue;
 
-        const atestadosDoAluno = allAtestados.filter(r => r.estudanteId == student.id);
-        const atestadosCount = atestadosDoAluno.length;
-        const diasAtestadoTotal = atestadosDoAluno.reduce((acc, curr) => acc + (parseInt(curr.dias) || 1), 0);
-        const isFaltosoFlag = allFaltosos.some(r => r.estudanteId == student.id);
+        let atestadosDoAluno = allAtestados.filter(r => r.estudanteId == student.id);
+        let atestadosCount = 0;
+        let diasAtestadoTotal = 0;
+
+        if (dataInicioVigencia && dataFimVigencia) {
+            const vigenciaInicio = new Date(dataInicioVigencia + 'T12:00:00');
+            const vigenciaFim = new Date(dataFimVigencia + 'T12:00:00');
+            
+            const atestadosFiltrados = atestadosDoAluno.filter(ates => {
+                const parts = ates.data.split('-');
+                const inicioAtes = new Date(parts[0], parts[1]-1, parts[2]);
+                const fimAtes = new Date(inicioAtes);
+                fimAtes.setDate(fimAtes.getDate() + (parseInt(ates.dias) || 1) - 1);
+                return inicioAtes <= vigenciaFim && fimAtes >= vigenciaInicio;
+            });
+            
+            atestadosCount = atestadosFiltrados.length;
+            
+            atestadosFiltrados.forEach(ates => {
+                const parts = ates.data.split('-');
+                const inicioAtes = new Date(parts[0], parts[1]-1, parts[2]);
+                const fimAtes = new Date(inicioAtes);
+                fimAtes.setDate(fimAtes.getDate() + (parseInt(ates.dias) || 1) - 1);
+                
+                const start = inicioAtes > vigenciaInicio ? inicioAtes : vigenciaInicio;
+                const end = fimAtes < vigenciaFim ? fimAtes : vigenciaFim;
+                
+                if (start <= end) {
+                    const diffDays = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+                    diasAtestadoTotal += diffDays;
+                }
+            });
+        } else {
+            atestadosCount = atestadosDoAluno.length;
+            diasAtestadoTotal = atestadosDoAluno.reduce((acc, curr) => acc + (parseInt(curr.dias) || 1), 0);
+        }
         
         const absencesList = studentDates.filter(dateStr => wasAbsent(student.id, dateStr));
         const totalAbsences = absencesList.length;
@@ -394,7 +527,7 @@ async function renderAbaAlertasBuscaAtiva() {
         const adjustedPresencePercentage = studentDates.length > 0 ? ((studentDates.length - absencesWithoutAtestado) / studentDates.length) * 100 : 100;
 
         const atestadosInfo = atestadosCount > 0 ? `🏥 ${atestadosCount} atestado(s) (${diasAtestadoTotal} dias)` : '';
-        const percInfo = `<span title="Presença Bruta: ${presencePercentage.toFixed(0)}%">${adjustedPresencePercentage.toFixed(0)}% presença (s/ atestado)</span>`;
+        const percInfo = `<span title="PB = Presença Bruta | DA = Presença Descontando Atestado">PB: ${presencePercentage.toFixed(0)}% | DA: ${adjustedPresencePercentage.toFixed(0)}%</span>`;
 
         // a) Faltas Consecutivas
         let consecutiveCount = 0, maxConsecutive = 0;
@@ -416,10 +549,9 @@ async function renderAbaAlertasBuscaAtiva() {
         if (lastWeekAbsences >= 3) alerts.weekly.push({ student, detail: `${lastWeekAbsences} faltas na semana passada`, atestadosInfo, percInfo, isFaltoso: isFaltosoFlag });
 
         // c) Baixa Frequência
-        if (presencePercentage < 70) alerts.percentage.push({ student, detail: `${presencePercentage.toFixed(0)}% de presença bruta`, atestadosInfo, percInfo, isFaltoso: isFaltosoFlag });
+        if (adjustedPresencePercentage < percentLimit) alerts.percentage.push({ student, detail: '', atestadosInfo, percInfo, isFaltoso: isFaltosoFlag });
     }
 
-    // --- 3. Renderização (Visão em Abas) ---
     const renderAlertList = (alertList, title) => {
         if (alertList.length === 0) return `<p class="empty-state">Nenhum estudante encontrado com este alerta no momento.</p>`;
         const byTurma = {};
@@ -431,6 +563,13 @@ async function renderAbaAlertasBuscaAtiva() {
         });
 
         let listHtml = `<h4 style="margin-top:0;">${title} (${alertList.length})</h4>`;
+        
+        if (currentBuscaAtivaSubTab === 'percentage') {
+            listHtml += `<div style="font-size: 11px; color: #718096; margin-bottom: 10px; background: #edf2f7; padding: 5px; border-radius: 4px;">
+                <strong>Legenda:</strong> PB = Presença Bruta | DA = Presença Descontando Atestado
+            </div>`;
+        }
+
         Object.keys(byTurma).sort().forEach(turmaName => {
             listHtml += `<div class="card" style="margin-bottom:10px; background:white;">
                 <h5 style="margin:0 0 5px 0; padding-bottom:5px; border-bottom:1px solid #eee;">${turmaName}</h5>
@@ -438,12 +577,17 @@ async function renderAbaAlertasBuscaAtiva() {
             byTurma[turmaName].forEach(item => {
                 const faltosoBadge = item.isFaltoso ? `<span style="background:#fed7d7; color:#c53030; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold;">🚨 Faltoso</span>` : `<button class="btn btn-danger" style="margin-left:8px; padding:2px 8px; font-size:10px; border-radius:4px;" onclick="marcarComoFaltosoBuscaAtiva(${item.student.id}, ${item.student.id_turma})">+ Marcar Faltoso</button>`;
                 
-                listHtml += `<li style="margin-bottom:8px; display:flex; align-items:center; flex-wrap:wrap; gap:5px; border-bottom:1px dashed #edf2f7; padding-bottom:5px;">
-                    ${getAeePrefix(item.student)}<strong>${item.student.nome_completo}</strong>: 
-                    <span style="color:#4a5568;">${item.detail}</span> 
-                    | <strong style="color:#2c5282;">${item.percInfo}</strong>
-                    ${item.atestadosInfo ? ` | <span style="color:#d69e2e; font-size:12px;">${item.atestadosInfo}</span>` : ''}
-                    ${faltosoBadge}
+                const detailHtml = item.detail ? `<span style="color:#4a5568;">${item.detail}</span> | ` : '';
+                const atestadoHtml = item.atestadosInfo ? `<div style="color:#d69e2e; font-size:12px; margin-top:2px;">${item.atestadosInfo}</div>` : '';
+
+                listHtml += `<li style="margin-bottom:8px; display:flex; flex-direction:column; border-bottom:1px dashed #edf2f7; padding-bottom:5px;">
+                    <div style="display:flex; align-items:center; flex-wrap:wrap; gap:5px;">
+                        ${getAeePrefix(item.student)}<strong>${item.student.nome_completo}</strong>: 
+                        ${detailHtml}
+                        <strong style="color:#2c5282;">${item.percInfo}</strong>
+                        ${faltosoBadge}
+                    </div>
+                    ${atestadoHtml}
                 </li>`;
             });
             listHtml += `</ul></div>`;
@@ -451,21 +595,23 @@ async function renderAbaAlertasBuscaAtiva() {
         return listHtml;
     };
 
+    const percentText = percentLimit < 100 ? `Menos de ${percentLimit}%` : `${percentLimit}%`;
+
     const subTabs = `
         <div style="display: flex; gap: 5px; margin-bottom: 0px; border-bottom: 2px solid #e2e8f0; position: relative; z-index: 1;">
             <button class="btn btn-sm ${currentBuscaAtivaSubTab === 'consecutive' ? 'btn-primary' : 'btn-secondary'}" 
                     style="border-radius: 8px 8px 0 0; padding: 10px 20px; border-bottom: none; font-weight: bold; margin-bottom: -2px;"
-                    onclick="currentBuscaAtivaSubTab='consecutive'; renderAbaAlertasBuscaAtiva()">
+                    onclick="currentBuscaAtivaSubTab='consecutive'; processarAlertasBuscaAtiva()">
                 🚨 Consecutivas (${alerts.consecutive.length})
             </button>
             <button class="btn btn-sm ${currentBuscaAtivaSubTab === 'weekly' ? 'btn-primary' : 'btn-secondary'}" 
                     style="border-radius: 8px 8px 0 0; padding: 10px 20px; border-bottom: none; font-weight: bold; margin-bottom: -2px;"
-                    onclick="currentBuscaAtivaSubTab='weekly'; renderAbaAlertasBuscaAtiva()">
+                    onclick="currentBuscaAtivaSubTab='weekly'; processarAlertasBuscaAtiva()">
                 📅 Semana Passada (${alerts.weekly.length})
             </button>
             <button class="btn btn-sm ${currentBuscaAtivaSubTab === 'percentage' ? 'btn-primary' : 'btn-secondary'}" 
                     style="border-radius: 8px 8px 0 0; padding: 10px 20px; border-bottom: none; font-weight: bold; margin-bottom: -2px;"
-                    onclick="currentBuscaAtivaSubTab='percentage'; renderAbaAlertasBuscaAtiva()">
+                    onclick="currentBuscaAtivaSubTab='percentage'; processarAlertasBuscaAtiva()">
                 📉 Baixa Frequência (${alerts.percentage.length})
             </button>
         </div>
@@ -480,11 +626,11 @@ async function renderAbaAlertasBuscaAtiva() {
         activeContent = renderAlertList(alerts.weekly, 'Faltas na Semana Anterior (3 ou mais no total)');
         activeStyle = 'background:#fffaf0; border:1px solid #fbd38d;';
     } else {
-        activeContent = renderAlertList(alerts.percentage, 'Baixa Frequência (Menos de 70% de presença total)');
+        activeContent = renderAlertList(alerts.percentage, `Baixa Frequência (${percentText} de presença DA)`);
         activeStyle = 'background:#ebf8ff; border:1px solid #bee3f8;';
     }
 
-    container.innerHTML = `
+    resultadoDiv.innerHTML = `
         <div style="margin-top: 10px;">
             ${subTabs}
             <div style="padding:25px; border-radius:0 0 8px 8px; min-height: 300px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); ${activeStyle}">
@@ -527,13 +673,13 @@ function renderAbaRegistrosAdministrativos() {
     // 1. Processar e Filtrar
     let lista = registros.map(r => {
         // Simulação de busca de estudante (em produção buscaria do banco)
-        const estudante = data.estudantes.find(e => e.id == r.estudanteId) || { nome_completo: 'Desconhecido' };
+        const estudante = (data.estudantes || []).find(e => e.id == r.estudanteId) || { nome_completo: 'Desconhecido' };
         
         if (estudante.status && estudante.status !== 'Ativo') {
             return null;
         }
         
-        const turma = data.turmas.find(t => t.id == r.turmaId) || { nome: '?' };
+        const turma = (data.turmas || []).find(t => t.id == r.turmaId) || { nome: '?' };
         
         let status = 'Ativo';
         let cor = '#22c55e';
@@ -593,7 +739,7 @@ function renderAbaRegistrosAdministrativos() {
                                 ${grupos[turmaNome].map(r => `
                                     <tr>
                                         <td style="color: ${r.cor}; font-weight: bold;">${r.tipo}</td>
-                                        <td>${getAeePrefix(data.estudantes.find(e => e.id == r.estudanteId))}${r.estudanteNome}</td>
+                                        <td>${getAeePrefix((data.estudantes || []).find(e => e.id == r.estudanteId))}${r.estudanteNome}</td>
                                         <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
                                         <td>
                                             <button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})">🗑️</button>
