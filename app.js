@@ -365,14 +365,22 @@ async function abrirModalPerfil() {
             </div>
             <div style="background:#faf5ff; padding:10px; border-radius:6px; border:1px solid #d6bcfa;">
                 <strong style="font-size:12px; color:#553c9a; display:block; margin-bottom:5px;">Passo 2: Uso Diário</strong>
-                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Ao clicar no botão abaixo, o sistema preparará as faltas e registros de hoje. Depois, basta abrir o site do Estado e clicar no favorito que você salvou.</p>
-                <button class="btn btn-sm" onclick="prepararSincronizacaoRPA()" style="width:100%; background-color:#805ad5; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🚀 Sincronizar Chamadas de Hoje</button>
+                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Envie os dados de hoje para serem usados no Governo.</p>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-sm" onclick="prepararSincronizacaoRPA()" style="flex:1; background-color:#805ad5; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🚀 Usar Robô Favorito</button>
+                    <button class="btn btn-sm" onclick="enviarDadosParaExtensao()" style="flex:1; background-color:#3182ce; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🧩 Enviar para Extensão</button>
+                </div>
             </div>
             <div style="background:#f0fff4; padding:10px; border-radius:6px; border:1px solid #c6f6d5; margin-top:10px;">
                 <strong style="font-size:12px; color:#276749; display:block; margin-bottom:5px;">Passo 3: Atualizar Turma (Sincronizar SED)</strong>
                 <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Após usar a opção "Extrair Alunos" no Robô, clique abaixo para puxar a lista automaticamente.</p>
                 <button class="btn btn-sm" onclick="sincronizarAlunosNuvem()" style="width:100%; background-color:#38a169; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🔄 Atualizar Turma (Puxar da Nuvem)</button>
                 <button class="btn btn-sm btn-secondary" onclick="abrirModalImportarAlunosSED()" style="width:100%; margin-top:5px; padding:8px; border-radius:4px;">Ou Colar Lista Manualmente</button>
+            </div>
+            <div style="background:#edf2f7; padding:10px; border-radius:6px; border:1px solid #cbd5e0; margin-top:10px;">
+                <strong style="font-size:12px; color:#2d3748; display:block; margin-bottom:5px;">Alternativa: Extensão do Chrome (Robusta)</strong>
+                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">A extensão sobrevive ao atualizar a página na SED, ideal para navegar por várias turmas seguidas.</p>
+                <button class="btn btn-sm btn-info" onclick="baixarArquivosExtensao()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🧩 Baixar Arquivos da Extensão</button>
             </div>
         </div>
     `;
@@ -1408,6 +1416,165 @@ function gerarCodigoBookmarklet() {
     // Minifica o código do bookmarklet para garantir que ele rode corretamente como URL
     return code.replace(/\n/g, ' ').replace(/\s{2,}/g, ' ');
 }
+
+window.enviarDadosParaExtensao = function() {
+    if (!currentUser) return alert('Usuário não identificado.');
+    const todayStr = getTodayString();
+    
+    const faltasHoje = (data.presencas || []).filter(p => p.data === todayStr && p.status === 'falta');
+    const alunosFaltantes = [];
+    faltasHoje.forEach(f => {
+        const estudante = (data.estudantes || []).find(e => e.id == f.id_estudante);
+        if (estudante) alunosFaltantes.push({ nome: estudante.nome_completo });
+    });
+    const registrosHoje = (data.registrosAula || []).filter(r => r.data === todayStr);
+
+    const payload = {
+        data: todayStr,
+        faltas: alunosFaltantes,
+        registros: registrosHoje.map(r => ({ conteudo: r.conteudo }))
+    };
+
+    window.postMessage({ type: 'EXT_SEND_PAYLOAD', payload: payload }, '*');
+    alert('Tentando enviar os dados de Hoje para a Extensão do Chrome...\\n\\nSe ela estiver instalada e ativa, um aviso verde aparecerá no canto inferior direito da tela!');
+};
+
+window.baixarArquivosExtensao = function() {
+    const files = [
+        {
+            name: 'manifest.json',
+            content: `{
+  "manifest_version": 3,
+  "name": "Robô SisProf SED",
+  "version": "1.0",
+  "description": "Automatiza chamadas na Sala do Futuro",
+  "permissions": ["tabs", "storage"],
+  "host_permissions": ["https://saladofuturo.educacao.sp.gov.br/*", "*://localhost/*", "https://*.firebaseapp.com/*", "https://*.profsis3.com/*", "https://*.web.app/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["*://localhost/*", "https://*.firebaseapp.com/*", "https://*.profsis3.com/*", "https://*.web.app/*"],
+      "js": ["content_profsis.js"]
+    },
+    {
+      "matches": ["https://saladofuturo.educacao.sp.gov.br/*"],
+      "js": ["content_sed.js"]
+    }
+  ]
+}`
+        },
+        {
+            name: 'background.js',
+            content: `chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'SYNC_DATA') {
+        chrome.storage.local.set({ rpa_data: request.payload }, () => {
+            sendResponse({ success: true });
+        });
+        return true;
+    }
+    if (request.action === 'GET_DATA') {
+        chrome.storage.local.get(['rpa_data'], (result) => {
+            sendResponse(result.rpa_data);
+        });
+        return true;
+    }
+});`
+        },
+        {
+            name: 'content_profsis.js',
+            content: `window.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'EXT_SEND_PAYLOAD') {
+        chrome.runtime.sendMessage({ action: 'SYNC_DATA', payload: e.data.payload }, (res) => {
+            if (res && res.success) {
+                const div = document.createElement('div');
+                div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#38a169; color:white; padding:10px 20px; border-radius:5px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 6px rgba(0,0,0,0.1);';
+                div.textContent = '✅ Dados recebidos pela Extensão Chrome!';
+                document.body.appendChild(div);
+                setTimeout(() => div.remove(), 4000);
+            }
+        });
+    }
+});`
+        },
+        {
+            name: 'content_sed.js',
+            content: `console.log('Robô SisProf SED - Ativo na Aba');
+function criarMenuFlutuante() {
+    if (document.getElementById('rpa-ext-menu')) return;
+    const div = document.createElement('div');
+    div.id = 'rpa-ext-menu';
+    div.style.cssText = 'position:fixed; bottom:20px; right:20px; width:250px; background:#fff; border:2px solid #805ad5; border-radius:8px; z-index:999999; box-shadow:0 10px 25px rgba(0,0,0,0.2); font-family:sans-serif; overflow:hidden;';
+    div.innerHTML = '<div style="background:#805ad5; color:#fff; padding:10px; font-weight:bold; text-align:center;">🧩 Extensão SisProf</div>' +
+        '<div style="padding:15px;">' +
+        '<button id="extBtnPreencher" style="width:100%; padding:10px; background:#3182ce; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">1️⃣ Preencher Chamada / Aula</button>' +
+        '</div>';
+    document.body.appendChild(div);
+    document.getElementById('extBtnPreencher').addEventListener('click', () => {
+        const btn = document.getElementById('extBtnPreencher');
+        btn.textContent = 'Buscando na Extensão...';
+        chrome.runtime.sendMessage({ action: 'GET_DATA' }, (data) => {
+            btn.textContent = '1️⃣ Preencher Chamada / Aula';
+            if(!data || !data.faltas) return alert('Nenhuma chamada pendente.\\n\\nVolte ao site do SisProf e clique em "Enviar para Extensão".');
+            executarPreenchimento(data);
+        });
+    });
+}
+function executarPreenchimento(payload) {
+    const normalize = s => s ? s.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").replace(/\\s+/g, " ").trim().toUpperCase() : "";
+    const alunosAlvo = payload.faltas.map(a => normalize(a.nome));
+    const cardsAlunos = document.querySelectorAll('.card_aluno1, .card_aluno');
+    if (cardsAlunos.length === 0) return alert('Lista de alunos não encontrada na tela. Por favor, certifique-se de estar na aba correta (Listagem de Chamada).');
+    let interagidos = 0;
+    cardsAlunos.forEach(card => {
+        const nomeElement = card.querySelector('.nome_aluno');
+        if (!nomeElement) return;
+        let nomeAluno = normalize(nomeElement.textContent).replace(/^\\d+\\s*-\\s*/, '');
+        const checkbox = card.querySelector('.falta_presenca_container input[type="checkbox"]');
+        if(!checkbox) return;
+        const levouFalta = alunosAlvo.includes(nomeAluno);
+        if (levouFalta && !checkbox.checked) { checkbox.click(); interagidos++; }
+        else if (!levouFalta && checkbox.checked) { checkbox.click(); }
+    });
+    if(payload.registros && payload.registros.length > 0) {
+        const txt = document.querySelector('textarea[name="o.Descricao"], textarea.form-control, textarea');
+        if(txt) {
+            txt.value = payload.registros[0].conteudo;
+            txt.dispatchEvent(new Event('input', {bubbles: true}));
+            txt.dispatchEvent(new Event('change', {bubbles: true}));
+        }
+    }
+    setTimeout(() => {
+        const btnSalvar = Array.from(document.querySelectorAll('button, a, input[type="submit"]')).find(b => {
+            const t = (b.textContent || b.value || '').trim().toLowerCase();
+            return t === 'salvar' || t === 'cadastrar' || t.includes('salvar');
+        });
+        if(btnSalvar) { btnSalvar.click(); alert('✅ Concluído! ' + interagidos + ' faltas preenchidas e salvas.'); } 
+        else { alert('✅ ' + interagidos + ' faltas preenchidas!\\n\\n⚠️ Salve manualmente, o botão final de Salvar não foi identificado de forma automática.'); }
+    }, 500);
+}
+setInterval(() => { if (document.querySelector('.grid-listagem') || document.querySelector('textarea[name="o.Descricao"]')) criarMenuFlutuante(); }, 2000);`
+        }
+    ];
+
+    if (confirm('O navegador baixará 4 arquivos (manifest.json, background.js, content_profsis.js e content_sed.js).\\n\\nO seu navegador pode pedir permissão para "Fazer download de múltiplos arquivos", certifique-se de PERMITIR.\\n\\nDeseja prosseguir?')) {
+        files.forEach((file, index) => {
+            setTimeout(() => {
+                const blob = new Blob([file.content], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = file.name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, index * 400); // 400ms de intervalo para evitar bloqueio agressivo pelo navegador
+        });
+        setTimeout(() => {
+            alert('Arquivos baixados!\\n\\nCOMO INSTALAR:\\n1. Crie uma pasta vazia chamada "Robo SisProf" e arraste os 4 arquivos baixados para dentro dela.\\n2. Abra chrome://extensions/ (ou Gerenciar Extensões) no Chrome.\\n3. Ative o "Modo do desenvolvedor" no canto superior direito.\\n4. Clique no botão "Carregar sem compactação" (canto superior esquerdo).\\n5. Selecione a pasta que você acabou de criar.\\n\\nPronto! A Extensão foi instalada e sempre que a aba do Governo abrir, um botão roxo vai aparecer.');
+        }, files.length * 400 + 500);
+    }
+};
 
 async function sincronizarAlunosNuvem() {
     if (!currentUser) return alert('Usuário não identificado.');
