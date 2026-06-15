@@ -1203,7 +1203,8 @@ function gerarCodigoBookmarklet() {
             ui.innerHTML = '<div style="background:#3182ce; color:#fff; padding:10px; font-weight:bold; display:flex; justify-content:space-between; align-items:center;"><span>🤖 Robô SisProf</span><span style="cursor:pointer;" onclick="this.parentElement.parentElement.remove(); window.sisprofRoboAtivo=false;">✖</span></div>' +
                            '<div style="padding:15px;" id="sisprof-content">' +
                            '<p style="margin:0 0 10px 0; font-size:13px; color:#4a5568; font-weight:bold;">O que você deseja fazer?</p>' +
-                           '<button onclick="iniciarExtrairAlunos()" style="width:100%; background:#38a169; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">📥 Extrair Alunos (Atualizar Turma)</button>' +
+                           '<button onclick="iniciarExtrairAlunos()" style="width:100%; background:#38a169; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">📥 Extrair Alunos (Turma Atual)</button>' +
+                           '<button onclick="iniciarExtrairTodasTurmas()" style="width:100%; background:#276749; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">📥 Extrair TODAS as Turmas (Auto)</button>' +
                            '<button onclick="iniciarPreenchimento()" style="width:100%; background:#3182ce; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">📤 Preencher Chamada / Aula</button>' +
                            '</div>';
             document.body.appendChild(ui);
@@ -1261,6 +1262,61 @@ function gerarCodigoBookmarklet() {
                 frame.contentWindow.postMessage({ type: 'SISPROF_SAVE_ALUNOS', payload: payload }, '*');
                 
                 content.innerHTML = '<p style="color:#38a169; font-weight:bold; font-size:13px;">Enviando para a nuvem...</p>';
+            };
+
+            window.iniciarExtrairTodasTurmas = async function() {
+                const selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
+                if (!selectTurma) return alert('Seletor de turma não encontrado. Certifique-se de estar na tela com o filtro de turmas (ex: Frequência).');
+                
+                const content = document.getElementById('sisprof-content');
+                const todasTurmas = [];
+                const options = Array.from(selectTurma.options).filter(o => o.value && o.text && !o.text.toLowerCase().includes('selecione') && !o.text.toLowerCase().includes('todos'));
+                
+                if (options.length === 0) return alert('Nenhuma turma encontrada no seletor.');
+                if (!confirm('O robô vai processar ' + options.length + ' turmas automaticamente.\\n\\nNÃO CLIQUE em nada até ele terminar. Deseja continuar?')) return;
+
+                for (let i = 0; i < options.length; i++) {
+                    const opt = options[i];
+                    content.innerHTML = '<p style="color:#2b6cb0; font-weight:bold; font-size:13px;">⏳ Lendo ' + opt.text.trim() + '... (' + (i+1) + '/' + options.length + ')</p>';
+                    
+                    selectTurma.value = opt.value;
+                    selectTurma.dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
+                    let btnBuscar = null;
+                    buttons.forEach(b => {
+                        const text = (b.innerText || b.value || '').toLowerCase();
+                        if (text.includes('pesquisar') || text.includes('buscar')) btnBuscar = b;
+                    });
+                    if (btnBuscar) btnBuscar.click();
+
+                    await new Promise(r => setTimeout(r, 4000));
+                    
+                    const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"]');
+                    const alunos = [];
+                    cardsAlunos.forEach(card => {
+                        const nomeElement = card.querySelector('.nome_aluno');
+                        if (!nomeElement) return;
+                        let nomeCompleto = nomeElement.textContent.trim();
+                        nomeCompleto = nomeCompleto.replace(/^\\d+\\s*-\\s*/, '');
+                        alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
+                    });
+                    
+                    if (alunos.length > 0) {
+                        todasTurmas.push({ turmaSED: opt.text.trim(), alunos: alunos });
+                    }
+                }
+                
+                if (todasTurmas.length === 0) {
+                    content.innerHTML = '<p style="color:#e53e3e; font-weight:bold; font-size:13px;">Nenhum aluno encontrado nas turmas.</p>';
+                    return;
+                }
+
+                const payload = { type: 'SISPROF_IMPORT_ALUNOS_MULTI', turmas: todasTurmas, timestamp: Date.now() };
+                const frame = document.getElementById('sisprof-iframe');
+                frame.contentWindow.postMessage({ type: 'SISPROF_SAVE_ALUNOS', payload: payload }, '*');
+                
+                content.innerHTML = '<p style="color:#38a169; font-weight:bold; font-size:13px;">✅ ' + todasTurmas.length + ' turmas copiadas com sucesso!</p>';
             };
 
             window.iniciarPreenchimento = function() {
@@ -1344,11 +1400,15 @@ async function sincronizarAlunosNuvem() {
             if (local) payload = JSON.parse(local);
         }
 
-        if (!payload || !payload.alunos || payload.alunos.length === 0) {
+        if (!payload || (!payload.alunos && !payload.turmas)) {
             return alert('Nenhuma lista de alunos pendente na nuvem.\\n\\nUse o Robô na Secretaria Digital (SED) e escolha a opção "Extrair Alunos" primeiro.');
         }
 
-        abrirModalImportarAlunosSED(payload);
+        if (payload.type === 'SISPROF_IMPORT_ALUNOS_MULTI') {
+            abrirModalImportacaoMultiSED(payload);
+        } else {
+            abrirModalImportarAlunosSED(payload);
+        }
     } catch(e) {
         console.error(e);
         alert('Erro ao buscar dados na nuvem.');
@@ -1477,6 +1537,149 @@ function processarImportacaoSED() {
     closeModal('modalImportarAlunosSED');
     
     if (typeof turmaAtual !== 'undefined' && turmaAtual == turmaId) {
+        showTurmaTab('estudantes');
+    }
+}
+
+function abrirModalImportacaoMultiSED(payload) {
+    closeModal('modalPerfilUsuario');
+    window.currentMultiPayload = payload;
+    
+    if (!document.getElementById('modalImportarMultiSED')) {
+        const div = document.createElement('div');
+        div.id = 'modalImportarMultiSED';
+        div.className = 'modal';
+        document.body.appendChild(div);
+    }
+    
+    const modal = document.getElementById('modalImportarMultiSED');
+    const turmasLocais = data.turmas || [];
+    
+    const normalizeTurma = (t) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "").replace(/\s+/g, '');
+    
+    let htmlList = '';
+    let matchCount = 0;
+
+    payload.turmas.forEach((turmaExtraida) => {
+        const sedNorm = normalizeTurma(turmaExtraida.turmaSED);
+        
+        const matches = turmasLocais.filter(t => {
+            const tNomeBase = t.nome.split('-')[0]; // Ignora a disciplina que vem depois do traço
+            const tNorm = normalizeTurma(tNomeBase);
+            return sedNorm.includes(tNorm) || tNorm.includes(sedNorm);
+        });
+        
+        if (matches.length > 0) {
+            matchCount++;
+            htmlList += `
+                <div style="margin-bottom: 10px; padding: 10px; border: 1px solid #c6f6d5; background: #f0fff4; border-radius: 4px;">
+                    <strong style="color: #276749;">SED: ${turmaExtraida.turmaSED}</strong> (${turmaExtraida.alunos.length} alunos)<br>
+                    <span style="font-size:12px; color: #2f855a;">↳ Atualizará: ${matches.map(m => m.nome + (m.disciplina ? ' - '+m.disciplina : '')).join(', ')}</span>
+                </div>
+            `;
+        } else {
+            htmlList += `
+                <div style="margin-bottom: 10px; padding: 10px; border: 1px solid #fed7d7; background: #fff5f5; border-radius: 4px;">
+                    <strong style="color: #c53030;">SED: ${turmaExtraida.turmaSED}</strong> (${turmaExtraida.alunos.length} alunos)<br>
+                    <span style="font-size:12px; color: #e53e3e;">↳ Nenhuma turma correspondente no SisProf (Ignorada).</span>
+                </div>
+            `;
+        }
+    });
+
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 600px; max-height: 80vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h2>📥 Sincronização Inteligente (Várias Turmas)</h2>
+                <button class="close-btn" onclick="closeModal('modalImportarMultiSED')">×</button>
+            </div>
+            <p style="font-size:13px; color:#4a5568; margin-bottom:15px;">
+                O robô extraiu <strong>${payload.turmas.length}</strong> turmas. 
+                O SisProf identificou <strong>${matchCount}</strong> correspondências locais (ignorando as disciplinas).
+            </p>
+            <div style="margin-bottom: 20px;">
+                ${htmlList}
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:10px; border-top:1px solid #e2e8f0; padding-top:15px;">
+                <button class="btn btn-secondary" onclick="closeModal('modalImportarMultiSED')">Cancelar</button>
+                <button class="btn btn-primary" onclick="processarImportacaoMultiSED()" ${matchCount === 0 ? 'disabled' : ''}>
+                    ✅ Sincronizar Turmas Correspondentes
+                </button>
+            </div>
+        </div>
+    `;
+    
+    showModal('modalImportarMultiSED');
+}
+
+function processarImportacaoMultiSED() {
+    const payload = window.currentMultiPayload;
+    if (!payload || !payload.turmas) return alert('Dados perdidos. Tente novamente.');
+    if (!confirm('Esta ação verificará e atualizará todas as turmas exibidas como correspondentes.\\nAlunos não listados na SED serão marcados como "Transferido".\\n\\nDeseja prosseguir?')) return;
+
+    const turmasLocais = data.turmas || [];
+    const normalizeTurma = (t) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "").replace(/\s+/g, '');
+    const normalizeName = (name) => name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase().replace(/\s+/g, ' ');
+
+    let totalAdicionados = 0;
+    let totalReativados = 0;
+    let totalTransferidos = 0;
+    let turmasAtualizadas = 0;
+
+    if (!data.estudantes) data.estudantes = [];
+
+    payload.turmas.forEach(turmaExtraida => {
+        const sedNorm = normalizeTurma(turmaExtraida.turmaSED);
+        const matches = turmasLocais.filter(t => {
+            const tNomeBase = t.nome.split('-')[0];
+            const tNorm = normalizeTurma(tNomeBase);
+            return sedNorm.includes(tNorm) || tNorm.includes(sedNorm);
+        });
+
+        if (matches.length > 0) {
+            turmasAtualizadas++;
+            const alunosExtraidos = turmaExtraida.alunos;
+            const nomesExtraidosSet = new Set(alunosExtraidos.map(a => normalizeName(a.nome)));
+
+            matches.forEach(tLocal => {
+                const estudantesTurma = data.estudantes.filter(e => e.id_turma == tLocal.id);
+                
+                estudantesTurma.forEach(e => {
+                    const nomeUpper = normalizeName(e.nome_completo);
+                    if (!nomesExtraidosSet.has(nomeUpper) && e.status === 'Ativo') {
+                        e.status = 'Transferido';
+                        totalTransferidos++;
+                    }
+                });
+
+                alunosExtraidos.forEach(aExtraido => {
+                    const nomeUpper = normalizeName(aExtraido.nome);
+                    const existente = estudantesTurma.find(e => normalizeName(e.nome_completo) === nomeUpper);
+                    
+                    if (existente) {
+                        if (existente.status !== 'Ativo') {
+                            existente.status = 'Ativo';
+                            totalReativados++;
+                        }
+                    } else {
+                        data.estudantes.push({
+                            id: Date.now() + Math.floor(Math.random() * 10000),
+                            id_turma: tLocal.id,
+                            nome_completo: aExtraido.nome,
+                            status: 'Ativo'
+                        });
+                        totalAdicionados++;
+                    }
+                });
+            });
+        }
+    });
+
+    persistirDados();
+    alert(`Sincronização Múltipla Concluída!\\n\\nTurmas Atualizadas: ${turmasAtualizadas}\\n✔️ Novos alunos: ${totalAdicionados}\\n🔄 Alunos reativados: ${totalReativados}\\n❌ Alunos transferidos (saíram): ${totalTransferidos}`);
+    closeModal('modalImportarMultiSED');
+
+    if (typeof turmaAtual !== 'undefined' && document.getElementById('turmaDetalhe') && document.getElementById('turmaDetalhe').classList.contains('active')) {
         showTurmaTab('estudantes');
     }
 }
