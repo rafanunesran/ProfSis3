@@ -1361,19 +1361,43 @@ function gerarCodigoBookmarklet() {
                     if (levouFalta && !checkbox.checked) { checkbox.click(); interagidos++; }
                     else if (!levouFalta && checkbox.checked) { checkbox.click(); }
                 });
-                alert('Concluído! ' + interagidos + ' faltas preenchidas no sistema da SED.');
+                
+                setTimeout(() => {
+                    const btnSalvar = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a')).find(b => {
+                        const text = (b.innerText || b.value || '').toLowerCase();
+                        return text.includes('salvar') || text.includes('cadastrar') || text.includes('gravar') || text.includes('finalizar');
+                    });
+                    if (btnSalvar) {
+                        btnSalvar.click();
+                        alert('✅ Concluído! ' + interagidos + ' faltas preenchidas e salvas na SED.');
+                    } else {
+                        alert('✅ Concluído! ' + interagidos + ' faltas preenchidas.\\n\\n⚠️ Não encontrei o botão de "Salvar" automaticamente. Por favor, clique nele manualmente.');
+                    }
+                }, 500);
             };
             
             window.preencherRegistroRPA = function() {
                 const payload = window.sisprofPayload;
                 if(!payload.registros || payload.registros.length === 0) return alert('Nenhum registro de aula escrito para o dia de hoje.');
                 
-                const txt = document.querySelector('textarea#conteudoAula, textarea[name="registroAula"], textarea.form-control');
+                const txt = document.querySelector('textarea#conteudoAula, textarea[name="registroAula"], textarea.form-control, textarea');
                 if(txt) {
                     txt.value = payload.registros[0].conteudo;
                     txt.dispatchEvent(new Event("input", { bubbles: true }));
                     txt.dispatchEvent(new Event("change", { bubbles: true }));
-                    alert('Texto preenchido!');
+                    
+                    setTimeout(() => {
+                        const btnSalvar = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a')).find(b => {
+                            const text = (b.innerText || b.value || '').toLowerCase();
+                            return text.includes('salvar') || text.includes('cadastrar') || text.includes('gravar') || text.includes('finalizar');
+                        });
+                        if (btnSalvar) {
+                            btnSalvar.click();
+                            alert('✅ Texto preenchido e salvo na SED!');
+                        } else {
+                            alert('✅ Texto preenchido!\\n\\n⚠️ Não encontrei o botão de "Salvar" automaticamente. Por favor, clique nele manualmente.');
+                        }
+                    }, 500);
                 } else {
                     alert('Campo de texto não encontrado. Abra a aba de Registro de Aula.');
                 }
