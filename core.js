@@ -239,6 +239,24 @@ function init() {
             window.parent.postMessage({ type: 'SISPROF_RPA_DATA', payload: payload || {} }, '*');
         };
         
+        // Listener para receber comandos do Robô e salvar no DB do app
+        window.addEventListener('message', async (e) => {
+            if (e.data && e.data.type === 'SISPROF_SAVE_ALUNOS') {
+                try {
+                    const payload = e.data.payload;
+                    const importKey = 'rpa_import_' + profId;
+                    if (typeof db !== 'undefined' && db) {
+                        await db.collection('app_data').doc(importKey).set(payload);
+                    } else {
+                        localStorage.setItem(importKey, JSON.stringify(payload));
+                    }
+                    window.parent.postMessage({ type: 'SISPROF_SAVE_SUCCESS' }, '*');
+                } catch(err) {
+                    window.parent.postMessage({ type: 'SISPROF_SAVE_ERROR', error: err.message }, '*');
+                }
+            }
+        });
+
         sendToParent();
         return; // Interrompe o carregamento normal do app
     }
