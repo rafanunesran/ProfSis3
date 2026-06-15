@@ -342,6 +342,35 @@ async function abrirModalPerfil() {
         </div>
     `;
 
+    // [NOVO] Integração RPA Sala do Futuro
+    let integrationArea = document.getElementById('secaoIntegracaoPerfil');
+    if (!integrationArea) {
+        integrationArea = document.createElement('div');
+        integrationArea.id = 'secaoIntegracaoPerfil';
+        containerTemas.parentNode.appendChild(integrationArea);
+    }
+    
+    const bookmarkletCode = gerarCodigoBookmarklet();
+    
+    integrationArea.innerHTML = `
+        <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cbd5e0;">
+            <h4 style="color:#2c5282; margin-bottom:5px; font-size:14px;">🤖 Integração Sala do Futuro (SED)</h4>
+            <p style="font-size:11px; color:#718096; margin-bottom:10px;">Ferramentas para enviar suas chamadas e registros automaticamente para o governo.</p>
+            <div style="background:#ebf8ff; padding:10px; border-radius:6px; margin-bottom:10px; border:1px solid #bee3f8;">
+                <strong style="font-size:12px; color:#2b6cb0; display:block; margin-bottom:5px;">Passo 1: Instalação (Faça apenas uma vez)</strong>
+                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Clique, segure e arraste o botão verde abaixo para a barra de favoritos do seu navegador:</p>
+                <div style="text-align:center;">
+                    <a href="javascript:(function(){${encodeURIComponent(bookmarkletCode)}})();" class="btn btn-sm" style="background-color:#38a169; color:white; font-weight:bold; padding:8px 15px; border-radius:20px; display:inline-block; text-decoration:none; box-shadow:0 2px 4px rgba(0,0,0,0.1); cursor:grab;" title="Arraste-me para os favoritos!">🧩 Robô SisProf</a>
+                </div>
+            </div>
+            <div style="background:#faf5ff; padding:10px; border-radius:6px; border:1px solid #d6bcfa;">
+                <strong style="font-size:12px; color:#553c9a; display:block; margin-bottom:5px;">Passo 2: Uso Diário</strong>
+                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Ao clicar no botão abaixo, o sistema preparará as faltas e registros de hoje. Depois, basta abrir o site do Estado e clicar no favorito que você salvou.</p>
+                <button class="btn btn-sm" onclick="prepararSincronizacaoRPA()" style="width:100%; background-color:#805ad5; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🚀 Sincronizar Chamadas de Hoje</button>
+            </div>
+        </div>
+    `;
+
     showModal('modalPerfilUsuario');
 }
 
