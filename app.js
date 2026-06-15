@@ -369,9 +369,10 @@ async function abrirModalPerfil() {
                 <button class="btn btn-sm" onclick="prepararSincronizacaoRPA()" style="width:100%; background-color:#805ad5; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🚀 Sincronizar Chamadas de Hoje</button>
             </div>
             <div style="background:#f0fff4; padding:10px; border-radius:6px; border:1px solid #c6f6d5; margin-top:10px;">
-                <strong style="font-size:12px; color:#276749; display:block; margin-bottom:5px;">Passo 3: Atualizar Lista de Alunos (SED)</strong>
-                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Copie a lista usando o Robô na SED, e clique abaixo para colar e atualizar sua turma no SisProf.</p>
-                <button class="btn btn-sm" onclick="abrirModalImportarAlunosSED()" style="width:100%; background-color:#38a169; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🔄 Atualizar Turma (Colar Lista)</button>
+                <strong style="font-size:12px; color:#276749; display:block; margin-bottom:5px;">Passo 3: Atualizar Turma (Sincronizar SED)</strong>
+                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Após usar a opção "Extrair Alunos" no Robô, clique abaixo para puxar a lista automaticamente.</p>
+                <button class="btn btn-sm" onclick="sincronizarAlunosNuvem()" style="width:100%; background-color:#38a169; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🔄 Atualizar Turma (Puxar da Nuvem)</button>
+                <button class="btn btn-sm btn-secondary" onclick="abrirModalImportarAlunosSED()" style="width:100%; margin-top:5px; padding:8px; border-radius:4px;">Ou Colar Lista Manualmente</button>
             </div>
         </div>
     `;
@@ -1201,38 +1202,39 @@ function gerarCodigoBookmarklet() {
             ui.style.cssText = 'position:fixed; top:20px; right:20px; width:320px; background:#fff; border:2px solid #3182ce; border-radius:8px; z-index:999999; box-shadow:0 10px 25px rgba(0,0,0,0.2); font-family:sans-serif; overflow:hidden;';
             ui.innerHTML = '<div style="background:#3182ce; color:#fff; padding:10px; font-weight:bold; display:flex; justify-content:space-between; align-items:center;"><span>🤖 Robô SisProf</span><span style="cursor:pointer;" onclick="this.parentElement.parentElement.remove(); window.sisprofRoboAtivo=false;">✖</span></div>' +
                            '<div style="padding:15px;" id="sisprof-content">' +
-                           '<p style="margin:0 0 10px 0; font-size:13px; color:#4a5568;">Conectando ao banco de dados do professor...</p>' +
+                           '<p style="margin:0 0 10px 0; font-size:13px; color:#4a5568; font-weight:bold;">O que você deseja fazer?</p>' +
+                           '<button onclick="iniciarExtrairAlunos()" style="width:100%; background:#38a169; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">📥 Extrair Alunos (Atualizar Turma)</button>' +
+                           '<button onclick="iniciarPreenchimento()" style="width:100%; background:#3182ce; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">📤 Preencher Chamada / Aula</button>' +
                            '</div>';
             document.body.appendChild(ui);
             
             const iframe = document.createElement('iframe');
+            iframe.id = 'sisprof-iframe';
             iframe.src = "${urlApp}?rpa_fetch=true&profId=${profId}";
             iframe.style.display = 'none';
             document.body.appendChild(iframe);
             
             window.addEventListener('message', function(e) {
                 if(e.data && e.data.type === 'SISPROF_RPA_DATA') {
-                    const content = document.getElementById('sisprof-content');
-                    const payload = e.data.payload;
-                    if(!payload || !payload.faltas) {
-                        let buttonsHtml = '<p style="color:#e53e3e; font-size:13px; font-weight:bold;">Nenhum dado pendente de chamada encontrado.</p><p style="font-size:12px; color:#718096; margin-bottom:15px;">Certifique-se de clicar em "Sincronizar" no SisProf primeiro se quiser fazer chamadas.</p>';
-                    } else {
-                        window.sisprofPayload = payload;
-                        let buttonsHtml = '<p style="font-size:13px; color:#2f855a; font-weight:bold; margin:0 0 10px 0;">✅ Dados de ' + payload.data + ' recebidos!</p>' +
-                                      '<p style="font-size:12px; color:#4a5568; margin-bottom:15px;">Faltas detectadas: <b>' + payload.faltas.length + '</b></p>' +
-                                      '<button onclick="preencherChamadaRPA()" style="width:100%; background:#3182ce; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">1️⃣ Preencher Chamada</button>' +
-                                      '<button onclick="preencherRegistroRPA()" style="width:100%; background:#805ad5; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">2️⃣ Preencher Diário (Texto)</button>';
+                    window.sisprofPayload = e.data.payload;
+                    if (window.esperandoDados) {
+                        mostrarBotoesPreenchimento(window.sisprofPayload);
                     }
-                    
-                    buttonsHtml += '<hr style="border-top:1px dashed #cbd5e0; margin:15px 0;"><button onclick="extrairAlunosRPA()" style="width:100%; background:#38a169; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">3️⃣ Extrair Alunos (Atualizar Turma)</button>';
-                    
-                    content.innerHTML = buttonsHtml;
+                } else if (e.data && e.data.type === 'SISPROF_SAVE_SUCCESS') {
+                    const content = document.getElementById('sisprof-content');
+                    content.innerHTML = '<p style="font-size:13px; color:#2f855a; font-weight:bold; margin:0 0 10px 0;">✅ Lista salva na nuvem com sucesso!</p>' + 
+                    '<p style="font-size:12px; color:#4a5568;">Volte ao SisProf e clique em <b>"Atualizar Turma (Puxar da Nuvem)"</b>.</p>';
+                } else if (e.data && e.data.type === 'SISPROF_SAVE_ERROR') {
+                    alert('Erro ao salvar na nuvem: ' + e.data.error);
                 }
-            }, {once: true});
+            });
 
-            window.extrairAlunosRPA = function() {
+            window.iniciarExtrairAlunos = function() {
                 const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"]');
                 if(cardsAlunos.length === 0) return alert('Nenhum aluno encontrado na tela. Abra a tela de chamada da turma desejada primeiro!');
+                
+                const content = document.getElementById('sisprof-content');
+                content.innerHTML = '<p style="color:#2b6cb0; font-weight:bold; font-size:13px;">Extraindo ' + cardsAlunos.length + ' alunos...</p>';
                 
                 const alunos = [];
                 cardsAlunos.forEach(card => {
@@ -1247,15 +1249,40 @@ function gerarCodigoBookmarklet() {
                     });
                 });
                 
-                const dataStr = JSON.stringify({ type: 'SISPROF_IMPORT_ALUNOS', alunos: alunos });
-                const ta = document.createElement('textarea');
-                ta.value = dataStr;
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
+                let turmaSelecionada = "Desconhecida";
+                const selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
+                if (selectTurma && selectTurma.options[selectTurma.selectedIndex]) {
+                    turmaSelecionada = selectTurma.options[selectTurma.selectedIndex].text.trim();
+                }
                 
-                alert('✅ Lista com ' + alunos.length + ' alunos copiada!\\n\\nAgora volte ao SisProf, clique em "Atualizar Turma (Colar Lista)" e cole os dados.');
+                const payload = { type: 'SISPROF_IMPORT_ALUNOS', alunos: alunos, turmaSED: turmaSelecionada, timestamp: Date.now() };
+                
+                const frame = document.getElementById('sisprof-iframe');
+                frame.contentWindow.postMessage({ type: 'SISPROF_SAVE_ALUNOS', payload: payload }, '*');
+                
+                content.innerHTML = '<p style="color:#38a169; font-weight:bold; font-size:13px;">Enviando para a nuvem...</p>';
+            };
+
+            window.iniciarPreenchimento = function() {
+                const content = document.getElementById('sisprof-content');
+                content.innerHTML = '<p style="color:#2b6cb0; font-weight:bold; font-size:13px;">Buscando dados na nuvem...</p>';
+                if (window.sisprofPayload) {
+                    mostrarBotoesPreenchimento(window.sisprofPayload);
+                } else {
+                    window.esperandoDados = true;
+                }
+            };
+            
+            window.mostrarBotoesPreenchimento = function(payload) {
+                const content = document.getElementById('sisprof-content');
+                if(!payload || !payload.faltas) {
+                    content.innerHTML = '<p style="color:#e53e3e; font-size:13px; font-weight:bold;">Nenhum dado pendente de chamada encontrado.</p><p style="font-size:12px; color:#718096; margin-bottom:15px;">Certifique-se de clicar em "Sincronizar" no SisProf primeiro se quiser fazer chamadas.</p>';
+                    return;
+                }
+                content.innerHTML = '<p style="font-size:13px; color:#2f855a; font-weight:bold; margin:0 0 10px 0;">✅ Dados de ' + payload.data + ' recebidos!</p>' +
+                                '<p style="font-size:12px; color:#4a5568; margin-bottom:15px;">Faltas detectadas: <b>' + payload.faltas.length + '</b></p>' +
+                                '<button onclick="preencherChamadaRPA()" style="width:100%; background:#3182ce; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">1️⃣ Preencher Chamada</button>' +
+                                '<button onclick="preencherRegistroRPA()" style="width:100%; background:#805ad5; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">2️⃣ Preencher Diário (Texto)</button>';
             };
             
             window.preencherChamadaRPA = function() {
@@ -1302,7 +1329,33 @@ function gerarCodigoBookmarklet() {
     return code.replace(/\n/g, ' ').replace(/\s{2,}/g, ' ');
 }
 
-function abrirModalImportarAlunosSED() {
+async function sincronizarAlunosNuvem() {
+    if (!currentUser) return alert('Usuário não identificado.');
+    const profId = currentUser.uid || currentUser.id;
+    const importKey = 'rpa_import_' + profId;
+
+    try {
+        let payload = null;
+        if (typeof db !== 'undefined' && db) {
+            const doc = await db.collection('app_data').doc(importKey).get();
+            if (doc.exists) payload = doc.data();
+        } else {
+            const local = localStorage.getItem(importKey);
+            if (local) payload = JSON.parse(local);
+        }
+
+        if (!payload || !payload.alunos || payload.alunos.length === 0) {
+            return alert('Nenhuma lista de alunos pendente na nuvem.\\n\\nUse o Robô na Secretaria Digital (SED) e escolha a opção "Extrair Alunos" primeiro.');
+        }
+
+        abrirModalImportarAlunosSED(payload);
+    } catch(e) {
+        console.error(e);
+        alert('Erro ao buscar dados na nuvem.');
+    }
+}
+
+function abrirModalImportarAlunosSED(payloadAuto = null) {
     closeModal('modalPerfilUsuario');
     
     if (!document.getElementById('modalImportarAlunosSED')) {
@@ -1315,8 +1368,8 @@ function abrirModalImportarAlunosSED() {
                     <h2>🔄 Atualizar Turma via SED</h2>
                     <button class="close-btn" onclick="closeModal('modalImportarAlunosSED')">×</button>
                 </div>
-                <p style="font-size:13px; color:#666;">Cole aqui os dados que o Robô copiou na Secretaria Digital (SED):</p>
-                <textarea id="textoImportacaoSED" rows="4" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; margin-bottom:15px; font-family:monospace; font-size:12px;" placeholder='Cole (Ctrl+V) aqui...'></textarea>
+                <p style="font-size:13px; color:#666;">Verifique os dados extraídos pelo robô e selecione a turma para atualizar:</p>
+                <textarea id="textoImportacaoSED" rows="4" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; margin-bottom:15px; font-family:monospace; font-size:12px;" placeholder='Cole (Ctrl+V) aqui ou aguarde o preenchimento automático...'></textarea>
                 
                 <label style="font-weight:bold; display:block; margin-bottom:5px;">Selecione a Turma a ser atualizada:</label>
                 <select id="selTurmaImportacaoSED" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; margin-bottom:20px;">
@@ -1336,7 +1389,21 @@ function abrirModalImportarAlunosSED() {
     select.innerHTML = '<option value="">Selecione a turma...</option>' + 
         turmas.map(t => `<option value="${t.id}">${t.nome} ${t.disciplina ? '- ' + t.disciplina : ''}</option>`).join('');
         
-    document.getElementById('textoImportacaoSED').value = '';
+    const textarea = document.getElementById('textoImportacaoSED');
+    if (payloadAuto && payloadAuto.alunos) {
+        textarea.value = JSON.stringify(payloadAuto);
+        if (payloadAuto.turmaSED && payloadAuto.turmaSED !== "Desconhecida") {
+            const match = turmas.find(t => {
+                const norm1 = t.nome.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const norm2 = payloadAuto.turmaSED.toLowerCase().replace(/[^a-z0-9]/g, '');
+                return norm1.includes(norm2) || norm2.includes(norm1);
+            });
+            if (match) select.value = match.id;
+        }
+    } else {
+        textarea.value = '';
+    }
+    
     showModal('modalImportarAlunosSED');
 }
 
