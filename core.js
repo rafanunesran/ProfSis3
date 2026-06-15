@@ -214,8 +214,36 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function init() {
-    // Verifica se é um link de compartilhamento
     const params = new URLSearchParams(window.location.search);
+    
+    // --- MANIPULADOR RPA (SALA DO FUTURO) ---
+    const rpaFetch = params.get('rpa_fetch');
+    if (rpaFetch) {
+        const profId = params.get('profId');
+        const syncKey = 'rpa_sync_' + profId;
+        
+        const sendToParent = async () => {
+            let payload = null;
+            try {
+                const local = localStorage.getItem(syncKey);
+                if (local) payload = JSON.parse(local);
+                
+                if (!payload && typeof db !== 'undefined' && db) {
+                    const doc = await db.collection('app_data').doc(syncKey).get();
+                    if (doc.exists) payload = doc.data();
+                }
+            } catch(e) {
+                console.warn('Erro ao buscar rpa_sync', e);
+            }
+            
+            window.parent.postMessage({ type: 'SISPROF_RPA_DATA', payload: payload || {} }, '*');
+        };
+        
+        sendToParent();
+        return; // Interrompe o carregamento normal do app
+    }
+
+    // Verifica se é um link de compartilhamento
     const shareId = params.get('share');
     if (shareId) {
         // Aguarda carregamento do gestor.js se necessário, ou chama direto

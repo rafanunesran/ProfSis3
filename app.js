@@ -368,6 +368,11 @@ async function abrirModalPerfil() {
                 <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Ao clicar no botão abaixo, o sistema preparará as faltas e registros de hoje. Depois, basta abrir o site do Estado e clicar no favorito que você salvou.</p>
                 <button class="btn btn-sm" onclick="prepararSincronizacaoRPA()" style="width:100%; background-color:#805ad5; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🚀 Sincronizar Chamadas de Hoje</button>
             </div>
+            <div style="background:#f0fff4; padding:10px; border-radius:6px; border:1px solid #c6f6d5; margin-top:10px;">
+                <strong style="font-size:12px; color:#276749; display:block; margin-bottom:5px;">Passo 3: Atualizar Lista de Alunos (SED)</strong>
+                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Copie a lista usando o Robô na SED, e clique abaixo para colar e atualizar sua turma no SisProf.</p>
+                <button class="btn btn-sm" onclick="abrirModalImportarAlunosSED()" style="width:100%; background-color:#38a169; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🔄 Atualizar Turma (Colar Lista)</button>
+            </div>
         </div>
     `;
 
@@ -1210,18 +1215,48 @@ function gerarCodigoBookmarklet() {
                     const content = document.getElementById('sisprof-content');
                     const payload = e.data.payload;
                     if(!payload || !payload.faltas) {
-                        content.innerHTML = '<p style="color:#e53e3e; font-size:13px; font-weight:bold;">Nenhum dado pendente encontrado.</p><p style="font-size:12px; color:#718096;">Certifique-se de clicar em "Sincronizar" lá no ProfSis3 primeiro.</p>';
-                        return;
+                        let buttonsHtml = '<p style="color:#e53e3e; font-size:13px; font-weight:bold;">Nenhum dado pendente de chamada encontrado.</p><p style="font-size:12px; color:#718096; margin-bottom:15px;">Certifique-se de clicar em "Sincronizar" no SisProf primeiro se quiser fazer chamadas.</p>';
+                    } else {
+                        window.sisprofPayload = payload;
+                        let buttonsHtml = '<p style="font-size:13px; color:#2f855a; font-weight:bold; margin:0 0 10px 0;">✅ Dados de ' + payload.data + ' recebidos!</p>' +
+                                      '<p style="font-size:12px; color:#4a5568; margin-bottom:15px;">Faltas detectadas: <b>' + payload.faltas.length + '</b></p>' +
+                                      '<button onclick="preencherChamadaRPA()" style="width:100%; background:#3182ce; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">1️⃣ Preencher Chamada</button>' +
+                                      '<button onclick="preencherRegistroRPA()" style="width:100%; background:#805ad5; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">2️⃣ Preencher Diário (Texto)</button>';
                     }
                     
-                    window.sisprofPayload = payload;
+                    buttonsHtml += '<hr style="border-top:1px dashed #cbd5e0; margin:15px 0;"><button onclick="extrairAlunosRPA()" style="width:100%; background:#38a169; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">3️⃣ Extrair Alunos (Atualizar Turma)</button>';
                     
-                    content.innerHTML = '<p style="font-size:13px; color:#2f855a; font-weight:bold; margin:0 0 10px 0;">✅ Dados de ' + payload.data + ' recebidos!</p>' +
-                                        '<p style="font-size:12px; color:#4a5568; margin-bottom:15px;">Faltas detectadas: <b>' + payload.faltas.length + '</b></p>' +
-                                        '<button onclick="preencherChamadaRPA()" style="width:100%; background:#3182ce; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">1️⃣ Preencher Chamada</button>' +
-                                        '<button onclick="preencherRegistroRPA()" style="width:100%; background:#805ad5; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">2️⃣ Preencher Diário (Texto)</button>';
+                    content.innerHTML = buttonsHtml;
                 }
             }, {once: true});
+
+            window.extrairAlunosRPA = function() {
+                const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"]');
+                if(cardsAlunos.length === 0) return alert('Nenhum aluno encontrado na tela. Abra a tela de chamada da turma desejada primeiro!');
+                
+                const alunos = [];
+                cardsAlunos.forEach(card => {
+                    const nomeElement = card.querySelector('.nome_aluno');
+                    if (!nomeElement) return;
+                    let nomeCompleto = nomeElement.textContent.trim();
+                    nomeCompleto = nomeCompleto.replace(/^\\d+\\s*-\\s*/, '');
+                    
+                    alunos.push({
+                        nome: nomeCompleto.toUpperCase(),
+                        status: 'Ativo'
+                    });
+                });
+                
+                const dataStr = JSON.stringify({ type: 'SISPROF_IMPORT_ALUNOS', alunos: alunos });
+                const ta = document.createElement('textarea');
+                ta.value = dataStr;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                
+                alert('✅ Lista com ' + alunos.length + ' alunos copiada!\\n\\nAgora volte ao SisProf, clique em "Atualizar Turma (Colar Lista)" e cole os dados.');
+            };
             
             window.preencherChamadaRPA = function() {
                 const payload = window.sisprofPayload;
@@ -1265,6 +1300,118 @@ function gerarCodigoBookmarklet() {
 
     // Minifica o código do bookmarklet para garantir que ele rode corretamente como URL
     return code.replace(/\n/g, ' ').replace(/\s{2,}/g, ' ');
+}
+
+function abrirModalImportarAlunosSED() {
+    closeModal('modalPerfilUsuario');
+    
+    if (!document.getElementById('modalImportarAlunosSED')) {
+        const div = document.createElement('div');
+        div.id = 'modalImportarAlunosSED';
+        div.className = 'modal';
+        div.innerHTML = `
+            <div class="modal-content" style="max-width: 500px;">
+                <div class="modal-header">
+                    <h2>🔄 Atualizar Turma via SED</h2>
+                    <button class="close-btn" onclick="closeModal('modalImportarAlunosSED')">×</button>
+                </div>
+                <p style="font-size:13px; color:#666;">Cole aqui os dados que o Robô copiou na Secretaria Digital (SED):</p>
+                <textarea id="textoImportacaoSED" rows="4" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; margin-bottom:15px; font-family:monospace; font-size:12px;" placeholder='Cole (Ctrl+V) aqui...'></textarea>
+                
+                <label style="font-weight:bold; display:block; margin-bottom:5px;">Selecione a Turma a ser atualizada:</label>
+                <select id="selTurmaImportacaoSED" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; margin-bottom:20px;">
+                </select>
+                
+                <div style="display:flex; justify-content:flex-end; gap:10px;">
+                    <button class="btn btn-secondary" onclick="closeModal('modalImportarAlunosSED')">Cancelar</button>
+                    <button class="btn btn-primary" onclick="processarImportacaoSED()">Atualizar Turma</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(div);
+    }
+    
+    const select = document.getElementById('selTurmaImportacaoSED');
+    const turmas = data.turmas || [];
+    select.innerHTML = '<option value="">Selecione a turma...</option>' + 
+        turmas.map(t => `<option value="${t.id}">${t.nome} ${t.disciplina ? '- ' + t.disciplina : ''}</option>`).join('');
+        
+    document.getElementById('textoImportacaoSED').value = '';
+    showModal('modalImportarAlunosSED');
+}
+
+function processarImportacaoSED() {
+    const jsonStr = document.getElementById('textoImportacaoSED').value.trim();
+    const turmaId = document.getElementById('selTurmaImportacaoSED').value;
+    
+    if (!jsonStr) return alert('Cole o texto copiado pelo Robô.');
+    if (!turmaId) return alert('Selecione uma turma para atualizar.');
+    
+    let payload;
+    try {
+        payload = JSON.parse(jsonStr);
+    } catch(e) {
+        return alert('Código inválido. Colete os dados novamente pelo Robô.');
+    }
+    
+    if (payload.type !== 'SISPROF_IMPORT_ALUNOS' || !Array.isArray(payload.alunos)) {
+        return alert('Formato de dados não reconhecido ou corrompido.');
+    }
+    
+    const alunosExtraidos = payload.alunos;
+    if (alunosExtraidos.length === 0) return alert('A lista de alunos está vazia.');
+    
+    if (!data.estudantes) data.estudantes = [];
+    
+    const estudantesTurma = data.estudantes.filter(e => e.id_turma == turmaId);
+    
+    if (!confirm(`Atenção: Serão verificados ${alunosExtraidos.length} estudantes nesta turma.\n\nAlunos da turma que NÃO estiverem na lista da SED serão marcados como 'Transferido' para preservar o histórico e não atrapalhar sua chamada.\n\nDeseja continuar?`)) return;
+    
+    let adicionados = 0;
+    let reativados = 0;
+    let transferidos = 0;
+    
+    const normalizeName = (name) => {
+        return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase().replace(/\s+/g, ' ');
+    };
+    
+    const nomesExtraidosSet = new Set(alunosExtraidos.map(a => normalizeName(a.nome)));
+    
+    estudantesTurma.forEach(e => {
+        const nomeUpper = normalizeName(e.nome_completo);
+        if (!nomesExtraidosSet.has(nomeUpper) && e.status === 'Ativo') {
+            e.status = 'Transferido';
+            transferidos++;
+        }
+    });
+    
+    alunosExtraidos.forEach(aExtraido => {
+        const nomeUpper = normalizeName(aExtraido.nome);
+        const existente = estudantesTurma.find(e => normalizeName(e.nome_completo) === nomeUpper);
+        
+        if (existente) {
+            if (existente.status !== 'Ativo') {
+                existente.status = 'Ativo';
+                reativados++;
+            }
+        } else {
+            data.estudantes.push({
+                id: Date.now() + Math.floor(Math.random() * 10000),
+                id_turma: Number(turmaId),
+                nome_completo: aExtraido.nome,
+                status: 'Ativo'
+            });
+            adicionados++;
+        }
+    });
+    
+    persistirDados();
+    alert(`Turma atualizada com sucesso!\n\n✔️ Novos alunos: ${adicionados}\n🔄 Alunos reativados: ${reativados}\n❌ Alunos transferidos (saíram): ${transferidos}`);
+    closeModal('modalImportarAlunosSED');
+    
+    if (typeof turmaAtual !== 'undefined' && turmaAtual == turmaId) {
+        showTurmaTab('estudantes');
+    }
 }
 
 function salvarTurma(e) {
