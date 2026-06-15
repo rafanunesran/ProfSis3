@@ -1452,11 +1452,11 @@ window.baixarArquivosExtensao = function() {
   "version": "1.0",
   "description": "Automatiza chamadas e integração na Secretaria Digital de SP.",
   "permissions": ["tabs", "storage"],
-  "host_permissions": ["https://saladofuturo.educacao.sp.gov.br/*", "*://localhost/*", "https://*.firebaseapp.com/*", "https://*.profsis3.com/*", "https://*.web.app/*"],
+  "host_permissions": ["https://saladofuturo.educacao.sp.gov.br/*", "*://localhost/*", "https://*.firebaseapp.com/*", "https://*.profsis3.com/*", "https://*.web.app/*", "https://*.github.io/*"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [
     {
-      "matches": ["*://localhost/*", "https://*.firebaseapp.com/*", "https://*.profsis3.com/*", "https://*.web.app/*"],
+      "matches": ["*://localhost/*", "https://*.firebaseapp.com/*", "https://*.profsis3.com/*", "https://*.web.app/*", "https://*.github.io/*"],
       "js": ["content_profsis.js"]
     },
     {
@@ -1712,7 +1712,7 @@ setInterval(() => { if (document.querySelector('.grid-listagem') || document.que
             }, index * 400); // 400ms de intervalo para evitar bloqueio agressivo pelo navegador
         });
         setTimeout(() => {
-            alert('Arquivos baixados!\\n\\nCOMO INSTALAR:\\n1. Crie uma pasta vazia chamada "Robo SisProf" e arraste os 4 arquivos baixados para dentro dela.\\n2. Abra chrome://extensions/ (ou Gerenciar Extensões) no Chrome.\\n3. Ative o "Modo do desenvolvedor" no canto superior direito.\\n4. Clique no botão "Carregar sem compactação" (canto superior esquerdo).\\n5. Selecione a pasta que você acabou de criar.\\n\\nPronto! A Extensão foi instalada e sempre que a aba do Governo abrir, um botão roxo vai aparecer.');
+            alert('Arquivos baixados!\\n\\nCOMO INSTALAR:\\n1. Crie uma pasta vazia chamada "Robo SisProf" e arraste os 4 arquivos baixados para dentro dela.\\n2. Abra chrome://extensions/ (ou Gerenciar Extensões) no Chrome.\\n3. Ative o "Modo do desenvolvedor" no canto superior direito.\\n4. Clique no botão "Carregar sem compactação" (canto superior esquerdo).\\n5. Selecione a pasta.\\n\\n⚠️ IMPORTANTE: Após instalar, RECARREGUE (F5) esta página do SisProf para que a extensão passe a funcionar nela!');
         }, files.length * 400 + 500);
     }
 };

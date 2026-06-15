@@ -9,14 +9,17 @@
   ],
   "host_permissions": [
     "https://saladofuturo.educacao.sp.gov.br/*",
-    "https://*.educacao.sp.gov.br/*"
+    "https://*.educacao.sp.gov.br/*",
+    "*://localhost/*",
+    "https://*.profsis3.com/*",
+    "https://*.github.io/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["http://localhost/*", "https://*.profsis3.com/*", "https://*.web.app/*", "https://*.firebaseapp.com/*"],
+      "matches": ["*://localhost/*", "https://*.profsis3.com/*", "https://*.web.app/*", "https://*.firebaseapp.com/*", "https://*.github.io/*"],
       "js": ["content_profsis.js"]
     },
     {
