@@ -1094,35 +1094,148 @@ function editarTurma(id) {
 }
 
 // --- INTEGRAÇÃO RPA (SALA DO FUTURO) ---
-async function iniciarSincronizacaoRPA() {
-    if (!confirm("Deseja iniciar a sincronização das chamadas de hoje com a Sala do Futuro via Robô (RPA)?\n\nCertifique-se de que o servidor local está rodando.")) return;
+async function prepararSincronizacaoRPA() {
+    if (!currentUser) return alert('Usuário não identificado.');
     
     try {
         const todayStr = getTodayString();
+        
+        // Coleta faltas de hoje
         const faltasHoje = (data.presencas || []).filter(p => p.data === todayStr && p.status === 'falta');
         
-        alert(`Sincronização acionada! Foram identificadas ${faltasHoje.length} faltas nas suas turmas hoje.\n\nO robô assumirá o controle em breve.`);
-        
-        /* 
-        // Exemplo de integração com o servidor local Express que criamos:
+        // Busca os nomes dos faltosos agrupados por turma
+        const alunosFaltantes = [];
+        const turmasAfetadas = new Set();
+
+        faltasHoje.forEach(f => {
+            const estudante = (data.estudantes || []).find(e => e.id == f.id_estudante);
+            if (estudante) {
+                alunosFaltantes.push({
+                    nome: estudante.nome_completo,
+                    turmaId: estudante.id_turma
+                });
+                turmasAfetadas.add(estudante.id_turma);
+            }
+        });
+
+        // Coleta registros de aula de hoje
+        const registrosHoje = (data.registrosAula || []).filter(r => r.data === todayStr);
+
+        // Monta o Payload para a nuvem
         const payload = {
-            professorId: currentUser.id || currentUser.uid,
+            timestamp: Date.now(),
             data: todayStr,
-            // Aqui você poderá mapear os alunos por turma para enviar requisições separadas
+            faltas: alunosFaltantes,
+            registros: registrosHoje.map(r => ({
+                turmaId: r.id_turma,
+                conteudo: r.conteudo
+            }))
         };
 
-        const response = await fetch('http://localhost:3000/api/sync-chamada', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const result = await response.json();
-        if(result.success) alert("Sincronização concluída com sucesso no Governo!");
-        */
+        const profId = currentUser.uid || currentUser.id;
+        const syncKey = 'rpa_sync_' + profId;
+        
+        // Salva temporariamente para que o Robô (Bookmarklet) possa ler
+        if (typeof saveData === 'function') {
+            await saveData('app_data', syncKey, payload);
+        } else {
+            localStorage.setItem(syncKey, JSON.stringify(payload));
+        }
+
+        // Fecha o modal de perfil e avisa o usuário
+        closeModal('modalPerfilUsuario');
+        
+        alert(`✅ Faltas e Registros de Aula enviados para a nuvem!\n\nForam preparadas faltas para ${turmasAfetadas.size} turma(s).\n\nAGORA:\n1. Acesse o site da Sala do Futuro.\n2. Entre na tela de "Chamada" ou "Registro de Aula".\n3. Clique no botão "Robô SisProf" na sua barra de favoritos.`);
+
     } catch (error) {
         console.error("Erro na integração com RPA:", error);
-        alert("Erro ao conectar com o robô local. Verifique se o servidor RPA na porta 3000 está em execução.");
+        alert("Erro ao preparar dados. Verifique sua conexão com a internet.");
     }
+}
+
+function gerarCodigoBookmarklet() {
+    const profId = currentUser ? (currentUser.uid || currentUser.id) : '';
+    // Obtém a URL atual sem query ou hash (usada para chamar o iframe)
+    const urlApp = window.location.href.split('?')[0].split('#')[0];
+    
+    let code = `
+        if(window.sisprofRoboAtivo){
+            alert('Robô SisProf já está aberto nesta aba!');
+        } else {
+            window.sisprofRoboAtivo = true;
+            const ui = document.createElement('div');
+            ui.style.cssText = 'position:fixed; top:20px; right:20px; width:320px; background:#fff; border:2px solid #3182ce; border-radius:8px; z-index:999999; box-shadow:0 10px 25px rgba(0,0,0,0.2); font-family:sans-serif; overflow:hidden;';
+            ui.innerHTML = '<div style="background:#3182ce; color:#fff; padding:10px; font-weight:bold; display:flex; justify-content:space-between; align-items:center;"><span>🤖 Robô SisProf</span><span style="cursor:pointer;" onclick="this.parentElement.parentElement.remove(); window.sisprofRoboAtivo=false;">✖</span></div>' +
+                           '<div style="padding:15px;" id="sisprof-content">' +
+                           '<p style="margin:0 0 10px 0; font-size:13px; color:#4a5568;">Conectando ao banco de dados do professor...</p>' +
+                           '</div>';
+            document.body.appendChild(ui);
+            
+            const iframe = document.createElement('iframe');
+            iframe.src = "${urlApp}?rpa_fetch=true&profId=${profId}";
+            iframe.style.display = 'none';
+            document.body.appendChild(iframe);
+            
+            window.addEventListener('message', function(e) {
+                if(e.data && e.data.type === 'SISPROF_RPA_DATA') {
+                    const content = document.getElementById('sisprof-content');
+                    const payload = e.data.payload;
+                    if(!payload || !payload.faltas) {
+                        content.innerHTML = '<p style="color:#e53e3e; font-size:13px; font-weight:bold;">Nenhum dado pendente encontrado.</p><p style="font-size:12px; color:#718096;">Certifique-se de clicar em "Sincronizar" lá no ProfSis3 primeiro.</p>';
+                        return;
+                    }
+                    
+                    window.sisprofPayload = payload;
+                    
+                    content.innerHTML = '<p style="font-size:13px; color:#2f855a; font-weight:bold; margin:0 0 10px 0;">✅ Dados de ' + payload.data + ' recebidos!</p>' +
+                                        '<p style="font-size:12px; color:#4a5568; margin-bottom:15px;">Faltas detectadas: <b>' + payload.faltas.length + '</b></p>' +
+                                        '<button onclick="preencherChamadaRPA()" style="width:100%; background:#3182ce; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">1️⃣ Preencher Chamada</button>' +
+                                        '<button onclick="preencherRegistroRPA()" style="width:100%; background:#805ad5; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer;">2️⃣ Preencher Diário (Texto)</button>';
+                }
+            }, {once: true});
+            
+            window.preencherChamadaRPA = function() {
+                const payload = window.sisprofPayload;
+                const normalize = s => s ? s.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").replace(/\\s+/g, " ").trim().toUpperCase() : "";
+                const alunosAlvo = payload.faltas.map(a => normalize(a.nome));
+                const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"]');
+                
+                if(cardsAlunos.length === 0) return alert('Nenhum aluno encontrado na tela. Entre na tela de chamada primeiro!');
+                
+                let interagidos = 0;
+                cardsAlunos.forEach(card => {
+                    const nomeElement = card.querySelector('.nome_aluno');
+                    if (!nomeElement) return;
+                    const nomeAluno = normalize(nomeElement.textContent);
+                    const checkbox = card.querySelector('input[type="checkbox"]');
+                    if(!checkbox) return;
+                    
+                    const levouFalta = alunosAlvo.includes(nomeAluno);
+                    if (levouFalta && !checkbox.checked) { checkbox.click(); interagidos++; }
+                    else if (!levouFalta && checkbox.checked) { checkbox.click(); }
+                });
+                alert('Concluído! ' + interagidos + ' faltas preenchidas no sistema da SED.');
+            };
+            
+            window.preencherRegistroRPA = function() {
+                const payload = window.sisprofPayload;
+                if(!payload.registros || payload.registros.length === 0) return alert('Nenhum registro de aula escrito para o dia de hoje.');
+                
+                const txt = document.querySelector('textarea#conteudoAula, textarea[name="registroAula"], textarea.form-control');
+                if(txt) {
+                    txt.value = payload.registros[0].conteudo;
+                    txt.dispatchEvent(new Event("input", { bubbles: true }));
+                    txt.dispatchEvent(new Event("change", { bubbles: true }));
+                    alert('Texto preenchido!');
+                } else {
+                    alert('Campo de texto não encontrado. Abra a aba de Registro de Aula.');
+                }
+            };
+        }
+    `;
+
+    // Minifica o código do bookmarklet para garantir que ele rode corretamente como URL
+    return code.replace(/\n/g, ' ').replace(/\s{2,}/g, ' ');
 }
 
 function salvarTurma(e) {
