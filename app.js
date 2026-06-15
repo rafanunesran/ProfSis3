@@ -1440,6 +1440,9 @@ window.enviarDadosParaExtensao = function() {
 };
 
 window.baixarArquivosExtensao = function() {
+    const profId = currentUser ? (currentUser.uid || currentUser.id) : '';
+    const urlApp = window.location.href.split('?')[0].split('#')[0];
+
     const files = [
         {
             name: 'manifest.json',
@@ -1447,7 +1450,7 @@ window.baixarArquivosExtensao = function() {
   "manifest_version": 3,
   "name": "Robô SisProf SED",
   "version": "1.0",
-  "description": "Automatiza chamadas na Sala do Futuro",
+  "description": "Automatiza chamadas e integração na Secretaria Digital de SP.",
   "permissions": ["tabs", "storage"],
   "host_permissions": ["https://saladofuturo.educacao.sp.gov.br/*", "*://localhost/*", "https://*.firebaseapp.com/*", "https://*.profsis3.com/*", "https://*.web.app/*"],
   "background": { "service_worker": "background.js" },
@@ -1499,60 +1502,198 @@ window.baixarArquivosExtensao = function() {
         {
             name: 'content_sed.js',
             content: `console.log('Robô SisProf SED - Ativo na Aba');
+const urlApp = "${urlApp}";
+const profId = "${profId}";
+
 function criarMenuFlutuante() {
     if (document.getElementById('rpa-ext-menu')) return;
     const div = document.createElement('div');
     div.id = 'rpa-ext-menu';
-    div.style.cssText = 'position:fixed; bottom:20px; right:20px; width:250px; background:#fff; border:2px solid #805ad5; border-radius:8px; z-index:999999; box-shadow:0 10px 25px rgba(0,0,0,0.2); font-family:sans-serif; overflow:hidden;';
-    div.innerHTML = '<div style="background:#805ad5; color:#fff; padding:10px; font-weight:bold; text-align:center;">🧩 Extensão SisProf</div>' +
-        '<div style="padding:15px;">' +
+    div.style.cssText = 'position:fixed; bottom:20px; right:20px; width:280px; background:#fff; border:2px solid #805ad5; border-radius:8px; z-index:999999; box-shadow:0 10px 25px rgba(0,0,0,0.2); font-family:sans-serif; overflow:hidden;';
+    div.innerHTML = '<div style="background:#805ad5; color:#fff; padding:10px; font-weight:bold; text-align:center; display:flex; justify-content:space-between; align-items:center;"><span>🧩 Extensão SisProf</span><span style="cursor:pointer;" onclick="this.parentElement.parentElement.remove();">✖</span></div>' +
+        '<div style="padding:15px;" id="ext-content">' +
+        '<button id="extBtnExtrair" style="width:100%; background:#38a169; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">📥 Extrair Alunos (Atual)</button>' +
+        '<button id="extBtnExtrairMulti" style="width:100%; background:#276749; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">📥 Extrair TODAS (Auto)</button>' +
         '<button id="extBtnPreencher" style="width:100%; padding:10px; background:#3182ce; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">1️⃣ Preencher Chamada / Aula</button>' +
         '</div>';
     document.body.appendChild(div);
+    
+    if(!document.getElementById('sisprof-iframe-ext')) {
+        const iframe = document.createElement('iframe');
+        iframe.id = 'sisprof-iframe-ext';
+        iframe.src = urlApp + "?rpa_fetch=true&profId=" + profId;
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+    }
+
     document.getElementById('extBtnPreencher').addEventListener('click', () => {
         const btn = document.getElementById('extBtnPreencher');
+        const oldText = btn.textContent;
         btn.textContent = 'Buscando na Extensão...';
         chrome.runtime.sendMessage({ action: 'GET_DATA' }, (data) => {
-            btn.textContent = '1️⃣ Preencher Chamada / Aula';
-            if(!data || !data.faltas) return alert('Nenhuma chamada pendente.\\n\\nVolte ao site do SisProf e clique em "Enviar para Extensão".');
+            btn.textContent = oldText;
+            if(!data || (!data.faltas && !data.registros)) return alert('Nenhuma chamada pendente.\\n\\nVolte ao site do SisProf e clique em "Enviar para Extensão".');
             executarPreenchimento(data);
         });
     });
+    
+    document.getElementById('extBtnExtrair').addEventListener('click', iniciarExtrairAlunos);
+    document.getElementById('extBtnExtrairMulti').addEventListener('click', iniciarExtrairTodasTurmas);
 }
-function executarPreenchimento(payload) {
-    const normalize = s => s ? s.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").replace(/\\s+/g, " ").trim().toUpperCase() : "";
-    const alunosAlvo = payload.faltas.map(a => normalize(a.nome));
-    const cardsAlunos = document.querySelectorAll('.card_aluno1, .card_aluno');
-    if (cardsAlunos.length === 0) return alert('Lista de alunos não encontrada na tela. Por favor, certifique-se de estar na aba correta (Listagem de Chamada).');
-    let interagidos = 0;
+
+window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'SISPROF_SAVE_SUCCESS') {
+        const content = document.getElementById('ext-content');
+        if (content) {
+            content.style.display = 'none';
+            const successDiv = document.createElement('div');
+            successDiv.id = 'ext-success';
+            successDiv.style.padding = '15px';
+            successDiv.innerHTML = '<p style="font-size:13px; color:#2f855a; font-weight:bold; margin:0 0 10px 0;">✅ Lista salva na nuvem com sucesso!</p>' + 
+            '<p style="font-size:12px; color:#4a5568; margin-bottom:15px;">Volte ao SisProf e clique em <b>"Atualizar Turma (Puxar da Nuvem)"</b>.</p>' +
+            '<button id="extBtnVoltar" style="width:100%; padding:8px; background:#e2e8f0; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">Voltar</button>';
+            content.parentElement.appendChild(successDiv);
+            document.getElementById('extBtnVoltar').addEventListener('click', () => {
+                successDiv.remove();
+                content.style.display = 'block';
+            });
+        }
+    } else if (e.data && e.data.type === 'SISPROF_SAVE_ERROR') {
+        alert('Erro ao salvar na nuvem: ' + e.data.error);
+    }
+});
+
+function iniciarExtrairAlunos() {
+    const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"]');
+    if(cardsAlunos.length === 0) return alert('Nenhum aluno encontrado na tela. Abra a tela de chamada da turma desejada primeiro!');
+    
+    const btn = document.getElementById('extBtnExtrair');
+    if (btn) btn.textContent = 'Extraindo...';
+    
+    const alunos = [];
     cardsAlunos.forEach(card => {
         const nomeElement = card.querySelector('.nome_aluno');
         if (!nomeElement) return;
-        let nomeAluno = normalize(nomeElement.textContent).replace(/^\\d+\\s*-\\s*/, '');
-        const checkbox = card.querySelector('.falta_presenca_container input[type="checkbox"]');
-        if(!checkbox) return;
-        const levouFalta = alunosAlvo.includes(nomeAluno);
-        if (levouFalta && !checkbox.checked) { checkbox.click(); interagidos++; }
-        else if (!levouFalta && checkbox.checked) { checkbox.click(); }
+        let nomeCompleto = nomeElement.textContent.trim();
+        nomeCompleto = nomeCompleto.replace(/^\\d+\\s*-\\s*/, '');
+        alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
     });
+    
+    let turmaSelecionada = "Desconhecida";
+    const selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
+    if (selectTurma && selectTurma.options[selectTurma.selectedIndex]) {
+        turmaSelecionada = selectTurma.options[selectTurma.selectedIndex].text.trim();
+    }
+    
+    const payload = { type: 'SISPROF_IMPORT_ALUNOS', alunos: alunos, turmaSED: turmaSelecionada, timestamp: Date.now() };
+    const frame = document.getElementById('sisprof-iframe-ext');
+    if (frame) frame.contentWindow.postMessage({ type: 'SISPROF_SAVE_ALUNOS', payload: payload }, '*');
+    
+    setTimeout(() => { if (btn) btn.textContent = '📥 Extrair Alunos (Atual)'; }, 2000);
+}
+
+async function iniciarExtrairTodasTurmas() {
+    const selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
+    if (!selectTurma) return alert('Seletor de turma não encontrado. Certifique-se de estar na tela com o filtro de turmas (ex: Frequência).');
+    
+    const btn = document.getElementById('extBtnExtrairMulti');
+    const todasTurmas = [];
+    const options = Array.from(selectTurma.options).filter(o => o.value && o.text && !o.text.toLowerCase().includes('selecione') && !o.text.toLowerCase().includes('todos'));
+    
+    if (options.length === 0) return alert('Nenhuma turma encontrada no seletor.');
+    if (!confirm('O robô vai processar ' + options.length + ' turmas automaticamente.\\n\\nNÃO CLIQUE em nada até ele terminar. Deseja continuar?')) return;
+
+    for (let i = 0; i < options.length; i++) {
+        const opt = options[i];
+        if (btn) btn.textContent = '⏳ Lendo ' + opt.text.trim().substring(0,10) + '... (' + (i+1) + '/' + options.length + ')';
+        
+        selectTurma.value = opt.value;
+        selectTurma.dispatchEvent(new Event('change', { bubbles: true }));
+        
+        const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
+        let btnBuscar = null;
+        buttons.forEach(b => {
+            const text = (b.innerText || b.value || '').toLowerCase();
+            if (text.includes('pesquisar') || text.includes('buscar')) btnBuscar = b;
+        });
+        if (btnBuscar) btnBuscar.click();
+
+        await new Promise(r => setTimeout(r, 4000));
+        
+        const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"]');
+        const alunos = [];
+        cardsAlunos.forEach(card => {
+            const nomeElement = card.querySelector('.nome_aluno');
+            if (!nomeElement) return;
+            let nomeCompleto = nomeElement.textContent.trim();
+            nomeCompleto = nomeCompleto.replace(/^\\d+\\s*-\\s*/, '');
+            alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
+        });
+        
+        if (alunos.length > 0) {
+            todasTurmas.push({ turmaSED: opt.text.trim(), alunos: alunos });
+        }
+    }
+    
+    if (todasTurmas.length === 0) {
+        if (btn) btn.textContent = 'Nenhum aluno encontrado';
+        setTimeout(() => { if (btn) btn.textContent = '📥 Extrair TODAS (Auto)'; }, 3000);
+        return;
+    }
+
+    const payload = { type: 'SISPROF_IMPORT_ALUNOS_MULTI', turmas: todasTurmas, timestamp: Date.now() };
+    const frame = document.getElementById('sisprof-iframe-ext');
+    if (frame) frame.contentWindow.postMessage({ type: 'SISPROF_SAVE_ALUNOS', payload: payload }, '*');
+    
+    if (btn) btn.textContent = '✅ ' + todasTurmas.length + ' turmas copiadas!';
+    setTimeout(() => { if (btn) btn.textContent = '📥 Extrair TODAS (Auto)'; }, 3000);
+}
+
+function executarPreenchimento(payload) {
+    const normalize = s => s ? s.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").replace(/\\s+/g, " ").trim().toUpperCase() : "";
+    let interagidos = 0;
+    
+    if (payload.faltas) {
+        const alunosAlvo = payload.faltas.map(a => normalize(a.nome));
+        const cardsAlunos = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
+        if (cardsAlunos.length > 0) {
+            cardsAlunos.forEach(card => {
+                const nomeElement = card.querySelector('.nome_aluno');
+                if (!nomeElement) return;
+                let nomeAluno = normalize(nomeElement.textContent).replace(/^\\d+\\s*-\\s*/, '');
+                const checkbox = card.querySelector('.falta_presenca_container input[type="checkbox"], input[type="checkbox"]');
+                if(!checkbox) return;
+                const levouFalta = alunosAlvo.includes(nomeAluno);
+                if (levouFalta && !checkbox.checked) { checkbox.click(); interagidos++; }
+                else if (!levouFalta && checkbox.checked) { checkbox.click(); }
+            });
+        }
+    }
+
     if(payload.registros && payload.registros.length > 0) {
-        const txt = document.querySelector('textarea[name="o.Descricao"], textarea.form-control, textarea');
+        const txt = document.querySelector('textarea[name="o.Descricao"], textarea#conteudoAula, textarea.form-control, textarea');
         if(txt) {
             txt.value = payload.registros[0].conteudo;
             txt.dispatchEvent(new Event('input', {bubbles: true}));
             txt.dispatchEvent(new Event('change', {bubbles: true}));
+            interagidos++;
         }
     }
-    setTimeout(() => {
-        const btnSalvar = Array.from(document.querySelectorAll('button, a, input[type="submit"]')).find(b => {
-            const t = (b.textContent || b.value || '').trim().toLowerCase();
-            return t === 'salvar' || t === 'cadastrar' || t.includes('salvar');
-        });
-        if(btnSalvar) { btnSalvar.click(); alert('✅ Concluído! ' + interagidos + ' faltas preenchidas e salvas.'); } 
-        else { alert('✅ ' + interagidos + ' faltas preenchidas!\\n\\n⚠️ Salve manualmente, o botão final de Salvar não foi identificado de forma automática.'); }
-    }, 500);
+    
+    if (interagidos > 0) {
+        setTimeout(() => {
+            const btnSalvar = Array.from(document.querySelectorAll('button, a, input[type="submit"], input[type="button"]')).find(b => {
+                const t = (b.textContent || b.value || '').trim().toLowerCase();
+                return t === 'salvar' || t === 'cadastrar' || t.includes('salvar') || t.includes('finalizar') || t.includes('gravar');
+            });
+            if(btnSalvar) { btnSalvar.click(); alert('✅ Concluído! Faltas e registros preenchidos e salvos.'); } 
+            else { alert('✅ Preenchimento concluído!\\n\\n⚠️ Salve manualmente, o botão final de Salvar não foi identificado de forma automática.'); }
+        }, 500);
+    } else {
+        alert('Nenhum aluno preenchido (talvez já estivessem corretos) ou campos não encontrados na tela. Por favor, verifique.');
+    }
 }
-setInterval(() => { if (document.querySelector('.grid-listagem') || document.querySelector('textarea[name="o.Descricao"]')) criarMenuFlutuante(); }, 2000);`
+setInterval(() => { if (document.querySelector('.grid-listagem') || document.querySelector('textarea[name="o.Descricao"]') || document.querySelector('textarea#conteudoAula')) criarMenuFlutuante(); }, 2000);`
         }
     ];
 
