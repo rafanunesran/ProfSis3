@@ -381,6 +381,7 @@ async function abrirModalPerfil() {
                 <strong style="font-size:12px; color:#2d3748; display:block; margin-bottom:5px;">Alternativa: Extensão do Chrome (Robusta)</strong>
                 <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">A extensão sobrevive ao atualizar a página na SED, ideal para navegar por várias turmas seguidas.</p>
                 <button class="btn btn-sm btn-info" onclick="baixarArquivosExtensao()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🧩 Baixar Arquivos da Extensão</button>
+                <div style="margin-top:8px; font-size:10px; color:#e53e3e; text-align:center;">⚠️ A extensão funciona <b>apenas no Computador</b>.<br>No celular, arraste o botão verde e use o <b>Passo 1 (Robô Favorito)</b>.</div>
             </div>
         </div>
     `;
@@ -1487,38 +1488,139 @@ function gerarCodigoBookmarklet() {
     return code.replace(/\n/g, ' ').replace(/\s{2,}/g, ' ');
 }
 
-window.enviarDadosParaExtensao = function() {
-    if (!currentUser) return alert('Usuário não identificado.');
+window.enviarDadosParaExtensao = async function(silencioso = false) {
+    if (!currentUser) {
+        if (!silencioso) alert('Usuário não identificado.');
+        return;
+    }
     const todayStr = getTodayString();
     
+    let alunosFaltantesNomes = [];
+    
     const faltasHoje = (data.presencas || []).filter(p => p.data === todayStr && p.status === 'falta');
-    const alunosFaltantes = [];
-    faltasHoje.forEach(f => {
-        const estudante = (data.estudantes || []).find(e => e.id == f.id_estudante);
-        if (estudante) alunosFaltantes.push({ nome: estudante.nome_completo });
-    });
+    
+    if (faltasHoje.length > 0) {
+        faltasHoje.forEach(f => {
+            const estudante = (data.estudantes || []).find(e => e.id == f.id_estudante);
+            if (estudante) alunosFaltantesNomes.push({ nome: estudante.nome_completo });
+        });
+    } else if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE && typeof db !== 'undefined' && db && currentUser.schoolId) {
+        try {
+            const docId = `school_${currentUser.schoolId}_${todayStr}`;
+            const doc = await db.collection('shared_attendance').doc(docId).get();
+            if (doc.exists) {
+                const sharedAbsences = doc.data().absences || {};
+                Object.entries(sharedAbsences).forEach(([estId, reporters]) => {
+                    const otherReporters = reporters.filter(uid => uid !== currentUser.id);
+                    if (otherReporters.length >= 2) {
+                        const estudante = (data.estudantes || []).find(e => e.id == estId);
+                        if (estudante) alunosFaltantesNomes.push({ nome: estudante.nome_completo });
+                    }
+                });
+            }
+        } catch(e) {}
+    }
+
     const registrosHoje = (data.registrosAula || []).filter(r => r.data === todayStr);
+
+    const fechamentoAlunos = [];
+    if (typeof turmaAtual !== 'undefined' && turmaAtual) {
+        const estudantesTurma = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
+        const bim = (typeof currentBimestreTrabalhos !== 'undefined') ? currentBimestreTrabalhos : 1;
+        const configBim = (data.configBimestres || []).find(c => c.bim === bim);
+        const trabalhos = (data.trabalhos || []).filter(t => t.id_turma == turmaAtual && (t.bimestre == bim || (!t.bimestre && bim == 1)));
+        const notas = data.notas || [];
+        const registrosGeral = data.registrosAdministrativos || [];
+
+        estudantesTurma.forEach(e => {
+            let somaPesos = 0;
+            let somaProdutos = 0;
+            trabalhos.forEach(t => {
+                const n = notas.find(nota => nota.id_trabalho == t.id && nota.id_estudante == e.id);
+                let valor = (n && n.valor !== undefined) ? n.valor : '';
+                if (valor === '') {
+                    if (typeof getNotaCompensacao === 'function' && t.tipo === 'compensacao') valor = getNotaCompensacao(e.id, bim);
+                    if (typeof getNotaCaderno === 'function' && t.tipo === 'caderno_auto') valor = getNotaCaderno(e.id, bim);
+                    if (typeof getNotaParticipacao === 'function' && t.tipo === 'participacao') valor = getNotaParticipacao(e.id, bim);
+                }
+                const peso = parseFloat(t.peso) || 0;
+                const parsed = parseFloat(valor.toString().replace(',', '.'));
+                const valorNum = (!isNaN(parsed)) ? parsed : 0;
+                somaProdutos += valorNum * peso;
+                somaPesos += peso;
+            });
+            const mediaRaw = somaPesos > 0 ? (somaProdutos / somaPesos) : null;
+            let mediaInt = '';
+            if (mediaRaw !== null) {
+                mediaInt = Math.round(mediaRaw).toString();
+            }
+
+            const isFaltoso = registrosGeral.some(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Faltoso');
+            let totalFaltasBimestre = 0;
+            let totalDiasAtestado = 0;
+            
+            if (configBim) {
+                 const atestadosEstudante = registrosGeral.filter(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Atestado');
+                 const bStart = new Date(configBim.inicio + 'T12:00:00');
+                 const bEnd = new Date(configBim.fim + 'T12:00:00');
+                 totalDiasAtestado = atestadosEstudante.reduce((acc, r) => {
+                     const cStart = new Date(r.data + 'T12:00:00');
+                     const cEnd = new Date(cStart);
+                     cEnd.setDate(cEnd.getDate() + (parseInt(r.dias) || 1) - 1);
+                     const start = cStart > bStart ? cStart : bStart;
+                     const end = cEnd < bEnd ? cEnd : bEnd;
+                     if (start <= end) {
+                         return acc + (Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1);
+                     }
+                     return acc;
+                 }, 0);
+                 
+                 if (isFaltoso && typeof getAulasNoDia === 'function') {
+                     let faltasAulas = 0;
+                     (data.presencas || []).filter(p => p.id_estudante == e.id && p.status === 'falta' && p.data >= configBim.inicio && p.data <= configBim.fim).forEach(p => {
+                         faltasAulas += getAulasNoDia(turmaAtual, p.data);
+                     });
+                     totalFaltasBimestre = faltasAulas;
+                 }
+            }
+            
+            const faltasFinais = Math.max(0, totalFaltasBimestre - totalDiasAtestado);
+            
+            fechamentoAlunos.push({
+                nome: e.nome_completo,
+                nota: mediaInt,
+                faltas: faltasFinais,
+                ausencias_compensadas: totalDiasAtestado,
+                justificativa: "Fechamento do bimestre vigente"
+            });
+        });
+    }
 
     const payload = {
         data: todayStr,
-        faltas: alunosFaltantes,
-        registros: registrosHoje.map(r => ({ conteudo: r.conteudo }))
+        faltas: alunosFaltantesNomes,
+        registros: registrosHoje.map(r => ({ conteudo: r.conteudo })),
+        fechamento: fechamentoAlunos
     };
 
-    let extRespondeu = false;
-    const listener = (e) => {
-        if (e.data && e.data.type === 'EXT_ACK') extRespondeu = true;
-    };
-    window.addEventListener('message', listener);
+    if (!silencioso) {
+        let extRespondeu = false;
+        const listener = (e) => {
+            if (e.data && e.data.type === 'EXT_ACK') extRespondeu = true;
+        };
+        window.addEventListener('message', listener);
 
-    window.postMessage({ type: 'EXT_SEND_PAYLOAD', payload: payload }, '*');
-    
-    setTimeout(() => {
-        window.removeEventListener('message', listener);
-        if (!extRespondeu) {
-            alert('A caixa verde não apareceu? Parece que a extensão não está conectada a esta página.\\n\\nCertifique-se de:\\n1. Ter ativado o "Modo do Desenvolvedor" na tela de extensões.\\n2. Ter instalado/atualizado a extensão com os arquivos corretos.\\n3. Ter apertado F5 (Recarregar) nesta página do SisProf.\\n\\nSe mesmo assim não for, você ainda pode usar o botão "Usar Robô Favorito" ao lado!');
-        }
-    }, 1500);
+        window.postMessage({ type: 'EXT_SEND_PAYLOAD', payload: payload }, '*');
+        
+        setTimeout(() => {
+            window.removeEventListener('message', listener);
+            if (!extRespondeu) {
+                alert('A caixa verde não apareceu? Parece que a extensão não está conectada a esta página.\\n\\nCertifique-se de:\\n1. Ter ativado o "Modo do Desenvolvedor" na tela de extensões.\\n2. Ter instalado/atualizado a extensão com os arquivos corretos.\\n3. Ter apertado F5 (Recarregar) nesta página do SisProf.\\n\\nSe mesmo assim não for, você ainda pode usar o botão "Usar Robô Favorito" ao lado!');
+            }
+        }, 1500);
+    } else {
+        window.postMessage({ type: 'EXT_SEND_PAYLOAD', payload: payload }, '*');
+    }
 };
 
 window.baixarArquivosExtensao = function() {
@@ -1806,50 +1908,104 @@ async function iniciarExtrairTodasTurmas() {
     setTimeout(() => { if (btn) btn.textContent = '📥 Extrair TODAS (Auto)'; }, 3000);
 }
 
-function executarPreenchimento(payload) {
-    const normalize = s => s ? s.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").replace(/\\s+/g, " ").trim().toUpperCase() : "";
-    let interagidos = 0;
-    
-    if (payload.faltas) {
-        const alunosAlvo = payload.faltas.map(a => normalize(a.nome));
-        const cardsAlunos = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
-        if (cardsAlunos.length > 0) {
-            cardsAlunos.forEach(card => {
-                const nomeElement = card.querySelector('.nome_aluno');
-                if (!nomeElement) return;
-                let nomeAluno = normalize(nomeElement.textContent).replace(/^\\d+\\s*-\\s*/, '');
-                const checkbox = card.querySelector('.falta_presenca_container input[type="checkbox"], input[type="checkbox"]');
-                if(!checkbox) return;
-                const levouFalta = alunosAlvo.includes(nomeAluno);
-                if (levouFalta && !checkbox.checked) { checkbox.click(); interagidos++; }
-                else if (!levouFalta && checkbox.checked) { checkbox.click(); }
-            });
-        }
-    }
+            window.executarPreenchimento = function(payload) {
+                const normalize = s => s ? s.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").replace(/\\s+/g, " ").trim().toUpperCase() : "";
+                let interagidos = 0;
+                
+                if (payload.faltas) {
+                    const alunosAlvo = payload.faltas.map(a => normalize(a.nome));
+                    const cardsAlunos = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
+                    if (cardsAlunos.length > 0) {
+                        cardsAlunos.forEach(card => {
+                            const nomeElement = card.querySelector('.nome_aluno');
+                            if (!nomeElement) return;
+                            let nomeAluno = normalize(nomeElement.textContent).replace(/^\\d+\\s*-\\s*/, '');
+                            const checkbox = card.querySelector('.falta_presenca_container input[type="checkbox"], input[type="checkbox"]');
+                            if(!checkbox) return;
+                            const levouFalta = alunosAlvo.includes(nomeAluno);
+                            if (levouFalta && checkbox.checked) { checkbox.click(); interagidos++; }
+                            else if (!levouFalta && !checkbox.checked) { checkbox.click(); }
+                        });
+                    }
+                }
 
-    if(payload.registros && payload.registros.length > 0) {
-        const txt = document.querySelector('textarea[name="o.Descricao"], textarea#conteudoAula, textarea.form-control, textarea');
-        if(txt) {
-            txt.value = payload.registros[0].conteudo;
-            txt.dispatchEvent(new Event('input', {bubbles: true}));
-            txt.dispatchEvent(new Event('change', {bubbles: true}));
-            interagidos++;
-        }
-    }
-    
-    if (interagidos > 0) {
-        setTimeout(() => {
-            const btnSalvar = Array.from(document.querySelectorAll('button, a, input[type="submit"], input[type="button"]')).find(b => {
-                const t = (b.textContent || b.value || '').trim().toLowerCase();
-                return t === 'salvar' || t === 'cadastrar' || t.includes('salvar') || t.includes('finalizar') || t.includes('gravar');
-            });
-            if(btnSalvar) { btnSalvar.click(); alert('✅ Concluído! Faltas e registros preenchidos e salvos.'); } 
-            else { alert('✅ Preenchimento concluído!\\n\\n⚠️ Salve manualmente, o botão final de Salvar não foi identificado de forma automática.'); }
-        }, 500);
-    } else {
-        alert('Nenhum aluno preenchido (talvez já estivessem corretos) ou campos não encontrados na tela. Por favor, verifique.');
-    }
-}
+                if(payload.registros && payload.registros.length > 0) {
+                    const txt = document.querySelector('textarea[name="o.Descricao"], textarea#conteudoAula, textarea.form-control, textarea');
+                    if(txt) {
+                        txt.value = payload.registros[0].conteudo;
+                        txt.dispatchEvent(new Event("input", { bubbles: true }));
+                        txt.dispatchEvent(new Event("change", { bubbles: true }));
+                        interagidos++;
+                    }
+                }
+
+                if (payload.fechamento && payload.fechamento.length > 0) {
+                    const isFechamentoScreen = document.querySelector('.boxAulasPlanejadasRealizadas');
+                    if (isFechamentoScreen) {
+                        const alunosFechamento = payload.fechamento;
+                        const cardsFechamento = document.querySelectorAll('.card_aluno, .card_aluno1');
+                        
+                        cardsFechamento.forEach(card => {
+                            const nomeElement = card.querySelector('.nome_aluno');
+                            if (!nomeElement) return;
+                            const nomeAluno = normalize(nomeElement.textContent).replace(/^\\d+\\s*-\\s*/, '');
+                            
+                            const dadosAluno = alunosFechamento.find(a => normalize(a.nome) === nomeAluno);
+                            if (dadosAluno) {
+                                const inputs = card.querySelectorAll('input[type="number"]');
+                                const txt = card.querySelector('textarea.form-control');
+                                
+                                if (inputs.length >= 4) {
+                                    if (dadosAluno.nota !== '') {
+                                        inputs[1].value = dadosAluno.nota;
+                                        inputs[1].dispatchEvent(new Event('input', {bubbles: true}));
+                                        inputs[1].dispatchEvent(new Event('change', {bubbles: true}));
+                                    }
+                                    inputs[2].value = dadosAluno.faltas;
+                                    inputs[2].dispatchEvent(new Event('input', {bubbles: true}));
+                                    inputs[2].dispatchEvent(new Event('change', {bubbles: true}));
+                                    
+                                    inputs[3].value = dadosAluno.ausencias_compensadas;
+                                    inputs[3].dispatchEvent(new Event('input', {bubbles: true}));
+                                    inputs[3].dispatchEvent(new Event('change', {bubbles: true}));
+                                    
+                                    interagidos++;
+                                }
+                                
+                                if (txt && dadosAluno.nota !== '') {
+                                    txt.value = dadosAluno.justificativa;
+                                    txt.dispatchEvent(new Event('input', {bubbles: true}));
+                                    txt.dispatchEvent(new Event('change', {bubbles: true}));
+                                }
+                            }
+                        });
+                    }
+                }
+                
+                if (interagidos > 0) {
+                    setTimeout(() => {
+                        const btnSalvar = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a')).find(b => {
+                            const text = (b.innerText || b.value || '').toLowerCase();
+                            return text.includes('salvar') || text.includes('cadastrar') || text.includes('gravar') || text.includes('finalizar');
+                        });
+                        if (btnSalvar) {
+                            btnSalvar.click();
+                            alert('✅ Concluído! Lançamentos preenchidos e salvos na SED.');
+                        } else {
+                            alert('✅ Concluído!\\n\\n⚠️ Não encontrei o botão de "Salvar" automaticamente. Por favor, clique nele manualmente.');
+                        }
+                    }, 500);
+                } else {
+                    alert('Nenhum dado pendente ou campos não encontrados na tela. Por favor, verifique.');
+                }
+            };
+            
+            window.preencherChamadaRPA = function() {
+                window.executarPreenchimento(window.sisprofPayload);
+            };
+            window.preencherRegistroRPA = function() {
+                window.executarPreenchimento(window.sisprofPayload);
+            };
 setInterval(() => { if (document.querySelector('.grid-listagem') || document.querySelector('textarea[name="o.Descricao"]') || document.querySelector('textarea#conteudoAula')) criarMenuFlutuante(); }, 2000);`
         }
     ];
@@ -2825,6 +2981,7 @@ async function salvarChamadaManual() {
     await sincronizarFaltasCompartilhadas(dataChamada, mapSync);
 
     await persistirDados();
+    if (typeof window.enviarDadosParaExtensao === 'function') window.enviarDadosParaExtensao(true);
     alert('Chamada salva e sincronizada com a gestão!');
     renderChamada(); // Atualiza para refletir contagens
 }
