@@ -494,6 +494,34 @@ async function exportarDocumentoFinal(tipo) {
         win.document.close();
         
         closeModal('modalRevisaoDocumento');
+        
+        // [NOVO] AUTO-SALVAR DRAFT DO REGISTRO DE AULA
+        try {
+            const hoje = getTodayString();
+            if (!data.registrosAula) data.registrosAula = [];
+            
+            const getSerieNomeLocal = (nome) => {
+                if (!nome) return '';
+                let n = nome.trim();
+                n = n.replace(/[\s-]+[A-Za-z]$/i, '');
+                n = n.replace(/(\d)[A-Za-z]$/i, '$1');
+                n = n.replace(/([ºª])[A-Za-z]$/i, '$1');
+                return n.trim();
+            };
+
+            const turmasAlvo = (data.turmas || []).filter(t => t.disciplina === payload.disciplina && getSerieNomeLocal(t.ano_serie || t.nome) === payload.serie);
+            
+            turmasAlvo.forEach(turma => {
+                const registroExistente = data.registrosAula.find(r => r.id_turma == turma.id && r.data == hoje);
+                const conteudoResumo = `Tema: ${payload.tema}\n\nObjetivo: ${payload.dados.objetivos || 'Apresentado no plano de aula.'}\n\nDesenvolvimento: ${payload.dados.desenvolvimento || ''}`;
+                
+                if (!registroExistente) {
+                    data.registrosAula.push({ id: Date.now() + Math.random(), id_turma: turma.id, data: hoje, conteudo: conteudoResumo.substring(0, 1000) });
+                }
+            });
+            persistirDados();
+            if (typeof window.enviarDadosParaExtensao === 'function') window.enviarDadosParaExtensao(true);
+        } catch(er) { console.warn("Erro ao auto-salvar registro", er); }
 
     } catch (e) {
         alert('Erro ao formatar o documento: ' + e.message);
