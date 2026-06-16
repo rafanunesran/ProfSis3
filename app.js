@@ -1239,11 +1239,11 @@ function gerarCodigoBookmarklet() {
             });
 
             window.iniciarExtrairAlunos = function() {
-                const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"]');
+                const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"], .card_aluno1, .card_aluno');
                 if(cardsAlunos.length === 0) return alert('Nenhum aluno encontrado na tela. Abra a tela de chamada da turma desejada primeiro!');
                 
                 const content = document.getElementById('sisprof-content');
-                content.innerHTML = '<p style="color:#2b6cb0; font-weight:bold; font-size:13px;">Extraindo ' + cardsAlunos.length + ' alunos...</p>';
+                if (content) content.innerHTML = '<p style="color:#2b6cb0; font-weight:bold; font-size:13px;">Extraindo ' + cardsAlunos.length + ' alunos...</p>';
                 
                 const alunos = [];
                 cardsAlunos.forEach(card => {
@@ -1251,80 +1251,150 @@ function gerarCodigoBookmarklet() {
                     if (!nomeElement) return;
                     let nomeCompleto = nomeElement.textContent.trim();
                     nomeCompleto = nomeCompleto.replace(/^\\d+\\s*-\\s*/, '');
-                    
-                    alunos.push({
-                        nome: nomeCompleto.toUpperCase(),
-                        status: 'Ativo'
-                    });
+                    alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
                 });
                 
                 let turmaSelecionada = "Desconhecida";
                 const selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
                 if (selectTurma && selectTurma.options[selectTurma.selectedIndex]) {
                     turmaSelecionada = selectTurma.options[selectTurma.selectedIndex].text.trim();
+                } else {
+                    const spans = document.querySelectorAll('.font-cabecalho-filtro');
+                    spans.forEach(span => {
+                        if (span.textContent.includes('Turma:')) turmaSelecionada = span.textContent.replace('Turma:', '').trim();
+                    });
                 }
                 
                 const payload = { type: 'SISPROF_IMPORT_ALUNOS', alunos: alunos, turmaSED: turmaSelecionada, timestamp: Date.now() };
                 
                 const frame = document.getElementById('sisprof-iframe');
-                frame.contentWindow.postMessage({ type: 'SISPROF_SAVE_ALUNOS', payload: payload }, '*');
+                if (frame) frame.contentWindow.postMessage({ type: 'SISPROF_SAVE_ALUNOS', payload: payload }, '*');
                 
-                content.innerHTML = '<p style="color:#38a169; font-weight:bold; font-size:13px;">Enviando para a nuvem...</p>';
+                if (content) content.innerHTML = '<p style="color:#38a169; font-weight:bold; font-size:13px;">Enviando para a nuvem...</p>';
             };
 
             window.iniciarExtrairTodasTurmas = async function() {
-                const selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
-                if (!selectTurma) return alert('Seletor de turma não encontrado. Certifique-se de estar na tela com o filtro de turmas (ex: Frequência).');
+                let selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
+                let isCustomDropdown = false;
+                let turmaWrapper = null;
                 
+                if (!selectTurma) {
+                    const labels = document.querySelectorAll('.form-label-dropdown');
+                    labels.forEach(l => {
+                        if (l.textContent.trim() === 'Turma') turmaWrapper = l.parentElement;
+                    });
+                    if (turmaWrapper) isCustomDropdown = true;
+                }
+
+                if (!selectTurma && !isCustomDropdown) {
+                    return alert('Filtro de turma não encontrado. Certifique-se de estar na tela com os filtros (ex: Frequência).');
+                }
+
                 const content = document.getElementById('sisprof-content');
                 const todasTurmas = [];
-                const options = Array.from(selectTurma.options).filter(o => o.value && o.text && !o.text.toLowerCase().includes('selecione') && !o.text.toLowerCase().includes('todos'));
                 
-                if (options.length === 0) return alert('Nenhuma turma encontrada no seletor.');
-                if (!confirm('O robô vai processar ' + options.length + ' turmas automaticamente.\\n\\nNÃO CLIQUE em nada até ele terminar. Deseja continuar?')) return;
+                if (!isCustomDropdown) {
+                    const options = Array.from(selectTurma.options).filter(o => o.value && o.text && !o.text.toLowerCase().includes('selecione') && !o.text.toLowerCase().includes('todos'));
+                    if (options.length === 0) return alert('Nenhuma turma encontrada no seletor.');
+                    if (!confirm('O robô vai processar ' + options.length + ' turmas automaticamente.\\n\\nNÃO CLIQUE em nada até ele terminar. Deseja continuar?')) return;
 
-                for (let i = 0; i < options.length; i++) {
-                    const opt = options[i];
-                    content.innerHTML = '<p style="color:#2b6cb0; font-weight:bold; font-size:13px;">⏳ Lendo ' + opt.text.trim() + '... (' + (i+1) + '/' + options.length + ')</p>';
-                    
-                    selectTurma.value = opt.value;
-                    selectTurma.dispatchEvent(new Event('change', { bubbles: true }));
-                    
-                    const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
-                    let btnBuscar = null;
-                    buttons.forEach(b => {
-                        const text = (b.innerText || b.value || '').toLowerCase();
-                        if (text.includes('pesquisar') || text.includes('buscar')) btnBuscar = b;
-                    });
-                    if (btnBuscar) btnBuscar.click();
+                    for (let i = 0; i < options.length; i++) {
+                        const opt = options[i];
+                        if (content) content.innerHTML = '<p style="color:#2b6cb0; font-weight:bold; font-size:13px;">⏳ Lendo ' + opt.text.trim().substring(0,10) + '... (' + (i+1) + '/' + options.length + ')</p>';
+                        
+                        selectTurma.value = opt.value;
+                        selectTurma.dispatchEvent(new Event('change', { bubbles: true }));
+                        
+                        const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
+                        let btnBuscar = null;
+                        buttons.forEach(b => {
+                            const text = (b.innerText || b.value || '').toLowerCase();
+                            if (text.includes('pesquisar') || text.includes('buscar')) btnBuscar = b;
+                        });
+                        if (btnBuscar) btnBuscar.click();
 
-                    await new Promise(r => setTimeout(r, 4000));
+                        await new Promise(r => setTimeout(r, 4000));
+                        
+                        const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"], .card_aluno1, .card_aluno');
+                        const alunos = [];
+                        cardsAlunos.forEach(card => {
+                            const nomeElement = card.querySelector('.nome_aluno');
+                            if (!nomeElement) return;
+                            let nomeCompleto = nomeElement.textContent.trim();
+                            nomeCompleto = nomeCompleto.replace(/^\\d+\\s*-\\s*/, '');
+                            alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
+                        });
+                        
+                        if (alunos.length > 0) {
+                            todasTurmas.push({ turmaSED: opt.text.trim(), alunos: alunos });
+                        }
+                    }
+                } else {
+                    if (!confirm('O robô tentará extrair as turmas automaticamente.\\nNÃO CLIQUE EM NADA na tela.\\nDeseja continuar?')) return;
                     
-                    const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"]');
-                    const alunos = [];
-                    cardsAlunos.forEach(card => {
-                        const nomeElement = card.querySelector('.nome_aluno');
-                        if (!nomeElement) return;
-                        let nomeCompleto = nomeElement.textContent.trim();
-                        nomeCompleto = nomeCompleto.replace(/^\\d+\\s*-\\s*/, '');
-                        alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
-                    });
+                    const input = turmaWrapper.querySelector('input');
+                    if (!input) return alert('Input do menu não encontrado.');
                     
-                    if (alunos.length > 0) {
-                        todasTurmas.push({ turmaSED: opt.text.trim(), alunos: alunos });
+                    input.click();
+                    await new Promise(r => setTimeout(r, 1000));
+                    
+                    const listItems = document.querySelectorAll('.custom-dropdown li');
+                    if (listItems.length === 0) return alert('Nenhuma turma encontrada no menu.');
+                    
+                    const optionsTexts = Array.from(listItems).map(li => li.textContent.trim()).filter(t => !t.toLowerCase().includes('selecione') && !t.toLowerCase().includes('todos'));
+                    
+                    input.click(); 
+                    await new Promise(r => setTimeout(r, 500));
+                    
+                    for (let i = 0; i < optionsTexts.length; i++) {
+                        const text = optionsTexts[i];
+                        if (content) content.innerHTML = '<p style="color:#2b6cb0; font-weight:bold; font-size:13px;">⏳ Lendo ' + text.substring(0,10) + '... (' + (i+1) + '/' + optionsTexts.length + ')</p>';
+                        
+                        input.click();
+                        await new Promise(r => setTimeout(r, 1000));
+                        
+                        const currentListItems = document.querySelectorAll('.custom-dropdown li');
+                        const targetLi = Array.from(currentListItems).find(li => li.textContent.trim() === text);
+                        if (targetLi) targetLi.click();
+                        
+                        await new Promise(r => setTimeout(r, 1000));
+                        
+                        const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
+                        let btnBuscar = null;
+                        buttons.forEach(b => {
+                            const btext = (b.innerText || b.value || '').toLowerCase();
+                            if (btext.includes('pesquisar') || btext.includes('buscar')) btnBuscar = b;
+                        });
+                        if (btnBuscar) btnBuscar.click();
+                        
+                        await new Promise(r => setTimeout(r, 4000));
+                        
+                        const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"], .card_aluno1, .card_aluno');
+                        const alunos = [];
+                        cardsAlunos.forEach(card => {
+                            const nomeElement = card.querySelector('.nome_aluno');
+                            if (!nomeElement) return;
+                            let nomeCompleto = nomeElement.textContent.trim();
+                            nomeCompleto = nomeCompleto.replace(/^\\d+\\s*-\\s*/, '');
+                            alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
+                        });
+                        
+                        if (alunos.length > 0) {
+                            todasTurmas.push({ turmaSED: text, alunos: alunos });
+                        }
                     }
                 }
                 
                 if (todasTurmas.length === 0) {
-                    content.innerHTML = '<p style="color:#e53e3e; font-weight:bold; font-size:13px;">Nenhum aluno encontrado nas turmas.</p>';
+                    if (content) content.innerHTML = '<p style="color:#e53e3e; font-weight:bold; font-size:13px;">Nenhum aluno encontrado nas turmas.</p>';
                     return;
                 }
 
                 const payload = { type: 'SISPROF_IMPORT_ALUNOS_MULTI', turmas: todasTurmas, timestamp: Date.now() };
                 const frame = document.getElementById('sisprof-iframe');
-                frame.contentWindow.postMessage({ type: 'SISPROF_SAVE_ALUNOS', payload: payload }, '*');
+                if (frame) frame.contentWindow.postMessage({ type: 'SISPROF_SAVE_ALUNOS', payload: payload }, '*');
                 
-                content.innerHTML = '<p style="color:#38a169; font-weight:bold; font-size:13px;">✅ ' + todasTurmas.length + ' turmas copiadas com sucesso!</p>';
+                if (content) content.innerHTML = '<p style="color:#38a169; font-weight:bold; font-size:13px;">✅ ' + todasTurmas.length + ' turmas copiadas com sucesso!</p>';
             };
 
             window.iniciarPreenchimento = function() {
@@ -1435,8 +1505,20 @@ window.enviarDadosParaExtensao = function() {
         registros: registrosHoje.map(r => ({ conteudo: r.conteudo }))
     };
 
+    let extRespondeu = false;
+    const listener = (e) => {
+        if (e.data && e.data.type === 'EXT_ACK') extRespondeu = true;
+    };
+    window.addEventListener('message', listener);
+
     window.postMessage({ type: 'EXT_SEND_PAYLOAD', payload: payload }, '*');
-    alert('Tentando enviar os dados de Hoje para a Extensão do Chrome...\\n\\nSe ela estiver instalada e ativa, um aviso verde aparecerá no canto inferior direito da tela!');
+    
+    setTimeout(() => {
+        window.removeEventListener('message', listener);
+        if (!extRespondeu) {
+            alert('A caixa verde não apareceu? Parece que a extensão não está conectada a esta página.\\n\\nCertifique-se de:\\n1. Ter ativado o "Modo do Desenvolvedor" na tela de extensões.\\n2. Ter instalado/atualizado a extensão com os arquivos corretos.\\n3. Ter apertado F5 (Recarregar) nesta página do SisProf.\\n\\nSe mesmo assim não for, você ainda pode usar o botão "Usar Robô Favorito" ao lado!');
+        }
+    }, 1500);
 };
 
 window.baixarArquivosExtensao = function() {
@@ -1487,6 +1569,7 @@ window.baixarArquivosExtensao = function() {
             name: 'content_profsis.js',
             content: `window.addEventListener('message', (e) => {
     if (e.data && e.data.type === 'EXT_SEND_PAYLOAD') {
+        window.postMessage({ type: 'EXT_ACK' }, '*');
         chrome.runtime.sendMessage({ action: 'SYNC_DATA', payload: e.data.payload }, (res) => {
             if (res && res.success) {
                 const div = document.createElement('div');
@@ -1564,7 +1647,7 @@ window.addEventListener('message', function(e) {
 });
 
 function iniciarExtrairAlunos() {
-    const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"]');
+    const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"], .card_aluno1, .card_aluno');
     if(cardsAlunos.length === 0) return alert('Nenhum aluno encontrado na tela. Abra a tela de chamada da turma desejada primeiro!');
     
     const btn = document.getElementById('extBtnExtrair');
@@ -1583,6 +1666,11 @@ function iniciarExtrairAlunos() {
     const selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
     if (selectTurma && selectTurma.options[selectTurma.selectedIndex]) {
         turmaSelecionada = selectTurma.options[selectTurma.selectedIndex].text.trim();
+    } else {
+        const spans = document.querySelectorAll('.font-cabecalho-filtro');
+        spans.forEach(span => {
+            if (span.textContent.includes('Turma:')) turmaSelecionada = span.textContent.replace('Turma:', '').trim();
+        });
     }
     
     const payload = { type: 'SISPROF_IMPORT_ALUNOS', alunos: alunos, turmaSED: turmaSelecionada, timestamp: Date.now() };
@@ -1593,45 +1681,114 @@ function iniciarExtrairAlunos() {
 }
 
 async function iniciarExtrairTodasTurmas() {
-    const selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
-    if (!selectTurma) return alert('Seletor de turma não encontrado. Certifique-se de estar na tela com o filtro de turmas (ex: Frequência).');
+    let selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
+    let isCustomDropdown = false;
+    let turmaWrapper = null;
+    
+    if (!selectTurma) {
+        const labels = document.querySelectorAll('.form-label-dropdown');
+        labels.forEach(l => {
+            if (l.textContent.trim() === 'Turma') turmaWrapper = l.parentElement;
+        });
+        if (turmaWrapper) isCustomDropdown = true;
+    }
+
+    if (!selectTurma && !isCustomDropdown) {
+        return alert('Filtro de turma não encontrado. Certifique-se de estar na tela com os filtros (ex: Frequência).');
+    }
     
     const btn = document.getElementById('extBtnExtrairMulti');
     const todasTurmas = [];
-    const options = Array.from(selectTurma.options).filter(o => o.value && o.text && !o.text.toLowerCase().includes('selecione') && !o.text.toLowerCase().includes('todos'));
     
-    if (options.length === 0) return alert('Nenhuma turma encontrada no seletor.');
-    if (!confirm('O robô vai processar ' + options.length + ' turmas automaticamente.\\n\\nNÃO CLIQUE em nada até ele terminar. Deseja continuar?')) return;
+    if (!isCustomDropdown) {
+        const options = Array.from(selectTurma.options).filter(o => o.value && o.text && !o.text.toLowerCase().includes('selecione') && !o.text.toLowerCase().includes('todos'));
+        if (options.length === 0) return alert('Nenhuma turma encontrada no seletor.');
+        if (!confirm('O robô vai processar ' + options.length + ' turmas automaticamente.\\n\\nNÃO CLIQUE em nada até ele terminar. Deseja continuar?')) return;
 
-    for (let i = 0; i < options.length; i++) {
-        const opt = options[i];
-        if (btn) btn.textContent = '⏳ Lendo ' + opt.text.trim().substring(0,10) + '... (' + (i+1) + '/' + options.length + ')';
-        
-        selectTurma.value = opt.value;
-        selectTurma.dispatchEvent(new Event('change', { bubbles: true }));
-        
-        const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
-        let btnBuscar = null;
-        buttons.forEach(b => {
-            const text = (b.innerText || b.value || '').toLowerCase();
-            if (text.includes('pesquisar') || text.includes('buscar')) btnBuscar = b;
-        });
-        if (btnBuscar) btnBuscar.click();
+        for (let i = 0; i < options.length; i++) {
+            const opt = options[i];
+            if (btn) btn.textContent = '⏳ Lendo ' + opt.text.trim().substring(0,10) + '... (' + (i+1) + '/' + options.length + ')';
+            
+            selectTurma.value = opt.value;
+            selectTurma.dispatchEvent(new Event('change', { bubbles: true }));
+            
+            const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
+            let btnBuscar = null;
+            buttons.forEach(b => {
+                const text = (b.innerText || b.value || '').toLowerCase();
+                if (text.includes('pesquisar') || text.includes('buscar')) btnBuscar = b;
+            });
+            if (btnBuscar) btnBuscar.click();
 
-        await new Promise(r => setTimeout(r, 4000));
+            await new Promise(r => setTimeout(r, 4000));
+            
+            const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"], .card_aluno1, .card_aluno');
+            const alunos = [];
+            cardsAlunos.forEach(card => {
+                const nomeElement = card.querySelector('.nome_aluno');
+                if (!nomeElement) return;
+                let nomeCompleto = nomeElement.textContent.trim();
+                nomeCompleto = nomeCompleto.replace(/^\\d+\\s*-\\s*/, '');
+                alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
+            });
+            
+            if (alunos.length > 0) {
+                todasTurmas.push({ turmaSED: opt.text.trim(), alunos: alunos });
+            }
+        }
+    } else {
+        if (!confirm('O robô tentará extrair as turmas automaticamente.\\nNÃO CLIQUE EM NADA na tela.\\nDeseja continuar?')) return;
         
-        const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"]');
-        const alunos = [];
-        cardsAlunos.forEach(card => {
-            const nomeElement = card.querySelector('.nome_aluno');
-            if (!nomeElement) return;
-            let nomeCompleto = nomeElement.textContent.trim();
-            nomeCompleto = nomeCompleto.replace(/^\\d+\\s*-\\s*/, '');
-            alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
-        });
+        const input = turmaWrapper.querySelector('input');
+        if (!input) return alert('Input do menu não encontrado.');
         
-        if (alunos.length > 0) {
-            todasTurmas.push({ turmaSED: opt.text.trim(), alunos: alunos });
+        input.click();
+        await new Promise(r => setTimeout(r, 1000));
+        
+        const listItems = document.querySelectorAll('.custom-dropdown li');
+        if (listItems.length === 0) return alert('Nenhuma turma encontrada no menu.');
+        
+        const optionsTexts = Array.from(listItems).map(li => li.textContent.trim()).filter(t => !t.toLowerCase().includes('selecione') && !t.toLowerCase().includes('todos'));
+        
+        input.click(); 
+        await new Promise(r => setTimeout(r, 500));
+        
+        for (let i = 0; i < optionsTexts.length; i++) {
+            const text = optionsTexts[i];
+            if (btn) btn.textContent = '⏳ Lendo ' + text.substring(0,10) + '... (' + (i+1) + '/' + optionsTexts.length + ')';
+            
+            input.click();
+            await new Promise(r => setTimeout(r, 1000));
+            
+            const currentListItems = document.querySelectorAll('.custom-dropdown li');
+            const targetLi = Array.from(currentListItems).find(li => li.textContent.trim() === text);
+            if (targetLi) targetLi.click();
+            
+            await new Promise(r => setTimeout(r, 1000));
+            
+            const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
+            let btnBuscar = null;
+            buttons.forEach(b => {
+                const btext = (b.innerText || b.value || '').toLowerCase();
+                if (btext.includes('pesquisar') || btext.includes('buscar')) btnBuscar = b;
+            });
+            if (btnBuscar) btnBuscar.click();
+            
+            await new Promise(r => setTimeout(r, 4000));
+            
+            const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"], .card_aluno1, .card_aluno');
+            const alunos = [];
+            cardsAlunos.forEach(card => {
+                const nomeElement = card.querySelector('.nome_aluno');
+                if (!nomeElement) return;
+                let nomeCompleto = nomeElement.textContent.trim();
+                nomeCompleto = nomeCompleto.replace(/^\\d+\\s*-\\s*/, '');
+                alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
+            });
+            
+            if (alunos.length > 0) {
+                todasTurmas.push({ turmaSED: text, alunos: alunos });
+            }
         }
     }
     
