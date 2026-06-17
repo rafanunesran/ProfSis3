@@ -32,7 +32,7 @@ function abrirModalGerarDocumentoIA() {
         div.innerHTML = `
             <div class="modal-content" style="max-width: 600px;">
                 <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
-                    <h2 style="margin: 0;">✨ Estagiário</h2>
+                    <h2 style="margin: 0;">🤖 Estagiário IA</h2>
                     <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalGerarDocumentoIA')">×</button>
                 </div>
                 
@@ -76,7 +76,7 @@ function abrirModalGerarDocumentoIA() {
                         <label style="font-weight:bold; margin:0;">Comando do Estagiário:</label>
                         <button class="btn btn-sm btn-secondary" style="font-size:10px; padding:2px 5px;" onclick="restaurarPromptPadraoIA()">Restaurar Padrão</button>
                     </div>
-                    <p style="font-size:11px; color:#718096; margin-bottom:5px;">voce pode modificar com seu prompt pessoal ou usar o nativo</p>
+                    <p style="font-size:11px; color:#718096; margin-bottom:5px;">Você pode modificar com seu prompt pessoal ou usar o nativo</p>
                     <textarea id="iaDocPrompt" rows="6" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; font-family:monospace; font-size:11px; line-height:1.4;" onchange="localStorage.setItem('ia_prompt_template', this.value)"></textarea>
                 </div>
 
@@ -195,10 +195,10 @@ async function gerarDocumentoIA() {
 
             // Injeta as diretrizes obrigatórias de forma invisível caso o prompt colado não as tenha
             if (faltaMarcador) {
-                promptText += `\\n\\n[DADOS OBRIGATÓRIOS]\\nO plano de aula DEVE ser sobre a disciplina de ${disciplina}, para a série/ano ${serie}, com o tema "${tema}".\\nAs habilidades devem seguir o código e formato do Currículo Paulista específicos da disciplina de ${disciplina} (ex: se for Matemática, use EF...MA..., se for Arte, EF...AR...).`;
+                promptText += `\n\n[DADOS OBRIGATÓRIOS]\nO plano de aula DEVE ser sobre a disciplina de ${disciplina}, para a série/ano ${serie}, com o tema "${tema}".\nAs habilidades devem seguir o código e formato do Currículo Paulista específicos da disciplina de ${disciplina} (ex: se for Matemática, use EF...MA..., se for Arte, EF...AR...).`;
             }
             if (faltaEstruturaJson) {
-                promptText += `\\n\\n[FORMATO DE SAÍDA OBRIGATÓRIO]\\nRetorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:\\n{"aprendizagem_essencial": "Habilidade central", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades com códigos", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
+                promptText += `\n\n[FORMATO DE SAÍDA OBRIGATÓRIO]\nRetorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:\n{"aprendizagem_essencial": "Habilidade central", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades com códigos", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
             }
         }
 
@@ -300,19 +300,30 @@ async function gerarDocumentoIA() {
         }
 
         if (!success) {
-            throw new Error(`A Inteligência Artificial falhou ou rejeitou o pedido.\\nMotivo: ${lastError}`);
+            throw new Error(`A Inteligência Artificial falhou ou rejeitou o pedido.\nMotivo: ${lastError}`);
         }
 
         // Limpa potenciais blocos markdown que a IA possa enviar por teimosia e converte para objeto
-        const jsonLimpo = respostaTexto.replace(/```json/g, '').replace(/```/g, '').trim();
-        dadosEstruturados = JSON.parse(jsonLimpo);
+        let jsonLimpo = respostaTexto.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').trim();
+        
+        const jsonMatch = jsonLimpo.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            jsonLimpo = jsonMatch[0];
+        }
+        
+        try {
+            dadosEstruturados = JSON.parse(jsonLimpo);
+        } catch (parseErr) {
+            console.error("Erro no JSON retornado pela IA:", respostaTexto);
+            throw new Error("A IA não retornou os dados no formato esperado. Por favor, tente gerar novamente.");
+        }
 
         closeModal('modalGerarDocumentoIA');
         abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasNomesStr, duracaoAulasStr, bimestreAtual, dadosEstruturados);
 
     } catch (e) {
         console.error(e);
-        alert('Erro ao gerar documento com IA:\\nVerifique sua chave de API ou tente novamente.\\n\\nDetalhes: ' + e.message);
+        alert('Erro ao gerar documento com IA:\n' + e.message);
     } finally {
         btn.textContent = originalText;
         btn.disabled = false;
