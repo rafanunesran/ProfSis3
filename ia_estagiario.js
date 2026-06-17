@@ -445,13 +445,88 @@ async function exportarDocumentoFinal(tipo) {
     };
 
     try {
-        // Nova Abordagem: Carregar o layout externo da pasta Docs
-        // Certifique-se de que a extensão do arquivo seja a mesma (.html, .txt, etc)
-        const response = await fetch('Docs/Base_Plano_Aula.html');
-        if (!response.ok) {
-            throw new Error('Não foi possível carregar o arquivo Docs/Base_Plano_Aula.html. Verifique o caminho e a extensão!');
+        let templateHtml = '';
+        try {
+            const response = await fetch('Docs/Base_Plano_Aula.html');
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            templateHtml = await response.text();
+        } catch (fetchErr) {
+            console.warn("Template local não carregado (CORS/file://). Usando template embutido.", fetchErr);
+            templateHtml = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Planos de Aula Semanais</title>
+<style>
+    @page { size: landscape; margin: 10mm; }
+    body { font-family: Arial, sans-serif; font-size: 11px; margin: 0; padding: 0; }
+    .page-break { page-break-after: always; margin-bottom: 30px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    th, td { border: 1px solid black; padding: 6px; text-align: left; vertical-align: top; }
+    .header-table { border: none; width: 100%; margin-bottom: 10px; }
+    .header-table td { border: none; text-align: center; vertical-align: middle; }
+    .header-left { text-align: left; width: 250px; }
+    .header-right { text-align: right; width: 150px; }
+    .header-center { font-weight: bold; font-size: 14px; }
+    .subtitle { text-align: center; font-weight: bold; margin-bottom: 10px; font-size: 13px; }
+    .gray-bg { background-color: #f2f2f2; font-weight: bold; text-align: center; }
+    .center { text-align: center; }
+</style>
+</head>
+<body>
+<div class="page-break">
+    <table class="header-table">
+        <tr>
+            <td class="header-left"><img src="{{LOGO_ESTADO}}" style="max-width: 220px; max-height: 80px;"></td>
+            <td class="header-center">UNIDADE REGIONAL DE ENSINO - {{REGIÃO}}<br>{{NOME COMPLETO DA ESCOLA}}<br>{{TIPO DE DOC}}</td>
+            <td class="header-right"><img src="{{LOGO_ESCOLA}}" style="max-width: 120px; max-height: 80px;"></td>
+        </tr>
+    </table>
+    <div class="subtitle">{{BIMESTRE}}</div>
+    <table>
+        <tr>
+            <td colspan="4"><b>PROFESSOR:</b> {{PROFESSOR}}</td>
+            <td colspan="3"><b>DISCIPLINA:</b> {{DISCIPLINA}}</td>
+        </tr>
+        <tr>
+            <td colspan="4"><b>ANO:</b>{{SERIE}} {{TURMAS}}</td>
+            <td colspan="3"><b>DATA:</b> {{SEMANA}}</td>
+        </tr>
+        <tr>
+            <td colspan="4"><b>TEMA DA AULA:</b> {{TEMA}}</td>
+            <td colspan="3"><b>Aprendizagem essencial:</b> {{APRENDIZAGEM_ESSENCIAL}}</td>
+        </tr>
+        <tr class="gray-bg">
+            <td width="12%">CONTEÚDOS</td>
+            <td width="15%">HABILIDADES</td>
+            <td width="13%">OBJETIVOS</td>
+            <td width="30%">DESENVOLVIMENTO</td>
+            <td width="10%">MATERIAIS</td>
+            <td width="10%">AVALIAÇÃO</td>
+            <td width="10%">DURAÇÃO</td>
+        </tr>
+        <tr>
+            <td>{{CONTEUDOS}}</td>
+            <td>{{HABILIDADES}}</td>
+            <td>{{OBJETIVOS}}</td>
+            <td>
+                {{DESENVOLVIMENTO}}
+            </td>
+            <td>{{MATERIAIS}}</td>
+            <td>{{AVALIACAO}}</td>
+            <td class="center"><b>{{DURACAO}}</b></td>
+        </tr>
+        <tr>
+            <td colspan="7" style="height: 60px;">
+                <b>* OBSERVAÇÃO DO CGPG:</b><br><br>
+                <b>CIÊNCIA DO PROFESSOR:</b> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <b>CIÊNCIA DO CGPG:</b>
+            </td>
+        </tr>
+    </table>
+</div>
+</body>
+</html>`;
         }
-        let templateHtml = await response.text();
 
         // Busca configurações globais e da escola
         let configSistema = {};
@@ -501,6 +576,9 @@ async function exportarDocumentoFinal(tipo) {
         }
 
         const win = window.open('', '', 'width=900,height=800');
+        if (!win) {
+            throw new Error('O navegador bloqueou a abertura da janela (Pop-up). Permita pop-ups no seu navegador para gerar o documento.');
+        }
         win.document.write(htmlFinal);
         win.document.close();
         
