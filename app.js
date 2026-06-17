@@ -1661,14 +1661,31 @@ window.baixarArquivosExtensao = function() {
             name: 'background.js',
             content: `chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'SYNC_DATA') {
-        chrome.storage.local.set({ rpa_data: request.payload }, () => {
-            sendResponse({ success: true });
+        chrome.storage.local.get(['rpa_data_history'], (result) => {
+            let history = result.rpa_data_history || {};
+            const date = request.payload.data;
+            if (date) {
+                history[date] = request.payload;
+                const keys = Object.keys(history).sort();
+                while(keys.length > 5) { delete history[keys.shift()]; }
+                chrome.storage.local.set({ rpa_data_history: history, rpa_data: request.payload }, () => {
+                    sendResponse({ success: true });
+                });
+            } else {
+                sendResponse({ success: false });
+            }
         });
         return true;
     }
     if (request.action === 'GET_DATA') {
-        chrome.storage.local.get(['rpa_data'], (result) => {
-            sendResponse(result.rpa_data);
+        chrome.storage.local.get(['rpa_data_history', 'rpa_data', 'rpa_done_marks'], (result) => {
+            sendResponse(result);
+        });
+        return true;
+    }
+    if (request.action === 'SAVE_MARKS') {
+        chrome.storage.local.set({ rpa_done_marks: request.marks }, () => {
+            sendResponse({ success: true });
         });
         return true;
     }
@@ -1697,16 +1714,31 @@ window.baixarArquivosExtensao = function() {
 const urlApp = "${urlApp}";
 const profId = "${profId}";
 
+let extHistory = {};
+let extDoneMarks = {};
+let currentSelectedDate = "";
+
 function criarMenuFlutuante() {
     if (document.getElementById('rpa-ext-menu')) return;
     const div = document.createElement('div');
     div.id = 'rpa-ext-menu';
-    div.style.cssText = 'position:fixed; bottom:20px; right:20px; width:280px; background:#fff; border:2px solid #805ad5; border-radius:8px; z-index:999999; box-shadow:0 10px 25px rgba(0,0,0,0.2); font-family:sans-serif; overflow:hidden;';
+    div.style.cssText = 'position:fixed; top:20px; right:20px; width:320px; background:#fff; border:2px solid #805ad5; border-radius:8px; z-index:999999; box-shadow:0 10px 25px rgba(0,0,0,0.2); font-family:sans-serif; overflow:hidden; display:flex; flex-direction:column; max-height: 90vh;';
     div.innerHTML = '<div style="background:#805ad5; color:#fff; padding:10px; font-weight:bold; text-align:center; display:flex; justify-content:space-between; align-items:center;"><span>🧩 Extensão SisProf</span><span style="cursor:pointer;" onclick="this.parentElement.parentElement.remove();">✖</span></div>' +
-        '<div style="padding:15px;" id="ext-content">' +
+        '<div style="padding:15px; overflow-y:auto;" id="ext-content">' +
+        '<div style="margin-bottom:15px;">' +
+        '<label style="font-size:12px; font-weight:bold; color:#4a5568;">Dia Sincronizado:</label>' +
+        '<select id="extDiaSelect" style="width:100%; padding:6px; margin-top:4px; border-radius:4px; border:1px solid #cbd5e0; font-size:12px;"></select>' +
+        '</div>' +
+        '<div id="extDiaInfo" style="margin-bottom:15px; font-size:12px; color:#2d3748; background:#f7fafc; padding:10px; border-radius:4px; border:1px solid #e2e8f0; min-height:40px;">Carregando...</div>' +
+        '<div style="margin-bottom:15px;">' +
+        '<label style="font-size:12px; font-weight:bold; color:#4a5568; display:flex; justify-content:space-between;">Aulas a Lançar: <span style="font-weight:normal; font-size:10px; cursor:pointer; color:#3182ce;" id="extBtnLerAulas">Ler da Tela 🔄</span></label>' +
+        '<div id="extListaAulas" style="margin-top:5px; max-height:120px; overflow-y:auto; border:1px solid #e2e8f0; padding:5px; border-radius:4px; font-size:11px; background:#fff;"></div>' +
+        '</div>' +
+        '<button id="extBtnPreencher" style="width:100%; padding:10px; background:#3182ce; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">1️⃣ Preencher Chamada / Aula</button>' +
+        '<hr style="border:0; border-top:1px solid #eee; margin:15px 0;">' +
+        '<p style="font-size:11px; color:#718096; margin-bottom:5px; font-weight:bold;">Extrair Alunos da SED:</p>' +
         '<button id="extBtnExtrair" style="width:100%; background:#38a169; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">📥 Extrair Alunos (Atual)</button>' +
         '<button id="extBtnExtrairMulti" style="width:100%; background:#276749; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">📥 Extrair TODAS (Auto)</button>' +
-        '<button id="extBtnPreencher" style="width:100%; padding:10px; background:#3182ce; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer;">1️⃣ Preencher Chamada / Aula</button>' +
         '</div>';
     document.body.appendChild(div);
     
@@ -1718,19 +1750,193 @@ function criarMenuFlutuante() {
         document.body.appendChild(iframe);
     }
 
+    document.getElementById('extDiaSelect').addEventListener('change', (e) => {
+        currentSelectedDate = e.target.value;
+        renderDiaInfo();
+        lerAulasDaTela();
+    });
+
+    document.getElementById('extBtnLerAulas').addEventListener('click', lerAulasDaTela);
+
     document.getElementById('extBtnPreencher').addEventListener('click', () => {
+        if(!currentSelectedDate || !extHistory[currentSelectedDate]) {
+            alert('Selecione um dia válido.');
+            return;
+        }
         const btn = document.getElementById('extBtnPreencher');
         const oldText = btn.textContent;
-        btn.textContent = 'Buscando na Extensão...';
-        chrome.runtime.sendMessage({ action: 'GET_DATA' }, (data) => {
-            btn.textContent = oldText;
-            if(!data || (!data.faltas && !data.registros)) return alert('Nenhuma chamada pendente.\\n\\nVolte ao site do SisProf e clique em "Enviar para Extensão".');
-            executarPreenchimento(data);
-        });
+        btn.textContent = 'Preenchendo...';
+        
+        selecionarDataSED(currentSelectedDate);
+        setTimeout(() => {
+            selecionarAulasSED();
+            setTimeout(() => {
+                executarPreenchimento(extHistory[currentSelectedDate]);
+                btn.textContent = oldText;
+            }, 1000);
+        }, 800);
     });
     
     document.getElementById('extBtnExtrair').addEventListener('click', iniciarExtrairAlunos);
     document.getElementById('extBtnExtrairMulti').addEventListener('click', iniciarExtrairTodasTurmas);
+
+    carregarDados();
+}
+
+function carregarDados() {
+    chrome.runtime.sendMessage({ action: 'GET_DATA' }, (data) => {
+        if(data && data.rpa_data_history) {
+            extHistory = data.rpa_data_history;
+        } else if(data && data.rpa_data) {
+            extHistory = {};
+            extHistory[data.rpa_data.data] = data.rpa_data;
+        }
+        extDoneMarks = data.rpa_done_marks || {};
+        
+        const select = document.getElementById('extDiaSelect');
+        select.innerHTML = '';
+        const dates = Object.keys(extHistory).sort((a,b) => b.localeCompare(a));
+        if(dates.length === 0) {
+            select.innerHTML = '<option value="">Nenhum dado recebido</option>';
+            document.getElementById('extDiaInfo').innerHTML = 'Volte ao SisProf e envie os dados para a extensão.';
+            return;
+        }
+        
+        dates.forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d;
+            const parts = d.split('-');
+            opt.textContent = parts[2] + '/' + parts[1] + '/' + parts[0];
+            select.appendChild(opt);
+        });
+        
+        if (!currentSelectedDate || !extHistory[currentSelectedDate]) {
+            currentSelectedDate = dates[0];
+        }
+        select.value = currentSelectedDate;
+        renderDiaInfo();
+        setTimeout(lerAulasDaTela, 1000);
+    });
+}
+
+function renderDiaInfo() {
+    const info = document.getElementById('extDiaInfo');
+    if(!currentSelectedDate || !extHistory[currentSelectedDate]) {
+        info.innerHTML = 'Sem dados.';
+        return;
+    }
+    const payload = extHistory[currentSelectedDate];
+    const numFaltas = (payload.faltas && payload.faltas.length) ? payload.faltas.length : 0;
+    const temRegistro = (payload.registros && payload.registros.length > 0 && payload.registros[0].conteudo) ? 'Sim' : 'Não';
+    
+    info.innerHTML = '<strong>Faltas a lançar:</strong> ' + numFaltas + '<br><strong>Registro de Aula:</strong> ' + temRegistro;
+}
+
+function lerAulasDaTela() {
+    const lista = document.getElementById('extListaAulas');
+    if(!lista) return;
+    
+    const checkboxes = document.querySelectorAll('.multi-select-menuitem input[type="checkbox"]');
+    if(checkboxes.length === 0) {
+        lista.innerHTML = '<div style="color:#a0aec0; text-align:center; padding:10px 0;">Nenhuma aula encontrada.<br>Abra a aba de Chamada e selecione a Turma.</div>';
+        return;
+    }
+    
+    lista.innerHTML = '';
+    checkboxes.forEach((chk, index) => {
+        const label = chk.parentElement.textContent.trim();
+        const val = chk.value;
+        const markKey = currentSelectedDate + '_' + val;
+        const isDone = extDoneMarks[markKey] || false;
+        
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0f0f0; padding:3px 0;';
+        
+        const chkId = 'ext_aula_' + index;
+        const doneId = 'ext_done_' + index;
+        
+        div.innerHTML = '<label style="cursor:pointer; display:flex; align-items:center; gap:5px; flex:1;"><input type="checkbox" class="ext-aula-chk" id="' + chkId + '" data-val="' + val + '"> ' + label + '</label>' +
+            '<label style="cursor:pointer; font-size:10px; color:' + (isDone ? '#38a169' : '#a0aec0') + '; font-weight:bold; display:flex; align-items:center; gap:2px;" title="Marcar como Lançado"><input type="checkbox" class="ext-done-chk" id="' + doneId + '" ' + (isDone ? 'checked' : '') + '> Lançado</label>';
+        
+        lista.appendChild(div);
+        
+        const doneChk = document.getElementById(doneId);
+        doneChk.addEventListener('change', (e) => {
+            extDoneMarks[markKey] = e.target.checked;
+            chrome.runtime.sendMessage({ action: 'SAVE_MARKS', marks: extDoneMarks });
+            doneChk.parentElement.style.color = e.target.checked ? '#38a169' : '#a0aec0';
+        });
+    });
+}
+
+function selecionarDataSED(dataStr) {
+    if(!dataStr) return;
+    const parts = dataStr.split('-');
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1; 
+    const day = parseInt(parts[2], 10);
+
+    const monthSelect = document.querySelector('.ui-datepicker-month');
+    const yearSelect = document.querySelector('.ui-datepicker-year');
+    
+    let changed = false;
+    if (monthSelect && monthSelect.value != month) {
+        monthSelect.value = month;
+        monthSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        changed = true;
+    }
+    if (yearSelect && yearSelect.value != year) {
+        yearSelect.value = year;
+        yearSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        changed = true;
+    }
+
+    const clickDay = () => {
+        const dayCell = document.querySelector('td[data-handler="selectDay"][data-month="' + month + '"][data-year="' + year + '"] a.ui-state-default');
+        if (dayCell && dayCell.textContent.trim() == day) {
+            dayCell.click();
+        } else {
+            const cells = document.querySelectorAll('td[data-handler="selectDay"]');
+            for (let i = 0; i < cells.length; i++) {
+                if (cells[i].getAttribute('data-month') == month && cells[i].getAttribute('data-year') == year) {
+                    const a = cells[i].querySelector('a');
+                    if (a && a.textContent.trim() == day) {
+                        a.click();
+                        break;
+                    }
+                }
+            }
+        }
+    };
+
+    if (changed) {
+        setTimeout(clickDay, 500);
+    } else {
+        clickDay();
+    }
+}
+
+function selecionarAulasSED() {
+    const chks = document.querySelectorAll('.ext-aula-chk:checked');
+    if(chks.length === 0) return;
+    const selecionados = Array.from(chks).map(c => c.getAttribute('data-val'));
+
+    const btnAbrir = document.querySelector('.multi-select-button');
+    if(btnAbrir) btnAbrir.click(); 
+
+    setTimeout(() => {
+        const checkboxes = document.querySelectorAll('.multi-select-menuitem input[type="checkbox"]');
+        checkboxes.forEach(chk => {
+            const val = chk.value;
+            if(selecionados.includes(val) && !chk.checked) {
+                chk.click();
+            } else if (!selecionados.includes(val) && chk.checked) {
+                chk.click();
+            }
+        });
+        
+        if(btnAbrir) btnAbrir.click();
+    }, 200);
 }
 
 window.addEventListener('message', function(e) {
