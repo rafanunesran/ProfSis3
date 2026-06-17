@@ -1474,6 +1474,8 @@ function gerarCodigoBookmarklet() {
                                 const levouFalta = alunosAlvo.includes(nomeAluno);
                                 if (levouFalta && checkbox.checked) { checkbox.click(); interagidos++; }
                                 else if (!levouFalta && !checkbox.checked) { checkbox.click(); }
+                                if (levouFalta && !checkbox.checked) { checkbox.click(); interagidos++; }
+                                else if (!levouFalta && checkbox.checked) { checkbox.click(); }
                             });
                         }
                     }
@@ -2305,6 +2307,8 @@ async function iniciarExtrairTodasTurmas() {
                             const levouFalta = alunosAlvo.includes(nomeAluno);
                             if (levouFalta && checkbox.checked) { checkbox.click(); interagidos++; }
                             else if (!levouFalta && !checkbox.checked) { checkbox.click(); }
+                            if (levouFalta && !checkbox.checked) { checkbox.click(); interagidos++; }
+                            else if (!levouFalta && checkbox.checked) { checkbox.click(); }
                         });
                     }
                 }
