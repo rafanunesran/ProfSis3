@@ -1454,6 +1454,13 @@ function gerarCodigoBookmarklet() {
                     }
                 }, 500);
             };
+            <!-- Seus outros scripts -->
+            <script src="shared.js"></script>
+            <script src="core.js"></script>
+            <script src="app.js"></script>
+            
+            <!-- ADICIONE ESTA LINHA AQUI 👇 -->
+            <script src="ia_estagiario.js"></script>
             
             window.preencherRegistroRPA = function() {
                 const payload = window.sisprofPayload;
