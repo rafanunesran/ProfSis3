@@ -1771,8 +1771,17 @@ function criarMenuFlutuante() {
         setTimeout(() => {
             selecionarAulasSED();
             setTimeout(() => {
-                executarPreenchimento(extHistory[currentSelectedDate]);
-                btn.textContent = oldText;
+                const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
+                let btnBuscar = null;
+                buttons.forEach(b => {
+                    const text = (b.innerText || b.value || '').toLowerCase();
+                    if (text.includes('pesquisar') || text.includes('buscar') || text.includes('listar')) btnBuscar = b;
+                });
+                if (btnBuscar) btnBuscar.click();
+                setTimeout(() => {
+                    executarPreenchimento(extHistory[currentSelectedDate]);
+                    btn.textContent = oldText;
+                }, 2500);
             }, 1000);
         }, 800);
     });
@@ -2219,7 +2228,7 @@ async function iniciarExtrairTodasTurmas() {
             window.preencherRegistroRPA = function() {
                 window.executarPreenchimento(window.sisprofPayload);
             };
-setInterval(() => { if (document.querySelector('.grid-listagem') || document.querySelector('textarea[name="o.Descricao"]') || document.querySelector('textarea#conteudoAula')) criarMenuFlutuante(); }, 2000);`
+setInterval(() => { if (document.querySelector('.grid-listagem') || document.querySelector('textarea[name="o.Descricao"]') || document.querySelector('textarea#conteudoAula') || document.querySelector('.calendario-padrao') || document.querySelector('.input-aula-hora') || document.querySelector('.conteudo-filter')) criarMenuFlutuante(); }, 2000);`
         }
     ];
 
