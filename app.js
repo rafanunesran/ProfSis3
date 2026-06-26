@@ -2411,9 +2411,13 @@ function checkAndCreateMenu() {
     } else {
         console.log('[SisProf Ext] Nenhum elemento alvo encontrado. Tentando novamente em 2 segundos.');
     }
+// Garante que o menu não seja criado múltiplas vezes se a extensão for recarregada
+if (!document.getElementById('rpa-ext-menu')) {
+    criarMenuFlutuante();
 }
 window.sisprofMenuInterval = setInterval(checkAndCreateMenu, 2000);
 checkAndCreateMenu();`
+`
         }
     ];
 
