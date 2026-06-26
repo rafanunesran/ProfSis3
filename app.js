@@ -1873,13 +1873,11 @@ window.baixarArquivosExtensao = function() {
             content: `console.log('Robô SisProf SED - Ativo na Aba [v3]');
 const urlApp = "${urlApp}";
 const profId = "${profId}";
-
 let extHistory = {};
 let extDoneMarks = {};
 let currentSelectedDate = "";
 
 function criarMenuFlutuante() {
-    if (document.getElementById('rpa-ext-menu')) return;
     const div = document.createElement('div');
     div.id = 'rpa-ext-menu';
     div.style.cssText = 'position:fixed; top:20px; right:20px; width:320px; background:#fff; border:2px solid #805ad5; border-radius:8px; z-index:999999; box-shadow:0 10px 25px rgba(0,0,0,0.2); font-family:sans-serif; overflow:hidden; display:flex; flex-direction:column; max-height: 90vh;';
@@ -2391,32 +2389,10 @@ async function iniciarExtrairTodasTurmas() {
                 window.executarPreenchimento(window.sisprofPayload);
             };
 
-function checkAndCreateMenu() {
-    console.log('[SisProf Ext] Verificando a página...');
-    if (document.getElementById('rpa-ext-menu')) {
-        if (window.sisprofMenuInterval) clearInterval(window.sisprofMenuInterval);
-        return;
-    }
-    const el1 = document.querySelector('.grid-listagem');
-    const el2 = document.querySelector('textarea[name="o.Descricao"]');
-    const el3 = document.querySelector('textarea#conteudoAula');
-    const el4 = document.querySelector('.calendario-padrao');
-    const el5 = document.querySelector('.input-aula-hora');
-    const el6 = document.querySelector('.conteudo-filter');
-    console.log('[SisProf Ext] Elementos encontrados:', { el4, el5, el6 });
-    if (el1 || el2 || el3 || el4 || el5 || el6) {
-        console.log('[SisProf Ext] Elemento alvo detectado! Criando menu flutuante...');
-        criarMenuFlutuante();
-        if (window.sisprofMenuInterval) clearInterval(window.sisprofMenuInterval);
-    } else {
-        console.log('[SisProf Ext] Nenhum elemento alvo encontrado. Tentando novamente em 2 segundos.');
-    }
 // Garante que o menu não seja criado múltiplas vezes se a extensão for recarregada
 if (!document.getElementById('rpa-ext-menu')) {
     criarMenuFlutuante();
 }
-window.sisprofMenuInterval = setInterval(checkAndCreateMenu, 2000);
-checkAndCreateMenu();`
 `
         }
     ];
