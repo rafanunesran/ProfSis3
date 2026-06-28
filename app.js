@@ -2037,7 +2037,7 @@ function lerAulasDaTela() {
 }
 
 function selecionarDataSED(dataStr) {
-    if(!dataStr) return;
+    if (!dataStr) return;
     const parts = dataStr.split('-');
     const year = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10) - 1; 
@@ -2046,7 +2046,7 @@ function selecionarDataSED(dataStr) {
     const monthSelect = document.querySelector('.ui-datepicker-month');
     const yearSelect = document.querySelector('.ui-datepicker-year');
     
-    let changed = false;
+    let changed = false; // Flag para saber se precisamos esperar o calendário recarregar
     if (monthSelect && monthSelect.value != month) {
         monthSelect.value = month;
         monthSelect.dispatchEvent(new Event('change', { bubbles: true }));
@@ -2059,23 +2059,23 @@ function selecionarDataSED(dataStr) {
     }
 
     const clickDay = () => {
-        const dayCell = document.querySelector('td[data-handler="selectDay"][data-month="' + month + '"][data-year="' + year + '"] a.ui-state-default');
-        if (dayCell && dayCell.textContent.trim() == day) {
-            dayCell.click();
-        } else {
-            const cells = document.querySelectorAll('td[data-handler="selectDay"]');
-            for (let i = 0; i < cells.length; i++) {
-                if (cells[i].getAttribute('data-month') == month && cells[i].getAttribute('data-year') == year) {
-                    const a = cells[i].querySelector('a');
-                    if (a && a.textContent.trim() == day) {
-                        a.click();
-                        break;
-                    }
-                }
+        // O seletor ficou mais robusto para encontrar o dia correto, mesmo que a classe mude
+        const dayCells = document.querySelectorAll('td[data-handler="selectDay"][data-month="' + month + '"][data-year="' + year + '"]');
+        let found = false;
+        for (const cell of dayCells) {
+            const link = cell.querySelector('a.ui-state-default');
+            if (link && link.textContent.trim() == day) {
+                // Simula um clique real
+                const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+                link.dispatchEvent(clickEvent);
+                found = true;
+                break;
             }
         }
+        if (!found) console.warn('[SisProf Ext] Célula do dia ' + day + ' não encontrada no calendário.');
     };
 
+    // Se o mês/ano mudou, o calendário do jQuery UI recarrega. Precisamos esperar um pouco.
     if (changed) {
         setTimeout(clickDay, 500);
     } else {
@@ -2084,25 +2084,29 @@ function selecionarDataSED(dataStr) {
 }
 
 function selecionarAulasSED() {
-    const chks = document.querySelectorAll('.ext-aula-chk:checked');
-    if(chks.length === 0) return;
+    const chks = document.querySelectorAll('.ext-aula-chk:checked'); // Pega as aulas que marcamos no menu
+    if (chks.length === 0) return;
     const selecionados = Array.from(chks).map(c => c.getAttribute('data-val'));
 
+    // O seletor de aulas agora é '.multi-select-button'
     const btnAbrir = document.querySelector('.multi-select-button');
-    if(btnAbrir) btnAbrir.click(); 
+    if (btnAbrir) btnAbrir.click(); 
 
     setTimeout(() => {
+        // Os checkboxes das aulas estão dentro de '.multi-select-menuitem'
         const checkboxes = document.querySelectorAll('.multi-select-menuitem input[type="checkbox"]');
         checkboxes.forEach(chk => {
             const val = chk.value;
-            if(selecionados.includes(val) && !chk.checked) {
+            // Marca ou desmarca conforme a nossa seleção
+            if (selecionados.includes(val) && !chk.checked) {
                 chk.click();
             } else if (!selecionados.includes(val) && chk.checked) {
                 chk.click();
             }
         });
         
-        if(btnAbrir) btnAbrir.click();
+        // Fecha o menu dropdown de aulas
+        if (btnAbrir) btnAbrir.click();
     }, 200);
 }
 
@@ -2294,12 +2298,15 @@ async function iniciarExtrairTodasTurmas() {
                 
                 if (payload.faltas) {
                     const alunosAlvo = payload.faltas.map(a => normalize(a.nome));
+                    const cardsAlunos = document.querySelectorAll('div.card_aluno'); // O seletor agora é mais simples
                     const cardsAlunos = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
                     if (cardsAlunos.length > 0) {
                         cardsAlunos.forEach(card => {
+                            const nomeElement = card.querySelector('p.nome_aluno'); // O nome está dentro de um <p>
                             const nomeElement = card.querySelector('.nome_aluno');
                             if (!nomeElement) return;
                             let nomeAluno = normalize(nomeElement.textContent).replace(/^\\d+\\s*-\\s*/, '');
+                            const checkbox = card.querySelector('input[type="checkbox"]'); // O checkbox de falta/presença
                             const checkbox = card.querySelector('.falta_presenca_container input[type="checkbox"], input[type="checkbox"]');
                             if(!checkbox) return;
                             const levouFalta = alunosAlvo.includes(nomeAluno);
@@ -2312,6 +2319,7 @@ async function iniciarExtrairTodasTurmas() {
                 }
 
                 if(payload.registros && payload.registros.length > 0) {
+                    const txt = document.querySelector('textarea#conteudoAula, textarea.form-control, textarea'); // Seletor atualizado
                     const txt = document.querySelector('textarea[name="o.Descricao"], textarea#conteudoAula, textarea.form-control, textarea');
                     if(txt) {
                         txt.value = payload.registros[0].conteudo;
@@ -2323,7 +2331,7 @@ async function iniciarExtrairTodasTurmas() {
 
                 if (payload.fechamento && payload.fechamento.length > 0) {
                     const isFechamentoScreen = document.querySelector('.boxAulasPlanejadasRealizadas');
-                    if (isFechamentoScreen) {
+                    if (isFechamentoScreen) { // Se estiver na tela de fechamento
                         const alunosFechamento = payload.fechamento;
                         const cardsFechamento = document.querySelectorAll('.card_aluno, .card_aluno1');
                         
@@ -2367,7 +2375,7 @@ async function iniciarExtrairTodasTurmas() {
                 if (interagidos > 0) {
                     setTimeout(() => {
                         const btnSalvar = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a')).find(b => {
-                            const text = (b.innerText || b.value || '').toLowerCase();
+                            const text = (b.innerText || b.value || b.textContent || '').toLowerCase();
                             return text.includes('salvar') || text.includes('cadastrar') || text.includes('gravar') || text.includes('finalizar');
                         });
                         if (btnSalvar) {

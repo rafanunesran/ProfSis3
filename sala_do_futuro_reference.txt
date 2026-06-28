@@ -1,0 +1,881 @@
+<main b-7jydelafz6=""><div class="bb-top-row px-4 d-flex justify-content-between align-items-center flex-wrap gap-2" b-7jydelafz6=""><!--!--><div b-7jydelafz6=""></div>
+
+                            <div class="conteudo-perfil d-flex align-items-center flex-nowrap gap-2" b-7jydelafz6=""><!--!--><span id="AR10SP0TL30IB" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-custom-class="bb-tooltip-primary" data-bs-html="false" _bl_d2dbb625-8103-4c55-a6d5-efcdad523ea4="" aria-label="Aciona polícia até o local" data-bs-original-title="Aciona polícia até o local"><a href="javascript:void(0)" class="btn-chamar-policia d-flex align-items-center gap-1" b-7jydelafz6=""><!--!--><i class="icon-policia" b-7jydelafz6=""></i></a></span><!--!--><span id="AR10SP0TL30IC" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-custom-class="bb-tooltip-primary" data-bs-html="false" _bl_98839b3e-4f37-40f2-870e-3d10c8f6276d="" data-bs-original-title="Visão Pedagógica"><div class="visao-sfa-container" b-7jydelafz6=""><!--!--><i class="icon-sfa" b-7jydelafz6=""></i>
+                                                    <!--!--><div class="sfa-info" b-7jydelafz6=""><div class="texto-sfa" b-7jydelafz6=""> Ir para Visão </div>
+                                                        <div class="texto-sfa-detalhe" b-7jydelafz6=""> Pedagógica </div></div></div></span><!--!--><div class="perfil-wrapper" b-m67a2k3mn1=""><div class="perfil-container" b-m67a2k3mn1=""><div class="avatar-circle" b-m67a2k3mn1="">RN</div><!--!-->
+            
+            <div class="perfil-info" b-m67a2k3mn1=""><div class="usuario-nome" b-m67a2k3mn1="">Rafael Nunes Figueiredo</div><!--!-->
+                <div class="perfil-nome" b-m67a2k3mn1=""><span class="perfil-nome-text" b-m67a2k3mn1="">Professor</span><!--!-->
+                    <img src="/assests/Seta.svg" class="seta-icon fechada" b-m67a2k3mn1=""></div><div class="escola-nome" b-m67a2k3mn1="">Francisca Lisboa Peralta Professora</div></div></div></div><!--!-->
+
+
+<!--!--><style b-m67a2k3mn1="">
+
+    .acoes-mobile-topo {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        margin-bottom: 12px;
+    }
+
+    .acao-esquerda,
+    .acao-direita {
+        display: flex;
+        align-items: center;
+    }
+
+    .acao-direita {
+        margin-left: auto;
+    }
+
+    .botao-aplicar {
+        width: 40px;
+        border-radius: 50%;
+        margin-top: 28px;
+        font-family: 'Open Sans', sans-serif;
+        font-weight: bold;
+        font-size: 14px;
+        text-align: center;
+        padding: 7px;
+        margin-left: -10px;
+    }
+
+    .botao-limpar {
+        width: 150px;
+        margin-top: 20px;
+        margin-bottom: 15px;
+        color: #1565D8;
+        border: 1px solid #1565D8;
+        background-color: transparent;
+        font-family: 'Open Sans', sans-serif;
+        font-weight: bold;
+        font-size: 14px;
+    }
+
+        .botao-limpar:hover {
+            background-color: #1565D8;
+            color: #fff !important;
+        }
+
+
+    .botao-sair {
+        width: 280px;
+        display: flex;
+        height: 2.5rem;
+        align-items: center;
+        gap: 0.9375rem;
+        align-self: stretch;
+        color: #183B56;
+        font-size: 14px;
+        font-style: normal;
+        font-weight: 500;
+        line-height: 1.25rem;
+        letter-spacing: 0.00975rem;
+        border-radius: 10px;
+        margin-top: 5px;
+    }
+
+        .botao-sair:hover {
+            background-color: #E8F0FB;
+        }
+</style><a href="javascript:void(0)" class="notification-sino position-relative" b-7jydelafz6=""><!--!--><span id="AR10SP0TL30ID" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-custom-class="bb-tooltip-primary" data-bs-html="false" _bl_839ed83e-1167-4b2e-9013-a2015dcee315="" data-bs-original-title="Notificações"><!--!--><i id="AR10SP0TL30IE" class="bi bi-bell-fill fs-3"></i><span class="notification-badge position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" b-7jydelafz6="">96</span></span></a></div></div><!--!-->
+
+                        <!--!--><div class="modal-selectEscola"><div class="modal " tabindex="-1" style="display:none" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-confirm"><div class="modal-content"><!--!--><div class="modal-header justify-content-center"><div class="icon-box icon-emergenciaDanger"><i class="material-icons">warning_amber</i></div>
+                    <div><h4 class="title-emergenciaDanger">Aviso</h4></div></div>
+                <div class="modal-body text-center"><!--!--><h5 class="textAzul">Selecione a escola onde deseja</h5><!--!--><h5 class="textAzul"><strong>a presença da polícia:</strong></h5><!--!--><br></div><!--!-->
+                <div class="modal-footer justify-content-center"><button type="button" class="btn btn-outline-primary">Cancelar</button></div></div></div></div></div><!--!-->
+
+
+<div class="modal-emergencia"><div class="modal " tabindex="-1" style="display:none" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-confirm"><div class="modal-content"><!--!--><div class="modal-header justify-content-center"><div class="icon-box icon-emergenciaDanger"><br>
+                        <i class="material-icons">warning_amber</i></div>
+                    <div><h4 class="title-emergenciaDanger"><strong>Aviso</strong></h4></div></div>
+                <div class="modal-body text-center"><h6 class="title-emergenciaDanger">Escola selecionada: <strong></strong></h6><!--!-->
+                    <br><!--!--><h6 class="textVermelho">VOCÊ TEM CERTEZA QUE <strong>HÁ UMA EMERGÊNCIA</strong> QUE REQUER UMA VIATURA DA POLÍCIA MILITAR NA SUA ESCOLA IMEDIATAMENTE?</h6></div><!--!-->
+                <div class="modal-footer justify-content-center"><button type="button" class="btn btn-outline-primary"><!--!-->Não</button><!--!-->
+                    <button type="button" class="btn btn-outline-primary">Sim</button></div></div></div></div></div><!--!-->
+
+
+<div class="modal-loading " tabindex="-1" style="display:none" aria-hidden="true"><!--!--><div class="modal-dialog modal-dialog-centered modal-confirm"><div class="modal-content text-center loading-modal-content"><div class="modal-body"><div class="spinner-border text-danger custom-spinner" role="status" aria-live="polite"><span class="sr-only">Carregando...</span></div>
+                <p>Sincronizando...</p></div></div></div></div><!--!-->
+
+
+<div class="modal-msgEmergencia " tabindex="-1" style="display:none" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-confirm"><div class="modal-content modal-content-msgEmergencia"><div class="modal-header justify-content-center"><div class="icon-box "><i class="material-icons"></i></div><!--!-->
+                <div class="title-msgEmergencia"><h4 class=""></h4></div></div><!--!-->
+            <div class="modal-body text-center"><h6 class="textAzul"></h6></div><!--!-->
+            <div class="modal-footer justify-content-center"><button type="button" class="btn btn-outline-primary">Voltar a home</button></div></div></div></div><!--!-->
+
+                        <div class="py-2" b-7jydelafz6=""><!--!--><section class="conteudo-full-page px-4" b-cdjrpe70aq=""><section class="titulo-page" b-cdjrpe70aq=""><h2 b-cdjrpe70aq=""><!--!--><i id="AR10SP0TL30IF" class="fa-solid fa-book-open fs-3 icon-page"></i><!--!-->
+            Diário de Classe
+            &nbsp;
+        </h2></section><!--!-->
+
+    <!--!--><nav id="AR10SP0TL30IG" class="breadcrumb-page" aria-label="breadcrumb" _bl_ee530c60-5b59-4fc0-be19-01748943533f=""><ol class="breadcrumb"><li class="breadcrumb-item"><a href="/">Home</a></li><li class="breadcrumb-item"><a href="/diario-classe__home">Diário de Classe</a></li><li class="breadcrumb-item"><a href="/diario-classe__frequencia___lancamento">Lançamento da Frequência</a></li><li class="breadcrumb-item active" aria-current="page">Lançamento da Frequência Detalhes</li></ol></nav><!--!-->
+
+    <div class="bb-page grid-full-page-no-sidebar" b-cdjrpe70aq=""><main b-cdjrpe70aq=""><section b-cdjrpe70aq=""><!--!--><!--!--><!--!--><!--!-->
+
+<section class="page-interna"><!--!--><section class="titulo-page"><div class="icone-titulo" style="background-image: url('/assests/icon-DiárioClasse-Frequencia.svg');"></div><!--!-->
+    <span class="txt-titulo">Lançamento de Frequências</span></section><!--!-->
+
+
+<!--!--><style>
+    .titulo-page {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: nowrap;
+    }
+
+    .icone-titulo {
+        width: 32px;
+        height: 32px;
+        background-size: contain;
+        background-repeat: no-repeat;
+        background-position: center center;
+        flex-shrink: 0;
+    }
+
+    .txt-titulo {
+        font-size: 1.5625rem;
+        font-weight: 700;
+        color: #183B56;
+        margin: 0;
+        white-space: normal;
+        word-break: break-word;
+        flex: 1;
+    }
+
+    @media (max-width: 768px) {
+        .txt-titulo {
+            font-size: 1.25rem !important
+        }
+    }
+</style><!--!-->
+    <!--!--><div class="header-filtro" style="padding:10px 20px; border-bottom: 4px solid var(--color-frequencia);"><div class="linha-topo d-flex justify-content-between align-items-center w-100"><div class="topo-superior-filtro d-flex w-100 justify-content-between align-items-center"><div class="topo-esquerda d-flex align-items-center gap-2"><strong class="font-filtro"></strong><div class="grupo-filtros-p d-flex gap-2 flex-wrap"><span class="font-cabecalho-filtro no-hover"><!--!--><b>URE:</b> Osasco</span><!--!-->
+                            <span class="font-cabecalho-filtro no-hover"><!--!--><b>Escola:</b> Francisca Lisboa Peralta Professora</span><span class="font-cabecalho-filtro  no-hover"><!--!--><b>Turma:</b> 9° Ano B Integral 9H Anual</span><span class="font-cabecalho-filtro  no-hover"><!--!--><b>Disciplina:</b> Arte</span></div></div><!--!-->
+
+            <div class="header-ano d-flex align-items-center gap-2"><span class="header-year"><b>2026</b></span><!--!-->
+                <!--!--><i id="AR10SP0TL30IJ" class="fa-regular fa-calendar fs-5 icon-page" style="color:#183B56"></i></div></div></div><div class="row g-1 mt-1 row-filtros"><div class="col-md-12"><div class="row"></div></div></div><div class="filtro-container"></div></div><!--!--><br>
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2"><div class="d-flex align-items-start"><!--!--><button type="button" id="AR10SP0TL30IK" class="btn btn btn-light rounded-pill shadow-md px-4 botao-voltar" style="margin-top: 0!important; margin-left: 5px;" _bl_164e1d09-a6d2-4850-add0-ce8a84fe6726=""><!--!--><i class="fas fa-arrow-left"></i>
+                        <!--!--><span class="ms-2">Voltar</span></button></div><!--!-->
+        <div class="d-flex justify-content-end"></div></div><!--!--><script>
+    window.resizeHelper = {
+        registerResizeHandler: function (dotNetHelper) {
+            function reportSize() {
+                dotNetHelper.invokeMethodAsync('UpdateWidth', window.innerWidth);
+            }
+            window.addEventListener('resize', reportSize);
+            reportSize();
+        }
+    };
+
+    function voltarPagina() {
+        window.history.back();
+    }
+</script>
+
+<!--!--><style>
+    .header-filtro {
+        background-color: white;
+        border-radius: 10px;
+        padding: 10px 20px;
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        text-decoration: none;
+    }
+
+        /* aplica em todos os inputs e selects dentro do header */
+        .header-filtro .form-control,
+        .header-filtro .dropdown-input {
+            border-radius: 0.75rem !important;
+            padding: 6px 12px;
+        }
+
+        /* se quiser deixar ainda mais "pill" (bem redondo) */
+        .header-filtro .form-control,
+        .header-filtro .dropdown-input {
+            border-radius: 10px !important;
+            font-family: 'Open Sans', sans-serif;
+            font-size: 14px;
+        }
+
+
+
+    .linha-topo {
+        flex-direction: column; /* Colunas no mobile */
+        align-items: flex-start;
+    }
+
+    .topo-superior-filtro {
+        flex-direction: row;
+        justify-content: space-between; /* separa esquerda e direita */
+        width: 100%;
+        /* margin-bottom: 0.5rem; */
+    }
+
+    .topo-esquerda {
+        flex-direction: row;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .header-ano {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .grupo-filtros-padrao {
+        flex-direction: column !important; /* DE, Escola, Turma em coluna */
+        gap: 0.25rem !important;
+        width: 100% !important;
+        display: flex !important;
+        gap: 8px !important;
+        flex-wrap: wrap !important;
+    }
+
+    .filtros {
+        display: flex;
+        gap: 20px;
+    }
+
+    .botoes {
+        width: 30%;
+        margin-top: 15px;
+        display: flex;
+        gap: 10px;
+    }
+
+    .mensagem-erro {
+        color: red;
+        font-size: 14px;
+        margin-top: 5px;
+    }
+
+    .rounded-circle {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+
+    .icon-filtro {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        background-repeat: no-repeat;
+        background-position: center;
+        background-size: contain;
+    }
+
+    .font-filtro {
+        font-size: 20px;
+        color: #304869;
+        font-family: 'Open Sans', sans-serif;
+    }
+
+
+    .font-cabecalho-filtro {
+        font-size: 14px;
+        color: #304869;
+        background-color: #1565D80D;
+        border-radius: 15px;
+        padding: 4px 10px;
+        display: inline-block;
+        font-family: 'Open Sans', sans-serif;
+        cursor: pointer;
+    }
+
+        .font-cabecalho-filtro:hover {
+            color: white;
+            background-color: #0d6efd;
+        }
+
+    .no-hover {
+        pointer-events: none;
+        background-color: #1565D80D; /* Cor padrão sem hover */
+        color: #304869; /* Cor padrão sem hover */
+        cursor: initial;
+    }
+
+    .txt-titulo {
+        font-family: 'Open Sans', sans-serif !important;
+    }
+
+    .grupo-filtros-p {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        flex-grow: 1;
+    }
+
+
+
+    .botao-filtro {
+        width: 150px;
+        height: 39px;
+        margin-top: 20px;
+        margin-bottom: 20px;
+        font-weight: bold;
+        font-size: 14px;
+        min-width:105px !important;
+    }
+
+    .botao-filtro-limpar {
+        width: 150px;
+        height: 39px;
+        margin-top: 20px;
+        margin-bottom: 20px;
+        color: #1565D8;
+        border: 1px solid #1565D8;
+        background-color: transparent;
+        font-weight: bold;
+        font-size: 14px;
+    }
+
+        .botao-filtro-limpar:hover {
+            background-color: #1565D8;
+            color: #fff !important;
+        }
+
+
+    .titulo-pagina {
+        background: #C1C9D8;
+        color: var(--Text-Title, #374F78);
+        padding: 10px;
+        font-size: 1.5rem;
+        font-weight: bold;
+    }
+
+    .filtro-titulo {
+        color: #374F78;
+    }
+
+    .botao-filtro-limpar {
+        width: 150px;
+        margin-top: 20px;
+        margin-bottom: 20px;
+        color: #1565D8;
+        border: 1px solid #1565D8;
+        background-color: transparent;
+        font-family: 'Open Sans', sans-serif;
+        font-weight: bold;
+        font-size: 14px;
+    }
+
+        .botao-filtro-limpar:hover {
+            background-color: #1565D8;
+            color: #fff !important;
+        }
+
+    .row-filtros {
+        height: auto;
+    }
+
+    @media (max-width: 1247px) {
+
+        .row-filtros .col-md-3,
+        .row-filtros .col-md-4,
+        .row-filtros .col-md-6,
+        .row-filtros .col-md-8 {
+            flex: 0 0 100% !important;
+            max-width: 100% !important;
+        }
+
+        .row-filtros .offset-md-1 {
+            margin-left: 0 !important;
+        }
+    }
+
+    @media (max-width: 860px) {
+        .row-filtros {
+            height: auto; /* ou qualquer outro estilo padrão */
+        }
+    }
+
+    /* Para telas entre 577px e 991px */
+    @media (min-width: 577px) and (max-width: 991px) {
+
+        .row-filtros > .col-md-8 {
+            flex: 0 0 100% !important;
+            max-width: 100% !important;
+        }
+
+        .row-filtros > .col-md-3,
+        .row-filtros > .offset-md-1 {
+            flex: 0 0 100% !important;
+            max-width: 100% !important;
+            margin-left: 0 !important;
+            justify-content: flex-start !important;
+        }
+    }
+
+    @media (max-width: 349px) {
+        .font-filtro {
+            font-size: 18px;
+            white-space: normal;
+            word-break: break-word;
+            line-height: 1.2;
+            text-align: left;
+        }
+    }
+
+</style><!--!-->
+    <br><!--!--><div id="AR10SP0TL30IH" class="alert alert-warning" style="text-align: center" role="alert" _bl_a851f87f-bfea-4bfa-a6ea-462be5060e12=""><!--!--><i id="AR10SP0TL30IL" class="bi bi-exclamation-triangle-fill me-2"></i><!--!-->
+        <!--!--><b>Aviso! </b><br>
+        O prazo para lançamento de frequência para o seu perfil, será de até <b>5</b><!--!--> dias corridos.
+</div><!--!-->
+
+    <!--!--><div id="AR10SP0TL30II" class="alert alert-warning" style="text-align: center" role="alert" _bl_0d4085b0-87be-417c-a92a-a91eb508b781=""><!--!-->
+        Os alunos destacados em vermelho ainda não possuem lançamento salvo.
+    </div><div class="row"><div class="col-12 col-md-12 col-lg-5 conteudo-page-interna-info barra-sticky" style="top: 60px;height: fit-content;"><div class="position-sticky"><!--!--><div class="conteudo-filter"><label>Data da Frequência:</label><!--!-->
+
+    <div class="calendario-padrao"><div id="calendarioDatePicker" data-provide="datepicker" value="25/06/2026" _bl_33a906ce-e11a-4f57-bd5e-b2a34a3795a3="" class="hasDatepicker"><div class="ui-datepicker-inline ui-datepicker ui-widget ui-widget-content ui-helper-clearfix ui-corner-all" style="display: block;"><div class="ui-datepicker-header ui-widget-header ui-helper-clearfix ui-corner-all"><a class="ui-datepicker-prev ui-corner-all ui-state-disabled" title="Mês anterior não possui dias disponíveis para lançamento."><span class="ui-icon ui-icon-circle-triangle-w">Mês anterior não possui dias disponíveis para lançamento.</span></a><a class="ui-datepicker-next ui-corner-all ui-state-disabled" title="Next"><span class="ui-icon ui-icon-circle-triangle-e">Next</span></a><div class="ui-datepicker-title"><select class="ui-datepicker-month" data-handler="selectMonth" data-event="change"><option value="5" selected="selected">Jun</option></select><select class="ui-datepicker-year" data-handler="selectYear" data-event="change"><option value="2026" selected="selected">2026</option></select></div></div><table class="ui-datepicker-calendar"><thead><tr><th scope="col" class="ui-datepicker-week-end"><span title="Domingo">Dom</span></th><th scope="col"><span title="Segunda">Seg</span></th><th scope="col"><span title="Terça">Ter</span></th><th scope="col"><span title="Quarta">Qua</span></th><th scope="col"><span title="Quinta">Qui</span></th><th scope="col"><span title="Sexta">Sex</span></th><th scope="col" class="ui-datepicker-week-end"><span title="Sábado">Sab</span></th></tr></thead><tbody><tr><td class=" ui-datepicker-week-end ui-datepicker-other-month ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">31</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">1</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">2</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">3</span></td><td class=" ui-datepicker-unselectable ui-state-disabled DiaNaoLetivo" title="FERIADO  NACIONAL"><span class="ui-state-default">4</span></td><td class=" ui-datepicker-unselectable ui-state-disabled DiaNaoLetivo" title="PONTO FACULTATIVO"><span class="ui-state-default">5</span></td><td class=" ui-datepicker-week-end ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">6</span></td></tr><tr><td class=" ui-datepicker-week-end ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">7</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">8</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">9</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">10</span></td><td class=" ui-datepicker-unselectable ui-state-disabled DiaLancado" title="Há lançamento(s) neste dia."><span class="ui-state-default">11</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">12</span></td><td class=" ui-datepicker-week-end ui-datepicker-unselectable ui-state-disabled DiaNaoLetivo" title="FERIADO MUNICIPAL"><span class="ui-state-default">13</span></td></tr><tr><td class=" ui-datepicker-week-end ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">14</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">15</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">16</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">17</span></td><td class=" ui-datepicker-unselectable ui-state-disabled DiaLancado" title="Há lançamento(s) neste dia."><span class="ui-state-default">18</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">19</span></td><td class=" ui-datepicker-week-end ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">20</span></td></tr><tr><td class=" ui-datepicker-week-end ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">21</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">22</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">23</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">24</span></td><td class=" ui-datepicker-days-cell-over DiaLancar ui-datepicker-current-day ui-datepicker-today" title="Dia liberado para lançamento" data-handler="selectDay" data-event="click" data-month="5" data-year="2026"><a class="ui-state-default ui-state-highlight ui-state-active ui-state-hover" href="#">25</a></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">26</span></td><td class=" ui-datepicker-week-end ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">27</span></td></tr><tr><td class=" ui-datepicker-week-end ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">28</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">29</span></td><td class=" ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">30</span></td><td class=" ui-datepicker-other-month ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">1</span></td><td class=" ui-datepicker-other-month ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">2</span></td><td class=" ui-datepicker-other-month ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">3</span></td><td class=" ui-datepicker-week-end ui-datepicker-other-month ui-datepicker-unselectable ui-state-disabled "><span class="ui-state-default">4</span></td></tr></tbody></table></div></div><!--!-->
+
+        <div class="legenda-calendario"><!--!--><p><b>Legenda</b></p>
+            <div class="conteudo-legenda"><!--!--><div class="box-legenda indisponivel"><i class="fa-solid fa-circle icon"></i> Dias Indisponíveis
+                </div>
+                <!--!--><div class="box-legenda dia-disponiveis"><i class="fa-solid fa-circle icon"></i> Dias Disponíveis
+                </div><!--!--><div class="box-legenda dia-lancado"><i class="fa-solid fa-circle icon"></i> Dias Lançados
+                    </div><!--!--><div class="box-legenda nao-letivo"><i class="fa-solid fa-circle icon"></i> Dias Não Letivos
+                </div>
+                <!--!--><div class="box-legenda dia-atual"><i class="fa-solid fa-circle icon"></i> Dia Selecionado
+                </div></div></div></div></div><!--!-->
+
+
+<!--!--><style>
+    .calendario-padrao {
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 5px;
+    }
+</style><!--!--><div class="input-aula-hora"><!--!--><label>Horário de Aula:</label>
+    <input type="hidden" id="hdValor" value="" _bl_0db74b46-cab3-4657-9f66-3fce3e9ffcb1=""><select id="inputAula" name="inputAula" multiple="" class="mutliSelect" data-enhace="" style="display: none;"><option value="12:50 às 13:40">10ª aula - 12:50<!--!--> às 13:40</option></select><div class="multi-select-container"><span class="multi-select-button" role="button" aria-haspopup="true" tabindex="0" aria-label="">Selecione ...</span><div class="multi-select-menu" role="menu" style="width: auto;"><div class="multi-select-menuitems"><label class="multi-select-menuitem" for="inputAula_0" role="menuitem"><input type="checkbox" id="inputAula_0" value="12:50 às 13:40"> 10ª aula - 12:50 às 13:40</label></div></div></div></div><div class="conteudo-btns mt-2"></div></div></div><!--!-->
+            <div class="col-12 col-md-12 col-lg-7 listagem-alunos"><div class="opcoes-header"><div class="filtro-aluno-ativo"><!--!-->
+                        Mostrar Ativos e Inativos <!--!--><!--!-->
+<div class="form-check form-switch"><!--!-->
+    <input type="checkbox" id="AR10SP0TL31IF" class="form-check-input" role="switch" _bl_f27ec18b-6499-4655-a2fc-379b425d95d7=""><!--!-->
+
+</div><!--!-->
+</div><!--!-->
+
+                    <div class="marcacao_falta_presenca"><!--!--><p>Marcar todos como:</p>
+                        <!--!--><button type="button" id="AR10SP0TL31IG" class="btn btn-primary btn_falta_presenca falta" _bl_b561c3aa-92d7-4644-b894-42cd70741a47="" title="Falta"><!--!--><span>
+                                F
+                            </span></button><!--!-->
+                        <!--!--><button type="button" id="AR10SP0TL31IH" class="btn btn-primary btn_falta_presenca presenca" _bl_4499f3b7-9851-4beb-86cd-de0e7a60a8f7="" title="Presença"><!--!--><span>
+                                C
+                            </span></button></div></div><div style="display: flex; align-items: center; gap: 5px;"><input type="checkbox"><!--!-->
+                        <!--!--><label style="margin-top:5px;"><b>Replicar Frequência</b></label></div><section class="grid-listagem"><div class="grid-listagem-header"><p class="clickable"><!--!--><b>N°</b><i class="fa-solid fa-arrows-up-down" style="margin-left: 5px"></i></p><!--!-->
+
+                        <p class="clickable"><!--!--><b>Nome Aluno</b><i class="fa-solid fa-arrows-up-down" style="margin-left: 5px"></i></p><!--!-->
+
+
+                        <p class="clickable"><!--!--><b>Presença</b><i class="fa-solid fa-arrows-up-down" style="margin-left: 5px"></i></p></div><div class="card_aluno"><div class="card_aluno__numero">1</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">ALLYCIA ALVES VITORINO TEJEDA</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">2</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">ALLYSSON COSTA MATIAS</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">3</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">ANA CAROLINA DE OLIVEIRA SANTOS MENDES</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">4</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">ANA JULIA CORREIA DOS SANTOS</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">5</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">ANA LUIZA MENDES DE OLIVEIRA</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">6</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">ANAHI GYOVANNA DOS SANTOS ARAUJO</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">7</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">ANGELINA VELASCO NEVES</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">8</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">ANGELINA VITORIA ROSA</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">10</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">ARTHUR FELIX SANTOS</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">11</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">BEATRIZ DA SILVA FERNANDES</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">12</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">BEYMAR HUGO CHOQUE APAZA</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">13</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">BRAYAN ALMEIDA ALEXANDRE</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">14</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">BRUNO BATISTA FELIX</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">15</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">CAROLINA SILVA GOMES</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">16</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">DANIELLY RODRIGUES BASTOS</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">18</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">DAVI PEREIRA PRUDENTE</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">20</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">ERICK DE BEM FERREIRA COSTA</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">22</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">ITALO GOMES MEIRA</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">24</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">JHULYANA FERREIRA COSTA</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">26</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">LAUANY STHER DE ARAUJO ANDRADE</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">27</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">LETICIA STELY COSTA SANTOS</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">29</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">LUCIANO HENRIQUE ALMEIDA CONCEICAO DA SILVA</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">30</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">LYDIA FLORES SOUSA</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">32</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">MARCELLA PEREIRA CAMARGO</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">34</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">MATHEUS ALVES SANTOS</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">35</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">MILENA CONCEICAO CORREA</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">36</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">MURILO FELTIRN DE AGUIAR</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">37</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">PEDRO HENRIQUE ANDRADE DA SILVA</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">39</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">PEDRO HENRIQUE MOHR DOS SANTOS</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">41</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">REBECCA ALVES DE CAMPOS</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">42</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">RICARDO MESQUITA ALVES DOS SANTOS</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">43</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">SAYDA MARIANA FLORES APAZA</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">44</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">SOFIA ROSA RODRIGUES</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">45</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">THOMAS RAFAEL CARVALHO FERNANDO</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">46</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">YASMIN DO CARMO VIEIRA</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">47</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">KAUAN FERNANDES DE JESUS</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="card_aluno"><div class="card_aluno__numero">48</div><!--!-->
+
+                                                <div class="card_aluno__infoaluno"><p class="nome_aluno">LAISLLA BEATRIZ SANTOS SILVA</p><!--!-->
+                                                    <div class="conteudo-status"><!--!--><span class="tag_aluno aluno_ativo"><i class="fa-solid fa-circle icon"></i> Aluno ativo</span></div></div></div><div class="conteudo-btns mb-3"><!--!--><button type="button" id="AR10SP0TL31II" class="btn btn-primary" _bl_685d8c9f-b370-4d9e-aaeb-d0463564ada1=""><!--!--><i id="AR10SP0TL31IJ" class="fa-solid fa-floppy-disk icon-page"></i><!--!-->
+                                        Salvar
+                                    </button></div></section></div></div></section><!--!-->
+
+
+<!--!--><script>
+    $(document).ready(function () {
+
+        var ativo = $(".active").removeClass('active');
+        var doc = document.querySelectorAll(".nav-link");
+
+        $(doc).each(function (index, item) {
+            if (item.title == "DiarioHome")
+                item.classList.add("active");
+        });
+
+    });
+</script>
+
+<!--!--><style>
+    .aluno_novo {
+        & .card_aluno__infoaluno
+
+    {
+        .nome_aluno
+
+    {
+        color: red !important;
+    }
+
+    }
+    }
+
+    /* .card_aluno:has(> .falta_presenca_container:nth-child(3)) {
+        display: block !important;
+    } */
+
+    .card_aluno1 {
+        display: -webkit-box;
+        display: -ms-grid;
+        /* //display: grid; */
+        border-radius: 6px;
+        background-color: var(--color-white);
+        -webkit-box-shadow: 0px 0px 10px 0px var(--color-sombra-rgba);
+        box-shadow: 0px 0px 10px 0px var(--color-sombra-rgba);
+        padding-right: 10px;
+        -ms-grid-columns: 70px 1fr 95px;
+        grid-template: "card_aluno__numero1 card_aluno__infoaluno card_aluno__media" / 70px 1fr 95px;
+        & .card_aluno__numero1
+
+    {
+        display: -webkit-box;
+        display: -ms-flexbox;
+        display: flex;
+        -webkit-box-pack: center;
+        -ms-flex-pack: center;
+        justify-content: center;
+        -webkit-box-align: center;
+        -ms-flex-align: center;
+        align-items: center;
+        -ms-grid-row: 1;
+        -ms-grid-column: 1;
+        grid-area: card_aluno__numero1;
+        color: var(--color-gray-095);
+        text-align: center;
+        font-family: 'Open Sans', sans-serif;
+        font-size: 1.125rem;
+        font-style: normal;
+        font-weight: 700;
+        line-height: normal;
+        margin-right: 8px;
+        border-bottom-left-radius: 6px;
+        border-top-left-radius: 6px;
+        background-color: var(--Text-Title);
+        -webkit-box-shadow: 0px 0px 10px 0px var(--color-sombra-rgba);
+        box-shadow: 0px 0px 10px 0px var(--color-sombra-rgba);
+        width: 60px;
+    }
+
+    & .card_aluno__infoaluno {
+        display: -webkit-box;
+        display: -ms-flexbox;
+        display: flex;
+        -webkit-box-orient: vertical;
+        -webkit-box-direction: normal;
+        -ms-flex-direction: column;
+        flex-direction: column;
+        -webkit-box-pack: center;
+        -ms-flex-pack: center;
+        justify-content: center;
+        -ms-grid-row: 1;
+        -ms-grid-column: 2;
+        grid-area: card_aluno__infoaluno;
+        -webkit-box-align: start;
+        -ms-flex-align: start;
+        gap: var(--Professor-condicional-itemAulaRealizadas, 0.3125rem);
+        -webkit-box-flex: 1;
+        -ms-flex: 1 0 0;
+        flex: 1 0 0;
+        padding-right: 10px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+
+            .nome_aluno {
+                color: var(--Text-Title);
+                font-family: 'Open Sans', sans-serif;
+                font-size: 1rem;
+                font-style: normal;
+                font-weight: 500;
+                line-height: normal;
+                /*text-transform: capitalize;*/
+                margin-bottom: 0;
+            }
+
+    .conteudo-status {
+        display: -webkit-box;
+        display: -ms-flexbox;
+        display: flex;
+        -webkit-box-align: center;
+        -ms-flex-align: center;
+        align-items: center;
+        gap: 0.625rem;
+    }
+
+    .card_faltas {
+        display: -webkit-box;
+        display: -ms-flexbox;
+        display: flex;
+        -webkit-box-orient: vertical;
+        -webkit-box-direction: normal;
+        -ms-flex-direction: column;
+        flex-direction: column;
+        -webkit-box-align: start;
+        -ms-flex-align: start;
+        align-items: flex-start;
+        gap: 0.3125rem;
+        .select_just
+
+    {
+        width: 100%;
+        padding: 6px 10px;
+        border-radius: 0.16738rem;
+        border: 0.714px solid var(--color-gray-200);
+        background: var(--color-white);
+        &:disabled
+
+    {
+        background-color: #e7e7e7 !important;
+    }
+
+    }
+
+    p {
+        margin-bottom: 0;
+        color: #3F4756;
+        font-family: Inter;
+        font-size: 0.875rem;
+        font-style: normal;
+        line-height: normal;
+    }
+
+    & .conteudo_faltas {
+        display: -webkit-box;
+        display: -ms-flexbox;
+        display: flex;
+        -webkit-box-pack: center;
+        -ms-flex-pack: center;
+        justify-content: center;
+        -webkit-box-align: center;
+        -ms-flex-align: center;
+        align-items: center;
+        gap: 0.75rem;
+        & .grup_faltas
+
+    {
+        display: -webkit-box;
+        display: -ms-flexbox;
+        display: flex;
+        -webkit-box-orient: vertical;
+        -webkit-box-direction: normal;
+        -ms-flex-direction: column;
+        flex-direction: column;
+        -webkit-box-align: start;
+        -ms-flex-align: start;
+        align-items: flex-start;
+        gap: 0.125rem;
+        /*                    &:nth-child(1){
+                            width: 90px;
+                        }*/
+        label
+
+    {
+        color: var(--color-gray-450);
+        font-family: Inter;
+        font-size: 0.75rem;
+        font-style: normal;
+        font-weight: 400;
+        line-height: normal;
+    }
+
+    input {
+        width: 100%;
+        padding: 6px 10px;
+        border-radius: 0.16738rem;
+        border: 0.714px solid var(--color-gray-200);
+        background: var(--color-white);
+    }
+
+    }
+    }
+    }
+    }
+
+    & .card_aluno__media {
+        padding-top: 10px;
+        padding-bottom: 10px;
+        display: -webkit-box;
+        display: -ms-flexbox;
+        display: flex;
+        -webkit-box-orient: vertical;
+        -webkit-box-direction: normal;
+        -ms-flex-direction: column;
+        flex-direction: column;
+        -webkit-box-pack: justify;
+        -ms-flex-pack: justify;
+        justify-content: space-between;
+        -webkit-box-align: center;
+        -ms-flex-align: center;
+        align-items: center;
+        gap: 0.3125rem;
+        -ms-grid-row: 1;
+        -ms-grid-column: 3;
+        grid-area: card_aluno__media;
+        label
+
+    {
+        color: var(--Text-Default);
+        text-align: center;
+        font-family: Inter;
+        font-size: 0.875rem;
+        font-style: normal;
+        font-weight: 700;
+        line-height: normal;
+    }
+
+    input {
+        text-align: center;
+        width: 100%;
+        padding: 0.5rem 0.5625rem;
+        border-radius: 0.1875rem;
+        border: 0.8px solid var(--color-gray-200);
+        background: var(--color-white);
+    }
+
+    }
+
+    & .card_aluno__falta {
+        display: -webkit-box;
+        display: -ms-flexbox;
+        display: flex;
+        -webkit-box-pack: center;
+        -ms-flex-pack: center;
+        justify-content: center;
+        -webkit-box-align: center;
+        -ms-flex-align: center;
+        align-items: center;
+        gap: 0.3125rem;
+        padding-right: 10px;
+    }
+
+    }
+
+    @media (min-width: 768px) {
+        .barra-sticky {
+            position: sticky;
+        }
+
+    
+    }
+
+    @media only screen and (max-width: 768px) {
+        .barra-sticky {
+            max-width: 95% !important;
+        }
+
+        .listagem-alunos {
+            max-width: 95% !important;
+        }
+    }
+</style></section></main></div></section><!--!-->
+
+
+
+<!--!--><style b-cdjrpe70aq="">
+    .bb-sidebar-top-row {
+        display: none;
+    }
+</style></div></main>
