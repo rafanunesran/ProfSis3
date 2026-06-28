@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "ProfSis3 RPA - Sala do Futuro",
-  "version": "1.1",
+  "version": "1.2",
   "description": "Automatiza a integração e o preenchimento de diários na Secretaria Digital de SP.",
   "permissions": [
     "tabs",
     "storage"
   ],
   "host_permissions": [
+    "https://saladofuturoprofessor.educacao.sp.gov.br/*",
     "https://saladofuturo.educacao.sp.gov.br/*",
     "https://*.educacao.sp.gov.br/*",
     "*://localhost/*",
@@ -24,7 +25,11 @@
       "run_at": "document_end"
     },
     {
-      "matches": ["https://saladofuturo.educacao.sp.gov.br/*", "https://*.educacao.sp.gov.br/*"],
+      "matches": [
+        "https://saladofuturoprofessor.educacao.sp.gov.br/*",
+        "https://saladofuturo.educacao.sp.gov.br/*",
+        "https://*.educacao.sp.gov.br/*"
+      ],
       "js": ["content_sed.js"],
       "run_at": "document_end"
     }
