@@ -19,13 +19,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://localhost/*", "https://*.profsis3.com/*", "https://*.web.app/*", "https://*.firebaseapp.com/*", "https://*.github.io/*"],
+      "matches": ["*://localhost/*", "https://*.firebaseapp.com/*", "https://*.profsis3.com/*", "https://*.web.app/*", "https://*.github.io/*"],
       "js": ["content_profsis.js"]
     },
     {
       "matches": ["https://saladofuturo.educacao.sp.gov.br/*"],
-      "js": ["content_sed.js"],
-      "run_at": "document_idle"
+      "js": ["content_sed.js"]
     }
   ]
 }
