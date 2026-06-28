@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ProfSis3 RPA - Sala do Futuro",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Automatiza a integração e o preenchimento de diários na Secretaria Digital de SP.",
   "permissions": [
     "tabs",
