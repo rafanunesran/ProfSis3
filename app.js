@@ -1799,11 +1799,11 @@ window.baixarArquivosExtensao = function() {
             name: 'manifest.json',
             content: `{
   "manifest_version": 3,
-  "name": "ProfSis3 RPA - Sala do Futuro",
+  "name": "Robô SisProf SED",
   "version": "1.0",
   "description": "Automatiza chamadas e integração na Secretaria Digital de SP.",
   "permissions": ["tabs", "storage"],
-  "host_permissions": ["https://saladofuturo.educacao.sp.gov.br/*", "https://*.educacao.sp.gov.br/*", "*://localhost/*", "https://*.profsis3.com/*", "https://*.github.io/*"],
+  "host_permissions": ["https://saladofuturo.educacao.sp.gov.br/*", "*://localhost/*", "https://*.firebaseapp.com/*", "https://*.profsis3.com/*", "https://*.web.app/*", "https://*.github.io/*"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [
     {
@@ -1819,65 +1819,37 @@ window.baixarArquivosExtensao = function() {
         },
         {
             name: 'background.js',
-            content: `// background.js
-
-// Listener para mensagens dos content scripts
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    // Rota para sincronizar dados do SisProf para a extensão
+            content: `chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'SYNC_DATA') {
-        const payload = request.payload;
-        const date = payload.data;
-        
         chrome.storage.local.get(['rpa_data_history'], (result) => {
             let history = result.rpa_data_history || {};
-            history[date] = payload;
-            
-            // Mantém apenas os últimos 5 dias no histórico para não sobrecarregar
-            const keys = Object.keys(history).sort((a, b) => new Date(b) - new Date(a));
-            if (keys.length > 5) {
-                const oldestKey = keys[keys.length - 1];
-                delete history[oldestKey];
+            const date = request.payload.data;
+            if (date) {
+                history[date] = request.payload;
+                const keys = Object.keys(history).sort();
+                while(keys.length > 5) { delete history[keys.shift()]; }
+                chrome.storage.local.set({ rpa_data_history: history, rpa_data: request.payload }, () => {
+                    sendResponse({ success: true });
+                });
+            } else {
+                sendResponse({ success: false });
             }
-            
-            chrome.storage.local.set({ rpa_data_history: history }, () => {
-                sendResponse({ success: true });
-            });
         });
-        return true; // Indica que a resposta será assíncrona
+        return true;
     }
-
-    // Rota para o content_sed.js obter os dados sincronizados
     if (request.action === 'GET_DATA') {
-        chrome.storage.local.get(['rpa_data_history', 'rpa_done_marks'], (result) => {
+        chrome.storage.local.get(['rpa_data_history', 'rpa_data', 'rpa_done_marks'], (result) => {
             sendResponse(result);
         });
         return true;
     }
-
-    // Rota para salvar as marcações de "Lançado"
     if (request.action === 'SAVE_MARKS') {
         chrome.storage.local.set({ rpa_done_marks: request.marks }, () => {
             sendResponse({ success: true });
         });
         return true;
     }
-
-    // Rota para salvar a lista de alunos extraída da SED
-    if (request.action === 'SAVE_STUDENTS') {
-        const profId = request.profId;
-        if (!profId) {
-            sendResponse({ success: false, error: 'ID do professor não fornecido.' });
-            return false;
-        }
-        const importKey = 'rpa_import_' + profId;
-        // Salva no storage local da extensão, que o SisProf poderá ler depois
-        chrome.storage.local.set({ [importKey]: request.payload }, () => {
-            sendResponse({ success: true });
-        });
-        return true;
-    }
-});
-`
+});`
         },
         {
             name: 'content_profsis.js',
@@ -1898,9 +1870,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         },
         {
             name: 'content_sed.js',
-            content: `console.log('Robô SisProf SED - Ativo na Aba [v4]');
-const urlApp = "${urlApp}";
-const profId = "${profId}";
+            content: `console.log('Robô SisProf SED - Ativo na Aba [v3]');
 let extHistory = {};
 let extDoneMarks = {};
 let currentSelectedDate = "";
@@ -1928,6 +1898,13 @@ function criarMenuFlutuante() {
         '<button id="extBtnExtrairMulti" style="width:100%; background:#276749; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">📥 Extrair TODAS (Auto)</button>' +
         '</div>';
     document.body.appendChild(div);
+    
+    // Adiciona os listeners para os botões e funcionalidades
+    document.getElementById('extDiaSelect').addEventListener('change', (e) => {
+        currentSelectedDate = e.target.value;
+        renderDiaInfo();
+        lerAulasDaTela();
+    });
 
     document.getElementById('extBtnLerAulas').addEventListener('click', lerAulasDaTela);
 
@@ -1961,15 +1938,6 @@ function criarMenuFlutuante() {
     
     document.getElementById('extBtnExtrair').addEventListener('click', iniciarExtrairAlunos);
     document.getElementById('extBtnExtrairMulti').addEventListener('click', iniciarExtrairTodasTurmas);
-    
-    const selectDia = document.getElementById('extDiaSelect');
-    if (selectDia) {
-        selectDia.addEventListener('change', (e) => {
-            currentSelectedDate = e.target.value;
-            renderDiaInfo();
-            lerAulasDaTela();
-        });
-    }
 
     carregarDados();
 
@@ -2137,10 +2105,10 @@ function selecionarAulasSED() {
     }, 200);
 }
 
-function mostrarMensagemSucessoExtensao(mensagem = '✅ Lista salva na nuvem com sucesso!') {
+function mostrarMensagemSucessoExtensao() {
     const contentDiv = document.getElementById('ext-content');
     if (contentDiv) {
-            contentDiv.style.display = 'none'; // Esconde o conteúdo principal
+            contentDiv.style.display = 'none';
             const successDiv = document.createElement('div');
             successDiv.id = 'ext-success';
             successDiv.style.padding = '15px';
@@ -2148,17 +2116,22 @@ function mostrarMensagemSucessoExtensao(mensagem = '✅ Lista salva na nuvem com
             '<p style="font-size:12px; color:#4a5568; margin-bottom:15px;">Volte ao SisProf e clique em <b>"Atualizar Turma (Puxar da Nuvem)"</b>.</p>' +
             '<button id="extBtnVoltar" style="width:100%; padding:8px; background:#e2e8f0; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">Voltar</button>';
             contentDiv.parentElement.appendChild(successDiv);
-            
             document.getElementById('extBtnVoltar').addEventListener('click', () => {
                 successDiv.remove();
                 contentDiv.style.display = 'block';
             });
     }
-}
+    } else if (e.data && e.data.type === 'SISPROF_SAVE_ERROR') {
+        alert('Erro ao salvar na nuvem: ' + e.data.error);
+    }
+});
 
 function iniciarExtrairAlunos() {
     const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"], .card_aluno1, .card_aluno');
     if(cardsAlunos.length === 0) return alert('Nenhum aluno encontrado na tela. Abra a tela de chamada da turma desejada primeiro!');
+    
+    const btn = document.getElementById('extBtnExtrair');
+    if (btn) btn.textContent = 'Extraindo...';
     
     const alunos = [];
     cardsAlunos.forEach(card => {
@@ -2182,13 +2155,16 @@ function iniciarExtrairAlunos() {
     
     const payload = { type: 'SISPROF_IMPORT_ALUNOS', alunos: alunos, turmaSED: turmaSelecionada, timestamp: Date.now() };
     
-    chrome.runtime.sendMessage({ action: 'SAVE_STUDENTS', payload: payload, profId: profId }, (response) => {
+    // Comunica com o background script para salvar os dados
+    chrome.runtime.sendMessage({ action: 'SAVE_STUDENTS', payload: payload }, (response) => {
         if (response && response.success) {
             mostrarMensagemSucessoExtensao();
         } else {
             alert('Erro ao salvar na nuvem: ' + (response ? response.error : 'Sem resposta do background.'));
         }
     });
+    
+    setTimeout(() => { if (btn) btn.textContent = '📥 Extrair Alunos (Atual)'; }, 2000);
 }
 
 async function iniciarExtrairTodasTurmas() {
@@ -2311,13 +2287,17 @@ async function iniciarExtrairTodasTurmas() {
 
     const payload = { type: 'SISPROF_IMPORT_ALUNOS_MULTI', turmas: todasTurmas, timestamp: Date.now() };
     
-    chrome.runtime.sendMessage({ action: 'SAVE_STUDENTS', payload: payload, profId: profId }, (response) => {
+    // Comunica com o background script para salvar os dados
+    chrome.runtime.sendMessage({ action: 'SAVE_STUDENTS', payload: payload }, (response) => {
         if (response && response.success) {
             mostrarMensagemSucessoExtensao();
         } else {
             alert('Erro ao salvar na nuvem: ' + (response ? response.error : 'Sem resposta do background.'));
         }
     });
+    
+    if (btn) btn.textContent = '✅ ' + todasTurmas.length + ' turmas copiadas!';
+    setTimeout(() => { if (btn) btn.textContent = '📥 Extrair TODAS (Auto)'; }, 3000);
 }
 
             window.executarPreenchimento = function(payload) {
@@ -2325,10 +2305,12 @@ async function iniciarExtrairTodasTurmas() {
                 let interagidos = 0;
                 
                 if (payload.faltas) {
-                    const alunosAlvo = payload.faltas.map(a => normalize(a.nome)); // O seletor agora é mais simples
+                    const alunosAlvo = payload.faltas.map(a => normalize(a.nome));
+                    const cardsAlunos = document.querySelectorAll('div.card_aluno'); // O seletor agora é mais simples
                     const cardsAlunos = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
                     if (cardsAlunos.length > 0) {
                         cardsAlunos.forEach(card => {
+                            const nomeElement = card.querySelector('p.nome_aluno'); // O nome está dentro de um <p>
                             const nomeElement = card.querySelector('.nome_aluno');
                             if (!nomeElement) return;
                             let nomeAluno = normalize(nomeElement.textContent).replace(/^\\d+\\s*-\\s*/, '');
@@ -2345,6 +2327,7 @@ async function iniciarExtrairTodasTurmas() {
                 }
 
                 if(payload.registros && payload.registros.length > 0) {
+                    const txt = document.querySelector('textarea#conteudoAula, textarea.form-control, textarea'); // Seletor atualizado
                     const txt = document.querySelector('textarea[name="o.Descricao"], textarea#conteudoAula, textarea.form-control, textarea');
                     if(txt) {
                         txt.value = payload.registros[0].conteudo;
@@ -2422,6 +2405,9 @@ async function iniciarExtrairTodasTurmas() {
                 window.executarPreenchimento(window.sisprofPayload);
             };
 
+// Inicia a extensão criando o menu flutuante assim que a página carrega.
+// A verificação interna em criarMenuFlutuante() evita duplicidade.
+criarMenuFlutuante();
 `
         }
     ];
