@@ -1,37 +1,42 @@
+// BACKGROUND SCRIPT - ProfSis3 Extension
+// Gerencia mensagens entre content scripts e storage
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === "START_RPA_CHAMADA") {
-        // Salva a tarefa na memória (storage) e abre uma nova aba da Sala do Futuro
-        chrome.storage.local.set({ rpaTask: request.payload, rpaType: 'CHAMADA' }, () => {
+    if (request.action === "START_RPA_CHAMADA" || request.action === "START_RPA_LOTE") {
+        // Salva a tarefa no storage e abre a SED
+        const task = request.payload;
+        chrome.storage.local.set({ 
+            rpaTask: task, 
+            rpaType: request.action === "START_RPA_CHAMADA" ? 'CHAMADA' : 'LOTE',
+            rpaTimestamp: Date.now()
+        }, () => {
+            // Abre a SED em nova aba
             chrome.tabs.create({ url: 'https://saladofuturo.educacao.sp.gov.br/' });
+            if (sendResponse) sendResponse({ received: true });
         });
-        sendResponse({ received: true });
+        return true; // Resposta assíncrona
     } 
-    else if (request.action === "START_RPA_LOTE") {
-        chrome.storage.local.set({ rpaTask: request.payload, rpaType: 'LOTE' }, () => {
+    else if (request.action === "EXT_SAVE_PAYLOAD") {
+        // Salva payload recebido via postMessage e ABRE a SED
+        chrome.storage.local.set({ 
+            rpaTask: request.payload, 
+            rpaType: 'CHAMADA',
+            rpaTimestamp: Date.now()
+        }, () => {
+            // Abre a SED em nova aba para o content_sed.js executar
             chrome.tabs.create({ url: 'https://saladofuturo.educacao.sp.gov.br/' });
+            if (sendResponse) sendResponse({ success: true });
         });
-        sendResponse({ received: true });
+        return true;
     }
     else if (request.action === "FETCH_TURMAS") {
-        // Exemplo: chamando a API privada da Sala do Futuro enquanto o professor já está logado
-        // Insira aqui a rota real mapeada do Network (F12) da SED
-        const apiPrivadaTurmasUrl = 'https://saladofuturo.educacao.sp.gov.br/api/core/turmas'; 
-
-        fetch(apiPrivadaTurmasUrl, {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' }
-        })
-        .then(res => {
-            if (!res.ok) throw new Error("Acesso negado.");
-            return res.json();
-        })
-        .then(data => {
-            sendResponse({ success: true, turmas: data });
-        })
-        .catch(err => {
-            sendResponse({ success: false, error: 'Por favor, abra uma aba da SED e faça login antes de mapear as turmas.' });
+        // Requisição de turmas da SED (precisa estar logado)
+        sendResponse({ 
+            success: false, 
+            error: 'Função desativada - use o content script na SED.' 
         });
-
-        return true; // Retorna true para informar que a resposta é assíncrona
     }
 });
+
+// NOTA: Quando o content script da SED for injetado,
+// ele lerá o rpaTask do storage e executará a automação.
