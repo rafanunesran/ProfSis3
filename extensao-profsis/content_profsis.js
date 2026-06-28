@@ -32,17 +32,30 @@ window.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'EXT_SEND_PAYLOAD') {
         console.log("📨 Payload recebido via postMessage:", event.data.payload);
         
-        // Envia para o background.js salvar no storage
+        // Confirma recebimento imediatamente para o app.js
+        window.postMessage({ type: 'EXT_ACK' }, '*');
+        
+        // Envia para o background.js salvar no storage e abrir a SED
         chrome.runtime.sendMessage({
             action: "EXT_SAVE_PAYLOAD",
             payload: event.data.payload
         }, (response) => {
             if (response && response.success) {
                 console.log("✅ Payload salvo no storage da extensão!");
-                // Confirma para o app que recebemos
-                window.postMessage({ type: 'EXT_ACK' }, '*');
+                
+                // Mostra notificação visual na página
+                const div = document.createElement('div');
+                div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#38a169; color:white; padding:10px 20px; border-radius:5px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 6px rgba(0,0,0,0.1);';
+                div.textContent = '✅ Dados enviados para a Extensão! A SED será aberta...';
+                document.body.appendChild(div);
+                setTimeout(() => div.remove(), 4000);
             } else {
                 console.warn("⚠️ Falha ao salvar payload no storage");
+                const div = document.createElement('div');
+                div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#e53e3e; color:white; padding:10px 20px; border-radius:5px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 6px rgba(0,0,0,0.1);';
+                div.textContent = '❌ Erro ao enviar para extensão. Verifique o console.';
+                document.body.appendChild(div);
+                setTimeout(() => div.remove(), 4000);
             }
         });
     }
