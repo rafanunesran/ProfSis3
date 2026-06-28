@@ -20,11 +20,13 @@
   "content_scripts": [
     {
       "matches": ["*://localhost/*", "https://*.firebaseapp.com/*", "https://*.profsis3.com/*", "https://*.web.app/*", "https://*.github.io/*"],
-      "js": ["content_profsis.js"]
+      "js": ["content_profsis.js"],
+      "run_at": "document_end"
     },
     {
-      "matches": ["https://saladofuturo.educacao.sp.gov.br/*"],
-      "js": ["content_sed.js"]
+      "matches": ["https://saladofuturo.educacao.sp.gov.br/*", "https://*.educacao.sp.gov.br/*"],
+      "js": ["content_sed.js"],
+      "run_at": "document_end"
     }
   ]
 }
