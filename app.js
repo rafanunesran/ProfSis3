@@ -4398,28 +4398,51 @@ function getNotaCompensacao(estudanteId, bimestre) {
 }
 
 function getNotaCaderno(estudanteId, bimestre) {
+    // [REESCRITO] Lógica de Acúmulo de Pontos
     const config = (data.configBimestres || []).find(c => c.bim === bimestre);
-    if (!config || !config.inicio || !config.fim) return 10;
+    if (!config || !config.inicio || !config.fim) return ''; // Retorna vazio se não há bimestre configurado
 
-    const registros = (data.caderno || []).filter(c => 
-        String(c.id_estudante) === String(estudanteId) && 
-        c.data >= config.inicio && c.data <= config.fim
-    );
+    const totalAulasBimestre = calcularTotalAulasPrevistas(turmaAtual, config.inicio, config.fim);
+    if (totalAulasBimestre === 0) return 10; // Se não há aulas, a nota é máxima por padrão
 
-    let penalidade = 0;
-    let extra = 0;
-    registros.forEach(r => {
-        if (r.status === 'nao_realizou') penalidade += 1.0;
-        else if (r.status === 'incompleto') penalidade += 0.5;
-        if (r.extra_caderno) extra += 1.0;
-    });
+    const pontosPorAula = 10 / totalAulasBimestre;
+    let notaAcumulada = 0;
+    let pontosExtras = 0;
 
-    return parseFloat((10 - penalidade + extra).toFixed(1));
+    // Itera sobre os dias do bimestre para verificar presença e registros
+    let diaCorrente = new Date(config.inicio + 'T12:00:00');
+    const fimBimestre = new Date(config.fim + 'T12:00:00');
+
+    while(diaCorrente <= fimBimestre) {
+        const dataStr = diaCorrente.toISOString().split('T')[0];
+        const aulasNoDia = getAulasNoDia(turmaAtual, dataStr);
+
+        if (aulasNoDia > 0) {
+            const falta = (data.presencas || []).some(p => p.id_estudante == estudanteId && p.data === dataStr && p.status === 'falta');
+            
+            if (!falta) {
+                // Aluno presente, verifica o caderno
+                const registroCaderno = (data.caderno || []).find(c => c.id_estudante == estudanteId && c.data === dataStr);
+                
+                if (!registroCaderno || registroCaderno.status === 'completo') {
+                    notaAcumulada += aulasNoDia * pontosPorAula;
+                } else if (registroCaderno.status === 'incompleto') {
+                    notaAcumulada += (aulasNoDia * pontosPorAula) / 2; // Ganha metade se incompleto
+                }
+                // Se 'nao_realizou', não ganha nada.
+
+                if (registroCaderno && registroCaderno.extra_caderno) pontosExtras += 1.0;
+            }
+        }
+        diaCorrente.setDate(diaCorrente.getDate() + 1);
+    }
+
+    return Math.min(10, parseFloat((notaAcumulada + pontosExtras).toFixed(1)));
 }
 
 function getNotaParticipacao(estudanteId, bimestre) {
     const config = (data.configBimestres || []).find(c => c.bim === bimestre);
-    if (!config || !config.inicio || !config.fim) return 10;
+    if (!config || !config.inicio || !config.fim) return '';
 
     // 1. Cálculo da Frequência na Turma Atual
     const faltasEstudante = (data.presencas || []).filter(p => 
@@ -4430,10 +4453,35 @@ function getNotaParticipacao(estudanteId, bimestre) {
 
     // [MODIFICAÇÃO] Cálculo da Base baseado na Agenda Prevista
     const totalAulas = calcularTotalAulasPrevistas(turmaAtual, config.inicio, config.fim);
-    let notaInicial = 10;
+    if (totalAulas === 0) return 10;
 
-    if (totalAulas > 0 && (faltasEstudante / totalAulas) * 100 > 30) {
-        notaInicial = 5;
+    const pontosPorAula = 10 / totalAulas;
+    let notaAcumulada = 0;
+    let pontosExtras = 0;
+
+    // Itera sobre os dias do bimestre
+    let diaCorrente = new Date(config.inicio + 'T12:00:00');
+    const fimBimestre = new Date(config.fim + 'T12:00:00');
+
+    while(diaCorrente <= fimBimestre) {
+        const dataStr = diaCorrente.toISOString().split('T')[0];
+        const aulasNoDia = getAulasNoDia(turmaAtual, dataStr);
+
+        if (aulasNoDia > 0) {
+            const falta = (data.presencas || []).some(p => p.id_estudante == estudanteId && p.data === dataStr && p.status === 'falta');
+            
+            if (!falta) {
+                const registroCaderno = (data.caderno || []).find(c => c.id_estudante == estudanteId && c.data === dataStr);
+                let modicadorEngajamento = 1; // Padrão é 100%
+                if (registroCaderno) {
+                    if (registroCaderno.engajamento === 'medio') modicadorEngajamento = 0.5; // Ganha metade
+                    else if (registroCaderno.engajamento === 'nada') modicadorEngajamento = 0; // Não ganha
+                    if (registroCaderno.extra_pratica) pontosExtras += 1.0;
+                }
+                notaAcumulada += (aulasNoDia * pontosPorAula) * modicadorEngajamento;
+            }
+        }
+        diaCorrente.setDate(diaCorrente.getDate() + 1);
     }
 
     // 2. Penalidade por Ocorrências (Filtradas pela Turma Atual)
@@ -4441,27 +4489,11 @@ function getNotaParticipacao(estudanteId, bimestre) {
         o.id_turma == turmaAtual &&
         o.data >= config.inicio && o.data <= config.fim && 
         (o.ids_estudantes || []).map(id => String(id)).includes(String(estudanteId))
-    ).reduce((acc, o) => {
-        if (o.tipo === 'rapida') return acc + 2;
-        if (o.tipo === 'disciplinar') return acc + 3;
-        return acc;
-    }, 0);
+    ).reduce((acc, o) => acc + (o.tipo === 'disciplinar' ? 3 : 2), 0);
 
-    const registrosBim = (data.caderno || []).filter(c => 
-        String(c.id_estudante) === String(estudanteId) && 
-        c.data >= config.inicio && c.data <= config.fim
-    );
+    const notaFinal = notaAcumulada + pontosExtras - penalidade;
 
-    let penalidadeEngajamento = 0;
-    let extraPrat = 0;
-
-    registrosBim.forEach(reg => {
-        if (reg.engajamento === 'medio') penalidadeEngajamento += 0.5;
-        else if (reg.engajamento === 'nada') penalidadeEngajamento += 1.0;
-        if (reg.extra_pratica) extraPrat += 1.0;
-    });
-
-    return parseFloat((notaInicial - penalidade - penalidadeEngajamento + extraPrat).toFixed(1));
+    return Math.max(0, Math.min(10, parseFloat(notaFinal.toFixed(1))));
 }
 
 function renderTrabalhos() {
