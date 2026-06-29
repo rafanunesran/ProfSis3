@@ -19,32 +19,67 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     } 
     else if (request.action === "EXT_SAVE_PAYLOAD" || request.action === "SYNC_DATA") {
-        // Salva payload recebido via postMessage
-        chrome.storage.local.set({ 
-            rpaTask: request.payload, 
-            rpaType: 'CHAMADA',
-            rpaTimestamp: Date.now()
-        }, () => {
-            sendResponse({ success: true });
+        // Salva payload recebido via postMessage - mantém histórico por data
+        chrome.storage.local.get(['rpa_data_history', 'rpa_data'], (result) => {
+            let history = result.rpa_data_history || {};
+            const payload = request.payload;
+            const date = payload && payload.data;
+            
+            if (date) {
+                // Guarda no histórico por data
+                history[date] = payload;
+                
+                // Mantém apenas os últimos 30 dias
+                const keys = Object.keys(history).sort();
+                while(keys.length > 30) { 
+                    delete history[keys.shift()]; 
+                }
+                
+                chrome.storage.local.set({ 
+                    rpa_data_history: history,
+                    rpa_data: payload,
+                    rpaTask: payload,
+                    rpaType: request.action === "SYNC_DATA" ? 'CHAMADA' : 'CHAMADA',
+                    rpaTimestamp: Date.now()
+                }, () => {
+                    if (sendResponse) sendResponse({ success: true });
+                });
+            } else {
+                // Fallback: salva sem data específica
+                chrome.storage.local.set({ 
+                    rpaTask: payload, 
+                    rpaType: 'CHAMADA',
+                    rpaTimestamp: Date.now()
+                }, () => {
+                    if (sendResponse) sendResponse({ success: true });
+                });
+            }
         });
         return true;
     }
     else if (request.action === "GET_DATA") {
-        // Retorna os dados salvos no storage (usado pelo bookmarklet)
+        // Retorna os dados salvos no storage (histórico completo)
+        chrome.storage.local.get(['rpa_data_history', 'rpa_data', 'rpa_done_marks', 'rpa_imported_students'], (result) => {
+            if (sendResponse) sendResponse(result || {});
+        });
+        return true;
+    }
+    else if (request.action === "GET_HISTORY") {
+        // Retorna apenas o histórico de dados (múltiplos dias)
         chrome.storage.local.get(['rpa_data_history'], (result) => {
             if (sendResponse) sendResponse(result || {});
         });
         return true;
     }
     else if (request.action === "SAVE_MARKS") {
-        // Salva marcas de "já lançado" (usado pelo bookmarklet)
+        // Salva marcas de "já lançado"
         chrome.storage.local.set({ rpa_done_marks: request.marks }, () => {
             if (sendResponse) sendResponse({ success: true });
         });
         return true;
     }
     else if (request.action === "SAVE_STUDENTS") {
-        // Salva alunos extraídos da SED (usado pelo bookmarklet)
+        // Salva alunos extraídos da SED
         chrome.storage.local.set({ rpa_imported_students: request.payload }, () => {
             if (sendResponse) sendResponse({ success: true });
         });
@@ -65,3 +100,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // NOTA: Quando o content script da SED for injetado,
 // ele lerá o rpaTask do storage e executará a automação.
+console.log("✅ Background script carregado!");
