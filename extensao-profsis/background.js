@@ -19,13 +19,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     } 
     else if (request.action === "EXT_SAVE_PAYLOAD" || request.action === "SYNC_DATA") {
-        // Salva payload recebido via postMessage (NÃO abre mais a SED automaticamente)
+        // Salva payload recebido via postMessage
         chrome.storage.local.set({ 
             rpaTask: request.payload, 
             rpaType: 'CHAMADA',
             rpaTimestamp: Date.now()
         }, () => {
-            if (sendResponse) sendResponse({ success: true });
+            sendResponse({ success: true });
         });
         return true;
     }
