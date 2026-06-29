@@ -198,6 +198,7 @@ function atualizarInterfacePorData() {
         statusEl.innerHTML = '⏳ <strong>Sem dados para esta data.</strong><br>Use o SisProf para enviar os dados primeiro.';
         statusEl.style.color = '#718096';
         document.getElementById('sisprof-lista-faltosos').innerHTML = '<div style="color:#a0aec0; text-align:center; padding:10px 0;">Nenhum dado de faltas para esta data.</div>';
+        document.getElementById('sisprof-lista-aulas').innerHTML = '<div style="color:#a0aec0; text-align:center; padding:10px 0;">Sem dados de turmas para esta data.</div>';
         return;
     }
     
@@ -205,15 +206,20 @@ function atualizarInterfacePorData() {
     const numFaltas = (payload.faltas && payload.faltas.length) ? payload.faltas.length : 0;
     const temRegistro = (payload.registros && payload.registros.length > 0 && payload.registros[0].conteudo) ? 'Sim' : 'Não';
     const temFechamento = (payload.fechamento && payload.fechamento.length > 0) ? payload.fechamento.length + ' alunos' : 'Não';
+    const numTurmas = (payload.turmas && payload.turmas.length) ? payload.turmas.length : 0;
     
     statusEl.innerHTML = '<strong>📅 ' + formatarDataBR(currentSelectedDate) + '</strong><br>' +
         '🔴 Faltas: <strong>' + numFaltas + '</strong><br>' +
         '📝 Registro: <strong>' + temRegistro + '</strong><br>' +
-        '📊 Fechamento: <strong>' + temFechamento + '</strong>';
+        '📊 Fechamento: <strong>' + temFechamento + '</strong><br>' +
+        '📚 Turmas: <strong>' + numTurmas + '</strong>';
     statusEl.style.color = '#2d3748';
     
     // Atualiza lista de faltosos
     renderizarListaFaltosos(payload);
+    
+    // Atualiza lista de turmas/disciplinas do payload
+    renderizarTurmasPayload(payload);
 }
 
 function renderizarListaFaltosos(payload) {
@@ -244,6 +250,50 @@ function renderizarListaFaltosos(payload) {
     // Eventos para os checkboxes de "Lançado"
     container.querySelectorAll('.sisprof-done-chk').forEach(chk => {
         chk.addEventListener('change', function() {
+            const key = this.getAttribute('data-key');
+            extDoneMarks[key] = this.checked;
+            chrome.runtime.sendMessage({ action: 'SAVE_MARKS', marks: extDoneMarks });
+            this.parentElement.style.color = this.checked ? '#38a169' : '#a0aec0';
+        });
+    });
+}
+
+// ==================== TURMAS DO PAYLOAD ====================
+
+function renderizarTurmasPayload(payload) {
+    const container = document.getElementById('sisprof-lista-aulas');
+    if (!container) return;
+    
+    const turmas = payload.turmas || [];
+    
+    if (turmas.length === 0) {
+        // Se não tem turmas no payload, tenta ler da tela
+        lerAulasDaTela();
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    turmas.forEach((turma, index) => {
+        const markKey = currentSelectedDate + '_turma_' + turma.id;
+        const isDone = extDoneMarks[markKey] || false;
+        const label = turma.nome + (turma.disciplina ? ' - ' + turma.disciplina : '') + ' (' + turma.horario + ')';
+        
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0f0f0; padding:3px 0;';
+        
+        div.innerHTML = '<label style="cursor:pointer; display:flex; align-items:center; gap:5px; flex:1; font-size:12px;">' +
+            '<input type="checkbox" class="sisprof-aula-chk" data-val="' + turma.id + '" checked> ' + label +
+            '</label>' +
+            '<label style="cursor:pointer; font-size:10px; color:' + (isDone ? '#38a169' : '#a0aec0') + '; font-weight:bold; display:flex; align-items:center; gap:2px;" title="Marcar como Lançado">' +
+                '<input type="checkbox" class="sisprof-done-chk" data-key="' + markKey + '" ' + (isDone ? 'checked' : '') + '> Lançado' +
+            '</label>';
+        
+        container.appendChild(div);
+        
+        // Evento para marcar como lançado
+        const doneChk = div.querySelector('.sisprof-done-chk');
+        doneChk.addEventListener('change', function() {
             const key = this.getAttribute('data-key');
             extDoneMarks[key] = this.checked;
             chrome.runtime.sendMessage({ action: 'SAVE_MARKS', marks: extDoneMarks });
