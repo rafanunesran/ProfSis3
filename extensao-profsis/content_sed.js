@@ -34,12 +34,16 @@ function injetarMenu() {
     
     var div = document.createElement('div');
     div.id = 'sisprof-menu-flutuante';
-    div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;';
+    div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto; transition: all 0.3s ease;';
     div.innerHTML = 
         '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
             '<span>🤖 Robô SisProf <span id="sisprof-versao" style="font-size:10px; opacity:0.7;">v2.0</span></span>' +
-            '<span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span>' +
+            '<div style="display:flex; gap:8px;">' +
+                '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;" title="Minimizar à esquerda">◀</span>' +
+                '<span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span>' +
+            '</div>' +
         '</div>' +
+        '<div id="sisprof-conteudo">' +
         '<p style="margin:0 0 10px 0; color:#4a5568; font-size:13px;">✅ Extensão funcionando!</p>' +
         
         // Seletor de Dia
@@ -77,7 +81,8 @@ function injetarMenu() {
         '<button id="sisprof-btn-analisar" style="width:100%; background:#dd6b20; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px;">🔍 Analisar Faltosos da Turma</button>' +
         '<hr style="border:0; border-top:1px solid #e2e8f0; margin:10px 0;">' +
         '<button id="sisprof-btn-extrair" style="width:100%; background:#38a169; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px;">📥 Extrair Alunos (Atual)</button>' +
-        '<button id="sisprof-btn-extrair-multi" style="width:100%; background:#276749; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px;">📥 Extrair TODAS (Auto)</button>';
+        '<button id="sisprof-btn-extrair-multi" style="width:100%; background:#276749; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px;">📥 Extrair TODAS (Auto)</button>' +
+        '</div>';
     
     document.body.appendChild(div);
     console.log("✅ Menu aprimorado injetado!");
@@ -86,6 +91,31 @@ function injetarMenu() {
     
     // Fechar
     document.getElementById('sisprof-fechar').onclick = function() { div.remove(); };
+    
+    // Minimizar à esquerda
+    document.getElementById('sisprof-minimizar').onclick = function() {
+        const conteudo = document.getElementById('sisprof-conteudo');
+        const isMinimized = conteudo.style.display === 'none';
+        
+        if (isMinimized) {
+            // Restaurar
+            conteudo.style.display = 'block';
+            div.style.right = '20px';
+            div.style.left = 'auto';
+            div.style.width = '350px';
+            this.innerHTML = '◀';
+            this.title = 'Minimizar à esquerda';
+        } else {
+            // Minimizar
+            conteudo.style.display = 'none';
+            div.style.right = 'auto';
+            div.style.left = '20px';
+            div.style.width = '50px';
+            div.style.padding = '10px';
+            this.innerHTML = '▶';
+            this.title = 'Restaurar';
+        }
+    };
     
     // Botão Hoje
     document.getElementById('sisprof-btn-hoje').onclick = function() {
@@ -430,20 +460,47 @@ function marcarFaltasNaChamada() {
     const alunosAlvo = payload.faltas.map(a => normalize(a.nome));
     let interagidos = 0;
     
-    const cardsAlunos = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
+    // Tenta múltiplos seletores para encontrar os cards de alunos
+    const cardsAlunos = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"], [class*="aluno"]');
+    
     if (cardsAlunos.length > 0) {
         cardsAlunos.forEach(card => {
             const nomeElement = card.querySelector('.nome_aluno');
             if (!nomeElement) return;
             let nomeAluno = normalize(nomeElement.textContent).replace(/^\d+\s*[-.]?\s*/, '');
-            const checkbox = card.querySelector('.falta_presenca_container input[type="checkbox"], input[type="checkbox"]');
-            if (!checkbox) return;
-            const levouFalta = alunosAlvo.includes(nomeAluno);
-            const deveEstarPresente = !levouFalta;
-            if (checkbox.checked !== deveEstarPresente) { 
-                checkbox.click(); 
-                interagidos++; 
-            }
+            
+            // Encontra TODOS os checkboxes dentro do card (para lidar com dobradinhas)
+            const checkboxes = card.querySelectorAll('.falta_presenca_container input[type="checkbox"], input[type="checkbox"]');
+            
+            checkboxes.forEach(checkbox => {
+                if (!checkbox) return;
+                const levouFalta = alunosAlvo.includes(nomeAluno);
+                const deveEstarPresente = !levouFalta;
+                if (checkbox.checked !== deveEstarPresente) { 
+                    checkbox.click(); 
+                    interagidos++; 
+                }
+            });
+        });
+    } else {
+        // Fallback: tenta encontrar checkboxes diretamente na tabela
+        const linhas = document.querySelectorAll('table tbody tr');
+        linhas.forEach(linha => {
+            const cells = linha.querySelectorAll('td');
+            if (cells.length < 2) return;
+            const nomeTexto = cells[0].textContent.trim();
+            let nomeAluno = normalize(nomeTexto).replace(/^\d+\s*[-.]?\s*/, '');
+            const checkboxes = linha.querySelectorAll('input[type="checkbox"]');
+            
+            checkboxes.forEach(checkbox => {
+                if (!checkbox) return;
+                const levouFalta = alunosAlvo.includes(nomeAluno);
+                const deveEstarPresente = !levouFalta;
+                if (checkbox.checked !== deveEstarPresente) { 
+                    checkbox.click(); 
+                    interagidos++; 
+                }
+            });
         });
     }
     
