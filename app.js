@@ -1123,139 +1123,89 @@ function editarTurma(id) {
     }
 }
 
-window.enviarDadosParaExtensao = async function(silencioso = false) {
+// Função auxiliar para montar payload de um dia específico
+function montarPayloadPorData(dataStr) {
+    let alunosFaltantesNomes = [];
+    
+    const faltasNoDia = (data.presencas || []).filter(p => p.data === dataStr && p.status === 'falta');
+    
+    if (faltasNoDia.length > 0) {
+        faltasNoDia.forEach(f => {
+            const estudante = (data.estudantes || []).find(e => e.id == f.id_estudante);
+            if (estudante) alunosFaltantesNomes.push({ nome: estudante.nome_completo });
+        });
+    }
+    
+    const registrosNoDia = (data.registrosAula || []).filter(r => r.data === dataStr);
+    
+    return {
+        data: dataStr,
+        faltas: alunosFaltantesNomes,
+        registros: registrosNoDia.map(r => ({ conteudo: r.conteudo })),
+        fechamento: [] // Fechamento é sempre do bimestre atual, não por dia
+    };
+}
+
+// Envia dados de múltiplos dias para a extensão
+window.enviarDadosParaExtensao = async function(silencioso = false, diasParaEnviar = null) {
     if (!currentUser) {
         if (!silencioso) alert('Usuário não identificado.');
         return;
     }
+    
     const todayStr = getTodayString();
     
-    let alunosFaltantesNomes = [];
-    
-    const faltasHoje = (data.presencas || []).filter(p => p.data === todayStr && p.status === 'falta');
-    
-    if (faltasHoje.length > 0) {
-        faltasHoje.forEach(f => {
-            const estudante = (data.estudantes || []).find(e => e.id == f.id_estudante);
-            if (estudante) alunosFaltantesNomes.push({ nome: estudante.nome_completo });
-        });
-    } else if (typeof USE_FIREBASE !== 'undefined' && USE_FIREBASE && typeof db !== 'undefined' && db && currentUser.schoolId) {
-        try {
-            const docId = `school_${currentUser.schoolId}_${todayStr}`;
-            const doc = await db.collection('shared_attendance').doc(docId).get();
-            if (doc.exists) {
-                const sharedAbsences = doc.data().absences || {};
-                Object.entries(sharedAbsences).forEach(([estId, reporters]) => {
-                    const otherReporters = reporters.filter(uid => uid !== currentUser.id);
-                    if (otherReporters.length >= 2) {
-                        const estudante = (data.estudantes || []).find(e => e.id == estId);
-                        if (estudante) alunosFaltantesNomes.push({ nome: estudante.nome_completo });
-                    }
-                });
-            }
-        } catch(e) {}
+    // Se silencioso (auto-save), envia apenas o dia de hoje
+    if (silencioso) {
+        const payload = montarPayloadPorData(todayStr);
+        window.postMessage({ type: 'EXT_SEND_PAYLOAD', payload: payload }, '*');
+        return;
     }
-
-    const registrosHoje = (data.registrosAula || []).filter(r => r.data === todayStr);
-
-    const fechamentoAlunos = [];
-    if (typeof turmaAtual !== 'undefined' && turmaAtual) {
-        const estudantesTurma = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
-        const bim = (typeof currentBimestreTrabalhos !== 'undefined') ? currentBimestreTrabalhos : 1;
-        const configBim = (data.configBimestres || []).find(c => c.bim === bim);
-        const trabalhos = (data.trabalhos || []).filter(t => t.id_turma == turmaAtual && (t.bimestre == bim || (!t.bimestre && bim == 1)));
-        const notas = data.notas || [];
-        const registrosGeral = data.registrosAdministrativos || [];
-
-        estudantesTurma.forEach(e => {
-            let somaPesos = 0;
-            let somaProdutos = 0;
-            trabalhos.forEach(t => {
-                const n = notas.find(nota => nota.id_trabalho == t.id && nota.id_estudante == e.id);
-                let valor = (n && n.valor !== undefined) ? n.valor : '';
-                if (valor === '') {
-                    if (typeof getNotaCompensacao === 'function' && t.tipo === 'compensacao') valor = getNotaCompensacao(e.id, bim);
-                    if (typeof getNotaCaderno === 'function' && t.tipo === 'caderno_auto') valor = getNotaCaderno(e.id, bim);
-                    if (typeof getNotaParticipacao === 'function' && t.tipo === 'participacao') valor = getNotaParticipacao(e.id, bim);
-                }
-                const peso = parseFloat(t.peso) || 0;
-                const parsed = parseFloat(valor.toString().replace(',', '.'));
-                const valorNum = (!isNaN(parsed)) ? parsed : 0;
-                somaProdutos += valorNum * peso;
-                somaPesos += peso;
-            });
-            const mediaRaw = somaPesos > 0 ? (somaProdutos / somaPesos) : null;
-            let mediaInt = '';
-            if (mediaRaw !== null) {
-                mediaInt = Math.round(mediaRaw).toString();
-            }
-
-            const isFaltoso = registrosGeral.some(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Faltoso');
-            let totalFaltasBimestre = 0;
-            let totalDiasAtestado = 0;
-            
-            if (configBim) {
-                 const atestadosEstudante = registrosGeral.filter(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Atestado');
-                 const bStart = new Date(configBim.inicio + 'T12:00:00');
-                 const bEnd = new Date(configBim.fim + 'T12:00:00');
-                 totalDiasAtestado = atestadosEstudante.reduce((acc, r) => {
-                     const cStart = new Date(r.data + 'T12:00:00');
-                     const cEnd = new Date(cStart);
-                     cEnd.setDate(cEnd.getDate() + (parseInt(r.dias) || 1) - 1);
-                     const start = cStart > bStart ? cStart : bStart;
-                     const end = cEnd < bEnd ? cEnd : bEnd;
-                     if (start <= end) {
-                         return acc + (Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1);
-                     }
-                     return acc;
-                 }, 0);
-                 
-                 if (isFaltoso && typeof getAulasNoDia === 'function') {
-                     let faltasAulas = 0;
-                     (data.presencas || []).filter(p => p.id_estudante == e.id && p.status === 'falta' && p.data >= configBim.inicio && p.data <= configBim.fim).forEach(p => {
-                         faltasAulas += getAulasNoDia(turmaAtual, p.data);
-                     });
-                     totalFaltasBimestre = faltasAulas;
-                 }
-            }
-            
-            const faltasFinais = Math.max(0, totalFaltasBimestre - totalDiasAtestado);
-            
-            fechamentoAlunos.push({
-                nome: e.nome_completo,
-                nota: mediaInt,
-                faltas: faltasFinais,
-                ausencias_compensadas: totalDiasAtestado,
-                justificativa: "Fechamento do bimestre vigente"
-            });
-        });
+    
+    // Se não especificou dias, pergunta quantos dias enviar
+    if (diasParaEnviar === null) {
+        diasParaEnviar = prompt('Quantos dias corridos (incluindo hoje) deseja enviar para a extensão?', '5');
+        if (!diasParaEnviar) return;
+        diasParaEnviar = parseInt(diasParaEnviar);
+        if (isNaN(diasParaEnviar) || diasParaEnviar < 1) {
+            alert('Número inválido.');
+            return;
+        }
     }
-
-    const payload = {
-        data: todayStr,
-        faltas: alunosFaltantesNomes,
-        registros: registrosHoje.map(r => ({ conteudo: r.conteudo })),
-        fechamento: fechamentoAlunos
+    
+    // Gera payloads para os últimos N dias
+    const payloads = [];
+    for (let i = 0; i < diasParaEnviar; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dataStr = d.toISOString().split('T')[0];
+        const payload = montarPayloadPorData(dataStr);
+        payloads.push(payload);
+    }
+    
+    // Envia cada payload individualmente para a extensão
+    let extRespondeu = false;
+    const listener = (e) => {
+        if (e.data && e.data.type === 'EXT_ACK') extRespondeu = true;
     };
-
-    if (!silencioso) {
-        let extRespondeu = false;
-        const listener = (e) => {
-            if (e.data && e.data.type === 'EXT_ACK') extRespondeu = true;
-        };
-        window.addEventListener('message', listener);
-
+    window.addEventListener('message', listener);
+    
+    let enviados = 0;
+    for (const payload of payloads) {
         window.postMessage({ type: 'EXT_SEND_PAYLOAD', payload: payload }, '*');
-        
-        setTimeout(() => {
-            window.removeEventListener('message', listener);
-            if (!extRespondeu) {
-                alert('A caixa verde não apareceu? Parece que a extensão não está conectada a esta página.\\n\\nCertifique-se de:\\n1. Ter ativado o "Modo do Desenvolvedor" na tela de extensões.\\n2. Ter instalado/atualizado a extensão com os arquivos corretos.\\n3. Ter apertado F5 (Recarregar) nesta página do SisProf.\\n\\nSe mesmo assim não for, você ainda pode usar o botão "Usar Robô Favorito" ao lado!');
-            }
-        }, 1500);
-    } else {
-        window.postMessage({ type: 'EXT_SEND_PAYLOAD', payload: payload }, '*');
+        enviados++;
+        // Pequeno delay entre envios para não sobrecarregar
+        await new Promise(r => setTimeout(r, 200));
     }
+    
+    setTimeout(() => {
+        window.removeEventListener('message', listener);
+        if (!extRespondeu) {
+            alert('A caixa verde não apareceu? Parece que a extensão não está conectada a esta página.\n\nCertifique-se de:\n1. Ter ativado o "Modo do Desenvolvedor" na tela de extensões.\n2. Ter instalado/atualizado a extensão com os arquivos corretos.\n3. Ter apertado F5 (Recarregar) nesta página do SisProf.\n\nSe mesmo assim não for, você ainda pode usar o botão "Usar Robô Favorito" ao lado!');
+        } else {
+            alert('✅ ' + enviados + ' dia(s) enviado(s) para a extensão com sucesso!');
+        }
+    }, 1500);
 };
 
 window.saveRpaDataFromExtension = async function(payload) {
