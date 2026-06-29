@@ -216,51 +216,6 @@ document.addEventListener('DOMContentLoaded', () => {
 function init() {
     const params = new URLSearchParams(window.location.search);
     
-    // --- MANIPULADOR RPA (SALA DO FUTURO) ---
-    const rpaFetch = params.get('rpa_fetch');
-    if (rpaFetch) {
-        const profId = params.get('profId');
-        const syncKey = 'rpa_sync_' + profId;
-        
-        const sendToParent = async () => {
-            let payload = null;
-            try {
-                const local = localStorage.getItem(syncKey);
-                if (local) payload = JSON.parse(local);
-                
-                if (!payload && typeof db !== 'undefined' && db) {
-                    const doc = await db.collection('app_data').doc(syncKey).get();
-                    if (doc.exists) payload = doc.data();
-                }
-            } catch(e) {
-                console.warn('Erro ao buscar rpa_sync', e);
-            }
-            
-            window.parent.postMessage({ type: 'SISPROF_RPA_DATA', payload: payload || {} }, '*');
-        };
-        
-        // Listener para receber comandos do Robô e salvar no DB do app
-        window.addEventListener('message', async (e) => {
-            if (e.data && e.data.type === 'SISPROF_SAVE_ALUNOS') {
-                try {
-                    const payload = e.data.payload;
-                    const importKey = 'rpa_import_' + profId;
-                    if (typeof db !== 'undefined' && db) {
-                        await db.collection('app_data').doc(importKey).set(payload);
-                    } else {
-                        localStorage.setItem(importKey, JSON.stringify(payload));
-                    }
-                    window.parent.postMessage({ type: 'SISPROF_SAVE_SUCCESS' }, '*');
-                } catch(err) {
-                    window.parent.postMessage({ type: 'SISPROF_SAVE_ERROR', error: err.message }, '*');
-                }
-            }
-        });
-
-        sendToParent();
-        return; // Interrompe o carregamento normal do app
-    }
-
     // Verifica se é um link de compartilhamento
     const shareId = params.get('share');
     if (shareId) {
@@ -378,6 +333,29 @@ async function fazerLogin(e) {
     }
 }
 
+async function solicitarResetSenha() {
+    const email = prompt("Por favor, insira seu e-mail para redefinir a senha:");
+    if (!email) {
+        return; // User cancelled the prompt
+    }
+
+    if (typeof firebase === 'undefined' || !USE_FIREBASE) {
+        alert('A redefinição de senha só está disponível no modo online (Firebase).');
+        return;
+    }
+
+    try {
+        await firebase.auth().sendPasswordResetEmail(email);
+        alert('Se o e-mail estiver cadastrado em nosso sistema, um link para redefinição de senha foi enviado.');
+    } catch (error) {
+        // For security, don't reveal if the user was not found.
+        // Log the error for debugging purposes.
+        console.error("Erro ao tentar enviar e-mail de redefinição:", error);
+        // Show the same generic message to the user.
+        alert('Se o e-mail estiver cadastrado em nosso sistema, um link para redefinição de senha foi enviado.');
+    }
+}
+
 async function fazerCadastro(e) {
     e.preventDefault();
     const nome = document.getElementById('cadNome').value;
@@ -436,26 +414,27 @@ function renderLogin() {
     const adminContainer = document.getElementById('adminContainer');
     if (adminContainer) adminContainer.style.display = 'none';
 
-    const statusDb = USE_FIREBASE ? '🔥 Banco: Online (Firebase)' : '💻 Banco: Local (Offline)';
-    const colorDb = USE_FIREBASE ? '#e53e3e' : '#3182ce';
+    const statusClass = USE_FIREBASE ? 'online' : 'offline';
+    const statusText = USE_FIREBASE ? '🔥 Online (Firebase)' : '💻 Local (Offline)';
 
     container.innerHTML = `
         <div class="auth-box">
             <h2>🔐 Login</h2>
-            <div style="text-align:center; margin-bottom:15px; font-size:12px; color:${colorDb}; font-weight:bold; background:#f7fafc; padding:5px; border-radius:4px; border:1px solid ${colorDb}40;">
-                ${statusDb}
-            </div>
+            <div class="status-indicator ${statusClass}">${statusText}</div>
             <form onsubmit="fazerLogin(event)">
                 <label>Email: <input type="email" id="loginEmail" required></label>
                 <label>Senha: 
                     <div class="password-wrapper">
-                        <input type="password" id="loginSenha" required style="padding-right: 35px;">
+                        <input type="password" id="loginSenha" required>
                         <button type="button" class="toggle-password" onclick="toggleSenha('loginSenha', this)">👁️</button>
                     </div>
                 </label>
-                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Entrar</button>
+                <button type="submit" class="btn btn-primary">Entrar</button>
             </form>
-            <span class="auth-link" onclick="renderCadastro()">Não tem conta? Cadastre-se</span>
+            <div class="auth-links-container">
+                <span class="auth-link" onclick="solicitarResetSenha()">Esqueceu a senha?</span>
+                <span class="auth-link" onclick="renderCadastro()">Não tem conta? Cadastre-se</span>
+            </div>
         </div>
     `;
 }
@@ -483,13 +462,15 @@ async function renderCadastro() {
                 </label>
                 <label>Senha: 
                     <div class="password-wrapper">
-                        <input type="password" id="cadSenha" required style="padding-right: 35px;">
+                        <input type="password" id="cadSenha" required>
                         <button type="button" class="toggle-password" onclick="toggleSenha('cadSenha', this)">👁️</button>
                     </div>
                 </label>
-                <button type="submit" class="btn btn-success" style="width: 100%; margin-top: 10px;">Criar Conta</button>
+                <button type="submit" class="btn btn-success">Criar Conta</button>
             </form>
-            <span class="auth-link" onclick="renderLogin()">Já tem conta? Faça Login</span>
+            <div class="auth-links-container" style="justify-content: center;">
+                <span class="auth-link" onclick="renderLogin()">Já tem conta? Faça Login</span>
+            </div>
         </div>
     `;
 }
