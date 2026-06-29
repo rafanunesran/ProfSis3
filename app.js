@@ -350,38 +350,24 @@ async function abrirModalPerfil() {
         containerTemas.parentNode.appendChild(integrationArea);
     }
     
-    const bookmarkletCode = gerarCodigoBookmarklet();
-    
     integrationArea.innerHTML = `
         <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cbd5e0;">
             <h4 style="color:#2c5282; margin-bottom:5px; font-size:14px;">🤖 Integração Sala do Futuro (SED)</h4>
-            <p style="font-size:11px; color:#718096; margin-bottom:10px;">Ferramentas para enviar suas chamadas e registros automaticamente para o governo.</p>
-            <div style="background:#ebf8ff; padding:10px; border-radius:6px; margin-bottom:10px; border:1px solid #bee3f8;">
-                <strong style="font-size:12px; color:#2b6cb0; display:block; margin-bottom:5px;">Passo 1: Instalação (Faça apenas uma vez)</strong>
-                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Clique, segure e arraste o botão verde abaixo para a barra de favoritos do seu navegador:</p>
-                <div style="text-align:center;">
-                    <a href="javascript:(function(){${encodeURIComponent(bookmarkletCode)}})();" class="btn btn-sm" style="background-color:#38a169; color:white; font-weight:bold; padding:8px 15px; border-radius:20px; display:inline-block; text-decoration:none; box-shadow:0 2px 4px rgba(0,0,0,0.1); cursor:grab;" title="Arraste-me para os favoritos!">🧩 Robô SisProf</a>
-                </div>
+            <p style="font-size:11px; color:#718096; margin-bottom:10px;">Use a extensão do Chrome para enviar suas chamadas e registros automaticamente para a SED.</p>
+            
+            <div style="background:#edf2f7; padding:10px; border-radius:6px; border:1px solid #cbd5e0; margin-top:10px;">
+                <strong style="font-size:12px; color:#2d3748; display:block; margin-bottom:5px;">Extensão do Chrome (Computador)</strong>
+                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">A extensão é a forma mais robusta de integração, ideal para navegar por várias turmas.</p>
+                <button class="btn btn-sm btn-info" onclick="baixarArquivosExtensao()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🧩 Baixar Arquivos da Extensão</button>
+                <p style="font-size:11px; color:#4a5568; margin-top:10px;">Após instalar, clique abaixo para enviar os dados de hoje para a extensão:</p>
+                <button class="btn btn-sm" onclick="enviarDadosParaExtensao()" style="width:100%; background-color:#3182ce; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🧩 Enviar para Extensão</button>
             </div>
-            <div style="background:#faf5ff; padding:10px; border-radius:6px; border:1px solid #d6bcfa;">
-                <strong style="font-size:12px; color:#553c9a; display:block; margin-bottom:5px;">Passo 2: Uso Diário</strong>
-                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Envie os dados de hoje para serem usados no Governo.</p>
-                <div style="display:flex; gap:10px;">
-                    <button class="btn btn-sm" onclick="prepararSincronizacaoRPA()" style="flex:1; background-color:#805ad5; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🚀 Usar Robô Favorito</button>
-                    <button class="btn btn-sm" onclick="enviarDadosParaExtensao()" style="flex:1; background-color:#3182ce; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🧩 Enviar para Extensão</button>
-                </div>
-            </div>
+
             <div style="background:#f0fff4; padding:10px; border-radius:6px; border:1px solid #c6f6d5; margin-top:10px;">
-                <strong style="font-size:12px; color:#276749; display:block; margin-bottom:5px;">Passo 3: Atualizar Turma (Sincronizar SED)</strong>
+                <strong style="font-size:12px; color:#276749; display:block; margin-bottom:5px;">Atualizar Turma (Sincronizar SED)</strong>
                 <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Após usar a opção "Extrair Alunos" no Robô, clique abaixo para puxar a lista automaticamente.</p>
                 <button class="btn btn-sm" onclick="sincronizarAlunosNuvem()" style="width:100%; background-color:#38a169; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🔄 Atualizar Turma (Puxar da Nuvem)</button>
                 <button class="btn btn-sm btn-secondary" onclick="abrirModalImportarAlunosSED()" style="width:100%; margin-top:5px; padding:8px; border-radius:4px;">Ou Colar Lista Manualmente</button>
-            </div>
-            <div style="background:#edf2f7; padding:10px; border-radius:6px; border:1px solid #cbd5e0; margin-top:10px;">
-                <strong style="font-size:12px; color:#2d3748; display:block; margin-bottom:5px;">Alternativa: Extensão do Chrome (Robusta)</strong>
-                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">A extensão sobrevive ao atualizar a página na SED, ideal para navegar por várias turmas seguidas.</p>
-                <button class="btn btn-sm btn-info" onclick="baixarArquivosExtensao()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🧩 Baixar Arquivos da Extensão</button>
-                <div style="margin-top:8px; font-size:10px; color:#e53e3e; text-align:center;">⚠️ A extensão funciona <b>apenas no Computador</b>.<br>No celular, arraste o botão verde e use o <b>Passo 1 (Robô Favorito)</b>.</div>
             </div>
         </div>
     `;
@@ -1137,524 +1123,6 @@ function editarTurma(id) {
     }
 }
 
-// --- INTEGRAÇÃO RPA (SALA DO FUTURO) ---
-async function prepararSincronizacaoRPA() {
-    if (!currentUser) return alert('Usuário não identificado.');
-    
-    try {
-        const todayStr = getTodayString();
-        
-        // Coleta faltas de hoje
-        const faltasHoje = (data.presencas || []).filter(p => p.data === todayStr && p.status === 'falta');
-        
-        // Busca os nomes dos faltosos agrupados por turma
-        const alunosFaltantes = [];
-        const turmasAfetadas = new Set();
-
-        faltasHoje.forEach(f => {
-            const estudante = (data.estudantes || []).find(e => e.id == f.id_estudante);
-            if (estudante) {
-                alunosFaltantes.push({
-                    nome: estudante.nome_completo,
-                    turmaId: estudante.id_turma
-                });
-                turmasAfetadas.add(estudante.id_turma);
-            }
-        });
-
-        // Coleta registros de aula de hoje
-        const registrosHoje = (data.registrosAula || []).filter(r => r.data === todayStr);
-
-        // Monta o Payload para a nuvem
-        const payload = {
-            timestamp: Date.now(),
-            data: todayStr,
-            faltas: alunosFaltantes,
-            registros: registrosHoje.map(r => ({
-                turmaId: r.id_turma,
-                conteudo: r.conteudo
-            }))
-        };
-
-        const profId = currentUser.uid || currentUser.id;
-        const syncKey = 'rpa_sync_' + profId;
-        
-        let history = {};
-        try {
-            if (typeof db !== 'undefined' && db) {
-                const doc = await db.collection('app_data').doc(syncKey).get();
-                if (doc.exists && doc.data().history) history = doc.data().history;
-            } else {
-                const local = localStorage.getItem(syncKey);
-                if (local) history = JSON.parse(local).history || {};
-            }
-        } catch(err) { console.warn(err); }
-
-        history[todayStr] = payload;
-        
-        const keys = Object.keys(history).sort();
-        while (keys.length > 5) {
-            delete history[keys.shift()];
-        }
-
-        const finalData = { history: history };
-
-        // Salva temporariamente para que o Robô (Bookmarklet) possa ler
-        if (typeof saveData === 'function') {
-            await saveData('app_data', syncKey, finalData);
-        } else {
-            localStorage.setItem(syncKey, JSON.stringify(finalData));
-        }
-
-        // Fecha o modal de perfil e avisa o usuário
-        closeModal('modalPerfilUsuario');
-        
-        alert(`✅ Faltas e Registros de Aula enviados para a nuvem!\n\nForam preparadas faltas para ${turmasAfetadas.size} turma(s).\n\nAGORA:\n1. Acesse o site da Sala do Futuro.\n2. Entre na tela de "Chamada" ou "Registro de Aula".\n3. Clique no botão "Robô SisProf" na sua barra de favoritos.`);
-
-    } catch (error) {
-        console.error("Erro na integração com RPA:", error);
-        alert("Erro ao preparar dados. Verifique sua conexão com a internet.");
-    }
-}
-
-function gerarCodigoBookmarklet() {
-    const profId = currentUser ? (currentUser.uid || currentUser.id) : '';
-    // Obtém a URL atual sem query ou hash (usada para chamar o iframe)
-    const urlApp = window.location.href.split('?')[0].split('#')[0];
-    
-    let code = `
-        if(window.sisprofRoboAtivo){
-            alert('Robô SisProf já está aberto nesta aba!');
-        } else {
-            window.sisprofRoboAtivo = true;
-                window.extHistory = {};
-                window.extDoneMarks = {};
-                window.currentSelectedDate = "";
-
-            const ui = document.createElement('div');
-                ui.style.cssText = 'position:fixed; top:20px; right:20px; width:320px; background:#fff; border:2px solid #38a169; border-radius:8px; z-index:999999; box-shadow:0 10px 25px rgba(0,0,0,0.2); font-family:sans-serif; overflow:hidden; display:flex; flex-direction:column; max-height:90vh;';
-                ui.innerHTML = '<div style="background:#38a169; color:#fff; padding:10px; font-weight:bold; display:flex; justify-content:space-between; align-items:center;"><span>🤖 Robô SisProf (Favorito)</span><span style="cursor:pointer;" onclick="this.parentElement.parentElement.remove(); window.sisprofRoboAtivo=false;">✖</span></div>' +
-                               '<div style="padding:15px; overflow-y:auto;" id="sisprof-content">' +
-                               '<div style="margin-bottom:15px;">' +
-                               '<label style="font-size:12px; font-weight:bold; color:#4a5568;">Dia Sincronizado:</label>' +
-                               '<select id="rpaDiaSelect" style="width:100%; padding:6px; margin-top:4px; border-radius:4px; border:1px solid #cbd5e0; font-size:12px;" onchange="window.mudarDiaRPA(this.value)"></select>' +
-                               '</div>' +
-                               '<div id="rpaDiaInfo" style="margin-bottom:15px; font-size:12px; color:#2d3748; background:#f7fafc; padding:10px; border-radius:4px; border:1px solid #e2e8f0; min-height:40px;">Aguardando dados da nuvem...</div>' +
-                               '<div style="margin-bottom:15px;">' +
-                               '<label style="font-size:12px; font-weight:bold; color:#4a5568; display:flex; justify-content:space-between;">Aulas a Lançar: <span style="font-weight:normal; font-size:10px; cursor:pointer; color:#3182ce;" onclick="window.lerAulasDaTelaRPA()">Ler da Tela 🔄</span></label>' +
-                               '<div id="rpaListaAulas" style="margin-top:5px; max-height:120px; overflow-y:auto; border:1px solid #e2e8f0; padding:5px; border-radius:4px; font-size:11px; background:#fff;"></div>' +
-                               '</div>' +
-                               '<button id="rpaBtnPreencher" onclick="window.preencherTudoRPA()" style="width:100%; background:#3182ce; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">1️⃣ Preencher Chamada / Aula</button>' +
-                               '<hr style="border:0; border-top:1px solid #eee; margin:15px 0;">' +
-                               '<p style="font-size:11px; color:#718096; margin-bottom:5px; font-weight:bold;">Extrair Alunos da SED:</p>' +
-                               '<button onclick="window.iniciarExtrairAlunos()" style="width:100%; background:#38a169; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">📥 Extrair Alunos (Atual)</button>' +
-                               '<button onclick="window.iniciarExtrairTodasTurmas()" style="width:100%; background:#276749; color:#fff; border:none; padding:10px; border-radius:4px; font-weight:bold; cursor:pointer; margin-bottom:10px;">📥 Extrair TODAS (Auto)</button>' +
-                           '</div>';
-            document.body.appendChild(ui);
-            
-            const iframe = document.createElement('iframe');
-            iframe.id = 'sisprof-iframe';
-            iframe.src = "${urlApp}?rpa_fetch=true&profId=${profId}";
-            iframe.style.display = 'none';
-            document.body.appendChild(iframe);
-            
-            window.addEventListener('message', function(e) {
-                if(e.data && e.data.type === 'SISPROF_RPA_DATA') {
-                    const payload = e.data.payload;
-                    if (payload && payload.history) {
-                        window.extHistory = payload.history;
-                    } else if (payload && payload.data) {
-                        window.extHistory = {};
-                        window.extHistory[payload.data] = payload;
-                    }
-                    
-                    try {
-                        const marks = localStorage.getItem('rpa_done_marks');
-                        if (marks) window.extDoneMarks = JSON.parse(marks);
-                        else window.extDoneMarks = {};
-                    } catch(err){ window.extDoneMarks = {}; }
-                    
-                    window.renderRpaHistory();
-                    setTimeout(window.lerAulasDaTelaRPA, 1000);
-
-                } else if (e.data && e.data.type === 'SISPROF_SAVE_SUCCESS') {
-                    alert('✅ Lista salva na nuvem com sucesso!\\nVolte ao SisProf e clique em "Atualizar Turma (Puxar da Nuvem)".');
-                } else if (e.data && e.data.type === 'SISPROF_SAVE_ERROR') {
-                    alert('Erro ao salvar na nuvem: ' + e.data.error);
-                }
-            });
-
-                window.renderRpaHistory = function() {
-                    const select = document.getElementById('rpaDiaSelect');
-                    if(!select) return;
-                    select.innerHTML = '';
-                    const dates = Object.keys(window.extHistory).sort((a,b) => b.localeCompare(a));
-                    if(dates.length === 0) {
-                        select.innerHTML = '<option value="">Nenhum dado recebido</option>';
-                        document.getElementById('rpaDiaInfo').innerHTML = 'Volte ao SisProf e use a opção "Usar Robô Favorito" no seu perfil para enviar os dados para a nuvem.';
-                        return;
-                    }
-                    dates.forEach(d => {
-                        const opt = document.createElement('option');
-                        opt.value = d;
-                        const parts = d.split('-');
-                        opt.textContent = parts[2] + '/' + parts[1] + '/' + parts[0];
-                        select.appendChild(opt);
-                    });
-                    if (!window.currentSelectedDate || !window.extHistory[window.currentSelectedDate]) {
-                        window.currentSelectedDate = dates[0];
-                    }
-                    select.value = window.currentSelectedDate;
-                    window.mudarDiaRPA(window.currentSelectedDate);
-                };
-
-                window.mudarDiaRPA = function(dateStr) {
-                    window.currentSelectedDate = dateStr;
-                    const info = document.getElementById('rpaDiaInfo');
-                    if(!window.currentSelectedDate || !window.extHistory[window.currentSelectedDate]) {
-                        if(info) info.innerHTML = 'Sem dados.';
-                        return;
-                    }
-                    const payload = window.extHistory[window.currentSelectedDate];
-                    const numFaltas = (payload.faltas && payload.faltas.length) ? payload.faltas.length : 0;
-                    const temRegistro = (payload.registros && payload.registros.length > 0 && payload.registros[0].conteudo) ? 'Sim' : 'Não';
-                    if(info) info.innerHTML = '<strong>Faltas a lançar:</strong> ' + numFaltas + '<br><strong>Registro de Aula:</strong> ' + temRegistro;
-                    
-                    window.lerAulasDaTelaRPA();
-                };
-
-                window.lerAulasDaTelaRPA = function() {
-                    const lista = document.getElementById('rpaListaAulas');
-                    if(!lista) return;
-                    
-                    const checkboxes = document.querySelectorAll('.multi-select-menuitem input[type="checkbox"]');
-                    if(checkboxes.length === 0) {
-                        lista.innerHTML = '<div style="color:#a0aec0; text-align:center; padding:10px 0;">Nenhuma aula encontrada.<br>Abra a aba de Chamada e selecione a Turma antes de prosseguir.</div>';
-                        return;
-                    }
-                    
-                    lista.innerHTML = '';
-                    checkboxes.forEach((chk, index) => {
-                        const label = chk.parentElement.textContent.trim();
-                        const val = chk.value;
-                        const markKey = window.currentSelectedDate + '_' + val;
-                        const isDone = window.extDoneMarks[markKey] || false;
-                        
-                        const div = document.createElement('div');
-                        div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0f0f0; padding:3px 0;';
-                        
-                        const chkId = 'rpa_aula_' + index;
-                        const doneId = 'rpa_done_' + index;
-                        
-                        div.innerHTML = '<label style="cursor:pointer; display:flex; align-items:center; gap:5px; flex:1;"><input type="checkbox" class="rpa-aula-chk" id="' + chkId + '" data-val="' + val + '"> ' + label + '</label>' +
-                            '<label style="cursor:pointer; font-size:10px; color:' + (isDone ? '#38a169' : '#a0aec0') + '; font-weight:bold; display:flex; align-items:center; gap:2px;" title="Marcar como Lançado"><input type="checkbox" class="rpa-done-chk" id="' + doneId + '" ' + (isDone ? 'checked' : '') + '> Lançado</label>';
-                        
-                        lista.appendChild(div);
-                        
-                        const doneChk = document.getElementById(doneId);
-                        doneChk.addEventListener('change', (e) => {
-                            window.extDoneMarks[markKey] = e.target.checked;
-                            try { localStorage.setItem('rpa_done_marks', JSON.stringify(window.extDoneMarks)); } catch(err){}
-                            doneChk.parentElement.style.color = e.target.checked ? '#38a169' : '#a0aec0';
-                        });
-                    });
-                };
-
-                window.preencherTudoRPA = function() {
-                    if(!window.currentSelectedDate || !window.extHistory[window.currentSelectedDate]) {
-                        alert('Selecione um dia válido.');
-                        return;
-                    }
-                    const btn = document.getElementById('rpaBtnPreencher');
-                    const oldText = btn.textContent;
-                    btn.textContent = 'Preenchendo...';
-                    
-                    window.selecionarDataSED(window.currentSelectedDate);
-                    setTimeout(() => {
-                        window.selecionarAulasSED();
-                        setTimeout(() => {
-                            const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
-                            let btnBuscar = null;
-                            buttons.forEach(b => {
-                                const text = (b.innerText || b.value || '').toLowerCase();
-                                if (text.includes('pesquisar') || text.includes('buscar') || text.includes('listar')) btnBuscar = b;
-                            });
-                            if (btnBuscar) btnBuscar.click();
-                            setTimeout(() => {
-                                window.executarPreenchimentoRPA(window.extHistory[window.currentSelectedDate]);
-                                btn.textContent = oldText;
-                            }, 2500);
-                        }, 1000);
-                    }, 800);
-                };
-
-                window.selecionarDataSED = function(dataStr) {
-                    if(!dataStr) return;
-                    const parts = dataStr.split('-');
-                    const year = parseInt(parts[0], 10);
-                    const month = parseInt(parts[1], 10) - 1; 
-                    const day = parseInt(parts[2], 10);
-
-                    const monthSelect = document.querySelector('.ui-datepicker-month');
-                    const yearSelect = document.querySelector('.ui-datepicker-year');
-                    
-                    let changed = false;
-                    if (monthSelect && monthSelect.value != month) {
-                        monthSelect.value = month;
-                        monthSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                        changed = true;
-                    }
-                    if (yearSelect && yearSelect.value != year) {
-                        yearSelect.value = year;
-                        yearSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                        changed = true;
-                    }
-
-                    const clickDay = () => {
-                        const dayCell = document.querySelector('td[data-handler="selectDay"][data-month="' + month + '"][data-year="' + year + '"] a.ui-state-default');
-                        if (dayCell && dayCell.textContent.trim() == day) {
-                            dayCell.click();
-                        } else {
-                            const cells = document.querySelectorAll('td[data-handler="selectDay"]');
-                            for (let i = 0; i < cells.length; i++) {
-                                if (cells[i].getAttribute('data-month') == month && cells[i].getAttribute('data-year') == year) {
-                                    const a = cells[i].querySelector('a');
-                                    if (a && a.textContent.trim() == day) {
-                                        a.click();
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    };
-
-                    if (changed) {
-                        setTimeout(clickDay, 500);
-                    } else {
-                        clickDay();
-                    }
-                };
-
-                window.selecionarAulasSED = function() {
-                    const chks = document.querySelectorAll('.rpa-aula-chk:checked');
-                    if(chks.length === 0) return;
-                    const selecionados = Array.from(chks).map(c => c.getAttribute('data-val'));
-
-                    const btnAbrir = document.querySelector('.multi-select-button');
-                    if(btnAbrir) btnAbrir.click(); 
-
-                    setTimeout(() => {
-                        const checkboxes = document.querySelectorAll('.multi-select-menuitem input[type="checkbox"]');
-                        checkboxes.forEach(chk => {
-                            const val = chk.value;
-                            if(selecionados.includes(val) && !chk.checked) {
-                                chk.click();
-                            } else if (!selecionados.includes(val) && chk.checked) {
-                                chk.click();
-                            }
-                        });
-                        if(btnAbrir) btnAbrir.click();
-                    }, 200);
-                };
-
-                window.executarPreenchimentoRPA = function(payload) {
-                    const normalize = s => s ? s.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").replace(/\\s+/g, " ").trim().toUpperCase() : "";
-                    let interagidos = 0;
-                    
-                    if (payload.faltas) {
-                        const alunosAlvo = payload.faltas.map(a => normalize(a.nome));
-                        const cardsAlunos = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
-                        if (cardsAlunos.length > 0) {
-                            cardsAlunos.forEach(card => {
-                                const nomeElement = card.querySelector('.nome_aluno');
-                                if (!nomeElement) return;
-                                let nomeAluno = normalize(nomeElement.textContent).replace(/^\\d+\\s*-\\s*/, '');
-                                const checkbox = card.querySelector('.falta_presenca_container input[type="checkbox"], input[type="checkbox"]');
-                                if(!checkbox) return;
-                                const levouFalta = alunosAlvo.includes(nomeAluno);
-                                if (levouFalta && checkbox.checked) { checkbox.click(); interagidos++; }
-                                else if (!levouFalta && !checkbox.checked) { checkbox.click(); }
-                                if (levouFalta && !checkbox.checked) { checkbox.click(); interagidos++; }
-                                else if (!levouFalta && checkbox.checked) { checkbox.click(); }
-                            });
-                        }
-                    }
-
-                    if(payload.registros && payload.registros.length > 0) {
-                        const txt = document.querySelector('textarea[name="o.Descricao"], textarea#conteudoAula, textarea.form-control, textarea');
-                        if(txt) {
-                            txt.value = payload.registros[0].conteudo;
-                            txt.dispatchEvent(new Event("input", { bubbles: true }));
-                            txt.dispatchEvent(new Event("change", { bubbles: true }));
-                            interagidos++;
-                        }
-                    }
-                    
-                    if (interagidos > 0) {
-                        setTimeout(() => {
-                            const btnSalvar = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a')).find(b => {
-                                const text = (b.innerText || b.value || '').toLowerCase();
-                                return text.includes('salvar') || text.includes('cadastrar') || text.includes('gravar') || text.includes('finalizar');
-                            });
-                            if (btnSalvar) {
-                                btnSalvar.click();
-                                alert('✅ Concluído! Lançamentos preenchidos e salvos na SED.');
-                            } else {
-                                alert('✅ Concluído!\\n\\n⚠️ Não encontrei o botão de "Salvar" automaticamente. Por favor, clique nele manualmente.');
-                            }
-                        }, 500);
-                    } else {
-                        alert('Nenhum dado pendente ou campos não encontrados na tela.');
-                    }
-                };
-
-                window.iniciarExtrairAlunos = function() {
-                    const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"], .card_aluno1, .card_aluno');
-                    if(cardsAlunos.length === 0) return alert('Nenhum aluno encontrado na tela. Abra a tela de chamada da turma primeiro!');
-                    
-                    const alunos = [];
-                    cardsAlunos.forEach(card => {
-                        const nomeElement = card.querySelector('.nome_aluno');
-                        if (!nomeElement) return;
-                        let nomeCompleto = nomeElement.textContent.trim();
-                        nomeCompleto = nomeCompleto.replace(/^\\d+\\s*-\\s*/, '');
-                        alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
-                    });
-                    
-                    let turmaSelecionada = "Desconhecida";
-                    const selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
-                    if (selectTurma && selectTurma.options[selectTurma.selectedIndex]) {
-                        turmaSelecionada = selectTurma.options[selectTurma.selectedIndex].text.trim();
-                    } else {
-                        const spans = document.querySelectorAll('.font-cabecalho-filtro');
-                        spans.forEach(span => {
-                            if (span.textContent.includes('Turma:')) turmaSelecionada = span.textContent.replace('Turma:', '').trim();
-                        });
-                    }
-                    
-                    const payload = { type: 'SISPROF_IMPORT_ALUNOS', alunos: alunos, turmaSED: turmaSelecionada, timestamp: Date.now() };
-                    const frame = document.getElementById('sisprof-iframe');
-                    if (frame) frame.contentWindow.postMessage({ type: 'SISPROF_SAVE_ALUNOS', payload: payload }, '*');
-                };
-
-                window.iniciarExtrairTodasTurmas = async function() {
-                    let selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
-                    let isCustomDropdown = false;
-                    let turmaWrapper = null;
-                    
-                    if (!selectTurma) {
-                        const labels = document.querySelectorAll('.form-label-dropdown');
-                        labels.forEach(l => {
-                            if (l.textContent.trim() === 'Turma') turmaWrapper = l.parentElement;
-                        });
-                        if (turmaWrapper) isCustomDropdown = true;
-                    }
-
-                    if (!selectTurma && !isCustomDropdown) {
-                        return alert('Filtro de turma não encontrado.');
-                    }
-
-                    const todasTurmas = [];
-                    
-                    if (!isCustomDropdown) {
-                        const options = Array.from(selectTurma.options).filter(o => o.value && o.text && !o.text.toLowerCase().includes('selecione') && !o.text.toLowerCase().includes('todos'));
-                        if (options.length === 0) return alert('Nenhuma turma encontrada no seletor.');
-                        if (!confirm('O robô vai processar ' + options.length + ' turmas automaticamente.\\n\\nNÃO CLIQUE em nada até ele terminar. Deseja continuar?')) return;
-
-                        for (let i = 0; i < options.length; i++) {
-                            const opt = options[i];
-                            
-                            selectTurma.value = opt.value;
-                            selectTurma.dispatchEvent(new Event('change', { bubbles: true }));
-                            
-                            const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
-                            let btnBuscar = null;
-                            buttons.forEach(b => {
-                                const text = (b.innerText || b.value || '').toLowerCase();
-                                if (text.includes('pesquisar') || text.includes('buscar')) btnBuscar = b;
-                            });
-                            if (btnBuscar) btnBuscar.click();
-
-                            await new Promise(r => setTimeout(r, 4000));
-                            
-                            const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"], .card_aluno1, .card_aluno');
-                            const alunos = [];
-                            cardsAlunos.forEach(card => {
-                                const nomeElement = card.querySelector('.nome_aluno');
-                                if (!nomeElement) return;
-                                let nomeCompleto = nomeElement.textContent.trim();
-                                nomeCompleto = nomeCompleto.replace(/^\\d+\\s*-\\s*/, '');
-                                alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
-                            });
-                            
-                            if (alunos.length > 0) {
-                                todasTurmas.push({ turmaSED: opt.text.trim(), alunos: alunos });
-                            }
-                        }
-                    } else {
-                        if (!confirm('O robô tentará extrair as turmas automaticamente.\\nNÃO CLIQUE EM NADA na tela.\\nDeseja continuar?')) return;
-                        
-                        const input = turmaWrapper.querySelector('input');
-                        input.click();
-                        await new Promise(r => setTimeout(r, 1000));
-                        
-                        const listItems = document.querySelectorAll('.custom-dropdown li');
-                        const optionsTexts = Array.from(listItems).map(li => li.textContent.trim()).filter(t => !t.toLowerCase().includes('selecione') && !t.toLowerCase().includes('todos'));
-                        
-                        input.click(); 
-                        await new Promise(r => setTimeout(r, 500));
-                        
-                        for (let i = 0; i < optionsTexts.length; i++) {
-                            const text = optionsTexts[i];
-                            
-                            input.click();
-                            await new Promise(r => setTimeout(r, 1000));
-                            
-                            const currentListItems = document.querySelectorAll('.custom-dropdown li');
-                            const targetLi = Array.from(currentListItems).find(li => li.textContent.trim() === text);
-                            if (targetLi) targetLi.click();
-                            
-                            await new Promise(r => setTimeout(r, 1000));
-                            
-                            const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
-                            let btnBuscar = null;
-                            buttons.forEach(b => {
-                                const btext = (b.innerText || b.value || '').toLowerCase();
-                                if (btext.includes('pesquisar') || btext.includes('buscar')) btnBuscar = b;
-                            });
-                            if (btnBuscar) btnBuscar.click();
-                            
-                            await new Promise(r => setTimeout(r, 4000));
-                            
-                            const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"], .card_aluno1, .card_aluno');
-                            const alunos = [];
-                            cardsAlunos.forEach(card => {
-                                const nomeElement = card.querySelector('.nome_aluno');
-                                if (!nomeElement) return;
-                                let nomeCompleto = nomeElement.textContent.trim();
-                                nomeCompleto = nomeCompleto.replace(/^\\d+\\s*-\\s*/, '');
-                                alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
-                            });
-                            
-                            if (alunos.length > 0) {
-                                todasTurmas.push({ turmaSED: text, alunos: alunos });
-                            }
-                        }
-                    }
-                    
-                    if (todasTurmas.length === 0) return alert('Nenhum aluno encontrado nas turmas.');
-                    const payload = { type: 'SISPROF_IMPORT_ALUNOS_MULTI', turmas: todasTurmas, timestamp: Date.now() };
-                    const frame = document.getElementById('sisprof-iframe');
-                    if (frame) frame.contentWindow.postMessage({ type: 'SISPROF_SAVE_ALUNOS', payload: payload }, '*');
-                };
-            }
-        }
-    `;
-
-    // Minifica o código do bookmarklet para garantir que ele rode corretamente como URL
-    return code.replace(/\n/g, ' ').replace(/\s{2,}/g, ' ');
-}
-
 window.enviarDadosParaExtensao = async function(silencioso = false) {
     if (!currentUser) {
         if (!silencioso) alert('Usuário não identificado.');
@@ -1790,6 +1258,19 @@ window.enviarDadosParaExtensao = async function(silencioso = false) {
     }
 };
 
+window.saveRpaDataFromExtension = async function(payload) {
+    if (!currentUser) throw new Error('Usuário não identificado.');
+    const profId = currentUser.uid || currentUser.id;
+    const importKey = 'rpa_import_' + profId;
+    
+    if (typeof saveData === 'function') {
+        await saveData('app_data', importKey, payload);
+        console.log('Dados da extensão salvos na nuvem via content script.');
+    } else {
+        localStorage.setItem(importKey, JSON.stringify(payload));
+    }
+};
+
 window.baixarArquivosExtensao = function() {
     const profId = currentUser ? (currentUser.uid || currentUser.id) : '';
     const urlApp = window.location.href.split('?')[0].split('#')[0];
@@ -1849,6 +1330,25 @@ window.baixarArquivosExtensao = function() {
         });
         return true;
     }
+    if (request.action === 'SAVE_STUDENTS') {
+        chrome.tabs.query({ url: [
+            "*://localhost/*", 
+            "https://*.firebaseapp.com/*", 
+            "https://*.profsis3.com/*", 
+            "https://*.web.app/*", 
+            "https://*.github.io/*"
+        ] }, (tabs) => {
+            const sisprofTab = tabs.find(t => t.url && !t.url.includes('saladofuturo'));
+            if (sisprofTab) {
+                chrome.tabs.sendMessage(sisprofTab.id, { type: 'SAVE_RPA_DATA', payload: request.payload }, (response) => {
+                    sendResponse(chrome.runtime.lastError ? { success: false, error: 'A aba do SisProf não respondeu.' } : response);
+                });
+            } else {
+                sendResponse({ success: false, error: 'Aba do SisProf não encontrada.' });
+            }
+        });
+        return true; // Indica resposta assíncrona
+    }
 });`
         },
         {
@@ -1865,6 +1365,19 @@ window.baixarArquivosExtensao = function() {
                 setTimeout(() => div.remove(), 4000);
             }
         });
+    }
+});
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.type === 'SAVE_RPA_DATA') {
+        if (typeof window.saveRpaDataFromExtension === 'function') {
+            window.saveRpaDataFromExtension(request.payload)
+                .then(() => sendResponse({ success: true }))
+                .catch(err => sendResponse({ success: false, error: err.message }));
+        } else {
+            sendResponse({ success: false, error: 'Função de salvamento não encontrada na página.' });
+        }
+        return true; // Indica resposta assíncrona
     }
 });`
         },
@@ -2158,7 +1671,14 @@ function iniciarExtrairAlunos() {
     // Comunica com o background script para salvar os dados
     chrome.runtime.sendMessage({ action: 'SAVE_STUDENTS', payload: payload }, (response) => {
         if (response && response.success) {
-            mostrarMensagemSucessoExtensao();
+            const contentDiv = document.getElementById('ext-content');
+            if (contentDiv) {
+                contentDiv.style.display = 'none';
+                const successDiv = document.createElement('div');
+                successDiv.id = 'ext-success';
+                successDiv.innerHTML = '<p style="font-size:13px; color:#2f855a; font-weight:bold; margin:15px;">✅ ' + todasTurmas.length + ' turmas salvas na nuvem com sucesso!<br><br>Volte ao SisProf e clique em "Atualizar Turma".</p>';
+                contentDiv.parentElement.appendChild(successDiv);
+            }
         } else {
             alert('Erro ao salvar na nuvem: ' + (response ? response.error : 'Sem resposta do background.'));
         }
@@ -2290,7 +1810,14 @@ async function iniciarExtrairTodasTurmas() {
     // Comunica com o background script para salvar os dados
     chrome.runtime.sendMessage({ action: 'SAVE_STUDENTS', payload: payload }, (response) => {
         if (response && response.success) {
-            mostrarMensagemSucessoExtensao();
+            const contentDiv = document.getElementById('ext-content');
+            if (contentDiv) {
+                contentDiv.style.display = 'none';
+                const successDiv = document.createElement('div');
+                successDiv.id = 'ext-success';
+                successDiv.innerHTML = '<p style="font-size:13px; color:#2f855a; font-weight:bold; margin:15px;">✅ Lista salva na nuvem com sucesso!<br><br>Volte ao SisProf e clique em "Atualizar Turma".</p>';
+                contentDiv.parentElement.appendChild(successDiv);
+            }
         } else {
             alert('Erro ao salvar na nuvem: ' + (response ? response.error : 'Sem resposta do background.'));
         }
@@ -2306,28 +1833,22 @@ async function iniciarExtrairTodasTurmas() {
                 
                 if (payload.faltas) {
                     const alunosAlvo = payload.faltas.map(a => normalize(a.nome));
-                    const cardsAlunos = document.querySelectorAll('div.card_aluno'); // O seletor agora é mais simples
                     const cardsAlunos = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
                     if (cardsAlunos.length > 0) {
                         cardsAlunos.forEach(card => {
-                            const nomeElement = card.querySelector('p.nome_aluno'); // O nome está dentro de um <p>
                             const nomeElement = card.querySelector('.nome_aluno');
                             if (!nomeElement) return;
                             let nomeAluno = normalize(nomeElement.textContent).replace(/^\\d+\\s*-\\s*/, '');
-                            const checkbox = card.querySelector('input[type="checkbox"]'); // O checkbox de falta/presença
                             const checkbox = card.querySelector('.falta_presenca_container input[type="checkbox"], input[type="checkbox"]');
                             if(!checkbox) return;
                             const levouFalta = alunosAlvo.includes(nomeAluno);
-                            if (levouFalta && checkbox.checked) { checkbox.click(); interagidos++; }
-                            else if (!levouFalta && !checkbox.checked) { checkbox.click(); }
-                            if (levouFalta && !checkbox.checked) { checkbox.click(); interagidos++; }
-                            else if (!levouFalta && checkbox.checked) { checkbox.click(); }
+                            const deveEstarPresente = !levouFalta;
+                            if (checkbox.checked !== deveEstarPresente) { checkbox.click(); interagidos++; }
                         });
                     }
                 }
 
                 if(payload.registros && payload.registros.length > 0) {
-                    const txt = document.querySelector('textarea#conteudoAula, textarea.form-control, textarea'); // Seletor atualizado
                     const txt = document.querySelector('textarea[name="o.Descricao"], textarea#conteudoAula, textarea.form-control, textarea');
                     if(txt) {
                         txt.value = payload.registros[0].conteudo;
