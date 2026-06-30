@@ -116,6 +116,7 @@ async function iniciarApp() {
 
         // Injeta botão de Perfil e aplica tema
         injectProfileButton();
+        injectApoieButton();
         aplicarTemaSalvo();
 
         // Sincroniza marcadores AEE de toda a escola para a equipe
@@ -257,6 +258,47 @@ function injectProfileButton() {
     // Insere antes do botão Sair (e depois do botão de Gestor se houver)
     const btnSair = container.querySelector('.btn-danger');
     container.insertBefore(btn, btnSair);
+}
+
+// [NOVO] Função para injetar o botão de Apoio
+function injectApoieButton() {
+    const container = document.getElementById('headerUserArea');
+    if (!container || document.getElementById('btnApoie')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'btnApoie';
+    btn.className = 'btn btn-sm btn-success';
+    btn.style.marginTop = '5px';
+    btn.style.marginRight = '5px';
+    btn.innerHTML = '❤️ Apoie';
+    btn.onclick = abrirModalApoie;
+
+    // Insere antes do botão Sair
+    const btnSair = container.querySelector('.btn-danger');
+    container.insertBefore(btn, btnSair);
+}
+
+function abrirModalApoie() {
+    if (!document.getElementById('modalApoie')) {
+        const div = document.createElement('div');
+        div.id = 'modalApoie';
+        div.className = 'modal';
+        div.innerHTML = `
+            <div class="modal-content" style="max-width: 450px; text-align: center;">
+                <div class="modal-header">
+                    <h2>❤️ Apoie o Projeto</h2>
+                    <button class="close-btn" onclick="closeModal('modalApoie')">×</button>
+                </div>
+                <div style="padding: 20px 25px;">
+                    <p style="font-size:16px; color:#4a5568; line-height:1.5;">Devido a custos operacionais, estamos abrindo para apoio financeiro que pode ser feito por meio de assinatura mensal.</p>
+                    <a href="https://mpago.la/2gkfmyw" target="_blank" class="btn btn-primary" style="display:block; padding: 15px; font-size: 18px; font-weight: bold; text-decoration: none; margin-top: 25px;">Apoiar com R$ 7,00/mês</a>
+                    <p style="font-size:11px; color:#718096; margin-top:8px;">Pagamento seguro via Mercado Pago.</p>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(div);
+    }
+    showModal('modalApoie');
 }
 
 // --- SISTEMA DE TEMAS ---
