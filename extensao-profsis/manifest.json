@@ -13,7 +13,9 @@
     "https://*.educacao.sp.gov.br/*",
     "*://localhost/*",
     "https://*.profsis3.com/*",
-    "https://*.github.io/*"
+    "https://*.github.io/*",
+    "https://identitytoolkit.googleapis.com/*",
+    "https://firestore.googleapis.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -22,16 +24,15 @@
     {
       "matches": ["*://localhost/*", "https://*.firebaseapp.com/*", "https://*.profsis3.com/*", "https://*.web.app/*", "https://*.github.io/*"],
       "js": ["content_profsis.js"],
-      "run_at": "document_end"
+      "run_at": "document_idle"
     },
     {
       "matches": [
         "https://saladofuturoprofessor.educacao.sp.gov.br/*",
-        "https://saladofuturo.educacao.sp.gov.br/*",
-        "https://*.educacao.sp.gov.br/*"
+        "https://saladofuturo.educacao.sp.gov.br/*"
       ],
       "js": ["content_sed.js"],
-      "run_at": "document_end"
+      "run_at": "document_idle"
     }
   ]
 }
