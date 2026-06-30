@@ -1134,14 +1134,14 @@ function montarPayloadPorData(dataStr) {
         // Se houve chamada, pega apenas os faltosos registrados
         faltasNoDia.forEach(f => {
             const estudante = (data.estudantes || []).find(e => e.id == f.id_estudante);
-            if (estudante) alunosFaltantesNomes.push({ nome: estudante.nome_completo });
+            if (estudante) alunosFaltantesNomes.push({ nome: estudante.nome_completo, id_turma: estudante.id_turma });
         });
     } else {
         // Se NÃO houve chamada neste dia, considera TODOS os alunos como faltosos
         // para garantir que a extensão marque todos como falta
         const estudantesAtivos = (data.estudantes || []).filter(e => !e.status || e.status === 'Ativo');
         estudantesAtivos.forEach(e => {
-            alunosFaltantesNomes.push({ nome: e.nome_completo });
+            alunosFaltantesNomes.push({ nome: e.nome_completo, id_turma: e.id_turma });
         });
     }
     
