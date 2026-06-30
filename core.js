@@ -200,9 +200,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Se o Firebase diz que está logado, mas o app não sabe, recupera os dados
                 const usersData = await getData('system', 'users_list');
                 const users = (usersData && usersData.list) ? usersData.list : [];
-                const userProfile = users.find(u => u.email === user.email);
+                // Comparação tolerante: case-insensitive e tolera ausência de ".com"
+                const normalizeEmail = (e) => (e || '').trim().toLowerCase().replace(/\.com$/, '');
+                const userEmailNorm = normalizeEmail(user.email);
+                const userProfile = users.find(u => normalizeEmail(u.email) === userEmailNorm);
                 
                 if (userProfile) {
+                    // Sincroniza o email do Auth no perfil para buscas futuras
+                    userProfile.email = user.email;
                     currentUser = { ...userProfile, uid: user.uid }; // Vincula UID do Auth
                     localStorage.setItem('app_current_user', JSON.stringify(currentUser));
                     // Se estiver na tela de login, recarrega para entrar
@@ -267,9 +272,15 @@ async function fazerLogin(e) {
                 // O onAuthStateChanged vai lidar com o resto, mas buscamos o perfil aqui para agilizar
                 const usersData = await getData('system', 'users_list');
                 const users = (usersData && usersData.list) ? usersData.list : [];
-                const user = users.find(u => u.email === email);
+                // Comparação tolerante: case-insensitive e tolera ausência de ".com"
+                // (necessário porque emails antigos no banco podem não ter ".com")
+                const normalizeEmail = (e) => (e || '').trim().toLowerCase().replace(/\.com$/, '');
+                const emailNorm = normalizeEmail(email);
+                const user = users.find(u => normalizeEmail(u.email) === emailNorm);
                 
                 if (user) {
+                    // Sincroniza o email do Auth no perfil para buscas futuras
+                    user.email = email;
                     localStorage.setItem('app_current_user', JSON.stringify(user));
                     currentUser = user;
                     if (typeof iniciarApp === 'function') iniciarApp();

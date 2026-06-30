@@ -102,13 +102,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     firestoreGet('system', 'users_list', authData.idToken)
                         .then(usersDoc => {
                             const users = (usersDoc && usersDoc.list) ? usersDoc.list : [];
-                            const profile = users.find(u => u.email === authData.email);
+                            // Comparação tolerante: case-insensitive e tolera ausência de ".com"
+                            // (necessário porque emails antigos no banco podem não ter ".com")
+                            const normalizeEmail = (e) => (e || '').trim().toLowerCase().replace(/\.com$/, '');
+                            const authEmailNorm = normalizeEmail(authData.email);
+                            const profile = users.find(u => normalizeEmail(u.email) === authEmailNorm);
                             if (profile) {
+                                // Sincroniza o email do Auth no perfil para buscas futuras
+                                profile.email = authData.email;
                                 chrome.storage.local.set({ fb_profile: profile }, () => {
                                     sendResponse({ success: true, user: profile });
                                 });
                             } else {
-                                sendResponse({ success: false, error: 'Perfil não encontrado no banco.' });
+                                console.warn('Emails no banco:', users.map(u => u.email));
+                                sendResponse({ success: false, error: 'Perfil não encontrado no banco para ' + authData.email });
                             }
                         })
                         .catch(err => {

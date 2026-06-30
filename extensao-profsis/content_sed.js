@@ -1,7 +1,7 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
-// v3.0 - Login direto + busca de dados do Firebase (sem depender do app ProfSis)
+// v2.0 - Login direto + busca de dados do Firebase (sem depender do app ProfSis)
 
-console.log("🤖 content_sed.js EXECUTADO - v3.0 (Firebase Direto)");
+console.log("🤖 content_sed.js EXECUTADO - v2.0 (Firebase Direto)");
 
 // ==================== VARIÁVEIS GLOBAIS ====================
 let extHistory = {};
@@ -241,7 +241,7 @@ function injetarMenu() {
     div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto; transition: all 0.3s ease;';
     div.innerHTML = 
         '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
-            '<span>🤖 Robô SisProf <span id="sisprof-versao" style="font-size:10px; opacity:0.7;">v3.0</span></span>' +
+            '<span>🤖 Robô SisProf <span id="sisprof-versao" style="font-size:10px; opacity:0.7;">v2.0</span></span>' +
             '<div style="display:flex; gap:8px; align-items:center;">' +
                 '<span id="sisprof-user-name" style="font-size:11px; opacity:0.9; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
                 '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;" title="Minimizar">▶</span>' +
