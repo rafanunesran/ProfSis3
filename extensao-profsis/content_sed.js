@@ -17,6 +17,7 @@ let extHistory = {};
 let extDoneMarks = {};
 let currentSelectedDate = "";
 let faltososCache = {}; // Cache de faltosos por turma
+let aulasSelecionadasState = new Set();
 let aulasDisponiveis = []; // Aulas disponíveis na tela
 
 // ==================== FUNÇÕES PRINCIPAIS ====================
@@ -39,7 +40,7 @@ function injetarMenu() {
         '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
             '<span>🤖 Robô SisProf <span id="sisprof-versao" style="font-size:10px; opacity:0.7;">v2.0</span></span>' +
             '<div style="display:flex; gap:8px;">' +
-                '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;" title="Minimizar à esquerda">◀</span>' +
+                '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;" title="Minimizar">▶</span>' +
                 '<span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span>' +
             '</div>' +
         '</div>' +
@@ -92,28 +93,25 @@ function injetarMenu() {
     // Fechar
     document.getElementById('sisprof-fechar').onclick = function() { div.remove(); };
     
-    // Minimizar à esquerda
+    // Minimizar/Maximizar
     document.getElementById('sisprof-minimizar').onclick = function() {
         const conteudo = document.getElementById('sisprof-conteudo');
         const isMinimized = conteudo.style.display === 'none';
         
         if (isMinimized) {
-            // Restaurar
+            // Maximizar
             conteudo.style.display = 'block';
-            div.style.right = '20px';
-            div.style.left = 'auto';
             div.style.width = '350px';
-            this.innerHTML = '◀';
-            this.title = 'Minimizar à esquerda';
+            div.style.padding = '20px';
+            this.innerHTML = '▶';
+            this.title = 'Minimizar';
         } else {
             // Minimizar
             conteudo.style.display = 'none';
-            div.style.right = 'auto';
-            div.style.left = '20px';
-            div.style.width = '50px';
+            div.style.width = 'auto'; // Shrink to fit header
             div.style.padding = '10px';
-            this.innerHTML = '▶';
-            this.title = 'Restaurar';
+            this.innerHTML = '◀';
+            this.title = 'Maximizar';
         }
     };
     
@@ -197,6 +195,19 @@ function injetarMenu() {
     // Carrega dados iniciais
     carregarDados();
     
+    // Observador para reagir a mudanças na tela da SED (ex: carregar alunos)
+    const observer = new MutationObserver((mutations) => {
+        for(let mutation of mutations) {
+            if (mutation.type === 'childList') {
+                // Quando a lista de alunos (.card_aluno) aparece, atualiza a lista de faltosos
+                if (document.querySelector('.card_aluno, .card_aluno1')) {
+                    atualizarInterfacePorData();
+                }
+            }
+        }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
     // Configura data inicial como hoje
     const hoje = new Date();
     document.getElementById('sisprof-data-input').value = hoje.toISOString().split('T')[0];
@@ -255,11 +266,37 @@ function atualizarInterfacePorData() {
 function renderizarListaFaltosos(payload) {
     const container = document.getElementById('sisprof-lista-faltosos');
     if (!container) return;
-    
-    const faltas = payload.faltas || [];
-    
+
+    // Pega a turma atual da tela da SED
+    let turmaSelecionadaTexto = "";
+    const spans = document.querySelectorAll('.font-cabecalho-filtro');
+    spans.forEach(span => {
+        if (span.textContent.includes('Turma:')) {
+            turmaSelecionadaTexto = span.textContent.replace('Turma:', '').trim();
+        }
+    });
+
+    const turmasPayload = payload.turmas || [];
+    let turmaFiltrarId = null;
+
+    if (turmaSelecionadaTexto) {
+        // Encontra a turma correspondente no payload para obter o ID
+        const normalize = s => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+        const sedNomeNorm = normalize(turmaSelecionadaTexto);
+        const turmaMatch = turmasPayload.find(t => sedNomeNorm.includes(normalize(t.nome)));
+        if (turmaMatch) {
+            turmaFiltrarId = turmaMatch.id;
+        }
+    }
+
+    let faltas = payload.faltas || [];
+    // Filtra os faltosos se uma turma foi identificada na tela
+    if (turmaFiltrarId) {
+        faltas = faltas.filter(f => f.id_turma == turmaFiltrarId);
+    }
+
     if (faltas.length === 0) {
-        container.innerHTML = '<div style="color:#38a169; text-align:center; padding:10px 0; font-weight:bold;">✅ Nenhum faltoso para esta data.</div>';
+        container.innerHTML = '<div style="color:#38a169; text-align:center; padding:10px 0; font-weight:bold;">✅ Nenhum faltoso para esta turma/data.</div>';
         return;
     }
     
@@ -302,18 +339,22 @@ function renderizarTurmasPayload(payload) {
         return;
     }
     
+    // Reseta o estado das aulas selecionadas ao carregar um novo payload (nova data)
+    aulasSelecionadasState = new Set(turmas.map(t => String(t.id)));
+
     container.innerHTML = '';
     
     turmas.forEach((turma, index) => {
         const markKey = currentSelectedDate + '_turma_' + turma.id;
         const isDone = extDoneMarks[markKey] || false;
         const label = turma.nome + (turma.disciplina ? ' - ' + turma.disciplina : '') + ' (' + turma.horario + ')';
+        const isChecked = aulasSelecionadasState.has(String(turma.id));
         
         const div = document.createElement('div');
         div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0f0f0; padding:3px 0;';
         
         div.innerHTML = '<label style="cursor:pointer; display:flex; align-items:center; gap:5px; flex:1; font-size:12px;">' +
-            '<input type="checkbox" class="sisprof-aula-chk" data-val="' + turma.id + '" checked> ' + label +
+            '<input type="checkbox" class="sisprof-aula-chk" data-val="' + turma.id + '" ' + (isChecked ? 'checked' : '') + '> ' + label +
             '</label>' +
             '<label style="cursor:pointer; font-size:10px; color:' + (isDone ? '#38a169' : '#a0aec0') + '; font-weight:bold; display:flex; align-items:center; gap:2px;" title="Marcar como Lançado">' +
                 '<input type="checkbox" class="sisprof-done-chk" data-key="' + markKey + '" ' + (isDone ? 'checked' : '') + '> Lançado' +
@@ -321,6 +362,17 @@ function renderizarTurmasPayload(payload) {
         
         container.appendChild(div);
         
+        // Adiciona evento para atualizar o estado da seleção
+        const aulaChk = div.querySelector('.sisprof-aula-chk');
+        aulaChk.addEventListener('change', function() {
+            const val = this.getAttribute('data-val');
+            if (this.checked) {
+                aulasSelecionadasState.add(val);
+            } else {
+                aulasSelecionadasState.delete(val);
+            }
+        });
+
         // Evento para marcar como lançado
         const doneChk = div.querySelector('.sisprof-done-chk');
         doneChk.addEventListener('change', function() {
@@ -346,22 +398,31 @@ function lerAulasDaTela() {
         return;
     }
     
-    aulasDisponiveis = [];
+    const novasAulasDisponiveis = [];
+    checkboxes.forEach(chk => {
+        novasAulasDisponiveis.push({ label: chk.parentElement.textContent.trim(), val: chk.value });
+    });
+
+    // Se a lista de aulas na tela mudou, reseta o estado para todas selecionadas
+    if (aulasDisponiveis.length !== novasAulasDisponiveis.length || 
+        !aulasDisponiveis.every((v, i) => v.val === novasAulasDisponiveis[i].val)) {
+        aulasSelecionadasState = new Set(novasAulasDisponiveis.map(a => a.val));
+    }
+    aulasDisponiveis = novasAulasDisponiveis;
+
     lista.innerHTML = '';
     
-    checkboxes.forEach((chk, index) => {
-        const label = chk.parentElement.textContent.trim();
-        const val = chk.value;
+    aulasDisponiveis.forEach((aula, index) => {
+        const { label, val } = aula;
         const markKey = currentSelectedDate + '_aula_' + val;
         const isDone = extDoneMarks[markKey] || false;
-        
-        aulasDisponiveis.push({ label, val, index });
+        const isChecked = aulasSelecionadasState.has(val);
         
         const div = document.createElement('div');
         div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0f0f0; padding:3px 0;';
         
         div.innerHTML = '<label style="cursor:pointer; display:flex; align-items:center; gap:5px; flex:1; font-size:12px;">' +
-            '<input type="checkbox" class="sisprof-aula-chk" data-val="' + val + '" checked> ' + label +
+            '<input type="checkbox" class="sisprof-aula-chk" data-val="' + val + '" ' + (isChecked ? 'checked' : '') + '> ' + label +
             '</label>' +
             '<label style="cursor:pointer; font-size:10px; color:' + (isDone ? '#38a169' : '#a0aec0') + '; font-weight:bold; display:flex; align-items:center; gap:2px;" title="Marcar como Lançado">' +
                 '<input type="checkbox" class="sisprof-done-chk" data-key="' + markKey + '" ' + (isDone ? 'checked' : '') + '> Lançado' +
@@ -369,6 +430,16 @@ function lerAulasDaTela() {
         
         lista.appendChild(div);
         
+        // Adiciona evento para atualizar o estado da seleção
+        const aulaChk = div.querySelector('.sisprof-aula-chk');
+        aulaChk.addEventListener('change', function() {
+            if (this.checked) {
+                aulasSelecionadasState.add(this.getAttribute('data-val'));
+            } else {
+                aulasSelecionadasState.delete(this.getAttribute('data-val'));
+            }
+        });
+
         // Evento para marcar como lançado
         const doneChk = div.querySelector('.sisprof-done-chk');
         doneChk.addEventListener('change', function() {
@@ -908,13 +979,13 @@ function formatarDataBR(dataStr) {
 // Tenta injetar a cada 2 segundos até conseguir (lida com Blazor que carrega dinamicamente)
 var tentativas = 0;
 var intervalo = setInterval(function() {
-    tentativas++;
     if (document.body && !document.getElementById('sisprof-menu-flutuante')) {
         try { injetarMenu(); } catch(e) { console.error("Erro:", e); }
     }
     if (document.getElementById('sisprof-menu-flutuante') || tentativas > 20) {
         clearInterval(intervalo);
     }
+    tentativas++;
 }, 2000);
 
 // Também tenta imediatamente
