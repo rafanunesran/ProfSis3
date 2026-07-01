@@ -1,5 +1,5 @@
 // BACKGROUND SCRIPT - ProfSis3 Extension
-// v2.5.0 - Extrair Alunos escreve direto no Firestore (sessão do Firebase capturada do ProfSis), com fallback via aba aberta
+// v2.5.1 - Corrige casamento de turma (evita contaminação cruzada) e avisa a aba do ProfSis para recarregar após a escrita
 
 // URLs do ProfSis para buscar abas abertas
 const PROFSIS_URL_PATTERNS = [
@@ -132,50 +132,87 @@ function normalizeAlunoNome(nome) {
     return (nome || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase().replace(/\s+/g, ' ');
 }
 
-// Cria/reativa/remaneja/transfere alunos em `estudantes` (array mutado in-place) para as turmas em `turmaIds`.
-function aplicarAtualizacaoAlunos(estudantes, turmaIds, alunosExtraidos) {
+// Encontra a turma física (local) correspondente ao nome extraído da SED.
+// - Prioriza correspondência EXATA (evita casar "6" com "6ºA" e "6ºB" ao mesmo tempo).
+// - Se ainda houver mais de uma turma FÍSICA candidata (masterId diferente, ou id diferente
+//   quando não há masterId), retorna erro em vez de aplicar em todas (evita contaminação cruzada
+//   entre turmas, que já causou remanejamentos duplicados/errados).
+// - Turmas que só diferem pela disciplina mas compartilham o mesmo masterId contam como UMA turma física.
+function encontrarAlvoTurma(turmasLocais, turmaSED) {
+    const sedNorm = normalizeTurmaNome(turmaSED);
+    const comNorm = (turmasLocais || [])
+        .map(t => ({ turma: t, norm: normalizeTurmaNome((t.nome || '').split('-')[0]) }))
+        .filter(x => x.norm);
+
+    let candidatos = comNorm.filter(x => x.norm === sedNorm);
+    if (candidatos.length === 0) {
+        candidatos = comNorm.filter(x => sedNorm.includes(x.norm) || x.norm.includes(sedNorm));
+    }
+    if (candidatos.length === 0) {
+        return { erro: 'Nenhuma turma local corresponde a "' + turmaSED + '". Verifique se a turma está cadastrada no ProfSis.' };
+    }
+
+    const grupos = new Map();
+    candidatos.forEach(({ turma }) => {
+        const key = String(turma.masterId || turma.id);
+        if (!grupos.has(key)) grupos.set(key, turma);
+    });
+
+    if (grupos.size > 1) {
+        const nomes = [...new Set(candidatos.map(c => c.turma.nome))].join(', ');
+        return { erro: 'Mais de uma turma local corresponde a "' + turmaSED + '" (' + nomes + '). Ajuste os nomes das turmas no ProfSis para que fiquem inequívocos.' };
+    }
+
+    const turma = grupos.values().next().value;
+    return { masterId: turma.masterId || null, turmaId: turma.id };
+}
+
+// Cria/reativa/remaneja/transfere alunos em `estudantes` (array mutado in-place) para a turma `turmaId`.
+function aplicarAtualizacaoAlunos(estudantes, turmaId, alunosExtraidos) {
     let adicionados = 0, reativados = 0, remanejados = 0, transferidos = 0;
     const nomesExtraidosSet = new Set(alunosExtraidos.map(a => normalizeAlunoNome(a.nome)));
 
-    turmaIds.forEach(turmaId => {
-        estudantes.filter(e => e.id_turma == turmaId).forEach(e => {
-            const nomeUpper = normalizeAlunoNome(e.nome_completo);
-            if (!nomesExtraidosSet.has(nomeUpper) && e.status === 'Ativo') {
-                e.status = 'Transferido';
-                transferidos++;
-            }
-        });
-
-        alunosExtraidos.forEach(aExtraido => {
-            const nomeUpper = normalizeAlunoNome(aExtraido.nome);
-            const existenteGlobal = estudantes.find(e => normalizeAlunoNome(e.nome_completo) === nomeUpper);
-            if (existenteGlobal) {
-                if (existenteGlobal.id_turma == turmaId) {
-                    if (existenteGlobal.status !== 'Ativo') { existenteGlobal.status = 'Ativo'; reativados++; }
-                } else {
-                    existenteGlobal.id_turma = turmaId;
-                    existenteGlobal.status = 'Ativo';
-                    remanejados++;
-                }
-            } else {
-                estudantes.push({ id: Date.now() + Math.floor(Math.random() * 10000), id_turma: turmaId, nome_completo: aExtraido.nome, status: 'Ativo' });
-                adicionados++;
-            }
-        });
+    estudantes.filter(e => e.id_turma == turmaId).forEach(e => {
+        const nomeUpper = normalizeAlunoNome(e.nome_completo);
+        if (!nomesExtraidosSet.has(nomeUpper) && e.status === 'Ativo') {
+            e.status = 'Transferido';
+            transferidos++;
+        }
     });
 
-    return { adicionados, reativados, remanejados, transferidos };
+    alunosExtraidos.forEach(aExtraido => {
+        const nomeUpper = normalizeAlunoNome(aExtraido.nome);
+        const existenteGlobal = estudantes.find(e => normalizeAlunoNome(e.nome_completo) === nomeUpper);
+        if (existenteGlobal) {
+            if (existenteGlobal.id_turma == turmaId) {
+                if (existenteGlobal.status !== 'Ativo') { existenteGlobal.status = 'Ativo'; reativados++; }
+            } else {
+                existenteGlobal.id_turma = turmaId;
+                existenteGlobal.status = 'Ativo';
+                remanejados++;
+            }
+        } else {
+            estudantes.push({ id: Date.now() + Math.floor(Math.random() * 10000), id_turma: turmaId, nome_completo: aExtraido.nome, status: 'Ativo' });
+            adicionados++;
+        }
+    });
+
+    return { adicionados, reativados, remanejados, transferidos, turmasAtualizadas: 1 };
 }
 
-// Escreve direto no Firestore: turmas vinculadas à gestão (masterId) vão para o documento
-// compartilhado da escola (visível a todos os professores); turmas próprias vão pro documento do professor.
+// Escreve direto no Firestore: turma vinculada à gestão (masterId) vai para o documento
+// compartilhado da escola (visível a todos os professores); turma própria vai pro documento do professor.
 async function atualizarAlunosDiretoFirebase(payload) {
     const alunos = payload && payload.alunos;
     const turmaSED = payload && payload.turmaSED;
     if (!alunos || !turmaSED) throw new Error('Payload inválido.');
 
     const auth = await getValidFirebaseAuth();
-    if (!auth) throw new Error('Sem sessão do Firebase salva. Faça login no ProfSis pelo menos uma vez.');
+    if (!auth) {
+        const err = new Error('Sem sessão do Firebase salva. Faça login no ProfSis pelo menos uma vez.');
+        err.code = 'NO_SESSION';
+        throw err;
+    }
 
     const userStorage = await chrome.storage.local.get(['profsis_user']);
     const user = userStorage.profsis_user;
@@ -186,50 +223,27 @@ async function atualizarAlunosDiretoFirebase(payload) {
     const profData = await firestoreGetDoc(profDocId, auth.idToken);
     if (!profData) throw new Error('Não foi possível ler os dados do professor no Firestore.');
 
-    const turmasProf = profData.turmas || [];
-    const sedNorm = normalizeTurmaNome(turmaSED);
-    const turmasLocais = turmasProf.filter(t => {
-        const base = (t.nome || '').split('-')[0];
-        const tNorm = normalizeTurmaNome(base);
-        return tNorm && (sedNorm.includes(tNorm) || tNorm.includes(sedNorm));
-    });
+    const alvo = encontrarAlvoTurma(profData.turmas || [], turmaSED);
+    if (alvo.erro) throw new Error(alvo.erro);
 
-    if (turmasLocais.length === 0) {
-        throw new Error('Nenhuma turma local corresponde a "' + turmaSED + '". Verifique se a turma está cadastrada no ProfSis.');
-    }
-
-    const turmasComMaster = turmasLocais.filter(t => t.masterId);
-    const turmasSemMaster = turmasLocais.filter(t => !t.masterId);
-    const total = { adicionados: 0, reativados: 0, remanejados: 0, transferidos: 0, turmasAtualizadas: turmasLocais.length };
-
-    // Turmas vinculadas à gestão: escreve no documento compartilhado da escola (visível a todos os professores)
-    if (turmasComMaster.length > 0) {
+    // Turma vinculada à gestão: escreve no documento compartilhado da escola (visível a todos os professores)
+    if (alvo.masterId) {
         if (!user || !user.schoolId) throw new Error('Escola do usuário não identificada; não é possível compartilhar os alunos.');
         const gestorDocId = 'app_data_school_' + user.schoolId + '_gestor';
         const gestorData = await firestoreGetDoc(gestorDocId, auth.idToken);
         if (!gestorData) throw new Error('Não foi possível ler os dados da escola no Firestore.');
         if (!gestorData.estudantes) gestorData.estudantes = [];
 
-        const masterIds = turmasComMaster.map(t => t.masterId);
-        const r = aplicarAtualizacaoAlunos(gestorData.estudantes, masterIds, alunos);
-        total.adicionados += r.adicionados; total.reativados += r.reativados;
-        total.remanejados += r.remanejados; total.transferidos += r.transferidos;
-
+        const resultado = aplicarAtualizacaoAlunos(gestorData.estudantes, alvo.masterId, alunos);
         await firestoreSetDoc(gestorDocId, gestorData, auth.idToken);
+        return resultado;
     }
 
-    // Turmas próprias (sem vínculo com a gestão): escreve no documento privado do professor
-    if (turmasSemMaster.length > 0) {
-        if (!profData.estudantes) profData.estudantes = [];
-        const turmaIds = turmasSemMaster.map(t => t.id);
-        const r = aplicarAtualizacaoAlunos(profData.estudantes, turmaIds, alunos);
-        total.adicionados += r.adicionados; total.reativados += r.reativados;
-        total.remanejados += r.remanejados; total.transferidos += r.transferidos;
-
-        await firestoreSetDoc(profDocId, profData, auth.idToken);
-    }
-
-    return total;
+    // Turma própria (sem vínculo com a gestão): escreve no documento privado do professor
+    if (!profData.estudantes) profData.estudantes = [];
+    const resultado = aplicarAtualizacaoAlunos(profData.estudantes, alvo.turmaId, alunos);
+    await firestoreSetDoc(profDocId, profData, auth.idToken);
+    return resultado;
 }
 
 // ==================== LISTENER DE MENSAGENS ====================
@@ -421,8 +435,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         atualizarAlunosDiretoFirebase(request.payload).then(resultado => {
             console.log("[Background] Escrita direta no Firestore concluída:", resultado);
             sendResponse({ success: true, direct: true, resultado: resultado });
+            // Pede para qualquer aba aberta do ProfSis recarregar os dados (para refletir a mudança na tela)
+            chrome.tabs.query({}, (tabs) => {
+                tabs.filter(t => isProfSisUrl(t.url)).forEach(t => {
+                    chrome.tabs.sendMessage(t.id, { action: 'PROFSIS_REFRESH_DATA' }, () => { void chrome.runtime.lastError; });
+                });
+            });
         }).catch(errDireto => {
-            console.warn("[Background] Escrita direta falhou, tentando via aba do ProfSis:", errDireto.message);
+            // Só tenta o caminho via aba do ProfSis quando o motivo for falta de sessão do Firebase.
+            // Erros de dados (turma não encontrada, turma ambígua, etc.) são reais e não seriam
+            // resolvidos tentando de novo por outro caminho - só confundiriam o usuário.
+            if (errDireto.code !== 'NO_SESSION') {
+                console.error("[Background] Falha ao atualizar alunos:", errDireto.message);
+                sendResponse({ success: false, error: errDireto.message });
+                return;
+            }
+            console.warn("[Background] Sem sessão do Firebase, tentando via aba do ProfSis:", errDireto.message);
             chrome.tabs.query({}, (tabs) => {
                 const profsisTab = tabs.find(t => isProfSisUrl(t.url));
                 if (profsisTab) {
@@ -525,4 +553,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-console.log("✅ Background script carregado! (v2.5.0 - Escrita direta no Firestore)");
+console.log("✅ Background script carregado! (v2.5.1 - Escrita direta no Firestore)");

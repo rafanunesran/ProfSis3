@@ -1,8 +1,8 @@
 // CONTENT SCRIPT - ProfSis3 (Injetado no site do ProfSis)
-// v2.5.0 - Extrair Alunos: repassa a sessão do Firebase Auth para a extensão escrever direto no Firestore
+// v2.5.1 - Repassa pedido de recarga de dados (PROFSIS_REFRESH_DATA) após escrita direta no Firestore
 // Faz a ponte entre o app (postMessage) e a extensão (chrome.runtime)
 
-console.log("🧩 Extensão ProfSis3 ativa na página do ProfSis! (v2.5.0)");
+console.log("🧩 Extensão ProfSis3 ativa na página do ProfSis! (v2.5.1)");
 
 // ==================== DETECÇÃO DE LOGIN ====================
 
@@ -190,6 +190,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // Responde imediatamente; o app.js processará de forma assíncrona
         sendResponse({ success: true, message: 'Evento disparado para o app.' });
     }
+    // ---- A extensão escreveu direto no Firestore (via background) - pede para esta aba recarregar os dados ----
+    if (request.action === "PROFSIS_REFRESH_DATA") {
+        console.log("[ProfSis Ext] 🔄 Extensão pediu para recarregar os dados após atualização de alunos.");
+        window.dispatchEvent(new CustomEvent('SisProf_Refresh_Data'));
+        sendResponse({ received: true });
+    }
 });
 
-console.log("✅ Ponte postMessage ↔ chrome.runtime estabelecida! (v2.5.0)");
+console.log("✅ Ponte postMessage ↔ chrome.runtime estabelecida! (v2.5.1)");

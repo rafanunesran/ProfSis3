@@ -1697,12 +1697,92 @@ window.addEventListener('SisProf_Update_Students', async (event) => {
     }
 });
 
-// Processa a atualização de alunos vindos da SED (funciona para gestão e professor).
-// Mesma lógica de casamento de turma usada em processarImportacaoMultiSED, mas com remanejamento
-// global: um aluno já cadastrado em outra turma é movido para a turma da chamada, em vez de duplicado.
+// A extensão escreveu direto no Firestore (via background) - esta aba precisa recarregar seus dados
+// para não ficar mostrando a lista de alunos desatualizada.
+window.addEventListener('SisProf_Refresh_Data', async () => {
+    console.log('[SisProf] 🔄 Recarregando dados após atualização de alunos pela extensão...');
+    if (typeof carregarDadosUsuario === 'function') await carregarDadosUsuario();
+    if (typeof turmaAtual !== 'undefined' && turmaAtual && typeof abrirTurma === 'function') {
+        await abrirTurma(turmaAtual);
+        if (document.getElementById('turmaDetalhe') && document.getElementById('turmaDetalhe').classList.contains('active') && typeof showTurmaTab === 'function') {
+            showTurmaTab('estudantes');
+        }
+    }
+});
+
+// Acha a turma física local (mesma lógica em extensao-profsis/background.js: encontrarAlvoTurma).
+// Prioriza correspondência EXATA de nome (evita casar "6" com "6ºA" e "6ºB" ao mesmo tempo) e, se
+// mais de uma turma FÍSICA ainda corresponder (masterId diferente, ou id diferente sem masterId),
+// falha em vez de aplicar em todas (evita contaminação cruzada / remanejamentos duplicados).
+function encontrarAlvoTurmaExtensao(turmasLocais, turmaSED, normalizeTurma) {
+    const sedNorm = normalizeTurma(turmaSED);
+    const comNorm = (turmasLocais || [])
+        .map(t => ({ turma: t, norm: normalizeTurma((t.nome || '').split('-')[0]) }))
+        .filter(x => x.norm);
+
+    let candidatos = comNorm.filter(x => x.norm === sedNorm);
+    if (candidatos.length === 0) {
+        candidatos = comNorm.filter(x => sedNorm.includes(x.norm) || x.norm.includes(sedNorm));
+    }
+    if (candidatos.length === 0) {
+        return { erro: `Nenhuma turma local corresponde a "${turmaSED}". Verifique se a turma está cadastrada no ProfSis.` };
+    }
+
+    const grupos = new Map();
+    candidatos.forEach(({ turma }) => {
+        const key = String(turma.masterId || turma.id);
+        if (!grupos.has(key)) grupos.set(key, turma);
+    });
+
+    if (grupos.size > 1) {
+        const nomes = [...new Set(candidatos.map(c => c.turma.nome))].join(', ');
+        return { erro: `Mais de uma turma local corresponde a "${turmaSED}" (${nomes}). Ajuste os nomes das turmas no ProfSis para que fiquem inequívocos.` };
+    }
+
+    const turma = grupos.values().next().value;
+    return { masterId: turma.masterId || null, turmaId: turma.id };
+}
+
+// Cria/reativa/remaneja/transfere alunos em `estudantes` (array mutado in-place) para a turma `turmaId`.
+function aplicarAtualizacaoAlunosExtensao(estudantes, turmaId, alunosExtraidos, normalizeName) {
+    let adicionados = 0, reativados = 0, remanejados = 0, transferidos = 0;
+    const nomesExtraidosSet = new Set(alunosExtraidos.map(a => normalizeName(a.nome)));
+
+    estudantes.filter(e => e.id_turma == turmaId).forEach(e => {
+        const nomeUpper = normalizeName(e.nome_completo);
+        if (!nomesExtraidosSet.has(nomeUpper) && e.status === 'Ativo') {
+            e.status = 'Transferido';
+            transferidos++;
+        }
+    });
+
+    alunosExtraidos.forEach(aExtraido => {
+        const nomeUpper = normalizeName(aExtraido.nome);
+        const existenteGlobal = estudantes.find(e => normalizeName(e.nome_completo) === nomeUpper);
+        if (existenteGlobal) {
+            if (existenteGlobal.id_turma == turmaId) {
+                if (existenteGlobal.status !== 'Ativo') { existenteGlobal.status = 'Ativo'; reativados++; }
+            } else {
+                existenteGlobal.id_turma = turmaId;
+                existenteGlobal.status = 'Ativo';
+                remanejados++;
+            }
+        } else {
+            estudantes.push({ id: Date.now() + Math.floor(Math.random() * 10000), id_turma: turmaId, nome_completo: aExtraido.nome, status: 'Ativo' });
+            adicionados++;
+        }
+    });
+
+    return { adicionados, reativados, remanejados, transferidos, turmasAtualizadas: 1 };
+}
+
+// Processa a atualização de alunos vindos da SED (fallback via aba aberta, quando a extensão não tem
+// sessão do Firebase salva). Turma vinculada à gestão (masterId) grava no documento COMPARTILHADO da
+// escola (não na cópia pessoal do professor, que é resincronizada a partir de lá sempre que a turma é
+// aberta - gravar só na cópia pessoal faria os alunos novos desaparecerem na próxima vez que a turma
+// fosse aberta). Turma própria grava direto em `data` via persistirDados(), como o resto do app.
 async function processarAtualizacaoAlunosExtensao(payload) {
     if (!currentUser) throw new Error('Usuário não identificado.');
-    if (!data.estudantes) data.estudantes = [];
     if (!data.turmas) data.turmas = [];
 
     const alunosExtraidos = payload.alunos;
@@ -1711,78 +1791,25 @@ async function processarAtualizacaoAlunosExtensao(payload) {
     const normalizeTurma = (t) => t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "").replace(/\s+/g, '');
     const normalizeName = (name) => name.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toUpperCase().replace(/\s+/g, ' ');
 
-    const sedNorm = normalizeTurma(turmaSED);
+    const alvo = encontrarAlvoTurmaExtensao(data.turmas, turmaSED, normalizeTurma);
+    if (alvo.erro) throw new Error(alvo.erro);
 
-    // Busca turmas locais que correspondem ao nome da turma da SED (ignora a disciplina após o traço)
-    const turmasLocais = data.turmas.filter(t => {
-        const tNomeBase = t.nome.split('-')[0];
-        const tNorm = normalizeTurma(tNomeBase);
-        return tNorm && (sedNorm.includes(tNorm) || tNorm.includes(sedNorm));
-    });
+    if (alvo.masterId) {
+        if (!currentUser.schoolId) throw new Error('Escola do usuário não identificada; não é possível compartilhar os alunos.');
+        const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+        const gestorData = await getData('app_data', key);
+        if (!gestorData) throw new Error('Não foi possível ler os dados da escola.');
+        if (!gestorData.estudantes) gestorData.estudantes = [];
 
-    if (turmasLocais.length === 0) {
-        throw new Error(`Nenhuma turma local corresponde a "${turmaSED}". Verifique se a turma está cadastrada no ProfSis.`);
+        const resultado = aplicarAtualizacaoAlunosExtensao(gestorData.estudantes, alvo.masterId, alunosExtraidos, normalizeName);
+        await saveData('app_data', key, gestorData);
+        return resultado;
     }
 
-    let totalAdicionados = 0;
-    let totalReativados = 0;
-    let totalRemanejados = 0;
-    let totalTransferidos = 0;
-
-    const nomesExtraidosSet = new Set(alunosExtraidos.map(a => normalizeName(a.nome)));
-
-    turmasLocais.forEach(tLocal => {
-        const estudantesTurma = data.estudantes.filter(e => e.id_turma == tLocal.id);
-
-        // 1. Marca como 'Transferido' os alunos ativos da turma que NÃO estão na lista da SED
-        estudantesTurma.forEach(e => {
-            const nomeUpper = normalizeName(e.nome_completo);
-            if (!nomesExtraidosSet.has(nomeUpper) && e.status === 'Ativo') {
-                e.status = 'Transferido';
-                totalTransferidos++;
-            }
-        });
-
-        // 2. Processa cada aluno extraído da SED
-        alunosExtraidos.forEach(aExtraido => {
-            const nomeUpper = normalizeName(aExtraido.nome);
-
-            // Procura o aluno em TODAS as turmas (não apenas nesta)
-            const existenteGlobal = data.estudantes.find(e => normalizeName(e.nome_completo) === nomeUpper);
-
-            if (existenteGlobal) {
-                if (existenteGlobal.id_turma == tLocal.id) {
-                    if (existenteGlobal.status !== 'Ativo') {
-                        existenteGlobal.status = 'Ativo';
-                        totalReativados++;
-                    }
-                } else {
-                    // Existe em outra turma - remaneja para esta turma
-                    existenteGlobal.id_turma = tLocal.id;
-                    existenteGlobal.status = 'Ativo';
-                    totalRemanejados++;
-                }
-            } else {
-                data.estudantes.push({
-                    id: Date.now() + Math.floor(Math.random() * 10000),
-                    id_turma: tLocal.id,
-                    nome_completo: aExtraido.nome,
-                    status: 'Ativo'
-                });
-                totalAdicionados++;
-            }
-        });
-    });
-
+    if (!data.estudantes) data.estudantes = [];
+    const resultado = aplicarAtualizacaoAlunosExtensao(data.estudantes, alvo.turmaId, alunosExtraidos, normalizeName);
     await persistirDados();
-
-    return {
-        adicionados: totalAdicionados,
-        reativados: totalReativados,
-        remanejados: totalRemanejados,
-        transferidos: totalTransferidos,
-        turmasAtualizadas: turmasLocais.length
-    };
+    return resultado;
 }
 
 function salvarTurma(e) {

@@ -1,7 +1,7 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
-// v2.5.0 - Adiciona o botão "Extrair Alunos" (atualiza o banco do ProfSis direto a partir da tela de chamada)
+// v2.5.1 - Corrige casamento de turma no "Extrair Alunos" (evita contaminação cruzada entre turmas)
 
-    console.log("🤖 content_sed.js EXECUTADO - v2.5.0");
+    console.log("🤖 content_sed.js EXECUTADO - v2.5.1");
 
 // ==================== VARIÁVEIS GLOBAIS ====================
 let extHistory = {};
@@ -211,7 +211,7 @@ function injetarMenu() {
     div.id = 'sisprof-menu-flutuante';
     div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;';
     div.innerHTML = '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
-            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v2.5.0</span></span>' +
+            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v2.5.1</span></span>' +
         '<div style="display:flex; gap:8px; align-items:center;"><span id="sisprof-user-name" style="font-size:11px; opacity:0.9; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
         '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;">▶</span><span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span></div></div>' +
         '<div id="sisprof-conteudo"><p style="margin:0 0 10px 0; color:#4a5568; font-size:13px;">✅ Conectado ao ProfSis!</p>' +
