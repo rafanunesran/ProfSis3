@@ -1,5 +1,5 @@
 // BACKGROUND SCRIPT - ProfSis3 Extension
-// v2.0.1 - Nova abordagem: detecta login do ProfSis em aba aberta (sem Firebase Auth)
+// v2.1.0 - Nova abordagem: detecta login do ProfSis em aba aberta (sem Firebase Auth)
 
 // URLs do ProfSis para buscar abas abertas
 const PROFSIS_URL_PATTERNS = [
@@ -178,6 +178,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         chrome.storage.local.remove(['profsis_user', 'profsis_logged_in', 'profsis_app_data', 'profsis_login_time', 'profsis_data_time'], () => {
             console.log('[Logout] Dados do ProfSis limpos.');
             sendResponse({ success: true });
+        });
+        return true;
+    }
+    
+    // ---- SED: Atualizar alunos direto no banco do ProfSis ----
+    if (request.action === "UPDATE_STUDENTS_DB") {
+        console.log("[Background] Atualizando alunos no banco do ProfSis:", request.payload.turmaSED);
+        chrome.tabs.query({}, (tabs) => {
+            const profsisTab = tabs.find(t => isProfSisUrl(t.url));
+            if (profsisTab) {
+                chrome.tabs.sendMessage(profsisTab.id, { 
+                    action: "PROFSIS_UPDATE_STUDENTS", 
+                    payload: request.payload 
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        console.error("[Background] Erro ao enviar para ProfSis:", chrome.runtime.lastError);
+                        sendResponse({ success: false, error: 'Erro de comunicação com o ProfSis.' });
+                    } else if (response && response.success) {
+                        sendResponse({ success: true });
+                    } else {
+                        sendResponse({ success: false, error: 'ProfSis não processou a atualização.' });
+                    }
+                });
+            } else {
+                sendResponse({ success: false, error: 'ProfSis não está aberto.' });
+            }
         });
         return true;
     }

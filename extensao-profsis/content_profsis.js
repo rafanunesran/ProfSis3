@@ -1,8 +1,8 @@
 // CONTENT SCRIPT - ProfSis3 (Injetado no site do ProfSis)
-// v2.0.1 - Detecta login e envia dados do usuário + dados completos para a extensão
+// v2.1.0 - Detecta login e envia dados do usuário + dados completos para a extensão
 // Faz a ponte entre o app (postMessage) e a extensão (chrome.runtime)
 
-console.log("🧩 Extensão ProfSis3 ativa na página do ProfSis! (v2.0.1)");
+console.log("🧩 Extensão ProfSis3 ativa na página do ProfSis! (v2.1.0)");
 
 // ==================== DETECÇÃO DE LOGIN ====================
 
@@ -175,6 +175,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const logged = verificarLoginProfSis();
         sendResponse({ logged: logged });
     }
+    // ---- NOVO: Atualizar alunos direto no banco (vindo da SED) ----
+    if (request.action === "PROFSIS_UPDATE_STUDENTS") {
+        console.log("[ProfSis Ext] 📥 Atualizar alunos no banco:", request.payload.turmaSED, "-", (request.payload.alunos || []).length, "alunos");
+        // Dispara um evento customizado para o app.js processar a atualização no banco
+        window.dispatchEvent(new CustomEvent('SisProf_Update_Students', { detail: request.payload }));
+        // Responde imediatamente; o app.js processará assíncrono
+        sendResponse({ success: true, message: 'Evento disparado para o app.' });
+    }
 });
 
-console.log("✅ Ponte postMessage ↔ chrome.runtime estabelecida! (v2.0.1)");
+console.log("✅ Ponte postMessage ↔ chrome.runtime estabelecida! (v2.1.0)");
