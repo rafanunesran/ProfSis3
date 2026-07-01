@@ -1678,11 +1678,14 @@ window.addEventListener('SisProf_Update_Students', async (event) => {
         const resultado = await processarAtualizacaoAlunosExtensao(payload);
         console.log('[SisProf] ✅ Atualização concluída:', resultado);
 
+        const avisoSeguranca = resultado.transferenciaBloqueada
+            ? `<br><br>⚠️ <strong>Nenhum aluno foi marcado como transferido:</strong> a lista raspada (${resultado.extraidos}) está bem menor que os ${resultado.ativosAntes} alunos já ativos. Confira se a tela da SED carregou todos os alunos.`
+            : '';
         const div = document.createElement('div');
         div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#38a169; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
-        div.innerHTML = `✅ <strong>Alunos Atualizados!</strong><br><span style="font-size:12px; font-weight:normal;">Turma: ${payload.turmaSED}<br>✔️ Novos: ${resultado.adicionados} | 🔄 Reativados: ${resultado.reativados} | 📋 Remanejados: ${resultado.remanejados} | ❌ Transferidos: ${resultado.transferidos}</span>`;
+        div.innerHTML = `✅ <strong>Alunos Atualizados!</strong><br><span style="font-size:12px; font-weight:normal;">Turma: ${payload.turmaSED}<br>✔️ Novos: ${resultado.adicionados} | 🔄 Reativados: ${resultado.reativados} | 📋 Remanejados: ${resultado.remanejados} | ❌ Transferidos: ${resultado.transferidos}${avisoSeguranca}</span>`;
         document.body.appendChild(div);
-        setTimeout(() => div.remove(), 6000);
+        setTimeout(() => div.remove(), resultado.transferenciaBloqueada ? 12000 : 6000);
 
         if (typeof turmaAtual !== 'undefined' && document.getElementById('turmaDetalhe') && document.getElementById('turmaDetalhe').classList.contains('active')) {
             showTurmaTab('estudantes');
@@ -1744,17 +1747,25 @@ function encontrarAlvoTurmaExtensao(turmasLocais, turmaSED, normalizeTurma) {
 }
 
 // Cria/reativa/remaneja/transfere alunos em `estudantes` (array mutado in-place) para a turma `turmaId`.
+// [SEGURANÇA] Só marca ausentes como "Transferido" se a lista extraída cobrir pelo menos 60% dos
+// alunos já ativos na turma. Uma raspagem parcial da tela (ex: cards da SED ainda carregando) não
+// pode ser interpretada como "o aluno saiu da turma" - isso já apagou turmas inteiras por engano.
 function aplicarAtualizacaoAlunosExtensao(estudantes, turmaId, alunosExtraidos, normalizeName) {
     let adicionados = 0, reativados = 0, remanejados = 0, transferidos = 0;
     const nomesExtraidosSet = new Set(alunosExtraidos.map(a => normalizeName(a.nome)));
 
-    estudantes.filter(e => e.id_turma == turmaId).forEach(e => {
-        const nomeUpper = normalizeName(e.nome_completo);
-        if (!nomesExtraidosSet.has(nomeUpper) && e.status === 'Ativo') {
-            e.status = 'Transferido';
-            transferidos++;
-        }
-    });
+    const ativosAtuais = estudantes.filter(e => e.id_turma == turmaId && e.status === 'Ativo');
+    const transferenciaSegura = ativosAtuais.length < 3 || alunosExtraidos.length >= ativosAtuais.length * 0.6;
+
+    if (transferenciaSegura) {
+        ativosAtuais.forEach(e => {
+            const nomeUpper = normalizeName(e.nome_completo);
+            if (!nomesExtraidosSet.has(nomeUpper)) {
+                e.status = 'Transferido';
+                transferidos++;
+            }
+        });
+    }
 
     alunosExtraidos.forEach(aExtraido => {
         const nomeUpper = normalizeName(aExtraido.nome);
@@ -1773,7 +1784,12 @@ function aplicarAtualizacaoAlunosExtensao(estudantes, turmaId, alunosExtraidos, 
         }
     });
 
-    return { adicionados, reativados, remanejados, transferidos, turmasAtualizadas: 1 };
+    return {
+        adicionados, reativados, remanejados, transferidos, turmasAtualizadas: 1,
+        transferenciaBloqueada: !transferenciaSegura,
+        ativosAntes: ativosAtuais.length,
+        extraidos: alunosExtraidos.length
+    };
 }
 
 // Processa a atualização de alunos vindos da SED (fallback via aba aberta, quando a extensão não tem
@@ -2169,9 +2185,10 @@ async function renderEstudantes() {
         ${aeeHtml}
         ${muralHtml}
         ${isGestor ? `
-            <div style="display:flex; gap: 10px; margin-bottom: 10px;">
+            <div style="display:flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
                 <button class="btn btn-primary btn-sm" onclick="abrirModalNovoEstudante()">+ Novo Estudante</button>
                 <button class="btn btn-secondary btn-sm" onclick="showModal('modalImportarEstudantes')">📂 Importar CSV</button>
+                ${estudantes.some(e => e.status && e.status !== 'Ativo') ? `<button class="btn btn-success btn-sm" onclick="reativarTodosTransferidosTurma()">🔄 Reativar todos os Transferidos desta turma</button>` : ''}
             </div>
         ` : ''}
         <table style="margin-top:10px;">
@@ -2206,7 +2223,7 @@ async function renderEstudantes() {
                             ${badgeBimestre}
                         </td>
                         <td><span style="font-size:12px; padding:2px 6px; border-radius:4px; background:#edf2f7;">${e.status || 'Ativo'}</span></td>
-                        <td>${isGestor ? `<button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})">🗑️</button>` : '<span style="color:#ccc;">-</span>'}</td>
+                        <td>${isGestor ? `${e.status && e.status !== 'Ativo' ? `<button class="btn btn-success btn-sm" onclick="reativarEstudante(${e.id})" title="Marcar como Ativo de novo">🔄 Reativar</button> ` : ''}<button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})">🗑️</button>` : '<span style="color:#ccc;">-</span>'}</td>
                     </tr>
                 `}).join('')}
             </tbody>
@@ -2250,6 +2267,28 @@ function removerEstudante(id) {
         persistirDados();
         renderEstudantes();
     }
+}
+
+// Reverte um estudante marcado como Transferido/etc. de volta para Ativo.
+// Útil para corrigir transferências em massa feitas por engano (ex: importação com lista incompleta).
+function reativarEstudante(id) {
+    const est = (data.estudantes || []).find(e => e.id == id);
+    if (!est) return;
+    est.status = 'Ativo';
+    persistirDados();
+    renderEstudantes();
+}
+
+// Reativa de uma vez todos os estudantes não-Ativos da turma atual. Mostra os nomes antes de aplicar,
+// para o gestor conferir se são mesmo transferências indevidas (ex: erro do "Extrair Alunos").
+function reativarTodosTransferidosTurma() {
+    const afetados = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && e.status && e.status !== 'Ativo');
+    if (afetados.length === 0) return;
+    const nomes = afetados.map(e => `• ${e.nome_completo} (${e.status})`).join('\n');
+    if (!confirm(`Reativar ${afetados.length} estudante(s) desta turma?\n\n${nomes}\n\nTodos voltarão para o status "Ativo".`)) return;
+    afetados.forEach(e => { e.status = 'Ativo'; });
+    persistirDados();
+    renderEstudantes();
 }
 
 // --- CHAMADA ---

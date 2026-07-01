@@ -1,5 +1,5 @@
 // BACKGROUND SCRIPT - ProfSis3 Extension
-// v2.5.1 - Corrige casamento de turma (evita contaminação cruzada) e avisa a aba do ProfSis para recarregar após a escrita
+// v2.5.2 - Proteção contra raspagem parcial: nunca marca ninguém como Transferido se a lista extraída parecer incompleta
 
 // URLs do ProfSis para buscar abas abertas
 const PROFSIS_URL_PATTERNS = [
@@ -168,17 +168,25 @@ function encontrarAlvoTurma(turmasLocais, turmaSED) {
 }
 
 // Cria/reativa/remaneja/transfere alunos em `estudantes` (array mutado in-place) para a turma `turmaId`.
+// [SEGURANÇA] Só marca ausentes como "Transferido" se a lista extraída cobrir pelo menos 60% dos
+// alunos já ativos na turma. Uma raspagem parcial da tela (ex: cards da SED ainda carregando) não
+// pode ser interpretada como "o aluno saiu da turma" - isso já apagou turmas inteiras por engano.
 function aplicarAtualizacaoAlunos(estudantes, turmaId, alunosExtraidos) {
     let adicionados = 0, reativados = 0, remanejados = 0, transferidos = 0;
     const nomesExtraidosSet = new Set(alunosExtraidos.map(a => normalizeAlunoNome(a.nome)));
 
-    estudantes.filter(e => e.id_turma == turmaId).forEach(e => {
-        const nomeUpper = normalizeAlunoNome(e.nome_completo);
-        if (!nomesExtraidosSet.has(nomeUpper) && e.status === 'Ativo') {
-            e.status = 'Transferido';
-            transferidos++;
-        }
-    });
+    const ativosAtuais = estudantes.filter(e => e.id_turma == turmaId && e.status === 'Ativo');
+    const transferenciaSegura = ativosAtuais.length < 3 || alunosExtraidos.length >= ativosAtuais.length * 0.6;
+
+    if (transferenciaSegura) {
+        ativosAtuais.forEach(e => {
+            const nomeUpper = normalizeAlunoNome(e.nome_completo);
+            if (!nomesExtraidosSet.has(nomeUpper)) {
+                e.status = 'Transferido';
+                transferidos++;
+            }
+        });
+    }
 
     alunosExtraidos.forEach(aExtraido => {
         const nomeUpper = normalizeAlunoNome(aExtraido.nome);
@@ -197,7 +205,12 @@ function aplicarAtualizacaoAlunos(estudantes, turmaId, alunosExtraidos) {
         }
     });
 
-    return { adicionados, reativados, remanejados, transferidos, turmasAtualizadas: 1 };
+    return {
+        adicionados, reativados, remanejados, transferidos, turmasAtualizadas: 1,
+        transferenciaBloqueada: !transferenciaSegura,
+        ativosAntes: ativosAtuais.length,
+        extraidos: alunosExtraidos.length
+    };
 }
 
 // Escreve direto no Firestore: turma vinculada à gestão (masterId) vai para o documento
@@ -553,4 +566,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-console.log("✅ Background script carregado! (v2.5.1 - Escrita direta no Firestore)");
+console.log("✅ Background script carregado! (v2.5.2 - Escrita direta no Firestore)");

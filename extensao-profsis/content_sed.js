@@ -1,7 +1,7 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
-// v2.5.1 - Corrige casamento de turma no "Extrair Alunos" (evita contaminação cruzada entre turmas)
+// v2.5.2 - Espera a lista de alunos estabilizar antes de raspar e bloqueia transferências em massa por raspagem incompleta
 
-    console.log("🤖 content_sed.js EXECUTADO - v2.5.1");
+    console.log("🤖 content_sed.js EXECUTADO - v2.5.2");
 
 // ==================== VARIÁVEIS GLOBAIS ====================
 let extHistory = {};
@@ -211,7 +211,7 @@ function injetarMenu() {
     div.id = 'sisprof-menu-flutuante';
     div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;';
     div.innerHTML = '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
-            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v2.5.1</span></span>' +
+            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v2.5.2</span></span>' +
         '<div style="display:flex; gap:8px; align-items:center;"><span id="sisprof-user-name" style="font-size:11px; opacity:0.9; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
         '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;">▶</span><span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span></div></div>' +
         '<div id="sisprof-conteudo"><p style="margin:0 0 10px 0; color:#4a5568; font-size:13px;">✅ Conectado ao ProfSis!</p>' +
@@ -387,50 +387,79 @@ function executarPreenchimento(payload) {
 
 // ==================== EXTRAIR ALUNOS (atualiza direto no banco) ====================
 
-function iniciarExtrairAlunos() {
-    const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"], .card_aluno1, .card_aluno');
-    if (cardsAlunos.length === 0) return alert('Nenhum aluno encontrado na tela. Abra a tela de chamada da turma desejada primeiro!');
+const SELETOR_CARDS_ALUNO = '.grid-listagem > div[class*="card_aluno"], .card_aluno1, .card_aluno';
 
-    const btn = document.getElementById('sisprof-btn-extrair');
-    if (btn) { btn.textContent = '⏳ Extraindo e atualizando...'; btn.disabled = true; }
-
-    const alunos = [];
-    cardsAlunos.forEach(card => {
-        const nomeElement = card.querySelector('.nome_aluno');
-        if (!nomeElement) return;
-        let nomeCompleto = nomeElement.textContent.trim().replace(/^\d+\s*[-.]?\s*/, '');
-        alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
-    });
-
-    // Detecta a turma selecionada na SED
-    let turmaSelecionada = "Desconhecida";
-    const selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
-    if (selectTurma && selectTurma.options[selectTurma.selectedIndex]) {
-        turmaSelecionada = selectTurma.options[selectTurma.selectedIndex].text.trim();
-    } else {
-        document.querySelectorAll('.font-cabecalho-filtro').forEach(span => {
-            if (span.textContent.includes('Turma:')) turmaSelecionada = span.textContent.replace('Turma:', '').trim();
-        });
-    }
-
-    console.log('[SisProf Ext] Extraindo', alunos.length, 'alunos da turma', turmaSelecionada);
-
-    // Pede ao background para escrever direto no Firestore (ou, se não houver sessão salva, via aba do ProfSis)
-    const payload = { alunos: alunos, turmaSED: turmaSelecionada, timestamp: Date.now() };
-    chrome.runtime.sendMessage({ action: 'UPDATE_STUDENTS_DB', payload: payload }, (response) => {
-        if (btn) { btn.textContent = '📥 Extrair Alunos (Atualizar Banco)'; btn.disabled = false; }
-        if (chrome.runtime.lastError) {
-            alert('⚠️ Erro de comunicação com a extensão: ' + chrome.runtime.lastError.message);
-            return;
-        }
-        if (response && response.success) {
-            const r = response.resultado;
-            const via = response.direct ? 'direto no banco' : 'via aba do ProfSis';
-            const detalhes = r ? ('\n\n✔️ Novos: ' + r.adicionados + ' | 🔄 Reativados: ' + r.reativados + ' | 📋 Remanejados: ' + r.remanejados + ' | ❌ Transferidos: ' + r.transferidos) : '';
-            alert('✅ ' + alunos.length + ' aluno(s) processados ' + via + '!\n\nTurma: ' + turmaSelecionada + detalhes);
+// A SED é uma SPA (Blazor) que renderiza os cards de aluno aos poucos. Raspar a tela imediatamente
+// ao clicar pode pegar uma lista PARCIAL (poucos cards ainda montados) - o que já fez a extensão
+// marcar erroneamente a maioria da turma como "Transferido". Por isso, só considera a lista pronta
+// quando a contagem de cards não mudar entre duas checagens seguidas.
+function aguardarCardsEstaveis(callback, tentativas) {
+    tentativas = tentativas || 0;
+    const contagem1 = document.querySelectorAll(SELETOR_CARDS_ALUNO).length;
+    setTimeout(() => {
+        const contagem2 = document.querySelectorAll(SELETOR_CARDS_ALUNO).length;
+        if (contagem2 === contagem1 || tentativas >= 6) {
+            callback();
         } else {
-            alert('⚠️ Não foi possível atualizar o banco.\n' + (response ? response.error : 'Sem resposta da extensão.') + '\n\nDica: faça login no ProfSis pelo menos uma vez para a extensão salvar sua sessão.');
+            aguardarCardsEstaveis(callback, tentativas + 1);
         }
+    }, 400);
+}
+
+function iniciarExtrairAlunos() {
+    const btn = document.getElementById('sisprof-btn-extrair');
+    if (btn) { btn.textContent = '⏳ Aguardando lista carregar...'; btn.disabled = true; }
+
+    aguardarCardsEstaveis(() => {
+        const cardsAlunos = document.querySelectorAll(SELETOR_CARDS_ALUNO);
+        if (cardsAlunos.length === 0) {
+            if (btn) { btn.textContent = '📥 Extrair Alunos (Atualizar Banco)'; btn.disabled = false; }
+            return alert('Nenhum aluno encontrado na tela. Abra a tela de chamada da turma desejada primeiro!');
+        }
+
+        if (btn) btn.textContent = '⏳ Extraindo e atualizando...';
+
+        const alunos = [];
+        cardsAlunos.forEach(card => {
+            const nomeElement = card.querySelector('.nome_aluno');
+            if (!nomeElement) return;
+            let nomeCompleto = nomeElement.textContent.trim().replace(/^\d+\s*[-.]?\s*/, '');
+            alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
+        });
+
+        // Detecta a turma selecionada na SED
+        let turmaSelecionada = "Desconhecida";
+        const selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
+        if (selectTurma && selectTurma.options[selectTurma.selectedIndex]) {
+            turmaSelecionada = selectTurma.options[selectTurma.selectedIndex].text.trim();
+        } else {
+            document.querySelectorAll('.font-cabecalho-filtro').forEach(span => {
+                if (span.textContent.includes('Turma:')) turmaSelecionada = span.textContent.replace('Turma:', '').trim();
+            });
+        }
+
+        console.log('[SisProf Ext] Extraindo', alunos.length, 'alunos da turma', turmaSelecionada);
+
+        // Pede ao background para escrever direto no Firestore (ou, se não houver sessão salva, via aba do ProfSis)
+        const payload = { alunos: alunos, turmaSED: turmaSelecionada, timestamp: Date.now() };
+        chrome.runtime.sendMessage({ action: 'UPDATE_STUDENTS_DB', payload: payload }, (response) => {
+            if (btn) { btn.textContent = '📥 Extrair Alunos (Atualizar Banco)'; btn.disabled = false; }
+            if (chrome.runtime.lastError) {
+                alert('⚠️ Erro de comunicação com a extensão: ' + chrome.runtime.lastError.message);
+                return;
+            }
+            if (response && response.success) {
+                const r = response.resultado;
+                const via = response.direct ? 'direto no banco' : 'via aba do ProfSis';
+                const detalhes = r ? ('\n\n✔️ Novos: ' + r.adicionados + ' | 🔄 Reativados: ' + r.reativados + ' | 📋 Remanejados: ' + r.remanejados + ' | ❌ Transferidos: ' + r.transferidos) : '';
+                const avisoSeguranca = (r && r.transferenciaBloqueada)
+                    ? '\n\n⚠️ ATENÇÃO: a lista raspada (' + r.extraidos + ') está bem menor que os alunos já ativos na turma (' + r.ativosAntes + '). Por segurança, NINGUÉM foi marcado como transferido desta vez. Confira se a tela da SED carregou todos os alunos antes de tentar de novo.'
+                    : '';
+                alert('✅ ' + alunos.length + ' aluno(s) processados ' + via + '!\n\nTurma: ' + turmaSelecionada + detalhes + avisoSeguranca);
+            } else {
+                alert('⚠️ Não foi possível atualizar o banco.\n' + (response ? response.error : 'Sem resposta da extensão.') + '\n\nDica: faça login no ProfSis pelo menos uma vez para a extensão salvar sua sessão.');
+            }
+        });
     });
 }
 
