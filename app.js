@@ -1662,6 +1662,129 @@ function processarImportacaoMultiSED() {
     }
 }
 
+// ==================== ATUALIZAÇÃO DIRETA DE ALUNOS VIA EXTENSÃO (SED → Banco) ====================
+// Fallback usado pela extensão quando ela não tem uma sessão do Firebase salva para escrever
+// direto no Firestore: pede para esta aba (se aberta) processar e salvar a atualização.
+window.addEventListener('SisProf_Update_Students', async (event) => {
+    const payload = event.detail;
+    if (!payload || !payload.alunos || !payload.turmaSED) {
+        console.warn('[SisProf] Payload de atualização de alunos inválido:', payload);
+        return;
+    }
+
+    console.log('[SisProf] 📥 Atualizando alunos no banco via extensão:', payload.turmaSED, '-', payload.alunos.length, 'alunos');
+
+    try {
+        const resultado = await processarAtualizacaoAlunosExtensao(payload);
+        console.log('[SisProf] ✅ Atualização concluída:', resultado);
+
+        const div = document.createElement('div');
+        div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#38a169; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
+        div.innerHTML = `✅ <strong>Alunos Atualizados!</strong><br><span style="font-size:12px; font-weight:normal;">Turma: ${payload.turmaSED}<br>✔️ Novos: ${resultado.adicionados} | 🔄 Reativados: ${resultado.reativados} | 📋 Remanejados: ${resultado.remanejados} | ❌ Transferidos: ${resultado.transferidos}</span>`;
+        document.body.appendChild(div);
+        setTimeout(() => div.remove(), 6000);
+
+        if (typeof turmaAtual !== 'undefined' && document.getElementById('turmaDetalhe') && document.getElementById('turmaDetalhe').classList.contains('active')) {
+            showTurmaTab('estudantes');
+        }
+    } catch (e) {
+        console.error('[SisProf] ❌ Erro ao atualizar alunos:', e);
+        const div = document.createElement('div');
+        div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#e53e3e; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
+        div.innerHTML = `❌ <strong>Erro ao atualizar alunos:</strong><br><span style="font-size:12px; font-weight:normal;">${e.message}</span>`;
+        document.body.appendChild(div);
+        setTimeout(() => div.remove(), 6000);
+    }
+});
+
+// Processa a atualização de alunos vindos da SED (funciona para gestão e professor).
+// Mesma lógica de casamento de turma usada em processarImportacaoMultiSED, mas com remanejamento
+// global: um aluno já cadastrado em outra turma é movido para a turma da chamada, em vez de duplicado.
+async function processarAtualizacaoAlunosExtensao(payload) {
+    if (!currentUser) throw new Error('Usuário não identificado.');
+    if (!data.estudantes) data.estudantes = [];
+    if (!data.turmas) data.turmas = [];
+
+    const alunosExtraidos = payload.alunos;
+    const turmaSED = payload.turmaSED;
+
+    const normalizeTurma = (t) => t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "").replace(/\s+/g, '');
+    const normalizeName = (name) => name.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toUpperCase().replace(/\s+/g, ' ');
+
+    const sedNorm = normalizeTurma(turmaSED);
+
+    // Busca turmas locais que correspondem ao nome da turma da SED (ignora a disciplina após o traço)
+    const turmasLocais = data.turmas.filter(t => {
+        const tNomeBase = t.nome.split('-')[0];
+        const tNorm = normalizeTurma(tNomeBase);
+        return tNorm && (sedNorm.includes(tNorm) || tNorm.includes(sedNorm));
+    });
+
+    if (turmasLocais.length === 0) {
+        throw new Error(`Nenhuma turma local corresponde a "${turmaSED}". Verifique se a turma está cadastrada no ProfSis.`);
+    }
+
+    let totalAdicionados = 0;
+    let totalReativados = 0;
+    let totalRemanejados = 0;
+    let totalTransferidos = 0;
+
+    const nomesExtraidosSet = new Set(alunosExtraidos.map(a => normalizeName(a.nome)));
+
+    turmasLocais.forEach(tLocal => {
+        const estudantesTurma = data.estudantes.filter(e => e.id_turma == tLocal.id);
+
+        // 1. Marca como 'Transferido' os alunos ativos da turma que NÃO estão na lista da SED
+        estudantesTurma.forEach(e => {
+            const nomeUpper = normalizeName(e.nome_completo);
+            if (!nomesExtraidosSet.has(nomeUpper) && e.status === 'Ativo') {
+                e.status = 'Transferido';
+                totalTransferidos++;
+            }
+        });
+
+        // 2. Processa cada aluno extraído da SED
+        alunosExtraidos.forEach(aExtraido => {
+            const nomeUpper = normalizeName(aExtraido.nome);
+
+            // Procura o aluno em TODAS as turmas (não apenas nesta)
+            const existenteGlobal = data.estudantes.find(e => normalizeName(e.nome_completo) === nomeUpper);
+
+            if (existenteGlobal) {
+                if (existenteGlobal.id_turma == tLocal.id) {
+                    if (existenteGlobal.status !== 'Ativo') {
+                        existenteGlobal.status = 'Ativo';
+                        totalReativados++;
+                    }
+                } else {
+                    // Existe em outra turma - remaneja para esta turma
+                    existenteGlobal.id_turma = tLocal.id;
+                    existenteGlobal.status = 'Ativo';
+                    totalRemanejados++;
+                }
+            } else {
+                data.estudantes.push({
+                    id: Date.now() + Math.floor(Math.random() * 10000),
+                    id_turma: tLocal.id,
+                    nome_completo: aExtraido.nome,
+                    status: 'Ativo'
+                });
+                totalAdicionados++;
+            }
+        });
+    });
+
+    await persistirDados();
+
+    return {
+        adicionados: totalAdicionados,
+        reativados: totalReativados,
+        remanejados: totalRemanejados,
+        transferidos: totalTransferidos,
+        turmasAtualizadas: turmasLocais.length
+    };
+}
+
 function salvarTurma(e) {
     e.preventDefault();
     const id = document.getElementById('turmaId').value;

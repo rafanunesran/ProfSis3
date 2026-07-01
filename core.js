@@ -189,6 +189,21 @@ async function sincronizarFaltasCompartilhadas(dataStr, mapEstadoFaltas) {
 
 // --- FIM CONFIGURAÇÃO ---
 
+// Repassa a sessão do Firebase Auth (refresh token) para a extensão SisProf, se instalada.
+// Permite que a extensão leia/escreva no Firestore direto (ex: extrair alunos da SED), sem depender desta aba aberta.
+function repassarSessaoFirebaseParaExtensao(user) {
+    if (!user || !user.refreshToken) return;
+    try {
+        const apiKey = firebase.app().options.apiKey;
+        window.postMessage({
+            type: 'EXT_FIREBASE_SESSION',
+            session: { refreshToken: user.refreshToken, apiKey: apiKey, uid: user.uid, email: user.email }
+        }, '*');
+    } catch (e) {
+        console.warn('[SisProf] Falha ao repassar sessão do Firebase para a extensão:', e);
+    }
+}
+
 // Inicialização
 document.addEventListener('DOMContentLoaded', () => {
     init();
@@ -196,6 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // [NOVO] Monitorar estado do login do Firebase (Mantém a sessão ativa)
     if (USE_FIREBASE && typeof firebase !== 'undefined') {
         firebase.auth().onAuthStateChanged(async (user) => {
+            if (user) repassarSessaoFirebaseParaExtensao(user);
             if (user && !currentUser) {
                 // Se o Firebase diz que está logado, mas o app não sabe, recupera os dados
                 const usersData = await getData('system', 'users_list');

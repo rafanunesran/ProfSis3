@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ProfSis3 - Extensão para Aulas de Hoje",
-  "version": "2.4.3",
-  "description": "Exibe as aulas do dia do ProfSis em um card de agenda na Sala do Futuro.",
+  "version": "2.5.0",
+  "description": "Exibe as aulas do dia do ProfSis em um card de agenda na Sala do Futuro e permite extrair alunos direto para o banco.",
   "permissions": [
     "tabs",
     "storage",
@@ -17,7 +17,9 @@
     "https://*.firebaseapp.com/*",
     "https://*.profsis3.com/*",
     "https://*.web.app/*",
-    "https://*.github.io/*"
+    "https://*.github.io/*",
+    "https://securetoken.googleapis.com/*",
+    "https://firestore.googleapis.com/*"
   ],
   "background": {
     "service_worker": "background.js"

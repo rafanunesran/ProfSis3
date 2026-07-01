@@ -1,8 +1,8 @@
 // CONTENT SCRIPT - ProfSis3 (Injetado no site do ProfSis)
-// v2.3.0 - Removido o fluxo de "Extrair Alunos" (sessão do Firebase e PROFSIS_UPDATE_STUDENTS)
+// v2.5.0 - Extrair Alunos: repassa a sessão do Firebase Auth para a extensão escrever direto no Firestore
 // Faz a ponte entre o app (postMessage) e a extensão (chrome.runtime)
 
-console.log("🧩 Extensão ProfSis3 ativa na página do ProfSis! (v2.3.0)");
+console.log("🧩 Extensão ProfSis3 ativa na página do ProfSis! (v2.5.0)");
 
 // ==================== DETECÇÃO DE LOGIN ====================
 
@@ -132,6 +132,13 @@ window.addEventListener('SisProf_Fetch_Turmas_Estado', () => {
 // 2. Escuta postMessage do app.js (enviado por window.enviarDadosParaExtensao)
 window.addEventListener('message', (event) => {
     // Aceita mensagens de qualquer origem (mesma página)
+
+    // Sessão do Firebase Auth (refresh token) para a extensão escrever direto no Firestore
+    if (event.data && event.data.type === 'EXT_FIREBASE_SESSION') {
+        chrome.runtime.sendMessage({ action: 'PROFSIS_FIREBASE_SESSION', session: event.data.session });
+        return;
+    }
+
     if (event.data && event.data.type === 'EXT_SEND_PAYLOAD') {
         console.log("📨 Payload recebido via postMessage:", event.data.payload);
         
@@ -175,6 +182,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const logged = verificarLoginProfSis();
         sendResponse({ logged: logged });
     }
+    // ---- Atualizar alunos direto no banco (fallback, quando a extensão não tem sessão Firebase salva) ----
+    if (request.action === "PROFSIS_UPDATE_STUDENTS") {
+        console.log("[ProfSis Ext] 📥 Atualizar alunos no banco (via aba):", request.payload.turmaSED, "-", (request.payload.alunos || []).length, "alunos");
+        // Dispara um evento customizado para o app.js processar a atualização no banco
+        window.dispatchEvent(new CustomEvent('SisProf_Update_Students', { detail: request.payload }));
+        // Responde imediatamente; o app.js processará de forma assíncrona
+        sendResponse({ success: true, message: 'Evento disparado para o app.' });
+    }
 });
 
-console.log("✅ Ponte postMessage ↔ chrome.runtime estabelecida! (v2.3.0)");
+console.log("✅ Ponte postMessage ↔ chrome.runtime estabelecida! (v2.5.0)");
