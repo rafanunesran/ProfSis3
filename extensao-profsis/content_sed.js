@@ -1,7 +1,7 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
-// v2.3.0 - Removido o botão "Extrair Alunos"
+// v2.4.3 - Corrige a fonte de dados da agenda: usa schoolGrade/schoolExceptions (igual ao card Agenda do Dia do dashboard do ProfSis), não gradeHoraria
 
-    console.log("🤖 content_sed.js EXECUTADO - v2.3.0");
+    console.log("🤖 content_sed.js EXECUTADO - v2.4.3");
 
 // ==================== VARIÁVEIS GLOBAIS ====================
 let extHistory = {};
@@ -173,6 +173,35 @@ function montarPayloadPorData(dataStr) {
     return { data: dataStr, faltas: alunosFaltantesNomes, registros: registrosNoDia.map(r => ({ conteudo: r.conteudo })), fechamento: [] };
 }
 
+// Turmas que o professor tem no dia — mesma lógica do card "Agenda do Dia" do dashboard do ProfSis
+// (app.js renderDashboard): grade da escola + exceções do dia, cruzadas com horariosAulas do professor.
+// Usa schoolGrade/schoolExceptions (cópia que o ProfSis salva no professor ao abrir uma turma),
+// já que a extensão não tem acesso direto ao documento da gestão.
+function montarTurmasDoDia(dataStr) {
+    if (!dataStr) return [];
+    const gradeEscola = profsisAppData.schoolGrade || [];
+    const excecoesGrade = profsisAppData.schoolExceptions || [];
+    const minhasAulas = profsisAppData.horariosAulas || [];
+    const turmas = profsisAppData.turmas || [];
+    const diaSemana = new Date(dataStr + 'T12:00:00').getDay();
+    const excecaoDoDia = excecoesGrade.find(e => e.data === dataStr);
+    const blocosDoDia = excecaoDoDia
+        ? (excecaoDoDia.blocos || [])
+        : gradeEscola.filter(g => g.diaSemana == diaSemana).sort((a, b) => (a.inicio || '').localeCompare(b.inicio || ''));
+
+    const lista = [];
+    blocosDoDia.forEach(bloco => {
+        const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
+        if (aula && aula.tipo === 'aula' && aula.id_turma) {
+            const turma = turmas.find(t => t.id == aula.id_turma);
+            if (turma && turma.nome && turma.disciplina && !lista.some(t => t.id === turma.id)) {
+                lista.push({ id: turma.id, nome: turma.nome, disciplina: turma.disciplina });
+            }
+        }
+    });
+    return lista;
+}
+
 // ==================== MENU FLUTUANTE ====================
 
 function injetarMenu() {
@@ -182,13 +211,17 @@ function injetarMenu() {
     div.id = 'sisprof-menu-flutuante';
     div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;';
     div.innerHTML = '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
-            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v2.3.0</span></span>' +
+            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v2.4.3</span></span>' +
         '<div style="display:flex; gap:8px; align-items:center;"><span id="sisprof-user-name" style="font-size:11px; opacity:0.9; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
         '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;">▶</span><span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span></div></div>' +
         '<div id="sisprof-conteudo"><p style="margin:0 0 10px 0; color:#4a5568; font-size:13px;">✅ Conectado ao ProfSis!</p>' +
         '<div style="background:#f0fff4; padding:10px; border-radius:8px; border:1px solid #c6f6d5; margin-bottom:10px;"><label style="font-size:12px; font-weight:bold; color:#276749; display:block; margin-bottom:4px;">📅 Selecione o Dia:</label>' +
         '<div style="display:flex; gap:5px;"><input type="date" id="sisprof-data-input" style="flex:1; padding:6px; border:1px solid #cbd5e0; border-radius:4px; font-size:12px;"><button id="sisprof-btn-hoje" style="background:#38a169; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">Hoje</button></div></div>' +
         '<div id="sisprof-status" style="background:#f7fafc; padding:10px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:10px; font-size:11px; color:#718096;">Verificando...</div>' +
+        '<div style="border:1px solid #e2e8f0; border-radius:8px; margin-bottom:10px; overflow:hidden;">' +
+            '<div style="background:#f7fafc; padding:6px 8px; font-size:11px; font-weight:bold; color:#4a5568; border-bottom:1px solid #e2e8f0;">📚 Aulas do Dia</div>' +
+            '<div id="sisprof-lista-turmas"></div>' +
+        '</div>' +
         '<button id="sisprof-btn-preencher" style="width:100%; background:#3182ce; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px; margin-bottom:8px;">✅ Preencher Chamada</button>' +
         '<hr style="border:0; border-top:1px solid #e2e8f0; margin:10px 0;">' +
         '<button id="sisprof-btn-logout" style="width:100%; background:#718096; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px;">🚪 Desconectar</button></div>';
@@ -232,12 +265,44 @@ function atualizarInterfacePorData() {
     if (!statusEl) return;
     if (!currentSelectedDate || !extHistory[currentSelectedDate]) {
         statusEl.innerHTML = '⏳ <strong>Sem dados para esta data.</strong><br>Verifique se há chamadas no ProfSis.';
+        renderizarListaTurmasDoDia();
         return;
     }
     const payload = extHistory[currentSelectedDate];
     const numFaltas = (payload.faltas && payload.faltas.length) ? payload.faltas.length : 0;
     const temRegistro = (payload.registros && payload.registros.length > 0 && payload.registros[0].conteudo) ? 'Sim' : 'Não';
     statusEl.innerHTML = '<strong>📅 ' + formatarDataBR(currentSelectedDate) + '</strong><br>🔴 Faltosos (Gestão): <strong>' + numFaltas + '</strong><br>📝 Registro: <strong>' + temRegistro + '</strong>';
+    renderizarListaTurmasDoDia();
+}
+
+// Aulas que o professor tem no dia selecionado (consulta a agenda: gradeHoraria + horariosAulas),
+// com checkbox para marcar como concluído.
+function renderizarListaTurmasDoDia() {
+    const container = document.getElementById('sisprof-lista-turmas');
+    if (!container) return;
+    const turmas = montarTurmasDoDia(currentSelectedDate);
+    if (turmas.length === 0) {
+        container.innerHTML = '<div style="color:#a0aec0; text-align:center; padding:10px 0; font-size:12px;">Nenhuma aula para este dia.</div>';
+        return;
+    }
+    container.innerHTML = '';
+    turmas.forEach(turma => {
+        const markKey = currentSelectedDate + '_turma_' + turma.id;
+        const isDone = extDoneMarks[markKey] || false;
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0f0f0; padding:6px 8px;';
+        div.innerHTML =
+            '<span style="font-size:12px; color:#2d3748; font-weight:600;">' + turma.nome + ' ' + turma.disciplina + '</span>' +
+            '<input type="checkbox" class="sisprof-turma-done-chk" data-key="' + markKey + '" ' + (isDone ? 'checked' : '') + '>';
+        container.appendChild(div);
+        div.querySelector('.sisprof-turma-done-chk').addEventListener('change', function() {
+            const key = this.getAttribute('data-key');
+            extDoneMarks[key] = this.checked;
+            chrome.runtime.sendMessage({ action: 'SAVE_MARKS', marks: extDoneMarks });
+        });
+    });
+    const last = container.lastElementChild;
+    if (last) last.style.borderBottom = 'none';
 }
 
 // ==================== PREENCHIMENTO ====================
