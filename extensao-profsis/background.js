@@ -1,5 +1,5 @@
 // BACKGROUND SCRIPT - ProfSis3 Extension
-// v2.2.0 - Extrair Alunos escreve direto no Firestore (sessão do Firebase capturada do ProfSis), sem depender da aba aberta
+// v2.3.0 - Removido o fluxo de "Extrair Alunos" (escrita direta no Firestore e relay via ProfSis)
 
 // URLs do ProfSis para buscar abas abertas
 const PROFSIS_URL_PATTERNS = [
@@ -15,221 +15,6 @@ const PROFSIS_URL_PATTERNS = [
 function isProfSisUrl(url) {
     if (!url) return false;
     return PROFSIS_URL_PATTERNS.some(pattern => pattern.test(url));
-}
-
-// ==================== ESCRITA DIRETA NO FIRESTORE ====================
-// Reaproveita a sessão do Firebase Auth capturada do ProfSis (refresh token) para
-// ler/escrever no Firestore direto do background, sem precisar da aba do ProfSis aberta.
-
-const FIRESTORE_PROJECT_ID = 'profsis3';
-
-// Troca o refresh token por um ID token válido, renovando e cacheando conforme necessário.
-async function getValidFirebaseAuth() {
-    const stored = await chrome.storage.local.get(['profsis_firebase_session', 'profsis_id_token_cache']);
-    const session = stored.profsis_firebase_session;
-    if (!session || !session.refreshToken || !session.apiKey) return null;
-
-    const cache = stored.profsis_id_token_cache;
-    const now = Date.now();
-    if (cache && cache.idToken && cache.expiresAt && cache.expiresAt > now + 60000) {
-        return { idToken: cache.idToken, uid: cache.uid };
-    }
-
-    let resp;
-    try {
-        resp = await fetch('https://securetoken.googleapis.com/v1/token?key=' + encodeURIComponent(session.apiKey), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(session.refreshToken)
-        });
-    } catch (e) {
-        return null;
-    }
-    if (!resp.ok) return null;
-
-    const json = await resp.json();
-    const idToken = json.id_token;
-    const expiresAt = now + ((parseInt(json.expires_in, 10) || 3600) * 1000);
-
-    await chrome.storage.local.set({
-        profsis_firebase_session: { ...session, refreshToken: json.refresh_token || session.refreshToken },
-        profsis_id_token_cache: { idToken: idToken, uid: json.user_id, expiresAt: expiresAt }
-    });
-    return { idToken: idToken, uid: json.user_id };
-}
-
-// ---- Serialização de valores Firestore (REST) ↔ objetos JS simples ----
-function toFirestoreValue(v) {
-    if (v === null || v === undefined) return { nullValue: null };
-    if (typeof v === 'boolean') return { booleanValue: v };
-    if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
-    if (typeof v === 'string') return { stringValue: v };
-    if (Array.isArray(v)) return { arrayValue: { values: v.map(toFirestoreValue) } };
-    if (typeof v === 'object') {
-        const fields = {};
-        Object.keys(v).forEach(k => { if (v[k] !== undefined) fields[k] = toFirestoreValue(v[k]); });
-        return { mapValue: { fields: fields } };
-    }
-    return { nullValue: null };
-}
-
-function fromFirestoreValue(fv) {
-    if (!fv) return null;
-    if ('nullValue' in fv) return null;
-    if ('booleanValue' in fv) return fv.booleanValue;
-    if ('integerValue' in fv) return parseInt(fv.integerValue, 10);
-    if ('doubleValue' in fv) return fv.doubleValue;
-    if ('stringValue' in fv) return fv.stringValue;
-    if ('timestampValue' in fv) return fv.timestampValue;
-    if ('arrayValue' in fv) return (fv.arrayValue.values || []).map(fromFirestoreValue);
-    if ('mapValue' in fv) {
-        const obj = {};
-        const fields = fv.mapValue.fields || {};
-        Object.keys(fields).forEach(k => { obj[k] = fromFirestoreValue(fields[k]); });
-        return obj;
-    }
-    return null;
-}
-
-function firestoreDocToPlainObject(doc) {
-    const fields = (doc && doc.fields) || {};
-    const obj = {};
-    Object.keys(fields).forEach(k => { obj[k] = fromFirestoreValue(fields[k]); });
-    return obj;
-}
-
-// Lê um documento em app_data/{docId}. Retorna null se não existir.
-async function firestoreGetDoc(docId, idToken) {
-    const url = 'https://firestore.googleapis.com/v1/projects/' + FIRESTORE_PROJECT_ID + '/databases/(default)/documents/app_data/' + encodeURIComponent(docId);
-    const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + idToken } });
-    if (resp.status === 404) return null;
-    if (!resp.ok) throw new Error('Erro ao ler dados no Firestore (' + resp.status + ')');
-    const json = await resp.json();
-    return firestoreDocToPlainObject(json);
-}
-
-// Sobrescreve por completo o documento em app_data/{docId} (mesma semântica do saveData() do app: set() integral).
-async function firestoreSetDoc(docId, dataObj, idToken) {
-    const url = 'https://firestore.googleapis.com/v1/projects/' + FIRESTORE_PROJECT_ID + '/databases/(default)/documents/app_data/' + encodeURIComponent(docId);
-    const fields = {};
-    Object.keys(dataObj).forEach(k => { if (dataObj[k] !== undefined) fields[k] = toFirestoreValue(dataObj[k]); });
-    const resp = await fetch(url, {
-        method: 'PATCH',
-        headers: { 'Authorization': 'Bearer ' + idToken, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: fields })
-    });
-    if (!resp.ok) {
-        const errText = await resp.text().catch(() => '');
-        throw new Error('Erro ao salvar no Firestore (' + resp.status + '): ' + errText);
-    }
-}
-
-// ---- Lógica de atualização de alunos (espelha processarAtualizacaoAlunosExtensao do app.js) ----
-function normalizeTurmaNome(t) {
-    return (t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '').replace(/\s+/g, '');
-}
-function normalizeAlunoNome(nome) {
-    return (nome || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase().replace(/\s+/g, ' ');
-}
-
-// Cria/reativa/remaneja/transfere alunos em `estudantes` (array mutado in-place) para as turmas em `turmaIds`.
-function aplicarAtualizacaoAlunos(estudantes, turmaIds, alunosExtraidos) {
-    let adicionados = 0, reativados = 0, remanejados = 0, transferidos = 0;
-    const nomesExtraidosSet = new Set(alunosExtraidos.map(a => normalizeAlunoNome(a.nome)));
-
-    turmaIds.forEach(turmaId => {
-        estudantes.filter(e => e.id_turma == turmaId).forEach(e => {
-            const nomeUpper = normalizeAlunoNome(e.nome_completo);
-            if (!nomesExtraidosSet.has(nomeUpper) && e.status === 'Ativo') {
-                e.status = 'Transferido';
-                transferidos++;
-            }
-        });
-
-        alunosExtraidos.forEach(aExtraido => {
-            const nomeUpper = normalizeAlunoNome(aExtraido.nome);
-            const existenteGlobal = estudantes.find(e => normalizeAlunoNome(e.nome_completo) === nomeUpper);
-            if (existenteGlobal) {
-                if (existenteGlobal.id_turma == turmaId) {
-                    if (existenteGlobal.status !== 'Ativo') { existenteGlobal.status = 'Ativo'; reativados++; }
-                } else {
-                    existenteGlobal.id_turma = turmaId;
-                    existenteGlobal.status = 'Ativo';
-                    remanejados++;
-                }
-            } else {
-                estudantes.push({ id: Date.now() + Math.floor(Math.random() * 10000), id_turma: turmaId, nome_completo: aExtraido.nome, status: 'Ativo' });
-                adicionados++;
-            }
-        });
-    });
-
-    return { adicionados, reativados, remanejados, transferidos };
-}
-
-// Escreve direto no Firestore: turmas vinculadas à gestão (masterId) vão para o documento
-// compartilhado da escola (visível a todos os professores); turmas próprias vão pro documento do professor.
-async function atualizarAlunosDiretoFirebase(payload) {
-    const alunos = payload && payload.alunos;
-    const turmaSED = payload && payload.turmaSED;
-    if (!alunos || !turmaSED) throw new Error('Payload inválido.');
-
-    const auth = await getValidFirebaseAuth();
-    if (!auth) throw new Error('Sem sessão do Firebase salva. Faça login no ProfSis pelo menos uma vez.');
-
-    const userStorage = await chrome.storage.local.get(['profsis_user']);
-    const user = userStorage.profsis_user;
-    const uid = (user && user.uid) || auth.uid;
-    if (!uid) throw new Error('Usuário do ProfSis não identificado.');
-
-    const profDocId = 'app_data_' + uid;
-    const profData = await firestoreGetDoc(profDocId, auth.idToken);
-    if (!profData) throw new Error('Não foi possível ler os dados do professor no Firestore.');
-
-    const turmasProf = profData.turmas || [];
-    const sedNorm = normalizeTurmaNome(turmaSED);
-    const turmasLocais = turmasProf.filter(t => {
-        const base = (t.nome || '').split('-')[0];
-        const tNorm = normalizeTurmaNome(base);
-        return tNorm && (sedNorm.includes(tNorm) || tNorm.includes(sedNorm));
-    });
-
-    if (turmasLocais.length === 0) {
-        throw new Error('Nenhuma turma local corresponde a "' + turmaSED + '". Verifique se a turma está cadastrada no ProfSis.');
-    }
-
-    const turmasComMaster = turmasLocais.filter(t => t.masterId);
-    const turmasSemMaster = turmasLocais.filter(t => !t.masterId);
-    const total = { adicionados: 0, reativados: 0, remanejados: 0, transferidos: 0, turmasAtualizadas: turmasLocais.length };
-
-    // Turmas vinculadas à gestão: escreve no documento compartilhado da escola (visível a todos os professores)
-    if (turmasComMaster.length > 0) {
-        if (!user || !user.schoolId) throw new Error('Escola do usuário não identificada; não é possível compartilhar os alunos.');
-        const gestorDocId = 'app_data_school_' + user.schoolId + '_gestor';
-        const gestorData = await firestoreGetDoc(gestorDocId, auth.idToken);
-        if (!gestorData) throw new Error('Não foi possível ler os dados da escola no Firestore.');
-        if (!gestorData.estudantes) gestorData.estudantes = [];
-
-        const masterIds = turmasComMaster.map(t => t.masterId);
-        const r = aplicarAtualizacaoAlunos(gestorData.estudantes, masterIds, alunos);
-        total.adicionados += r.adicionados; total.reativados += r.reativados;
-        total.remanejados += r.remanejados; total.transferidos += r.transferidos;
-
-        await firestoreSetDoc(gestorDocId, gestorData, auth.idToken);
-    }
-
-    // Turmas próprias (sem vínculo com a gestão): escreve no documento privado do professor
-    if (turmasSemMaster.length > 0) {
-        if (!profData.estudantes) profData.estudantes = [];
-        const turmaIds = turmasSemMaster.map(t => t.id);
-        const r = aplicarAtualizacaoAlunos(profData.estudantes, turmaIds, alunos);
-        total.adicionados += r.adicionados; total.reativados += r.reativados;
-        total.remanejados += r.remanejados; total.transferidos += r.transferidos;
-
-        await firestoreSetDoc(profDocId, profData, auth.idToken);
-    }
-
-    return total;
 }
 
 // ==================== LISTENER DE MENSAGENS ====================
@@ -261,19 +46,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
     
-    // ---- PROFSIS: Sessão do Firebase Auth (refresh token) para escrita direta no Firestore ----
-    if (request.action === "PROFSIS_FIREBASE_SESSION") {
-        if (request.session && request.session.refreshToken && request.session.apiKey) {
-            console.log("[Background] Sessão do Firebase recebida do ProfSis (uid:", request.session.uid, ")");
-            chrome.storage.local.set({ profsis_firebase_session: request.session }, () => {
-                sendResponse({ success: true });
-            });
-        } else {
-            sendResponse({ success: false, error: 'Sessão inválida.' });
-        }
-        return true;
-    }
-
     // ---- PROFSIS: Dados completos do app recebidos ----
     if (request.action === "PROFSIS_DATA_UPDATE") {
         console.log("[Background] Dados do ProfSis recebidos:", Object.keys(request.appData || {}).length, "chaves");
@@ -408,45 +180,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
     // ---- LOGOUT ----
     if (request.action === "PROFSIS_LOGOUT") {
-        chrome.storage.local.remove(['profsis_user', 'profsis_logged_in', 'profsis_app_data', 'profsis_login_time', 'profsis_data_time', 'profsis_firebase_session', 'profsis_id_token_cache'], () => {
+        chrome.storage.local.remove(['profsis_user', 'profsis_logged_in', 'profsis_app_data', 'profsis_login_time', 'profsis_data_time'], () => {
             console.log('[Logout] Dados do ProfSis limpos.');
             sendResponse({ success: true });
         });
         return true;
     }
 
-    // ---- SED: Atualizar alunos direto no banco do ProfSis ----
-    if (request.action === "UPDATE_STUDENTS_DB") {
-        console.log("[Background] Atualizando alunos no banco do ProfSis:", request.payload.turmaSED);
-        atualizarAlunosDiretoFirebase(request.payload).then(resultado => {
-            console.log("[Background] Escrita direta no Firestore concluída:", resultado);
-            sendResponse({ success: true, direct: true, resultado: resultado });
-        }).catch(errDireto => {
-            console.warn("[Background] Escrita direta falhou, tentando via aba do ProfSis:", errDireto.message);
-            chrome.tabs.query({}, (tabs) => {
-                const profsisTab = tabs.find(t => isProfSisUrl(t.url));
-                if (profsisTab) {
-                    chrome.tabs.sendMessage(profsisTab.id, {
-                        action: "PROFSIS_UPDATE_STUDENTS",
-                        payload: request.payload
-                    }, (response) => {
-                        if (chrome.runtime.lastError) {
-                            console.error("[Background] Erro ao enviar para ProfSis:", chrome.runtime.lastError);
-                            sendResponse({ success: false, error: errDireto.message });
-                        } else if (response && response.success) {
-                            sendResponse({ success: true, direct: false });
-                        } else {
-                            sendResponse({ success: false, error: 'ProfSis não processou a atualização.' });
-                        }
-                    });
-                } else {
-                    sendResponse({ success: false, error: errDireto.message });
-                }
-            });
-        });
-        return true;
-    }
-    
     // ---- AÇÕES LEGADAS (compatibilidade) ----
     if (request.action === "START_RPA_CHAMADA" || request.action === "START_RPA_LOTE") {
         const task = request.payload;
@@ -525,4 +265,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-console.log("✅ Background script carregado! (v2.2.0 - Escrita direta no Firestore)");
+console.log("✅ Background script carregado! (v2.3.0)");

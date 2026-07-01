@@ -1,7 +1,7 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
-// v2.2.0 - Removidos os cards de Agenda do Dia e Faltosos do Dia do menu flutuante
+// v2.3.0 - Removido o botão "Extrair Alunos"
 
-    console.log("🤖 content_sed.js EXECUTADO - v2.2.0");
+    console.log("🤖 content_sed.js EXECUTADO - v2.3.0");
 
 // ==================== VARIÁVEIS GLOBAIS ====================
 let extHistory = {};
@@ -182,7 +182,7 @@ function injetarMenu() {
     div.id = 'sisprof-menu-flutuante';
     div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;';
     div.innerHTML = '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
-            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v2.2.0</span></span>' +
+            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v2.3.0</span></span>' +
         '<div style="display:flex; gap:8px; align-items:center;"><span id="sisprof-user-name" style="font-size:11px; opacity:0.9; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
         '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;">▶</span><span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span></div></div>' +
         '<div id="sisprof-conteudo"><p style="margin:0 0 10px 0; color:#4a5568; font-size:13px;">✅ Conectado ao ProfSis!</p>' +
@@ -191,7 +191,6 @@ function injetarMenu() {
         '<div id="sisprof-status" style="background:#f7fafc; padding:10px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:10px; font-size:11px; color:#718096;">Verificando...</div>' +
         '<button id="sisprof-btn-preencher" style="width:100%; background:#3182ce; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px; margin-bottom:8px;">✅ Preencher Chamada</button>' +
         '<hr style="border:0; border-top:1px solid #e2e8f0; margin:10px 0;">' +
-        '<button id="sisprof-btn-extrair" style="width:100%; background:#38a169; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px;">📥 Extrair Alunos (Atualizar Banco)</button>' +
         '<button id="sisprof-btn-logout" style="width:100%; background:#718096; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px;">🚪 Desconectar</button></div>';
     document.body.appendChild(div);
     if (profsisProfile && profsisProfile.nome) { const n = document.getElementById('sisprof-user-name'); if (n) n.textContent = profsisProfile.nome.split(' ')[0]; }
@@ -212,7 +211,6 @@ function injetarMenu() {
             setTimeout(() => { const payload = extHistory[currentSelectedDate]; if (payload) executarPreenchimento(payload); btn.textContent = oldText; btn.disabled = false; }, 2500);
         }, 1000);
     };
-    document.getElementById('sisprof-btn-extrair').onclick = iniciarExtrairAlunos;
     let observerDebounce = null, observerBusy = false;
     const observer = new MutationObserver(() => {
         if (observerBusy) return;
@@ -318,51 +316,6 @@ function executarPreenchimento(payload) {
             else alert('✅ Concluído! ⚠️ Clique em "Salvar" manualmente.');
         }, 500);
     } else alert('Nenhum dado pendente ou campos não encontrados na tela.');
-}
-
-// ==================== EXTRAIR ALUNOS (atualiza direto no banco) ====================
-
-function iniciarExtrairAlunos() {
-    const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"], .card_aluno1, .card_aluno');
-    if (cardsAlunos.length === 0) return alert('Nenhum aluno encontrado na tela. Abra a tela de chamada da turma desejada primeiro!');
-    
-    const btn = document.getElementById('sisprof-btn-extrair');
-    if (btn) { btn.textContent = '⏳ Extraindo e atualizando...'; btn.disabled = true; }
-    
-    const alunos = [];
-    cardsAlunos.forEach(card => {
-        const nomeElement = card.querySelector('.nome_aluno');
-        if (!nomeElement) return;
-        let nomeCompleto = nomeElement.textContent.trim().replace(/^\d+\s*[-.]?\s*/, '');
-        alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
-    });
-    
-    // Detecta a turma selecionada na SED
-    let turmaSelecionada = "Desconhecida";
-    const selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
-    if (selectTurma && selectTurma.options[selectTurma.selectedIndex]) {
-        turmaSelecionada = selectTurma.options[selectTurma.selectedIndex].text.trim();
-    } else {
-        document.querySelectorAll('.font-cabecalho-filtro').forEach(span => {
-            if (span.textContent.includes('Turma:')) turmaSelecionada = span.textContent.replace('Turma:', '').trim();
-        });
-    }
-    
-    console.log('[SisProf Ext] Extraindo', alunos.length, 'alunos da turma', turmaSelecionada);
-    
-    // Pede ao background para escrever direto no Firestore (ou, se não houver sessão salva, via aba do ProfSis)
-    const payload = { type: 'SISPROF_UPDATE_STUDENTS_DB', alunos: alunos, turmaSED: turmaSelecionada, timestamp: Date.now() };
-    chrome.runtime.sendMessage({ action: 'UPDATE_STUDENTS_DB', payload: payload }, (response) => {
-        if (btn) { btn.textContent = '📥 Extrair Alunos (Atualizar Banco)'; btn.disabled = false; }
-        if (response && response.success) {
-            const r = response.resultado;
-            const via = response.direct ? 'direto no banco' : 'via aba do ProfSis';
-            const detalhes = r ? ('\n\n✔️ Novos: ' + r.adicionados + ' | 🔄 Reativados: ' + r.reativados + ' | 📋 Remanejados: ' + r.remanejados + ' | ❌ Transferidos: ' + r.transferidos) : '';
-            alert('✅ ' + alunos.length + ' aluno(s) processados ' + via + '!\n\nTurma: ' + turmaSelecionada + detalhes);
-        } else {
-            alert('⚠️ Não foi possível atualizar o banco.\n' + (response ? response.error : 'Sem resposta da extensão.') + '\n\nDica: faça login no ProfSis pelo menos uma vez para a extensão salvar sua sessão.');
-        }
-    });
 }
 
 // ==================== UTILITÁRIOS ====================
