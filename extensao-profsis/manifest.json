@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ProfSis3 - Extensão para Aulas de Hoje",
-  "version": "2.5.2",
+  "version": "2.6.0",
   "description": "Exibe as aulas do dia do ProfSis em um card de agenda na Sala do Futuro e permite extrair alunos direto para o banco.",
   "permissions": [
     "tabs",

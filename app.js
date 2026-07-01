@@ -1678,14 +1678,11 @@ window.addEventListener('SisProf_Update_Students', async (event) => {
         const resultado = await processarAtualizacaoAlunosExtensao(payload);
         console.log('[SisProf] ✅ Atualização concluída:', resultado);
 
-        const avisoSeguranca = resultado.transferenciaBloqueada
-            ? `<br><br>⚠️ <strong>Nenhum aluno foi marcado como transferido:</strong> a lista raspada (${resultado.extraidos}) está bem menor que os ${resultado.ativosAntes} alunos já ativos. Confira se a tela da SED carregou todos os alunos.`
-            : '';
         const div = document.createElement('div');
         div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#38a169; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
-        div.innerHTML = `✅ <strong>Alunos Atualizados!</strong><br><span style="font-size:12px; font-weight:normal;">Turma: ${payload.turmaSED}<br>✔️ Novos: ${resultado.adicionados} | 🔄 Reativados: ${resultado.reativados} | 📋 Remanejados: ${resultado.remanejados} | ❌ Transferidos: ${resultado.transferidos}${avisoSeguranca}</span>`;
+        div.innerHTML = `✅ <strong>Alunos Atualizados!</strong><br><span style="font-size:12px; font-weight:normal;">Turma: ${payload.turmaSED}<br>✔️ Novos: ${resultado.adicionados} | 🔄 Reativados: ${resultado.reativados}</span>`;
         document.body.appendChild(div);
-        setTimeout(() => div.remove(), resultado.transferenciaBloqueada ? 12000 : 6000);
+        setTimeout(() => div.remove(), 6000);
 
         if (typeof turmaAtual !== 'undefined' && document.getElementById('turmaDetalhe') && document.getElementById('turmaDetalhe').classList.contains('active')) {
             showTurmaTab('estudantes');
@@ -1746,50 +1743,32 @@ function encontrarAlvoTurmaExtensao(turmasLocais, turmaSED, normalizeTurma) {
     return { masterId: turma.masterId || null, turmaId: turma.id };
 }
 
-// Cria/reativa/remaneja/transfere alunos em `estudantes` (array mutado in-place) para a turma `turmaId`.
-// [SEGURANÇA] Só marca ausentes como "Transferido" se a lista extraída cobrir pelo menos 60% dos
-// alunos já ativos na turma. Uma raspagem parcial da tela (ex: cards da SED ainda carregando) não
-// pode ser interpretada como "o aluno saiu da turma" - isso já apagou turmas inteiras por engano.
+// Cria/reativa alunos em `estudantes` (array mutado in-place) para a turma `turmaId`.
+// Lógica puramente aditiva, sem nenhum efeito colateral em quem já está ativo:
+// - Aluno extraído NÃO existe no sistema -> cria, já na turma alvo, status Ativo.
+// - Aluno extraído já existe e está Ativo -> não faz NADA (não mexe em id_turma, não duplica).
+// - Aluno extraído já existe mas não está Ativo -> só atualiza o status para Ativo (reativa).
+// Nunca marca ninguém como "Transferido" e nunca move o id_turma de um aluno já ativo - isso
+// já causou remanejamentos e transferências indevidas quando a raspagem da SED não é 100% confiável.
 function aplicarAtualizacaoAlunosExtensao(estudantes, turmaId, alunosExtraidos, normalizeName) {
-    let adicionados = 0, reativados = 0, remanejados = 0, transferidos = 0;
-    const nomesExtraidosSet = new Set(alunosExtraidos.map(a => normalizeName(a.nome)));
-
-    const ativosAtuais = estudantes.filter(e => e.id_turma == turmaId && e.status === 'Ativo');
-    const transferenciaSegura = ativosAtuais.length < 3 || alunosExtraidos.length >= ativosAtuais.length * 0.6;
-
-    if (transferenciaSegura) {
-        ativosAtuais.forEach(e => {
-            const nomeUpper = normalizeName(e.nome_completo);
-            if (!nomesExtraidosSet.has(nomeUpper)) {
-                e.status = 'Transferido';
-                transferidos++;
-            }
-        });
-    }
+    let adicionados = 0, reativados = 0;
 
     alunosExtraidos.forEach(aExtraido => {
         const nomeUpper = normalizeName(aExtraido.nome);
-        const existenteGlobal = estudantes.find(e => normalizeName(e.nome_completo) === nomeUpper);
-        if (existenteGlobal) {
-            if (existenteGlobal.id_turma == turmaId) {
-                if (existenteGlobal.status !== 'Ativo') { existenteGlobal.status = 'Ativo'; reativados++; }
-            } else {
-                existenteGlobal.id_turma = turmaId;
-                existenteGlobal.status = 'Ativo';
-                remanejados++;
+        const existente = estudantes.find(e => normalizeName(e.nome_completo) === nomeUpper);
+        if (existente) {
+            if (existente.status !== 'Ativo') {
+                existente.status = 'Ativo';
+                reativados++;
             }
+            // já ativo: não faz nada
         } else {
             estudantes.push({ id: Date.now() + Math.floor(Math.random() * 10000), id_turma: turmaId, nome_completo: aExtraido.nome, status: 'Ativo' });
             adicionados++;
         }
     });
 
-    return {
-        adicionados, reativados, remanejados, transferidos, turmasAtualizadas: 1,
-        transferenciaBloqueada: !transferenciaSegura,
-        ativosAntes: ativosAtuais.length,
-        extraidos: alunosExtraidos.length
-    };
+    return { adicionados, reativados, turmasAtualizadas: 1 };
 }
 
 // Processa a atualização de alunos vindos da SED (fallback via aba aberta, quando a extensão não tem
