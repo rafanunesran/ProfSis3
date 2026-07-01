@@ -1,5 +1,5 @@
 // BACKGROUND SCRIPT - ProfSis3 Extension
-// Gerencia mensagens entre content scripts, storage e Firebase (Auth + Firestore REST)
+// v2.0.1 - Login robusto com fallback + busca de dados do Firebase (REST API)
 
 // ==================== CONFIGURAÇÃO FIREBASE ====================
 const FIREBASE_CONFIG = {
@@ -13,11 +13,42 @@ const FIREBASE_CONFIG = {
     measurementId: "G-2EJ3T4DPLG"
 };
 
+// ==================== UTILITÁRIOS ====================
+
+// Normaliza email: lowercase + remove espaços + tolera ausência de ".com"
+function normalizeEmail(email) {
+    if (!email) return '';
+    return String(email).trim().toLowerCase().replace(/\.com$/, '');
+}
+
+// Traduz mensagens de erro do Firebase Auth para português
+function traduzirErroAuth(erroMsg) {
+    const mapa = {
+        'EMAIL_NOT_FOUND': 'Email não cadastrado no Firebase Auth.',
+        'INVALID_PASSWORD': 'Senha incorreta.',
+        'USER_DISABLED': 'Conta desativada pelo administrador.',
+        'TOO_MANY_ATTEMPTS_TRY_LATER': 'Muitas tentativas. Tente novamente mais tarde.',
+        'EMAIL_EXISTS': 'Email já cadastrado.',
+        'OPERATION_NOT_ALLOWED': 'Operação não permitida.',
+        'INVALID_EMAIL': 'Email inválido.',
+        'WEAK_PASSWORD': 'Senha muito fraca (mínimo 6 caracteres).',
+        'NETWORK_REQUEST_FAILED': 'Erro de rede. Verifique sua conexão com a internet.',
+        'INVALID_LOGIN_CREDENTIALS': 'Email ou senha incorretos.'
+    };
+    if (!erroMsg) return 'Erro desconhecido no login.';
+    // Procura por correspondência exata ou parcial
+    for (const [key, val] of Object.entries(mapa)) {
+        if (erroMsg.includes(key)) return val;
+    }
+    return erroMsg;
+}
+
 // ==================== FUNÇÕES FIREBASE (REST API) ====================
 
 // Login via Firebase Auth REST API
 async function firebaseLogin(email, password) {
     const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_CONFIG.apiKey}`;
+    console.log('[Login] Chamando Firebase Auth para:', email);
     const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -29,21 +60,30 @@ async function firebaseLogin(email, password) {
     });
     if (!response.ok) {
         const err = await response.json();
-        throw new Error(err.error?.message || 'Falha no login');
+        const rawMsg = err.error?.message || 'Falha no login';
+        console.error('[Login] Firebase Auth rejeitou:', rawMsg);
+        throw new Error(traduzirErroAuth(rawMsg));
     }
-    return await response.json(); // { idToken, localId (uid), email, ... }
+    const data = await response.json();
+    console.log('[Login] Firebase Auth OK! UID:', data.localId);
+    return data; // { idToken, localId (uid), email, refreshToken, expiresIn, ... }
 }
 
 // Buscar documento no Firestore via REST API
 async function firestoreGet(collection, docId, idToken) {
     const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_CONFIG.projectId}/databases/(default)/documents/${collection}/${docId}`;
+    console.log('[Firestore] GET', collection + '/' + docId);
     const response = await fetch(url, {
         method: 'GET',
         headers: idToken ? { 'Authorization': `Bearer ${idToken}` } : {}
     });
-    if (response.status === 404) return null;
+    if (response.status === 404) {
+        console.warn('[Firestore] Documento não encontrado (404):', collection + '/' + docId);
+        return null;
+    }
     if (!response.ok) {
         const err = await response.text();
+        console.error('[Firestore] GET falhou:', response.status, err);
         throw new Error(`Firestore GET falhou: ${response.status} ${err}`);
     }
     const data = await response.json();
@@ -62,7 +102,6 @@ function parseFirestoreDocument(doc) {
 
 function parseFirestoreValue(value) {
     if (!value) return null;
-    // Firestore REST retorna { valueType: value }
     if (value.stringValue !== undefined) return value.stringValue;
     if (value.integerValue !== undefined) return parseInt(value.integerValue, 10);
     if (value.doubleValue !== undefined) return value.doubleValue;
@@ -86,45 +125,94 @@ function parseFirestoreValue(value) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log("📨 Background recebeu:", request.action);
     
-    // ---- LOGIN FIREBASE ----
+    // ---- LOGIN FIREBASE (com fallback legado) ----
     if (request.action === "FIREBASE_LOGIN") {
-        firebaseLogin(request.email, request.password)
-            .then(authData => {
+        const email = (request.email || '').trim().toLowerCase();
+        const password = request.password || '';
+        
+        console.log('[Login] Iniciando login para:', email);
+        
+        if (!email || !password) {
+            sendResponse({ success: false, error: 'Email e senha são obrigatórios.' });
+            return true;
+        }
+        
+        // Etapa 1: Tenta Firebase Auth
+        firebaseLogin(email, password)
+            .then(async (authData) => {
+                console.log('[Login] Auth OK, salvando sessão...');
                 // Salva sessão
-                chrome.storage.local.set({
-                    fb_idToken: authData.idToken,
-                    fb_uid: authData.localId,
-                    fb_email: authData.email,
-                    fb_refreshToken: authData.refreshToken,
-                    fb_expiresAt: Date.now() + (parseInt(authData.expiresIn, 10) * 1000)
-                }, () => {
-                    // Busca perfil do usuário no Firestore
-                    firestoreGet('system', 'users_list', authData.idToken)
-                        .then(usersDoc => {
-                            const users = (usersDoc && usersDoc.list) ? usersDoc.list : [];
-                            // Comparação tolerante: case-insensitive e tolera ausência de ".com"
-                            // (necessário porque emails antigos no banco podem não ter ".com")
-                            const normalizeEmail = (e) => (e || '').trim().toLowerCase().replace(/\.com$/, '');
-                            const authEmailNorm = normalizeEmail(authData.email);
-                            const profile = users.find(u => normalizeEmail(u.email) === authEmailNorm);
-                            if (profile) {
-                                // Sincroniza o email do Auth no perfil para buscas futuras
-                                profile.email = authData.email;
-                                chrome.storage.local.set({ fb_profile: profile }, () => {
-                                    sendResponse({ success: true, user: profile });
-                                });
-                            } else {
-                                console.warn('Emails no banco:', users.map(u => u.email));
-                                sendResponse({ success: false, error: 'Perfil não encontrado no banco para ' + authData.email });
-                            }
-                        })
-                        .catch(err => {
-                            console.error('Erro ao buscar perfil:', err);
-                            sendResponse({ success: false, error: 'Login OK, mas falha ao buscar perfil: ' + err.message });
-                        });
+                await new Promise(resolve => {
+                    chrome.storage.local.set({
+                        fb_idToken: authData.idToken,
+                        fb_uid: authData.localId,
+                        fb_email: authData.email,
+                        fb_refreshToken: authData.refreshToken,
+                        fb_expiresAt: Date.now() + (parseInt(authData.expiresIn, 10) * 1000)
+                    }, resolve);
                 });
+                
+                // Etapa 2: Busca perfil no Firestore
+                try {
+                    console.log('[Login] Buscando perfil no Firestore...');
+                    const usersDoc = await firestoreGet('system', 'users_list', authData.idToken);
+                    const users = (usersDoc && usersDoc.list) ? usersDoc.list : [];
+                    console.log('[Login] Usuários no banco:', users.length, '| Emails:', users.map(u => u.email));
+                    
+                    const authEmailNorm = normalizeEmail(authData.email);
+                    const profile = users.find(u => normalizeEmail(u.email) === authEmailNorm);
+                    
+                    if (profile) {
+                        // Sincroniza o email do Auth no perfil
+                        profile.email = authData.email;
+                        // Garante que tem uid
+                        if (!profile.uid) profile.uid = authData.localId;
+                        
+                        await new Promise(resolve => {
+                            chrome.storage.local.set({ fb_profile: profile }, resolve);
+                        });
+                        console.log('[Login] ✅ Sucesso! Perfil:', profile.nome || profile.email);
+                        sendResponse({ success: true, user: profile });
+                    } else {
+                        // Fallback: cria perfil mínimo baseado no Auth
+                        console.warn('[Login] Perfil não encontrado no banco. Criando perfil mínimo...');
+                        const minimalProfile = {
+                            id: authData.localId,
+                            uid: authData.localId,
+                            email: authData.email,
+                            nome: authData.email.split('@')[0],
+                            role: 'professor',
+                            schoolId: null
+                        };
+                        await new Promise(resolve => {
+                            chrome.storage.local.set({ fb_profile: minimalProfile }, resolve);
+                        });
+                        console.log('[Login] ✅ Login com perfil mínimo:', minimalProfile.email);
+                        sendResponse({ success: true, user: minimalProfile });
+                    }
+                } catch (err) {
+                    console.error('[Login] Erro ao buscar perfil:', err.message);
+                    // Mesmo com erro no Firestore, permite login com perfil mínimo
+                    const minimalProfile = {
+                        id: authData.localId,
+                        uid: authData.localId,
+                        email: authData.email,
+                        nome: authData.email.split('@')[0],
+                        role: 'professor',
+                        schoolId: null
+                    };
+                    await new Promise(resolve => {
+                        chrome.storage.local.set({ fb_profile: minimalProfile }, resolve);
+                    });
+                    sendResponse({ 
+                        success: true, 
+                        user: minimalProfile,
+                        warning: 'Login OK, mas não foi possível buscar o perfil completo: ' + err.message
+                    });
+                }
             })
             .catch(err => {
+                console.error('[Login] ❌ Falha no Firebase Auth:', err.message);
                 sendResponse({ success: false, error: err.message });
             });
         return true;
@@ -133,6 +221,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // ---- LOGOUT ----
     if (request.action === "FIREBASE_LOGOUT") {
         chrome.storage.local.remove(['fb_idToken', 'fb_uid', 'fb_email', 'fb_refreshToken', 'fb_expiresAt', 'fb_profile'], () => {
+            console.log('[Logout] Sessão limpa.');
             sendResponse({ success: true });
         });
         return true;
@@ -142,6 +231,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "FIREBASE_CHECK_SESSION") {
         chrome.storage.local.get(['fb_idToken', 'fb_profile', 'fb_expiresAt'], (result) => {
             const isValid = result.fb_idToken && result.fb_expiresAt && (Date.now() < result.fb_expiresAt);
+            console.log('[Session] Válida:', !!isValid, '| Expira em:', result.fb_expiresAt ? new Date(result.fb_expiresAt).toISOString() : 'n/a');
             sendResponse({
                 loggedIn: !!isValid,
                 user: result.fb_profile || null,
@@ -163,13 +253,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 const uid = profile.uid || profile.id;
                 const key = 'app_data_' + uid;
                 
+                console.log('[Dados] Buscando professor:', key);
                 // Busca dados do professor
                 const profData = await firestoreGet('app_data', key, result.fb_idToken);
                 
                 // Busca dados da escola (gestor) para grade horária
                 let gestorData = null;
                 if (profile.schoolId) {
-                    gestorData = await firestoreGet('app_data', `app_data_school_${profile.schoolId}_gestor`, result.fb_idToken);
+                    const gestorKey = `app_data_school_${profile.schoolId}_gestor`;
+                    console.log('[Dados] Buscando gestor:', gestorKey);
+                    gestorData = await firestoreGet('app_data', gestorKey, result.fb_idToken);
                 }
                 
                 sendResponse({
@@ -179,7 +272,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     profile: profile
                 });
             } catch (err) {
-                console.error('Erro ao buscar dados:', err);
+                console.error('[Dados] Erro:', err);
                 sendResponse({ success: false, error: err.message });
             }
         });
@@ -264,4 +357,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-console.log("✅ Background script carregado! (v2.0 com Firebase REST)");
+console.log("✅ Background script carregado! (v2.0.1 - Login robusto com fallback)");

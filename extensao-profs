@@ -1,7 +1,7 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
-// v3.0 - Login direto + busca de dados do Firebase (sem depender do app ProfSis)
+// v2.0.1 - Login direto + busca de dados do Firebase (sem depender do app ProfSis)
 
-console.log("🤖 content_sed.js EXECUTADO - v3.0 (Firebase Direto)");
+console.log("🤖 content_sed.js EXECUTADO - v2.0.1 (Firebase Direto)");
 
 // ==================== VARIÁVEIS GLOBAIS ====================
 let extHistory = {};
