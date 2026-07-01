@@ -5,24 +5,26 @@
   "description": "Automatiza a integração e o preenchimento de diários na Secretaria Digital de SP.",
   "permissions": [
     "tabs",
-    "storage"
+    "storage",
+    "scripting"
   ],
   "host_permissions": [
     "https://saladofuturoprofessor.educacao.sp.gov.br/*",
     "https://saladofuturo.educacao.sp.gov.br/*",
     "https://*.educacao.sp.gov.br/*",
     "*://localhost/*",
+    "*://127.0.0.1/*",
+    "https://*.firebaseapp.com/*",
     "https://*.profsis3.com/*",
-    "https://*.github.io/*",
-    "https://identitytoolkit.googleapis.com/*",
-    "https://firestore.googleapis.com/*"
+    "https://*.web.app/*",
+    "https://*.github.io/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["*://localhost/*", "https://*.firebaseapp.com/*", "https://*.profsis3.com/*", "https://*.web.app/*", "https://*.github.io/*"],
+      "matches": ["*://localhost/*", "*://127.0.0.1/*", "https://*.firebaseapp.com/*", "https://*.profsis3.com/*", "https://*.web.app/*", "https://*.github.io/*"],
       "js": ["content_profsis.js"],
       "run_at": "document_idle"
     },

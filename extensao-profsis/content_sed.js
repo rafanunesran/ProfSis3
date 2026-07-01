@@ -1,7 +1,7 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
-// v2.0.1 - Login direto + busca de dados do Firebase (sem depender do app ProfSis)
+// v2.0.1 - Nova abordagem: detecta login do ProfSis em aba aberta (sem formulário de login)
 
-console.log("🤖 content_sed.js EXECUTADO - v2.0.1 (Firebase Direto)");
+console.log("🤖 content_sed.js EXECUTADO - v2.0.1 (Detecção ProfSis)");
 
 // ==================== VARIÁVEIS GLOBAIS ====================
 let extHistory = {};
@@ -9,223 +9,161 @@ let extDoneMarks = {};
 let currentSelectedDate = "";
 let aulasSelecionadasState = new Set();
 let aulasDisponiveis = [];
-let fbProfile = null; // Perfil do usuário logado
-let fbProfessorData = null; // Dados do professor (app_data_<uid>)
-let fbGestorData = null; // Dados da escola (grade horária)
+let profsisProfile = null;
+let profsisAppData = null;
 
-// ==================== TELA DE LOGIN ====================
+// ==================== TELA DE STATUS (sem formulário de login) ====================
 
-function mostrarTelaLogin() {
-    // Remove menu existente se houver
+function mostrarTelaStatus() {
     const oldMenu = document.getElementById('sisprof-menu-flutuante');
     if (oldMenu) oldMenu.remove();
+    if (document.getElementById('sisprof-status-box')) return;
+    if (!document.body) { setTimeout(mostrarTelaStatus, 500); return; }
     
-    if (document.getElementById('sisprof-login-box')) return;
-    if (!document.body) { setTimeout(mostrarTelaLogin, 500); return; }
-    
-    console.log("🔐 Mostrando tela de login...");
+    console.log("🔍 Verificando status do ProfSis...");
     
     const div = document.createElement('div');
-    div.id = 'sisprof-login-box';
-    div.style.cssText = 'position:fixed; top:20px; right:20px; width:320px; background:white; border:3px solid #3182ce; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5);';
+    div.id = 'sisprof-status-box';
+    div.style.cssText = 'position:fixed; top:20px; right:20px; width:340px; background:white; border:3px solid #3182ce; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5);';
     div.innerHTML = 
         '<div style="background:#3182ce; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; text-align:center;">' +
-            '🤖 Robô SisProf - Login' +
+            '🤖 Robô SisProf <span style="font-size:10px; opacity:0.7;">v2.0.1</span>' +
         '</div>' +
-        '<p style="font-size:12px; color:#4a5568; margin-bottom:15px;">Faça login com sua conta do ProfSis para buscar seus dados automaticamente.</p>' +
-        '<form id="sisprof-login-form">' +
-            '<label style="font-size:12px; font-weight:bold; color:#2d3748; display:block; margin-bottom:4px;">Email:</label>' +
-            '<input type="email" id="sisprof-login-email" required style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; margin-bottom:10px; box-sizing:border-box;">' +
-        '<label style="font-size:12px; font-weight:bold; color:#2d3748; display:block; margin-bottom:4px;">Senha:</label>' +
-        '<div style="position:relative; margin-bottom:15px;">' +
-            '<input type="password" id="sisprof-login-senha" required style="width:100%; padding:8px 36px 8px 8px; border:1px solid #cbd5e0; border-radius:4px; box-sizing:border-box;">' +
-            '<span id="sisprof-toggle-senha" title="Mostrar/ocultar senha" style="position:absolute; right:8px; top:50%; transform:translateY(-50%); cursor:pointer; font-size:16px; user-select:none; color:#718096;">👁️</span>' +
-        '</div>' +
-        '<button type="submit" id="sisprof-btn-login" style="width:100%; background:#3182ce; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px;">🔐 Entrar</button>' +
-    '</form>' +
-        '<div id="sisprof-login-status" style="margin-top:10px; font-size:12px; text-align:center;"></div>';
+        '<div id="sisprof-status-content" style="text-align:center;">' +
+            '<p style="font-size:13px; color:#4a5568;">⏳ Verificando conexão com o ProfSis...</p>' +
+        '</div>';
     
     document.body.appendChild(div);
     
-    // Toggle para revelar/ocultar a senha
-    const toggleSenha = document.getElementById('sisprof-toggle-senha');
-    const inputSenha = document.getElementById('sisprof-login-senha');
-    if (toggleSenha && inputSenha) {
-        toggleSenha.addEventListener('click', function() {
-            if (inputSenha.type === 'password') {
-                inputSenha.type = 'text';
-                toggleSenha.textContent = '🙈';
-            } else {
-                inputSenha.type = 'password';
-                toggleSenha.textContent = '👁️';
-            }
-        });
-    }
-    
-    document.getElementById('sisprof-login-form').addEventListener('submit', function(e) {
-        e.preventDefault();
-        const email = document.getElementById('sisprof-login-email').value.trim().toLowerCase();
-        const senha = document.getElementById('sisprof-login-senha').value;
-        const btn = document.getElementById('sisprof-btn-login');
-        const status = document.getElementById('sisprof-login-status');
+    // Pede ao background para verificar o login do ProfSis
+    chrome.runtime.sendMessage({ action: 'CHECK_PROFSIS_LOGIN' }, (response) => {
+        if (chrome.runtime.lastError) {
+            console.error('[SisProf Ext] Erro:', chrome.runtime.lastError);
+            mostrarErroConexao(div);
+            return;
+        }
         
-        btn.textContent = '⏳ Entrando...';
-        btn.disabled = true;
-        status.innerHTML = '<span style="color:#3182ce;">Conectando ao Firebase...</span>';
-        
-        chrome.runtime.sendMessage({ action: 'FIREBASE_LOGIN', email: email, password: senha }, (response) => {
-            if (chrome.runtime.lastError) {
-                status.innerHTML = '<span style="color:#e53e3e;">Erro: ' + chrome.runtime.lastError.message + '</span>';
-                btn.textContent = '🔐 Entrar';
-                btn.disabled = false;
-                return;
-            }
-            if (response && response.success) {
-                status.innerHTML = '<span style="color:#38a169; font-weight:bold;">✅ Login realizado!</span>';
-                setTimeout(() => {
-                    div.remove();
-                    iniciarFluxoCompleto();
-                }, 800);
-            } else {
-                status.innerHTML = '<span style="color:#e53e3e;">❌ ' + (response ? response.error : 'Erro desconhecido') + '</span>';
-                btn.textContent = '🔐 Entrar';
-                btn.disabled = false;
-            }
-        });
+        if (response && response.loggedIn) {
+            console.log('[SisProf Ext] ✅ ProfSis logado:', response.user.nome || response.user.email);
+            profsisProfile = response.user;
+            profsisAppData = response.appData || {};
+            div.remove();
+            iniciarFluxoCompleto();
+        } else if (response && response.tabFound) {
+            mostrarAvisoLogin(div);
+        } else {
+            mostrarBotaoAbrirProfSis(div);
+        }
     });
+}
+
+function mostrarErroConexao(div) {
+    const content = div.querySelector('#sisprof-status-content');
+    content.innerHTML = 
+        '<p style="font-size:13px; color:#e53e3e; margin-bottom:15px;">❌ Erro de conexão com a extensão.</p>' +
+        '<button id="sisprof-btn-retry" style="width:100%; background:#3182ce; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer;">🔄 Tentar Novamente</button>';
+    document.getElementById('sisprof-btn-retry').onclick = function() { div.remove(); mostrarTelaStatus(); };
+}
+
+function mostrarAvisoLogin(div) {
+    const content = div.querySelector('#sisprof-status-content');
+    content.innerHTML = 
+        '<p style="font-size:13px; color:#dd6b20; margin-bottom:10px;">⚠️ O ProfSis está aberto mas você não está logado.</p>' +
+        '<p style="font-size:12px; color:#718096; margin-bottom:15px;">Faça login no ProfSis e depois clique no botão abaixo.</p>' +
+        '<button id="sisprof-btn-recheck" style="width:100%; background:#38a169; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; margin-bottom:8px;">🔄 Já fiz login - Verificar</button>' +
+        '<button id="sisprof-btn-open-profsis" style="width:100%; background:#3182ce; color:white; border:none; padding:8px; border-radius:6px; cursor:pointer; font-size:12px;">🌐 Ir para o ProfSis</button>';
+    document.getElementById('sisprof-btn-recheck').onclick = function() { div.remove(); mostrarTelaStatus(); };
+    document.getElementById('sisprof-btn-open-profsis').onclick = function() { chrome.runtime.sendMessage({ action: 'OPEN_PROFSIS' }); };
+}
+
+function mostrarBotaoAbrirProfSis(div) {
+    const content = div.querySelector('#sisprof-status-content');
+    content.innerHTML = 
+        '<p style="font-size:13px; color:#e53e3e; margin-bottom:10px;">🔴 O ProfSis não está aberto.</p>' +
+        '<p style="font-size:12px; color:#718096; margin-bottom:15px;">Abra o ProfSis, faça login e depois clique no botão abaixo para conectar.</p>' +
+        '<button id="sisprof-btn-open-profsis" style="width:100%; background:#3182ce; color:white; border:none; padding:12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:14px; margin-bottom:8px;">🌐 Abrir ProfSis</button>' +
+        '<button id="sisprof-btn-recheck" style="width:100%; background:#38a169; color:white; border:none; padding:8px; border-radius:6px; cursor:pointer; font-size:12px;">✅ Já abri e loguei - Conectar</button>';
+    document.getElementById('sisprof-btn-open-profsis').onclick = function() { chrome.runtime.sendMessage({ action: 'OPEN_PROFSIS' }); };
+    document.getElementById('sisprof-btn-recheck').onclick = function() { div.remove(); mostrarTelaStatus(); };
 }
 
 // ==================== FLUXO PRINCIPAL ====================
 
 function iniciarFluxoCompleto() {
-    // Verifica sessão e busca dados
-    chrome.runtime.sendMessage({ action: 'FIREBASE_CHECK_SESSION' }, (session) => {
-        if (chrome.runtime.lastError || !session || !session.loggedIn) {
-            mostrarTelaLogin();
-            return;
-        }
-        fbProfile = session.user;
-        carregarDadosFirebase();
-    });
-}
-
-// Busca dados do professor direto do Firebase (via background)
-function carregarDadosFirebase() {
-    console.log('[SisProf Ext] Buscando dados do Firebase...');
-    const statusEl = document.getElementById('sisprof-status');
-    if (statusEl) statusEl.innerHTML = '⏳ <strong>Buscando dados na nuvem...</strong>';
-    
-    chrome.runtime.sendMessage({ action: 'FIREBASE_GET_PROFESSOR_DATA' }, (response) => {
-        if (chrome.runtime.lastError) {
-            console.error('[SisProf Ext] Erro:', chrome.runtime.lastError.message);
-            alert('Erro ao buscar dados: ' + chrome.runtime.lastError.message);
-            return;
-        }
-        if (!response || !response.success) {
-            console.error('[SisProf Ext] Falha:', response ? response.error : 'sem resposta');
-            alert('Falha ao buscar dados: ' + (response ? response.error : 'sem resposta'));
-            return;
-        }
-        
-        fbProfessorData = response.professorData || {};
-        fbGestorData = response.gestorData || {};
-        fbProfile = response.profile || fbProfile;
-        
-        console.log('[SisProf Ext] Dados recebidos! Professor:', Object.keys(fbProfessorData).length, 'chaves');
-        
-        // Monta o histórico de payloads para os últimos 30 dias
-        montarHistoricoLocal();
-        
-        // Carrega marcadores salvos localmente
-        chrome.runtime.sendMessage({ action: 'GET_DATA' }, (data) => {
-            if (!chrome.runtime.lastError && data) {
-                extDoneMarks = data.rpa_done_marks || {};
-            }
-            atualizarInterfacePorData();
-            setTimeout(lerAulasDaTela, 1000);
+    if (profsisProfile) {
+        carregarDadosProfSis();
+    } else {
+        chrome.runtime.sendMessage({ action: 'CHECK_PROFSIS_LOGIN' }, (response) => {
+            if (chrome.runtime.lastError || !response || !response.loggedIn) { mostrarTelaStatus(); return; }
+            profsisProfile = response.user;
+            profsisAppData = response.appData || {};
+            carregarDadosProfSis();
         });
+    }
+}
+
+function carregarDadosProfSis() {
+    console.log('[SisProf Ext] Dados do ProfSis:', Object.keys(profsisAppData || {}).length, 'chaves');
+    if (!profsisAppData || Object.keys(profsisAppData).length === 0) {
+        console.log('[SisProf Ext] Sem dados - pedindo ao ProfSis...');
+        chrome.runtime.sendMessage({ action: 'REQUEST_PROFSIS_DATA' });
+        setTimeout(() => {
+            chrome.runtime.sendMessage({ action: 'CHECK_PROFSIS_LOGIN' }, (response) => {
+                if (response && response.loggedIn && response.appData) { profsisAppData = response.appData; }
+                montarHistoricoLocal();
+                chrome.runtime.sendMessage({ action: 'GET_DATA' }, (data) => {
+                    if (!chrome.runtime.lastError && data) extDoneMarks = data.rpa_done_marks || {};
+                    injetarMenu();
+                });
+            });
+        }, 3000);
+        return;
+    }
+    montarHistoricoLocal();
+    chrome.runtime.sendMessage({ action: 'GET_DATA' }, (data) => {
+        if (!chrome.runtime.lastError && data) extDoneMarks = data.rpa_done_marks || {};
+        injetarMenu();
     });
 }
 
-// Monta o payload (faltas, registros, turmas) para cada dia, igual ao app.js
+// ==================== MONTAGEM DE HISTÓRICO ====================
+
 function montarHistoricoLocal() {
     extHistory = {};
     const hoje = new Date();
-    
-    // Gera payloads para os últimos 30 dias
     for (let i = 0; i < 30; i++) {
         const d = new Date(hoje);
         d.setDate(d.getDate() - i);
         const dataStr = d.toISOString().split('T')[0];
         extHistory[dataStr] = montarPayloadPorData(dataStr);
     }
-    
-    console.log('[SisProf Ext] Histórico local montado:', Object.keys(extHistory).length, 'dias');
+    console.log('[SisProf Ext] Histórico montado:', Object.keys(extHistory).length, 'dias');
 }
 
-// Réplica da função montarPayloadPorData do app.js
 function montarPayloadPorData(dataStr) {
     let alunosFaltantesNomes = [];
-    
-    const presencas = (fbProfessorData.presencas || []);
-    const estudantes = (fbProfessorData.estudantes || []);
-    const registrosAula = (fbProfessorData.registrosAula || []);
-    
+    const presencas = (profsisAppData.presencas || []);
+    const estudantes = (profsisAppData.estudantes || []);
+    const registrosAula = (profsisAppData.registrosAula || []);
     const faltasNoDia = presencas.filter(p => p.data === dataStr && p.status === 'falta');
     const presencasNoDia = presencas.filter(p => p.data === dataStr);
-    
     if (presencasNoDia.length > 0) {
-        // Se houve chamada, pega apenas os faltosos registrados
-        faltasNoDia.forEach(f => {
-            const estudante = estudantes.find(e => e.id == f.id_estudante);
-            if (estudante) alunosFaltantesNomes.push({ nome: estudante.nome_completo, id_turma: estudante.id_turma });
-        });
+        faltasNoDia.forEach(f => { const est = estudantes.find(e => e.id == f.id_estudante); if (est) alunosFaltantesNomes.push({ nome: est.nome_completo, id_turma: est.id_turma }); });
     } else {
-        // Se NÃO houve chamada neste dia, considera TODOS os alunos como faltosos
-        const estudantesAtivos = estudantes.filter(e => !e.status || e.status === 'Ativo');
-        estudantesAtivos.forEach(e => {
-            alunosFaltantesNomes.push({ nome: e.nome_completo, id_turma: e.id_turma });
-        });
+        estudantes.filter(e => !e.status || e.status === 'Ativo').forEach(e => { alunosFaltantesNomes.push({ nome: e.nome_completo, id_turma: e.id_turma }); });
     }
-    
     const registrosNoDia = registrosAula.filter(r => r.data === dataStr);
-    
-    // Monta lista de turmas/disciplinas do professor neste dia
     const turmasDoDia = [];
-    const gradeEscola = (fbGestorData && fbGestorData.gradeHoraria) || fbProfessorData.gradeHoraria || [];
-    const excecoesGrade = (fbGestorData && fbGestorData.gradeHorariaExcecoes) || fbProfessorData.gradeHorariaExcecoes || [];
-    const minhasAulas = fbProfessorData.horariosAulas || [];
-    const turmas = fbProfessorData.turmas || [];
-    
+    const gradeEscola = profsisAppData.gradeHoraria || [];
+    const excecoesGrade = profsisAppData.gradeHorariaExcecoes || [];
+    const minhasAulas = profsisAppData.horariosAulas || [];
+    const turmas = profsisAppData.turmas || [];
     const d = new Date(dataStr + 'T12:00:00');
     const diaSemana = d.getDay();
-    
     const excecao = excecoesGrade.find(e => e.data === dataStr);
     const blocosHoje = excecao ? (excecao.blocos || []) : gradeEscola.filter(g => g.diaSemana == diaSemana);
-    
-    blocosHoje.forEach(bloco => {
-        const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
-        if (aula && aula.tipo === 'aula' && aula.id_turma) {
-            const turma = turmas.find(t => t.id == aula.id_turma);
-            if (turma) {
-                turmasDoDia.push({
-                    id: turma.id,
-                    nome: turma.nome,
-                    disciplina: turma.disciplina || '',
-                    horario: (bloco.inicio || '') + ' - ' + (bloco.fim || ''),
-                    label: bloco.label || ''
-                });
-            }
-        }
-    });
-    
-    return {
-        data: dataStr,
-        faltas: alunosFaltantesNomes,
-        registros: registrosNoDia.map(r => ({ conteudo: r.conteudo })),
-        fechamento: [],
-        turmas: turmasDoDia
-    };
+    blocosHoje.forEach(bloco => { const aula = minhasAulas.find(a => a.id_bloco == bloco.id); if (aula && aula.tipo === 'aula' && aula.id_turma) { const turma = turmas.find(t => t.id == aula.id_turma); if (turma) turmasDoDia.push({ id: turma.id, nome: turma.nome, disciplina: turma.disciplina || '', horario: (bloco.inicio || '') + ' - ' + (bloco.fim || ''), label: bloco.label || '' }); } });
+    return { data: dataStr, faltas: alunosFaltantesNomes, registros: registrosNoDia.map(r => ({ conteudo: r.conteudo })), fechamento: [], turmas: turmasDoDia };
 }
 
 // ==================== MENU FLUTUANTE ====================
@@ -233,49 +171,22 @@ function montarPayloadPorData(dataStr) {
 function injetarMenu() {
     if (document.getElementById('sisprof-menu-flutuante')) return;
     if (!document.body) { setTimeout(injetarMenu, 500); return; }
-    
-    console.log("🔄 Injetando menu flutuante...");
-    
     var div = document.createElement('div');
     div.id = 'sisprof-menu-flutuante';
-    div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto; transition: all 0.3s ease;';
-    div.innerHTML = 
-        '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
-            '<span>🤖 Robô SisProf <span id="sisprof-versao" style="font-size:10px; opacity:0.7;">v2.0.1</span></span>' +
-            '<div style="display:flex; gap:8px; align-items:center;">' +
-                '<span id="sisprof-user-name" style="font-size:11px; opacity:0.9; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
-                '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;" title="Minimizar">▶</span>' +
-                '<span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span>' +
-            '</div>' +
-        '</div>' +
-        '<div id="sisprof-conteudo">' +
-        '<p style="margin:0 0 10px 0; color:#4a5568; font-size:13px;">✅ Conectado ao Firebase!</p>' +
-        
-        '<div style="background:#f0fff4; padding:10px; border-radius:8px; border:1px solid #c6f6d5; margin-bottom:10px;">' +
-            '<label style="font-size:12px; font-weight:bold; color:#276749; display:block; margin-bottom:4px;">📅 Selecione o Dia:</label>' +
-            '<div style="display:flex; gap:5px;">' +
-                '<input type="date" id="sisprof-data-input" style="flex:1; padding:6px; border:1px solid #cbd5e0; border-radius:4px; font-size:12px;">' +
-                '<button id="sisprof-btn-hoje" style="background:#38a169; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">Hoje</button>' +
-            '</div>' +
-        '</div>' +
-        
+    div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;';
+    div.innerHTML = '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
+        '<span>🤖 Robô SisProf <span style="font-size:10px; opacity:0.7;">v2.0.1</span></span>' +
+        '<div style="display:flex; gap:8px; align-items:center;"><span id="sisprof-user-name" style="font-size:11px; opacity:0.9; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
+        '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;">▶</span><span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span></div></div>' +
+        '<div id="sisprof-conteudo"><p style="margin:0 0 10px 0; color:#4a5568; font-size:13px;">✅ Conectado ao ProfSis!</p>' +
+        '<div style="background:#f0fff4; padding:10px; border-radius:8px; border:1px solid #c6f6d5; margin-bottom:10px;"><label style="font-size:12px; font-weight:bold; color:#276749; display:block; margin-bottom:4px;">📅 Selecione o Dia:</label>' +
+        '<div style="display:flex; gap:5px;"><input type="date" id="sisprof-data-input" style="flex:1; padding:6px; border:1px solid #cbd5e0; border-radius:4px; font-size:12px;"><button id="sisprof-btn-hoje" style="background:#38a169; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">Hoje</button></div></div>' +
         '<div id="sisprof-status" style="background:#f7fafc; padding:10px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:10px; font-size:11px; color:#718096;">Verificando...</div>' +
-        
-        '<div style="background:#ebf8ff; padding:10px; border-radius:8px; border:1px solid #bee3f8; margin-bottom:10px;">' +
-            '<label style="font-size:12px; font-weight:bold; color:#2c5282; display:block; margin-bottom:4px;">📚 Aulas do Dia:</label>' +
-            '<div id="sisprof-lista-aulas" style="max-height:120px; overflow-y:auto; font-size:12px;">' +
-                '<div style="color:#a0aec0; text-align:center; padding:10px 0;">Carregando aulas...</div>' +
-            '</div>' +
-            '<button id="sisprof-btn-atualizar-aulas" style="width:100%; background:#3182ce; color:white; border:none; padding:5px; border-radius:4px; cursor:pointer; font-size:11px; margin-top:5px;">🔄 Atualizar Aulas da Tela</button>' +
-        '</div>' +
-        
-        '<div style="background:#fff5f5; padding:10px; border-radius:8px; border:1px solid #fed7d7; margin-bottom:10px;">' +
-            '<label style="font-size:12px; font-weight:bold; color:#c53030; display:block; margin-bottom:4px;">🔴 Faltosos do Dia:</label>' +
-            '<div id="sisprof-lista-faltosos" style="max-height:150px; overflow-y:auto; font-size:12px;">' +
-                '<div style="color:#a0aec0; text-align:center; padding:10px 0;">Nenhum dado de faltas carregado.</div>' +
-            '</div>' +
-        '</div>' +
-        
+        '<div style="background:#ebf8ff; padding:10px; border-radius:8px; border:1px solid #bee3f8; margin-bottom:10px;"><label style="font-size:12px; font-weight:bold; color:#2c5282; display:block; margin-bottom:4px;">📚 Aulas do Dia:</label>' +
+        '<div id="sisprof-lista-aulas" style="max-height:120px; overflow-y:auto; font-size:12px;"><div style="color:#a0aec0; text-align:center; padding:10px 0;">Carregando aulas...</div></div>' +
+        '<button id="sisprof-btn-atualizar-aulas" style="width:100%; background:#3182ce; color:white; border:none; padding:5px; border-radius:4px; cursor:pointer; font-size:11px; margin-top:5px;">🔄 Atualizar Aulas da Tela</button></div>' +
+        '<div style="background:#fff5f5; padding:10px; border-radius:8px; border:1px solid #fed7d7; margin-bottom:10px;"><label style="font-size:12px; font-weight:bold; color:#c53030; display:block; margin-bottom:4px;">🔴 Faltosos do Dia:</label>' +
+        '<div id="sisprof-lista-faltosos" style="max-height:150px; overflow-y:auto; font-size:12px;"><div style="color:#a0aec0; text-align:center; padding:10px 0;">Nenhum dado de faltas carregado.</div></div></div>' +
         '<button id="sisprof-btn-preencher" style="width:100%; background:#3182ce; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px; margin-bottom:8px;">1️⃣ Preencher Chamada Automático</button>' +
         '<button id="sisprof-btn-marcar-faltas" style="width:100%; background:#e53e3e; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px;">✅ Marcar Faltas na Chamada</button>' +
         '<button id="sisprof-btn-analisar" style="width:100%; background:#dd6b20; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px;">🔍 Analisar Faltosos da Turma</button>' +
@@ -283,14 +194,14 @@ function injetarMenu() {
         '<button id="sisprof-btn-extrair" style="width:100%; background:#38a169; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px;">📥 Extrair Alunos (Atual)</button>' +
         '<button id="sisprof-btn-extrair-multi" style="width:100%; background:#276749; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px;">📥 Extrair TODAS (Auto)</button>' +
         '<hr style="border:0; border-top:1px solid #e2e8f0; margin:10px 0;">' +
-        '<button id="sisprof-btn-logout" style="width:100%; background:#718096; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px;">🚪 Sair (Logout)</button>' +
-        '</div>';
-    
+        '<button id="sisprof-btn-refresh" style="width:100%; background:#3182ce; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px; margin-bottom:8px;">🔄 Atualizar Dados do ProfSis</button>' +
+        '<button id="sisprof-btn-logout" style="width:100%; background:#718096; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px;">🚪 Desconectar</button></div>';
     document.body.appendChild(div);
-    if (fbProfile && fbProfile.nome) { const n = document.getElementById('sisprof-user-name'); if (n) n.textContent = fbProfile.nome.split(' ')[0]; }
+    if (profsisProfile && profsisProfile.nome) { const n = document.getElementById('sisprof-user-name'); if (n) n.textContent = profsisProfile.nome.split(' ')[0]; }
     document.getElementById('sisprof-fechar').onclick = function() { div.remove(); };
     document.getElementById('sisprof-minimizar').onclick = function() { const c = document.getElementById('sisprof-conteudo'); c.style.display = c.style.display === 'none' ? 'block' : 'none'; this.innerHTML = c.style.display === 'none' ? '◀' : '▶'; };
-    document.getElementById('sisprof-btn-logout').onclick = function() { chrome.runtime.sendMessage({ action: 'FIREBASE_LOGOUT' }, () => { div.remove(); fbProfile = null; fbProfessorData = null; fbGestorData = null; extHistory = {}; mostrarTelaLogin(); }); };
+    document.getElementById('sisprof-btn-logout').onclick = function() { chrome.runtime.sendMessage({ action: 'PROFSIS_LOGOUT' }, () => { div.remove(); profsisProfile = null; profsisAppData = null; extHistory = {}; mostrarTelaStatus(); }); };
+    document.getElementById('sisprof-btn-refresh').onclick = function() { chrome.runtime.sendMessage({ action: 'REQUEST_PROFSIS_DATA' }, () => { setTimeout(() => { div.remove(); iniciarFluxoCompleto(); }, 2000); }); };
     document.getElementById('sisprof-btn-hoje').onclick = function() { const h = new Date().toISOString().split('T')[0]; document.getElementById('sisprof-data-input').value = h; currentSelectedDate = h; atualizarInterfacePorData(); };
     document.getElementById('sisprof-data-input').addEventListener('change', function() { currentSelectedDate = this.value; atualizarInterfacePorData(); lerAulasDaTela(); });
     document.getElementById('sisprof-btn-atualizar-aulas').onclick = lerAulasDaTela;
@@ -310,7 +221,6 @@ function injetarMenu() {
     document.getElementById('sisprof-btn-analisar').onclick = analisarFaltososTurma;
     document.getElementById('sisprof-btn-extrair').onclick = iniciarExtrairAlunos;
     document.getElementById('sisprof-btn-extrair-multi').onclick = iniciarExtrairTodasTurmas;
-    
     let observerDebounce = null, observerBusy = false;
     const observer = new MutationObserver(() => {
         if (observerBusy) return;
@@ -322,6 +232,8 @@ function injetarMenu() {
     document.getElementById('sisprof-data-input').value = h;
     currentSelectedDate = h;
 }
+
+// ==================== INTERFACE ====================
 
 function atualizarInterfacePorData() {
     const statusEl = document.getElementById('sisprof-status');
@@ -410,6 +322,8 @@ function lerAulasDaTela() {
     });
 }
 
+// ==================== PREENCHIMENTO ====================
+
 function selecionarDataSED(dataStr) {
     if (!dataStr) return;
     const parts = dataStr.split('-');
@@ -461,6 +375,8 @@ function executarPreenchimento(payload) {
     if (interagidos > 0) { setTimeout(() => { const btnSalvar = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a')).find(b => { const text = (b.innerText || b.value || b.textContent || '').toLowerCase(); return text.includes('salvar') || text.includes('cadastrar') || text.includes('gravar') || text.includes('finalizar'); }); if (btnSalvar) { btnSalvar.click(); alert('✅ Concluído! Lançamentos preenchidos e salvos na SED.'); } else alert('✅ Concluído! ⚠️ Clique em "Salvar" manualmente.'); }, 500); } else alert('Nenhum dado pendente ou campos não encontrados na tela.');
 }
 
+// ==================== ANÁLISE ====================
+
 function analisarFaltososTurma() {
     const cardsAlunos = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
     if (cardsAlunos.length === 0) { alert('Nenhum aluno encontrado. Abra a Chamada da turma primeiro.'); return; }
@@ -482,6 +398,8 @@ function analisarFaltososTurma() {
     modalDiv.innerHTML = html + '<button onclick="this.parentElement.remove()" style="width:100%; padding:8px; background:#e2e8f0; border:none; border-radius:4px; cursor:pointer; font-weight:bold; margin-top:10px;">Fechar</button>';
     document.body.appendChild(modalDiv);
 }
+
+// ==================== EXTRAIR ALUNOS ====================
 
 function iniciarExtrairAlunos() {
     const cardsAlunos = document.querySelectorAll('.grid-listagem > div[class*="card_aluno"], .card_aluno1, .card_aluno');
@@ -556,13 +474,17 @@ async function iniciarExtrairTodasTurmas() {
     setTimeout(() => { if (btn) btn.textContent = '📥 Extrair TODAS (Auto)'; }, 3000);
 }
 
+// ==================== UTILITÁRIOS ====================
+
 function formatarDataBR(dataStr) { if (!dataStr) return ''; const parts = dataStr.split('-'); return parts[2] + '/' + parts[1] + '/' + parts[0]; }
+
+// ==================== INICIALIZAÇÃO ====================
 
 var tentativas = 0;
 var intervalo = setInterval(function() {
-    if (document.body && !document.getElementById('sisprof-menu-flutuante') && !document.getElementById('sisprof-login-box')) { try { iniciarFluxoCompleto(); } catch(e) { console.error("Erro:", e); } }
-    if (document.getElementById('sisprof-menu-flutuante') || document.getElementById('sisprof-login-box') || tentativas > 20) { clearInterval(intervalo); }
+    if (document.body && !document.getElementById('sisprof-menu-flutuante') && !document.getElementById('sisprof-status-box')) { try { mostrarTelaStatus(); } catch(e) { console.error("Erro:", e); } }
+    if (document.getElementById('sisprof-menu-flutuante') || document.getElementById('sisprof-status-box') || tentativas > 20) { clearInterval(intervalo); }
     tentativas++;
 }, 2000);
 
-setTimeout(iniciarFluxoCompleto, 1000);
+setTimeout(mostrarTelaStatus, 1000);

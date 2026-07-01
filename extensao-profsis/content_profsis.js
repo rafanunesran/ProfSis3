@@ -1,7 +1,110 @@
-// CONTENT SCRIPT - ProfSis3 (Injetado no site do SisProf)
+// CONTENT SCRIPT - ProfSis3 (Injetado no site do ProfSis)
+// v2.0.1 - Detecta login e envia dados do usuário + dados completos para a extensão
 // Faz a ponte entre o app (postMessage) e a extensão (chrome.runtime)
 
-console.log("🧩 Extensão ProfSis3 ativa na página do SisProf!");
+console.log("🧩 Extensão ProfSis3 ativa na página do ProfSis! (v2.0.1)");
+
+// ==================== DETECÇÃO DE LOGIN ====================
+
+// Verifica se o usuário está logado no ProfSis
+function verificarLoginProfSis() {
+    // Tenta pegar o usuário do localStorage (como o core.js salva)
+    const userJson = localStorage.getItem('app_current_user');
+    if (userJson) {
+        try {
+            const user = JSON.parse(userJson);
+            if (user && user.email) {
+                console.log("[ProfSis Ext] Usuário logado detectado:", user.nome || user.email);
+                // Envia o perfil para a extensão (background.js)
+                chrome.runtime.sendMessage({
+                    action: "PROFSIS_USER_LOGGED_IN",
+                    user: user
+                });
+                
+                // Também tenta enviar os dados completos do app
+                enviarDadosCompletos();
+                return true;
+            }
+        } catch (e) {
+            console.warn("[ProfSis Ext] Erro ao ler usuário do localStorage:", e);
+        }
+    }
+    
+    // Verifica se a tela de login está visível (não está logado)
+    const authContainer = document.getElementById('authContainer');
+    const appContainer = document.getElementById('appContainer');
+    if (authContainer && authContainer.style.display !== 'none' && (!appContainer || appContainer.style.display === 'none')) {
+        console.log("[ProfSis Ext] Tela de login visível - usuário NÃO está logado");
+        chrome.runtime.sendMessage({
+            action: "PROFSIS_USER_NOT_LOGGED"
+        });
+        return false;
+    }
+    
+    // Se o appContainer está visível, está logado
+    if (appContainer && appContainer.style.display !== 'none') {
+        console.log("[ProfSis Ext] App visível - usuário está logado (sem localStorage)");
+        // Tenta novamente pegar do localStorage
+        const userJson2 = localStorage.getItem('app_current_user');
+        if (userJson2) {
+            try {
+                const user = JSON.parse(userJson2);
+                chrome.runtime.sendMessage({
+                    action: "PROFSIS_USER_LOGGED_IN",
+                    user: user
+                });
+                enviarDadosCompletos();
+                return true;
+            } catch (e) {}
+        }
+    }
+    
+    return false;
+}
+
+// Tenta enviar os dados completos do app (turmas, estudantes, presencas, etc.)
+function enviarDadosCompletos() {
+    // Os dados do app são salvos no localStorage com a chave 'app_data_<userId>'
+    const userJson = localStorage.getItem('app_current_user');
+    if (!userJson) return;
+    
+    try {
+        const user = JSON.parse(userJson);
+        const userId = user.id || user.uid || 'unknown';
+        const dataKey = 'app_data_' + userId;
+        const dataJson = localStorage.getItem(dataKey);
+        
+        if (dataJson) {
+            const appData = JSON.parse(dataJson);
+            console.log("[ProfSis Ext] Dados do app encontrados:", Object.keys(appData).length, "chaves");
+            chrome.runtime.sendMessage({
+                action: "PROFSIS_DATA_UPDATE",
+                profile: user,
+                appData: appData
+            });
+        } else {
+            console.log("[ProfSis Ext] Sem dados do app no localStorage para", dataKey);
+        }
+    } catch (e) {
+        console.warn("[ProfSis Ext] Erro ao enviar dados completos:", e);
+    }
+}
+
+// ==================== EVENTOS DOM ====================
+
+// Monitora mudanças no localStorage (quando o usuário faz login)
+window.addEventListener('storage', (event) => {
+    if (event.key === 'app_current_user') {
+        console.log("[ProfSis Ext] localStorage mudou - re-verificando login");
+        setTimeout(verificarLoginProfSis, 500);
+    }
+});
+
+// Verifica login ao carregar e periodicamente
+setTimeout(verificarLoginProfSis, 2000);
+setInterval(verificarLoginProfSis, 10000); // A cada 10 segundos
+
+// ==================== EVENTOS DO APP (postMessage) ====================
 
 // 1. Escuta eventos DOM customizados (disparados pelo app.js)
 window.addEventListener('SisProf_Start_RPA', (event) => {
@@ -61,4 +164,17 @@ window.addEventListener('message', (event) => {
     }
 });
 
-console.log("✅ Ponte postMessage ↔ chrome.runtime estabelecida!");
+// 3. Escuta pedidos da extensão para enviar dados atualizados
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === "PROFSIS_REQUEST_DATA") {
+        console.log("[ProfSis Ext] Extensão pediu dados - re-enviando...");
+        verificarLoginProfSis();
+        sendResponse({ received: true });
+    }
+    if (request.action === "PROFSIS_REQUEST_LOGIN_STATUS") {
+        const logged = verificarLoginProfSis();
+        sendResponse({ logged: logged });
+    }
+});
+
+console.log("✅ Ponte postMessage ↔ chrome.runtime estabelecida! (v2.0.1)");
