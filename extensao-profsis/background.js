@@ -1,5 +1,5 @@
 // BACKGROUND SCRIPT - ProfSis3 Extension
-// v2.6.1 - Diagnóstico: mostra em qual conta/escola/turma os alunos foram gravados; usa o uid real do token, não o cacheado
+// v2.6.2 - Diagnóstico completo: mostra a turma LOCAL exata que foi casada com o texto da SED (nome/disciplina), não só o id
 
 // URLs do ProfSis para buscar abas abertas
 const PROFSIS_URL_PATTERNS = [
@@ -164,7 +164,7 @@ function encontrarAlvoTurma(turmasLocais, turmaSED) {
     }
 
     const turma = grupos.values().next().value;
-    return { masterId: turma.masterId || null, turmaId: turma.id };
+    return { masterId: turma.masterId || null, turmaId: turma.id, turmaNomeLocal: turma.nome, turmaDisciplinaLocal: turma.disciplina || null };
 }
 
 // Cria/reativa alunos em `estudantes` (array mutado in-place) para a turma `turmaId`.
@@ -227,7 +227,12 @@ async function atualizarAlunosDiretoFirebase(payload) {
     const alvo = encontrarAlvoTurma(profData.turmas || [], turmaSED);
     if (alvo.erro) throw new Error(alvo.erro);
 
-    const debugInfo = { uid: uid, profDocId: profDocId, turmaSED: turmaSED, masterId: alvo.masterId || null, turmaId: alvo.turmaId || null, schoolId: (user && user.schoolId) || null };
+    const debugInfo = {
+        uid: uid, profDocId: profDocId, turmaSED: turmaSED,
+        masterId: alvo.masterId || null, turmaId: alvo.turmaId || null,
+        turmaNomeLocal: alvo.turmaNomeLocal || null, turmaDisciplinaLocal: alvo.turmaDisciplinaLocal || null,
+        schoolId: (user && user.schoolId) || null
+    };
 
     // Turma vinculada à gestão: escreve no documento compartilhado da escola (visível a todos os professores)
     if (alvo.masterId) {
@@ -556,4 +561,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-console.log("✅ Background script carregado! (v2.6.1 - Escrita direta no Firestore)");
+console.log("✅ Background script carregado! (v2.6.2 - Escrita direta no Firestore)");

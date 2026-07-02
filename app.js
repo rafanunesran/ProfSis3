@@ -1096,6 +1096,7 @@ function renderTurmas() {
                 </div>
             </div>
             <div style="font-size:12px; color:#718096;">${t.turno}</div>
+            <div style="font-size:10px; color:#a0aec0; margin-top:4px;" title="Use para conferir onde a extensão gravou os alunos">ID: ${t.id}${t.masterId ? ' | Turma da gestão (masterId): ' + t.masterId : ''}</div>
         </div>
     `).join('');
     
@@ -1745,7 +1746,7 @@ function encontrarAlvoTurmaExtensao(turmasLocais, turmaSED, normalizeTurma) {
     }
 
     const turma = grupos.values().next().value;
-    return { masterId: turma.masterId || null, turmaId: turma.id };
+    return { masterId: turma.masterId || null, turmaId: turma.id, turmaNomeLocal: turma.nome, turmaDisciplinaLocal: turma.disciplina || null };
 }
 
 // Cria/reativa alunos em `estudantes` (array mutado in-place) para a turma `turmaId`.
@@ -1794,7 +1795,11 @@ async function processarAtualizacaoAlunosExtensao(payload) {
     const alvo = encontrarAlvoTurmaExtensao(data.turmas, turmaSED, normalizeTurma);
     if (alvo.erro) throw new Error(alvo.erro);
 
-    const debugInfo = { uid: currentUser.uid || currentUser.id, schoolId: currentUser.schoolId || null, turmaSED, masterId: alvo.masterId || null, turmaId: alvo.turmaId || null };
+    const debugInfo = {
+        uid: currentUser.uid || currentUser.id, schoolId: currentUser.schoolId || null, turmaSED,
+        masterId: alvo.masterId || null, turmaId: alvo.turmaId || null,
+        turmaNomeLocal: alvo.turmaNomeLocal || null, turmaDisciplinaLocal: alvo.turmaDisciplinaLocal || null
+    };
 
     if (alvo.masterId) {
         if (!currentUser.schoolId) throw new Error('Escola do usuário não identificada (uid ' + debugInfo.uid + '); não é possível compartilhar os alunos.');
