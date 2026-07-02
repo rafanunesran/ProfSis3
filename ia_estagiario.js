@@ -21,6 +21,9 @@ function abrirModalGerarDocumentoIA() {
     proximaSexta.setDate(proximaSegunda.getDate() + 4);
     const formatData = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
     const semanaSugerida = `${formatData(proximaSegunda)} a ${formatData(proximaSexta)}`;
+    const toISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const semanaInicioISO = toISO(proximaSegunda);
+    const semanaFimISO = toISO(proximaSexta);
 
     const defaultPromptTemplate = `Você é um professor/coordenador pedagógico experiente do Estado de São Paulo. Crie a estrutura de um Plano de Aula de {{disciplina}} para a série/ano {{serie}} sobre o tema: "{{tema}}".\nUtilize seus profundos conhecimentos sobre o Currículo Paulista e os Materiais de Apoio (Caderno do Aluno/Professor) da SEDUC-SP.\nAs habilidades devem seguir estritamente o código e formato do Currículo Paulista específicos da disciplina de {{disciplina}} (ex: se for Matemática, use EF...MA..., se for Arte, EF...AR..., etc.).\nA Aprendizagem Essencial deve ser compatível com os documentos curriculares oficiais da disciplina.\nRetorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:\n{"aprendizagem_essencial": "Habilidade central do Currículo Paulista", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades cognitivas a desenvolver com os códigos do Currículo Paulista da disciplina solicitada", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
     const savedPrompt = localStorage.getItem('ia_prompt_template') || defaultPromptTemplate;
@@ -46,6 +49,8 @@ function abrirModalGerarDocumentoIA() {
                     <div style="flex: 1;">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Semana Vigente:</label>
                         <input type="text" id="iaDocSemana" value="${semanaSugerida}" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                        <input type="hidden" id="iaDocSemanaInicio" value="${semanaInicioISO}">
+                        <input type="hidden" id="iaDocSemanaFim" value="${semanaFimISO}">
                     </div>
                 </div>
 
@@ -104,7 +109,11 @@ function abrirModalGerarDocumentoIA() {
     if (docDisciplina) docDisciplina.value = '';
     const docSemana = document.getElementById('iaDocSemana');
     if (docSemana) docSemana.value = semanaSugerida;
-    
+    const docSemanaInicio = document.getElementById('iaDocSemanaInicio');
+    if (docSemanaInicio) docSemanaInicio.value = semanaInicioISO;
+    const docSemanaFim = document.getElementById('iaDocSemanaFim');
+    if (docSemanaFim) docSemanaFim.value = semanaFimISO;
+
     const docPrompt = document.getElementById('iaDocPrompt');
     if (docPrompt) docPrompt.value = savedPrompt;
 
@@ -126,7 +135,9 @@ async function gerarDocumentoIA() {
     const serie = document.getElementById('iaDocSerie') ? document.getElementById('iaDocSerie').value : '';
     const disciplina = document.getElementById('iaDocDisciplina') ? document.getElementById('iaDocDisciplina').value : '';
     const semana = document.getElementById('iaDocSemana') ? document.getElementById('iaDocSemana').value : '';
-    
+    const semanaInicioISO = document.getElementById('iaDocSemanaInicio') ? document.getElementById('iaDocSemanaInicio').value : '';
+    const semanaFimISO = document.getElementById('iaDocSemanaFim') ? document.getElementById('iaDocSemanaFim').value : '';
+
     if (!serie || !disciplina) return alert('Por favor, selecione a série e a disciplina.');
     if (!tema) return alert('Por favor, informe o tema/assunto.');
 
@@ -319,7 +330,7 @@ async function gerarDocumentoIA() {
         }
 
         closeModal('modalGerarDocumentoIA');
-        abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasNomesStr, duracaoAulasStr, bimestreAtual, dadosEstruturados);
+        abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasNomesStr, duracaoAulasStr, bimestreAtual, dadosEstruturados, semanaInicioISO, semanaFimISO);
 
     } catch (e) {
         console.error(e);
@@ -330,7 +341,7 @@ async function gerarDocumentoIA() {
     }
 }
 
-function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasStr, duracaoAulas, bimestreAtual, dados) {
+function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasStr, duracaoAulas, bimestreAtual, dados, semanaInicioISO, semanaFimISO) {
     if (!document.getElementById('modalRevisaoDocumento')) {
         const div = document.createElement('div');
         div.id = 'modalRevisaoDocumento';
@@ -348,6 +359,8 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
     modal.dataset.turmasStr = turmasStr;
     modal.dataset.duracaoAulas = duracaoAulas;
     modal.dataset.bimestre = bimestreAtual;
+    modal.dataset.semanaInicio = semanaInicioISO || '';
+    modal.dataset.semanaFim = semanaFimISO || '';
 
     let formHtml = '';
     if (tipo === 'plano_aula') {
@@ -585,10 +598,13 @@ async function exportarDocumentoFinal(tipo) {
         closeModal('modalRevisaoDocumento');
         
         // [NOVO] AUTO-SALVAR DRAFT DO REGISTRO DE AULA
+        // Gera um rascunho de registro para CADA dia em que a turma realmente tem aula dentro da
+        // semana informada no plano (não só "hoje"), assim o rascunho já aparece pré-preenchido na
+        // Chamada de qualquer um desses dias. Nunca sobrescreve um registro que o professor já tenha
+        // feito manualmente para aquele dia (checagem de "registroExistente" por turma+data).
         try {
-            const hoje = getTodayString();
             if (!data.registrosAula) data.registrosAula = [];
-            
+
             const getSerieNomeLocal = (nome) => {
                 if (!nome) return '';
                 let n = nome.trim();
@@ -598,18 +614,70 @@ async function exportarDocumentoFinal(tipo) {
                 return n.trim();
             };
 
-            const turmasAlvo = (data.turmas || []).filter(t => t.disciplina === payload.disciplina && getSerieNomeLocal(t.ano_serie || t.nome) === payload.serie);
-            
-            turmasAlvo.forEach(turma => {
-                const registroExistente = data.registrosAula.find(r => r.id_turma == turma.id && r.data == hoje);
-                const conteudoResumo = `Tema: ${payload.tema}\n\nObjetivo: ${payload.dados.objetivos || 'Apresentado no plano de aula.'}\n\nDesenvolvimento: ${payload.dados.desenvolvimento || ''}`;
-                
-                if (!registroExistente) {
-                    data.registrosAula.push({ id: Date.now() + Math.random(), id_turma: turma.id, data: hoje, conteudo: conteudoResumo.substring(0, 1000) });
+            // Busca a grade/exceções da escola direto no banco (mesmo padrão do renderDashboard/
+            // renderChamada), em vez de confiar em data.schoolGrade/schoolExceptions - que só ficam
+            // preenchidos se o professor já tiver aberto o Dashboard nesta sessão.
+            let gradeEscola = data.schoolGrade || [];
+            let excecoesGrade = data.schoolExceptions || [];
+            if (currentUser && currentUser.schoolId) {
+                const keyGestor = 'app_data_school_' + currentUser.schoolId + '_gestor';
+                const gestorData = await getData('app_data', keyGestor);
+                if (gestorData) {
+                    gradeEscola = gestorData.gradeHoraria || [];
+                    excecoesGrade = gestorData.gradeHorariaExcecoes || [];
                 }
+            }
+            const minhasAulas = data.horariosAulas || [];
+
+            const turmaTemAulaNoDia = (turmaId, dataStr) => {
+                const diaSemana = new Date(dataStr + 'T12:00:00').getDay();
+                const excecao = excecoesGrade.find(e => e.data === dataStr);
+                const blocosDoDia = excecao ? (excecao.blocos || []) : gradeEscola.filter(g => g.diaSemana == diaSemana);
+                return blocosDoDia.some(bloco => {
+                    const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
+                    return aula && aula.tipo === 'aula' && aula.id_turma == turmaId;
+                });
+            };
+
+            const turmasAlvo = (data.turmas || []).filter(t => t.disciplina === payload.disciplina && getSerieNomeLocal(t.ano_serie || t.nome) === payload.serie);
+
+            // Monta a lista de dias da semana do plano (inclusive); cai para "hoje" se as datas não vieram.
+            const diasDaSemana = [];
+            const inicioISO = modal.dataset.semanaInicio;
+            const fimISO = modal.dataset.semanaFim;
+            if (inicioISO && fimISO) {
+                const cursor = new Date(inicioISO + 'T12:00:00');
+                const fim = new Date(fimISO + 'T12:00:00');
+                while (cursor <= fim) {
+                    diasDaSemana.push(cursor.toISOString().split('T')[0]);
+                    cursor.setDate(cursor.getDate() + 1);
+                }
+            } else {
+                diasDaSemana.push(getTodayString());
+            }
+
+            const conteudoResumo = `Tema: ${payload.tema}\n\nObjetivo: ${payload.dados.objetivos || 'Apresentado no plano de aula.'}\n\nDesenvolvimento: ${payload.dados.desenvolvimento || ''}`;
+            let algumCriado = false;
+
+            turmasAlvo.forEach(turma => {
+                // Se a turma não tem nenhum bloco de grade configurado, não há como saber os dias de
+                // aula dela - cai para o comportamento antigo (rascunho só em "hoje") em vez de não
+                // criar nada.
+                const turmaTemGradeConfigurada = gradeEscola.some(g => minhasAulas.some(a => a.id_bloco == g.id && a.id_turma == turma.id));
+                const diasAlvo = turmaTemGradeConfigurada ? diasDaSemana.filter(d => turmaTemAulaNoDia(turma.id, d)) : [getTodayString()];
+
+                diasAlvo.forEach(diaStr => {
+                    const registroExistente = data.registrosAula.find(r => r.id_turma == turma.id && r.data == diaStr);
+                    if (registroExistente) return;
+                    data.registrosAula.push({ id: Date.now() + Math.random(), id_turma: turma.id, data: diaStr, conteudo: conteudoResumo.substring(0, 1000) });
+                    algumCriado = true;
+                });
             });
-            persistirDados();
-            if (typeof window.enviarDadosParaExtensao === 'function') window.enviarDadosParaExtensao(true);
+
+            if (algumCriado) {
+                persistirDados();
+                if (typeof window.enviarDadosParaExtensao === 'function') window.enviarDadosParaExtensao(true);
+            }
         } catch(er) { console.warn("Erro ao auto-salvar registro", er); }
 
     } catch (e) {

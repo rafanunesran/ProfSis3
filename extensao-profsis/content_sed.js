@@ -1,7 +1,9 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
-// v2.7.0 - Casamento de turma corrigido no "Extrair Alunos" (código série+letra em vez de substring solto)
+// v2.8.0 - Botão único agora detecta a tela (Chamada x Registro de Aulas) e troca rótulo/ação:
+// "Preencher Chamada" só mexe em faltas, "Preencher Registro" só mexe no texto do registro,
+// casado com a Turma/Disciplina exibida no cabeçalho da tela de Registro.
 
-    console.log("🤖 content_sed.js EXECUTADO - v2.7.0");
+    console.log("🤖 content_sed.js EXECUTADO - v2.8.0");
 
 // ==================== VARIÁVEIS GLOBAIS ====================
 let extHistory = {};
@@ -169,8 +171,18 @@ function montarPayloadPorData(dataStr) {
     });
     
     const registrosNoDia = registrosAula.filter(r => r.data === dataStr);
+    const turmasProfsis = profsisAppData.turmas || [];
 
-    return { data: dataStr, faltas: alunosFaltantesNomes, registros: registrosNoDia.map(r => ({ conteudo: r.conteudo })), fechamento: [] };
+    // Mantém id_turma/turmaNome/disciplina em cada registro (em vez de só o texto) para dar para
+    // casar com a turma/disciplina exibida na tela "Registro de Aulas Detalhes" da SED - sem isso,
+    // um professor com mais de uma turma no mesmo dia sempre pegaria o registro errado (o primeiro
+    // da lista) ao preencher o Registro de uma turma que não é a primeira.
+    const registros = registrosNoDia.map(r => {
+        const turma = turmasProfsis.find(t => t.id == r.id_turma);
+        return { conteudo: r.conteudo, id_turma: r.id_turma, turmaNome: turma ? turma.nome : null, disciplina: turma ? turma.disciplina : null };
+    });
+
+    return { data: dataStr, faltas: alunosFaltantesNomes, registros: registros, fechamento: [] };
 }
 
 // Turmas que o professor tem no dia — mesma lógica do card "Agenda do Dia" do dashboard do ProfSis
@@ -202,6 +214,62 @@ function montarTurmasDoDia(dataStr) {
     return lista;
 }
 
+// ==================== DETECÇÃO DE TELA (CHAMADA x REGISTRO) ====================
+// A SED usa a mesma extensão em duas telas bem diferentes: "Lançamento de Frequências" (chamada)
+// e "Registro de Aulas Detalhes" (conteúdo da aula). O título em .txt-titulo é o jeito mais estável
+// de saber em qual delas estamos (a URL da SPA Blazor não muda de forma confiável entre elas).
+function detectarTipoTelaSED() {
+    const tituloEl = document.querySelector('.txt-titulo');
+    const titulo = tituloEl ? tituloEl.textContent.trim() : '';
+    if (/registro de aulas detalhes/i.test(titulo)) return 'registro';
+    if (/lan[cç]amento de frequ[êe]ncias?/i.test(titulo)) return 'chamada';
+    return null;
+}
+
+function normalizeTextoSED(s) {
+    return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+}
+
+// Mesma lógica de extrairCodigoSerieTurma do background.js (código série+letra, ex: "8C"), duplicada
+// aqui porque content script e service worker rodam em contextos separados e não compartilham funções.
+function extrairCodigoSerieTurmaSED(nome) {
+    if (!nome) return null;
+    const m = nome.match(/(\d+)\s*[ºo°]?\.?\s*(?:ano|s[ée]rie)?\s*\.?\s*([A-Za-zÀ-ú])\b/i);
+    if (!m) return null;
+    return (m[1] + m[2]).toUpperCase();
+}
+
+// Lê a Turma/Disciplina exibidas no cabeçalho da tela atual da SED (mesmo padrão usado em
+// iniciarExtrairAlunos) e acha, dentro dos registros do dia, o que pertence a essa turma+disciplina.
+function encontrarRegistroParaTela(payload) {
+    if (!payload || !payload.registros || payload.registros.length === 0) return null;
+    if (payload.registros.length === 1) return payload.registros[0];
+
+    let turmaSED = null, disciplinaSED = null;
+    document.querySelectorAll('.font-cabecalho-filtro').forEach(span => {
+        const t = span.textContent || '';
+        if (t.includes('Turma:')) turmaSED = t.replace(/^.*Turma:/i, '').trim();
+        if (t.includes('Disciplina:')) disciplinaSED = t.replace(/^.*Disciplina:/i, '').trim();
+    });
+    if (!turmaSED) return null;
+
+    const codigoSED = extrairCodigoSerieTurmaSED(turmaSED);
+    let candidatos = [];
+    if (codigoSED) {
+        candidatos = payload.registros.filter(r => extrairCodigoSerieTurmaSED((r.turmaNome || '').split('-')[0]) === codigoSED);
+    }
+    if (candidatos.length === 0) {
+        const normTurmaSED = normalizeTextoSED(turmaSED);
+        candidatos = payload.registros.filter(r => normalizeTextoSED((r.turmaNome || '').split('-')[0]) === normTurmaSED);
+    }
+    if (candidatos.length > 1 && disciplinaSED) {
+        const normDiscSED = normalizeTextoSED(disciplinaSED);
+        const porDisciplina = candidatos.filter(r => normalizeTextoSED(r.disciplina) === normDiscSED);
+        if (porDisciplina.length > 0) candidatos = porDisciplina;
+    }
+    return candidatos.length > 0 ? candidatos[0] : null;
+}
+
 // ==================== MENU FLUTUANTE ====================
 
 function injetarMenu() {
@@ -211,7 +279,7 @@ function injetarMenu() {
     div.id = 'sisprof-menu-flutuante';
     div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;';
     div.innerHTML = '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
-            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v2.7.0</span></span>' +
+            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v2.8.0</span></span>' +
         '<div style="display:flex; gap:8px; align-items:center;"><span id="sisprof-user-name" style="font-size:11px; opacity:0.9; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
         '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;">▶</span><span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span></div></div>' +
         '<div id="sisprof-conteudo"><p style="margin:0 0 10px 0; color:#4a5568; font-size:13px;">✅ Conectado ao ProfSis!</p>' +
@@ -235,22 +303,24 @@ function injetarMenu() {
     document.getElementById('sisprof-data-input').addEventListener('change', function() { currentSelectedDate = this.value; atualizarInterfacePorData(); });
     document.getElementById('sisprof-btn-preencher').onclick = function() {
         if (!currentSelectedDate) { alert('Selecione um dia primeiro.'); return; }
-        const btn = this; const oldText = btn.textContent; btn.textContent = '⏳ Preenchendo...'; btn.disabled = true;
-        selecionarDataSED(currentSelectedDate);
-        setTimeout(() => {
-            const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
-            let btnBuscar = null;
-            buttons.forEach(b => { const t = (b.innerText || b.value || '').toLowerCase(); if (t.includes('pesquisar') || t.includes('buscar') || t.includes('listar')) btnBuscar = b; });
-            if (btnBuscar) btnBuscar.click();
-            setTimeout(() => { const payload = extHistory[currentSelectedDate]; if (payload) executarPreenchimento(payload); btn.textContent = oldText; btn.disabled = false; }, 2500);
-        }, 1000);
+        const tipoTela = detectarTipoTelaSED();
+        if (tipoTela === 'registro') { preencherRegistroNaTela(this); }
+        else if (tipoTela === 'chamada') { preencherChamadaNaTela(this); }
+        else { alert('Não foi possível identificar se esta é a tela de Chamada ou de Registro da SED. Abra "Lançamento de Frequências" ou "Registro de Aulas Detalhes" e tente novamente.'); }
     };
     document.getElementById('sisprof-btn-extrair').onclick = iniciarExtrairAlunos;
     let observerDebounce = null, observerBusy = false;
     const observer = new MutationObserver(() => {
         if (observerBusy) return;
         if (observerDebounce) clearTimeout(observerDebounce);
-        observerDebounce = setTimeout(() => { if (document.querySelector('.card_aluno, .card_aluno1')) { observerBusy = true; try { atualizarInterfacePorData(); } catch (e) {} finally { observerBusy = false; } } }, 800);
+        observerDebounce = setTimeout(() => {
+            // .txt-titulo existe em praticamente toda tela "page-interna" da SED (Chamada, Registro,
+            // etc.) - usado aqui para também reagir na tela de Registro, que não tem .card_aluno.
+            if (document.querySelector('.card_aluno, .card_aluno1') || document.querySelector('.txt-titulo')) {
+                observerBusy = true;
+                try { atualizarInterfacePorData(); atualizarModoBotaoPreencher(); } catch (e) {} finally { observerBusy = false; }
+            }
+        }, 800);
     });
     observer.observe(document.body, { childList: true, subtree: true });
     const h = new Date().toISOString().split('T')[0];
@@ -258,6 +328,22 @@ function injetarMenu() {
     currentSelectedDate = h;
     // Mostra a agenda do dia imediatamente, em qualquer tela (não depende de entrar na chamada)
     atualizarInterfacePorData();
+    atualizarModoBotaoPreencher();
+}
+
+// Ajusta o rótulo/ação do botão único conforme a tela da SED (Chamada ou Registro).
+function atualizarModoBotaoPreencher() {
+    const btn = document.getElementById('sisprof-btn-preencher');
+    if (!btn) return;
+    const tipo = detectarTipoTelaSED();
+    if (tipo === 'registro') {
+        btn.textContent = '✅ Preencher Registro';
+        btn.title = 'Preenche o texto do registro de aula (conteúdo) da turma/disciplina desta tela.';
+    } else {
+        // Padrão "Chamada" também quando a tela ainda não foi identificada (ex: carregando).
+        btn.textContent = '✅ Preencher Chamada';
+        btn.title = 'Marca as faltas da turma desta tela.';
+    }
 }
 
 // ==================== INTERFACE ====================
@@ -322,10 +408,42 @@ function selecionarDataSED(dataStr) {
 }
 
 
-function executarPreenchimento(payload) {
-    const normalize = s => s ? s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
+// Aciona o botão a partir da tela de "Lançamento de Frequências": seleciona a data, clica em
+// Pesquisar/Buscar para carregar os alunos e então marca as faltas (e fechamento, se aplicável).
+// Não mexe em nenhum campo de texto de registro - essa tela só cuida de presença.
+function preencherChamadaNaTela(btn) {
+    const oldText = btn.textContent; btn.textContent = '⏳ Preenchendo...'; btn.disabled = true;
+    selecionarDataSED(currentSelectedDate);
+    setTimeout(() => {
+        const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
+        let btnBuscar = null;
+        buttons.forEach(b => { const t = (b.innerText || b.value || '').toLowerCase(); if (t.includes('pesquisar') || t.includes('buscar') || t.includes('listar')) btnBuscar = b; });
+        if (btnBuscar) btnBuscar.click();
+        setTimeout(() => {
+            const payload = extHistory[currentSelectedDate];
+            if (payload) executarPreenchimentoChamada(payload);
+            btn.textContent = oldText; btn.disabled = false;
+        }, 2500);
+    }, 1000);
+}
+
+// Aciona o botão a partir da tela "Registro de Aulas Detalhes": seleciona a data no calendário da
+// SED e preenche o texto do registro casado com a turma/disciplina desta tela. Não mexe em faltas.
+function preencherRegistroNaTela(btn) {
+    const oldText = btn.textContent; btn.textContent = '⏳ Preenchendo...'; btn.disabled = true;
+    selecionarDataSED(currentSelectedDate);
+    setTimeout(() => {
+        const payload = extHistory[currentSelectedDate];
+        if (payload) executarPreenchimentoRegistro(payload);
+        else alert('Sem dados de registro para esta data.');
+        btn.textContent = oldText; btn.disabled = false;
+    }, 1200);
+}
+
+function executarPreenchimentoChamada(payload) {
+    const normalize = s => s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
     let interagidos = 0;
-    
+
     // Marca apenas os faltosos classificados pela gestão
     // payload.faltas agora contém apenas os faltosos da gestão que realmente faltaram
     if (payload.faltas && payload.faltas.length > 0) {
@@ -341,14 +459,8 @@ function executarPreenchimento(payload) {
             if (checkbox.checked !== deveEstarPresente) { checkbox.click(); interagidos++; }
         });
     }
-    
-    // Preenche registro/conteúdo da aula se disponível
-    if (payload.registros && payload.registros.length > 0) {
-        const txt = document.querySelector('textarea[name="o.Descricao"], textarea#conteudoAula, textarea.form-control, textarea');
-        if (txt) { txt.value = payload.registros[0].conteudo; txt.dispatchEvent(new Event("input", { bubbles: true })); txt.dispatchEvent(new Event("change", { bubbles: true })); interagidos++; }
-    }
-    
-    // Fechamento bimestre se aplicável
+
+    // Fechamento bimestre se aplicável (tela própria, identificada pelo próprio seletor abaixo)
     if (payload.fechamento && payload.fechamento.length > 0) {
         const isFechamentoScreen = document.querySelector('.boxAulasPlanejadasRealizadas');
         if (isFechamentoScreen) {
@@ -372,17 +484,48 @@ function executarPreenchimento(payload) {
             });
         }
     }
-    
+
     if (interagidos > 0) {
         setTimeout(() => {
             const btnSalvar = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a')).find(b => {
                 const text = (b.innerText || b.value || b.textContent || '').toLowerCase();
                 return text.includes('salvar') || text.includes('cadastrar') || text.includes('gravar') || text.includes('finalizar');
             });
-            if (btnSalvar) { btnSalvar.click(); alert('✅ Concluído! Lançamentos preenchidos e salvos na SED.'); }
+            if (btnSalvar) { btnSalvar.click(); alert('✅ Concluído! Faltas preenchidas e salvas na SED.'); }
             else alert('✅ Concluído! ⚠️ Clique em "Salvar" manualmente.');
         }, 500);
-    } else alert('Nenhum dado pendente ou campos não encontrados na tela.');
+    } else alert('Nenhuma falta pendente ou tela de chamada não encontrada.');
+}
+
+// Preenche o campo de texto na tela "Registro de Aulas Detalhes". O registro certo é escolhido
+// casando a Turma/Disciplina exibidas no cabeçalho da SED com os registros do ProfSis para o dia
+// (ver encontrarRegistroParaTela) - importante quando o professor tem mais de uma turma no mesmo dia.
+function executarPreenchimentoRegistro(payload) {
+    const registro = encontrarRegistroParaTela(payload);
+    if (!registro || !registro.conteudo) {
+        alert('Nenhum registro (ou rascunho do Estagiário) encontrado no ProfSis para a turma/disciplina e data desta tela.');
+        return;
+    }
+
+    const areas = document.querySelectorAll('textarea[name="o.Descricao"]');
+    if (areas.length === 0) {
+        alert('Não encontrei o campo de texto do registro nesta tela.\n\nSe a SED exigir escolher o "Horário de Aula" antes de mostrar o campo, selecione-o manualmente e clique em "Preencher Registro" de novo.');
+        return;
+    }
+    areas.forEach(txt => {
+        txt.value = registro.conteudo;
+        txt.dispatchEvent(new Event('input', { bubbles: true }));
+        txt.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    setTimeout(() => {
+        const btnSalvar = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a')).find(b => {
+            const text = (b.innerText || b.value || b.textContent || '').toLowerCase();
+            return text.includes('salvar') || text.includes('gravar');
+        });
+        if (btnSalvar) { btnSalvar.click(); alert('✅ Registro preenchido e salvo na SED.'); }
+        else alert('✅ Registro preenchido! ⚠️ Clique em "Salvar" manualmente.');
+    }, 400);
 }
 
 // ==================== EXTRAIR ALUNOS (atualiza direto no banco) ====================
