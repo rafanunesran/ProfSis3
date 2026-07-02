@@ -1794,22 +1794,24 @@ async function processarAtualizacaoAlunosExtensao(payload) {
     const alvo = encontrarAlvoTurmaExtensao(data.turmas, turmaSED, normalizeTurma);
     if (alvo.erro) throw new Error(alvo.erro);
 
+    const debugInfo = { uid: currentUser.uid || currentUser.id, schoolId: currentUser.schoolId || null, turmaSED, masterId: alvo.masterId || null, turmaId: alvo.turmaId || null };
+
     if (alvo.masterId) {
-        if (!currentUser.schoolId) throw new Error('Escola do usuário não identificada; não é possível compartilhar os alunos.');
+        if (!currentUser.schoolId) throw new Error('Escola do usuário não identificada (uid ' + debugInfo.uid + '); não é possível compartilhar os alunos.');
         const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
         const gestorData = await getData('app_data', key);
-        if (!gestorData) throw new Error('Não foi possível ler os dados da escola.');
+        if (!gestorData) throw new Error('Não foi possível ler os dados da escola (documento ' + key + ').');
         if (!gestorData.estudantes) gestorData.estudantes = [];
 
         const resultado = aplicarAtualizacaoAlunosExtensao(gestorData.estudantes, alvo.masterId, alunosExtraidos, normalizeName);
         await saveData('app_data', key, gestorData);
-        return resultado;
+        return { ...resultado, debugInfo: { ...debugInfo, gestorDocId: key } };
     }
 
     if (!data.estudantes) data.estudantes = [];
     const resultado = aplicarAtualizacaoAlunosExtensao(data.estudantes, alvo.turmaId, alunosExtraidos, normalizeName);
     await persistirDados();
-    return resultado;
+    return { ...resultado, debugInfo };
 }
 
 function salvarTurma(e) {

@@ -1,5 +1,5 @@
 // BACKGROUND SCRIPT - ProfSis3 Extension
-// v2.6.0 - Lógica puramente aditiva: nunca mais marca "Transferido" nem remaneja id_turma de quem já está ativo
+// v2.6.1 - Diagnóstico: mostra em qual conta/escola/turma os alunos foram gravados; usa o uid real do token, não o cacheado
 
 // URLs do ProfSis para buscar abas abertas
 const PROFSIS_URL_PATTERNS = [
@@ -211,34 +211,42 @@ async function atualizarAlunosDiretoFirebase(payload) {
 
     const userStorage = await chrome.storage.local.get(['profsis_user']);
     const user = userStorage.profsis_user;
-    const uid = (user && user.uid) || auth.uid;
+    // [DIAGNÓSTICO] Se a sessão cacheada (profsis_user) estiver dessincronizada de quem o refresh
+    // token realmente autentica (auth.uid) - ex: sessão antiga de outra conta - usar user.uid aqui
+    // faria ler/escrever no documento ERRADO. Prioriza a identidade real do token.
+    if (user && user.uid && user.uid !== auth.uid) {
+        console.warn('[Background] ⚠️ profsis_user.uid (' + user.uid + ') difere do uid do token atual (' + auth.uid + '). Usando o uid do token.');
+    }
+    const uid = auth.uid || (user && user.uid);
     if (!uid) throw new Error('Usuário do ProfSis não identificado.');
 
     const profDocId = 'app_data_' + uid;
     const profData = await firestoreGetDoc(profDocId, auth.idToken);
-    if (!profData) throw new Error('Não foi possível ler os dados do professor no Firestore.');
+    if (!profData) throw new Error('Não foi possível ler os dados do professor no Firestore (documento ' + profDocId + ').');
 
     const alvo = encontrarAlvoTurma(profData.turmas || [], turmaSED);
     if (alvo.erro) throw new Error(alvo.erro);
 
+    const debugInfo = { uid: uid, profDocId: profDocId, turmaSED: turmaSED, masterId: alvo.masterId || null, turmaId: alvo.turmaId || null, schoolId: (user && user.schoolId) || null };
+
     // Turma vinculada à gestão: escreve no documento compartilhado da escola (visível a todos os professores)
     if (alvo.masterId) {
-        if (!user || !user.schoolId) throw new Error('Escola do usuário não identificada; não é possível compartilhar os alunos.');
+        if (!user || !user.schoolId) throw new Error('Escola do usuário não identificada (uid ' + uid + '); não é possível compartilhar os alunos.');
         const gestorDocId = 'app_data_school_' + user.schoolId + '_gestor';
         const gestorData = await firestoreGetDoc(gestorDocId, auth.idToken);
-        if (!gestorData) throw new Error('Não foi possível ler os dados da escola no Firestore.');
+        if (!gestorData) throw new Error('Não foi possível ler os dados da escola no Firestore (documento ' + gestorDocId + ').');
         if (!gestorData.estudantes) gestorData.estudantes = [];
 
         const resultado = aplicarAtualizacaoAlunos(gestorData.estudantes, alvo.masterId, alunos);
         await firestoreSetDoc(gestorDocId, gestorData, auth.idToken);
-        return resultado;
+        return { ...resultado, debugInfo: { ...debugInfo, gestorDocId } };
     }
 
     // Turma própria (sem vínculo com a gestão): escreve no documento privado do professor
     if (!profData.estudantes) profData.estudantes = [];
     const resultado = aplicarAtualizacaoAlunos(profData.estudantes, alvo.turmaId, alunos);
     await firestoreSetDoc(profDocId, profData, auth.idToken);
-    return resultado;
+    return { ...resultado, debugInfo };
 }
 
 // ==================== LISTENER DE MENSAGENS ====================
@@ -548,4 +556,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-console.log("✅ Background script carregado! (v2.6.0 - Escrita direta no Firestore)");
+console.log("✅ Background script carregado! (v2.6.1 - Escrita direta no Firestore)");
