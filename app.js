@@ -1716,17 +1716,39 @@ window.addEventListener('SisProf_Refresh_Data', async () => {
     }
 });
 
+// Extrai um código "série+letra" (ex: "8C") do nome da turma, tanto do texto cru da SED
+// ("8º Ano C Integral 9H Anual") quanto do nome local abreviado ("8A", "8C"...).
+// Isso existe porque checar substring solto é perigoso: "8A" é substring de "8Ano C..."
+// (por causa do "8A" dentro de "8Ano"), então "8A" e "8º Ano C" batiam por engano mesmo
+// sendo turmas DIFERENTES (letras A e C). Exigir o código completo evita essa colisão.
+function extrairCodigoSerieTurmaExtensao(nome) {
+    if (!nome) return null;
+    const m = nome.match(/(\d+)\s*[ºo°]?\.?\s*(?:ano|s[ée]rie)?\s*\.?\s*([A-Za-zÀ-ú])\b/i);
+    if (!m) return null;
+    return (m[1] + m[2]).toUpperCase();
+}
+
 // Acha a turma física local (mesma lógica em extensao-profsis/background.js: encontrarAlvoTurma).
-// Prioriza correspondência EXATA de nome (evita casar "6" com "6ºA" e "6ºB" ao mesmo tempo) e, se
-// mais de uma turma FÍSICA ainda corresponder (masterId diferente, ou id diferente sem masterId),
-// falha em vez de aplicar em todas (evita contaminação cruzada / remanejamentos duplicados).
+// Prioriza o código série+letra (ex: "8C") e, se não der pra extrair, cai para nome normalizado
+// EXATO e por último substring (mais fraco). Se mais de uma turma FÍSICA ainda corresponder
+// (masterId diferente, ou id diferente sem masterId), falha em vez de aplicar em todas.
 function encontrarAlvoTurmaExtensao(turmasLocais, turmaSED, normalizeTurma) {
     const sedNorm = normalizeTurma(turmaSED);
+    const sedCodigo = extrairCodigoSerieTurmaExtensao(turmaSED);
     const comNorm = (turmasLocais || [])
-        .map(t => ({ turma: t, norm: normalizeTurma((t.nome || '').split('-')[0]) }))
+        .map(t => {
+            const base = (t.nome || '').split('-')[0];
+            return { turma: t, norm: normalizeTurma(base), codigo: extrairCodigoSerieTurmaExtensao(base) };
+        })
         .filter(x => x.norm);
 
-    let candidatos = comNorm.filter(x => x.norm === sedNorm);
+    let candidatos = [];
+    if (sedCodigo) {
+        candidatos = comNorm.filter(x => x.codigo && x.codigo === sedCodigo);
+    }
+    if (candidatos.length === 0) {
+        candidatos = comNorm.filter(x => x.norm === sedNorm);
+    }
     if (candidatos.length === 0) {
         candidatos = comNorm.filter(x => sedNorm.includes(x.norm) || x.norm.includes(sedNorm));
     }
@@ -1750,18 +1772,20 @@ function encontrarAlvoTurmaExtensao(turmasLocais, turmaSED, normalizeTurma) {
 }
 
 // Cria/reativa alunos em `estudantes` (array mutado in-place) para a turma `turmaId`.
-// Lógica puramente aditiva, sem nenhum efeito colateral em quem já está ativo:
-// - Aluno extraído NÃO existe no sistema -> cria, já na turma alvo, status Ativo.
-// - Aluno extraído já existe e está Ativo -> não faz NADA (não mexe em id_turma, não duplica).
-// - Aluno extraído já existe mas não está Ativo -> só atualiza o status para Ativo (reativa).
-// Nunca marca ninguém como "Transferido" e nunca move o id_turma de um aluno já ativo - isso
-// já causou remanejamentos e transferências indevidas quando a raspagem da SED não é 100% confiável.
+// Mesma lógica usada na "Importar CSV" do modo Gestor: a checagem de existência é ESCOPADA à
+// turma alvo (não procura o nome em todas as turmas do sistema) - simples e previsível:
+// - Aluno extraído NÃO existe NESTA turma -> cria, status Ativo.
+// - Aluno extraído já existe NESTA turma e está Ativo -> não faz NADA.
+// - Aluno extraído já existe NESTA turma mas não está Ativo -> só atualiza o status para Ativo.
+// Nunca marca ninguém como "Transferido", nunca mexe em id_turma de quem já existe, e nunca
+// mexe em alunos de outras turmas - isso já causou remanejamentos e transferências indevidas.
 function aplicarAtualizacaoAlunosExtensao(estudantes, turmaId, alunosExtraidos, normalizeName) {
     let adicionados = 0, reativados = 0;
+    const estudantesDaTurma = estudantes.filter(e => e.id_turma == turmaId);
 
     alunosExtraidos.forEach(aExtraido => {
         const nomeUpper = normalizeName(aExtraido.nome);
-        const existente = estudantes.find(e => normalizeName(e.nome_completo) === nomeUpper);
+        const existente = estudantesDaTurma.find(e => normalizeName(e.nome_completo) === nomeUpper);
         if (existente) {
             if (existente.status !== 'Ativo') {
                 existente.status = 'Ativo';
