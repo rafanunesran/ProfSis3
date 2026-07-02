@@ -1,9 +1,17 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
-// v2.8.0 - Botão único agora detecta a tela (Chamada x Registro de Aulas) e troca rótulo/ação:
-// "Preencher Chamada" só mexe em faltas, "Preencher Registro" só mexe no texto do registro,
-// casado com a Turma/Disciplina exibida no cabeçalho da tela de Registro.
+// v2.12.0 - "Preencher Chamada" agora seleciona sozinho o Horário de Aula (multi-select da SED,
+// obrigatório antes dos cards de aluno aparecerem) casado com a grade da turma da tela, além do
+// dia. Os faltosos são buscados na hora via FETCH_CHAMADA_DIRETO (documento da escola/gestão +
+// documento do professor), não do cache local - antes um Faltoso podia sumir dependendo da turma
+// se o professor não tivesse aberto aquela turma no ProfSis para sincronizar. A marcação de faltas
+// vale só para a turma exibida na tela e segue em frente mesmo sem chamada lançada nesse dia (não
+// depende de lançamento prévio) - marca falta pros faltosos e presença pro resto, e lança do
+// mesmo jeito. Ao clicar em Salvar na Chamada, a turma do dia é marcada como "Lançado" automaticamente.
+// "Preencher Registro" também seleciona sozinho o Bimestre e o Horário de Aula (mesmo multi-select
+// da Chamada) antes de preencher, e busca o conteúdo do registro direto no Firestore
+// (FETCH_REGISTRO_DIRETO), não do cache local, para nunca preencher um texto desatualizado.
 
-    console.log("🤖 content_sed.js EXECUTADO - v2.8.0");
+    console.log("🤖 content_sed.js EXECUTADO - v2.12.0");
 
 // ==================== VARIÁVEIS GLOBAIS ====================
 let extHistory = {};
@@ -170,19 +178,24 @@ function montarPayloadPorData(dataStr) {
         // Se houve chamada e o aluno esteve presente, NÃO inclui (não faltou)
     });
     
-    const registrosNoDia = registrosAula.filter(r => r.data === dataStr);
-    const turmasProfsis = profsisAppData.turmas || [];
+    return { data: dataStr, faltas: alunosFaltantesNomes, registros: construirRegistrosDoDia(profsisAppData, dataStr), fechamento: [] };
+}
 
-    // Mantém id_turma/turmaNome/disciplina em cada registro (em vez de só o texto) para dar para
-    // casar com a turma/disciplina exibida na tela "Registro de Aulas Detalhes" da SED - sem isso,
-    // um professor com mais de uma turma no mesmo dia sempre pegaria o registro errado (o primeiro
-    // da lista) ao preencher o Registro de uma turma que não é a primeira.
-    const registros = registrosNoDia.map(r => {
-        const turma = turmasProfsis.find(t => t.id == r.id_turma);
-        return { conteudo: r.conteudo, id_turma: r.id_turma, turmaNome: turma ? turma.nome : null, disciplina: turma ? turma.disciplina : null };
-    });
-
-    return { data: dataStr, faltas: alunosFaltantesNomes, registros: registros, fechamento: [] };
+// Mantém id_turma/turmaNome/disciplina em cada registro (em vez de só o texto) para dar para casar
+// com a turma/disciplina exibida na tela "Registro de Aulas Detalhes" da SED - sem isso, um
+// professor com mais de uma turma no mesmo dia sempre pegaria o registro errado (o primeiro da
+// lista) ao preencher o Registro de uma turma que não é a primeira.
+// Recebe `appData` como parâmetro (em vez de ler profsisAppData direto) para poder ser usada tanto
+// com o cache local quanto com dados buscados na hora direto do Firestore (ver preencherRegistroNaTela).
+function construirRegistrosDoDia(appData, dataStr) {
+    const registrosAula = appData.registrosAula || [];
+    const turmasProfsis = appData.turmas || [];
+    return registrosAula
+        .filter(r => r.data === dataStr)
+        .map(r => {
+            const turma = turmasProfsis.find(t => t.id == r.id_turma);
+            return { conteudo: r.conteudo, id_turma: r.id_turma, turmaNome: turma ? turma.nome : null, disciplina: turma ? turma.disciplina : null };
+        });
 }
 
 // Turmas que o professor tem no dia — mesma lógica do card "Agenda do Dia" do dashboard do ProfSis
@@ -214,6 +227,28 @@ function montarTurmasDoDia(dataStr) {
     return lista;
 }
 
+// Horários (início/fim) que a turma tem na grade em um dia específico - usado para casar com as
+// opções do "Horário de Aula" da SED, tanto na tela de Chamada quanto na de Registro de Aulas (é o
+// mesmo widget ".input-aula-hora" nas duas). Mesma fonte de dados/regra do montarTurmasDoDia, mas
+// filtrada para uma única turma (pode haver mais de um bloco no dia, ex: aula geminada).
+function obterBlocosDaTurmaNoDia(turmaId, dataStr) {
+    if (!turmaId || !dataStr) return [];
+    const gradeEscola = profsisAppData.schoolGrade || [];
+    const excecoesGrade = profsisAppData.schoolExceptions || [];
+    const minhasAulas = profsisAppData.horariosAulas || [];
+    const diaSemana = new Date(dataStr + 'T12:00:00').getDay();
+    const excecaoDoDia = excecoesGrade.find(e => e.data === dataStr);
+    const blocosDoDia = excecaoDoDia
+        ? (excecaoDoDia.blocos || [])
+        : gradeEscola.filter(g => g.diaSemana == diaSemana);
+    return blocosDoDia
+        .filter(bloco => {
+            const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
+            return aula && aula.tipo === 'aula' && aula.id_turma == turmaId;
+        })
+        .map(bloco => ({ inicio: bloco.inicio, fim: bloco.fim }));
+}
+
 // ==================== DETECÇÃO DE TELA (CHAMADA x REGISTRO) ====================
 // A SED usa a mesma extensão em duas telas bem diferentes: "Lançamento de Frequências" (chamada)
 // e "Registro de Aulas Detalhes" (conteúdo da aula). O título em .txt-titulo é o jeito mais estável
@@ -239,12 +274,11 @@ function extrairCodigoSerieTurmaSED(nome) {
     return (m[1] + m[2]).toUpperCase();
 }
 
-// Lê a Turma/Disciplina exibidas no cabeçalho da tela atual da SED (mesmo padrão usado em
-// iniciarExtrairAlunos) e acha, dentro dos registros do dia, o que pertence a essa turma+disciplina.
-function encontrarRegistroParaTela(payload) {
-    if (!payload || !payload.registros || payload.registros.length === 0) return null;
-    if (payload.registros.length === 1) return payload.registros[0];
-
+// Lê a Turma/Disciplina exibidas no cabeçalho da tela atual da SED (Chamada e Registro usam o
+// mesmo padrão de cabeçalho) e acha a turma correspondente no ProfSis - usado tanto para casar o
+// Registro certo quanto para saber de qual turma marcar os faltosos e qual horário selecionar.
+function obterTurmaDaTelaSED() {
+    const turmasProfsis = profsisAppData.turmas || [];
     let turmaSED = null, disciplinaSED = null;
     document.querySelectorAll('.font-cabecalho-filtro').forEach(span => {
         const t = span.textContent || '';
@@ -256,17 +290,28 @@ function encontrarRegistroParaTela(payload) {
     const codigoSED = extrairCodigoSerieTurmaSED(turmaSED);
     let candidatos = [];
     if (codigoSED) {
-        candidatos = payload.registros.filter(r => extrairCodigoSerieTurmaSED((r.turmaNome || '').split('-')[0]) === codigoSED);
+        candidatos = turmasProfsis.filter(t => extrairCodigoSerieTurmaSED((t.nome || '').split('-')[0]) === codigoSED);
     }
     if (candidatos.length === 0) {
         const normTurmaSED = normalizeTextoSED(turmaSED);
-        candidatos = payload.registros.filter(r => normalizeTextoSED((r.turmaNome || '').split('-')[0]) === normTurmaSED);
+        candidatos = turmasProfsis.filter(t => normalizeTextoSED((t.nome || '').split('-')[0]) === normTurmaSED);
     }
     if (candidatos.length > 1 && disciplinaSED) {
         const normDiscSED = normalizeTextoSED(disciplinaSED);
-        const porDisciplina = candidatos.filter(r => normalizeTextoSED(r.disciplina) === normDiscSED);
+        const porDisciplina = candidatos.filter(t => normalizeTextoSED(t.disciplina) === normDiscSED);
         if (porDisciplina.length > 0) candidatos = porDisciplina;
     }
+    return candidatos.length > 0 ? candidatos[0] : null;
+}
+
+// Acha, dentro dos registros do dia, o que pertence à turma+disciplina exibida no cabeçalho.
+function encontrarRegistroParaTela(payload) {
+    if (!payload || !payload.registros || payload.registros.length === 0) return null;
+    if (payload.registros.length === 1) return payload.registros[0];
+
+    const turma = obterTurmaDaTelaSED();
+    if (!turma) return null;
+    const candidatos = payload.registros.filter(r => r.id_turma == turma.id);
     return candidatos.length > 0 ? candidatos[0] : null;
 }
 
@@ -279,7 +324,7 @@ function injetarMenu() {
     div.id = 'sisprof-menu-flutuante';
     div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;';
     div.innerHTML = '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
-            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v2.8.0</span></span>' +
+            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v2.12.0</span></span>' +
         '<div style="display:flex; gap:8px; align-items:center;"><span id="sisprof-user-name" style="font-size:11px; opacity:0.9; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
         '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;">▶</span><span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span></div></div>' +
         '<div id="sisprof-conteudo"><p style="margin:0 0 10px 0; color:#4a5568; font-size:13px;">✅ Conectado ao ProfSis!</p>' +
@@ -408,46 +453,217 @@ function selecionarDataSED(dataStr) {
 }
 
 
-// Aciona o botão a partir da tela de "Lançamento de Frequências": seleciona a data, clica em
-// Pesquisar/Buscar para carregar os alunos e então marca as faltas (e fechamento, se aplicável).
+// Casa os horários da grade da turma (obterBlocosDaTurmaNoDia) com as opções do "Horário de Aula"
+// da SED - um multi-select próprio (não é um <select> comum), presente tanto na Chamada (onde é
+// obrigatório pros cards de aluno com o checkbox de falta/presença aparecerem) quanto no Registro
+// de Aulas (onde é obrigatório pro campo de texto aparecer). Os itens do menu ficam sempre no DOM
+// (só ficam visíveis quando o usuário abre o combo), então clicá-los funciona mesmo sem abrir o
+// combo; só clicamos em ".multi-select-button" se ainda não achamos nenhum item (caso a SED só
+// monte o menu no primeiro clique).
+function selecionarHorarioSED(blocos, callback, tentativas) {
+    tentativas = tentativas || 0;
+    const checkboxes = document.querySelectorAll('.input-aula-hora .multi-select-menuitem input[type="checkbox"]');
+    if (checkboxes.length === 0) {
+        if (tentativas >= 5) { callback(); return; }
+        const btnAbrir = document.querySelector('.input-aula-hora .multi-select-button');
+        if (btnAbrir) btnAbrir.click();
+        setTimeout(() => selecionarHorarioSED(blocos, callback, tentativas + 1), 300);
+        return;
+    }
+
+    const normHora = s => (s || '').replace(/\s+/g, ' ').trim();
+    const alvos = blocos.map(b => normHora(b.inicio + ' às ' + b.fim));
+    let algumMarcado = false;
+    checkboxes.forEach(chk => {
+        const bate = alvos.includes(normHora(chk.value));
+        if (bate) { algumMarcado = true; if (!chk.checked) chk.click(); }
+        else if (blocos.length > 0 && chk.checked) { chk.click(); }
+    });
+    // Não achamos o horário da grade dessa turma (grade não cadastrada, exceção do dia, etc.) -
+    // se só existe uma opção na tela, marca ela mesmo assim para não travar o preenchimento por
+    // falta de horário selecionado.
+    if (!algumMarcado && blocos.length === 0 && checkboxes.length === 1 && !checkboxes[0].checked) {
+        checkboxes[0].click();
+    }
+    setTimeout(callback, 500);
+}
+
+// Bimestre (1 a 4) cujo período (configBimestres, cadastrado pela gestão) cobre a data selecionada
+// - usado para marcar o <select name="Model.NumeroBimestre"> da tela de Registro de Aulas.
+function obterBimestreDoDia(dataStr) {
+    if (!dataStr) return null;
+    const configBimestres = profsisAppData.configBimestres || [];
+    const config = configBimestres.find(c => c.inicio && c.fim && dataStr >= c.inicio && dataStr <= c.fim);
+    return config ? config.bim : null;
+}
+
+// Seleciona o Bimestre na tela "Registro de Aulas Detalhes" (select comum, ao contrário do
+// Horário de Aula). Sem bimestre calculado ou sem a opção correspondente no <select>, não mexe em
+// nada - o professor decide manualmente nesse caso, em vez de arriscar gravar no bimestre errado.
+function selecionarBimestreSED(bimestre, callback) {
+    const select = document.querySelector('select[name="Model.NumeroBimestre"]');
+    if (!select || !bimestre) { callback(); return; }
+    const valorAlvo = String(bimestre);
+    const temOpcao = Array.from(select.options).some(o => o.value === valorAlvo);
+    if (temOpcao && select.value !== valorAlvo) {
+        select.value = valorAlvo;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    setTimeout(callback, 400);
+}
+
+// Espera os cards de aluno da Chamada terminarem de renderizar com o checkbox de falta/presença
+// (só aparece depois do Horário de Aula ser selecionado). Desiste depois de ~3s e segue em frente
+// de qualquer forma - o preenchimento não deve travar só porque a SED demorou ou não tem nenhuma
+// chamada lançada ainda para esse dia/horário.
+function aguardarChamadaRenderizada(callback, tentativas) {
+    tentativas = tentativas || 0;
+    const temCard = document.querySelector('.card_aluno1 input[type="checkbox"], .card_aluno input[type="checkbox"], .grid-listagem > div[class*="card_aluno"] input[type="checkbox"]');
+    if (temCard || tentativas >= 8) { callback(); return; }
+    setTimeout(() => aguardarChamadaRenderizada(callback, tentativas + 1), 400);
+}
+
+// Mesma ideia da anterior, mas para o campo de texto do Registro de Aulas, que só aparece depois
+// de Bimestre + Horário de Aula selecionados.
+function aguardarCampoRegistroRenderizado(callback, tentativas) {
+    tentativas = tentativas || 0;
+    const temCampo = document.querySelector('textarea[name="o.Descricao"]');
+    if (temCampo || tentativas >= 8) { callback(); return; }
+    setTimeout(() => aguardarCampoRegistroRenderizado(callback, tentativas + 1), 400);
+}
+
+// Aciona o botão a partir da tela de "Lançamento de Frequências": seleciona a data e o Horário de
+// Aula (casado com a grade da turma exibida na tela) e então marca as faltas. Continua mesmo que a
+// SED ainda não tenha nenhuma chamada lançada nesse dia/horário - o objetivo é justamente lançar.
 // Não mexe em nenhum campo de texto de registro - essa tela só cuida de presença.
 function preencherChamadaNaTela(btn) {
-    const oldText = btn.textContent; btn.textContent = '⏳ Preenchendo...'; btn.disabled = true;
+    const oldText = btn.textContent; btn.textContent = '⏳ Buscando faltosos no banco...'; btn.disabled = true;
     selecionarDataSED(currentSelectedDate);
-    setTimeout(() => {
-        const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
-        let btnBuscar = null;
-        buttons.forEach(b => { const t = (b.innerText || b.value || '').toLowerCase(); if (t.includes('pesquisar') || t.includes('buscar') || t.includes('listar')) btnBuscar = b; });
-        if (btnBuscar) btnBuscar.click();
-        setTimeout(() => {
-            const payload = extHistory[currentSelectedDate];
-            if (payload) executarPreenchimentoChamada(payload);
+    chrome.runtime.sendMessage({ action: 'FETCH_CHAMADA_DIRETO' }, (response) => {
+        if (chrome.runtime.lastError || !response || !response.success) {
+            const erro = chrome.runtime.lastError ? chrome.runtime.lastError.message : (response && response.error);
+            alert('⚠️ Não foi possível buscar os faltosos no banco' + (erro ? (': ' + erro) : '') + '.\n\nFaça login no ProfSis pelo menos uma vez para a extensão salvar sua sessão.');
             btn.textContent = oldText; btn.disabled = false;
-        }, 2500);
-    }, 1000);
+            return;
+        }
+        btn.textContent = '⏳ Preenchendo...';
+        setTimeout(() => {
+            // Compatibilidade com telas antigas da SED que exigiam clicar em Pesquisar/Buscar antes
+            // de listar os alunos (a tela atual já lista direto após escolher data + horário).
+            const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
+            let btnBuscar = null;
+            buttons.forEach(b => { const t = (b.innerText || b.value || '').toLowerCase(); if (t.includes('pesquisar') || t.includes('buscar') || t.includes('listar')) btnBuscar = b; });
+            if (btnBuscar) btnBuscar.click();
+
+            const turma = obterTurmaDaTelaSED();
+            const turmasParaFaltas = (response.dados.turmas && response.dados.turmas.length) ? response.dados.turmas : (profsisAppData.turmas || []);
+            const blocos = turma ? obterBlocosDaTurmaNoDia(turma.id, currentSelectedDate) : [];
+            const faltas = construirFaltasDoDia(response.dados, currentSelectedDate, turmasParaFaltas);
+            selecionarHorarioSED(blocos, () => {
+                aguardarChamadaRenderizada(() => {
+                    const historico = extHistory[currentSelectedDate];
+                    const payload = { faltas: faltas, fechamento: (historico && historico.fechamento) || [] };
+                    executarPreenchimentoChamada(payload, turma ? turma.id : null);
+                    btn.textContent = oldText; btn.disabled = false;
+                });
+            });
+        }, 800);
+    });
 }
 
-// Aciona o botão a partir da tela "Registro de Aulas Detalhes": seleciona a data no calendário da
-// SED e preenche o texto do registro casado com a turma/disciplina desta tela. Não mexe em faltas.
+// Monta a lista de faltosos do dia cruzando (1) os alunos classificados como "Faltoso" pela
+// GESTÃO no documento da escola (turmas vinculadas via masterId - a fonte de verdade, buscada ao
+// vivo em FETCH_CHAMADA_DIRETO) com (2) os classificados no próprio documento do professor (turmas
+// sem vínculo com a gestão), e só marca falta de fato se: não houve chamada registrada nesse dia
+// para o aluno (continua/lança mesmo assim) OU a chamada registrada já é "falta". Aluno presente
+// numa chamada existente nunca entra na lista.
+function construirFaltasDoDia(dados, dataStr, turmasLocais) {
+    const presencas = dados.presencas || [];
+    const faltantes = [];
+
+    const avaliarEIncluir = (est, idTurmaLocal) => {
+        if (!est || (est.status && est.status !== 'Ativo')) return;
+        const presencaDoDia = presencas.find(p => p.id_estudante == est.id && p.data === dataStr);
+        if (!presencaDoDia || presencaDoDia.status === 'falta') {
+            faltantes.push({ nome: est.nome_completo, id_turma: idTurmaLocal, id_estudante: est.id });
+        }
+    };
+
+    // Turmas vinculadas à gestão: usa o "Faltoso" e os alunos do documento da escola direto,
+    // casando pela masterId - não depende do professor ter aberto essa turma no ProfSis para
+    // sincronizar localmente (era a causa de faltosos sumirem dependendo da turma).
+    if (dados.estudantesGestor && dados.registrosAdministrativosGestor) {
+        dados.registrosAdministrativosGestor
+            .filter(r => r.tipo === 'Faltoso')
+            .forEach(reg => {
+                const est = dados.estudantesGestor.find(e => e.id == reg.estudanteId);
+                if (!est) return;
+                const turmaLocal = turmasLocais.find(t => t.masterId == est.id_turma);
+                if (!turmaLocal) return; // faltoso de uma turma que este professor não leciona
+                avaliarEIncluir(est, turmaLocal.id);
+            });
+    }
+
+    // Turmas sem vínculo com a gestão: usa o "Faltoso" cadastrado no próprio documento do
+    // professor (também serve de fallback caso o documento da escola não tenha sido lido).
+    (dados.registrosAdministrativosProfessor || [])
+        .filter(r => r.tipo === 'Faltoso')
+        .forEach(reg => {
+            const est = (dados.estudantesProfessor || []).find(e => e.id == reg.estudanteId);
+            if (!est) return;
+            avaliarEIncluir(est, est.id_turma);
+        });
+
+    return faltantes;
+}
+
+// Aciona o botão a partir da tela "Registro de Aulas Detalhes": seleciona Data, Bimestre e Horário
+// de Aula (casado com a grade da turma exibida na tela) e só então preenche o texto do registro.
+// Não mexe em faltas. O conteúdo do registro é buscado direto no Firestore (FETCH_REGISTRO_DIRETO
+// no background), e não do cache local (profsisAppData) - evita preencher um texto desatualizado
+// quando o professor edita/cria o registro no ProfSis sem reabrir/ressincronizar a aba antes de vir
+// preencher na SED.
 function preencherRegistroNaTela(btn) {
-    const oldText = btn.textContent; btn.textContent = '⏳ Preenchendo...'; btn.disabled = true;
+    const oldText = btn.textContent; btn.textContent = '⏳ Buscando registro no Firebase...'; btn.disabled = true;
     selecionarDataSED(currentSelectedDate);
-    setTimeout(() => {
-        const payload = extHistory[currentSelectedDate];
-        if (payload) executarPreenchimentoRegistro(payload);
-        else alert('Sem dados de registro para esta data.');
-        btn.textContent = oldText; btn.disabled = false;
-    }, 1200);
+    chrome.runtime.sendMessage({ action: 'FETCH_REGISTRO_DIRETO' }, (response) => {
+        if (chrome.runtime.lastError || !response || !response.success) {
+            const erro = chrome.runtime.lastError ? chrome.runtime.lastError.message : (response && response.error);
+            alert('⚠️ Não foi possível buscar o registro no Firebase' + (erro ? (': ' + erro) : '') + '.\n\nFaça login no ProfSis pelo menos uma vez para a extensão salvar sua sessão.');
+            btn.textContent = oldText; btn.disabled = false;
+            return;
+        }
+        btn.textContent = '⏳ Preenchendo...';
+        setTimeout(() => {
+            const turma = obterTurmaDaTelaSED();
+            const blocos = turma ? obterBlocosDaTurmaNoDia(turma.id, currentSelectedDate) : [];
+            const bimestre = obterBimestreDoDia(currentSelectedDate);
+            selecionarBimestreSED(bimestre, () => {
+                selecionarHorarioSED(blocos, () => {
+                    aguardarCampoRegistroRenderizado(() => {
+                        const payload = { registros: construirRegistrosDoDia(response.dados, currentSelectedDate) };
+                        executarPreenchimentoRegistro(payload);
+                        btn.textContent = oldText; btn.disabled = false;
+                    });
+                });
+            });
+        }, 1200);
+    });
 }
 
-function executarPreenchimentoChamada(payload) {
+// turmaId (opcional) restringe as faltas à turma exibida na tela - importante quando o professor
+// tem faltosos classificados pela gestão em mais de uma turma no mesmo dia. Quando não é possível
+// identificar a turma da tela, cai para todos os faltosos do dia (continua mesmo assim).
+function executarPreenchimentoChamada(payload, turmaId) {
     const normalize = s => s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
     let interagidos = 0;
 
-    // Marca apenas os faltosos classificados pela gestão
-    // payload.faltas agora contém apenas os faltosos da gestão que realmente faltaram
-    if (payload.faltas && payload.faltas.length > 0) {
-        const alunosAlvo = payload.faltas.map(a => normalize(a.nome));
+    // Marca apenas os faltosos classificados pela gestão para a turma desta tela. Roda mesmo
+    // quando não há nenhum faltoso (ou nenhuma chamada anterior) - nesse caso todo mundo fica
+    // marcado como presente, mas a chamada é lançada do mesmo jeito.
+    {
+        const faltasDaTurma = turmaId ? (payload.faltas || []).filter(a => a.id_turma == turmaId) : (payload.faltas || []);
+        const alunosAlvo = faltasDaTurma.map(a => normalize(a.nome));
         document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]').forEach(card => {
             const nomeElement = card.querySelector('.nome_aluno');
             if (!nomeElement) return;
@@ -491,10 +707,24 @@ function executarPreenchimentoChamada(payload) {
                 const text = (b.innerText || b.value || b.textContent || '').toLowerCase();
                 return text.includes('salvar') || text.includes('cadastrar') || text.includes('gravar') || text.includes('finalizar');
             });
-            if (btnSalvar) { btnSalvar.click(); alert('✅ Concluído! Faltas preenchidas e salvas na SED.'); }
-            else alert('✅ Concluído! ⚠️ Clique em "Salvar" manualmente.');
+            if (btnSalvar) {
+                btnSalvar.click();
+                marcarTurmaComoFeita(turmaId);
+                alert('✅ Concluído! Faltas preenchidas e salvas na SED.');
+            } else alert('✅ Concluído! ⚠️ Clique em "Salvar" manualmente.');
         }, 500);
     } else alert('Nenhuma falta pendente ou tela de chamada não encontrada.');
+}
+
+// Marca a turma do dia selecionado como "Lançado" na lista "Aulas do Dia" (mesmo checkbox que o
+// usuário marcaria manualmente) - só roda depois do clique em "Salvar" da SED, confirmando que a
+// chamada dessa turma foi mesmo enviada.
+function marcarTurmaComoFeita(turmaId) {
+    if (!turmaId || !currentSelectedDate) return;
+    const key = currentSelectedDate + '_turma_' + turmaId;
+    extDoneMarks[key] = true;
+    chrome.runtime.sendMessage({ action: 'SAVE_MARKS', marks: extDoneMarks });
+    renderizarListaTurmasDoDia();
 }
 
 // Preenche o campo de texto na tela "Registro de Aulas Detalhes". O registro certo é escolhido

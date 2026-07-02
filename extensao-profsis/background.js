@@ -289,6 +289,140 @@ async function atualizarAlunosDiretoFirebase(payload) {
     return { ...resultado, debugInfo };
 }
 
+// Lê o app_data_{userId} do localStorage de uma aba do ProfSis já aberta (mesma técnica usada em
+// CHECK_PROFSIS_LOGIN). É a fonte mais confiável quando há uma aba aberta: reflete a conta
+// realmente logada agora e os dados mais recentes em memória, sem depender de token nenhum.
+function lerAppDataDaAbaProfSis(tabId) {
+    return new Promise((resolve) => {
+        chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            func: () => {
+                const userJson = localStorage.getItem('app_current_user');
+                if (!userJson) return null;
+                try {
+                    const user = JSON.parse(userJson);
+                    const userId = user.id || user.uid || 'unknown';
+                    const dataJson = localStorage.getItem('app_data_' + userId);
+                    return dataJson ? JSON.parse(dataJson) : null;
+                } catch (e) { return null; }
+            }
+        }, (results) => {
+            if (chrome.runtime.lastError || !results || !results[0]) { resolve(null); return; }
+            resolve(results[0].result);
+        });
+    });
+}
+
+// Lê registrosAula/turmas direto do documento do professor no Firestore (ignora o cache local em
+// profsis_app_data) - usado como último recurso pelo "Preencher Registro" da SED quando não há
+// nenhuma aba do ProfSis aberta para ler ao vivo (ver lerAppDataDaAbaProfSis).
+async function buscarRegistroDiretoFirebase() {
+    const auth = await getValidFirebaseAuth();
+    if (!auth) {
+        const err = new Error('Sem sessão do Firebase salva. Faça login no ProfSis pelo menos uma vez.');
+        err.code = 'NO_SESSION';
+        throw err;
+    }
+    const userStorage = await chrome.storage.local.get(['profsis_user']);
+    const user = userStorage.profsis_user;
+    const uid = auth.uid || (user && user.uid);
+    if (!uid) throw new Error('Usuário do ProfSis não identificado.');
+
+    const profDocId = 'app_data_' + uid;
+    const profData = await firestoreGetDoc(profDocId, auth.idToken);
+    if (!profData) {
+        // Mesmo caso do UPDATE_STUDENTS_DB: token válido mas sem documento para esse uid quer
+        // dizer sessão salva errada/desatualizada (ex: de outra conta). Descarta pra não repetir
+        // esse erro sempre - da próxima vez que uma aba do ProfSis logada abrir, ela repassa a
+        // sessão certa de novo automaticamente.
+        await chrome.storage.local.remove(['profsis_firebase_session', 'profsis_id_token_cache']);
+        const err = new Error('A sessão salva pela extensão não corresponde a nenhuma conta válida (documento ' + profDocId + ' não existe). Ela foi descartada - abra uma aba do ProfSis logada e tente de novo.');
+        err.code = 'NO_SESSION';
+        throw err;
+    }
+
+    return { registrosAula: profData.registrosAula || [], turmas: profData.turmas || [] };
+}
+
+// Lê os dados da Chamada (presenças/turmas do professor + alunos e "Faltoso" do GESTOR) direto da
+// aba do ProfSis já aberta, rodando no contexto (world: 'MAIN') da própria página - usa a sessão
+// Firebase real dela (getData/currentUser já inicializados pelo core.js), sem token cacheado e sem
+// risco de conta errada. É a fonte mais confiável porque os "Faltosos" são cadastrados pela gestão
+// no documento da escola (app_data_school_{schoolId}_gestor), e o app só copia isso para o
+// documento do professor quando ele abre o Dashboard ou aquela turma específica - se ele não abriu
+// recentemente a turma em questão, o cache local da extensão simplesmente não tem esse Faltoso.
+function lerDadosChamadaDaAbaProfSis(tabId) {
+    return new Promise((resolve) => {
+        chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            world: 'MAIN',
+            func: async () => {
+                if (typeof data === 'undefined' || typeof getData !== 'function') return null;
+                let gestorData = null;
+                if (typeof currentUser !== 'undefined' && currentUser && currentUser.schoolId) {
+                    try {
+                        gestorData = await getData('app_data', 'app_data_school_' + currentUser.schoolId + '_gestor');
+                    } catch (e) { gestorData = null; }
+                }
+                return {
+                    presencas: data.presencas || [],
+                    turmas: data.turmas || [],
+                    estudantesProfessor: data.estudantes || [],
+                    registrosAdministrativosProfessor: data.registrosAdministrativos || [],
+                    estudantesGestor: gestorData ? (gestorData.estudantes || []) : null,
+                    registrosAdministrativosGestor: gestorData ? (gestorData.registrosAdministrativos || []) : null
+                };
+            }
+        }, (results) => {
+            if (chrome.runtime.lastError || !results || !results[0]) { resolve(null); return; }
+            resolve(results[0].result);
+        });
+    });
+}
+
+// Mesma coisa, mas direto no Firestore (REST) - usado quando não há nenhuma aba do ProfSis aberta.
+async function buscarDadosChamadaDiretoFirebase() {
+    const auth = await getValidFirebaseAuth();
+    if (!auth) {
+        const err = new Error('Sem sessão do Firebase salva. Faça login no ProfSis pelo menos uma vez.');
+        err.code = 'NO_SESSION';
+        throw err;
+    }
+    const userStorage = await chrome.storage.local.get(['profsis_user']);
+    const user = userStorage.profsis_user;
+    const uid = auth.uid || (user && user.uid);
+    if (!uid) throw new Error('Usuário do ProfSis não identificado.');
+
+    const profDocId = 'app_data_' + uid;
+    const profData = await firestoreGetDoc(profDocId, auth.idToken);
+    if (!profData) {
+        await chrome.storage.local.remove(['profsis_firebase_session', 'profsis_id_token_cache']);
+        const err = new Error('A sessão salva pela extensão não corresponde a nenhuma conta válida (documento ' + profDocId + ' não existe). Ela foi descartada - abra uma aba do ProfSis logada e tente de novo.');
+        err.code = 'NO_SESSION';
+        throw err;
+    }
+
+    let estudantesGestor = null, registrosAdministrativosGestor = null;
+    const schoolId = user && user.schoolId;
+    if (schoolId) {
+        const gestorDocId = 'app_data_school_' + schoolId + '_gestor';
+        const gestorData = await firestoreGetDoc(gestorDocId, auth.idToken);
+        if (gestorData) {
+            estudantesGestor = gestorData.estudantes || [];
+            registrosAdministrativosGestor = gestorData.registrosAdministrativos || [];
+        }
+    }
+
+    return {
+        presencas: profData.presencas || [],
+        turmas: profData.turmas || [],
+        estudantesProfessor: profData.estudantes || [],
+        registrosAdministrativosProfessor: profData.registrosAdministrativos || [],
+        estudantesGestor: estudantesGestor,
+        registrosAdministrativosGestor: registrosAdministrativosGestor
+    };
+}
+
 // ==================== LISTENER DE MENSAGENS ====================
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log("📨 Background recebeu:", request.action);
@@ -518,6 +652,65 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
 
+    // ---- SED: Preencher Registro - busca registrosAula/turmas mais atuais possível ----
+    if (request.action === "FETCH_REGISTRO_DIRETO") {
+        const viaFirestoreDireto = () => {
+            buscarRegistroDiretoFirebase().then(dados => {
+                sendResponse({ success: true, dados: dados });
+            }).catch(err => {
+                console.error("[Background] Falha ao buscar registro direto no Firestore:", err.message);
+                sendResponse({ success: false, error: err.message });
+            });
+        };
+
+        // [PRIORIDADE] Se houver uma aba do ProfSis aberta e logada, lê o app_data dela direto do
+        // localStorage: é sempre a conta realmente logada agora (sem risco do token cacheado da
+        // extensão estar dessincronizado, que já causou "documento não encontrado" no Firestore
+        // direto - mesmo motivo pelo qual UPDATE_STUDENTS_DB prioriza a aba).
+        chrome.tabs.query({}, (tabs) => {
+            const profsisTab = tabs.find(t => isProfSisUrl(t.url));
+            if (!profsisTab) { viaFirestoreDireto(); return; }
+            lerAppDataDaAbaProfSis(profsisTab.id).then(appData => {
+                if (appData) {
+                    sendResponse({ success: true, dados: { registrosAula: appData.registrosAula || [], turmas: appData.turmas || [] } });
+                } else {
+                    console.warn("[Background] Aba do ProfSis aberta mas sem dados legíveis, tentando Firestore direto.");
+                    viaFirestoreDireto();
+                }
+            });
+        });
+        return true;
+    }
+
+    // ---- SED: Preencher Chamada - busca presenças/turmas do professor e Faltosos do GESTOR ----
+    if (request.action === "FETCH_CHAMADA_DIRETO") {
+        const viaFirestoreDireto = () => {
+            buscarDadosChamadaDiretoFirebase().then(dados => {
+                sendResponse({ success: true, dados: dados });
+            }).catch(err => {
+                console.error("[Background] Falha ao buscar dados da chamada direto no Firestore:", err.message);
+                sendResponse({ success: false, error: err.message });
+            });
+        };
+
+        // [PRIORIDADE] Aba do ProfSis aberta: lê ao vivo no contexto da própria página (getData
+        // real, com a sessão Firebase dela) - garante pegar os Faltosos do documento da escola
+        // mesmo que o professor não tenha aberto aquela turma específica no ProfSis recentemente.
+        chrome.tabs.query({}, (tabs) => {
+            const profsisTab = tabs.find(t => isProfSisUrl(t.url));
+            if (!profsisTab) { viaFirestoreDireto(); return; }
+            lerDadosChamadaDaAbaProfSis(profsisTab.id).then(dados => {
+                if (dados) {
+                    sendResponse({ success: true, dados: dados });
+                } else {
+                    console.warn("[Background] Aba do ProfSis aberta mas sem dados legíveis para a chamada, tentando Firestore direto.");
+                    viaFirestoreDireto();
+                }
+            });
+        });
+        return true;
+    }
+
     // ---- AÇÕES LEGADAS (compatibilidade) ----
     if (request.action === "START_RPA_CHAMADA" || request.action === "START_RPA_LOTE") {
         const task = request.payload;
@@ -596,4 +789,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-console.log("✅ Background script carregado! (v2.7.0 - Escrita direta no Firestore)");
+console.log("✅ Background script carregado! (v2.9.0 - Chamada busca Faltosos do documento da escola/gestão em tempo real)");
