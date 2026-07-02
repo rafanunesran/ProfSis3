@@ -1,4 +1,7 @@
 // BACKGROUND SCRIPT - ProfSis3 Extension
+// v3.1.0 - Fallback de texto de Registro via IA (GERAR_TEXTO_REGISTRO_IA/gerarTextoRegistroFallbackIA),
+// reaproveitando a chave/roteador multi-provedor (Groq/OpenAI/Gemini) já configurado para "IA Estagiário"
+// (lido de system/config_ia no Firestore via firestoreGetDocEm).
 // v2.7.0 - Casamento de turma por código série+letra (ex: "8C"), evita "8A" casar com "8º Ano C" por substring; existência de aluno escopada à turma alvo
 
 // URLs do ProfSis para buscar abas abertas
@@ -100,7 +103,14 @@ function firestoreDocToPlainObject(doc) {
 
 // Lê um documento em app_data/{docId}. Retorna null se não existir.
 async function firestoreGetDoc(docId, idToken) {
-    const url = 'https://firestore.googleapis.com/v1/projects/' + FIRESTORE_PROJECT_ID + '/databases/(default)/documents/app_data/' + encodeURIComponent(docId);
+    return firestoreGetDocEm('app_data', docId, idToken);
+}
+
+// v3.1.0: versão genérica de firestoreGetDoc que aceita a coleção como parâmetro - usada para ler
+// system/config_ia (chave de IA já configurada pelo Super Admin para a feature "IA Estagiário", ver
+// core.js getData()/admin.js configurarChaveIA()), que fica numa coleção diferente de app_data.
+async function firestoreGetDocEm(colecao, docId, idToken) {
+    const url = 'https://firestore.googleapis.com/v1/projects/' + FIRESTORE_PROJECT_ID + '/databases/(default)/documents/' + encodeURIComponent(colecao) + '/' + encodeURIComponent(docId);
     const resp = await fetch(url, { headers: { 'Authorization': 'Bearer ' + idToken } });
     if (resp.status === 404) return null;
     if (!resp.ok) throw new Error('Erro ao ler dados no Firestore (' + resp.status + ')');
@@ -122,6 +132,92 @@ async function firestoreSetDoc(docId, dataObj, idToken) {
         const errText = await resp.text().catch(() => '');
         throw new Error('Erro ao salvar no Firestore (' + resp.status + '): ' + errText);
     }
+}
+
+// ==================== FALLBACK DE REGISTRO VIA IA (v3.1.0) ====================
+// Quando o professor não tem registro salvo no ProfSis para uma turma/data (só usado pelo workflow
+// automático da SED - ver GERAR_TEXTO_REGISTRO_IA abaixo), gera um texto curto e deliberadamente
+// genérico para não inventar um conteúdo específico que possa ficar factualmente errado num
+// documento oficial. Reaproveita a MESMA chave/roteador multi-provedor já configurado para a feature
+// "IA Estagiário" (ver ia_estagiario.js:234-298 e admin.js configurarChaveIA()): detecta o provedor
+// pelo prefixo da chave (sk- -> OpenAI, gsk_ -> Groq, senão Gemini).
+async function gerarTextoRegistroFallbackIA(disciplina, turmaNome) {
+    const auth = await getValidFirebaseAuth();
+    if (!auth) return { success: false, error: 'Sessão do ProfSis não encontrada ou expirada - abra o ProfSis e faça login antes de tentar de novo.' };
+
+    let configData;
+    try {
+        configData = await firestoreGetDocEm('system', 'config_ia', auth.idToken);
+    } catch (e) {
+        return { success: false, error: 'Erro ao ler a configuração de IA: ' + e.message };
+    }
+    const apiKeys = (configData && configData.apiKey) ? configData.apiKey.split(',').map(k => k.trim()).filter(k => k) : [];
+    if (apiKeys.length === 0) return { success: false, error: 'Chave de IA não configurada (peça ao Administrador para configurar em Super Admin > Migração > "Configurar Chave").' };
+
+    const promptText = 'Escreva, em português do Brasil, um texto de 1 a 2 frases curtas, simples e '
+        + 'genéricas para preencher o campo "Registro de Aula" de uma aula de "' + disciplina + '" '
+        + 'da turma "' + turmaNome + '". NÃO invente um tema, atividade ou conteúdo específico - use '
+        + 'algo genérico e seguro como continuidade de um trabalho em andamento (ex.: retomada de '
+        + 'conteúdo, atividades de reforço, feedback aos alunos). Retorne APENAS o texto puro, sem '
+        + 'aspas, sem markdown, sem explicações.';
+
+    let lastError = '';
+    for (const currentKey of apiKeys) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        try {
+            let texto = '';
+            // --- Mesmo roteador multi-IA de ia_estagiario.js, adaptado para texto puro (não JSON) ---
+            if (currentKey.startsWith('sk-') && !currentKey.startsWith('sk-ant-')) {
+                // OpenAI (GPT-4o-mini)
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentKey },
+                    body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: promptText }], temperature: 0.7 }),
+                    signal: controller.signal
+                });
+                if (!response.ok) throw new Error('OpenAI Erro: ' + response.statusText);
+                const apiDataObj = await response.json();
+                texto = apiDataObj.choices[0].message.content;
+            } else if (currentKey.startsWith('gsk_')) {
+                // Groq (Llama 3.3 70B)
+                const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentKey },
+                    body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: promptText }], temperature: 0.7 }),
+                    signal: controller.signal
+                });
+                if (!response.ok) throw new Error('Groq Erro: ' + response.statusText);
+                const apiDataObj = await response.json();
+                texto = apiDataObj.choices[0].message.content;
+            } else {
+                // Google Gemini (padrão)
+                const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=' + currentKey, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }], generationConfig: { temperature: 0.7 } }),
+                    signal: controller.signal
+                });
+                if (!response.ok) {
+                    const errorObj = await response.json().catch(() => ({}));
+                    throw new Error(errorObj.error ? errorObj.error.message : response.statusText);
+                }
+                const apiDataObj = await response.json();
+                if (!apiDataObj.candidates || apiDataObj.candidates.length === 0 || !apiDataObj.candidates[0].content) throw new Error('A IA não retornou um conteúdo válido.');
+                texto = apiDataObj.candidates[0].content.parts[0].text;
+            }
+
+            texto = (texto || '').trim().replace(/^["']|["']$/g, '');
+            if (!texto) throw new Error('A IA retornou um texto vazio.');
+            clearTimeout(timeoutId);
+            return { success: true, texto: texto };
+        } catch (err) {
+            clearTimeout(timeoutId);
+            lastError = err.name === 'AbortError' ? 'Tempo de resposta esgotado.' : err.message;
+            console.warn('⚠️ Falha ao gerar texto de registro via IA:', lastError);
+        }
+    }
+    return { success: false, error: lastError || 'Nenhuma chave de IA configurada funcionou.' };
 }
 
 // ---- Lógica de atualização de alunos (cria/reativa/remaneja/transfere) ----
@@ -788,6 +884,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         chrome.storage.local.get(['rpa_data_history', 'rpa_data', 'rpa_done_marks', 'rpa_imported_students'], (result) => {
             if (sendResponse) sendResponse(result || {});
         });
+        return true;
+    }
+    else if (request.action === "GERAR_TEXTO_REGISTRO_IA") {
+        gerarTextoRegistroFallbackIA(request.disciplina, request.turmaNome)
+            .then(resultado => { if (sendResponse) sendResponse(resultado); })
+            .catch(err => { if (sendResponse) sendResponse({ success: false, error: err.message || 'Erro desconhecido ao gerar texto via IA.' }); });
         return true;
     }
     else if (request.action === "GET_HISTORY") {

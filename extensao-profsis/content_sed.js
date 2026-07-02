@@ -1,9 +1,32 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
+// v3.1.1 - A tela de Registro só mostra o campo de texto depois de selecionar o "Horário de Aula"
+// (aba em #tabsNavegacao) - antes disso o preenchimento abortava com "Não encontrei o campo de texto
+// do registro". Agora percorre todas as abas (ver preencherTextoRegistroEmTodasAsAbas), preenchendo o
+// texto em cada uma antes de salvar. Vale tanto pro botão manual quanto pro modo automático.
+//
+// v3.1.0 - Casamento de disciplina por sigla/proximidade (ex.: "EMA" <-> "Esporte-Musica-Arte", ver
+// disciplinasCasam/iniciaisDisciplina) nas 3 funções que casavam só por igualdade exata. Registro sem
+// conteúdo salvo no ProfSis agora tem fallback: em modo automático, gera um texto curto e genérico via
+// IA (mesma chave/roteador de "IA Estagiário", ver gerarTextoRegistroFallbackIA em background.js) em
+// vez de abortar; no botão manual o comportamento não muda.
+//
+// v3.0.1 - Ajuste pós-teste real: em modo automático a Chamada agora finaliza (clica Salvar) mesmo
+// sem nenhuma falta no dia, e trata os dois modais de confirmação que a SED abre depois do Salvar
+// ("Salvar frequência" e "Alterações salvas") - usando o atalho "Registro de aulas" do segundo modal
+// para pular direto para o Registro da mesma turma quando disponível (ver confirmarModalSalvarFrequencia/
+// aguardarModalAlteracoesSalvas).
+//
+// v3.0.0 - Botão "Auto" por aula no card "Aulas do Dia": navega sozinho pela SED (lista de Chamada
+// -> preenchimento -> lista de Registro -> preenchimento) e marca a aula como concluída ao final,
+// reaproveitando o preenchimento existente em modo silencioso (ver WORKFLOW AUTOMÁTICO abaixo).
+// Convenção de versionamento a partir daqui: ajuste pontual incrementa o último dígito (3.0.1,
+// 3.0.2...), mudança de escopo médio incrementa o dígito do meio (3.1.0).
+//
 // v2.9.0 - Aulas dobradinhas: marca "Replicar Frequência" na chamada e seleciona ao menos uma aula
 // de Material Digital em CADA aba do Registro (não só a ativa). Botão "Extrair Alunos" agora só
 // aparece na tela de chamada (espelhando o botão de Material, que já só aparecia no Registro).
 
-    console.log("🤖 content_sed.js EXECUTADO - v2.9.0");
+    console.log("🤖 content_sed.js EXECUTADO - v3.1.1");
 
 // ==================== VARIÁVEIS GLOBAIS ====================
 let extHistory = {};
@@ -27,7 +50,7 @@ function mostrarTelaStatus() {
     div.style.cssText = 'position:fixed; top:20px; right:20px; width:340px; background:white; border:3px solid #3182ce; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5);';
     div.innerHTML = 
         '<div style="background:#3182ce; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; text-align:center;">' +
-            '🤖 Robô SisProf <span style="font-size:10px; opacity:0.7;">v2.1.0</span>' +
+            '🤖 Robô SisProf <span style="font-size:10px; opacity:0.7;">v3.1.1</span>' +
         '</div>' +
         '<div id="sisprof-status-content" style="text-align:center;">' +
             '<p style="font-size:13px; color:#4a5568;">⏳ Verificando conexão com o ProfSis...</p>' +
@@ -250,6 +273,33 @@ function normalizeTextoSED(s) {
     return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/gi, '').toLowerCase();
 }
 
+// v3.1.0: palavras curtas a ignorar ao montar as iniciais de uma disciplina com várias palavras
+// (ex.: "Esporte Musica e Arte" -> iniciais "EMA", ignorando o "e" do meio).
+const STOPWORDS_INICIAIS_DISCIPLINA = ['e', 'de', 'da', 'do', 'das', 'dos', 'em'];
+
+function iniciaisDisciplina(nome) {
+    return (nome || '')
+        .split(/[\s\-\/]+/)
+        .map(p => p.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z]/g, ''))
+        .filter(p => p && !STOPWORDS_INICIAIS_DISCIPLINA.includes(p.toLowerCase()))
+        .map(p => p[0].toUpperCase())
+        .join('');
+}
+
+// v3.1.0: compara dois nomes de disciplina "por proximidade" - iguais normalizados (como já era
+// antes), OU um dos dois é a sigla/iniciais do outro (ex.: "EMA" <-> "Esporte-Musica-Arte", "TI" <->
+// "Tecnologia e Inovação"). Cobre o caso em que o ProfSis guarda a sigla e a SED mostra o nome por
+// extenso (ou vice-versa) - só entra em jogo DEPOIS que a igualdade exata já falhou, então não
+// afrouxa a exigência de exatamente 1 candidato final nas funções que a usam.
+function disciplinasCasam(nomeA, nomeB) {
+    if (!nomeA || !nomeB) return false;
+    const normA = normalizeTextoSED(nomeA), normB = normalizeTextoSED(nomeB);
+    if (normA === normB) return true;
+    const inicialA = normalizeTextoSED(iniciaisDisciplina(nomeA));
+    const inicialB = normalizeTextoSED(iniciaisDisciplina(nomeB));
+    return (!!inicialA && inicialA === normB) || (!!inicialB && inicialB === normA);
+}
+
 // Mesma lógica de extrairCodigoSerieTurma do background.js (código série+letra, ex: "8C"), duplicada
 // aqui porque content script e service worker rodam em contextos separados e não compartilham funções.
 function extrairCodigoSerieTurmaSED(nome) {
@@ -283,8 +333,7 @@ function encontrarRegistroParaTela(payload) {
         candidatos = payload.registros.filter(r => normalizeTextoSED((r.turmaNome || '').split('-')[0]) === normTurmaSED);
     }
     if (candidatos.length > 1 && disciplinaSED) {
-        const normDiscSED = normalizeTextoSED(disciplinaSED);
-        const porDisciplina = candidatos.filter(r => normalizeTextoSED(r.disciplina) === normDiscSED);
+        const porDisciplina = candidatos.filter(r => disciplinasCasam(r.disciplina, disciplinaSED));
         if (porDisciplina.length > 0) candidatos = porDisciplina;
     }
     return candidatos.length > 0 ? candidatos[0] : null;
@@ -313,8 +362,7 @@ function encontrarIdTurmaDaTelaAtual() {
         candidatos = turmas.filter(t => normalizeTextoSED((t.nome || '').split('-')[0]) === normTurmaSED);
     }
     if (candidatos.length > 1 && disciplinaSED) {
-        const normDiscSED = normalizeTextoSED(disciplinaSED);
-        const porDisciplina = candidatos.filter(t => normalizeTextoSED(t.disciplina) === normDiscSED);
+        const porDisciplina = candidatos.filter(t => disciplinasCasam(t.disciplina, disciplinaSED));
         if (porDisciplina.length > 0) candidatos = porDisciplina;
     }
     return candidatos.length > 0 ? candidatos[0].id : null;
@@ -329,13 +377,14 @@ function injetarMenu() {
     div.id = 'sisprof-menu-flutuante';
     div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;';
     div.innerHTML = '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
-            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v2.9.0</span></span>' +
+            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v3.1.1</span></span>' +
         '<div style="display:flex; gap:8px; align-items:center;"><span id="sisprof-user-name" style="font-size:11px; opacity:0.9; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
         '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;">▶</span><span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span></div></div>' +
         '<div id="sisprof-conteudo"><p style="margin:0 0 10px 0; color:#4a5568; font-size:13px;">✅ Conectado ao ProfSis!</p>' +
         '<div style="background:#f0fff4; padding:10px; border-radius:8px; border:1px solid #c6f6d5; margin-bottom:10px;"><label style="font-size:12px; font-weight:bold; color:#276749; display:block; margin-bottom:4px;">📅 Selecione o Dia:</label>' +
         '<div style="display:flex; gap:5px;"><input type="date" id="sisprof-data-input" style="flex:1; padding:6px; border:1px solid #cbd5e0; border-radius:4px; font-size:12px;"><button id="sisprof-btn-hoje" style="background:#38a169; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">Hoje</button></div></div>' +
         '<div id="sisprof-status" style="background:#f7fafc; padding:10px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:10px; font-size:11px; color:#718096;">Verificando...</div>' +
+        '<div id="sisprof-auto-status" style="display:none;"></div>' +
         '<div style="border:1px solid #e2e8f0; border-radius:8px; margin-bottom:10px; overflow:hidden;">' +
             '<div style="background:#f7fafc; padding:6px 8px; font-size:11px; font-weight:bold; color:#4a5568; border-bottom:1px solid #e2e8f0;">📚 Aulas do Dia</div>' +
             '<div id="sisprof-lista-turmas"></div>' +
@@ -370,7 +419,7 @@ function injetarMenu() {
             // etc.) - usado aqui para também reagir na tela de Registro, que não tem .card_aluno.
             if (document.querySelector('.card_aluno, .card_aluno1') || document.querySelector('.txt-titulo')) {
                 observerBusy = true;
-                try { atualizarInterfacePorData(); atualizarModoBotaoPreencher(); atualizarVisibilidadeBotaoMaterial(); atualizarVisibilidadeBotaoExtrairAlunos(); } catch (e) {} finally { observerBusy = false; }
+                try { atualizarInterfacePorData(); atualizarModoBotaoPreencher(); atualizarVisibilidadeBotaoMaterial(); atualizarVisibilidadeBotaoExtrairAlunos(); avancarWorkflowAutoSeNecessario(); } catch (e) {} finally { observerBusy = false; }
             }
         }, 800);
     });
@@ -383,6 +432,19 @@ function injetarMenu() {
     atualizarModoBotaoPreencher();
     atualizarVisibilidadeBotaoMaterial();
     atualizarVisibilidadeBotaoExtrairAlunos();
+    // Workflow automático (v3.0): se há uma automação pendente (ex.: acabamos de recarregar após um
+    // location.href disparado por ela), sincroniza a data selecionada com a do workflow (senão ficaria
+    // presa em "hoje", vide bloco acima) e retoma a máquina de estados a partir do storage.
+    chrome.storage.local.get(['rpa_auto_workflow'], (result) => {
+        const wf = result.rpa_auto_workflow;
+        if (wf && wf.ativo && wf.data) {
+            currentSelectedDate = wf.data;
+            document.getElementById('sisprof-data-input').value = wf.data;
+            atualizarInterfacePorData();
+        }
+        atualizarPainelStatusWorkflow(wf);
+        avancarWorkflowAutoSeNecessario();
+    });
 }
 
 // O botão "Extrair Material Digital" só faz sentido na tela "Registro de Aulas Detalhes" (só ela tem
@@ -448,15 +510,20 @@ function renderizarListaTurmasDoDia() {
         const markKey = currentSelectedDate + '_turma_' + turma.id;
         const isDone = extDoneMarks[markKey] || false;
         const div = document.createElement('div');
-        div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0f0f0; padding:6px 8px;';
+        div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0f0f0; padding:6px 8px; gap:6px;';
         div.innerHTML =
-            '<span style="font-size:12px; color:#2d3748; font-weight:600;">' + turma.nome + ' ' + turma.disciplina + '</span>' +
+            '<button class="sisprof-turma-auto-btn" title="Preencher automaticamente Chamada e Registro desta aula" style="flex-shrink:0; font-size:11px; padding:3px 6px; border-radius:4px; border:1px solid #cbd5e0; cursor:pointer; background:' + (isDone ? '#e6fffa' : '#ebf8ff') + ';">' + (isDone ? '🔄' : '🤖') + '</button>' +
+            '<span style="font-size:12px; color:#2d3748; font-weight:600; flex:1;">' + turma.nome + ' ' + turma.disciplina + '</span>' +
             '<input type="checkbox" class="sisprof-turma-done-chk" data-key="' + markKey + '" ' + (isDone ? 'checked' : '') + '>';
         container.appendChild(div);
         div.querySelector('.sisprof-turma-done-chk').addEventListener('change', function() {
             const key = this.getAttribute('data-key');
             extDoneMarks[key] = this.checked;
             chrome.runtime.sendMessage({ action: 'SAVE_MARKS', marks: extDoneMarks });
+        });
+        div.querySelector('.sisprof-turma-auto-btn').addEventListener('click', function() {
+            if (isDone && !confirm('Esta aula já está marcada como concluída. Refazer o preenchimento automático (Chamada + Registro)?')) return;
+            iniciarWorkflowAuto(turma);
         });
     });
     const last = container.lastElementChild;
@@ -478,11 +545,27 @@ function selecionarDataSED(dataStr) {
 }
 
 
+// Reporta um resultado de preenchimento sem travar a thread quando rodando no workflow automático
+// (v3.0): em modo automático chama opts.aoConcluir com {ok, erro, mensagem} em vez de alert(),
+// permitindo que o orquestrador decida avançar ou abortar; no botão manual (opts ausente) o
+// comportamento continua idêntico ao de antes (alert() bloqueante).
+function reportarResultado(opts, ok, mensagem, extra) {
+    if (opts && opts.modoAutomatico) {
+        if (opts.aoConcluir) opts.aoConcluir(Object.assign({ ok: ok, erro: ok ? null : mensagem, mensagem: mensagem }, extra || {}));
+    } else {
+        alert(mensagem);
+    }
+}
+
 // Aciona o botão a partir da tela de "Lançamento de Frequências": seleciona a data, clica em
 // Pesquisar/Buscar para carregar os alunos e então marca as faltas (e fechamento, se aplicável).
 // Não mexe em nenhum campo de texto de registro - essa tela só cuida de presença.
-function preencherChamadaNaTela(btn) {
-    const oldText = btn.textContent; btn.textContent = '⏳ Preenchendo...'; btn.disabled = true;
+// opts = { modoAutomatico, aoConcluir } (v3.0): quando chamada pelo workflow automático, btn é null
+// e nenhum alert() é disparado - ver reportarResultado/executarPreenchimentoChamada.
+function preencherChamadaNaTela(btn, opts) {
+    opts = opts || {};
+    const oldText = btn ? btn.textContent : null;
+    if (btn) { btn.textContent = '⏳ Preenchendo...'; btn.disabled = true; }
     selecionarDataSED(currentSelectedDate);
     setTimeout(() => {
         const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
@@ -491,22 +574,26 @@ function preencherChamadaNaTela(btn) {
         if (btnBuscar) btnBuscar.click();
         setTimeout(() => {
             const payload = extHistory[currentSelectedDate];
-            if (payload) executarPreenchimentoChamada(payload);
-            btn.textContent = oldText; btn.disabled = false;
+            if (payload) executarPreenchimentoChamada(payload, opts);
+            else reportarResultado(opts, false, 'Sem dados de chamada para esta data.');
+            if (btn) { btn.textContent = oldText; btn.disabled = false; }
         }, 2500);
     }, 1000);
 }
 
 // Aciona o botão a partir da tela "Registro de Aulas Detalhes": seleciona a data no calendário da
 // SED e preenche o texto do registro casado com a turma/disciplina desta tela. Não mexe em faltas.
-function preencherRegistroNaTela(btn) {
-    const oldText = btn.textContent; btn.textContent = '⏳ Preenchendo...'; btn.disabled = true;
+// opts = { modoAutomatico, aoConcluir } (v3.0), mesmo contrato de preencherChamadaNaTela.
+function preencherRegistroNaTela(btn, opts) {
+    opts = opts || {};
+    const oldText = btn ? btn.textContent : null;
+    if (btn) { btn.textContent = '⏳ Preenchendo...'; btn.disabled = true; }
     selecionarDataSED(currentSelectedDate);
     setTimeout(() => {
         const payload = extHistory[currentSelectedDate];
-        if (payload) executarPreenchimentoRegistro(payload);
-        else alert('Sem dados de registro para esta data.');
-        btn.textContent = oldText; btn.disabled = false;
+        if (payload) executarPreenchimentoRegistro(payload, opts);
+        else reportarResultado(opts, false, 'Sem dados de registro para esta data.');
+        if (btn) { btn.textContent = oldText; btn.disabled = false; }
     }, 1200);
 }
 
@@ -523,7 +610,8 @@ function marcarCheckboxReplicarFrequencia() {
     return true;
 }
 
-function executarPreenchimentoChamada(payload) {
+function executarPreenchimentoChamada(payload, opts) {
+    opts = opts || {};
     const normalize = s => s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
     let interagidos = 0;
 
@@ -575,60 +663,224 @@ function executarPreenchimentoChamada(payload) {
         if (marcarCheckboxReplicarFrequencia()) interagidos++;
     }
 
-    if (interagidos > 0) {
+    const finalizarChamada = () => {
         setTimeout(() => {
             const btnSalvar = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a')).find(b => {
                 const text = (b.innerText || b.value || b.textContent || '').toLowerCase();
                 return text.includes('salvar') || text.includes('cadastrar') || text.includes('gravar') || text.includes('finalizar');
             });
-            if (btnSalvar) { btnSalvar.click(); alert('✅ Concluído! Faltas preenchidas e salvas na SED.'); }
-            else alert('✅ Concluído! ⚠️ Clique em "Salvar" manualmente.');
+            if (!btnSalvar) { reportarResultado(opts, false, '✅ Concluído! ⚠️ Clique em "Salvar" manualmente.'); return; }
+            btnSalvar.click();
+            if (!opts.modoAutomatico) { reportarResultado(opts, true, '✅ Concluído! Faltas preenchidas e salvas na SED.'); return; }
+            // Modo automático (v3.0.1): o clique acima só ABRE o modal "Salvar frequência" - a SED
+            // exige confirmar de novo dentro dele, e só então mostra "Alterações salvas" (ver
+            // confirmarModalSalvarFrequencia/aguardarModalAlteracoesSalvas abaixo).
+            confirmarModalSalvarFrequencia(opts);
         }, 500);
-    } else alert('Nenhuma falta pendente ou tela de chamada não encontrada.');
+    };
+    // v3.0.1: em modo automático finaliza mesmo sem faltas - a SED exige confirmar a frequência
+    // mesmo com 0 ausências (o modal de confirmação mostra "Ausências: 0" normalmente), e o
+    // workflow automático precisa desse Salvar para poder seguir para o Registro. No botão manual
+    // mantém o comportamento de sempre (só clica Salvar quando há alguma interação).
+    if (opts.modoAutomatico || interagidos > 0) finalizarChamada();
+    else reportarResultado(opts, false, 'Nenhuma falta pendente ou tela de chamada não encontrada.');
+}
+
+// v3.0.1: após clicar em "Salvar" na Chamada, a SED abre um modal de confirmação ("Salvar
+// frequência", com contagem de presenças/ausências) que exige um SEGUNDO clique em "Salvar" dentro
+// dele - só então a frequência é de fato persistida. Usado só em modo automático (no botão manual o
+// professor confirma esse modal ele mesmo, como sempre fez).
+function confirmarModalSalvarFrequencia(opts) {
+    aguardarCondicao(
+        () => encontrarBotaoEmModal('salvar frequência', 'salvar'),
+        (btn) => { btn.click(); aguardarModalAlteracoesSalvas(opts); },
+        () => reportarResultado(opts, false, 'Cliquei em "Salvar" mas o modal de confirmação da frequência não apareceu a tempo.')
+    );
+}
+
+// v3.0.1: depois de confirmar o modal acima, a SED mostra "Alterações salvas" com um atalho direto
+// para a tela de Registro de Aulas da MESMA turma/disciplina/data - se existir, usa-o (evita ter que
+// navegar pela lista de Registro de novo); senão reporta sucesso normal e o workflow cai no fluxo
+// antigo por lista (ver aguardarTelaDetalheEExecutar).
+function aguardarModalAlteracoesSalvas(opts) {
+    aguardarCondicao(
+        () => encontrarModalPorTitulo('alterações salvas'),
+        () => {
+            const btnRegistro = encontrarBotaoEmModal('alterações salvas', 'registro de aulas');
+            if (btnRegistro) { btnRegistro.click(); reportarResultado(opts, true, '✅ Concluído! Frequência salva e confirmada na SED.', { jaNavegouParaRegistro: true }); }
+            else reportarResultado(opts, true, '✅ Concluído! Frequência salva e confirmada na SED.', { jaNavegouParaRegistro: false });
+        },
+        () => reportarResultado(opts, false, 'Cliquei em "Salvar" no modal, mas não vi a confirmação "Alterações salvas".')
+    );
+}
+
+// v3.0.1: acha, dentro de algum modal ABERTO/VISÍVEL (.modal-content com dimensões > 0 - Bootstrap
+// costuma deixar modais fechados no DOM com display:none, então só checar presença não basta), o
+// botão do rodapé cujo texto contenha substringBotao. Se tituloModalAlvo for informado, exige que o
+// <h4> do modal contenha esse texto antes de procurar o botão (evita casar com outro modal aberto).
+// Usa normalizeTextoSED (já existente) para tolerar acentos e o texto do ícone Material dentro do
+// botão (ex.: "save" + "Salvar" viram "savesalvar", que ainda contém "salvar").
+function encontrarBotaoEmModal(tituloModalAlvo, substringBotao) {
+    const normSub = normalizeTextoSED(substringBotao);
+    const modais = Array.from(document.querySelectorAll('.modal-content')).filter(el => {
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+    });
+    for (const modal of modais) {
+        if (tituloModalAlvo) {
+            const h4 = modal.querySelector('h4');
+            if (!h4 || !normalizeTextoSED(h4.textContent).includes(normalizeTextoSED(tituloModalAlvo))) continue;
+        }
+        const botoes = Array.from(modal.querySelectorAll('.modal-footer button, .modal-footer a'));
+        const alvo = botoes.find(b => normalizeTextoSED(b.textContent).includes(normSub));
+        if (alvo) return alvo;
+    }
+    return null;
+}
+
+// v3.0.1: mesma ideia de encontrarBotaoEmModal, mas devolve o próprio modal (visível) cujo <h4>
+// contenha tituloAlvo - usado para confirmar que "Alterações salvas" apareceu, antes de procurar o
+// botão de atalho para o Registro.
+function encontrarModalPorTitulo(tituloAlvo) {
+    const normAlvo = normalizeTextoSED(tituloAlvo);
+    return Array.from(document.querySelectorAll('.modal-content')).find(modal => {
+        const rect = modal.getBoundingClientRect();
+        if (!(rect.width > 0 && rect.height > 0)) return false;
+        const h4 = modal.querySelector('h4');
+        return h4 && normalizeTextoSED(h4.textContent).includes(normAlvo);
+    }) || null;
 }
 
 // Preenche o campo de texto na tela "Registro de Aulas Detalhes". O registro certo é escolhido
 // casando a Turma/Disciplina exibidas no cabeçalho da SED com os registros do ProfSis para o dia
 // (ver encontrarRegistroParaTela) - importante quando o professor tem mais de uma turma no mesmo dia.
-function executarPreenchimentoRegistro(payload) {
+function executarPreenchimentoRegistro(payload, opts) {
+    opts = opts || {};
     const registro = encontrarRegistroParaTela(payload);
-    if (!registro || !registro.conteudo) {
-        alert('Nenhum registro (ou rascunho do Estagiário) encontrado no ProfSis para a turma/disciplina e data desta tela.');
-        return;
-    }
 
-    const areas = document.querySelectorAll('textarea[name="o.Descricao"]');
-    if (areas.length === 0) {
-        alert('Não encontrei o campo de texto do registro nesta tela.\n\nSe a SED exigir escolher o "Horário de Aula" antes de mostrar o campo, selecione-o manualmente e clique em "Preencher Registro" de novo.');
-        return;
-    }
-    areas.forEach(txt => {
-        txt.value = registro.conteudo;
-        txt.dispatchEvent(new Event('input', { bubbles: true }));
-        txt.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    // Preenche o textarea com conteudoTexto, marca o Material Digital (se houver) e salva - mesmo
+    // caminho de sempre, usado tanto para o conteúdo real do ProfSis quanto para o texto gerado por
+    // IA (ver fallback abaixo).
+    const prosseguirComConteudo = (conteudoTexto, cardsMaterialDigital) => {
+        const continuarComMaterialESalvar = () => {
+            const finalizarSalvamentoRegistro = (avisoCards) => {
+                setTimeout(() => {
+                    const btnSalvar = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a')).find(b => {
+                        const text = (b.innerText || b.value || b.textContent || '').toLowerCase();
+                        return text.includes('salvar') || text.includes('gravar');
+                    });
+                    const sufixoAviso = (avisoCards && avisoCards.length > 0)
+                        ? ('\n\n⚠️ Não encontrei na tela o(s) card(s) do Material Digital: ' + avisoCards.join(', ') + '. Marque manualmente se necessário.')
+                        : '';
+                    if (btnSalvar) { btnSalvar.click(); reportarResultado(opts, true, '✅ Registro preenchido e salvo na SED.' + sufixoAviso); }
+                    else reportarResultado(opts, false, '✅ Registro preenchido! ⚠️ Clique em "Salvar" manualmente.' + sufixoAviso);
+                }, 400);
+            };
 
-    const finalizarSalvamentoRegistro = (avisoCards) => {
-        setTimeout(() => {
-            const btnSalvar = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a')).find(b => {
-                const text = (b.innerText || b.value || b.textContent || '').toLowerCase();
-                return text.includes('salvar') || text.includes('gravar');
+            // Marca de volta os cards do Material Digital selecionados no ProfSis ANTES de salvar,
+            // para que o clique em Salvar grave texto + cards de uma vez só.
+            if (cardsMaterialDigital && cardsMaterialDigital.length > 0) {
+                marcarCardsMaterialDigitalNaTela(cardsMaterialDigital, finalizarSalvamentoRegistro);
+            } else {
+                finalizarSalvamentoRegistro([]);
+            }
+        };
+
+        const tabs = Array.from(document.querySelectorAll('#tabsNavegacao .nav-link'));
+        if (tabs.length === 0) {
+            // Tela sem abas de "Horário de Aula" - o campo já deveria estar visível direto.
+            const areas = document.querySelectorAll('textarea[name="o.Descricao"]');
+            if (areas.length === 0) {
+                reportarResultado(opts, false, 'Não encontrei o campo de texto do registro nesta tela.\n\nSe a SED exigir escolher o "Horário de Aula" antes de mostrar o campo, selecione-o manualmente e clique em "Preencher Registro" de novo.');
+                return;
+            }
+            areas.forEach(txt => {
+                txt.value = conteudoTexto;
+                txt.dispatchEvent(new Event('input', { bubbles: true }));
+                txt.dispatchEvent(new Event('change', { bubbles: true }));
             });
-            const sufixoAviso = (avisoCards && avisoCards.length > 0)
-                ? ('\n\n⚠️ Não encontrei na tela o(s) card(s) do Material Digital: ' + avisoCards.join(', ') + '. Marque manualmente se necessário.')
-                : '';
-            if (btnSalvar) { btnSalvar.click(); alert('✅ Registro preenchido e salvo na SED.' + sufixoAviso); }
-            else alert('✅ Registro preenchido! ⚠️ Clique em "Salvar" manualmente.' + sufixoAviso);
-        }, 400);
+            continuarComMaterialESalvar();
+            return;
+        }
+
+        // v3.1.1: a SED só mostra o campo de texto do registro depois de selecionar o "Horário de
+        // Aula" (aba em #tabsNavegacao) - percorre TODAS as abas (mesmo padrão já usado em
+        // marcarCardsMaterialDigitalNaTela/extrairTodasAsSessoes, porque aulas dobradinhas têm mais
+        // de uma aba e provavelmente exigem o campo preenchido em cada uma), espera cada uma
+        // renderizar e preenche o texto onde o campo existir, depois volta pra aba original.
+        preencherTextoRegistroEmTodasAsAbas(tabs, conteudoTexto, (totalPreenchidas) => {
+            if (totalPreenchidas === 0) {
+                reportarResultado(opts, false, 'Selecionei o(s) "Horário(s) de Aula" mas não encontrei o campo de texto do registro em nenhuma aba.');
+                return;
+            }
+            continuarComMaterialESalvar();
+        });
     };
 
-    // Marca de volta os cards do Material Digital selecionados no ProfSis ANTES de salvar, para que o
-    // clique em Salvar grave texto + cards de uma vez só.
-    if (registro.cardsMaterialDigital && registro.cardsMaterialDigital.length > 0) {
-        marcarCardsMaterialDigitalNaTela(registro.cardsMaterialDigital, finalizarSalvamentoRegistro);
-    } else {
-        finalizarSalvamentoRegistro([]);
+    if (registro && registro.conteudo) {
+        prosseguirComConteudo(registro.conteudo, registro.cardsMaterialDigital);
+        return;
     }
+
+    // v3.1.0: sem registro salvo no ProfSis - só em modo automático, gera um texto genérico via IA
+    // (reaproveitando a chave/roteador já configurado para "IA Estagiário", ver
+    // gerarTextoRegistroFallbackIA em background.js) em vez de abortar direto. No botão manual mantém
+    // o aviso de sempre - o professor decide o que fazer, nada é gerado sozinho.
+    if (!opts.modoAutomatico) {
+        reportarResultado(opts, false, 'Nenhum registro (ou rascunho do Estagiário) encontrado no ProfSis para a turma/disciplina e data desta tela.');
+        return;
+    }
+    let turmaSED = null, disciplinaSED = null;
+    document.querySelectorAll('.font-cabecalho-filtro').forEach(span => {
+        const t = span.textContent || '';
+        if (t.includes('Turma:')) turmaSED = t.replace(/^.*Turma:/i, '').trim();
+        if (t.includes('Disciplina:')) disciplinaSED = t.replace(/^.*Disciplina:/i, '').trim();
+    });
+    if (!turmaSED || !disciplinaSED) {
+        reportarResultado(opts, false, 'Não consegui identificar a turma/disciplina desta tela para gerar um texto de registro.');
+        return;
+    }
+    chrome.runtime.sendMessage({ action: 'GERAR_TEXTO_REGISTRO_IA', disciplina: disciplinaSED, turmaNome: turmaSED }, (resposta) => {
+        if (chrome.runtime.lastError || !resposta || !resposta.success) {
+            const motivo = (resposta && resposta.error) || (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'erro desconhecido';
+            reportarResultado(opts, false, 'Não havia registro salvo e a IA não conseguiu gerar um texto de fallback: ' + motivo);
+            return;
+        }
+        prosseguirComConteudo(resposta.texto, null);
+    });
+}
+
+// v3.1.1: preenche o texto do registro em CADA aba de #tabsNavegacao ("Horário de Aula") - a SED só
+// renderiza o campo de texto da aba ativa por vez (mesma limitação de marcarCardsMaterialDigitalNaTela
+// logo abaixo), e aulas dobradinhas têm mais de uma aba que provavelmente também exige o campo
+// preenchido. Clica em cada aba, espera renderizar (mesmo tempo de espera já usado nas outras funções
+// de aba deste arquivo), preenche o textarea se existir, e ao final volta pra aba em que estava.
+function preencherTextoRegistroEmTodasAsAbas(tabs, conteudoTexto, callback) {
+    const indiceOriginal = tabs.findIndex(t => t.classList.contains('active'));
+    let i = 0, preenchidas = 0;
+    function proximaAba() {
+        if (i >= tabs.length) {
+            if (indiceOriginal >= 0 && tabs[indiceOriginal]) tabs[indiceOriginal].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            setTimeout(() => callback(preenchidas), 300);
+            return;
+        }
+        const tab = tabs[i];
+        tab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        setTimeout(() => {
+            const areas = document.querySelectorAll('textarea[name="o.Descricao"]');
+            if (areas.length > 0) {
+                areas.forEach(txt => {
+                    txt.value = conteudoTexto;
+                    txt.dispatchEvent(new Event('input', { bubbles: true }));
+                    txt.dispatchEvent(new Event('change', { bubbles: true }));
+                });
+                preenchidas++;
+            }
+            i++;
+            proximaAba();
+        }, 350);
+    }
+    proximaAba();
 }
 
 // Marca os cards-alvo dentro de um pane específico. Casa por TÍTULO (não pelo id salvo no registro)
@@ -694,6 +946,292 @@ function marcarCardsMaterialDigitalNaTela(cardsAlvo, callback) {
         }, 350);
     }
     proximaAba();
+}
+
+// ==================== WORKFLOW AUTOMÁTICO (v3.0) ====================
+// Botão "Auto" por linha do card "Aulas do Dia": navega sozinho pela SED (lista de Chamada -> tela
+// de preenchimento -> lista de Registro -> tela de preenchimento), reaproveitando as funções de
+// preenchimento acima em modo silencioso (opts.modoAutomatico, ver reportarResultado), e marca a
+// aula como concluída ao final. Todo o estado vive em chrome.storage.local['rpa_auto_workflow']
+// porque navegar para as URLs de listagem (location.href) sempre recarrega o documento e destrói as
+// variáveis de memória deste content script - a retomada NUNCA confia em memória, sempre relê o
+// storage do zero (ver avancarWorkflowAutoSeNecessario).
+
+const URL_LISTA_CHAMADA = 'https://saladofuturoprofessor.educacao.sp.gov.br/diario-classe__frequencia___lancamento';
+const URL_LISTA_REGISTRO = 'https://saladofuturoprofessor.educacao.sp.gov.br/diario-classe__registrodeaulas';
+
+const ROTULOS_ETAPA_WORKFLOW = {
+    ir_para_lista_chamada: 'Abrindo lista de Chamada',
+    clicar_item_lista_chamada: 'Selecionando turma na Chamada',
+    preencher_chamada: 'Preenchendo Chamada',
+    ir_para_lista_registro: 'Abrindo lista de Registro',
+    clicar_item_lista_registro: 'Selecionando turma no Registro',
+    preencher_registro: 'Preenchendo Registro',
+    concluido: 'Concluído',
+    erro: 'Erro'
+};
+
+let workflowBusy = false;
+
+function isUrlListaChamada(href) { href = href || ''; return href.indexOf('diario-classe__frequencia___lancamento') !== -1 && href.indexOf('Detalhes') === -1; }
+function isUrlListaRegistro(href) { return (href || '').indexOf('diario-classe__registrodeaulas') !== -1; }
+
+// Confirma por ESTRUTURA do DOM (não só URL/título, que na SPA Blazor nem sempre é confiável - ver
+// comentário em detectarTipoTelaSED) que a tela de listagem de turma/disciplina carregou. A mesma
+// estrutura serve tanto para a lista de Chamada quanto para a de Registro.
+function estaNaTelaListagemSED() {
+    return !!document.querySelector('section.conteudoItens > a.item');
+}
+
+// Lê os itens da tela de listagem (turma/disciplina) tal como renderizados pela SED: nome da turma
+// no <b> do primeiro <p>, disciplina no segundo <p> no formato "CÓDIGO - Nome" (prefixo removido).
+function lerItensListaSED() {
+    return Array.from(document.querySelectorAll('section.conteudoItens > a.item')).map(el => {
+        const ps = el.querySelectorAll('p');
+        const bTurma = ps[0] ? ps[0].querySelector('b') : null;
+        const turmaNome = (bTurma ? bTurma.textContent : (ps[0] ? ps[0].textContent : '')).trim();
+        const disciplinaBruta = ps[1] ? ps[1].textContent.trim() : '';
+        const disciplina = disciplinaBruta.replace(/^\d+\s*-\s*/, '').trim();
+        return { el: el, turmaNome: turmaNome, disciplina: disciplina };
+    });
+}
+
+// Acha, na tela de listagem atual, o item cuja turma+disciplina corresponde ao alvo - mesma cascata
+// de casamento já usada em encontrarIdTurmaDaTelaAtual/encontrarRegistroParaTela (linhas ~296-321 e
+// ~264-291): tenta por código de série+letra primeiro, cai para nome normalizado, desempata por
+// disciplina normalizada. NUNCA retorna um item ambíguo - se não achar exatamente 1 candidato,
+// devolve {erro} em vez de arriscar clicar na turma errada.
+function encontrarItemNaListaSED(turmaNomeAlvo, disciplinaAlvo) {
+    const itens = lerItensListaSED();
+    if (itens.length === 0) return { erro: 'A lista de turmas/disciplinas está vazia nesta tela.' };
+
+    const codigoAlvo = extrairCodigoSerieTurmaSED(turmaNomeAlvo);
+    let candidatos = [];
+    if (codigoAlvo) candidatos = itens.filter(i => extrairCodigoSerieTurmaSED(i.turmaNome) === codigoAlvo);
+    if (candidatos.length === 0) {
+        const normAlvo = normalizeTextoSED(turmaNomeAlvo);
+        candidatos = itens.filter(i => normalizeTextoSED(i.turmaNome) === normAlvo);
+    }
+    if (candidatos.length > 1 && disciplinaAlvo) {
+        const porDisciplina = candidatos.filter(i => disciplinasCasam(i.disciplina, disciplinaAlvo));
+        if (porDisciplina.length > 0) candidatos = porDisciplina;
+    }
+    if (candidatos.length === 0) return { erro: 'Não encontrei a turma "' + turmaNomeAlvo + '" / disciplina "' + disciplinaAlvo + '" na lista da SED.' };
+    if (candidatos.length > 1) return { erro: 'Encontrei mais de uma turma/disciplina correspondente a "' + turmaNomeAlvo + '" / "' + disciplinaAlvo + '" - não é seguro escolher automaticamente.' };
+    return { item: candidatos[0].el };
+}
+
+// Poller genérico: chama checarFn() a cada intervaloMs até ela retornar algo truthy (chama
+// aoSucesso com o valor) ou até maxTentativas esgotar (chama aoTimeout) - nunca espera
+// indefinidamente nem age "no escuro". Usado por todas as esperas do workflow abaixo.
+function aguardarCondicao(checarFn, aoSucesso, aoTimeout, intervaloMs, maxTentativas) {
+    intervaloMs = intervaloMs || 450;
+    maxTentativas = maxTentativas || 22;
+    let tentativas = 0;
+    (function tick() {
+        let valor;
+        try { valor = checarFn(); } catch (e) { valor = null; }
+        if (valor) { aoSucesso(valor); return; }
+        tentativas++;
+        if (tentativas >= maxTentativas) { aoTimeout(); return; }
+        setTimeout(tick, intervaloMs);
+    })();
+}
+
+// Persiste a nova etapa, atualiza o painel de status e só então segue - nunca avança em memória
+// sem antes gravar no storage (é o storage que garante a retomada após reload).
+function transicionarWorkflow(wf, novaEtapa, callback) {
+    wf.etapa = novaEtapa;
+    wf.tentativasEtapaAtual = 0;
+    wf.ultimaAtualizacaoEm = Date.now();
+    wf.log = wf.log || [];
+    wf.log.push({ etapa: novaEtapa, ok: true, ts: wf.ultimaAtualizacaoEm });
+    chrome.storage.local.set({ rpa_auto_workflow: wf }, () => {
+        atualizarPainelStatusWorkflow(wf);
+        if (callback) callback();
+    });
+}
+
+// Aborta o workflow com um motivo visível (nunca fica tentando indefinidamente nem clica "no
+// escuro"). Não remove o objeto do storage automaticamente - o professor pode querer ver o motivo
+// do erro; só é limpo ao clicar "Fechar" no painel ou ao iniciar um novo Auto.
+function abortarWorkflow(wf, motivoErro, callback) {
+    wf.etapa = 'erro';
+    wf.erro = motivoErro;
+    wf.ativo = false;
+    wf.ultimaAtualizacaoEm = Date.now();
+    wf.log = wf.log || [];
+    wf.log.push({ etapa: 'erro', ok: false, ts: wf.ultimaAtualizacaoEm, motivo: motivoErro });
+    chrome.storage.local.set({ rpa_auto_workflow: wf }, () => {
+        atualizarPainelStatusWorkflow(wf);
+        if (callback) callback();
+    });
+}
+
+// Marca a aula como concluída (mesmo mecanismo do checkbox manual, content_sed.js ~470-474) e
+// finaliza o workflow.
+function marcarWorkflowConcluido(wf, callback) {
+    wf.etapa = 'concluido';
+    wf.ativo = false;
+    wf.ultimaAtualizacaoEm = Date.now();
+    wf.log = wf.log || [];
+    wf.log.push({ etapa: 'concluido', ok: true, ts: wf.ultimaAtualizacaoEm });
+    extDoneMarks[wf.markKey] = true;
+    chrome.runtime.sendMessage({ action: 'SAVE_MARKS', marks: extDoneMarks });
+    chrome.storage.local.set({ rpa_auto_workflow: wf }, () => {
+        atualizarPainelStatusWorkflow(wf);
+        renderizarListaTurmasDoDia();
+        if (callback) callback();
+    });
+}
+
+// Espera a tela de listagem (Chamada ou Registro) carregar, clica no item que casa com a turma do
+// workflow e avança para a etapa de preenchimento. Aborta se a lista não carregar a tempo ou se o
+// casamento for ambíguo/vazio.
+function aguardarClicarItemLista(wf, tipoLista, callback) {
+    aguardarCondicao(
+        estaNaTelaListagemSED,
+        () => {
+            const resultado = encontrarItemNaListaSED(wf.turmaNome, wf.disciplina);
+            if (resultado.erro) { abortarWorkflow(wf, resultado.erro, callback); return; }
+            resultado.item.click();
+            const proximaEtapa = tipoLista === 'chamada' ? 'preencher_chamada' : 'preencher_registro';
+            transicionarWorkflow(wf, proximaEtapa, callback);
+        },
+        () => { abortarWorkflow(wf, 'Não consegui abrir a lista de ' + tipoLista + ' a tempo.', callback); }
+    );
+}
+
+// Espera a tela de detalhe (preenchimento) carregar e então dispara o preenchimento silencioso
+// (modoAutomatico), avançando para a próxima etapa só quando o preenchimento reporta sucesso real.
+function aguardarTelaDetalheEExecutar(wf, tipoLista, callback) {
+    const condicaoPronta = () => {
+        if (tipoLista === 'chamada') return detectarTipoTelaSED() === 'chamada' && document.querySelector('.card_aluno, .card_aluno1');
+        return detectarTipoTelaSED() === 'registro' && (document.querySelector('textarea[name="o.Descricao"]') || document.querySelector('#tabsNavegacao'));
+    };
+    aguardarCondicao(
+        condicaoPronta,
+        () => {
+            // A tela pode ter recarregado do zero (location.href) - garante que a data usada pelo
+            // preenchimento é a do workflow, não "hoje" (que injetarMenu define por padrão).
+            currentSelectedDate = wf.data;
+            const aoConcluir = (resultado) => {
+                if (!resultado.ok) { abortarWorkflow(wf, resultado.erro || resultado.mensagem || ('Falha ao preencher ' + tipoLista + '.'), callback); return; }
+                if (tipoLista === 'chamada') {
+                    // v3.0.1: se o modal "Alterações salvas" já nos levou direto para o Registro da
+                    // mesma turma/disciplina/data (ver aguardarModalAlteracoesSalvas), pula a lista
+                    // de seleção - senão cai no fluxo antigo por lista.
+                    const proximaEtapa = resultado.jaNavegouParaRegistro ? 'preencher_registro' : 'ir_para_lista_registro';
+                    transicionarWorkflow(wf, proximaEtapa, callback);
+                } else {
+                    marcarWorkflowConcluido(wf, callback);
+                }
+            };
+            if (tipoLista === 'chamada') preencherChamadaNaTela(null, { modoAutomatico: true, aoConcluir: aoConcluir });
+            else preencherRegistroNaTela(null, { modoAutomatico: true, aoConcluir: aoConcluir });
+        },
+        () => { abortarWorkflow(wf, 'A tela de ' + tipoLista + ' não carregou a tempo.', callback); }
+    );
+}
+
+// Máquina de estados central: sempre lê o storage do zero (nunca confia em variável de memória) e
+// decide a ação com base em (etapa salva, estrutura do DOM atual). Chamada em dois pontos: no boot
+// do content script (cobre reload completo de documento) e no MutationObserver já existente (cobre
+// navegação client-side da SPA Blazor sem reload). workflowBusy evita reentrância entre os dois.
+function avancarWorkflowAutoSeNecessario() {
+    if (workflowBusy) return;
+    chrome.storage.local.get(['rpa_auto_workflow'], (result) => {
+        const wf = result.rpa_auto_workflow;
+        if (!wf || !wf.ativo) return;
+        if (wf.etapa === 'concluido' || wf.etapa === 'erro') return;
+
+        workflowBusy = true;
+        const done = () => { workflowBusy = false; };
+
+        switch (wf.etapa) {
+            case 'ir_para_lista_chamada':
+                if (isUrlListaChamada(location.href)) transicionarWorkflow(wf, 'clicar_item_lista_chamada', done);
+                else { location.href = URL_LISTA_CHAMADA; /* reload real vai acontecer; não chama done() de propósito */ }
+                break;
+            case 'clicar_item_lista_chamada':
+                aguardarClicarItemLista(wf, 'chamada', done);
+                break;
+            case 'preencher_chamada':
+                aguardarTelaDetalheEExecutar(wf, 'chamada', done);
+                break;
+            case 'ir_para_lista_registro':
+                if (isUrlListaRegistro(location.href)) transicionarWorkflow(wf, 'clicar_item_lista_registro', done);
+                else { location.href = URL_LISTA_REGISTRO; /* reload real vai acontecer; não chama done() de propósito */ }
+                break;
+            case 'clicar_item_lista_registro':
+                aguardarClicarItemLista(wf, 'registro', done);
+                break;
+            case 'preencher_registro':
+                aguardarTelaDetalheEExecutar(wf, 'registro', done);
+                break;
+            default:
+                done();
+        }
+    });
+}
+
+// Disparada pelo clique no botão "Auto" (ou "Refazer") de uma linha do card "Aulas do Dia".
+function iniciarWorkflowAuto(turma) {
+    chrome.storage.local.get(['rpa_auto_workflow'], (result) => {
+        const existente = result.rpa_auto_workflow;
+        if (existente && existente.ativo && String(existente.turmaId) !== String(turma.id)) {
+            alert('Já existe uma automação em andamento para outra turma ("' + existente.turmaNome + ' ' + existente.disciplina + '"). Aguarde ela terminar ou recarregue a página para cancelar antes de iniciar outra.');
+            return;
+        }
+        const agora = Date.now();
+        const wf = {
+            ativo: true,
+            turmaId: turma.id,
+            turmaNome: turma.nome,
+            disciplina: turma.disciplina,
+            data: currentSelectedDate,
+            markKey: currentSelectedDate + '_turma_' + turma.id,
+            etapa: 'ir_para_lista_chamada',
+            tentativasEtapaAtual: 0,
+            iniciadoEm: agora,
+            ultimaAtualizacaoEm: agora,
+            log: [],
+            erro: null
+        };
+        chrome.storage.local.set({ rpa_auto_workflow: wf }, () => {
+            atualizarPainelStatusWorkflow(wf);
+            avancarWorkflowAutoSeNecessario();
+        });
+    });
+}
+
+// Painel não-bloqueante de progresso (nunca usa alert()). Reaproveita o mesmo elemento
+// #sisprof-auto-status injetado em injetarMenu, irmão do #sisprof-status existente.
+function atualizarPainelStatusWorkflow(wf) {
+    const painel = document.getElementById('sisprof-auto-status');
+    if (!painel) return;
+    if (!wf || (!wf.ativo && wf.etapa !== 'erro')) {
+        painel.style.display = 'none';
+        painel.innerHTML = '';
+        return;
+    }
+    const corFundo = wf.etapa === 'erro' ? '#fff5f5' : '#ebf8ff';
+    const corBorda = wf.etapa === 'erro' ? '#feb2b2' : '#90cdf4';
+    painel.style.cssText = 'display:block; background:' + corFundo + '; border:1px solid ' + corBorda + '; border-radius:8px; padding:8px 10px; margin-bottom:10px; font-size:11px; color:#2d3748;';
+    let html = '<div style="font-weight:bold; margin-bottom:4px;">🤖 ' + wf.turmaNome + ' ' + wf.disciplina + '</div>';
+    if (wf.etapa === 'erro') {
+        html += '<div style="color:#c53030; margin-bottom:6px;">❌ ' + (wf.erro || 'Erro desconhecido.') + '</div>';
+        html += '<button id="sisprof-auto-status-fechar" style="background:#c53030; color:white; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-size:11px;">Fechar</button>';
+    } else {
+        html += '<div>' + (wf.etapa === 'concluido' ? '✅ ' : '⏳ ') + (ROTULOS_ETAPA_WORKFLOW[wf.etapa] || wf.etapa) + '</div>';
+    }
+    painel.innerHTML = html;
+    const btnFechar = document.getElementById('sisprof-auto-status-fechar');
+    if (btnFechar) btnFechar.onclick = function() {
+        chrome.storage.local.remove(['rpa_auto_workflow']);
+        painel.style.display = 'none';
+        painel.innerHTML = '';
+    };
 }
 
 // ==================== EXTRAIR ALUNOS (atualiza direto no banco) ====================

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ProfSis3 - Extensão para Aulas de Hoje",
-  "version": "2.8.0",
-  "description": "Exibe as aulas do dia do ProfSis em um card de agenda na Sala do Futuro, preenche Chamada e Registro de Aulas conforme a tela, e permite extrair alunos direto para o banco.",
+  "version": "3.1.1",
+  "description": "Exibe as aulas do dia do ProfSis em um card de agenda na Sala do Futuro, preenche Chamada e Registro de Aulas conforme a tela (com um botão \"Auto\" que navega e preenche sozinho, com fallback por IA quando não há registro salvo), e permite extrair alunos direto para o banco.",
   "permissions": [
     "tabs",
     "storage",
@@ -19,7 +19,10 @@
     "https://*.web.app/*",
     "https://*.github.io/*",
     "https://securetoken.googleapis.com/*",
-    "https://firestore.googleapis.com/*"
+    "https://firestore.googleapis.com/*",
+    "https://api.groq.com/*",
+    "https://api.openai.com/*",
+    "https://generativelanguage.googleapis.com/*"
   ],
   "background": {
     "service_worker": "background.js"
