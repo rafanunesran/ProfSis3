@@ -1,8 +1,8 @@
 // CONTENT SCRIPT - ProfSis3 (Injetado no site do ProfSis)
-// v2.5.1 - Repassa pedido de recarga de dados (PROFSIS_REFRESH_DATA) após escrita direta no Firestore
+// v2.6.0 - PROFSIS_UPDATE_STUDENTS agora espera a confirmação real do app.js antes de responder (evita falso "sucesso")
 // Faz a ponte entre o app (postMessage) e a extensão (chrome.runtime)
 
-console.log("🧩 Extensão ProfSis3 ativa na página do ProfSis! (v2.5.1)");
+console.log("🧩 Extensão ProfSis3 ativa na página do ProfSis! (v2.6.0)");
 
 // ==================== DETECÇÃO DE LOGIN ====================
 
@@ -185,10 +185,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // ---- Atualizar alunos direto no banco (fallback, quando a extensão não tem sessão Firebase salva) ----
     if (request.action === "PROFSIS_UPDATE_STUDENTS") {
         console.log("[ProfSis Ext] 📥 Atualizar alunos no banco (via aba):", request.payload.turmaSED, "-", (request.payload.alunos || []).length, "alunos");
-        // Dispara um evento customizado para o app.js processar a atualização no banco
+
+        // Espera o app.js terminar de processar de verdade (sucesso ou erro) antes de responder à
+        // extensão. Antes disso, respondíamos "sucesso" na hora, sem saber se o app realmente salvou -
+        // se o processamento falhasse (ex: turma não encontrada) ou a aba não tivesse o app carregado,
+        // a extensão mostrava "✅ criado" mesmo sem nada ter sido gravado.
+        let jaRespondeu = false;
+        const onResultado = (event) => {
+            if (jaRespondeu) return;
+            jaRespondeu = true;
+            window.removeEventListener('SisProf_Update_Students_Result', onResultado);
+            sendResponse(event.detail);
+        };
+        window.addEventListener('SisProf_Update_Students_Result', onResultado);
         window.dispatchEvent(new CustomEvent('SisProf_Update_Students', { detail: request.payload }));
-        // Responde imediatamente; o app.js processará de forma assíncrona
-        sendResponse({ success: true, message: 'Evento disparado para o app.' });
+
+        // Timeout de segurança: se o app não responder em 15s (ex: script não carregou), avisa o erro
+        // em vez de deixar a extensão esperando para sempre.
+        setTimeout(() => {
+            if (jaRespondeu) return;
+            jaRespondeu = true;
+            window.removeEventListener('SisProf_Update_Students_Result', onResultado);
+            sendResponse({ success: false, error: 'O ProfSis não respondeu a tempo nesta aba. Verifique se você está logado e tente novamente.' });
+        }, 15000);
+
+        return true; // resposta assíncrona
     }
     // ---- A extensão escreveu direto no Firestore (via background) - pede para esta aba recarregar os dados ----
     if (request.action === "PROFSIS_REFRESH_DATA") {
@@ -198,4 +219,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-console.log("✅ Ponte postMessage ↔ chrome.runtime estabelecida! (v2.5.1)");
+console.log("✅ Ponte postMessage ↔ chrome.runtime estabelecida! (v2.6.0)");

@@ -457,9 +457,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                             console.error("[Background] Erro ao enviar para ProfSis:", chrome.runtime.lastError);
                             sendResponse({ success: false, error: errDireto.message });
                         } else if (response && response.success) {
-                            sendResponse({ success: true, direct: false });
+                            sendResponse({ success: true, direct: false, resultado: response.resultado });
                         } else {
-                            sendResponse({ success: false, error: 'ProfSis não processou a atualização.' });
+                            sendResponse({ success: false, error: (response && response.error) || 'ProfSis não processou a atualização.' });
                         }
                     });
                 } else {
