@@ -290,7 +290,6 @@ function abrirModalApoie() {
                     <button class="close-btn" onclick="closeModal('modalApoie')">×</button>
                 </div>
                 <div style="padding: 20px 25px;">
-                    <p style="font-size:16px; color:#4a5568; line-height:1.5;">Devido a custos operacionais, estamos abrindo para apoio financeiro que pode ser feito por meio de assinatura mensal.</p>
                     <p style="font-size:16px; color:#4a5568; line-height:1.5;">O projeto é e sempre será gratuito. Devido aos custos operacionais, estamos abrindo para apoio financeiro por meio de assinatura mensal.</p>
                     <a href="https://mpago.la/2gkfmyw" target="_blank" class="btn btn-primary" style="display:block; padding: 15px; font-size: 18px; font-weight: bold; text-decoration: none; margin-top: 25px;">Apoiar com R$ 7,00/mês</a>
                     <p style="font-size:11px; color:#718096; margin-top:8px;">Pagamento seguro via Mercado Pago.</p>
