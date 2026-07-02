@@ -1669,6 +1669,7 @@ window.addEventListener('SisProf_Update_Students', async (event) => {
     const payload = event.detail;
     if (!payload || !payload.alunos || !payload.turmaSED) {
         console.warn('[SisProf] Payload de atualização de alunos inválido:', payload);
+        window.dispatchEvent(new CustomEvent('SisProf_Update_Students_Result', { detail: { success: false, error: 'Payload inválido.' } }));
         return;
     }
 
@@ -1687,6 +1688,8 @@ window.addEventListener('SisProf_Update_Students', async (event) => {
         if (typeof turmaAtual !== 'undefined' && document.getElementById('turmaDetalhe') && document.getElementById('turmaDetalhe').classList.contains('active')) {
             showTurmaTab('estudantes');
         }
+
+        window.dispatchEvent(new CustomEvent('SisProf_Update_Students_Result', { detail: { success: true, resultado } }));
     } catch (e) {
         console.error('[SisProf] ❌ Erro ao atualizar alunos:', e);
         const div = document.createElement('div');
@@ -1694,6 +1697,8 @@ window.addEventListener('SisProf_Update_Students', async (event) => {
         div.innerHTML = `❌ <strong>Erro ao atualizar alunos:</strong><br><span style="font-size:12px; font-weight:normal;">${e.message}</span>`;
         document.body.appendChild(div);
         setTimeout(() => div.remove(), 6000);
+
+        window.dispatchEvent(new CustomEvent('SisProf_Update_Students_Result', { detail: { success: false, error: e.message } }));
     }
 });
 
