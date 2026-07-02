@@ -179,7 +179,7 @@ function montarPayloadPorData(dataStr) {
     // da lista) ao preencher o Registro de uma turma que não é a primeira.
     const registros = registrosNoDia.map(r => {
         const turma = turmasProfsis.find(t => t.id == r.id_turma);
-        return { conteudo: r.conteudo, id_turma: r.id_turma, turmaNome: turma ? turma.nome : null, disciplina: turma ? turma.disciplina : null };
+        return { conteudo: r.conteudo, id_turma: r.id_turma, turmaNome: turma ? turma.nome : null, disciplina: turma ? turma.disciplina : null, cardsMaterialDigital: r.cardsMaterialDigital || [] };
     });
 
     return { data: dataStr, faltas: alunosFaltantesNomes, registros: registros, fechamento: [] };
@@ -292,6 +292,7 @@ function injetarMenu() {
         '</div>' +
         '<button id="sisprof-btn-preencher" style="width:100%; background:#3182ce; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px; margin-bottom:8px;">✅ Preencher Chamada</button>' +
         '<button id="sisprof-btn-extrair" style="width:100%; background:#38a169; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px;">📥 Extrair Alunos (Atualizar Banco)</button>' +
+        '<button id="sisprof-btn-extrair-material" style="width:100%; background:#805ad5; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px; display:none;">📥 Extrair Material Digital (Atualizar Catálogo)</button>' +
         '<hr style="border:0; border-top:1px solid #e2e8f0; margin:10px 0;">' +
         '<button id="sisprof-btn-logout" style="width:100%; background:#718096; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px;">🚪 Desconectar</button></div>';
     document.body.appendChild(div);
@@ -309,6 +310,7 @@ function injetarMenu() {
         else { alert('Não foi possível identificar se esta é a tela de Chamada ou de Registro da SED. Abra "Lançamento de Frequências" ou "Registro de Aulas Detalhes" e tente novamente.'); }
     };
     document.getElementById('sisprof-btn-extrair').onclick = iniciarExtrairAlunos;
+    document.getElementById('sisprof-btn-extrair-material').onclick = iniciarExtrairMaterialDigital;
     let observerDebounce = null, observerBusy = false;
     const observer = new MutationObserver(() => {
         if (observerBusy) return;
@@ -318,7 +320,7 @@ function injetarMenu() {
             // etc.) - usado aqui para também reagir na tela de Registro, que não tem .card_aluno.
             if (document.querySelector('.card_aluno, .card_aluno1') || document.querySelector('.txt-titulo')) {
                 observerBusy = true;
-                try { atualizarInterfacePorData(); atualizarModoBotaoPreencher(); } catch (e) {} finally { observerBusy = false; }
+                try { atualizarInterfacePorData(); atualizarModoBotaoPreencher(); atualizarVisibilidadeBotaoMaterial(); } catch (e) {} finally { observerBusy = false; }
             }
         }, 800);
     });
@@ -329,6 +331,15 @@ function injetarMenu() {
     // Mostra a agenda do dia imediatamente, em qualquer tela (não depende de entrar na chamada)
     atualizarInterfacePorData();
     atualizarModoBotaoPreencher();
+    atualizarVisibilidadeBotaoMaterial();
+}
+
+// O botão "Extrair Material Digital" só faz sentido na tela "Registro de Aulas Detalhes" (só ela tem
+// #tabsNavegacao) - fica escondido nas demais telas para não confundir com "Extrair Alunos".
+function atualizarVisibilidadeBotaoMaterial() {
+    const btn = document.getElementById('sisprof-btn-extrair-material');
+    if (!btn) return;
+    btn.style.display = (detectarTipoTelaSED() === 'registro') ? 'block' : 'none';
 }
 
 // Ajusta o rótulo/ação do botão único conforme a tela da SED (Chamada ou Registro).
@@ -518,14 +529,71 @@ function executarPreenchimentoRegistro(payload) {
         txt.dispatchEvent(new Event('change', { bubbles: true }));
     });
 
-    setTimeout(() => {
-        const btnSalvar = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a')).find(b => {
-            const text = (b.innerText || b.value || b.textContent || '').toLowerCase();
-            return text.includes('salvar') || text.includes('gravar');
-        });
-        if (btnSalvar) { btnSalvar.click(); alert('✅ Registro preenchido e salvo na SED.'); }
-        else alert('✅ Registro preenchido! ⚠️ Clique em "Salvar" manualmente.');
-    }, 400);
+    const finalizarSalvamentoRegistro = (avisoCards) => {
+        setTimeout(() => {
+            const btnSalvar = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], a')).find(b => {
+                const text = (b.innerText || b.value || b.textContent || '').toLowerCase();
+                return text.includes('salvar') || text.includes('gravar');
+            });
+            const sufixoAviso = (avisoCards && avisoCards.length > 0)
+                ? ('\n\n⚠️ Não encontrei na tela o(s) card(s) do Material Digital: ' + avisoCards.join(', ') + '. Marque manualmente se necessário.')
+                : '';
+            if (btnSalvar) { btnSalvar.click(); alert('✅ Registro preenchido e salvo na SED.' + sufixoAviso); }
+            else alert('✅ Registro preenchido! ⚠️ Clique em "Salvar" manualmente.' + sufixoAviso);
+        }, 400);
+    };
+
+    // Marca de volta os cards do Material Digital selecionados no ProfSis ANTES de salvar, para que o
+    // clique em Salvar grave texto + cards de uma vez só.
+    if (registro.cardsMaterialDigital && registro.cardsMaterialDigital.length > 0) {
+        marcarCardsMaterialDigitalNaTela(registro.cardsMaterialDigital, finalizarSalvamentoRegistro);
+    } else {
+        finalizarSalvamentoRegistro([]);
+    }
+}
+
+// Marca de volta na SED os checkboxes do "Material Digital" selecionados no ProfSis (cardsAlvo:
+// [{id, titulo, codigo}], no máximo 2). Procura primeiro na aba ativa; se não achar, percorre as
+// demais abas de #tabsNavegacao (mesma navegação usada na extração) até encontrar o checkbox certo.
+// Nunca interrompe o preenchimento por não achar um card - só acumula um aviso pro alert final.
+function marcarCardsMaterialDigitalNaTela(cardsAlvo, callback) {
+    if (!cardsAlvo || cardsAlvo.length === 0) { callback([]); return; }
+
+    const tabs = Array.from(document.querySelectorAll('#tabsNavegacao .nav-link'));
+    const indiceOriginal = tabs.findIndex(t => t.classList.contains('active'));
+    const pendentes = cardsAlvo.slice();
+
+    function marcarNaAbaAtual() {
+        for (let i = pendentes.length - 1; i >= 0; i--) {
+            const alvo = pendentes[i];
+            const checkbox = document.querySelector('input[type="checkbox"][id^="card-registro-' + alvo.id + '-"]');
+            if (checkbox) {
+                if (!checkbox.checked) checkbox.click();
+                pendentes.splice(i, 1);
+            }
+        }
+    }
+
+    function finalizar() {
+        const naoEncontrados = pendentes.map(p => p.titulo || p.id);
+        if (indiceOriginal >= 0 && tabs[indiceOriginal]) tabs[indiceOriginal].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        setTimeout(() => callback(naoEncontrados), 300);
+    }
+
+    marcarNaAbaAtual();
+    if (pendentes.length === 0 || tabs.length === 0) { finalizar(); return; }
+
+    let i = 0;
+    function proximaAba() {
+        if (pendentes.length === 0 || i >= tabs.length) { finalizar(); return; }
+        tabs[i].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        setTimeout(() => {
+            marcarNaAbaAtual();
+            i++;
+            proximaAba();
+        }, 350);
+    }
+    proximaAba();
 }
 
 // ==================== EXTRAIR ALUNOS (atualiza direto no banco) ====================
@@ -606,6 +674,117 @@ function iniciarExtrairAlunos() {
             } else {
                 alert('⚠️ Não foi possível atualizar o banco.\n' + (response ? response.error : 'Sem resposta da extensão.') + '\n\nDica: faça login no ProfSis pelo menos uma vez para a extensão salvar sua sessão.');
             }
+        });
+    });
+}
+
+// ==================== EXTRAIR MATERIAL DIGITAL (catálogo de aulas do currículo) ====================
+
+const SELETOR_CARDS_MATERIAL_DIGITAL = '.selecao_grid_registro';
+
+// A tela "Registro de Aulas Detalhes" (Blazor) monta as abas de #tabsNavegacao aos poucos, igual à
+// lista de alunos - por isso espera o número de abas parar de mudar antes de navegar por elas.
+function aguardarTelaRegistroEstavel(callback, tentativas) {
+    tentativas = tentativas || 0;
+    const contagem1 = document.querySelectorAll('#tabsNavegacao .nav-link').length;
+    setTimeout(() => {
+        const contagem2 = document.querySelectorAll('#tabsNavegacao .nav-link').length;
+        if ((contagem2 === contagem1 && contagem2 > 0) || tentativas >= 6) {
+            callback();
+        } else {
+            aguardarTelaRegistroEstavel(callback, tentativas + 1);
+        }
+    }, 400);
+}
+
+// Extrai os cards de "Material Digital" (Aula 1, Aula 2...) da aba atualmente visível. Cada card vira
+// {id, horario, titulo, codigo, temTarefa} - id+horario vêm do id do checkbox (card-registro-{ID}-{HORARIO}).
+function extrairCardsDaAbaAtiva() {
+    const pane = document.querySelector('.tab-content .tab-pane.show.active') || document.querySelector('.tab-content .tab-pane');
+    if (!pane) return [];
+    const cards = [];
+    pane.querySelectorAll(SELETOR_CARDS_MATERIAL_DIGITAL).forEach(bloco => {
+        const checkbox = bloco.querySelector('input[type="checkbox"]');
+        if (!checkbox || !checkbox.id) return;
+        const m = checkbox.id.match(/^card-registro-(\d+)-(.+)$/);
+        if (!m) return;
+        const tituloEl = bloco.querySelector('label p b');
+        const codigoEl = bloco.querySelector('label span');
+        const temTarefa = /aula com tarefa/i.test(bloco.textContent || '');
+        cards.push({
+            id: m[1],
+            horario: m[2],
+            titulo: tituloEl ? tituloEl.textContent.trim() : '',
+            codigo: codigoEl ? codigoEl.textContent.trim() : '',
+            temTarefa: temTarefa
+        });
+    });
+    return cards;
+}
+
+// Percorre TODAS as abas de #tabsNavegacao (o Blazor só renderiza o .tab-pane da aba ativa por vez),
+// extrai os cards de cada uma e devolve o professor pra aba em que estava ao final - não altera a tela
+// pra ele. Só faz sentido na tela "Registro de Aulas Detalhes" (só ela tem #tabsNavegacao).
+function extrairTodasAsSessoes(callback) {
+    const tabs = Array.from(document.querySelectorAll('#tabsNavegacao .nav-link'));
+    if (tabs.length === 0) { callback([]); return; }
+
+    const indiceOriginal = tabs.findIndex(t => t.classList.contains('active'));
+    const sessoes = [];
+    let i = 0;
+
+    function proximaAba() {
+        if (i >= tabs.length) {
+            if (indiceOriginal >= 0 && tabs[indiceOriginal]) tabs[indiceOriginal].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            setTimeout(() => callback(sessoes), 300);
+            return;
+        }
+        const tab = tabs[i];
+        tab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        setTimeout(() => {
+            const cards = extrairCardsDaAbaAtiva();
+            if (cards.length > 0) sessoes.push({ aba: (tab.textContent || '').trim(), cards: cards });
+            i++;
+            proximaAba();
+        }, 350);
+    }
+    proximaAba();
+}
+
+// Botão "Extrair Material Digital": lê Turma/Disciplina do cabeçalho (mesmo padrão de
+// encontrarRegistroParaTela/iniciarExtrairAlunos) e todos os cards de todas as abas/sessões, envia
+// para o background salvar no catálogo do ProfSis (data.materialDigitalCatalogo, por id_turma).
+function iniciarExtrairMaterialDigital() {
+    const btn = document.getElementById('sisprof-btn-extrair-material');
+    if (btn) { btn.textContent = '⏳ Lendo abas...'; btn.disabled = true; }
+
+    aguardarTelaRegistroEstavel(() => {
+        extrairTodasAsSessoes((sessoes) => {
+            if (btn) { btn.textContent = '📥 Extrair Material Digital (Atualizar Catálogo)'; btn.disabled = false; }
+
+            if (sessoes.length === 0) {
+                alert('Nenhum card de "Material Digital" encontrado nas abas desta tela.');
+                return;
+            }
+
+            let turmaSelecionada = "Desconhecida";
+            document.querySelectorAll('.font-cabecalho-filtro').forEach(span => {
+                if (span.textContent.includes('Turma:')) turmaSelecionada = span.textContent.replace('Turma:', '').trim();
+            });
+
+            const payload = { turmaSED: turmaSelecionada, sessoes: sessoes, timestamp: Date.now() };
+            chrome.runtime.sendMessage({ action: 'UPDATE_MATERIAL_DIGITAL_DB', payload: payload }, (response) => {
+                if (chrome.runtime.lastError) {
+                    alert('⚠️ Erro de comunicação com a extensão: ' + chrome.runtime.lastError.message);
+                    return;
+                }
+                if (response && response.success) {
+                    const totalCards = sessoes.reduce((acc, s) => acc + s.cards.length, 0);
+                    alert('✅ Catálogo atualizado! ' + sessoes.length + ' sessão(ões) e ' + totalCards + ' aula(s) do Material Digital salvas para a turma "' + turmaSelecionada + '".');
+                } else {
+                    alert('⚠️ Não foi possível salvar o catálogo.\n' + (response ? response.error : 'Sem resposta da extensão.'));
+                }
+            });
         });
     });
 }

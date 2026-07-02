@@ -211,6 +211,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
         return true; // resposta assíncrona
     }
+    // ---- Atualizar catálogo de Material Digital direto no banco (fallback, quando a extensão não tem sessão Firebase salva) ----
+    if (request.action === "PROFSIS_UPDATE_MATERIAL_DIGITAL") {
+        console.log("[ProfSis Ext] 📥 Atualizar catálogo de Material Digital (via aba):", request.payload.turmaSED);
+
+        // Mesmo padrão de PROFSIS_UPDATE_STUDENTS: só responde à extensão depois que o app.js
+        // confirmar de verdade (sucesso ou erro), com timeout de segurança.
+        let jaRespondeuMaterial = false;
+        const onResultadoMaterial = (event) => {
+            if (jaRespondeuMaterial) return;
+            jaRespondeuMaterial = true;
+            window.removeEventListener('SisProf_Update_MaterialDigital_Result', onResultadoMaterial);
+            sendResponse(event.detail);
+        };
+        window.addEventListener('SisProf_Update_MaterialDigital_Result', onResultadoMaterial);
+        window.dispatchEvent(new CustomEvent('SisProf_Update_MaterialDigital', { detail: request.payload }));
+
+        setTimeout(() => {
+            if (jaRespondeuMaterial) return;
+            jaRespondeuMaterial = true;
+            window.removeEventListener('SisProf_Update_MaterialDigital_Result', onResultadoMaterial);
+            sendResponse({ success: false, error: 'O ProfSis não respondeu a tempo nesta aba. Verifique se você está logado e tente novamente.' });
+        }, 15000);
+
+        return true; // resposta assíncrona
+    }
     // ---- A extensão escreveu direto no Firestore (via background) - pede para esta aba recarregar os dados ----
     if (request.action === "PROFSIS_REFRESH_DATA") {
         console.log("[ProfSis Ext] 🔄 Extensão pediu para recarregar os dados após atualização de alunos.");

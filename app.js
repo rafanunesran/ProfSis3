@@ -1815,6 +1815,41 @@ window.addEventListener('SisProf_Update_Students', async (event) => {
     }
 });
 
+// Recebe o catálogo de "Material Digital" (cards de aula do currículo) extraído pela extensão da
+// tela "Registro de Aulas Detalhes" da SED. Mesmo padrão de SisProf_Update_Students.
+window.addEventListener('SisProf_Update_MaterialDigital', async (event) => {
+    const payload = event.detail;
+    if (!payload || !payload.sessoes || !payload.turmaSED) {
+        console.warn('[SisProf] Payload de atualização de Material Digital inválido:', payload);
+        window.dispatchEvent(new CustomEvent('SisProf_Update_MaterialDigital_Result', { detail: { success: false, error: 'Payload inválido.' } }));
+        return;
+    }
+
+    console.log('[SisProf] 📥 Atualizando catálogo de Material Digital via extensão:', payload.turmaSED);
+
+    try {
+        const resultado = await processarAtualizacaoMaterialDigitalExtensao(payload);
+        console.log('[SisProf] ✅ Catálogo de Material Digital atualizado:', resultado);
+
+        const div = document.createElement('div');
+        div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#38a169; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
+        div.innerHTML = `✅ <strong>Catálogo de Material Digital atualizado!</strong><br><span style="font-size:12px; font-weight:normal;">Turma: ${payload.turmaSED}<br>📚 ${resultado.totalCards} aula(s) em ${resultado.totalSessoes} sessão(ões)</span>`;
+        document.body.appendChild(div);
+        setTimeout(() => div.remove(), 6000);
+
+        window.dispatchEvent(new CustomEvent('SisProf_Update_MaterialDigital_Result', { detail: { success: true, resultado } }));
+    } catch (e) {
+        console.error('[SisProf] ❌ Erro ao atualizar catálogo de Material Digital:', e);
+        const div = document.createElement('div');
+        div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#e53e3e; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
+        div.innerHTML = `❌ <strong>Erro ao atualizar catálogo:</strong><br><span style="font-size:12px; font-weight:normal;">${e.message}</span>`;
+        document.body.appendChild(div);
+        setTimeout(() => div.remove(), 6000);
+
+        window.dispatchEvent(new CustomEvent('SisProf_Update_MaterialDigital_Result', { detail: { success: false, error: e.message } }));
+    }
+});
+
 // A extensão escreveu direto no Firestore (via background) - esta aba precisa recarregar seus dados
 // para não ficar mostrando a lista de alunos desatualizada.
 window.addEventListener('SisProf_Refresh_Data', async () => {
@@ -1953,6 +1988,29 @@ async function processarAtualizacaoAlunosExtensao(payload) {
     const resultado = aplicarAtualizacaoAlunosExtensao(data.estudantes, alvo.turmaId, alunosExtraidos, normalizeName);
     await persistirDados();
     return { ...resultado, debugInfo };
+}
+
+// Grava o catálogo de "Material Digital" (cards de aula do currículo, extraídos da SED) dentro de
+// `data.materialDigitalCatalogo`, indexado por id_turma (a turma já carrega a disciplina implicitamente).
+// Diferente de alunos, esse catálogo é conteúdo curricular, não dado compartilhado de turma - por isso
+// grava SEMPRE na cópia pessoal do professor, mesmo quando a turma tem masterId (mesmo raciocínio já
+// usado para registrosAula).
+async function processarAtualizacaoMaterialDigitalExtensao(payload) {
+    if (!data.turmas) data.turmas = [];
+
+    const turmaSED = payload.turmaSED;
+    const sessoes = payload.sessoes || [];
+
+    const normalizeTurma = (t) => t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "").replace(/\s+/g, '');
+    const alvo = encontrarAlvoTurmaExtensao(data.turmas, turmaSED, normalizeTurma);
+    if (alvo.erro) throw new Error(alvo.erro);
+
+    if (!data.materialDigitalCatalogo) data.materialDigitalCatalogo = {};
+    data.materialDigitalCatalogo[alvo.turmaId] = { atualizadoEm: Date.now(), turmaSED: turmaSED, sessoes: sessoes };
+    await persistirDados();
+
+    const totalCards = sessoes.reduce((acc, s) => acc + ((s.cards || []).length), 0);
+    return { turmaId: alvo.turmaId, turmaNomeLocal: alvo.turmaNomeLocal, totalSessoes: sessoes.length, totalCards };
 }
 
 function salvarTurma(e) {
@@ -2544,6 +2602,7 @@ async function renderChamada() {
         <div style="margin-top: 15px; margin-bottom: 15px;">
             <label style="font-weight: bold; display: block; margin-bottom: 5px; color: #2d3748;">📝 Registro da Aula (Diário de Classe):</label>
             <textarea id="chamadaRegistroAula" rows="3" style="width: 100%; border: 1px solid #cbd5e0; padding: 10px; border-radius: 5px; font-family: inherit;" placeholder="Descreva o conteúdo ou as atividades da aula de hoje...">${conteudoRegistro}</textarea>
+            ${renderizarSeletorCardsMaterialDigital(turmaAtual, registroExistente ? registroExistente.cardsMaterialDigital : [], 'chamadaCardsMaterialDigital')}
         </div>
 
         <button class="btn btn-success" id="btnSalvarChamada" onclick="salvarChamadaManual()" style="width:100%; margin-top:15px; padding: 12px; font-size: 16px;">💾 Confirmar e Salvar Chamada</button>
@@ -2608,15 +2667,18 @@ async function salvarChamadaManual() {
     // Salva o Registro da Aula
     if (registroAulaConteudo.trim() !== '') {
         if (!data.registrosAula) data.registrosAula = [];
+        const cardsMaterialDigital = lerCardsMaterialDigitalSelecionados('chamadaCardsMaterialDigital');
         const idxRegistro = data.registrosAula.findIndex(r => r.id_turma == turmaAtual && r.data == dataChamada);
         if (idxRegistro !== -1) {
             data.registrosAula[idxRegistro].conteudo = registroAulaConteudo;
+            data.registrosAula[idxRegistro].cardsMaterialDigital = cardsMaterialDigital;
         } else {
             data.registrosAula.push({
                 id: Date.now() + Math.random(),
                 id_turma: turmaAtual,
                 data: dataChamada,
-                conteudo: registroAulaConteudo
+                conteudo: registroAulaConteudo,
+                cardsMaterialDigital: cardsMaterialDigital
             });
         }
     } else {
@@ -3450,6 +3512,80 @@ async function gerarOcorrenciaAtraso(estudanteId) {
     alert('Ocorrência de atraso gerada com sucesso!');
 }
 
+// --- SELETOR DE CARDS DO "MATERIAL DIGITAL" (qual aula do currículo foi dada) ---
+// Catálogo extraído pela extensão da tela "Registro de Aulas Detalhes" da SED (data.materialDigitalCatalogo,
+// por id_turma). Reaproveitado na aba Chamada, no modal "Novo Registro de Aula" e no Estagiário IA.
+const LIMITE_CARDS_MATERIAL_DIGITAL = 2;
+
+// Lista achatada dos cards do catálogo pra uma turma (todas as sessões/abas juntas), ou [] se a turma
+// ainda não tem catálogo extraído (a maioria das disciplinas não usa "Material Digital" na SED).
+function obterCardsCatalogoPorTurma(idTurma) {
+    const catalogo = (data.materialDigitalCatalogo || {})[idTurma];
+    if (!catalogo || !catalogo.sessoes) return [];
+    const cards = [];
+    catalogo.sessoes.forEach(sessao => {
+        (sessao.cards || []).forEach(card => cards.push({ ...card, aba: sessao.aba }));
+    });
+    return cards;
+}
+
+// Gera o HTML do seletor (checkboxes agrupados por sessão/aba). Retorna string vazia quando a turma
+// não tem catálogo - assim a seção simplesmente não aparece pras disciplinas sem Material Digital.
+function renderizarSeletorCardsMaterialDigital(idTurma, selecionadosAtuais, containerId) {
+    return renderizarSeletorCardsMaterialDigitalDeLista(obterCardsCatalogoPorTurma(idTurma), selecionadosAtuais, containerId);
+}
+
+// Mesma renderização acima, mas a partir de uma lista de cards já resolvida (usado pelo Estagiário IA,
+// que pode abranger várias turmas da mesma série+disciplina e precisa unir os catálogos delas antes).
+function renderizarSeletorCardsMaterialDigitalDeLista(cards, selecionadosAtuais, containerId) {
+    if (!cards || cards.length === 0) return '';
+
+    const idsSelecionados = new Set((selecionadosAtuais || []).map(c => c.id));
+    const porAba = {};
+    cards.forEach(c => { if (!porAba[c.aba]) porAba[c.aba] = []; porAba[c.aba].push(c); });
+
+    let html = `<div id="${containerId}" style="margin-top:10px; border:1px solid #cbd5e0; border-radius:6px; padding:10px; background:#fafafa;">`;
+    html += `<label style="font-weight:bold; display:block; margin-bottom:8px; color:#2d3748;">📚 Aula do Material Digital dada (máx. ${LIMITE_CARDS_MATERIAL_DIGITAL}):</label>`;
+    Object.keys(porAba).forEach(aba => {
+        html += `<div style="font-size:11px; font-weight:bold; color:#718096; margin:6px 0 3px 0;">${aba}</div>`;
+        porAba[aba].forEach(card => {
+            const checked = idsSelecionados.has(card.id) ? 'checked' : '';
+            const tituloAttr = (card.titulo || '').replace(/"/g, '&quot;');
+            html += `<label style="display:flex; align-items:flex-start; gap:6px; font-size:12px; margin-bottom:4px; cursor:pointer;">
+                <input type="checkbox" class="chk-card-material-digital" data-id="${card.id}" data-titulo="${tituloAttr}" data-codigo="${card.codigo || ''}" ${checked} onchange="onToggleCardMaterialDigital(this, '${containerId}')">
+                <span>${card.titulo}${card.temTarefa ? ' <span style="color:#26A95E; font-weight:bold;">(Aula com Tarefa)</span>' : ''}</span>
+            </label>`;
+        });
+    });
+    html += `</div>`;
+    return html;
+}
+
+// Aplica o limite de cards marcados por vez: ao tentar marcar um a mais que o limite, desmarca de novo
+// e avisa - não trava a lista (o professor sempre pode desmarcar um já marcado pra trocar por outro).
+function onToggleCardMaterialDigital(checkbox, containerId) {
+    if (!checkbox.checked) return;
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const marcados = container.querySelectorAll('.chk-card-material-digital:checked');
+    if (marcados.length > LIMITE_CARDS_MATERIAL_DIGITAL) {
+        checkbox.checked = false;
+        alert('Você já selecionou o máximo de ' + LIMITE_CARDS_MATERIAL_DIGITAL + ' aula(s) do Material Digital para este registro.');
+    }
+}
+
+// Lê os cards marcados dentro do container do seletor. Retorna [] se o container não existir (turma
+// sem catálogo, seção não renderizada).
+function lerCardsMaterialDigitalSelecionados(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return [];
+    return Array.from(container.querySelectorAll('.chk-card-material-digital:checked')).slice(0, LIMITE_CARDS_MATERIAL_DIGITAL).map(chk => ({
+        id: chk.getAttribute('data-id'),
+        titulo: chk.getAttribute('data-titulo'),
+        codigo: chk.getAttribute('data-codigo')
+    }));
+}
+
 // --- REGISTROS DE AULA (DIÁRIO DE CLASSE) ---
 let registroAulaEmEdicaoId = null;
 
@@ -3487,12 +3623,14 @@ function renderTurmaRegistros() {
 function abrirModalNovoRegistroAula(id = null) {
     registroAulaEmEdicaoId = id;
     const h3 = document.querySelector('#modalNovoRegistroAula h3');
+    let cardsAtuais = [];
 
     if (id) {
         const r = (data.registrosAula || []).find(x => x.id == id);
         if (r) {
             document.getElementById('regAulaData').value = r.data;
             document.getElementById('regAulaConteudo').value = r.conteudo;
+            cardsAtuais = r.cardsMaterialDigital || [];
             if (h3) h3.textContent = '✏️ Editar Registro de Aula';
         }
     } else {
@@ -3500,6 +3638,7 @@ function abrirModalNovoRegistroAula(id = null) {
         document.getElementById('regAulaConteudo').value = '';
         if (h3) h3.textContent = '+ Novo Registro de Aula';
     }
+    document.getElementById('regAulaCardsMaterialDigitalWrap').innerHTML = renderizarSeletorCardsMaterialDigital(turmaAtual, cardsAtuais, 'regAulaCardsMaterialDigital');
     showModal('modalNovoRegistroAula');
 }
 
@@ -3509,21 +3648,24 @@ async function salvarRegistroAula(e) {
     const conteudo = document.getElementById('regAulaConteudo').value;
     
     if (!dataReg || !conteudo) return alert('Preencha todos os campos.');
-    
+
     if (!data.registrosAula) data.registrosAula = [];
-    
+    const cardsMaterialDigital = lerCardsMaterialDigitalSelecionados('regAulaCardsMaterialDigital');
+
     if (registroAulaEmEdicaoId) {
         const idx = data.registrosAula.findIndex(r => r.id == registroAulaEmEdicaoId);
         if (idx !== -1) {
             data.registrosAula[idx].data = dataReg;
             data.registrosAula[idx].conteudo = conteudo;
+            data.registrosAula[idx].cardsMaterialDigital = cardsMaterialDigital;
         }
     } else {
         data.registrosAula.push({
             id: Date.now(),
             id_turma: turmaAtual,
             data: dataReg,
-            conteudo: conteudo
+            conteudo: conteudo,
+            cardsMaterialDigital: cardsMaterialDigital
         });
     }
     

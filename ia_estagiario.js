@@ -400,6 +400,29 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
         `;
     }
 
+    // Seletor de "qual aula do Material Digital foi dada" - reaproveita o catálogo extraído pela
+    // extensão (data.materialDigitalCatalogo, por id_turma). O modal inicial só tem Série+Disciplina
+    // (pode abranger várias turmas), então une os catálogos das turmas que batem com essa série+
+    // disciplina, deduplicando por id de card. Fica de fora do PDF por exigência do usuário - só é
+    // lido em exportarDocumentoFinal() pra anexar aos rascunhos de registrosAula (automações).
+    const getSerieNomeRevisao = (nome) => {
+        if (!nome) return '';
+        let n = nome.trim();
+        n = n.replace(/[\s-]+[A-Za-z]$/i, '');
+        n = n.replace(/(\d)[A-Za-z]$/i, '$1');
+        n = n.replace(/([ºª])[A-Za-z]$/i, '$1');
+        return n.trim();
+    };
+    const turmasAlvoRevisao = (data.turmas || []).filter(t => t.disciplina === disciplina && getSerieNomeRevisao(t.ano_serie || t.nome) === serie);
+    const cardsUnificadosRevisao = [];
+    const idsCardsVistosRevisao = new Set();
+    turmasAlvoRevisao.forEach(t => {
+        obterCardsCatalogoPorTurma(t.id).forEach(c => {
+            if (!idsCardsVistosRevisao.has(c.id)) { idsCardsVistosRevisao.add(c.id); cardsUnificadosRevisao.push(c); }
+        });
+    });
+    const cardsMaterialDigitalHtml = renderizarSeletorCardsMaterialDigitalDeLista(cardsUnificadosRevisao, [], 'revDocCardsMaterialDigital');
+
     document.getElementById('modalRevisaoDocumento').innerHTML = `
         <div class="modal-content" style="max-width: 700px;">
             <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
@@ -419,6 +442,7 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
             </div>
             <p style="font-size:13px; color:#666; margin-bottom:15px;">Abaixo está a estrutura pré-gerada. Fique à vontade para ajustar o texto antes de exportar o arquivo final.</p>
             ${formHtml}
+            ${cardsMaterialDigitalHtml}
             <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
                 <button class="btn btn-secondary" onclick="closeModal('modalRevisaoDocumento'); showModal('modalGerarDocumentoIA')">← Voltar</button>
                 <button class="btn btn-success" onclick="exportarDocumentoFinal('${tipo}')" id="btnExportarDoc">💾 Gerar PDF Final</button>
@@ -659,6 +683,11 @@ async function exportarDocumentoFinal(tipo) {
             const conteudoResumo = `Tema: ${payload.tema}\n\nObjetivo: ${payload.dados.objetivos || 'Apresentado no plano de aula.'}\n\nDesenvolvimento: ${payload.dados.desenvolvimento || ''}`;
             let algumCriado = false;
 
+            // Lido do seletor de "Material Digital" do modal de revisão - NÃO entra no template/PDF
+            // exportado (fica de fora dos placeholders substituídos acima), só é anexado aos rascunhos
+            // de registrosAula abaixo, para as automações (extensão) que preenchem a SED depois.
+            const cardsMaterialDigitalSelecionados = lerCardsMaterialDigitalSelecionados('revDocCardsMaterialDigital');
+
             turmasAlvo.forEach(turma => {
                 // Se a turma não tem nenhum bloco de grade configurado, não há como saber os dias de
                 // aula dela - cai para o comportamento antigo (rascunho só em "hoje") em vez de não
@@ -669,7 +698,7 @@ async function exportarDocumentoFinal(tipo) {
                 diasAlvo.forEach(diaStr => {
                     const registroExistente = data.registrosAula.find(r => r.id_turma == turma.id && r.data == diaStr);
                     if (registroExistente) return;
-                    data.registrosAula.push({ id: Date.now() + Math.random(), id_turma: turma.id, data: diaStr, conteudo: conteudoResumo.substring(0, 1000) });
+                    data.registrosAula.push({ id: Date.now() + Math.random(), id_turma: turma.id, data: diaStr, conteudo: conteudoResumo.substring(0, 1000), cardsMaterialDigital: cardsMaterialDigitalSelecionados });
                     algumCriado = true;
                 });
             });

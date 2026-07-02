@@ -289,6 +289,44 @@ async function atualizarAlunosDiretoFirebase(payload) {
     return { ...resultado, debugInfo };
 }
 
+// Escreve o catálogo de "Material Digital" direto no Firestore, sempre no documento PESSOAL do
+// professor (app_data_<uid>) - diferente de alunos, o catálogo é conteúdo curricular (não dado
+// compartilhado de turma), então nunca vai para o documento da escola/gestão - mesmo raciocínio já
+// aplicado a registrosAula.
+async function atualizarMaterialDigitalDiretoFirebase(payload) {
+    const sessoes = payload && payload.sessoes;
+    const turmaSED = payload && payload.turmaSED;
+    if (!sessoes || !turmaSED) throw new Error('Payload inválido.');
+
+    const auth = await getValidFirebaseAuth();
+    if (!auth) {
+        const err = new Error('Sem sessão do Firebase salva. Faça login no ProfSis pelo menos uma vez.');
+        err.code = 'NO_SESSION';
+        throw err;
+    }
+
+    const uid = auth.uid;
+    if (!uid) throw new Error('Usuário do ProfSis não identificado.');
+
+    const profDocId = 'app_data_' + uid;
+    const profData = await firestoreGetDoc(profDocId, auth.idToken);
+    if (!profData) {
+        await chrome.storage.local.remove(['profsis_firebase_session', 'profsis_id_token_cache']);
+        const err = new Error('A sessão salva pela extensão não corresponde a nenhuma conta válida (documento ' + profDocId + ' não existe). Ela foi descartada - abra o ProfSis, faça login e tente de novo.');
+        err.code = 'NO_SESSION';
+        throw err;
+    }
+
+    const alvo = encontrarAlvoTurma(profData.turmas || [], turmaSED);
+    if (alvo.erro) throw new Error(alvo.erro);
+
+    if (!profData.materialDigitalCatalogo) profData.materialDigitalCatalogo = {};
+    profData.materialDigitalCatalogo[alvo.turmaId] = { atualizadoEm: Date.now(), turmaSED: turmaSED, sessoes: sessoes };
+
+    await firestoreSetDoc(profDocId, profData, auth.idToken);
+    return { turmaId: alvo.turmaId, turmaNomeLocal: alvo.turmaNomeLocal, sessoes: sessoes.length };
+}
+
 // ==================== LISTENER DE MENSAGENS ====================
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log("📨 Background recebeu:", request.action);
@@ -508,6 +546,48 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 if (chrome.runtime.lastError) {
                     console.warn("[Background] Aba do ProfSis não respondeu, tentando Firestore direto:", chrome.runtime.lastError.message);
                     viaFirestoreDireto();
+                } else if (response && response.success) {
+                    sendResponse({ success: true, direct: false, resultado: response.resultado });
+                } else {
+                    sendResponse({ success: false, error: (response && response.error) || 'ProfSis não processou a atualização.' });
+                }
+            });
+        });
+        return true;
+    }
+
+    // ---- SED: Extrair Material Digital - atualizar catálogo de aulas no banco do ProfSis ----
+    if (request.action === "UPDATE_MATERIAL_DIGITAL_DB") {
+        console.log("[Background] Atualizando catálogo de Material Digital:", request.payload.turmaSED);
+
+        const viaFirestoreDiretoMaterial = () => {
+            atualizarMaterialDigitalDiretoFirebase(request.payload).then(resultado => {
+                console.log("[Background] Escrita direta no Firestore concluída (Material Digital):", resultado);
+                sendResponse({ success: true, direct: true, resultado: resultado });
+                chrome.tabs.query({}, (tabs) => {
+                    tabs.filter(t => isProfSisUrl(t.url)).forEach(t => {
+                        chrome.tabs.sendMessage(t.id, { action: 'PROFSIS_REFRESH_DATA' }, () => { void chrome.runtime.lastError; });
+                    });
+                });
+            }).catch(errDireto => {
+                console.error("[Background] Falha ao atualizar catálogo (Firestore direto):", errDireto.message);
+                sendResponse({ success: false, error: errDireto.message });
+            });
+        };
+
+        chrome.tabs.query({}, (tabs) => {
+            const profsisTab = tabs.find(t => isProfSisUrl(t.url));
+            if (!profsisTab) {
+                viaFirestoreDiretoMaterial();
+                return;
+            }
+            chrome.tabs.sendMessage(profsisTab.id, {
+                action: "PROFSIS_UPDATE_MATERIAL_DIGITAL",
+                payload: request.payload
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.warn("[Background] Aba do ProfSis não respondeu, tentando Firestore direto:", chrome.runtime.lastError.message);
+                    viaFirestoreDiretoMaterial();
                 } else if (response && response.success) {
                     sendResponse({ success: true, direct: false, resultado: response.resultado });
                 } else {
