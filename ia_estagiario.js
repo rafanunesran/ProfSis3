@@ -330,7 +330,11 @@ async function gerarDocumentoIA() {
         }
 
         closeModal('modalGerarDocumentoIA');
-        abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasNomesStr, duracaoAulasStr, bimestreAtual, dadosEstruturados, semanaInicioISO, semanaFimISO);
+        // Catálogo de Material Digital compartilhado pra essa disciplina+série (mesma coleção que
+        // qualquer turma/professor da escola alimenta) - buscado aqui (função já é async) pra não
+        // precisar tornar abrirModalRevisaoDocumento assíncrona.
+        const cardsMaterialDigitalDisponiveis = await obterCardsCatalogoCompartilhado(disciplina, serie);
+        abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasNomesStr, duracaoAulasStr, bimestreAtual, dadosEstruturados, semanaInicioISO, semanaFimISO, cardsMaterialDigitalDisponiveis);
 
     } catch (e) {
         console.error(e);
@@ -341,7 +345,7 @@ async function gerarDocumentoIA() {
     }
 }
 
-function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasStr, duracaoAulas, bimestreAtual, dados, semanaInicioISO, semanaFimISO) {
+function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasStr, duracaoAulas, bimestreAtual, dados, semanaInicioISO, semanaFimISO, cardsMaterialDigitalDisponiveis) {
     if (!document.getElementById('modalRevisaoDocumento')) {
         const div = document.createElement('div');
         div.id = 'modalRevisaoDocumento';
@@ -400,28 +404,11 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
         `;
     }
 
-    // Seletor de "qual aula do Material Digital foi dada" - reaproveita o catálogo extraído pela
-    // extensão (data.materialDigitalCatalogo, por id_turma). O modal inicial só tem Série+Disciplina
-    // (pode abranger várias turmas), então une os catálogos das turmas que batem com essa série+
-    // disciplina, deduplicando por id de card. Fica de fora do PDF por exigência do usuário - só é
-    // lido em exportarDocumentoFinal() pra anexar aos rascunhos de registrosAula (automações).
-    const getSerieNomeRevisao = (nome) => {
-        if (!nome) return '';
-        let n = nome.trim();
-        n = n.replace(/[\s-]+[A-Za-z]$/i, '');
-        n = n.replace(/(\d)[A-Za-z]$/i, '$1');
-        n = n.replace(/([ºª])[A-Za-z]$/i, '$1');
-        return n.trim();
-    };
-    const turmasAlvoRevisao = (data.turmas || []).filter(t => t.disciplina === disciplina && getSerieNomeRevisao(t.ano_serie || t.nome) === serie);
-    const cardsUnificadosRevisao = [];
-    const idsCardsVistosRevisao = new Set();
-    turmasAlvoRevisao.forEach(t => {
-        obterCardsCatalogoPorTurma(t.id).forEach(c => {
-            if (!idsCardsVistosRevisao.has(c.id)) { idsCardsVistosRevisao.add(c.id); cardsUnificadosRevisao.push(c); }
-        });
-    });
-    const cardsMaterialDigitalHtml = renderizarSeletorCardsMaterialDigitalDeLista(cardsUnificadosRevisao, [], 'revDocCardsMaterialDigital');
+    // Seletor de "qual aula do Material Digital foi dada" - reaproveita o catálogo compartilhado da
+    // escola pra essa disciplina+série (já resolvido em gerarDocumentoIA, antes de chamar esta função).
+    // Fica de fora do PDF por exigência do usuário - só é lido em exportarDocumentoFinal() pra anexar
+    // aos rascunhos de registrosAula (automações).
+    const cardsMaterialDigitalHtml = renderizarSeletorCardsMaterialDigitalDeLista(cardsMaterialDigitalDisponiveis || [], [], 'revDocCardsMaterialDigital');
 
     document.getElementById('modalRevisaoDocumento').innerHTML = `
         <div class="modal-content" style="max-width: 700px;">

@@ -289,14 +289,149 @@ async function atualizarAlunosDiretoFirebase(payload) {
     return { ...resultado, debugInfo };
 }
 
-// Escreve o catálogo de "Material Digital" direto no Firestore, sempre no documento PESSOAL do
-// professor (app_data_<uid>) - diferente de alunos, o catálogo é conteúdo curricular (não dado
-// compartilhado de turma), então nunca vai para o documento da escola/gestão - mesmo raciocínio já
-// aplicado a registrosAula.
+// ---- Material Digital: casamento de série (regex) e disciplina (fuzzy) - duplicado de app.js porque
+// content script/background/app rodam em contextos isolados (mesma convenção já usada no projeto pra
+// extrairCodigoSerieTurma*). ----
+
+const ORDINAIS_SERIE_MATERIAL_DIGITAL = {
+    'primeiro': '1', 'primeira': '1', 'segundo': '2', 'segunda': '2', 'terceiro': '3', 'terceira': '3',
+    'quarto': '4', 'quarta': '4', 'quinto': '5', 'quinta': '5', 'sexto': '6', 'sexta': '6',
+    'setimo': '7', 'setima': '7', 'oitavo': '8', 'oitava': '8', 'nono': '9', 'nona': '9'
+};
+
+function extrairSerieChaveMaterialDigital(nome) {
+    if (!nome) return '';
+    const semAcento = nome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const mDigito = semAcento.match(/(\d+)\s*[ºoa°]?/);
+    if (mDigito) return mDigito[1];
+    const mExtenso = semAcento.match(/\b(primeir[oa]|segund[oa]|terceir[oa]|quart[oa]|quint[oa]|sext[oa]|setim[oa]|oitav[oa]|non[oa])\b/);
+    if (mExtenso) return ORDINAIS_SERIE_MATERIAL_DIGITAL[mExtenso[1]] || mExtenso[1];
+    return semAcento.replace(/[^a-z0-9]/g, '');
+}
+
+function normalizarTextoComparacaoMaterialDigital(s) {
+    return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function distanciaLevenshteinMaterialDigital(a, b) {
+    const m = a.length, n = b.length;
+    if (m === 0) return n;
+    if (n === 0) return m;
+    let anterior = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+        const atual = [i];
+        for (let j = 1; j <= n; j++) {
+            const custo = a[i - 1] === b[j - 1] ? 0 : 1;
+            atual[j] = Math.min(atual[j - 1] + 1, anterior[j] + 1, anterior[j - 1] + custo);
+        }
+        anterior = atual;
+    }
+    return anterior[n];
+}
+
+// Cascata: igual normalizado -> abreviação por token -> abreviação geral -> distância de edição.
+function disciplinasSaoSemelhantes(a, b) {
+    const normA = normalizarTextoComparacaoMaterialDigital(a);
+    const normB = normalizarTextoComparacaoMaterialDigital(b);
+    if (!normA || !normB) return false;
+    if (normA === normB) return true;
+
+    const tokensA = normA.split(' ');
+    const tokensB = normB.split(' ');
+    if (tokensA.length === tokensB.length) {
+        const todosBatem = tokensA.every((tokA, i) => {
+            const tokB = tokensB[i];
+            return tokA.length >= 2 && tokB.length >= 2 && (tokB.startsWith(tokA) || tokA.startsWith(tokB));
+        });
+        if (todosBatem) return true;
+    }
+
+    if (normA.length >= 3 && normB.length >= 3 && (normA.startsWith(normB) || normB.startsWith(normA))) return true;
+
+    const distancia = distanciaLevenshteinMaterialDigital(normA, normB);
+    const maiorTamanho = Math.max(normA.length, normB.length);
+    const similaridade = maiorTamanho === 0 ? 1 : 1 - (distancia / maiorTamanho);
+    return similaridade >= 0.75;
+}
+
+// ---- REST helpers pra coleção shared_material_digital (a extensão não carrega o SDK completo do
+// Firestore, só faz chamadas REST cruas - por isso helpers dedicados em vez de reaproveitar
+// firestoreGetDoc/firestoreSetDoc, que são fixos na coleção app_data). ----
+
+// Consulta por schoolId+serieChave (duas igualdades, sem precisar de índice composto) e devolve os
+// documentos encontrados junto com seu resourceName completo (necessário pra atualizar depois).
+async function firestoreQuerySharedMaterialDigital(schoolId, serieChave, idToken) {
+    const url = 'https://firestore.googleapis.com/v1/projects/' + FIRESTORE_PROJECT_ID + '/databases/(default)/documents:runQuery';
+    const body = {
+        structuredQuery: {
+            from: [{ collectionId: 'shared_material_digital' }],
+            where: {
+                compositeFilter: {
+                    op: 'AND',
+                    filters: [
+                        { fieldFilter: { field: { fieldPath: 'schoolId' }, op: 'EQUAL', value: toFirestoreValue(schoolId) } },
+                        { fieldFilter: { field: { fieldPath: 'serieChave' }, op: 'EQUAL', value: toFirestoreValue(serieChave) } }
+                    ]
+                }
+            }
+        }
+    };
+    const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + idToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    if (!resp.ok) throw new Error('Erro ao consultar catálogo compartilhado no Firestore (' + resp.status + ')');
+    const json = await resp.json();
+    return (json || [])
+        .filter(item => item.document)
+        .map(item => ({ name: item.document.name, data: firestoreDocToPlainObject(item.document) }));
+}
+
+// Cria um novo documento (ID automático) na coleção shared_material_digital.
+async function firestoreCreateSharedMaterialDigital(dataObj, idToken) {
+    const url = 'https://firestore.googleapis.com/v1/projects/' + FIRESTORE_PROJECT_ID + '/databases/(default)/documents/shared_material_digital';
+    const fields = {};
+    Object.keys(dataObj).forEach(k => { if (dataObj[k] !== undefined) fields[k] = toFirestoreValue(dataObj[k]); });
+    const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + idToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: fields })
+    });
+    if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        throw new Error('Erro ao criar catálogo compartilhado no Firestore (' + resp.status + '): ' + errText);
+    }
+}
+
+// Atualiza só os campos passados (sessoes/atualizadoEm/atualizadoPor) de um documento já existente,
+// dado seu resourceName completo - usa updateMask pra NÃO apagar disciplinaOriginal/schoolId/serieChave.
+async function firestoreUpdateSharedMaterialDigital(resourceName, dataObj, idToken) {
+    const camposMask = Object.keys(dataObj).map(k => 'updateMask.fieldPaths=' + encodeURIComponent(k)).join('&');
+    const url = 'https://firestore.googleapis.com/v1/' + resourceName + '?' + camposMask;
+    const fields = {};
+    Object.keys(dataObj).forEach(k => { if (dataObj[k] !== undefined) fields[k] = toFirestoreValue(dataObj[k]); });
+    const resp = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Authorization': 'Bearer ' + idToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: fields })
+    });
+    if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        throw new Error('Erro ao atualizar catálogo compartilhado no Firestore (' + resp.status + '): ' + errText);
+    }
+}
+
+// Escreve o catálogo de "Material Digital" na coleção compartilhada shared_material_digital, num
+// cluster por escola+série+disciplina - igual ao caminho feito pelo app.js via SDK compat
+// (processarAtualizacaoMaterialDigitalExtensao), só que aqui via REST puro (fallback pra quando não há
+// aba do ProfSis aberta). Diferente de alunos, não precisa casar com uma turma local: o conteúdo vale
+// pra qualquer turma da escola com essa disciplina/série.
 async function atualizarMaterialDigitalDiretoFirebase(payload) {
     const sessoes = payload && payload.sessoes;
     const turmaSED = payload && payload.turmaSED;
-    if (!sessoes || !turmaSED) throw new Error('Payload inválido.');
+    const disciplinaSED = payload && payload.disciplinaSED;
+    if (!sessoes || !turmaSED || !disciplinaSED) throw new Error('Payload inválido.');
 
     const auth = await getValidFirebaseAuth();
     if (!auth) {
@@ -305,26 +440,32 @@ async function atualizarMaterialDigitalDiretoFirebase(payload) {
         throw err;
     }
 
-    const uid = auth.uid;
-    if (!uid) throw new Error('Usuário do ProfSis não identificado.');
+    const userStorage = await chrome.storage.local.get(['profsis_user']);
+    const user = userStorage.profsis_user;
+    if (!user || !user.schoolId) throw new Error('Escola do usuário não identificada; não é possível compartilhar o catálogo de Material Digital.');
+    const schoolId = user.schoolId;
 
-    const profDocId = 'app_data_' + uid;
-    const profData = await firestoreGetDoc(profDocId, auth.idToken);
-    if (!profData) {
-        await chrome.storage.local.remove(['profsis_firebase_session', 'profsis_id_token_cache']);
-        const err = new Error('A sessão salva pela extensão não corresponde a nenhuma conta válida (documento ' + profDocId + ' não existe). Ela foi descartada - abra o ProfSis, faça login e tente de novo.');
-        err.code = 'NO_SESSION';
-        throw err;
+    const serieChave = extrairSerieChaveMaterialDigital(turmaSED);
+    const candidatos = await firestoreQuerySharedMaterialDigital(schoolId, serieChave, auth.idToken);
+    const clusterExistente = candidatos.find(c => disciplinasSaoSemelhantes(disciplinaSED, c.data.disciplinaOriginal));
+
+    const dadosCluster = {
+        schoolId: schoolId,
+        serieChave: serieChave,
+        serieOriginal: turmaSED,
+        sessoes: sessoes,
+        atualizadoEm: Date.now(),
+        atualizadoPor: (auth.uid || '')
+    };
+
+    if (clusterExistente) {
+        await firestoreUpdateSharedMaterialDigital(clusterExistente.name, dadosCluster, auth.idToken);
+    } else {
+        dadosCluster.disciplinaOriginal = disciplinaSED;
+        await firestoreCreateSharedMaterialDigital(dadosCluster, auth.idToken);
     }
 
-    const alvo = encontrarAlvoTurma(profData.turmas || [], turmaSED);
-    if (alvo.erro) throw new Error(alvo.erro);
-
-    if (!profData.materialDigitalCatalogo) profData.materialDigitalCatalogo = {};
-    profData.materialDigitalCatalogo[alvo.turmaId] = { atualizadoEm: Date.now(), turmaSED: turmaSED, sessoes: sessoes };
-
-    await firestoreSetDoc(profDocId, profData, auth.idToken);
-    return { turmaId: alvo.turmaId, turmaNomeLocal: alvo.turmaNomeLocal, sessoes: sessoes.length };
+    return { disciplina: disciplinaSED, serieChave: serieChave, sessoes: sessoes.length, novoCluster: !clusterExistente };
 }
 
 // ==================== LISTENER DE MENSAGENS ====================

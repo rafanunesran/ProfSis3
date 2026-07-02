@@ -553,47 +553,33 @@ function executarPreenchimentoRegistro(payload) {
 }
 
 // Marca de volta na SED os checkboxes do "Material Digital" selecionados no ProfSis (cardsAlvo:
-// [{id, titulo, codigo}], no máximo 2). Procura primeiro na aba ativa; se não achar, percorre as
-// demais abas de #tabsNavegacao (mesma navegação usada na extração) até encontrar o checkbox certo.
-// Nunca interrompe o preenchimento por não achar um card - só acumula um aviso pro alert final.
+// [{id, titulo, codigo}], no máximo 2). Casa por TÍTULO (não pelo id salvo no registro) porque o mesmo
+// card ("Aula 1 - ...") tem um id numérico DIFERENTE em cada aba/sessão do #tabsNavegacao - o id
+// capturado na extração não existe nas outras abas. Procura só na aba ATUALMENTE ativa: é a sessão que
+// o professor está preenchendo agora que importa, marcar em outra aba não teria efeito no registro do
+// dia. Nunca interrompe o preenchimento por não achar um card - só acumula um aviso pro alert final.
 function marcarCardsMaterialDigitalNaTela(cardsAlvo, callback) {
     if (!cardsAlvo || cardsAlvo.length === 0) { callback([]); return; }
 
-    const tabs = Array.from(document.querySelectorAll('#tabsNavegacao .nav-link'));
-    const indiceOriginal = tabs.findIndex(t => t.classList.contains('active'));
-    const pendentes = cardsAlvo.slice();
+    const pane = document.querySelector('.tab-content .tab-pane.show.active') || document.querySelector('.tab-content .tab-pane');
+    const blocos = pane ? Array.from(pane.querySelectorAll(SELETOR_CARDS_MATERIAL_DIGITAL)) : [];
+    const naoEncontrados = [];
 
-    function marcarNaAbaAtual() {
-        for (let i = pendentes.length - 1; i >= 0; i--) {
-            const alvo = pendentes[i];
-            const checkbox = document.querySelector('input[type="checkbox"][id^="card-registro-' + alvo.id + '-"]');
-            if (checkbox) {
-                if (!checkbox.checked) checkbox.click();
-                pendentes.splice(i, 1);
-            }
+    cardsAlvo.forEach(alvo => {
+        const tituloAlvo = normalizeTextoSED(alvo.titulo);
+        const bloco = blocos.find(b => {
+            const tituloEl = b.querySelector('label p b');
+            return tituloEl && normalizeTextoSED(tituloEl.textContent) === tituloAlvo;
+        });
+        const checkbox = bloco ? bloco.querySelector('input[type="checkbox"]') : null;
+        if (checkbox) {
+            if (!checkbox.checked) checkbox.click();
+        } else {
+            naoEncontrados.push(alvo.titulo || alvo.id);
         }
-    }
+    });
 
-    function finalizar() {
-        const naoEncontrados = pendentes.map(p => p.titulo || p.id);
-        if (indiceOriginal >= 0 && tabs[indiceOriginal]) tabs[indiceOriginal].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        setTimeout(() => callback(naoEncontrados), 300);
-    }
-
-    marcarNaAbaAtual();
-    if (pendentes.length === 0 || tabs.length === 0) { finalizar(); return; }
-
-    let i = 0;
-    function proximaAba() {
-        if (pendentes.length === 0 || i >= tabs.length) { finalizar(); return; }
-        tabs[i].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-        setTimeout(() => {
-            marcarNaAbaAtual();
-            i++;
-            proximaAba();
-        }, 350);
-    }
-    proximaAba();
+    callback(naoEncontrados);
 }
 
 // ==================== EXTRAIR ALUNOS (atualiza direto no banco) ====================
@@ -753,7 +739,8 @@ function extrairTodasAsSessoes(callback) {
 
 // Botão "Extrair Material Digital": lê Turma/Disciplina do cabeçalho (mesmo padrão de
 // encontrarRegistroParaTela/iniciarExtrairAlunos) e todos os cards de todas as abas/sessões, envia
-// para o background salvar no catálogo do ProfSis (data.materialDigitalCatalogo, por id_turma).
+// para o background salvar no catálogo compartilhado da escola (coleção shared_material_digital,
+// agrupado por disciplina+série - visível a qualquer turma/professor da escola com essa combinação).
 function iniciarExtrairMaterialDigital() {
     const btn = document.getElementById('sisprof-btn-extrair-material');
     if (btn) { btn.textContent = '⏳ Lendo abas...'; btn.disabled = true; }
@@ -768,11 +755,18 @@ function iniciarExtrairMaterialDigital() {
             }
 
             let turmaSelecionada = "Desconhecida";
+            let disciplinaSelecionada = "";
             document.querySelectorAll('.font-cabecalho-filtro').forEach(span => {
                 if (span.textContent.includes('Turma:')) turmaSelecionada = span.textContent.replace('Turma:', '').trim();
+                if (span.textContent.includes('Disciplina:')) disciplinaSelecionada = span.textContent.replace('Disciplina:', '').trim();
             });
 
-            const payload = { turmaSED: turmaSelecionada, sessoes: sessoes, timestamp: Date.now() };
+            if (!disciplinaSelecionada) {
+                alert('Não encontrei a Disciplina no cabeçalho desta tela - o catálogo é compartilhado por disciplina/série, então preciso dela pra salvar corretamente.');
+                return;
+            }
+
+            const payload = { turmaSED: turmaSelecionada, disciplinaSED: disciplinaSelecionada, sessoes: sessoes, timestamp: Date.now() };
             chrome.runtime.sendMessage({ action: 'UPDATE_MATERIAL_DIGITAL_DB', payload: payload }, (response) => {
                 if (chrome.runtime.lastError) {
                     alert('⚠️ Erro de comunicação com a extensão: ' + chrome.runtime.lastError.message);
@@ -780,7 +774,7 @@ function iniciarExtrairMaterialDigital() {
                 }
                 if (response && response.success) {
                     const totalCards = sessoes.reduce((acc, s) => acc + s.cards.length, 0);
-                    alert('✅ Catálogo atualizado! ' + sessoes.length + ' sessão(ões) e ' + totalCards + ' aula(s) do Material Digital salvas para a turma "' + turmaSelecionada + '".');
+                    alert('✅ Catálogo atualizado! ' + sessoes.length + ' sessão(ões) e ' + totalCards + ' aula(s) do Material Digital salvas para "' + disciplinaSelecionada + '" - ' + turmaSelecionada + ' (compartilhado com a escola toda).');
                 } else {
                     alert('⚠️ Não foi possível salvar o catálogo.\n' + (response ? response.error : 'Sem resposta da extensão.'));
                 }
