@@ -314,7 +314,7 @@ const TEMAS_APP = {
 async function abrirModalPerfil() {
     if (!currentUser) return;
 
-    document.getElementById('perfilNome').textContent = currentUser.nome;
+    document.getElementById('perfilNome').innerHTML = `${currentUser.nome} <button class="btn btn-xs btn-secondary" style="margin-left: 10px; padding: 1px 5px;" onclick="editarNomeUsuario()">✏️ Editar</button>`;
     document.getElementById('perfilEmail').textContent = currentUser.email;
     document.getElementById('perfilRole').textContent = (currentUser.role || 'Professor').toUpperCase();
 
@@ -401,20 +401,54 @@ async function abrirModalPerfil() {
                 <strong style="font-size:12px; color:#2d3748; display:block; margin-bottom:5px;">Extensão do Chrome (Computador)</strong>
                 <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">A extensão é a forma mais robusta de integração, ideal para navegar por várias turmas.</p>
                 <button class="btn btn-sm btn-info" onclick="baixarArquivosExtensao()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🧩 Baixar Arquivos da Extensão</button>
-                <p style="font-size:11px; color:#4a5568; margin-top:10px;">Após instalar, clique abaixo para enviar os dados de hoje para a extensão:</p>
-                <button class="btn btn-sm" onclick="enviarDadosParaExtensao()" style="width:100%; background-color:#3182ce; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🧩 Enviar para Extensão</button>
-            </div>
-
-            <div style="background:#f0fff4; padding:10px; border-radius:6px; border:1px solid #c6f6d5; margin-top:10px;">
-                <strong style="font-size:12px; color:#276749; display:block; margin-bottom:5px;">Atualizar Turma (Sincronizar SED)</strong>
-                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Após usar a opção "Extrair Alunos" no Robô, clique abaixo para puxar a lista automaticamente.</p>
-                <button class="btn btn-sm" onclick="sincronizarAlunosNuvem()" style="width:100%; background-color:#38a169; color:white; font-weight:bold; border:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🔄 Atualizar Turma (Puxar da Nuvem)</button>
-                <button class="btn btn-sm btn-secondary" onclick="abrirModalImportarAlunosSED()" style="width:100%; margin-top:5px; padding:8px; border-radius:4px;">Ou Colar Lista Manualmente</button>
             </div>
         </div>
     `;
 
     showModal('modalPerfilUsuario');
+}
+
+async function editarNomeUsuario() {
+    const novoNome = prompt('Digite o novo nome ou apelido:', currentUser.nome);
+    if (novoNome && novoNome.trim() !== '' && novoNome.trim() !== currentUser.nome) {
+        const nomeAntigo = currentUser.nome;
+        const nomeFinal = novoNome.trim();
+        try {
+            // 1. Update local currentUser object and localStorage
+            currentUser.nome = nomeFinal;
+            localStorage.setItem('app_current_user', JSON.stringify(currentUser));
+
+            // 2. Update user list in the database
+            if (currentUser.email) {
+                const usersData = await getData('system', 'users_list');
+                const users = (usersData && usersData.list) ? usersData.list : [];
+                const userIndex = users.findIndex(u => u.email === currentUser.email);
+
+                if (userIndex !== -1) {
+                    users[userIndex].nome = nomeFinal;
+                    await saveData('system', 'users_list', { list: users });
+                } else {
+                    throw new Error('Usuário não encontrado no banco de dados para atualização.');
+                }
+            }
+
+            // 3. Update UI
+            const today = new Date();
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('currentDate').textContent = 
+                `${today.toLocaleDateString('pt-BR', options)} | Olá, ${currentUser.nome}`;
+            
+            document.getElementById('perfilNome').innerHTML = `${currentUser.nome} <button class="btn btn-xs btn-secondary" style="margin-left: 10px; padding: 1px 5px;" onclick="editarNomeUsuario()">✏️ Editar</button>`;
+            
+            alert('Nome atualizado com sucesso!');
+        } catch (e) {
+            currentUser.nome = nomeAntigo;
+            localStorage.setItem('app_current_user', JSON.stringify(currentUser));
+            console.error("Erro ao salvar o novo nome:", e);
+            alert('Erro ao salvar o novo nome. Por favor, tente novamente.');
+            abrirModalPerfil();
+        }
+    }
 }
 
 async function salvarTurmaCoordenacao(idTurma) {
@@ -1303,12 +1337,95 @@ window.saveRpaDataFromExtension = async function(payload) {
     }
 };
 
+// CRC-32 (usado pelo cabeçalho de cada arquivo dentro do .zip)
+function crc32ParaZip(bytes) {
+    if (!window.__zipCrcTable) {
+        const table = [];
+        for (let n = 0; n < 256; n++) {
+            let c = n;
+            for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+            table[n] = c >>> 0;
+        }
+        window.__zipCrcTable = table;
+    }
+    const table = window.__zipCrcTable;
+    let crc = 0xFFFFFFFF;
+    for (let i = 0; i < bytes.length; i++) crc = table[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+// Monta um .zip válido (método "store", sem compressão) em JS puro, sem depender de biblioteca
+// externa - suficiente para empacotar os poucos arquivos-texto da extensão.
+function criarZipSimples(arquivos) {
+    const encoder = new TextEncoder();
+    const partesLocais = [];
+    const partesCentrais = [];
+    let offset = 0;
+
+    arquivos.forEach(arq => {
+        const nomeBytes = encoder.encode(arq.name);
+        const dadosBytes = encoder.encode(arq.content);
+        const crc = crc32ParaZip(dadosBytes);
+        const tamanho = dadosBytes.length;
+
+        const header = new DataView(new ArrayBuffer(30));
+        header.setUint32(0, 0x04034b50, true);
+        header.setUint16(4, 20, true);
+        header.setUint16(6, 0, true);
+        header.setUint16(8, 0, true);
+        header.setUint16(10, 0, true);
+        header.setUint16(12, 0x21, true); // data DOS fixa (irrelevante para instalar a extensão)
+        header.setUint32(14, crc, true);
+        header.setUint32(18, tamanho, true);
+        header.setUint32(22, tamanho, true);
+        header.setUint16(26, nomeBytes.length, true);
+        header.setUint16(28, 0, true);
+        partesLocais.push(new Uint8Array(header.buffer), nomeBytes, dadosBytes);
+
+        const central = new DataView(new ArrayBuffer(46));
+        central.setUint32(0, 0x02014b50, true);
+        central.setUint16(4, 20, true);
+        central.setUint16(6, 20, true);
+        central.setUint16(8, 0, true);
+        central.setUint16(10, 0, true);
+        central.setUint16(12, 0, true);
+        central.setUint16(14, 0x21, true);
+        central.setUint32(16, crc, true);
+        central.setUint32(20, tamanho, true);
+        central.setUint32(24, tamanho, true);
+        central.setUint16(28, nomeBytes.length, true);
+        central.setUint16(30, 0, true);
+        central.setUint16(32, 0, true);
+        central.setUint16(34, 0, true);
+        central.setUint16(36, 0, true);
+        central.setUint32(38, 0, true);
+        central.setUint32(42, offset, true);
+        partesCentrais.push(new Uint8Array(central.buffer), nomeBytes);
+
+        offset += 30 + nomeBytes.length + tamanho;
+    });
+
+    const inicioCentral = offset;
+    const tamanhoCentral = partesCentrais.reduce((soma, p) => soma + p.length, 0);
+
+    const fim = new DataView(new ArrayBuffer(22));
+    fim.setUint32(0, 0x06054b50, true);
+    fim.setUint16(4, 0, true);
+    fim.setUint16(6, 0, true);
+    fim.setUint16(8, arquivos.length, true);
+    fim.setUint16(10, arquivos.length, true);
+    fim.setUint32(12, tamanhoCentral, true);
+    fim.setUint32(16, inicioCentral, true);
+    fim.setUint16(20, 0, true);
+
+    return new Blob([...partesLocais, ...partesCentrais, new Uint8Array(fim.buffer)], { type: 'application/zip' });
+}
+
 window.baixarArquivosExtensao = async function() {
-    const profId = currentUser ? (currentUser.uid || currentUser.id) : '';
     const urlApp = window.location.href.split('?')[0].split('#')[0];
     const baseUrl = urlApp.substring(0, urlApp.lastIndexOf('/') + 1);
 
-    if (!confirm('O navegador baixará 4 arquivos (manifest.json, background.js, content_profsis.js e content_sed.js).\\n\\nO seu navegador pode pedir permissão para "Fazer download de múltiplos arquivos", certifique-se de PERMITIR.\\n\\nDeseja prosseguir?')) return;
+    if (!confirm('Isso vai baixar um arquivo .zip com os arquivos atualizados da extensão (manifest.json, background.js, content_profsis.js e content_sed.js).\\n\\nDeseja prosseguir?')) return;
 
     // Busca os arquivos atualizados do servidor
     const filesToFetch = ['manifest.json', 'background.js', 'content_profsis.js', 'content_sed.js'];
@@ -1341,27 +1458,22 @@ window.baixarArquivosExtensao = async function() {
         }
     }
 
-    if (files.length !== 4) {
+    if (files.length !== filesToFetch.length) {
         alert('Erro: Nem todos os arquivos foram encontrados.');
         return;
     }
 
-    files.forEach((file, index) => {
-        setTimeout(() => {
-            const blob = new Blob([file.content], { type: 'text/plain;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = file.name;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        }, index * 400);
-    });
-    setTimeout(() => {
-        alert('Arquivos baixados!\\n\\nCOMO INSTALAR:\\n1. Crie uma pasta vazia chamada "Robo SisProf" e arraste os 4 arquivos baixados para dentro dela.\\n2. Abra chrome://extensions/ (ou Gerenciar Extensões) no Chrome.\\n3. Ative o "Modo do desenvolvedor" no canto superior direito.\\n4. Clique no botão "Carregar sem compactação" (canto superior esquerdo).\\n5. Selecione a pasta.\\n\\n⚠️ IMPORTANTE: Após instalar, RECARREGUE (F5) esta página do SisProf para que a extensão passe a funcionar nela!');
-    }, files.length * 400 + 500);
+    const zipBlob = criarZipSimples(files);
+    const url = URL.createObjectURL(zipBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'SisProf-Extensao.zip';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    alert('Arquivo baixado: SisProf-Extensao.zip\\n\\nCOMO INSTALAR:\\n1. Extraia o .zip em uma pasta (ex: "Robo SisProf").\\n2. Abra chrome://extensions/ (ou Gerenciar Extensões) no Chrome.\\n3. Ative o "Modo do desenvolvedor" no canto superior direito.\\n4. Clique no botão "Carregar sem compactação" (canto superior esquerdo).\\n5. Selecione a pasta extraída.\\n\\n⚠️ IMPORTANTE: Após instalar, RECARREGUE (F5) esta página do SisProf para que a extensão passe a funcionar nela!');
 };
 
 async function sincronizarAlunosNuvem() {
