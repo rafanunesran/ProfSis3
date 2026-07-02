@@ -1,5 +1,5 @@
 // BACKGROUND SCRIPT - ProfSis3 Extension
-// v2.6.2 - Diagnóstico completo: mostra a turma LOCAL exata que foi casada com o texto da SED (nome/disciplina), não só o id
+// v2.6.3 - Prioriza escrever via aba do ProfSis aberta (sessão sempre correta) em vez do token cacheado, que pode ficar dessincronizado
 
 // URLs do ProfSis para buscar abas abertas
 const PROFSIS_URL_PATTERNS = [
@@ -211,9 +211,9 @@ async function atualizarAlunosDiretoFirebase(payload) {
 
     const userStorage = await chrome.storage.local.get(['profsis_user']);
     const user = userStorage.profsis_user;
-    // [DIAGNÓSTICO] Se a sessão cacheada (profsis_user) estiver dessincronizada de quem o refresh
-    // token realmente autentica (auth.uid) - ex: sessão antiga de outra conta - usar user.uid aqui
-    // faria ler/escrever no documento ERRADO. Prioriza a identidade real do token.
+    // Se a sessão cacheada (profsis_user) estiver dessincronizada de quem o refresh token
+    // realmente autentica (auth.uid) - ex: token de uma conta antiga/errada que ficou salvo -
+    // usar user.uid aqui leria/escreveria no documento ERRADO. Prioriza a identidade real do token.
     if (user && user.uid && user.uid !== auth.uid) {
         console.warn('[Background] ⚠️ profsis_user.uid (' + user.uid + ') difere do uid do token atual (' + auth.uid + '). Usando o uid do token.');
     }
@@ -222,7 +222,16 @@ async function atualizarAlunosDiretoFirebase(payload) {
 
     const profDocId = 'app_data_' + uid;
     const profData = await firestoreGetDoc(profDocId, auth.idToken);
-    if (!profData) throw new Error('Não foi possível ler os dados do professor no Firestore (documento ' + profDocId + ').');
+    if (!profData) {
+        // O token é válido mas não existe documento para esse uid: a sessão salva pela extensão
+        // está incorreta/desatualizada (ex: de outra conta). Descarta para não ficar reusando essa
+        // sessão quebrada; da próxima vez que uma aba do ProfSis logada estiver aberta, ela repassa
+        // a sessão certa de novo automaticamente.
+        await chrome.storage.local.remove(['profsis_firebase_session', 'profsis_id_token_cache']);
+        const err = new Error('A sessão salva pela extensão não corresponde a nenhuma conta válida (documento ' + profDocId + ' não existe). Ela foi descartada - abra o ProfSis, faça login e tente de novo.');
+        err.code = 'NO_SESSION';
+        throw err;
+    }
 
     const alvo = encontrarAlvoTurma(profData.turmas || [], turmaSED);
     if (alvo.erro) throw new Error(alvo.erro);
@@ -440,43 +449,43 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // ---- SED: Extrair Alunos - atualizar alunos direto no banco do ProfSis ----
     if (request.action === "UPDATE_STUDENTS_DB") {
         console.log("[Background] Atualizando alunos no banco do ProfSis:", request.payload.turmaSED);
-        atualizarAlunosDiretoFirebase(request.payload).then(resultado => {
-            console.log("[Background] Escrita direta no Firestore concluída:", resultado);
-            sendResponse({ success: true, direct: true, resultado: resultado });
-            // Pede para qualquer aba aberta do ProfSis recarregar os dados (para refletir a mudança na tela)
-            chrome.tabs.query({}, (tabs) => {
-                tabs.filter(t => isProfSisUrl(t.url)).forEach(t => {
-                    chrome.tabs.sendMessage(t.id, { action: 'PROFSIS_REFRESH_DATA' }, () => { void chrome.runtime.lastError; });
+
+        const viaFirestoreDireto = () => {
+            atualizarAlunosDiretoFirebase(request.payload).then(resultado => {
+                console.log("[Background] Escrita direta no Firestore concluída:", resultado);
+                sendResponse({ success: true, direct: true, resultado: resultado });
+                chrome.tabs.query({}, (tabs) => {
+                    tabs.filter(t => isProfSisUrl(t.url)).forEach(t => {
+                        chrome.tabs.sendMessage(t.id, { action: 'PROFSIS_REFRESH_DATA' }, () => { void chrome.runtime.lastError; });
+                    });
                 });
-            });
-        }).catch(errDireto => {
-            // Só tenta o caminho via aba do ProfSis quando o motivo for falta de sessão do Firebase.
-            // Erros de dados (turma não encontrada, turma ambígua, etc.) são reais e não seriam
-            // resolvidos tentando de novo por outro caminho - só confundiriam o usuário.
-            if (errDireto.code !== 'NO_SESSION') {
-                console.error("[Background] Falha ao atualizar alunos:", errDireto.message);
+            }).catch(errDireto => {
+                console.error("[Background] Falha ao atualizar alunos (Firestore direto):", errDireto.message);
                 sendResponse({ success: false, error: errDireto.message });
+            });
+        };
+
+        // [PRIORIDADE] Se houver uma aba do ProfSis aberta e logada, usa ela: a sessão da aba é
+        // sempre a conta que está realmente logada agora. O token cacheado da extensão (usado no
+        // caminho "direto no Firestore") já causou escritas na conta errada quando ficou
+        // dessincronizado da sessão atual - por isso só é usado quando não há aba aberta.
+        chrome.tabs.query({}, (tabs) => {
+            const profsisTab = tabs.find(t => isProfSisUrl(t.url));
+            if (!profsisTab) {
+                viaFirestoreDireto();
                 return;
             }
-            console.warn("[Background] Sem sessão do Firebase, tentando via aba do ProfSis:", errDireto.message);
-            chrome.tabs.query({}, (tabs) => {
-                const profsisTab = tabs.find(t => isProfSisUrl(t.url));
-                if (profsisTab) {
-                    chrome.tabs.sendMessage(profsisTab.id, {
-                        action: "PROFSIS_UPDATE_STUDENTS",
-                        payload: request.payload
-                    }, (response) => {
-                        if (chrome.runtime.lastError) {
-                            console.error("[Background] Erro ao enviar para ProfSis:", chrome.runtime.lastError);
-                            sendResponse({ success: false, error: errDireto.message });
-                        } else if (response && response.success) {
-                            sendResponse({ success: true, direct: false, resultado: response.resultado });
-                        } else {
-                            sendResponse({ success: false, error: (response && response.error) || 'ProfSis não processou a atualização.' });
-                        }
-                    });
+            chrome.tabs.sendMessage(profsisTab.id, {
+                action: "PROFSIS_UPDATE_STUDENTS",
+                payload: request.payload
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.warn("[Background] Aba do ProfSis não respondeu, tentando Firestore direto:", chrome.runtime.lastError.message);
+                    viaFirestoreDireto();
+                } else if (response && response.success) {
+                    sendResponse({ success: true, direct: false, resultado: response.resultado });
                 } else {
-                    sendResponse({ success: false, error: errDireto.message });
+                    sendResponse({ success: false, error: (response && response.error) || 'ProfSis não processou a atualização.' });
                 }
             });
         });
@@ -561,4 +570,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-console.log("✅ Background script carregado! (v2.6.2 - Escrita direta no Firestore)");
+console.log("✅ Background script carregado! (v2.6.3 - Escrita direta no Firestore)");
