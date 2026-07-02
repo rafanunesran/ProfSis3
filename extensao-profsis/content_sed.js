@@ -1,9 +1,9 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
-// v2.8.0 - Botão único agora detecta a tela (Chamada x Registro de Aulas) e troca rótulo/ação:
-// "Preencher Chamada" só mexe em faltas, "Preencher Registro" só mexe no texto do registro,
-// casado com a Turma/Disciplina exibida no cabeçalho da tela de Registro.
+// v2.9.0 - Aulas dobradinhas: marca "Replicar Frequência" na chamada e seleciona ao menos uma aula
+// de Material Digital em CADA aba do Registro (não só a ativa). Botão "Extrair Alunos" agora só
+// aparece na tela de chamada (espelhando o botão de Material, que já só aparecia no Registro).
 
-    console.log("🤖 content_sed.js EXECUTADO - v2.8.0");
+    console.log("🤖 content_sed.js EXECUTADO - v2.9.0");
 
 // ==================== VARIÁVEIS GLOBAIS ====================
 let extHistory = {};
@@ -214,6 +214,26 @@ function montarTurmasDoDia(dataStr) {
     return lista;
 }
 
+// Conta quantas aulas (blocos da grade) a turma tem no dia, sem deduplicar - mesma lógica de
+// getAulasNoDia (app.js): 2 ou mais = "aula dobradinha" (duas aulas seguidas da mesma turma+disciplina
+// no mesmo dia, que exigem marcar "Replicar Frequência" na tela de chamada da SED).
+function contarAulasNoDia(idTurma, dataStr) {
+    if (!dataStr || !idTurma) return 0;
+    const gradeEscola = profsisAppData.schoolGrade || [];
+    const excecoesGrade = profsisAppData.schoolExceptions || [];
+    const minhasAulas = profsisAppData.horariosAulas || [];
+    const diaSemana = new Date(dataStr + 'T12:00:00').getDay();
+    const excecaoDoDia = excecoesGrade.find(e => e.data === dataStr);
+    const blocosDoDia = excecaoDoDia
+        ? (excecaoDoDia.blocos || [])
+        : gradeEscola.filter(g => g.diaSemana == diaSemana);
+
+    return blocosDoDia.filter(bloco => {
+        const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
+        return aula && aula.tipo === 'aula' && String(aula.id_turma) === String(idTurma);
+    }).length;
+}
+
 // ==================== DETECÇÃO DE TELA (CHAMADA x REGISTRO) ====================
 // A SED usa a mesma extensão em duas telas bem diferentes: "Lançamento de Frequências" (chamada)
 // e "Registro de Aulas Detalhes" (conteúdo da aula). O título em .txt-titulo é o jeito mais estável
@@ -270,6 +290,36 @@ function encontrarRegistroParaTela(payload) {
     return candidatos.length > 0 ? candidatos[0] : null;
 }
 
+// Lê a Turma/Disciplina do cabeçalho da tela atual (mesmo padrão de encontrarRegistroParaTela) e acha
+// o id da turma correspondente em profsisAppData.turmas - usado para saber se a turma tem dobradinha
+// no dia (ver contarAulasNoDia).
+function encontrarIdTurmaDaTelaAtual() {
+    let turmaSED = null, disciplinaSED = null;
+    document.querySelectorAll('.font-cabecalho-filtro').forEach(span => {
+        const t = span.textContent || '';
+        if (t.includes('Turma:')) turmaSED = t.replace(/^.*Turma:/i, '').trim();
+        if (t.includes('Disciplina:')) disciplinaSED = t.replace(/^.*Disciplina:/i, '').trim();
+    });
+    if (!turmaSED) return null;
+
+    const turmas = profsisAppData.turmas || [];
+    const codigoSED = extrairCodigoSerieTurmaSED(turmaSED);
+    let candidatos = [];
+    if (codigoSED) {
+        candidatos = turmas.filter(t => extrairCodigoSerieTurmaSED((t.nome || '').split('-')[0]) === codigoSED);
+    }
+    if (candidatos.length === 0) {
+        const normTurmaSED = normalizeTextoSED(turmaSED);
+        candidatos = turmas.filter(t => normalizeTextoSED((t.nome || '').split('-')[0]) === normTurmaSED);
+    }
+    if (candidatos.length > 1 && disciplinaSED) {
+        const normDiscSED = normalizeTextoSED(disciplinaSED);
+        const porDisciplina = candidatos.filter(t => normalizeTextoSED(t.disciplina) === normDiscSED);
+        if (porDisciplina.length > 0) candidatos = porDisciplina;
+    }
+    return candidatos.length > 0 ? candidatos[0].id : null;
+}
+
 // ==================== MENU FLUTUANTE ====================
 
 function injetarMenu() {
@@ -279,7 +329,7 @@ function injetarMenu() {
     div.id = 'sisprof-menu-flutuante';
     div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;';
     div.innerHTML = '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
-            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v2.8.0</span></span>' +
+            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v2.9.0</span></span>' +
         '<div style="display:flex; gap:8px; align-items:center;"><span id="sisprof-user-name" style="font-size:11px; opacity:0.9; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
         '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;">▶</span><span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span></div></div>' +
         '<div id="sisprof-conteudo"><p style="margin:0 0 10px 0; color:#4a5568; font-size:13px;">✅ Conectado ao ProfSis!</p>' +
@@ -291,7 +341,7 @@ function injetarMenu() {
             '<div id="sisprof-lista-turmas"></div>' +
         '</div>' +
         '<button id="sisprof-btn-preencher" style="width:100%; background:#3182ce; color:white; border:none; padding:10px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px; margin-bottom:8px;">✅ Preencher Chamada</button>' +
-        '<button id="sisprof-btn-extrair" style="width:100%; background:#38a169; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px;">📥 Extrair Alunos (Atualizar Banco)</button>' +
+        '<button id="sisprof-btn-extrair" style="width:100%; background:#38a169; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px; display:none;">📥 Extrair Alunos (Atualizar Banco)</button>' +
         '<button id="sisprof-btn-extrair-material" style="width:100%; background:#805ad5; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px; display:none;">📥 Extrair Material Digital (Atualizar Catálogo)</button>' +
         '<hr style="border:0; border-top:1px solid #e2e8f0; margin:10px 0;">' +
         '<button id="sisprof-btn-logout" style="width:100%; background:#718096; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px;">🚪 Desconectar</button></div>';
@@ -320,7 +370,7 @@ function injetarMenu() {
             // etc.) - usado aqui para também reagir na tela de Registro, que não tem .card_aluno.
             if (document.querySelector('.card_aluno, .card_aluno1') || document.querySelector('.txt-titulo')) {
                 observerBusy = true;
-                try { atualizarInterfacePorData(); atualizarModoBotaoPreencher(); atualizarVisibilidadeBotaoMaterial(); } catch (e) {} finally { observerBusy = false; }
+                try { atualizarInterfacePorData(); atualizarModoBotaoPreencher(); atualizarVisibilidadeBotaoMaterial(); atualizarVisibilidadeBotaoExtrairAlunos(); } catch (e) {} finally { observerBusy = false; }
             }
         }, 800);
     });
@@ -332,6 +382,7 @@ function injetarMenu() {
     atualizarInterfacePorData();
     atualizarModoBotaoPreencher();
     atualizarVisibilidadeBotaoMaterial();
+    atualizarVisibilidadeBotaoExtrairAlunos();
 }
 
 // O botão "Extrair Material Digital" só faz sentido na tela "Registro de Aulas Detalhes" (só ela tem
@@ -340,6 +391,14 @@ function atualizarVisibilidadeBotaoMaterial() {
     const btn = document.getElementById('sisprof-btn-extrair-material');
     if (!btn) return;
     btn.style.display = (detectarTipoTelaSED() === 'registro') ? 'block' : 'none';
+}
+
+// Mesma ideia do botão de Material, espelhada: "Extrair Alunos" só faz sentido na tela de chamada
+// ("Lançamento de Frequências", que tem os cards de aluno) - fica escondido nas demais telas.
+function atualizarVisibilidadeBotaoExtrairAlunos() {
+    const btn = document.getElementById('sisprof-btn-extrair');
+    if (!btn) return;
+    btn.style.display = (detectarTipoTelaSED() === 'chamada') ? 'block' : 'none';
 }
 
 // Ajusta o rótulo/ação do botão único conforme a tela da SED (Chamada ou Registro).
@@ -451,6 +510,19 @@ function preencherRegistroNaTela(btn) {
     }, 1200);
 }
 
+// Marca o checkbox "Replicar Frequência" da tela de chamada (sem id/classe própria, só identificável
+// pelo texto do label irmão) - necessário em aulas dobradinhas para a frequência valer pras duas aulas.
+// Retorna true só se de fato clicou (para contar como interação em executarPreenchimentoChamada).
+function marcarCheckboxReplicarFrequencia() {
+    const label = Array.from(document.querySelectorAll('label')).find(l => normalizeTextoSED(l.textContent) === 'replicarfrequencia');
+    if (!label) return false;
+    const container = label.closest('div') || label.parentElement;
+    const checkbox = container ? container.querySelector('input[type="checkbox"]') : null;
+    if (!checkbox || checkbox.checked) return false;
+    checkbox.click();
+    return true;
+}
+
 function executarPreenchimentoChamada(payload) {
     const normalize = s => s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
     let interagidos = 0;
@@ -494,6 +566,13 @@ function executarPreenchimentoChamada(payload) {
                 }
             });
         }
+    }
+
+    // Aula dobradinha (2 aulas da mesma turma+disciplina no dia): marca "Replicar Frequência" pra
+    // frequência valer nas duas. Conta como interação pra garantir o Salvar mesmo sem faltas no dia.
+    const idTurmaTela = encontrarIdTurmaDaTelaAtual();
+    if (idTurmaTela && contarAulasNoDia(idTurmaTela, currentSelectedDate) >= 2) {
+        if (marcarCheckboxReplicarFrequencia()) interagidos++;
     }
 
     if (interagidos > 0) {
@@ -552,19 +631,13 @@ function executarPreenchimentoRegistro(payload) {
     }
 }
 
-// Marca de volta na SED os checkboxes do "Material Digital" selecionados no ProfSis (cardsAlvo:
-// [{id, titulo, codigo}], no máximo 2). Casa por TÍTULO (não pelo id salvo no registro) porque o mesmo
-// card ("Aula 1 - ...") tem um id numérico DIFERENTE em cada aba/sessão do #tabsNavegacao - o id
-// capturado na extração não existe nas outras abas. Procura só na aba ATUALMENTE ativa: é a sessão que
-// o professor está preenchendo agora que importa, marcar em outra aba não teria efeito no registro do
-// dia. Nunca interrompe o preenchimento por não achar um card - só acumula um aviso pro alert final.
-function marcarCardsMaterialDigitalNaTela(cardsAlvo, callback) {
-    if (!cardsAlvo || cardsAlvo.length === 0) { callback([]); return; }
-
-    const pane = document.querySelector('.tab-content .tab-pane.show.active') || document.querySelector('.tab-content .tab-pane');
+// Marca os cards-alvo dentro de um pane específico. Casa por TÍTULO (não pelo id salvo no registro)
+// porque o mesmo card ("Aula 1 - ...") tem um id numérico DIFERENTE em cada aba/sessão do
+// #tabsNavegacao, mas o catálogo de títulos é o mesmo em todas as abas. Retorna os títulos de
+// cardsAlvo que foram encontrados e marcados NESTE pane.
+function marcarCardsAlvoNoPane(pane, cardsAlvo) {
     const blocos = pane ? Array.from(pane.querySelectorAll(SELETOR_CARDS_MATERIAL_DIGITAL)) : [];
-    const naoEncontrados = [];
-
+    const encontrados = [];
     cardsAlvo.forEach(alvo => {
         const tituloAlvo = normalizeTextoSED(alvo.titulo);
         const bloco = blocos.find(b => {
@@ -574,12 +647,53 @@ function marcarCardsMaterialDigitalNaTela(cardsAlvo, callback) {
         const checkbox = bloco ? bloco.querySelector('input[type="checkbox"]') : null;
         if (checkbox) {
             if (!checkbox.checked) checkbox.click();
-        } else {
-            naoEncontrados.push(alvo.titulo || alvo.id);
+            encontrados.push(alvo.titulo || alvo.id);
         }
     });
+    return encontrados;
+}
 
-    callback(naoEncontrados);
+// Marca de volta na SED os checkboxes do "Material Digital" selecionados no ProfSis (cardsAlvo:
+// [{id, titulo, codigo}], no máximo 2). Em aulas dobradinhas (2 abas em #tabsNavegacao, ex: "13ª aula" /
+// "14ª aula") a SED exige pelo menos uma aula marcada em CADA aba antes de salvar - por isso navega por
+// TODAS as abas (não só a ativa), reaproveitando o mesmo padrão de extrairTodasAsSessoes, marcando o(s)
+// mesmo(s) card(s)-alvo em cada uma (pode repetir a mesma aula nas duas abas, o que é esperado). Ao
+// final volta pra aba em que o professor estava. Só avisa no callback os títulos que não foram
+// encontrados em NENHUMA aba - nunca interrompe o preenchimento por não achar um card.
+function marcarCardsMaterialDigitalNaTela(cardsAlvo, callback) {
+    if (!cardsAlvo || cardsAlvo.length === 0) { callback([]); return; }
+
+    const tabs = Array.from(document.querySelectorAll('#tabsNavegacao .nav-link'));
+    if (tabs.length === 0) {
+        const pane = document.querySelector('.tab-content .tab-pane.show.active') || document.querySelector('.tab-content .tab-pane');
+        const encontrados = marcarCardsAlvoNoPane(pane, cardsAlvo);
+        callback(cardsAlvo.map(a => a.titulo || a.id).filter(t => !encontrados.includes(t)));
+        return;
+    }
+
+    const indiceOriginal = tabs.findIndex(t => t.classList.contains('active'));
+    const encontradosGlobal = [];
+    let i = 0;
+
+    function proximaAba() {
+        if (i >= tabs.length) {
+            if (indiceOriginal >= 0 && tabs[indiceOriginal]) tabs[indiceOriginal].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+            setTimeout(() => {
+                const naoEncontrados = cardsAlvo.map(a => a.titulo || a.id).filter(t => !encontradosGlobal.includes(t));
+                callback(naoEncontrados);
+            }, 300);
+            return;
+        }
+        const tab = tabs[i];
+        tab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        setTimeout(() => {
+            const pane = document.querySelector('.tab-content .tab-pane.show.active') || document.querySelector('.tab-content .tab-pane');
+            marcarCardsAlvoNoPane(pane, cardsAlvo).forEach(t => { if (!encontradosGlobal.includes(t)) encontradosGlobal.push(t); });
+            i++;
+            proximaAba();
+        }, 350);
+    }
+    proximaAba();
 }
 
 // ==================== EXTRAIR ALUNOS (atualiza direto no banco) ====================
