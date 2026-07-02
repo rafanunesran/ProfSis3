@@ -1819,13 +1819,13 @@ window.addEventListener('SisProf_Update_Students', async (event) => {
 // tela "Registro de Aulas Detalhes" da SED. Mesmo padrão de SisProf_Update_Students.
 window.addEventListener('SisProf_Update_MaterialDigital', async (event) => {
     const payload = event.detail;
-    if (!payload || !payload.sessoes || !payload.turmaSED) {
+    if (!payload || !payload.sessoes || !payload.turmaSED || !payload.disciplinaSED) {
         console.warn('[SisProf] Payload de atualização de Material Digital inválido:', payload);
         window.dispatchEvent(new CustomEvent('SisProf_Update_MaterialDigital_Result', { detail: { success: false, error: 'Payload inválido.' } }));
         return;
     }
 
-    console.log('[SisProf] 📥 Atualizando catálogo de Material Digital via extensão:', payload.turmaSED);
+    console.log('[SisProf] 📥 Atualizando catálogo de Material Digital via extensão:', payload.disciplinaSED, '-', payload.turmaSED);
 
     try {
         const resultado = await processarAtualizacaoMaterialDigitalExtensao(payload);
@@ -1990,27 +1990,127 @@ async function processarAtualizacaoAlunosExtensao(payload) {
     return { ...resultado, debugInfo };
 }
 
-// Grava o catálogo de "Material Digital" (cards de aula do currículo, extraídos da SED) dentro de
-// `data.materialDigitalCatalogo`, indexado por id_turma (a turma já carrega a disciplina implicitamente).
-// Diferente de alunos, esse catálogo é conteúdo curricular, não dado compartilhado de turma - por isso
-// grava SEMPRE na cópia pessoal do professor, mesmo quando a turma tem masterId (mesmo raciocínio já
-// usado para registrosAula).
+// ---- Material Digital: casamento de série (regex) e disciplina (fuzzy) entre turmas/professores ----
+// Duplicado em extensao-profsis/background.js (mesma convenção já usada no projeto pra funções que
+// rodam em contextos de execução isolados, ex: extrairCodigoSerieTurma*).
+
+const ORDINAIS_SERIE_MATERIAL_DIGITAL = {
+    'primeiro': '1', 'primeira': '1', 'segundo': '2', 'segunda': '2', 'terceiro': '3', 'terceira': '3',
+    'quarto': '4', 'quarta': '4', 'quinto': '5', 'quinta': '5', 'sexto': '6', 'sexta': '6',
+    'setimo': '7', 'setima': '7', 'oitavo': '8', 'oitava': '8', 'nono': '9', 'nona': '9'
+};
+
+// Deriva só o número da série (sem letra de turma, sem variação de escrita) de um nome de turma -
+// usada pra achar o cluster certo do catálogo de Material Digital, independente de quem escreveu o
+// nome ou como (ex: "9º Ano C", "9 Ano", "9EF", "nono ano" devem todos resolver pra "9").
+function extrairSerieChaveMaterialDigital(nome) {
+    if (!nome) return '';
+    const semAcento = nome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const mDigito = semAcento.match(/(\d+)\s*[ºoa°]?/);
+    if (mDigito) return mDigito[1];
+    const mExtenso = semAcento.match(/\b(primeir[oa]|segund[oa]|terceir[oa]|quart[oa]|quint[oa]|sext[oa]|setim[oa]|oitav[oa]|non[oa])\b/);
+    if (mExtenso) return ORDINAIS_SERIE_MATERIAL_DIGITAL[mExtenso[1]] || mExtenso[1];
+    return semAcento.replace(/[^a-z0-9]/g, '');
+}
+
+function normalizarTextoComparacaoMaterialDigital(s) {
+    return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+// Distância de Levenshtein simples (sem dependência externa) - só o último critério da cascata abaixo.
+function distanciaLevenshteinMaterialDigital(a, b) {
+    const m = a.length, n = b.length;
+    if (m === 0) return n;
+    if (n === 0) return m;
+    let anterior = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+        const atual = [i];
+        for (let j = 1; j <= n; j++) {
+            const custo = a[i - 1] === b[j - 1] ? 0 : 1;
+            atual[j] = Math.min(atual[j - 1] + 1, anterior[j] + 1, anterior[j - 1] + custo);
+        }
+        anterior = atual;
+    }
+    return anterior[n];
+}
+
+// Compara duas disciplinas em texto livre e decide se são "a mesma" pra fins de compartilhar o
+// catálogo de Material Digital. Cascata do mais confiável pro mais permissivo: igual normalizado ->
+// abreviação por token (ex: "ed fis" ~ "educação física") -> abreviação geral (ex: "port" ~ "português")
+// -> distância de edição (cobre pequenas variações/erros de digitação não previstos acima).
+function disciplinasSaoSemelhantes(a, b) {
+    const normA = normalizarTextoComparacaoMaterialDigital(a);
+    const normB = normalizarTextoComparacaoMaterialDigital(b);
+    if (!normA || !normB) return false;
+    if (normA === normB) return true;
+
+    const tokensA = normA.split(' ');
+    const tokensB = normB.split(' ');
+    if (tokensA.length === tokensB.length) {
+        const todosBatem = tokensA.every((tokA, i) => {
+            const tokB = tokensB[i];
+            return tokA.length >= 2 && tokB.length >= 2 && (tokB.startsWith(tokA) || tokA.startsWith(tokB));
+        });
+        if (todosBatem) return true;
+    }
+
+    if (normA.length >= 3 && normB.length >= 3 && (normA.startsWith(normB) || normB.startsWith(normA))) return true;
+
+    const distancia = distanciaLevenshteinMaterialDigital(normA, normB);
+    const maiorTamanho = Math.max(normA.length, normB.length);
+    const similaridade = maiorTamanho === 0 ? 1 : 1 - (distancia / maiorTamanho);
+    return similaridade >= 0.75;
+}
+
+// Grava o catálogo de "Material Digital" (cards de aula do currículo, extraídos da SED) na coleção
+// compartilhada `shared_material_digital`, num cluster por escola+série+disciplina (mesmo padrão de
+// acesso direto ao `db` do SDK compat usado em sincronizarFaltasCompartilhadas). Diferente de alunos, o
+// conteúdo é o mesmo currículo oficial da SEDUC pra qualquer turma da escola com essa disciplina/série -
+// não precisa casar com uma turma local específica (o professor nem precisa ter cadastrado a turma
+// ainda pra extração funcionar).
 async function processarAtualizacaoMaterialDigitalExtensao(payload) {
-    if (!data.turmas) data.turmas = [];
+    if (typeof db === 'undefined' || !db) throw new Error('Sem conexão com o banco de dados.');
+    if (!currentUser || !currentUser.schoolId) throw new Error('Escola do usuário não identificada.');
 
-    const turmaSED = payload.turmaSED;
+    const disciplinaOriginal = payload.disciplinaSED || '';
+    const turmaSED = payload.turmaSED || '';
     const sessoes = payload.sessoes || [];
+    if (!disciplinaOriginal) throw new Error('Não foi possível identificar a disciplina na tela da SED.');
 
-    const normalizeTurma = (t) => t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "").replace(/\s+/g, '');
-    const alvo = encontrarAlvoTurmaExtensao(data.turmas, turmaSED, normalizeTurma);
-    if (alvo.erro) throw new Error(alvo.erro);
+    const serieChave = extrairSerieChaveMaterialDigital(turmaSED);
+    const schoolId = currentUser.schoolId;
 
-    if (!data.materialDigitalCatalogo) data.materialDigitalCatalogo = {};
-    data.materialDigitalCatalogo[alvo.turmaId] = { atualizadoEm: Date.now(), turmaSED: turmaSED, sessoes: sessoes };
-    await persistirDados();
+    const candidatos = await db.collection('shared_material_digital')
+        .where('schoolId', '==', schoolId)
+        .where('serieChave', '==', serieChave)
+        .get();
+
+    let docExistente = null;
+    candidatos.forEach(doc => {
+        if (docExistente) return;
+        if (disciplinasSaoSemelhantes(disciplinaOriginal, doc.data().disciplinaOriginal)) docExistente = doc;
+    });
+
+    const dadosCluster = {
+        schoolId: schoolId,
+        serieChave: serieChave,
+        serieOriginal: turmaSED,
+        sessoes: sessoes,
+        atualizadoEm: Date.now(),
+        atualizadoPor: (currentUser.nome || currentUser.email || currentUser.id || '')
+    };
+
+    if (docExistente) {
+        await docExistente.ref.update(dadosCluster);
+    } else {
+        dadosCluster.disciplinaOriginal = disciplinaOriginal;
+        await db.collection('shared_material_digital').add(dadosCluster);
+    }
+
+    materialDigitalCacheCompartilhado.clear();
 
     const totalCards = sessoes.reduce((acc, s) => acc + ((s.cards || []).length), 0);
-    return { turmaId: alvo.turmaId, turmaNomeLocal: alvo.turmaNomeLocal, totalSessoes: sessoes.length, totalCards };
+    return { disciplina: disciplinaOriginal, serieChave: serieChave, totalSessoes: sessoes.length, totalCards, novoCluster: !docExistente };
 }
 
 function salvarTurma(e) {
@@ -2509,6 +2609,11 @@ async function renderChamada() {
     const registroExistente = (data.registrosAula || []).find(r => r.id_turma == turmaAtual && r.data == dataSelecionada);
     const conteudoRegistro = registroExistente ? registroExistente.conteudo : '';
 
+    // Catálogo de Material Digital compartilhado (por disciplina+série da turma atual)
+    const turmaChamada = (data.turmas || []).find(t => t.id == turmaAtual);
+    const cardsCatalogoChamada = turmaChamada ? await obterCardsCatalogoCompartilhado(turmaChamada.disciplina, turmaChamada.ano_serie || turmaChamada.nome) : [];
+    const seletorCardsMaterialDigitalHtml = renderizarSeletorCardsMaterialDigitalDeLista(cardsCatalogoChamada, registroExistente ? registroExistente.cardsMaterialDigital : [], 'chamadaCardsMaterialDigital');
+
     const html = `
         <div style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;">
             <button class="btn btn-info" onclick="renderRelatorioMensalFaltas()">📅 Relatório Mensal de Faltas</button>
@@ -2602,7 +2707,7 @@ async function renderChamada() {
         <div style="margin-top: 15px; margin-bottom: 15px;">
             <label style="font-weight: bold; display: block; margin-bottom: 5px; color: #2d3748;">📝 Registro da Aula (Diário de Classe):</label>
             <textarea id="chamadaRegistroAula" rows="3" style="width: 100%; border: 1px solid #cbd5e0; padding: 10px; border-radius: 5px; font-family: inherit;" placeholder="Descreva o conteúdo ou as atividades da aula de hoje...">${conteudoRegistro}</textarea>
-            ${renderizarSeletorCardsMaterialDigital(turmaAtual, registroExistente ? registroExistente.cardsMaterialDigital : [], 'chamadaCardsMaterialDigital')}
+            ${seletorCardsMaterialDigitalHtml}
         </div>
 
         <button class="btn btn-success" id="btnSalvarChamada" onclick="salvarChamadaManual()" style="width:100%; margin-top:15px; padding: 12px; font-size: 16px;">💾 Confirmar e Salvar Chamada</button>
@@ -3513,51 +3618,76 @@ async function gerarOcorrenciaAtraso(estudanteId) {
 }
 
 // --- SELETOR DE CARDS DO "MATERIAL DIGITAL" (qual aula do currículo foi dada) ---
-// Catálogo extraído pela extensão da tela "Registro de Aulas Detalhes" da SED (data.materialDigitalCatalogo,
-// por id_turma). Reaproveitado na aba Chamada, no modal "Novo Registro de Aula" e no Estagiário IA.
+// Catálogo compartilhado entre turmas/professores da mesma escola com a mesma disciplina+série
+// (coleção Firestore shared_material_digital - ver processarAtualizacaoMaterialDigitalExtensao acima).
+// Reaproveitado na aba Chamada, no modal "Novo Registro de Aula" e no Estagiário IA.
 const LIMITE_CARDS_MATERIAL_DIGITAL = 2;
 
-// Lista achatada dos cards do catálogo pra uma turma (todas as sessões/abas juntas), ou [] se a turma
-// ainda não tem catálogo extraído (a maioria das disciplinas não usa "Material Digital" na SED).
-function obterCardsCatalogoPorTurma(idTurma) {
-    const catalogo = (data.materialDigitalCatalogo || {})[idTurma];
-    if (!catalogo || !catalogo.sessoes) return [];
-    const cards = [];
-    catalogo.sessoes.forEach(sessao => {
-        (sessao.cards || []).forEach(card => cards.push({ ...card, aba: sessao.aba }));
-    });
-    return cards;
+// Cache em memória (válido pela sessão) pra não bater no Firestore a cada re-render da aba Chamada -
+// chave é schoolId+serieChave, já que essa é a granularidade da query (a comparação de disciplina por
+// semelhança acontece em cima do resultado já cacheado).
+const materialDigitalCacheCompartilhado = new Map();
+
+// Busca o catálogo compartilhado da escola pra uma disciplina+série (a turma do professor só serve pra
+// derivar esses dois valores - o catálogo em si não é mais amarrado a nenhum id_turma). Acha o cluster
+// certo por semelhança de disciplina (disciplinasSaoSemelhantes) e devolve os cards já achatados e
+// deduplicados por título (o mesmo card aparece em várias sessões/abas do catálogo extraído, só muda o
+// id/horario/aba de uma sessão pra outra - pro professor escolher, só o título importa). Retorna [] se
+// não houver catálogo pra essa combinação ou se estiver offline.
+async function obterCardsCatalogoCompartilhado(disciplina, nomeTurmaOuSerie) {
+    if (typeof db === 'undefined' || !db || !currentUser || !currentUser.schoolId || !disciplina) return [];
+
+    const serieChave = extrairSerieChaveMaterialDigital(nomeTurmaOuSerie);
+    const chaveCache = currentUser.schoolId + '|' + serieChave;
+
+    try {
+        let candidatosData = materialDigitalCacheCompartilhado.get(chaveCache);
+        if (!candidatosData) {
+            const snap = await db.collection('shared_material_digital')
+                .where('schoolId', '==', currentUser.schoolId)
+                .where('serieChave', '==', serieChave)
+                .get();
+            candidatosData = snap.docs.map(d => d.data());
+            materialDigitalCacheCompartilhado.set(chaveCache, candidatosData);
+        }
+
+        const cluster = candidatosData.find(d => disciplinasSaoSemelhantes(disciplina, d.disciplinaOriginal));
+        if (!cluster) return [];
+
+        const cardsPorTitulo = new Map();
+        (cluster.sessoes || []).forEach(sessao => {
+            (sessao.cards || []).forEach(card => {
+                const chaveTitulo = normalizarTextoComparacaoMaterialDigital(card.titulo);
+                if (chaveTitulo && !cardsPorTitulo.has(chaveTitulo)) cardsPorTitulo.set(chaveTitulo, card);
+            });
+        });
+        return Array.from(cardsPorTitulo.values());
+    } catch (e) {
+        console.warn('[Material Digital] Erro ao buscar catálogo compartilhado:', e);
+        return [];
+    }
 }
 
-// Gera o HTML do seletor (checkboxes agrupados por sessão/aba). Retorna string vazia quando a turma
-// não tem catálogo - assim a seção simplesmente não aparece pras disciplinas sem Material Digital.
-function renderizarSeletorCardsMaterialDigital(idTurma, selecionadosAtuais, containerId) {
-    return renderizarSeletorCardsMaterialDigitalDeLista(obterCardsCatalogoPorTurma(idTurma), selecionadosAtuais, containerId);
-}
-
-// Mesma renderização acima, mas a partir de uma lista de cards já resolvida (usado pelo Estagiário IA,
-// que pode abranger várias turmas da mesma série+disciplina e precisa unir os catálogos delas antes).
+// Gera o HTML do seletor (grid de cards/checkboxes, sem agrupamento por sessão - ver dedup acima).
+// Retorna string vazia quando não há catálogo pra essa disciplina/série - assim a seção simplesmente
+// não aparece pras disciplinas sem Material Digital.
 function renderizarSeletorCardsMaterialDigitalDeLista(cards, selecionadosAtuais, containerId) {
     if (!cards || cards.length === 0) return '';
 
     const idsSelecionados = new Set((selecionadosAtuais || []).map(c => c.id));
-    const porAba = {};
-    cards.forEach(c => { if (!porAba[c.aba]) porAba[c.aba] = []; porAba[c.aba].push(c); });
 
     let html = `<div id="${containerId}" style="margin-top:10px; border:1px solid #cbd5e0; border-radius:6px; padding:10px; background:#fafafa;">`;
     html += `<label style="font-weight:bold; display:block; margin-bottom:8px; color:#2d3748;">📚 Aula do Material Digital dada (máx. ${LIMITE_CARDS_MATERIAL_DIGITAL}):</label>`;
-    Object.keys(porAba).forEach(aba => {
-        html += `<div style="font-size:11px; font-weight:bold; color:#718096; margin:6px 0 3px 0;">${aba}</div>`;
-        porAba[aba].forEach(card => {
-            const checked = idsSelecionados.has(card.id) ? 'checked' : '';
-            const tituloAttr = (card.titulo || '').replace(/"/g, '&quot;');
-            html += `<label style="display:flex; align-items:flex-start; gap:6px; font-size:12px; margin-bottom:4px; cursor:pointer;">
-                <input type="checkbox" class="chk-card-material-digital" data-id="${card.id}" data-titulo="${tituloAttr}" data-codigo="${card.codigo || ''}" ${checked} onchange="onToggleCardMaterialDigital(this, '${containerId}')">
-                <span>${card.titulo}${card.temTarefa ? ' <span style="color:#26A95E; font-weight:bold;">(Aula com Tarefa)</span>' : ''}</span>
-            </label>`;
-        });
+    html += `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:8px;">`;
+    cards.forEach(card => {
+        const checked = idsSelecionados.has(card.id) ? 'checked' : '';
+        const tituloAttr = (card.titulo || '').replace(/"/g, '&quot;');
+        html += `<label style="display:flex; align-items:flex-start; gap:6px; font-size:12px; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#fff; cursor:pointer;">
+            <input type="checkbox" class="chk-card-material-digital" data-id="${card.id}" data-titulo="${tituloAttr}" data-codigo="${card.codigo || ''}" ${checked} onchange="onToggleCardMaterialDigital(this, '${containerId}')">
+            <span>${card.titulo}${card.temTarefa ? '<div style="margin-top:4px; display:inline-block; background:#e6fff2; color:#26A95E; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:10px;">Aula com Tarefa</div>' : ''}</span>
+        </label>`;
     });
-    html += `</div>`;
+    html += `</div></div>`;
     return html;
 }
 
@@ -3620,7 +3750,7 @@ function renderTurmaRegistros() {
     document.getElementById('tabRegistros').innerHTML = html;
 }
 
-function abrirModalNovoRegistroAula(id = null) {
+async function abrirModalNovoRegistroAula(id = null) {
     registroAulaEmEdicaoId = id;
     const h3 = document.querySelector('#modalNovoRegistroAula h3');
     let cardsAtuais = [];
@@ -3638,7 +3768,9 @@ function abrirModalNovoRegistroAula(id = null) {
         document.getElementById('regAulaConteudo').value = '';
         if (h3) h3.textContent = '+ Novo Registro de Aula';
     }
-    document.getElementById('regAulaCardsMaterialDigitalWrap').innerHTML = renderizarSeletorCardsMaterialDigital(turmaAtual, cardsAtuais, 'regAulaCardsMaterialDigital');
+    const turmaRegistro = (data.turmas || []).find(t => t.id == turmaAtual);
+    const cardsCatalogoRegistro = turmaRegistro ? await obterCardsCatalogoCompartilhado(turmaRegistro.disciplina, turmaRegistro.ano_serie || turmaRegistro.nome) : [];
+    document.getElementById('regAulaCardsMaterialDigitalWrap').innerHTML = renderizarSeletorCardsMaterialDigitalDeLista(cardsCatalogoRegistro, cardsAtuais, 'regAulaCardsMaterialDigital');
     showModal('modalNovoRegistroAula');
 }
 
