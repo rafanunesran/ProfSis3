@@ -38,6 +38,11 @@ try {
 } catch {
     Write-Host "Nao foi possivel configurar a politica do Chrome:" -ForegroundColor Red
     Write-Host $_
+    Write-Host ""
+    Write-Host "Isso pode acontecer se este computador nao permitir elevar para administrador" -ForegroundColor Yellow
+    Write-Host "(ex: conta de escola/empresa sem permissao). Nesse caso, use a instalacao manual:"
+    Write-Host "1. Peca para o suporte de TI da escola, OU"
+    Write-Host "2. Va na tela do ProfSis3 e use o link 'Modo avancado' para instalar sem precisar de administrador."
     exit 1
 }
 
