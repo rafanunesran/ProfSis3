@@ -1,4 +1,11 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
+// v3.1.4 - A tela de Chamada tem um campo "Horário de Aula" (widget .multi-select-container, por
+// cima de um <select multiple id="inputAula"> escondido) que a SED deixa em branco ("Selecione ...")
+// por padrão - nem o robô automático nem o botão manual nunca preenchiam esse campo, então o Salvar
+// acontecia sem saber pra qual horário/período a frequência era. Agora, depois de clicar em
+// Pesquisar, selecionarHorarioAulaChamada acha os blocos (inicio/fim) que a turma da tela tem no dia
+// (montarBlocosDaTurmaNoDia, mesma lógica de contarAulasNoDia) e marca o(s) checkbox(es)
+// correspondente(s) no widget antes de marcar faltas e salvar.
 // v3.1.3 - O número de versão exibido no painel flutuante (mostrarTelaStatus/injetarMenu) e nos
 // console.log estava escrito à mão nessas strings, dessincronizado do manifest.json - por isso
 // continuava mostrando uma versão antiga mesmo depois de bumps de versão. Agora lê sempre
@@ -266,6 +273,58 @@ function contarAulasNoDia(idTurma, dataStr) {
         const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
         return aula && aula.tipo === 'aula' && String(aula.id_turma) === String(idTurma);
     }).length;
+}
+
+// Mesma busca de contarAulasNoDia, mas devolvendo os blocos (com inicio/fim) em vez da contagem -
+// usada por selecionarHorarioAulaChamada pra saber qual(is) horário(s) marcar no widget "Horário de
+// Aula" da tela de Chamada.
+function montarBlocosDaTurmaNoDia(idTurma, dataStr) {
+    if (!dataStr || !idTurma) return [];
+    const gradeEscola = profsisAppData.schoolGrade || [];
+    const excecoesGrade = profsisAppData.schoolExceptions || [];
+    const minhasAulas = profsisAppData.horariosAulas || [];
+    const diaSemana = new Date(dataStr + 'T12:00:00').getDay();
+    const excecaoDoDia = excecoesGrade.find(e => e.data === dataStr);
+    const blocosDoDia = excecaoDoDia
+        ? (excecaoDoDia.blocos || [])
+        : gradeEscola.filter(g => g.diaSemana == diaSemana);
+
+    return blocosDoDia.filter(bloco => {
+        const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
+        return aula && aula.tipo === 'aula' && String(aula.id_turma) === String(idTurma);
+    });
+}
+
+// Normaliza "H:MM"/"HH:MM" pra sempre ter 2 dígitos na hora, pra comparar com tolerância o horário da
+// grade (bloco.inicio/fim) contra o value dos checkboxes do widget da SED (ex.: "07:50 às 08:40").
+function normalizarHorarioAula(s) {
+    return (s || '').trim().replace(/(^|\D)(\d)(?=:)/g, '$10$2');
+}
+
+// Seleciona, no widget "Horário de Aula" (.multi-select-container) da tela de Chamada, o(s)
+// checkbox(es) cujo horário bate com os blocos que a turma da tela atual tem no dia selecionado. A
+// SED deixa esse campo em branco por padrão ("Selecione ...") e o Salvar não sabe pra qual horário a
+// frequência é sem isso - nem o robô automático nem o botão manual nunca preenchiam esse campo antes.
+// Clica nos checkboxes (nunca define .checked/.value direto) porque é o clique que a SED escuta pra
+// sincronizar o <select multiple id="inputAula"> escondido atrás do widget.
+function selecionarHorarioAulaChamada(callback) {
+    callback = callback || function () {};
+    const idTurma = encontrarIdTurmaDaTelaAtual();
+    const blocos = idTurma ? montarBlocosDaTurmaNoDia(idTurma, currentSelectedDate) : [];
+    const botao = document.querySelector('.multi-select-button');
+    if (!idTurma || blocos.length === 0 || !botao) { callback(true); return; }
+
+    const valoresAlvo = blocos.map(b => normalizarHorarioAula((b.inicio || '') + ' às ' + (b.fim || '')));
+
+    botao.click();
+    setTimeout(() => {
+        document.querySelectorAll('.multi-select-menuitem input[type="checkbox"]').forEach(chk => {
+            const deveEstarMarcado = valoresAlvo.includes(normalizarHorarioAula(chk.value));
+            if (chk.checked !== deveEstarMarcado) chk.click();
+        });
+        botao.click();
+        setTimeout(() => callback(true), 200);
+    }, 200);
 }
 
 // ==================== DETECÇÃO DE TELA (CHAMADA x REGISTRO) ====================
@@ -620,10 +679,12 @@ function preencherChamadaNaTela(btn, opts) {
             buttons.forEach(b => { const t = (b.innerText || b.value || '').toLowerCase(); if (t.includes('pesquisar') || t.includes('buscar') || t.includes('listar')) btnBuscar = b; });
             if (btnBuscar) btnBuscar.click();
             setTimeout(() => {
-                const payload = extHistory[currentSelectedDate];
-                if (payload) executarPreenchimentoChamada(payload, opts);
-                else reportarResultado(opts, false, 'Sem dados de chamada para esta data.');
-                if (btn) { btn.textContent = oldText; btn.disabled = false; }
+                selecionarHorarioAulaChamada(() => {
+                    const payload = extHistory[currentSelectedDate];
+                    if (payload) executarPreenchimentoChamada(payload, opts);
+                    else reportarResultado(opts, false, 'Sem dados de chamada para esta data.');
+                    if (btn) { btn.textContent = oldText; btn.disabled = false; }
+                });
             }, 2500);
         }, 1000);
     });
