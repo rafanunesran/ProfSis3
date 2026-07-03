@@ -47,6 +47,17 @@ jobs:
             --crxURL "https://rafanunesran.github.io/ProfSis3/extensao-profsis/dist/profsis3-extension.crx"
           rm -f "$RUNNER_TEMP/key.pem"
 
+      - name: Build single-file installer (.bat)
+        shell: pwsh
+        run: |
+          $ps1Path = "extensao-profsis/installer/instalar_profsis3.ps1"
+          $scriptText = Get-Content $ps1Path -Raw
+          $bytes = [System.Text.Encoding]::Unicode.GetBytes($scriptText)
+          $encoded = [Convert]::ToBase64String($bytes)
+          New-Item -ItemType Directory -Force -Path extensao-profsis/dist | Out-Null
+          $batContent = "@echo off`r`nchcp 65001 >nul`r`ntitle Instalador ProfSis3`r`npowershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded`r`npause`r`n"
+          Set-Content -Path extensao-profsis/dist/instalar_profsis3.bat -Value $batContent -NoNewline -Encoding ascii
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
