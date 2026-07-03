@@ -1,4 +1,11 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
+// v3.1.5 - selecionarHorarioAulaChamada (v3.1.4) fechava o menu do widget "Horário de Aula" logo
+// depois de clicar no checkbox, sem esperar nada - a SED (Blazor) processa esse clique de forma
+// assíncrona, então fechar cedo demais interrompia o processamento e a seleção revertia sozinha pra
+// "Selecione ..." (sintoma: "abre e fecha mas não marca"). Agora usa aguardarCondicao (mesmo poller
+// do fix do calendário) pra confirmar que o texto do próprio botão do widget realmente virou o
+// horário escolhido antes de fechar o menu, e reporta falha clara em vez de seguir com o horário
+// errado se isso não acontecer a tempo.
 // v3.1.4 - A tela de Chamada tem um campo "Horário de Aula" (widget .multi-select-container, por
 // cima de um <select multiple id="inputAula"> escondido) que a SED deixa em branco ("Selecione ...")
 // por padrão - nem o robô automático nem o botão manual nunca preenchiam esse campo, então o Salvar
@@ -315,16 +322,32 @@ function selecionarHorarioAulaChamada(callback) {
     if (!idTurma || blocos.length === 0 || !botao) { callback(true); return; }
 
     const valoresAlvo = blocos.map(b => normalizarHorarioAula((b.inicio || '') + ' às ' + (b.fim || '')));
+    const botaoMostraAlvo = () => valoresAlvo.some(v => normalizarHorarioAula(botao.textContent).includes(v));
 
-    botao.click();
-    setTimeout(() => {
-        document.querySelectorAll('.multi-select-menuitem input[type="checkbox"]').forEach(chk => {
-            const deveEstarMarcado = valoresAlvo.includes(normalizarHorarioAula(chk.value));
-            if (chk.checked !== deveEstarMarcado) chk.click();
-        });
-        botao.click();
-        setTimeout(() => callback(true), 200);
-    }, 200);
+    // Já estava selecionado (ex.: robô rodando de novo numa aula já marcada) - não mexe em nada.
+    if (botaoMostraAlvo()) { callback(true); return; }
+
+    botao.click(); // abre o menu
+
+    aguardarCondicao(
+        () => document.querySelectorAll('.multi-select-menuitem input[type="checkbox"]').length > 0,
+        () => {
+            document.querySelectorAll('.multi-select-menuitem input[type="checkbox"]').forEach(chk => {
+                const deveEstarMarcado = valoresAlvo.includes(normalizarHorarioAula(chk.value));
+                if (chk.checked !== deveEstarMarcado) chk.click();
+            });
+            // A SED (Blazor) processa o clique do checkbox de forma assíncrona - espera o texto do
+            // próprio botão do widget realmente virar o horário escolhido antes de fechar. Fechar
+            // cedo demais (como antes, com um setTimeout fixo) fecha o menu antes da seleção "colar"
+            // no componente, revertendo pra "Selecione ..." sem avisar nada.
+            aguardarCondicao(
+                botaoMostraAlvo,
+                () => { botao.click(); callback(true); },
+                () => { botao.click(); callback(false); }
+            );
+        },
+        () => { botao.click(); callback(false); }
+    );
 }
 
 // ==================== DETECÇÃO DE TELA (CHAMADA x REGISTRO) ====================
@@ -679,7 +702,12 @@ function preencherChamadaNaTela(btn, opts) {
             buttons.forEach(b => { const t = (b.innerText || b.value || '').toLowerCase(); if (t.includes('pesquisar') || t.includes('buscar') || t.includes('listar')) btnBuscar = b; });
             if (btnBuscar) btnBuscar.click();
             setTimeout(() => {
-                selecionarHorarioAulaChamada(() => {
+                selecionarHorarioAulaChamada((selecionouHorario) => {
+                    if (!selecionouHorario) {
+                        if (btn) { btn.textContent = oldText; btn.disabled = false; }
+                        reportarResultado(opts, false, 'Não consegui selecionar o "Horário de Aula" na tela de Chamada - o campo continuou em "Selecione ...". Tente novamente ou selecione o horário manualmente antes de preencher.');
+                        return;
+                    }
                     const payload = extHistory[currentSelectedDate];
                     if (payload) executarPreenchimentoChamada(payload, opts);
                     else reportarResultado(opts, false, 'Sem dados de chamada para esta data.');
