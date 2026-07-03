@@ -1,4 +1,10 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
+// v3.1.8 - selecionarDataSED desistia na hora (callback(false)) se .ui-datepicker-month/
+// .ui-datepicker-year ainda não existissem no DOM, mesmo pra data de hoje (mês/ano já corretos,
+// nenhuma navegação necessária) - só que o robô automático considera a tela de Registro "pronta"
+// assim que #tabsNavegacao/o textarea aparecem (aguardarTelaDetalheEExecutar), o que pode acontecer
+// antes do calendário montar. Agora tenta de novo (mesmo tentativas/450ms do resto da função) em vez
+// de desistir na primeira checagem.
 // v3.1.7 - A tela de Registro tem um campo "Bimestre" (<select name="Model.NumeroBimestre">,
 // nativo) que a extensão nunca selecionava. Agora selecionarBimestreRegistro calcula o bimestre da
 // data selecionada (detectarBimestreAtual, mesma função já usada pro catálogo de Material Digital)
@@ -662,7 +668,15 @@ function selecionarDataSED(dataStr, callback) {
         tentativas = tentativas || 0;
         const monthSelect = document.querySelector('.ui-datepicker-month');
         const yearSelect = document.querySelector('.ui-datepicker-year');
-        if (!monthSelect || !yearSelect) { callback(false); return; }
+        if (!monthSelect || !yearSelect) {
+            // O calendário ainda pode não ter montado (Blazor) - tenta de novo em vez de desistir na
+            // hora. No robô automático, a tela é considerada "pronta" assim que #tabsNavegacao ou o
+            // textarea aparecem (ver aguardarTelaDetalheEExecutar), o que pode acontecer antes do
+            // calendário existir no DOM.
+            if (tentativas >= 14) { callback(false); return; }
+            setTimeout(() => navegarEClicar(tentativas + 1), 450);
+            return;
+        }
         const mesExibido = parseInt(monthSelect.value, 10);
         const anoExibido = parseInt(yearSelect.value, 10);
 
