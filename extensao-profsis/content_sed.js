@@ -1,4 +1,11 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
+// v3.1.2 - Corrige selecionarDataSED: os <select> de mês/ano do calendário (.ui-datepicker-month/
+// .ui-datepicker-year) só têm UMA <option> (a do mês exibido), então escrever .value neles nunca
+// navegava de verdade - datas retroativas que caíam no mês anterior (ex.: pendência do dia 30 com o
+// mês já virado) silenciosamente não eram selecionadas. Agora navega clicando nas setas ◀/▶ (como um
+// usuário faria) até alcançar o mês/ano alvo, e reporta falha clara (via reportarResultado) se a seta
+// necessária estiver desabilitada (prazo de lançamento da SED já vencido) em vez de seguir na data
+// errada sem avisar - ver preencherChamadaNaTela/preencherRegistroNaTela.
 // v3.1.1 - A tela de Registro só mostra o campo de texto depois de selecionar o "Horário de Aula"
 // (aba em #tabsNavegacao) - antes disso o preenchimento abortava com "Não encontrei o campo de texto
 // do registro". Agora percorre todas as abas (ver preencherTextoRegistroEmTodasAsAbas), preenchendo o
@@ -26,7 +33,7 @@
 // de Material Digital em CADA aba do Registro (não só a ativa). Botão "Extrair Alunos" agora só
 // aparece na tela de chamada (espelhando o botão de Material, que já só aparecia no Registro).
 
-    console.log("🤖 content_sed.js EXECUTADO - v3.1.1");
+    console.log("🤖 content_sed.js EXECUTADO - v3.1.2");
 
 // ==================== VARIÁVEIS GLOBAIS ====================
 let extHistory = {};
@@ -532,16 +539,47 @@ function renderizarListaTurmasDoDia() {
 
 // ==================== PREENCHIMENTO ====================
 
-function selecionarDataSED(dataStr) {
-    if (!dataStr) return;
+// Seleciona uma data no calendário inline da SED (jQuery UI Datepicker) e avisa via callback(sucesso)
+// se o dia realmente foi clicado. Os <select> de mês/ano (.ui-datepicker-month/.ui-datepicker-year)
+// só têm UMA <option> cada - a do mês/ano exibido no momento - então escrever neles não navega o
+// calendário (não existe essa <option> pra escolher). A navegação real é pelas setas ◀/▶
+// (.ui-datepicker-prev/.ui-datepicker-next); a SED desabilita a seta quando o prazo de lançamento
+// daquele mês já venceu ("prazo de até 5 dias corridos"), o que é sinalizado aqui como falha em vez
+// de tentar forçar.
+function selecionarDataSED(dataStr, callback) {
+    callback = callback || function () {};
+    if (!dataStr) { callback(false); return; }
     const parts = dataStr.split('-');
     const year = parseInt(parts[0], 10); const month = parseInt(parts[1], 10) - 1; const day = parseInt(parts[2], 10);
-    const monthSelect = document.querySelector('.ui-datepicker-month'); const yearSelect = document.querySelector('.ui-datepicker-year');
-    let changed = false;
-    if (monthSelect && monthSelect.value != month) { monthSelect.value = month; monthSelect.dispatchEvent(new Event('change', { bubbles: true })); changed = true; }
-    if (yearSelect && yearSelect.value != year) { yearSelect.value = year; yearSelect.dispatchEvent(new Event('change', { bubbles: true })); changed = true; }
-    const clickDay = () => { const dayCells = document.querySelectorAll('td[data-handler="selectDay"][data-month="' + month + '"][data-year="' + year + '"]'); for (const cell of dayCells) { const link = cell.querySelector('a.ui-state-default'); if (link && link.textContent.trim() == day) { link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); break; } } };
-    if (changed) setTimeout(clickDay, 500); else clickDay();
+
+    const clicarDia = () => {
+        const dayCells = document.querySelectorAll('td[data-handler="selectDay"][data-month="' + month + '"][data-year="' + year + '"]');
+        for (const cell of dayCells) {
+            const link = cell.querySelector('a.ui-state-default');
+            if (link && link.textContent.trim() == day) { link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); return true; }
+        }
+        return false;
+    };
+
+    const navegarEClicar = (tentativas) => {
+        tentativas = tentativas || 0;
+        const monthSelect = document.querySelector('.ui-datepicker-month');
+        const yearSelect = document.querySelector('.ui-datepicker-year');
+        if (!monthSelect || !yearSelect) { callback(false); return; }
+        const mesExibido = parseInt(monthSelect.value, 10);
+        const anoExibido = parseInt(yearSelect.value, 10);
+
+        if (mesExibido === month && anoExibido === year) { callback(clicarDia()); return; }
+        if (tentativas >= 14) { callback(false); return; } // trava de segurança (bem mais que o normalmente necessário)
+
+        const alvoAntesDoExibido = year < anoExibido || (year === anoExibido && month < mesExibido);
+        const seta = document.querySelector(alvoAntesDoExibido ? '.ui-datepicker-prev' : '.ui-datepicker-next');
+        if (!seta || seta.classList.contains('ui-state-disabled')) { callback(false); return; }
+        seta.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        setTimeout(() => navegarEClicar(tentativas + 1), 450);
+    };
+
+    navegarEClicar();
 }
 
 
@@ -566,19 +604,25 @@ function preencherChamadaNaTela(btn, opts) {
     opts = opts || {};
     const oldText = btn ? btn.textContent : null;
     if (btn) { btn.textContent = '⏳ Preenchendo...'; btn.disabled = true; }
-    selecionarDataSED(currentSelectedDate);
-    setTimeout(() => {
-        const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
-        let btnBuscar = null;
-        buttons.forEach(b => { const t = (b.innerText || b.value || '').toLowerCase(); if (t.includes('pesquisar') || t.includes('buscar') || t.includes('listar')) btnBuscar = b; });
-        if (btnBuscar) btnBuscar.click();
-        setTimeout(() => {
-            const payload = extHistory[currentSelectedDate];
-            if (payload) executarPreenchimentoChamada(payload, opts);
-            else reportarResultado(opts, false, 'Sem dados de chamada para esta data.');
+    selecionarDataSED(currentSelectedDate, (selecionou) => {
+        if (!selecionou) {
             if (btn) { btn.textContent = oldText; btn.disabled = false; }
-        }, 2500);
-    }, 1000);
+            reportarResultado(opts, false, 'Não consegui selecionar o dia ' + formatarDataBR(currentSelectedDate) + ' no calendário da SED. A SED só libera lançamento dentro de um prazo (ex.: "5 dias corridos") - se o prazo desse mês já venceu, não é possível lançar essa data.');
+            return;
+        }
+        setTimeout(() => {
+            const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
+            let btnBuscar = null;
+            buttons.forEach(b => { const t = (b.innerText || b.value || '').toLowerCase(); if (t.includes('pesquisar') || t.includes('buscar') || t.includes('listar')) btnBuscar = b; });
+            if (btnBuscar) btnBuscar.click();
+            setTimeout(() => {
+                const payload = extHistory[currentSelectedDate];
+                if (payload) executarPreenchimentoChamada(payload, opts);
+                else reportarResultado(opts, false, 'Sem dados de chamada para esta data.');
+                if (btn) { btn.textContent = oldText; btn.disabled = false; }
+            }, 2500);
+        }, 1000);
+    });
 }
 
 // Aciona o botão a partir da tela "Registro de Aulas Detalhes": seleciona a data no calendário da
@@ -588,13 +632,19 @@ function preencherRegistroNaTela(btn, opts) {
     opts = opts || {};
     const oldText = btn ? btn.textContent : null;
     if (btn) { btn.textContent = '⏳ Preenchendo...'; btn.disabled = true; }
-    selecionarDataSED(currentSelectedDate);
-    setTimeout(() => {
-        const payload = extHistory[currentSelectedDate];
-        if (payload) executarPreenchimentoRegistro(payload, opts);
-        else reportarResultado(opts, false, 'Sem dados de registro para esta data.');
-        if (btn) { btn.textContent = oldText; btn.disabled = false; }
-    }, 1200);
+    selecionarDataSED(currentSelectedDate, (selecionou) => {
+        if (!selecionou) {
+            if (btn) { btn.textContent = oldText; btn.disabled = false; }
+            reportarResultado(opts, false, 'Não consegui selecionar o dia ' + formatarDataBR(currentSelectedDate) + ' no calendário da SED. A SED só libera lançamento dentro de um prazo (ex.: "5 dias corridos") - se o prazo desse mês já venceu, não é possível lançar essa data.');
+            return;
+        }
+        setTimeout(() => {
+            const payload = extHistory[currentSelectedDate];
+            if (payload) executarPreenchimentoRegistro(payload, opts);
+            else reportarResultado(opts, false, 'Sem dados de registro para esta data.');
+            if (btn) { btn.textContent = oldText; btn.disabled = false; }
+        }, 1200);
+    });
 }
 
 // Marca o checkbox "Replicar Frequência" da tela de chamada (sem id/classe própria, só identificável
