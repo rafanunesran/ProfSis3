@@ -1,8 +1,9 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
-// v3.1.10 - Botão "🔑 Configurar Chave Groq (IA)" no painel: deixa configurar uma chave Groq própria
-// (guardada só em chrome.storage.local desta instalação, nunca no código-fonte) pro fallback de
-// texto por IA (gerarTextoRegistroFallbackIA em background.js) funcionar sem depender da sessão do
-// ProfSis - ver SALVAR_CHAVE_GROQ_PROPRIA/OBTER_CHAVE_GROQ_PROPRIA.
+// v3.2.0 - Removido o fallback de texto por IA (e o botão "Configurar Chave Groq" adicionado na
+// v3.1.10) - quando não há registro nem rascunho salvo no ProfSis, agora sorteia uma atividade
+// genérica de uma lista fixa (ATIVIDADES_GENERICAS_REGISTRO) em vez de chamar IA. O método de puxar
+// de registros/rascunhos do ProfSis (encontrarRegistroParaTela/registro.conteudo) não muda em nada -
+// só o que acontece depois dele não achar nenhum conteúdo.
 // v3.1.9 - O fallback de texto via IA (sem registro salvo no ProfSis) só rodava em modo automático;
 // no botão manual sempre abortava com "Nenhum registro (ou rascunho do Estagiário) encontrado...".
 // Agora roda nos dois caminhos, e a mensagem de sucesso avisa quando o texto salvo foi gerado por
@@ -511,26 +512,12 @@ function injetarMenu() {
         '<button id="sisprof-btn-extrair" style="width:100%; background:#38a169; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px; display:none;">📥 Extrair Alunos (Atualizar Banco)</button>' +
         '<button id="sisprof-btn-extrair-material" style="width:100%; background:#805ad5; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px; display:none;">📥 Extrair Material Digital (Atualizar Catálogo)</button>' +
         '<hr style="border:0; border-top:1px solid #e2e8f0; margin:10px 0;">' +
-        '<button id="sisprof-btn-config-ia" style="width:100%; background:#805ad5; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px; margin-bottom:8px;">🔑 Configurar Chave Groq (IA)</button>' +
         '<button id="sisprof-btn-logout" style="width:100%; background:#718096; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px;">🚪 Desconectar</button></div>';
     document.body.appendChild(div);
     if (profsisProfile && profsisProfile.nome) { const n = document.getElementById('sisprof-user-name'); if (n) n.textContent = profsisProfile.nome.split(' ')[0]; }
     document.getElementById('sisprof-fechar').onclick = function() { div.remove(); };
     document.getElementById('sisprof-minimizar').onclick = function() { const c = document.getElementById('sisprof-conteudo'); c.style.display = c.style.display === 'none' ? 'block' : 'none'; this.innerHTML = c.style.display === 'none' ? '◀' : '▶'; };
     document.getElementById('sisprof-btn-logout').onclick = function() { chrome.runtime.sendMessage({ action: 'PROFSIS_LOGOUT' }, () => { div.remove(); profsisProfile = null; profsisAppData = null; extHistory = {}; mostrarTelaStatus(); }); };
-    // Chave Groq própria (independe da sessão do ProfSis) usada no fallback de texto por IA quando
-    // não há registro salvo - fica só no chrome.storage.local desta instalação, nunca no código-fonte.
-    document.getElementById('sisprof-btn-config-ia').onclick = function() {
-        chrome.runtime.sendMessage({ action: 'OBTER_CHAVE_GROQ_PROPRIA' }, (resp) => {
-            const atual = (resp && resp.apiKey) ? resp.apiKey : '';
-            const mascarada = atual ? (atual.slice(0, 4) + '...' + atual.slice(-4)) : '(nenhuma configurada - usando a chave compartilhada do ProfSis)';
-            const nova = prompt('Chave Groq própria (começa com "gsk_"). Deixe em branco pra voltar a usar a chave compartilhada do ProfSis.\n\nAtual: ' + mascarada, atual);
-            if (nova === null) return;
-            chrome.runtime.sendMessage({ action: 'SALVAR_CHAVE_GROQ_PROPRIA', apiKey: nova }, () => {
-                alert(nova.trim() ? '✅ Chave Groq própria salva!' : '✅ Chave própria removida - vai usar a chave compartilhada do ProfSis de novo.');
-            });
-        });
-    };
     document.getElementById('sisprof-btn-hoje').onclick = function() { const h = new Date().toISOString().split('T')[0]; document.getElementById('sisprof-data-input').value = h; currentSelectedDate = h; atualizarInterfacePorData(); };
     document.getElementById('sisprof-data-input').addEventListener('change', function() { currentSelectedDate = this.value; atualizarInterfacePorData(); });
     document.getElementById('sisprof-btn-preencher').onclick = function() {
@@ -968,13 +955,29 @@ function executarPreenchimentoRegistro(payload, opts) {
     extrairMaterialDigitalSilencioso(() => executarPreenchimentoRegistroDepoisDeExtrair(payload, opts));
 }
 
+// Lista fixa de atividades genéricas sorteada em executarPreenchimentoRegistroDepoisDeExtrair quando
+// não há registro nem rascunho salvo no ProfSis pra turma/disciplina/data da tela - substitui a
+// geração por IA (Groq/OpenAI/Gemini) que a extensão usava antes, sem depender de rede/chave alguma.
+const ATIVIDADES_GENERICAS_REGISTRO = [
+    // Introdução e Diagnóstico
+    'Levantamento de Conhecimentos Prévios', 'Aula Expositiva Dialogada', 'Contextualização do Tema', 'Análise de Estudo de Caso',
+    // Desenvolvimento e Prática
+    'Exercício de Fixação', 'Aula Prática ou Laboratório', 'Leitura Guiada e Interpretação', 'Rotação por Estações',
+    'Oficina Criativa / Produção', 'Análise de Mídias', 'Aula Invertida',
+    // Interação e Aprofundamento
+    'Debate e Argumentação Orientada', 'Trabalho em Grupo (Planejamento)', 'Seminário de Apresentação', 'Conexões Interdisciplinares',
+    // Revisão e Avaliação
+    'Construção de Mapa Mental Coletivo', 'Correção Comentada', 'Avaliação Diagnóstica / Simulado', 'Autoavaliação e Feedback',
+    'Encerramento e Reflexão'
+];
+
 function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts) {
     const registro = encontrarRegistroParaTela(payload);
 
     // Preenche o textarea com conteudoTexto, marca o Material Digital (se houver) e salva - mesmo
-    // caminho de sempre, usado tanto para o conteúdo real do ProfSis quanto para o texto gerado por
-    // IA (ver fallback abaixo).
-    const prosseguirComConteudo = (conteudoTexto, cardsMaterialDigital, geradoPorIA) => {
+    // caminho de sempre, usado tanto para o conteúdo real do ProfSis quanto para a atividade genérica
+    // sorteada (ver fallback abaixo).
+    const prosseguirComConteudo = (conteudoTexto, cardsMaterialDigital, foiSorteio) => {
         const continuarComMaterialESalvar = () => {
             const finalizarSalvamentoRegistro = (avisoCards) => {
                 setTimeout(() => {
@@ -985,9 +988,9 @@ function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts) {
                     const sufixoAviso = (avisoCards && avisoCards.length > 0)
                         ? ('\n\n⚠️ Não encontrei na tela o(s) card(s) do Material Digital: ' + avisoCards.join(', ') + '. Marque manualmente se necessário.')
                         : '';
-                    const sufixoIA = geradoPorIA ? '\n\n🤖 Sem registro salvo no ProfSis - usei um texto genérico gerado por IA.' : '';
-                    if (btnSalvar) { btnSalvar.click(); reportarResultado(opts, true, '✅ Registro preenchido e salvo na SED.' + sufixoIA + sufixoAviso); }
-                    else reportarResultado(opts, false, '✅ Registro preenchido! ⚠️ Clique em "Salvar" manualmente.' + sufixoIA + sufixoAviso);
+                    const sufixoSorteio = foiSorteio ? '\n\n🎲 Sem registro salvo no ProfSis - usei uma atividade genérica sorteada: "' + conteudoTexto + '".' : '';
+                    if (btnSalvar) { btnSalvar.click(); reportarResultado(opts, true, '✅ Registro preenchido e salvo na SED.' + sufixoSorteio + sufixoAviso); }
+                    else reportarResultado(opts, false, '✅ Registro preenchido! ⚠️ Clique em "Salvar" manualmente.' + sufixoSorteio + sufixoAviso);
                 }, 400);
             };
 
@@ -1036,27 +1039,11 @@ function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts) {
         return;
     }
 
-    // v3.1.0/v3.1.9: sem registro salvo no ProfSis - gera um texto genérico via IA (reaproveitando a
-    // chave/roteador já configurado para "IA Estagiário", ver gerarTextoRegistroFallbackIA em
-    // background.js) em vez de abortar - tanto no botão manual quanto no robô automático.
-    let turmaSED = null, disciplinaSED = null;
-    document.querySelectorAll('.font-cabecalho-filtro').forEach(span => {
-        const t = span.textContent || '';
-        if (t.includes('Turma:')) turmaSED = t.replace(/^.*Turma:/i, '').trim();
-        if (t.includes('Disciplina:')) disciplinaSED = t.replace(/^.*Disciplina:/i, '').trim();
-    });
-    if (!turmaSED || !disciplinaSED) {
-        reportarResultado(opts, false, 'Não consegui identificar a turma/disciplina desta tela para gerar um texto de registro.');
-        return;
-    }
-    chrome.runtime.sendMessage({ action: 'GERAR_TEXTO_REGISTRO_IA', disciplina: disciplinaSED, turmaNome: turmaSED }, (resposta) => {
-        if (chrome.runtime.lastError || !resposta || !resposta.success) {
-            const motivo = (resposta && resposta.error) || (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'erro desconhecido';
-            reportarResultado(opts, false, 'Não havia registro salvo e a IA não conseguiu gerar um texto de fallback: ' + motivo);
-            return;
-        }
-        prosseguirComConteudo(resposta.texto, null, true);
-    });
+    // v3.2.0: sem registro nem rascunho salvo no ProfSis - sorteia uma atividade genérica da lista
+    // fixa (ATIVIDADES_GENERICAS_REGISTRO) em vez de abortar - tanto no botão manual quanto no robô
+    // automático. Substitui a geração por IA usada antes (não depende mais de rede/chave nenhuma).
+    const atividadeSorteada = ATIVIDADES_GENERICAS_REGISTRO[Math.floor(Math.random() * ATIVIDADES_GENERICAS_REGISTRO.length)];
+    prosseguirComConteudo(atividadeSorteada, null, true);
 }
 
 // v3.1.1: preenche o texto do registro em CADA aba de #tabsNavegacao ("Horário de Aula") - a SED só

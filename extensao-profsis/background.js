@@ -1,7 +1,9 @@
 // BACKGROUND SCRIPT - ProfSis3 Extension
-// v3.1.2 - gerarTextoRegistroFallbackIA agora prioriza uma chave Groq própria (chrome.storage.local,
-// rpa_groq_api_key, configurável pelo novo botão no painel) em vez de depender só da sessão do
-// ProfSis + chave compartilhada do Firestore - ver SALVAR_CHAVE_GROQ_PROPRIA/OBTER_CHAVE_GROQ_PROPRIA.
+// v3.1.3 - Removido o fallback de texto por IA (gerarTextoRegistroFallbackIA/GERAR_TEXTO_REGISTRO_IA
+// e a chave Groq própria configurável, SALVAR_CHAVE_GROQ_PROPRIA/OBTER_CHAVE_GROQ_PROPRIA, adicionada
+// na v3.1.2) - a extensão agora sorteia de uma lista fixa de atividades genéricas (ver
+// ATIVIDADES_GENERICAS_REGISTRO em content_sed.js) em vez de chamar IA, então esse código não tem
+// mais uso. getValidFirebaseAuth/firestoreGetDocEm continuam (usados por outras features).
 // v3.1.1 - Corrige a chave de localStorage lida no fallback de CHECK_PROFSIS_LOGIN (script injetado na
 // aba do ProfSis): agora prioriza o uid do Firebase Auth, mesma prioridade de getStorageKey em
 // shared.js ao salvar - antes priorizava o id do perfil, que para contas criadas pelo painel do
@@ -139,102 +141,6 @@ async function firestoreSetDoc(docId, dataObj, idToken) {
         const errText = await resp.text().catch(() => '');
         throw new Error('Erro ao salvar no Firestore (' + resp.status + '): ' + errText);
     }
-}
-
-// ==================== FALLBACK DE REGISTRO VIA IA (v3.1.0) ====================
-// Quando o professor não tem registro salvo no ProfSis para uma turma/data (só usado pelo workflow
-// automático da SED - ver GERAR_TEXTO_REGISTRO_IA abaixo), gera um texto curto e deliberadamente
-// genérico para não inventar um conteúdo específico que possa ficar factualmente errado num
-// documento oficial. Reaproveita a MESMA chave/roteador multi-provedor já configurado para a feature
-// "IA Estagiário" (ver ia_estagiario.js:234-298 e admin.js configurarChaveIA()): detecta o provedor
-// pelo prefixo da chave (sk- -> OpenAI, gsk_ -> Groq, senão Gemini).
-async function gerarTextoRegistroFallbackIA(disciplina, turmaNome) {
-    // Prioriza uma chave Groq própria configurada na extensão (chrome.storage.local, ver
-    // SALVAR_CHAVE_GROQ_PROPRIA/OBTER_CHAVE_GROQ_PROPRIA) - assim a IA funciona independente de
-    // sessão do ProfSis. Só cai no caminho antigo (sessão do ProfSis + chave compartilhada do
-    // Firestore, configurada pelo Administrador) se não houver chave própria salva.
-    const { rpa_groq_api_key } = await chrome.storage.local.get(['rpa_groq_api_key']);
-    let apiKeys;
-    if (rpa_groq_api_key) {
-        apiKeys = [rpa_groq_api_key];
-    } else {
-        const auth = await getValidFirebaseAuth();
-        if (!auth) return { success: false, error: 'Sessão do ProfSis não encontrada ou expirada - abra o ProfSis e faça login antes de tentar de novo (ou configure uma chave Groq própria no menu da extensão).' };
-
-        let configData;
-        try {
-            configData = await firestoreGetDocEm('system', 'config_ia', auth.idToken);
-        } catch (e) {
-            return { success: false, error: 'Erro ao ler a configuração de IA: ' + e.message };
-        }
-        apiKeys = (configData && configData.apiKey) ? configData.apiKey.split(',').map(k => k.trim()).filter(k => k) : [];
-        if (apiKeys.length === 0) return { success: false, error: 'Chave de IA não configurada (peça ao Administrador para configurar em Super Admin > Migração > "Configurar Chave", ou configure uma chave Groq própria no menu da extensão).' };
-    }
-
-    const promptText = 'Escreva, em português do Brasil, um texto de 1 a 3 palavras, bem curto e '
-        + 'genérico, para preencher o campo "Registro de Aula" de uma aula de "' + disciplina + '" '
-        + 'da turma "' + turmaNome + '" (ex.: "Atividade", "Atividade de recuperação", "Exercícios de '
-        + 'fixação", "Revisão de conteúdo"). NÃO invente um tema, atividade ou conteúdo específico - '
-        + 'use algo genérico e seguro. Retorne APENAS o texto puro, sem aspas, sem markdown, sem '
-        + 'explicações.';
-
-    let lastError = '';
-    for (const currentKey of apiKeys) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-        try {
-            let texto = '';
-            // --- Mesmo roteador multi-IA de ia_estagiario.js, adaptado para texto puro (não JSON) ---
-            if (currentKey.startsWith('sk-') && !currentKey.startsWith('sk-ant-')) {
-                // OpenAI (GPT-4o-mini)
-                const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentKey },
-                    body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: promptText }], temperature: 0.7 }),
-                    signal: controller.signal
-                });
-                if (!response.ok) throw new Error('OpenAI Erro: ' + response.statusText);
-                const apiDataObj = await response.json();
-                texto = apiDataObj.choices[0].message.content;
-            } else if (currentKey.startsWith('gsk_')) {
-                // Groq (Llama 3.3 70B)
-                const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentKey },
-                    body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: promptText }], temperature: 0.7 }),
-                    signal: controller.signal
-                });
-                if (!response.ok) throw new Error('Groq Erro: ' + response.statusText);
-                const apiDataObj = await response.json();
-                texto = apiDataObj.choices[0].message.content;
-            } else {
-                // Google Gemini (padrão)
-                const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=' + currentKey, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }], generationConfig: { temperature: 0.7 } }),
-                    signal: controller.signal
-                });
-                if (!response.ok) {
-                    const errorObj = await response.json().catch(() => ({}));
-                    throw new Error(errorObj.error ? errorObj.error.message : response.statusText);
-                }
-                const apiDataObj = await response.json();
-                if (!apiDataObj.candidates || apiDataObj.candidates.length === 0 || !apiDataObj.candidates[0].content) throw new Error('A IA não retornou um conteúdo válido.');
-                texto = apiDataObj.candidates[0].content.parts[0].text;
-            }
-
-            texto = (texto || '').trim().replace(/^["']|["']$/g, '');
-            if (!texto) throw new Error('A IA retornou um texto vazio.');
-            clearTimeout(timeoutId);
-            return { success: true, texto: texto };
-        } catch (err) {
-            clearTimeout(timeoutId);
-            lastError = err.name === 'AbortError' ? 'Tempo de resposta esgotado.' : err.message;
-            console.warn('⚠️ Falha ao gerar texto de registro via IA:', lastError);
-        }
-    }
-    return { success: false, error: lastError || 'Nenhuma chave de IA configurada funcionou.' };
 }
 
 // ---- Lógica de atualização de alunos (cria/reativa/remaneja/transfere) ----
@@ -930,26 +836,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     else if (request.action === "GET_DATA") {
         chrome.storage.local.get(['rpa_data_history', 'rpa_data', 'rpa_done_marks', 'rpa_imported_students'], (result) => {
             if (sendResponse) sendResponse(result || {});
-        });
-        return true;
-    }
-    else if (request.action === "GERAR_TEXTO_REGISTRO_IA") {
-        gerarTextoRegistroFallbackIA(request.disciplina, request.turmaNome)
-            .then(resultado => { if (sendResponse) sendResponse(resultado); })
-            .catch(err => { if (sendResponse) sendResponse({ success: false, error: err.message || 'Erro desconhecido ao gerar texto via IA.' }); });
-        return true;
-    }
-    // ---- Chave Groq própria (independe da sessão do ProfSis) usada em gerarTextoRegistroFallbackIA ----
-    else if (request.action === "SALVAR_CHAVE_GROQ_PROPRIA") {
-        const chave = (request.apiKey || '').trim() || null;
-        chrome.storage.local.set({ rpa_groq_api_key: chave }, () => {
-            if (sendResponse) sendResponse({ success: true });
-        });
-        return true;
-    }
-    else if (request.action === "OBTER_CHAVE_GROQ_PROPRIA") {
-        chrome.storage.local.get(['rpa_groq_api_key'], (result) => {
-            if (sendResponse) sendResponse({ success: true, apiKey: result.rpa_groq_api_key || null });
         });
         return true;
     }
