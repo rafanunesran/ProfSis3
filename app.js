@@ -1496,41 +1496,24 @@ window.baixarArquivosExtensao = async function() {
     alert('Arquivo baixado: SisProf-Extensao.zip\\n\\nCOMO INSTALAR:\\n1. Extraia o .zip em uma pasta (ex: "Robo SisProf").\\n2. Abra chrome://extensions/ (ou Gerenciar Extensões) no Chrome.\\n3. Ative o "Modo do desenvolvedor" no canto superior direito.\\n4. Clique no botão "Carregar sem compactação" (canto superior esquerdo).\\n5. Selecione a pasta extraída.\\n\\n⚠️ IMPORTANTE: Após instalar, RECARREGUE (F5) esta página do SisProf para que a extensão passe a funcionar nela!');
 };
 
-// Baixa o instalador (.bat + .ps1) que configura o Chrome para instalar a extensão sozinho
-// e mantê-la atualizada automaticamente daqui pra frente (sem Chrome Web Store).
+// Baixa o instalador (.bat único, autocontido) que configura o Chrome para instalar a
+// extensão sozinho e mantê-la atualizada automaticamente daqui pra frente (sem Chrome
+// Web Store). Não precisa descompactar nada - é um único arquivo pronto pra clicar.
 window.baixarInstaladorExtensaoDesktop = async function() {
     const urlApp = window.location.href.split('?')[0].split('#')[0];
     const baseUrl = urlApp.substring(0, urlApp.lastIndexOf('/') + 1);
+    const batUrl = baseUrl + 'extensao-profsis/dist/instalar_profsis3.bat?nocache=' + Date.now();
 
     if (!confirm('Isso vai baixar um instalador (.bat) que configura o Chrome para instalar a extensão do ProfSis3 e mantê-la atualizada sozinha, sem precisar baixar de novo no futuro.\\n\\nDeseja prosseguir?')) return;
 
-    const filesToFetch = ['installer/instalar_profsis3.bat', 'installer/instalar_profsis3.ps1'];
-    const files = [];
-    const semCache = '?nocache=' + Date.now(); // evita pegar uma cópia antiga do cache do navegador
-
-    for (const filePath of filesToFetch) {
-        try {
-            const response = await fetch(baseUrl + 'extensao-profsis/' + filePath + semCache, { cache: 'no-store' });
-            if (!response.ok) throw new Error('Falha ao buscar ' + filePath);
-            const content = await response.text();
-            files.push({ name: filePath.split('/').pop(), content: content });
-        } catch (e) {
-            alert('Erro ao baixar o instalador. Verifique se os arquivos estão publicados no servidor.\\n\\n' + e.message);
-            return;
-        }
-    }
-
-    const zipBlob = criarZipSimples(files);
-    const url = URL.createObjectURL(zipBlob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'Instalar-ProfSis3.zip';
+    a.href = batUrl;
+    a.download = 'instalar_profsis3.bat';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
 
-    alert('Arquivo baixado: Instalar-ProfSis3.zip\\n\\nCOMO INSTALAR:\\n1. Extraia o .zip em qualquer pasta.\\n2. Dê dois cliques em "instalar_profsis3.bat".\\n3. Se o Windows avisar "Editor desconhecido", clique em "Mais informações" e depois "Executar assim mesmo".\\n4. Siga as instruções na tela (em português) e feche/reabra o Chrome quando pedido.\\n\\n✅ A partir daí a extensão se atualiza sozinha - você não vai precisar baixar nada de novo.\\n\\n⚠️ Se você já tinha instalado a extensão manualmente antes, remova a versão antiga em chrome://extensions para evitar conflito.');
+    alert('Baixando instalar_profsis3.bat\\n\\nCOMO INSTALAR:\\n1. Dê dois cliques no arquivo baixado (não precisa descompactar nada).\\n2. Se o Windows avisar "Editor desconhecido", clique em "Mais informações" e depois "Executar assim mesmo".\\n3. Siga as instruções na tela (em português) e feche/reabra o Chrome quando pedido.\\n\\n✅ A partir daí a extensão se atualiza sozinha - você não vai precisar baixar nada de novo.\\n\\n⚠️ Se você já tinha instalado a extensão manualmente antes, remova a versão antiga em chrome://extensions para evitar conflito.');
 };
 
 // Baixa o pacote compactado (.crx) assinado, pensado para navegadores mobile como o Lemur Browser,
