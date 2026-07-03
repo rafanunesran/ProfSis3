@@ -1,0 +1,58 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: ["main"] # Muda para "master" se a sua branch principal tiver esse nome
+  workflow_dispatch:
+
+# ESTAS SÃO AS PERMISSÕES QUE CORRIGEM O ERRO 401
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build & sign extension (CRX3 + update.xml)
+        env:
+          EXT_SIGNING_KEY_B64: ${{ secrets.EXTENSION_SIGNING_KEY_B64 }}
+        run: |
+          if [ -z "$EXT_SIGNING_KEY_B64" ]; then
+            echo "EXTENSION_SIGNING_KEY_B64 secret não configurado - pulando build da extensão."
+            exit 0
+          fi
+          mkdir -p extensao-profsis/dist
+          echo "$EXT_SIGNING_KEY_B64" | base64 -d > "$RUNNER_TEMP/key.pem"
+          npx --yes crx3 extensao-profsis \
+            --key "$RUNNER_TEMP/key.pem" \
+            --crx extensao-profsis/dist/profsis3-extension.crx \
+            --xml extensao-profsis/dist/update.xml \
+            --crxURL "https://rafanunesran.github.io/ProfSis3/extensao-profsis/dist/profsis3-extension.crx"
+          rm -f "$RUNNER_TEMP/key.pem"
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
