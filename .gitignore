@@ -1,0 +1,3 @@
+*.pem
+extensao-profsis/dist/
+node_modules/
