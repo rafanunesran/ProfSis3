@@ -1,4 +1,8 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
+// v3.1.10 - Botão "🔑 Configurar Chave Groq (IA)" no painel: deixa configurar uma chave Groq própria
+// (guardada só em chrome.storage.local desta instalação, nunca no código-fonte) pro fallback de
+// texto por IA (gerarTextoRegistroFallbackIA em background.js) funcionar sem depender da sessão do
+// ProfSis - ver SALVAR_CHAVE_GROQ_PROPRIA/OBTER_CHAVE_GROQ_PROPRIA.
 // v3.1.9 - O fallback de texto via IA (sem registro salvo no ProfSis) só rodava em modo automático;
 // no botão manual sempre abortava com "Nenhum registro (ou rascunho do Estagiário) encontrado...".
 // Agora roda nos dois caminhos, e a mensagem de sucesso avisa quando o texto salvo foi gerado por
@@ -507,12 +511,26 @@ function injetarMenu() {
         '<button id="sisprof-btn-extrair" style="width:100%; background:#38a169; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px; display:none;">📥 Extrair Alunos (Atualizar Banco)</button>' +
         '<button id="sisprof-btn-extrair-material" style="width:100%; background:#805ad5; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px; display:none;">📥 Extrair Material Digital (Atualizar Catálogo)</button>' +
         '<hr style="border:0; border-top:1px solid #e2e8f0; margin:10px 0;">' +
+        '<button id="sisprof-btn-config-ia" style="width:100%; background:#805ad5; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px; margin-bottom:8px;">🔑 Configurar Chave Groq (IA)</button>' +
         '<button id="sisprof-btn-logout" style="width:100%; background:#718096; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px;">🚪 Desconectar</button></div>';
     document.body.appendChild(div);
     if (profsisProfile && profsisProfile.nome) { const n = document.getElementById('sisprof-user-name'); if (n) n.textContent = profsisProfile.nome.split(' ')[0]; }
     document.getElementById('sisprof-fechar').onclick = function() { div.remove(); };
     document.getElementById('sisprof-minimizar').onclick = function() { const c = document.getElementById('sisprof-conteudo'); c.style.display = c.style.display === 'none' ? 'block' : 'none'; this.innerHTML = c.style.display === 'none' ? '◀' : '▶'; };
     document.getElementById('sisprof-btn-logout').onclick = function() { chrome.runtime.sendMessage({ action: 'PROFSIS_LOGOUT' }, () => { div.remove(); profsisProfile = null; profsisAppData = null; extHistory = {}; mostrarTelaStatus(); }); };
+    // Chave Groq própria (independe da sessão do ProfSis) usada no fallback de texto por IA quando
+    // não há registro salvo - fica só no chrome.storage.local desta instalação, nunca no código-fonte.
+    document.getElementById('sisprof-btn-config-ia').onclick = function() {
+        chrome.runtime.sendMessage({ action: 'OBTER_CHAVE_GROQ_PROPRIA' }, (resp) => {
+            const atual = (resp && resp.apiKey) ? resp.apiKey : '';
+            const mascarada = atual ? (atual.slice(0, 4) + '...' + atual.slice(-4)) : '(nenhuma configurada - usando a chave compartilhada do ProfSis)';
+            const nova = prompt('Chave Groq própria (começa com "gsk_"). Deixe em branco pra voltar a usar a chave compartilhada do ProfSis.\n\nAtual: ' + mascarada, atual);
+            if (nova === null) return;
+            chrome.runtime.sendMessage({ action: 'SALVAR_CHAVE_GROQ_PROPRIA', apiKey: nova }, () => {
+                alert(nova.trim() ? '✅ Chave Groq própria salva!' : '✅ Chave própria removida - vai usar a chave compartilhada do ProfSis de novo.');
+            });
+        });
+    };
     document.getElementById('sisprof-btn-hoje').onclick = function() { const h = new Date().toISOString().split('T')[0]; document.getElementById('sisprof-data-input').value = h; currentSelectedDate = h; atualizarInterfacePorData(); };
     document.getElementById('sisprof-data-input').addEventListener('change', function() { currentSelectedDate = this.value; atualizarInterfacePorData(); });
     document.getElementById('sisprof-btn-preencher').onclick = function() {

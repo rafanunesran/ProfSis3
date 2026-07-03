@@ -1,4 +1,7 @@
 // BACKGROUND SCRIPT - ProfSis3 Extension
+// v3.1.2 - gerarTextoRegistroFallbackIA agora prioriza uma chave Groq própria (chrome.storage.local,
+// rpa_groq_api_key, configurável pelo novo botão no painel) em vez de depender só da sessão do
+// ProfSis + chave compartilhada do Firestore - ver SALVAR_CHAVE_GROQ_PROPRIA/OBTER_CHAVE_GROQ_PROPRIA.
 // v3.1.1 - Corrige a chave de localStorage lida no fallback de CHECK_PROFSIS_LOGIN (script injetado na
 // aba do ProfSis): agora prioriza o uid do Firebase Auth, mesma prioridade de getStorageKey em
 // shared.js ao salvar - antes priorizava o id do perfil, que para contas criadas pelo painel do
@@ -146,17 +149,27 @@ async function firestoreSetDoc(docId, dataObj, idToken) {
 // "IA Estagiário" (ver ia_estagiario.js:234-298 e admin.js configurarChaveIA()): detecta o provedor
 // pelo prefixo da chave (sk- -> OpenAI, gsk_ -> Groq, senão Gemini).
 async function gerarTextoRegistroFallbackIA(disciplina, turmaNome) {
-    const auth = await getValidFirebaseAuth();
-    if (!auth) return { success: false, error: 'Sessão do ProfSis não encontrada ou expirada - abra o ProfSis e faça login antes de tentar de novo.' };
+    // Prioriza uma chave Groq própria configurada na extensão (chrome.storage.local, ver
+    // SALVAR_CHAVE_GROQ_PROPRIA/OBTER_CHAVE_GROQ_PROPRIA) - assim a IA funciona independente de
+    // sessão do ProfSis. Só cai no caminho antigo (sessão do ProfSis + chave compartilhada do
+    // Firestore, configurada pelo Administrador) se não houver chave própria salva.
+    const { rpa_groq_api_key } = await chrome.storage.local.get(['rpa_groq_api_key']);
+    let apiKeys;
+    if (rpa_groq_api_key) {
+        apiKeys = [rpa_groq_api_key];
+    } else {
+        const auth = await getValidFirebaseAuth();
+        if (!auth) return { success: false, error: 'Sessão do ProfSis não encontrada ou expirada - abra o ProfSis e faça login antes de tentar de novo (ou configure uma chave Groq própria no menu da extensão).' };
 
-    let configData;
-    try {
-        configData = await firestoreGetDocEm('system', 'config_ia', auth.idToken);
-    } catch (e) {
-        return { success: false, error: 'Erro ao ler a configuração de IA: ' + e.message };
+        let configData;
+        try {
+            configData = await firestoreGetDocEm('system', 'config_ia', auth.idToken);
+        } catch (e) {
+            return { success: false, error: 'Erro ao ler a configuração de IA: ' + e.message };
+        }
+        apiKeys = (configData && configData.apiKey) ? configData.apiKey.split(',').map(k => k.trim()).filter(k => k) : [];
+        if (apiKeys.length === 0) return { success: false, error: 'Chave de IA não configurada (peça ao Administrador para configurar em Super Admin > Migração > "Configurar Chave", ou configure uma chave Groq própria no menu da extensão).' };
     }
-    const apiKeys = (configData && configData.apiKey) ? configData.apiKey.split(',').map(k => k.trim()).filter(k => k) : [];
-    if (apiKeys.length === 0) return { success: false, error: 'Chave de IA não configurada (peça ao Administrador para configurar em Super Admin > Migração > "Configurar Chave").' };
 
     const promptText = 'Escreva, em português do Brasil, um texto de 1 a 3 palavras, bem curto e '
         + 'genérico, para preencher o campo "Registro de Aula" de uma aula de "' + disciplina + '" '
@@ -924,6 +937,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         gerarTextoRegistroFallbackIA(request.disciplina, request.turmaNome)
             .then(resultado => { if (sendResponse) sendResponse(resultado); })
             .catch(err => { if (sendResponse) sendResponse({ success: false, error: err.message || 'Erro desconhecido ao gerar texto via IA.' }); });
+        return true;
+    }
+    // ---- Chave Groq própria (independe da sessão do ProfSis) usada em gerarTextoRegistroFallbackIA ----
+    else if (request.action === "SALVAR_CHAVE_GROQ_PROPRIA") {
+        const chave = (request.apiKey || '').trim() || null;
+        chrome.storage.local.set({ rpa_groq_api_key: chave }, () => {
+            if (sendResponse) sendResponse({ success: true });
+        });
+        return true;
+    }
+    else if (request.action === "OBTER_CHAVE_GROQ_PROPRIA") {
+        chrome.storage.local.get(['rpa_groq_api_key'], (result) => {
+            if (sendResponse) sendResponse({ success: true, apiKey: result.rpa_groq_api_key || null });
+        });
         return true;
     }
     else if (request.action === "GET_HISTORY") {
