@@ -450,6 +450,36 @@ function disciplinasSaoSemelhantes(a, b) {
     return similaridade >= 0.75;
 }
 
+// Mescla as sessões recém-extraídas da SED com as já salvas no catálogo compartilhado, em vez de
+// substituir o array inteiro: a tela de registro só mostra as abas/cards do dia, então sobrescrever
+// perderia o que já tinha sido capturado em extrações anteriores (e, rodando automaticamente a cada
+// registro, isso aconteceria o tempo todo). Casa sessões por `aba` e cards por título normalizado
+// (reaproveita normalizarTextoComparacaoMaterialDigital) pra nunca duplicar. Card já catalogado:
+// atualiza metadados leves mas preserva o bimestre em que foi capturado pela primeira vez. Card novo:
+// entra marcado com o bimestre atual.
+function mesclarSessoesMaterialDigital(sessoesExistentes, sessoesNovas, bimestre) {
+    const resultado = (sessoesExistentes || []).map(s => ({ aba: s.aba, cards: (s.cards || []).map(c => Object.assign({}, c)) }));
+
+    (sessoesNovas || []).forEach(sessaoNova => {
+        let sessaoAlvo = resultado.find(s => s.aba === sessaoNova.aba);
+        if (!sessaoAlvo) { sessaoAlvo = { aba: sessaoNova.aba, cards: [] }; resultado.push(sessaoAlvo); }
+
+        (sessaoNova.cards || []).forEach(cardNovo => {
+            const chave = normalizarTextoComparacaoMaterialDigital(cardNovo.titulo);
+            const existente = sessaoAlvo.cards.find(c => normalizarTextoComparacaoMaterialDigital(c.titulo) === chave);
+            if (existente) {
+                existente.horario = cardNovo.horario;
+                existente.codigo = cardNovo.codigo;
+                existente.temTarefa = cardNovo.temTarefa;
+            } else {
+                sessaoAlvo.cards.push(Object.assign({}, cardNovo, { bimestre: bimestre || null }));
+            }
+        });
+    });
+
+    return resultado;
+}
+
 // ---- REST helpers pra coleção shared_material_digital (a extensão não carrega o SDK completo do
 // Firestore, só faz chamadas REST cruas - por isso helpers dedicados em vez de reaproveitar
 // firestoreGetDoc/firestoreSetDoc, que são fixos na coleção app_data). ----
@@ -549,7 +579,7 @@ async function atualizarMaterialDigitalDiretoFirebase(payload) {
         schoolId: schoolId,
         serieChave: serieChave,
         serieOriginal: turmaSED,
-        sessoes: sessoes,
+        sessoes: mesclarSessoesMaterialDigital(clusterExistente ? clusterExistente.data.sessoes : [], sessoes, payload.bimestre),
         atualizadoEm: Date.now(),
         atualizadoPor: (auth.uid || '')
     };

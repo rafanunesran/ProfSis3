@@ -760,6 +760,13 @@ function encontrarModalPorTitulo(tituloAlvo) {
 // (ver encontrarRegistroParaTela) - importante quando o professor tem mais de uma turma no mesmo dia.
 function executarPreenchimentoRegistro(payload, opts) {
     opts = opts || {};
+    // Sincroniza o catálogo de Material Digital silenciosamente antes de preencher - os dois mexem
+    // nas mesmas abas de #tabsNavegacao, então precisa terminar a extração antes de começar a
+    // navegar de novo pra preencher (ver extrairMaterialDigitalSilencioso).
+    extrairMaterialDigitalSilencioso(() => executarPreenchimentoRegistroDepoisDeExtrair(payload, opts));
+}
+
+function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts) {
     const registro = encontrarRegistroParaTela(payload);
 
     // Preenche o textarea com conteudoTexto, marca o Material Digital (se houver) e salva - mesmo
@@ -1424,20 +1431,15 @@ function extrairTodasAsSessoes(callback) {
     proximaAba();
 }
 
-// Botão "Extrair Material Digital": lê Turma/Disciplina do cabeçalho (mesmo padrão de
-// encontrarRegistroParaTela/iniciarExtrairAlunos) e todos os cards de todas as abas/sessões, envia
-// para o background salvar no catálogo compartilhado da escola (coleção shared_material_digital,
-// agrupado por disciplina+série - visível a qualquer turma/professor da escola com essa combinação).
-function iniciarExtrairMaterialDigital() {
-    const btn = document.getElementById('sisprof-btn-extrair-material');
-    if (btn) { btn.textContent = '⏳ Lendo abas...'; btn.disabled = true; }
-
+// Coleta pura (sem UI) usada tanto pelo botão "Extrair Material Digital" quanto pela sincronização
+// silenciosa disparada a cada registro preenchido: espera as abas estabilizarem, lê os cards de
+// todas elas e o cabeçalho de Turma/Disciplina. Devolve { sessoes, turmaSelecionada,
+// disciplinaSelecionada } ou { erro } com a mesma mensagem que já era mostrada no botão manual.
+function coletarSessoesMaterialDigital(callback) {
     aguardarTelaRegistroEstavel(() => {
         extrairTodasAsSessoes((sessoes) => {
-            if (btn) { btn.textContent = '📥 Extrair Material Digital (Atualizar Catálogo)'; btn.disabled = false; }
-
             if (sessoes.length === 0) {
-                alert('Nenhum card de "Material Digital" encontrado nas abas desta tela.');
+                callback({ erro: 'Nenhum card de "Material Digital" encontrado nas abas desta tela.' });
                 return;
             }
 
@@ -1449,23 +1451,75 @@ function iniciarExtrairMaterialDigital() {
             });
 
             if (!disciplinaSelecionada) {
-                alert('Não encontrei a Disciplina no cabeçalho desta tela - o catálogo é compartilhado por disciplina/série, então preciso dela pra salvar corretamente.');
+                callback({ erro: 'Não encontrei a Disciplina no cabeçalho desta tela - o catálogo é compartilhado por disciplina/série, então preciso dela pra salvar corretamente.' });
                 return;
             }
 
-            const payload = { turmaSED: turmaSelecionada, disciplinaSED: disciplinaSelecionada, sessoes: sessoes, timestamp: Date.now() };
-            chrome.runtime.sendMessage({ action: 'UPDATE_MATERIAL_DIGITAL_DB', payload: payload }, (response) => {
-                if (chrome.runtime.lastError) {
-                    alert('⚠️ Erro de comunicação com a extensão: ' + chrome.runtime.lastError.message);
-                    return;
-                }
-                if (response && response.success) {
-                    const totalCards = sessoes.reduce((acc, s) => acc + s.cards.length, 0);
-                    alert('✅ Catálogo atualizado! ' + sessoes.length + ' sessão(ões) e ' + totalCards + ' aula(s) do Material Digital salvas para "' + disciplinaSelecionada + '" - ' + turmaSelecionada + ' (compartilhado com a escola toda).');
-                } else {
-                    alert('⚠️ Não foi possível salvar o catálogo.\n' + (response ? response.error : 'Sem resposta da extensão.'));
-                }
-            });
+            callback({ sessoes: sessoes, turmaSelecionada: turmaSelecionada, disciplinaSelecionada: disciplinaSelecionada });
+        });
+    });
+}
+
+// Acha em qual bimestre cai currentSelectedDate, usando a config de bimestres da escola (sincronizada
+// no profsisAppData quando o professor abre uma turma vinculada à gestão - mesmo dado usado em
+// app.js). Mesma lógica de configBimestres.find já usada lá, duplicada aqui porque a extensão só tem
+// a cópia enviada pelo app, não acesso direto ao Firestore da gestão. null se não houver config ainda.
+function detectarBimestreAtual() {
+    const configBimestres = (profsisAppData && profsisAppData.configBimestres) || [];
+    const data = currentSelectedDate || new Date().toISOString().split('T')[0];
+    const config = configBimestres.find(c => data >= c.inicio && data <= c.fim);
+    return config ? config.bim : null;
+}
+
+// Botão "Extrair Material Digital": lê Turma/Disciplina do cabeçalho (mesmo padrão de
+// encontrarRegistroParaTela/iniciarExtrairAlunos) e todos os cards de todas as abas/sessões, envia
+// para o background salvar no catálogo compartilhado da escola (coleção shared_material_digital,
+// agrupado por disciplina+série - visível a qualquer turma/professor da escola com essa combinação).
+function iniciarExtrairMaterialDigital() {
+    const btn = document.getElementById('sisprof-btn-extrair-material');
+    if (btn) { btn.textContent = '⏳ Lendo abas...'; btn.disabled = true; }
+
+    coletarSessoesMaterialDigital((dados) => {
+        if (btn) { btn.textContent = '📥 Extrair Material Digital (Atualizar Catálogo)'; btn.disabled = false; }
+
+        if (dados.erro) { alert(dados.erro); return; }
+
+        const { sessoes, turmaSelecionada, disciplinaSelecionada } = dados;
+        const payload = { turmaSED: turmaSelecionada, disciplinaSED: disciplinaSelecionada, sessoes: sessoes, bimestre: detectarBimestreAtual(), timestamp: Date.now() };
+        chrome.runtime.sendMessage({ action: 'UPDATE_MATERIAL_DIGITAL_DB', payload: payload }, (response) => {
+            if (chrome.runtime.lastError) {
+                alert('⚠️ Erro de comunicação com a extensão: ' + chrome.runtime.lastError.message);
+                return;
+            }
+            if (response && response.success) {
+                const totalCards = sessoes.reduce((acc, s) => acc + s.cards.length, 0);
+                alert('✅ Catálogo atualizado! ' + sessoes.length + ' sessão(ões) e ' + totalCards + ' aula(s) do Material Digital salvas para "' + disciplinaSelecionada + '" - ' + turmaSelecionada + ' (compartilhado com a escola toda).');
+            } else {
+                alert('⚠️ Não foi possível salvar o catálogo.\n' + (response ? response.error : 'Sem resposta da extensão.'));
+            }
+        });
+    });
+}
+
+// Sincroniza o catálogo de Material Digital em segundo plano, sem alert()/notificação - chamada
+// automaticamente a cada preenchimento de registro (manual ou robô completo, ver
+// executarPreenchimentoRegistro). Roda ANTES do preenchimento em si (nunca em paralelo), porque as
+// duas rotinas navegam clicando pelas mesmas abas de #tabsNavegacao - rodar junto causaria cliques
+// concorrentes. Sempre chama aoConcluir() ao final (sucesso, erro ou nada pra extrair).
+function extrairMaterialDigitalSilencioso(aoConcluir) {
+    coletarSessoesMaterialDigital((dados) => {
+        if (!dados || dados.erro) { aoConcluir(); return; }
+
+        const payload = { turmaSED: dados.turmaSelecionada, disciplinaSED: dados.disciplinaSelecionada, sessoes: dados.sessoes, bimestre: detectarBimestreAtual(), timestamp: Date.now(), silencioso: true };
+        chrome.runtime.sendMessage({ action: 'UPDATE_MATERIAL_DIGITAL_DB', payload: payload }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.warn('[SisProf Ext] Atualização silenciosa do catálogo de Material Digital falhou:', chrome.runtime.lastError.message);
+            } else if (response && response.success) {
+                console.log('[SisProf Ext] Catálogo de Material Digital atualizado silenciosamente:', response.resultado);
+            } else {
+                console.warn('[SisProf Ext] Atualização silenciosa do catálogo de Material Digital não teve sucesso:', response && response.error);
+            }
+            aoConcluir();
         });
     });
 }
