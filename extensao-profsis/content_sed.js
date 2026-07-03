@@ -1,4 +1,8 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
+// v3.1.9 - O fallback de texto via IA (sem registro salvo no ProfSis) só rodava em modo automático;
+// no botão manual sempre abortava com "Nenhum registro (ou rascunho do Estagiário) encontrado...".
+// Agora roda nos dois caminhos, e a mensagem de sucesso avisa quando o texto salvo foi gerado por
+// IA (geradoPorIA em prosseguirComConteudo), pra o professor saber que não é o conteúdo real dele.
 // v3.1.8 - selecionarDataSED desistia na hora (callback(false)) se .ui-datepicker-month/
 // .ui-datepicker-year ainda não existissem no DOM, mesmo pra data de hoje (mês/ano já corretos,
 // nenhuma navegação necessária) - só que o robô automático considera a tela de Registro "pronta"
@@ -952,7 +956,7 @@ function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts) {
     // Preenche o textarea com conteudoTexto, marca o Material Digital (se houver) e salva - mesmo
     // caminho de sempre, usado tanto para o conteúdo real do ProfSis quanto para o texto gerado por
     // IA (ver fallback abaixo).
-    const prosseguirComConteudo = (conteudoTexto, cardsMaterialDigital) => {
+    const prosseguirComConteudo = (conteudoTexto, cardsMaterialDigital, geradoPorIA) => {
         const continuarComMaterialESalvar = () => {
             const finalizarSalvamentoRegistro = (avisoCards) => {
                 setTimeout(() => {
@@ -963,8 +967,9 @@ function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts) {
                     const sufixoAviso = (avisoCards && avisoCards.length > 0)
                         ? ('\n\n⚠️ Não encontrei na tela o(s) card(s) do Material Digital: ' + avisoCards.join(', ') + '. Marque manualmente se necessário.')
                         : '';
-                    if (btnSalvar) { btnSalvar.click(); reportarResultado(opts, true, '✅ Registro preenchido e salvo na SED.' + sufixoAviso); }
-                    else reportarResultado(opts, false, '✅ Registro preenchido! ⚠️ Clique em "Salvar" manualmente.' + sufixoAviso);
+                    const sufixoIA = geradoPorIA ? '\n\n🤖 Sem registro salvo no ProfSis - usei um texto genérico gerado por IA.' : '';
+                    if (btnSalvar) { btnSalvar.click(); reportarResultado(opts, true, '✅ Registro preenchido e salvo na SED.' + sufixoIA + sufixoAviso); }
+                    else reportarResultado(opts, false, '✅ Registro preenchido! ⚠️ Clique em "Salvar" manualmente.' + sufixoIA + sufixoAviso);
                 }, 400);
             };
 
@@ -1013,14 +1018,9 @@ function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts) {
         return;
     }
 
-    // v3.1.0: sem registro salvo no ProfSis - só em modo automático, gera um texto genérico via IA
-    // (reaproveitando a chave/roteador já configurado para "IA Estagiário", ver
-    // gerarTextoRegistroFallbackIA em background.js) em vez de abortar direto. No botão manual mantém
-    // o aviso de sempre - o professor decide o que fazer, nada é gerado sozinho.
-    if (!opts.modoAutomatico) {
-        reportarResultado(opts, false, 'Nenhum registro (ou rascunho do Estagiário) encontrado no ProfSis para a turma/disciplina e data desta tela.');
-        return;
-    }
+    // v3.1.0/v3.1.9: sem registro salvo no ProfSis - gera um texto genérico via IA (reaproveitando a
+    // chave/roteador já configurado para "IA Estagiário", ver gerarTextoRegistroFallbackIA em
+    // background.js) em vez de abortar - tanto no botão manual quanto no robô automático.
     let turmaSED = null, disciplinaSED = null;
     document.querySelectorAll('.font-cabecalho-filtro').forEach(span => {
         const t = span.textContent || '';
@@ -1037,7 +1037,7 @@ function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts) {
             reportarResultado(opts, false, 'Não havia registro salvo e a IA não conseguiu gerar um texto de fallback: ' + motivo);
             return;
         }
-        prosseguirComConteudo(resposta.texto, null);
+        prosseguirComConteudo(resposta.texto, null, true);
     });
 }
 
