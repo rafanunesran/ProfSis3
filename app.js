@@ -1513,7 +1513,7 @@ window.baixarInstaladorExtensaoDesktop = async function() {
     a.click();
     document.body.removeChild(a);
 
-    alert('Baixando instalar_profsis3.bat\\n\\nCOMO INSTALAR:\\n1. Dê dois cliques no arquivo baixado (não precisa descompactar nada).\\n2. Se o Windows avisar "Editor desconhecido", clique em "Mais informações" e depois "Executar assim mesmo".\\n3. Siga as instruções na tela (em português) e feche/reabra o Chrome quando pedido.\\n\\n✅ A partir daí a extensão se atualiza sozinha - você não vai precisar baixar nada de novo.\\n\\n⚠️ Se você já tinha instalado a extensão manualmente antes, remova a versão antiga em chrome://extensions para evitar conflito.');
+    alert('Baixando instalar_profsis3.bat\\n\\nCOMO INSTALAR:\\n1. Dê dois cliques no arquivo baixado (não precisa descompactar nada).\\n2. Se o Windows avisar "Editor desconhecido", clique em "Mais informações" e depois "Executar assim mesmo".\\n3. O Windows vai pedir permissão de administrador (tela azul/cinza) - clique em "Sim". Isso é necessário para configurar o Chrome corretamente.\\n4. Siga as instruções na tela (em português) e feche/reabra o Chrome quando pedido.\\n\\n✅ A partir daí a extensão se atualiza sozinha - você não vai precisar baixar nada de novo.\\n\\n⚠️ Se você já tinha instalado a extensão manualmente antes, remova a versão antiga em chrome://extensions para evitar conflito.\\n\\n💡 Se o computador não permitir dar permissão de administrador (ex: conta de escola), use o link "Modo avançado" abaixo do botão.');
 };
 
 // Baixa o pacote compactado (.crx) assinado, pensado para navegadores mobile como o Lemur Browser,
