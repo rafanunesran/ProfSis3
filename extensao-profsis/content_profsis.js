@@ -1,8 +1,12 @@
 // CONTENT SCRIPT - ProfSis3 (Injetado no site do ProfSis)
+// v2.6.1 - Corrige a chave de localStorage usada para ler os dados do app: agora prioriza o uid do
+// Firebase Auth (mesma prioridade usada por getStorageKey em shared.js ao salvar), em vez do id do
+// perfil - que para contas criadas pelo painel do gestor/admin é só um timestamp desvinculado do uid.
+// Isso fazia a extensão nunca achar 'app_data_<id>' (nada é salvo nessa chave) e ficar sem aulas/horário.
 // v2.6.0 - PROFSIS_UPDATE_STUDENTS agora espera a confirmação real do app.js antes de responder (evita falso "sucesso")
 // Faz a ponte entre o app (postMessage) e a extensão (chrome.runtime)
 
-console.log("🧩 Extensão ProfSis3 ativa na página do ProfSis! (v2.6.0)");
+console.log("🧩 Extensão ProfSis3 ativa na página do ProfSis! (v2.6.1)");
 
 // ==================== DETECÇÃO DE LOGIN ====================
 
@@ -70,7 +74,7 @@ function enviarDadosCompletos() {
     
     try {
         const user = JSON.parse(userJson);
-        const userId = user.id || user.uid || 'unknown';
+        const userId = user.uid || user.id || 'unknown';
         const dataKey = 'app_data_' + userId;
         const dataJson = localStorage.getItem(dataKey);
         
@@ -244,4 +248,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-console.log("✅ Ponte postMessage ↔ chrome.runtime estabelecida! (v2.6.0)");
+console.log("✅ Ponte postMessage ↔ chrome.runtime estabelecida! (v2.6.1)");

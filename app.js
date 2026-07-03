@@ -941,10 +941,18 @@ async function renderDashboard() {
             gradeEscola = gestorData.gradeHoraria || [];
             excecoesGrade = gestorData.gradeHorariaExcecoes || [];
             // [MODIFICAÇÃO] Armazena globalmente para cálculos de nota síncronos
+            // Só persiste se algo realmente mudou desde o último save - evita gravação redundante
+            // a cada render do dashboard. Sem isso, schoolGrade/schoolExceptions ficavam só em
+            // memória até uma ação não relacionada disparar persistirDados(); um professor que
+            // logasse e fosse direto testar a extensão (sem fazer mais nada no ProfSis) podia
+            // pegar grade/horário vazios ou desatualizados no localStorage lido pela extensão.
+            const gradeMudou = JSON.stringify(data.schoolGrade || []) !== JSON.stringify(gradeEscola)
+                || JSON.stringify(data.schoolExceptions || []) !== JSON.stringify(excecoesGrade);
             data.schoolGrade = gradeEscola;
             data.schoolExceptions = excecoesGrade;
             if (gestorData.avisosMural) data.avisosMural = gestorData.avisosMural;
             if (gestorData.registrosAdministrativos) data.registrosAdministrativos = gestorData.registrosAdministrativos;
+            if (gradeMudou) persistirDados();
         }
     } else { gradeEscola = await getGradeEscola(); }
     

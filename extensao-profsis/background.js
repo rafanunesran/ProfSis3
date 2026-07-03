@@ -1,4 +1,8 @@
 // BACKGROUND SCRIPT - ProfSis3 Extension
+// v3.1.1 - Corrige a chave de localStorage lida no fallback de CHECK_PROFSIS_LOGIN (script injetado na
+// aba do ProfSis): agora prioriza o uid do Firebase Auth, mesma prioridade de getStorageKey em
+// shared.js ao salvar - antes priorizava o id do perfil, que para contas criadas pelo painel do
+// gestor/admin é só um timestamp desvinculado do uid, fazendo a extensão nunca achar os dados salvos.
 // v3.1.0 - Fallback de texto de Registro via IA (GERAR_TEXTO_REGISTRO_IA/gerarTextoRegistroFallbackIA),
 // reaproveitando a chave/roteador multi-provedor (Groq/OpenAI/Gemini) já configurado para "IA Estagiário"
 // (lido de system/config_ia no Firestore via firestoreGetDocEm).
@@ -679,7 +683,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                                         const user = JSON.parse(userJson);
                                         if (user && user.email) {
                                             // Pega também os dados do app
-                                            const userId = user.id || user.uid || 'unknown';
+                                            const userId = user.uid || user.id || 'unknown';
                                             const dataKey = 'app_data_' + userId;
                                             const dataJson = localStorage.getItem(dataKey);
                                             let appData = null;
@@ -949,4 +953,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-console.log("✅ Background script carregado! (v2.7.0 - Escrita direta no Firestore)");
+console.log("✅ Background script carregado! (v3.1.1 - Escrita direta no Firestore)");
