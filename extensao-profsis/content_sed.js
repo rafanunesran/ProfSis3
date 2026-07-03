@@ -612,6 +612,10 @@ function marcarCheckboxReplicarFrequencia() {
 
 function executarPreenchimentoChamada(payload, opts) {
     opts = opts || {};
+    // Sincroniza o banco de alunos silenciosamente a cada chamada preenchida (manual ou robô
+    // completo) - os cards da turma já estão carregados na tela neste ponto (ver
+    // preencherChamadaNaTela/aguardarTelaDetalheEExecutar).
+    extrairAlunosSilencioso();
     const normalize = s => s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
     let interagidos = 0;
 
@@ -1255,37 +1259,68 @@ function aguardarCardsEstaveis(callback, tentativas) {
     }, 400);
 }
 
+// Raspa os cards de aluno atualmente na tela (nome + turma selecionada). Usada tanto pelo botão
+// "Extrair Alunos" quanto pela atualização silenciosa disparada ao preencher a chamada. Retorna
+// null se não houver nenhum card na tela.
+function coletarAlunosDaTela() {
+    const cardsAlunos = document.querySelectorAll(SELETOR_CARDS_ALUNO);
+    if (cardsAlunos.length === 0) return null;
+
+    const alunos = [];
+    cardsAlunos.forEach(card => {
+        const nomeElement = card.querySelector('.nome_aluno');
+        if (!nomeElement) return;
+        let nomeCompleto = nomeElement.textContent.trim().replace(/^\d+\s*[-.]?\s*/, '');
+        alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
+    });
+
+    // Detecta a turma selecionada na SED
+    let turmaSelecionada = "Desconhecida";
+    const selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
+    if (selectTurma && selectTurma.options[selectTurma.selectedIndex]) {
+        turmaSelecionada = selectTurma.options[selectTurma.selectedIndex].text.trim();
+    } else {
+        document.querySelectorAll('.font-cabecalho-filtro').forEach(span => {
+            if (span.textContent.includes('Turma:')) turmaSelecionada = span.textContent.replace('Turma:', '').trim();
+        });
+    }
+
+    return { alunos, turmaSelecionada };
+}
+
+// Atualiza o banco de alunos em segundo plano, sem esperar estabilização de cards e sem nenhum
+// alert()/notificação - chamada automaticamente a cada preenchimento de chamada (manual ou pelo
+// robô completo, ver executarPreenchimentoChamada). payload.silencioso avisa o listener
+// SisProf_Update_Students (app.js) para não mostrar a notificação de novos alunos.
+function extrairAlunosSilencioso() {
+    const dados = coletarAlunosDaTela();
+    if (!dados || dados.alunos.length === 0) return;
+
+    const payload = { alunos: dados.alunos, turmaSED: dados.turmaSelecionada, timestamp: Date.now(), silencioso: true };
+    chrome.runtime.sendMessage({ action: 'UPDATE_STUDENTS_DB', payload: payload }, (response) => {
+        if (chrome.runtime.lastError) {
+            console.warn('[SisProf Ext] Atualização silenciosa de alunos falhou:', chrome.runtime.lastError.message);
+            return;
+        }
+        if (response && response.success) console.log('[SisProf Ext] Alunos atualizados silenciosamente:', response.resultado);
+        else console.warn('[SisProf Ext] Atualização silenciosa de alunos não teve sucesso:', response && response.error);
+    });
+}
+
 function iniciarExtrairAlunos() {
     const btn = document.getElementById('sisprof-btn-extrair');
     if (btn) { btn.textContent = '⏳ Aguardando lista carregar...'; btn.disabled = true; }
 
     aguardarCardsEstaveis(() => {
-        const cardsAlunos = document.querySelectorAll(SELETOR_CARDS_ALUNO);
-        if (cardsAlunos.length === 0) {
+        const dados = coletarAlunosDaTela();
+        if (!dados) {
             if (btn) { btn.textContent = '📥 Extrair Alunos (Atualizar Banco)'; btn.disabled = false; }
             return alert('Nenhum aluno encontrado na tela. Abra a tela de chamada da turma desejada primeiro!');
         }
 
         if (btn) btn.textContent = '⏳ Extraindo e atualizando...';
 
-        const alunos = [];
-        cardsAlunos.forEach(card => {
-            const nomeElement = card.querySelector('.nome_aluno');
-            if (!nomeElement) return;
-            let nomeCompleto = nomeElement.textContent.trim().replace(/^\d+\s*[-.]?\s*/, '');
-            alunos.push({ nome: nomeCompleto.toUpperCase(), status: 'Ativo' });
-        });
-
-        // Detecta a turma selecionada na SED
-        let turmaSelecionada = "Desconhecida";
-        const selectTurma = document.querySelector('select#filtroTurma, select[name*="turma"]');
-        if (selectTurma && selectTurma.options[selectTurma.selectedIndex]) {
-            turmaSelecionada = selectTurma.options[selectTurma.selectedIndex].text.trim();
-        } else {
-            document.querySelectorAll('.font-cabecalho-filtro').forEach(span => {
-                if (span.textContent.includes('Turma:')) turmaSelecionada = span.textContent.replace('Turma:', '').trim();
-            });
-        }
+        const { alunos, turmaSelecionada } = dados;
 
         console.log('[SisProf Ext] Extraindo', alunos.length, 'alunos da turma', turmaSelecionada);
 

@@ -1792,11 +1792,13 @@ window.addEventListener('SisProf_Update_Students', async (event) => {
         const resultado = await processarAtualizacaoAlunosExtensao(payload);
         console.log('[SisProf] ✅ Atualização concluída:', resultado);
 
-        const div = document.createElement('div');
-        div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#38a169; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
-        div.innerHTML = `✅ <strong>Alunos Atualizados!</strong><br><span style="font-size:12px; font-weight:normal;">Turma: ${payload.turmaSED}<br>✔️ Novos: ${resultado.adicionados} | 🔄 Reativados: ${resultado.reativados}</span>`;
-        document.body.appendChild(div);
-        setTimeout(() => div.remove(), 6000);
+        if (!payload.silencioso) {
+            const div = document.createElement('div');
+            div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#38a169; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
+            div.innerHTML = `✅ <strong>Alunos Atualizados!</strong><br><span style="font-size:12px; font-weight:normal;">Turma: ${payload.turmaSED}<br>✔️ Novos: ${resultado.adicionados} | 🔄 Reativados: ${resultado.reativados}</span>`;
+            document.body.appendChild(div);
+            setTimeout(() => div.remove(), 6000);
+        }
 
         if (typeof turmaAtual !== 'undefined' && document.getElementById('turmaDetalhe') && document.getElementById('turmaDetalhe').classList.contains('active')) {
             showTurmaTab('estudantes');
@@ -1805,11 +1807,13 @@ window.addEventListener('SisProf_Update_Students', async (event) => {
         window.dispatchEvent(new CustomEvent('SisProf_Update_Students_Result', { detail: { success: true, resultado } }));
     } catch (e) {
         console.error('[SisProf] ❌ Erro ao atualizar alunos:', e);
-        const div = document.createElement('div');
-        div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#e53e3e; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
-        div.innerHTML = `❌ <strong>Erro ao atualizar alunos:</strong><br><span style="font-size:12px; font-weight:normal;">${e.message}</span>`;
-        document.body.appendChild(div);
-        setTimeout(() => div.remove(), 6000);
+        if (!payload.silencioso) {
+            const div = document.createElement('div');
+            div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#e53e3e; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
+            div.innerHTML = `❌ <strong>Erro ao atualizar alunos:</strong><br><span style="font-size:12px; font-weight:normal;">${e.message}</span>`;
+            document.body.appendChild(div);
+            setTimeout(() => div.remove(), 6000);
+        }
 
         window.dispatchEvent(new CustomEvent('SisProf_Update_Students_Result', { detail: { success: false, error: e.message } }));
     }
