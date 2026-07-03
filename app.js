@@ -1446,9 +1446,14 @@ window.baixarArquivosExtensao = async function() {
     const filesToFetch = ['manifest.json', 'background.js', 'content_profsis.js', 'content_sed.js'];
     const files = [];
 
+    // Cache-busting: sem isso o navegador pode servir uma cópia antiga desses arquivos do cache
+    // (já aconteceu de o .zip baixado vir com uma versão anterior da extensão mesmo com o servidor
+    // já atualizado) - o parâmetro força uma busca nova no servidor a cada download.
+    const semCache = '?nocache=' + Date.now();
+
     for (const fileName of filesToFetch) {
         try {
-            const response = await fetch(baseUrl + 'extensao-profsis/' + fileName);
+            const response = await fetch(baseUrl + 'extensao-profsis/' + fileName + semCache, { cache: 'no-store' });
             if (response.ok) {
                 const content = await response.text();
                 files.push({ name: fileName, content: content });
@@ -1459,7 +1464,7 @@ window.baixarArquivosExtensao = async function() {
             console.warn('Erro ao buscar arquivo do servidor:', e);
             // Fallback: tenta buscar da raiz
             try {
-                const response = await fetch(baseUrl + fileName);
+                const response = await fetch(baseUrl + fileName + semCache, { cache: 'no-store' });
                 if (response.ok) {
                     const content = await response.text();
                     files.push({ name: fileName, content: content });
@@ -1501,10 +1506,11 @@ window.baixarInstaladorExtensaoDesktop = async function() {
 
     const filesToFetch = ['installer/instalar_profsis3.bat', 'installer/instalar_profsis3.ps1'];
     const files = [];
+    const semCache = '?nocache=' + Date.now(); // evita pegar uma cópia antiga do cache do navegador
 
     for (const filePath of filesToFetch) {
         try {
-            const response = await fetch(baseUrl + 'extensao-profsis/' + filePath);
+            const response = await fetch(baseUrl + 'extensao-profsis/' + filePath + semCache, { cache: 'no-store' });
             if (!response.ok) throw new Error('Falha ao buscar ' + filePath);
             const content = await response.text();
             files.push({ name: filePath.split('/').pop(), content: content });
@@ -1532,7 +1538,7 @@ window.baixarInstaladorExtensaoDesktop = async function() {
 window.baixarExtensaoMobile = function() {
     const urlApp = window.location.href.split('?')[0].split('#')[0];
     const baseUrl = urlApp.substring(0, urlApp.lastIndexOf('/') + 1);
-    const crxUrl = baseUrl + 'extensao-profsis/dist/profsis3-extension.crx';
+    const crxUrl = baseUrl + 'extensao-profsis/dist/profsis3-extension.crx?nocache=' + Date.now();
 
     if (!confirm('Isso vai baixar o pacote da extensão (.crx) para instalar no Lemur Browser (ou outro navegador mobile compatível).\\n\\nDeseja prosseguir?')) return;
 
