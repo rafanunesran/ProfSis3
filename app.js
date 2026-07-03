@@ -1835,20 +1835,24 @@ window.addEventListener('SisProf_Update_MaterialDigital', async (event) => {
         const resultado = await processarAtualizacaoMaterialDigitalExtensao(payload);
         console.log('[SisProf] ✅ Catálogo de Material Digital atualizado:', resultado);
 
-        const div = document.createElement('div');
-        div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#38a169; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
-        div.innerHTML = `✅ <strong>Catálogo de Material Digital atualizado!</strong><br><span style="font-size:12px; font-weight:normal;">Turma: ${payload.turmaSED}<br>📚 ${resultado.totalCards} aula(s) em ${resultado.totalSessoes} sessão(ões)</span>`;
-        document.body.appendChild(div);
-        setTimeout(() => div.remove(), 6000);
+        if (!payload.silencioso) {
+            const div = document.createElement('div');
+            div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#38a169; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
+            div.innerHTML = `✅ <strong>Catálogo de Material Digital atualizado!</strong><br><span style="font-size:12px; font-weight:normal;">Turma: ${payload.turmaSED}<br>📚 ${resultado.totalCards} aula(s) em ${resultado.totalSessoes} sessão(ões)</span>`;
+            document.body.appendChild(div);
+            setTimeout(() => div.remove(), 6000);
+        }
 
         window.dispatchEvent(new CustomEvent('SisProf_Update_MaterialDigital_Result', { detail: { success: true, resultado } }));
     } catch (e) {
         console.error('[SisProf] ❌ Erro ao atualizar catálogo de Material Digital:', e);
-        const div = document.createElement('div');
-        div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#e53e3e; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
-        div.innerHTML = `❌ <strong>Erro ao atualizar catálogo:</strong><br><span style="font-size:12px; font-weight:normal;">${e.message}</span>`;
-        document.body.appendChild(div);
-        setTimeout(() => div.remove(), 6000);
+        if (!payload.silencioso) {
+            const div = document.createElement('div');
+            div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#e53e3e; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
+            div.innerHTML = `❌ <strong>Erro ao atualizar catálogo:</strong><br><span style="font-size:12px; font-weight:normal;">${e.message}</span>`;
+            document.body.appendChild(div);
+            setTimeout(() => div.remove(), 6000);
+        }
 
         window.dispatchEvent(new CustomEvent('SisProf_Update_MaterialDigital_Result', { detail: { success: false, error: e.message } }));
     }
@@ -2066,6 +2070,37 @@ function disciplinasSaoSemelhantes(a, b) {
     return similaridade >= 0.75;
 }
 
+// Mescla as sessões recém-extraídas da SED com as já salvas no catálogo compartilhado, em vez de
+// substituir o array inteiro: a tela de registro só mostra as abas/cards do dia, então sobrescrever
+// perderia o que já tinha sido capturado em extrações anteriores (e, rodando automaticamente a cada
+// registro, isso aconteceria o tempo todo). Casa sessões por `aba` e cards por título normalizado
+// (reaproveita normalizarTextoComparacaoMaterialDigital) pra nunca duplicar. Card já catalogado:
+// atualiza metadados leves mas preserva o bimestre em que foi capturado pela primeira vez. Card novo:
+// entra marcado com o bimestre atual. Duplicada em background.js (mesma convenção já usada pras
+// outras funções de casamento de Material Digital - contextos isolados).
+function mesclarSessoesMaterialDigital(sessoesExistentes, sessoesNovas, bimestre) {
+    const resultado = (sessoesExistentes || []).map(s => ({ aba: s.aba, cards: (s.cards || []).map(c => Object.assign({}, c)) }));
+
+    (sessoesNovas || []).forEach(sessaoNova => {
+        let sessaoAlvo = resultado.find(s => s.aba === sessaoNova.aba);
+        if (!sessaoAlvo) { sessaoAlvo = { aba: sessaoNova.aba, cards: [] }; resultado.push(sessaoAlvo); }
+
+        (sessaoNova.cards || []).forEach(cardNovo => {
+            const chave = normalizarTextoComparacaoMaterialDigital(cardNovo.titulo);
+            const existente = sessaoAlvo.cards.find(c => normalizarTextoComparacaoMaterialDigital(c.titulo) === chave);
+            if (existente) {
+                existente.horario = cardNovo.horario;
+                existente.codigo = cardNovo.codigo;
+                existente.temTarefa = cardNovo.temTarefa;
+            } else {
+                sessaoAlvo.cards.push(Object.assign({}, cardNovo, { bimestre: bimestre || null }));
+            }
+        });
+    });
+
+    return resultado;
+}
+
 // Grava o catálogo de "Material Digital" (cards de aula do currículo, extraídos da SED) na coleção
 // compartilhada `shared_material_digital`, num cluster por escola+série+disciplina (mesmo padrão de
 // acesso direto ao `db` do SDK compat usado em sincronizarFaltasCompartilhadas). Diferente de alunos, o
@@ -2099,7 +2134,7 @@ async function processarAtualizacaoMaterialDigitalExtensao(payload) {
         schoolId: schoolId,
         serieChave: serieChave,
         serieOriginal: turmaSED,
-        sessoes: sessoes,
+        sessoes: mesclarSessoesMaterialDigital(docExistente ? docExistente.data().sessoes : [], sessoes, payload.bimestre),
         atualizadoEm: Date.now(),
         atualizadoPor: (currentUser.nome || currentUser.email || currentUser.id || '')
     };
@@ -3688,7 +3723,7 @@ function renderizarSeletorCardsMaterialDigitalDeLista(cards, selecionadosAtuais,
         const tituloAttr = (card.titulo || '').replace(/"/g, '&quot;');
         html += `<label style="display:flex; align-items:flex-start; gap:6px; font-size:12px; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#fff; cursor:pointer;">
             <input type="checkbox" class="chk-card-material-digital" data-id="${card.id}" data-titulo="${tituloAttr}" data-codigo="${card.codigo || ''}" ${checked} onchange="onToggleCardMaterialDigital(this, '${containerId}')">
-            <span>${card.titulo}${card.temTarefa ? '<div style="margin-top:4px; display:inline-block; background:#e6fff2; color:#26A95E; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:10px;">Aula com Tarefa</div>' : ''}</span>
+            <span>${card.titulo}${card.temTarefa ? '<div style="margin-top:4px; display:inline-block; background:#e6fff2; color:#26A95E; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:10px;">Aula com Tarefa</div>' : ''}${card.bimestre ? `<div style="margin-top:4px; display:inline-block; background:#ebf8ff; color:#2b6cb0; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:10px; margin-left:4px;">${card.bimestre}º Bim</div>` : ''}</span>
         </label>`;
     });
     html += `</div></div>`;
