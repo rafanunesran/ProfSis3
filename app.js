@@ -398,9 +398,16 @@ async function abrirModalPerfil() {
             <p style="font-size:11px; color:#718096; margin-bottom:10px;">Use a extensão do Chrome para enviar suas chamadas e registros automaticamente para a SED.</p>
             
             <div style="background:#edf2f7; padding:10px; border-radius:6px; border:1px solid #cbd5e0; margin-top:10px;">
-                <strong style="font-size:12px; color:#2d3748; display:block; margin-bottom:5px;">Extensão do Chrome (Computador)</strong>
-                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">A extensão é a forma mais robusta de integração, ideal para navegar por várias turmas.</p>
-                <button class="btn btn-sm btn-info" onclick="baixarArquivosExtensao()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">🧩 Baixar Arquivos da Extensão</button>
+                <strong style="font-size:12px; color:#2d3748; display:block; margin-bottom:5px;">💻 Extensão do Chrome (Computador)</strong>
+                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Instala a extensão e configura o Chrome para ela se atualizar sozinha daqui pra frente (nunca mais precisa baixar de novo).</p>
+                <button class="btn btn-sm btn-info" onclick="baixarInstaladorExtensaoDesktop()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">⬇️ Instalar no Chrome (Computador)</button>
+                <p style="font-size:10px; color:#a0aec0; margin-top:6px; margin-bottom:0;"><a href="#" onclick="baixarArquivosExtensao(); return false;" style="color:#a0aec0;">Modo avançado: baixar só os arquivos (Carregar sem compactação)</a></p>
+            </div>
+
+            <div style="background:#edf2f7; padding:10px; border-radius:6px; border:1px solid #cbd5e0; margin-top:10px;">
+                <strong style="font-size:12px; color:#2d3748; display:block; margin-bottom:5px;">📱 Extensão no Celular (Lemur Browser)</strong>
+                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Baixa o pacote compactado (.crx) para instalar no Lemur Browser.</p>
+                <button class="btn btn-sm btn-info" onclick="baixarExtensaoMobile()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">⬇️ Baixar Extensão para o Celular</button>
             </div>
         </div>
     `;
@@ -1482,6 +1489,61 @@ window.baixarArquivosExtensao = async function() {
     URL.revokeObjectURL(url);
 
     alert('Arquivo baixado: SisProf-Extensao.zip\\n\\nCOMO INSTALAR:\\n1. Extraia o .zip em uma pasta (ex: "Robo SisProf").\\n2. Abra chrome://extensions/ (ou Gerenciar Extensões) no Chrome.\\n3. Ative o "Modo do desenvolvedor" no canto superior direito.\\n4. Clique no botão "Carregar sem compactação" (canto superior esquerdo).\\n5. Selecione a pasta extraída.\\n\\n⚠️ IMPORTANTE: Após instalar, RECARREGUE (F5) esta página do SisProf para que a extensão passe a funcionar nela!');
+};
+
+// Baixa o instalador (.bat + .ps1) que configura o Chrome para instalar a extensão sozinho
+// e mantê-la atualizada automaticamente daqui pra frente (sem Chrome Web Store).
+window.baixarInstaladorExtensaoDesktop = async function() {
+    const urlApp = window.location.href.split('?')[0].split('#')[0];
+    const baseUrl = urlApp.substring(0, urlApp.lastIndexOf('/') + 1);
+
+    if (!confirm('Isso vai baixar um instalador (.bat) que configura o Chrome para instalar a extensão do ProfSis3 e mantê-la atualizada sozinha, sem precisar baixar de novo no futuro.\\n\\nDeseja prosseguir?')) return;
+
+    const filesToFetch = ['installer/instalar_profsis3.bat', 'installer/instalar_profsis3.ps1'];
+    const files = [];
+
+    for (const filePath of filesToFetch) {
+        try {
+            const response = await fetch(baseUrl + 'extensao-profsis/' + filePath);
+            if (!response.ok) throw new Error('Falha ao buscar ' + filePath);
+            const content = await response.text();
+            files.push({ name: filePath.split('/').pop(), content: content });
+        } catch (e) {
+            alert('Erro ao baixar o instalador. Verifique se os arquivos estão publicados no servidor.\\n\\n' + e.message);
+            return;
+        }
+    }
+
+    const zipBlob = criarZipSimples(files);
+    const url = URL.createObjectURL(zipBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Instalar-ProfSis3.zip';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    alert('Arquivo baixado: Instalar-ProfSis3.zip\\n\\nCOMO INSTALAR:\\n1. Extraia o .zip em qualquer pasta.\\n2. Dê dois cliques em "instalar_profsis3.bat".\\n3. Se o Windows avisar "Editor desconhecido", clique em "Mais informações" e depois "Executar assim mesmo".\\n4. Siga as instruções na tela (em português) e feche/reabra o Chrome quando pedido.\\n\\n✅ A partir daí a extensão se atualiza sozinha - você não vai precisar baixar nada de novo.\\n\\n⚠️ Se você já tinha instalado a extensão manualmente antes, remova a versão antiga em chrome://extensions para evitar conflito.');
+};
+
+// Baixa o pacote compactado (.crx) assinado, pensado para navegadores mobile como o Lemur Browser,
+// que aceitam carregar uma extensão "compactada" diretamente (sem passar por pasta extraída).
+window.baixarExtensaoMobile = function() {
+    const urlApp = window.location.href.split('?')[0].split('#')[0];
+    const baseUrl = urlApp.substring(0, urlApp.lastIndexOf('/') + 1);
+    const crxUrl = baseUrl + 'extensao-profsis/dist/profsis3-extension.crx';
+
+    if (!confirm('Isso vai baixar o pacote da extensão (.crx) para instalar no Lemur Browser (ou outro navegador mobile compatível).\\n\\nDeseja prosseguir?')) return;
+
+    const a = document.createElement('a');
+    a.href = crxUrl;
+    a.download = 'profsis3-extension.crx';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    alert('Baixando profsis3-extension.crx\\n\\nCOMO INSTALAR NO LEMUR BROWSER:\\n1. Abra o menu de extensões do Lemur.\\n2. Procure a opção de carregar/instalar uma extensão compactada.\\n3. Selecione o arquivo profsis3-extension.crx baixado.\\n\\nDica: de vez em quando, use o botão de atualizar extensões do Lemur para checar se saiu uma versão nova.');
 };
 
 async function sincronizarAlunosNuvem() {
