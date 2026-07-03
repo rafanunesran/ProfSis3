@@ -1,4 +1,15 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
+// v3.1.7 - A tela de Registro tem um campo "Bimestre" (<select name="Model.NumeroBimestre">,
+// nativo) que a extensão nunca selecionava. Agora selecionarBimestreRegistro calcula o bimestre da
+// data selecionada (detectarBimestreAtual, mesma função já usada pro catálogo de Material Digital)
+// e marca o <select> logo depois da data e antes de esperar as abas de "Horário de Aula" - as abas
+// exibidas podem depender do bimestre escolhido.
+// v3.1.6 - preencherRegistroNaTela esperava um setTimeout fixo de 1200ms depois de selecionar a data
+// antes de prosseguir - mesma família de bug do calendário/Chamada: a SED (Blazor) monta as abas de
+// "Horário de Aula" (#tabsNavegacao) aos poucos, e esse delay fixo às vezes prosseguia antes de
+// todas as abas terem renderizado (ex.: aula dobradinha). Agora reaproveita
+// aguardarTelaRegistroEstavel (já usada em extrairMaterialDigitalSilencioso) pra só prosseguir
+// quando a contagem de abas parar de mudar.
 // v3.1.5 - selecionarHorarioAulaChamada (v3.1.4) fechava o menu do widget "Horário de Aula" logo
 // depois de clicar no checkbox, sem esperar nada - a SED (Blazor) processa esse clique de forma
 // assíncrona, então fechar cedo demais interrompia o processamento e a seleção revertia sozinha pra
@@ -731,12 +742,24 @@ function preencherRegistroNaTela(btn, opts) {
             reportarResultado(opts, false, 'Não consegui selecionar o dia ' + formatarDataBR(currentSelectedDate) + ' no calendário da SED. A SED só libera lançamento dentro de um prazo (ex.: "5 dias corridos") - se o prazo desse mês já venceu, não é possível lançar essa data.');
             return;
         }
-        setTimeout(() => {
-            const payload = extHistory[currentSelectedDate];
-            if (payload) executarPreenchimentoRegistro(payload, opts);
-            else reportarResultado(opts, false, 'Sem dados de registro para esta data.');
-            if (btn) { btn.textContent = oldText; btn.disabled = false; }
-        }, 1200);
+        selecionarBimestreRegistro((selecionouBimestre) => {
+            if (!selecionouBimestre) {
+                if (btn) { btn.textContent = oldText; btn.disabled = false; }
+                reportarResultado(opts, false, 'Não consegui selecionar o "Bimestre" na tela de Registro para a data ' + formatarDataBR(currentSelectedDate) + '.');
+                return;
+            }
+            // Espera as abas de "Horário de Aula" (#tabsNavegacao) pararem de aparecer antes de
+            // prosseguir - a SED (Blazor) monta essas abas aos poucos (ver aguardarTelaRegistroEstavel,
+            // já usada em extrairMaterialDigitalSilencioso), então um delay fixo às vezes prosseguia
+            // antes de todas as abas (ex.: aula dobradinha) terem renderizado. Espera depois do
+            // bimestre porque as abas exibidas podem depender de qual bimestre está selecionado.
+            aguardarTelaRegistroEstavel(() => {
+                const payload = extHistory[currentSelectedDate];
+                if (payload) executarPreenchimentoRegistro(payload, opts);
+                else reportarResultado(opts, false, 'Sem dados de registro para esta data.');
+                if (btn) { btn.textContent = oldText; btn.disabled = false; }
+            });
+        });
     });
 }
 
@@ -1612,6 +1635,32 @@ function detectarBimestreAtual() {
     const data = currentSelectedDate || new Date().toISOString().split('T')[0];
     const config = configBimestres.find(c => data >= c.inicio && data <= c.fim);
     return config ? config.bim : null;
+}
+
+// Seleciona o "Bimestre" (<select name="Model.NumeroBimestre">, nativo - diferente do widget
+// "Horário de Aula" da Chamada) da tela de Registro de Aulas Detalhes, com base no bimestre
+// calculado pra data selecionada (detectarBimestreAtual, já usada pro catálogo de Material Digital).
+function selecionarBimestreRegistro(callback) {
+    callback = callback || function () {};
+    const select = document.querySelector('select[name="Model.NumeroBimestre"]');
+    const bimestreAlvo = detectarBimestreAtual();
+    if (!select || !bimestreAlvo) { callback(true); return; } // nada configurado/nenhum campo nesta tela - segue em frente
+
+    if (String(select.value) === String(bimestreAlvo)) { callback(true); return; } // já estava certo
+
+    const temOpcao = Array.from(select.options).some(o => o.value === String(bimestreAlvo));
+    if (!temOpcao) { callback(false); return; } // bimestre calculado não existe nesta tela - não força um valor errado
+
+    select.value = String(bimestreAlvo);
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    // Confirma que a mudança realmente "colou" antes de prosseguir - mesma cautela já aplicada aos
+    // outros campos (calendário/"Horário de Aula" da Chamada): a SED pode reagir de forma assíncrona
+    // (Blazor), inclusive reconstruindo as abas de "Horário de Aula" com base no bimestre escolhido.
+    aguardarCondicao(
+        () => String(select.value) === String(bimestreAlvo),
+        () => callback(true),
+        () => callback(false)
+    );
 }
 
 // Botão "Extrair Material Digital": lê Turma/Disciplina do cabeçalho (mesmo padrão de

@@ -158,12 +158,11 @@ async function gerarTextoRegistroFallbackIA(disciplina, turmaNome) {
     const apiKeys = (configData && configData.apiKey) ? configData.apiKey.split(',').map(k => k.trim()).filter(k => k) : [];
     if (apiKeys.length === 0) return { success: false, error: 'Chave de IA não configurada (peça ao Administrador para configurar em Super Admin > Migração > "Configurar Chave").' };
 
-    const promptText = 'Escreva, em português do Brasil, um texto de 1 a 2 frases curtas, simples e '
-        + 'genéricas para preencher o campo "Registro de Aula" de uma aula de "' + disciplina + '" '
-        + 'da turma "' + turmaNome + '". NÃO invente um tema, atividade ou conteúdo específico - use '
-        + 'algo genérico e seguro como continuidade de um trabalho em andamento (ex.: retomada de '
-        + 'conteúdo, atividades de reforço, feedback aos alunos). Retorne APENAS o texto puro, sem '
-        + 'aspas, sem markdown, sem explicações.';
+    const promptText = 'Escreva, em português do Brasil, um texto de 1 a 3 palavras, bem curto e '
+        + 'genérico, para preencher o campo "Registro de Aula" de uma aula de "' + disciplina + '" '
+        + 'da turma "' + turmaNome + '" (ex.: "Atividade", "Atividade de recuperação", "Revisão de '
+        + 'conteúdo"). NÃO invente um tema, atividade ou conteúdo específico - use algo genérico e '
+        + 'seguro. Retorne APENAS o texto puro, sem aspas, sem markdown, sem explicações.';
 
     let lastError = '';
     for (const currentKey of apiKeys) {
