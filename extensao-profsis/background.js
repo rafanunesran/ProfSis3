@@ -953,4 +953,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-console.log("✅ Background script carregado! (v3.1.1 - Escrita direta no Firestore)");
+console.log("✅ Background script carregado! (v" + chrome.runtime.getManifest().version + " - Escrita direta no Firestore)");

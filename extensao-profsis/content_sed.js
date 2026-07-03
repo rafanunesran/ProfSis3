@@ -1,4 +1,8 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
+// v3.1.3 - O número de versão exibido no painel flutuante (mostrarTelaStatus/injetarMenu) e nos
+// console.log estava escrito à mão nessas strings, dessincronizado do manifest.json - por isso
+// continuava mostrando uma versão antiga mesmo depois de bumps de versão. Agora lê sempre
+// chrome.runtime.getManifest().version, então nunca mais fica desatualizado nessas duas telas/logs.
 // v3.1.2 - Corrige selecionarDataSED: os <select> de mês/ano do calendário (.ui-datepicker-month/
 // .ui-datepicker-year) só têm UMA <option> (a do mês exibido), então escrever .value neles nunca
 // navegava de verdade - datas retroativas que caíam no mês anterior (ex.: pendência do dia 30 com o
@@ -33,7 +37,7 @@
 // de Material Digital em CADA aba do Registro (não só a ativa). Botão "Extrair Alunos" agora só
 // aparece na tela de chamada (espelhando o botão de Material, que já só aparecia no Registro).
 
-    console.log("🤖 content_sed.js EXECUTADO - v3.1.2");
+    console.log("🤖 content_sed.js EXECUTADO - v" + chrome.runtime.getManifest().version);
 
 // ==================== VARIÁVEIS GLOBAIS ====================
 let extHistory = {};
@@ -57,7 +61,7 @@ function mostrarTelaStatus() {
     div.style.cssText = 'position:fixed; top:20px; right:20px; width:340px; background:white; border:3px solid #3182ce; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5);';
     div.innerHTML = 
         '<div style="background:#3182ce; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; text-align:center;">' +
-            '🤖 Robô SisProf <span style="font-size:10px; opacity:0.7;">v3.1.1</span>' +
+            '🤖 Robô SisProf <span style="font-size:10px; opacity:0.7;">v' + chrome.runtime.getManifest().version + '</span>' +
         '</div>' +
         '<div id="sisprof-status-content" style="text-align:center;">' +
             '<p style="font-size:13px; color:#4a5568;">⏳ Verificando conexão com o ProfSis...</p>' +
@@ -384,7 +388,7 @@ function injetarMenu() {
     div.id = 'sisprof-menu-flutuante';
     div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;';
     div.innerHTML = '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
-            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v3.1.1</span></span>' +
+            '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v' + chrome.runtime.getManifest().version + '</span></span>' +
         '<div style="display:flex; gap:8px; align-items:center;"><span id="sisprof-user-name" style="font-size:11px; opacity:0.9; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
         '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;">▶</span><span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span></div></div>' +
         '<div id="sisprof-conteudo"><p style="margin:0 0 10px 0; color:#4a5568; font-size:13px;">✅ Conectado ao ProfSis!</p>' +

@@ -6,7 +6,7 @@
 // v2.6.0 - PROFSIS_UPDATE_STUDENTS agora espera a confirmação real do app.js antes de responder (evita falso "sucesso")
 // Faz a ponte entre o app (postMessage) e a extensão (chrome.runtime)
 
-console.log("🧩 Extensão ProfSis3 ativa na página do ProfSis! (v2.6.1)");
+console.log("🧩 Extensão ProfSis3 ativa na página do ProfSis! (v" + chrome.runtime.getManifest().version + ")");
 
 // ==================== DETECÇÃO DE LOGIN ====================
 
@@ -248,4 +248,4 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 });
 
-console.log("✅ Ponte postMessage ↔ chrome.runtime estabelecida! (v2.6.1)");
+console.log("✅ Ponte postMessage ↔ chrome.runtime estabelecida! (v" + chrome.runtime.getManifest().version + ")");
