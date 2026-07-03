@@ -1,4 +1,9 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
+// v3.2.1 - Na tela de Registro, quando a turma não tem dobradinha (sem abas em #tabsNavegacao), o
+// "Horário de Aula" também é o widget multi-select (.multi-select-container) - mesmo usado na
+// Chamada -, não um campo já visível como se assumia. selecionarHorarioAulaChamada virou
+// selecionarHorarioAulaMultiSelect (compartilhada pelas duas telas) e passou a ser chamada também
+// aqui antes de esperar (aguardarCondicao, não mais uma checagem única) o textarea aparecer.
 // v3.2.0 - Removido o fallback de texto por IA (e o botão "Configurar Chave Groq" adicionado na
 // v3.1.10) - quando não há registro nem rascunho salvo no ProfSis, agora sorteia uma atividade
 // genérica de uma lista fixa (ATIVIDADES_GENERICAS_REGISTRO) em vez de chamar IA. O método de puxar
@@ -309,8 +314,8 @@ function contarAulasNoDia(idTurma, dataStr) {
 }
 
 // Mesma busca de contarAulasNoDia, mas devolvendo os blocos (com inicio/fim) em vez da contagem -
-// usada por selecionarHorarioAulaChamada pra saber qual(is) horário(s) marcar no widget "Horário de
-// Aula" da tela de Chamada.
+// usada por selecionarHorarioAulaMultiSelect pra saber qual(is) horário(s) marcar no widget "Horário
+// de Aula" (usado tanto na tela de Chamada quanto na de Registro, quando a turma não tem dobradinha).
 function montarBlocosDaTurmaNoDia(idTurma, dataStr) {
     if (!dataStr || !idTurma) return [];
     const gradeEscola = profsisAppData.schoolGrade || [];
@@ -334,13 +339,14 @@ function normalizarHorarioAula(s) {
     return (s || '').trim().replace(/(^|\D)(\d)(?=:)/g, '$10$2');
 }
 
-// Seleciona, no widget "Horário de Aula" (.multi-select-container) da tela de Chamada, o(s)
-// checkbox(es) cujo horário bate com os blocos que a turma da tela atual tem no dia selecionado. A
-// SED deixa esse campo em branco por padrão ("Selecione ...") e o Salvar não sabe pra qual horário a
-// frequência é sem isso - nem o robô automático nem o botão manual nunca preenchiam esse campo antes.
-// Clica nos checkboxes (nunca define .checked/.value direto) porque é o clique que a SED escuta pra
-// sincronizar o <select multiple id="inputAula"> escondido atrás do widget.
-function selecionarHorarioAulaChamada(callback) {
+// Seleciona, no widget "Horário de Aula" (.multi-select-container), o(s) checkbox(es) cujo horário
+// bate com os blocos que a turma da tela atual tem no dia selecionado - usado tanto na tela de
+// Chamada quanto na de Registro (quando a turma não tem dobradinha, essa tela usa o MESMO widget em
+// vez de abas). Se o botão já mostra o horário certo (ex.: só existe 1 horário possível e a SED já
+// deixa pré-selecionado), não mexe em nada. Senão, clica nos checkboxes (nunca define .checked/.value
+// direto, porque é o clique que a SED escuta pra sincronizar o <select multiple id="inputAula">
+// escondido atrás do widget) até bater com o horário certo.
+function selecionarHorarioAulaMultiSelect(callback) {
     callback = callback || function () {};
     const idTurma = encontrarIdTurmaDaTelaAtual();
     const blocos = idTurma ? montarBlocosDaTurmaNoDia(idTurma, currentSelectedDate) : [];
@@ -736,7 +742,7 @@ function preencherChamadaNaTela(btn, opts) {
             buttons.forEach(b => { const t = (b.innerText || b.value || '').toLowerCase(); if (t.includes('pesquisar') || t.includes('buscar') || t.includes('listar')) btnBuscar = b; });
             if (btnBuscar) btnBuscar.click();
             setTimeout(() => {
-                selecionarHorarioAulaChamada((selecionouHorario) => {
+                selecionarHorarioAulaMultiSelect((selecionouHorario) => {
                     if (!selecionouHorario) {
                         if (btn) { btn.textContent = oldText; btn.disabled = false; }
                         reportarResultado(opts, false, 'Não consegui selecionar o "Horário de Aula" na tela de Chamada - o campo continuou em "Selecione ...". Tente novamente ou selecione o horário manualmente antes de preencher.');
@@ -1005,18 +1011,25 @@ function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts) {
 
         const tabs = Array.from(document.querySelectorAll('#tabsNavegacao .nav-link'));
         if (tabs.length === 0) {
-            // Tela sem abas de "Horário de Aula" - o campo já deveria estar visível direto.
-            const areas = document.querySelectorAll('textarea[name="o.Descricao"]');
-            if (areas.length === 0) {
-                reportarResultado(opts, false, 'Não encontrei o campo de texto do registro nesta tela.\n\nSe a SED exigir escolher o "Horário de Aula" antes de mostrar o campo, selecione-o manualmente e clique em "Preencher Registro" de novo.');
-                return;
-            }
-            areas.forEach(txt => {
-                txt.value = conteudoTexto;
-                txt.dispatchEvent(new Event('input', { bubbles: true }));
-                txt.dispatchEvent(new Event('change', { bubbles: true }));
+            // Tela sem abas de "Horário de Aula" (turma sem dobradinha) - aqui esse campo é o MESMO
+            // widget multi-select da tela de Chamada (.multi-select-container), não abas. Confirma
+            // ele primeiro (não mexe se já estiver certo) e só então espera (aguardarCondicao, em vez
+            // de checar uma vez só) o campo de texto aparecer - ele pode não existir ainda mesmo com
+            // o widget certo, a tela leva um instante pra renderizar.
+            selecionarHorarioAulaMultiSelect(() => {
+                aguardarCondicao(
+                    () => document.querySelectorAll('textarea[name="o.Descricao"]').length > 0,
+                    () => {
+                        document.querySelectorAll('textarea[name="o.Descricao"]').forEach(txt => {
+                            txt.value = conteudoTexto;
+                            txt.dispatchEvent(new Event('input', { bubbles: true }));
+                            txt.dispatchEvent(new Event('change', { bubbles: true }));
+                        });
+                        continuarComMaterialESalvar();
+                    },
+                    () => reportarResultado(opts, false, 'Não encontrei o campo de texto do registro nesta tela.\n\nSe a SED exigir escolher o "Horário de Aula" antes de mostrar o campo, selecione-o manualmente e clique em "Preencher Registro" de novo.')
+                );
             });
-            continuarComMaterialESalvar();
             return;
         }
 
