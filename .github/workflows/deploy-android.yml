@@ -40,8 +40,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Sync extension sources + build bundles
-        run: npm run prebuild
+      - name: Sync extension sources + build bundles + cap sync
+        # npx cap sync android regenera android/capacitor-cordova-android-plugins/ (gitignored -
+        # nao vai pro repo, e' sempre regenerado pelo Capacitor CLI) e copia www/ + config para o
+        # projeto Android. Sem isso, o gradle falha ao nao achar cordova.variables.gradle.
+        run: npm run cap:sync
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
