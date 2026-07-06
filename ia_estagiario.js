@@ -13,9 +13,26 @@ const TOP_K_CHUNKS_TIER2_ESTAGIARIO = 4;
 
 const MESES_AGENDA = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
+// Diferencia Ensino Médio de Ensino Fundamental quando os dois usam "Ano" pro mesmo número (ex: "1º
+// Ano" do Fundamental vs "1º Ano EM"/"1º Ano do Ensino Médio") - sem isso, extrairSerieChaveMaterialDigital
+// sozinha devolveria "1" pros dois, misturando os documentos dos dois segmentos na busca. Prefixa com
+// "EM" só quando o texto original menciona "EM" ou "Médio". Duplicada em admin.js (mesma convenção já
+// usada no projeto pra funções pequenas usadas em contextos/arquivos diferentes).
+function resolverSerieChaveCurriculoOficial(serieOriginal) {
+    const digito = extrairSerieChaveMaterialDigital(serieOriginal);
+    if (!digito) return '';
+    const original = String(serieOriginal || '');
+    // Sigla "EM" só em maiúsculas (ex: "1º Ano EM") - em minúsculas "em" é só a preposição comum do
+    // português (ex: "6º Ano em Período Integral"), que não deve disparar a detecção.
+    const temSiglaEM = /\bEM\b/.test(original);
+    const semAcento = original.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const temPalavraMedio = /medio/.test(semAcento);
+    return (temSiglaEM || temPalavraMedio) ? ('EM' + digito) : digito;
+}
+
 async function buscarLinhasCurriculoOficial(serie) {
     if (typeof db === 'undefined' || !db) return [];
-    const serieChave = extrairSerieChaveMaterialDigital(serie);
+    const serieChave = resolverSerieChaveCurriculoOficial(serie);
     if (!serieChave) return [];
 
     try {
@@ -34,7 +51,7 @@ async function buscarLinhasCurriculoOficial(serie) {
 
 async function buscarChunksCurriculoEmbedding(serie) {
     if (typeof db === 'undefined' || !db) return [];
-    const serieChave = extrairSerieChaveMaterialDigital(serie);
+    const serieChave = resolverSerieChaveCurriculoOficial(serie);
     if (!serieChave) return [];
 
     try {
@@ -177,7 +194,8 @@ const ROTULOS_TIPO_DOCUMENTO_ESTAGIARIO = {
     caderno_aluno: 'Caderno do Aluno',
     caderno_professor: 'Caderno do Professor',
     material_digital_pdf: 'Material Digital',
-    guia_priorizado: 'Guia Priorizado'
+    guia_priorizado: 'Guia Priorizado',
+    outros: 'Outros'
 };
 
 // Monta o bloco de texto injetado no prompt, instruindo a IA a reaproveitar os dados reais em vez de

@@ -4381,6 +4381,7 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
                     <option value="compensacao" ${t?.tipo === 'compensacao' ? 'selected' : ''}>Compensação de Faltas</option>
                     <option value="caderno_auto" ${t?.tipo === 'caderno_auto' ? 'selected' : ''}>Caderno (Automático)</option>
                     <option value="participacao" ${t?.tipo === 'participacao' ? 'selected' : ''}>Participação (Automático)</option>
+                    <option value="avaliacao_gestor" ${t?.tipo === 'avaliacao_gestor' ? 'selected' : ''}>Avaliação do Gestor (Automático)</option>
                 </select>
             </label>
 
@@ -4409,7 +4410,16 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
                 <p style="font-size:12px; color:#c53030; margin:0;">Inicia em 10. Queda para 5 se faltas > 30%. Deduções: -2 por Ocorrência Rápida, -3 por Disciplinar, -0,5 por Engajamento Médio (M) e -1 por Não desenvolveu (N).</p>
             </div>
 
-            ${(t && (t.tipo === 'compensacao' || t.tipo === 'caderno_auto' || t.tipo === 'participacao')) ? `
+            <div id="infoAvaliacaoGestor" style="display:none; margin-top:15px; background:#faf5ff; padding:15px; border-radius:8px; border:1px solid #e9d8fd;">
+                <p style="font-size:12px; color:#553c9a; margin:0 0 10px 0;">Puxa as notas de uma avaliação enviada pela gestão (ex: Prova Paulista). Se sua disciplina não foi testada nessa avaliação, a nota do aluno será a média geral dele nas disciplinas que foram.</p>
+                <label>Avaliação:
+                    <select id="trabalhoAvaliacaoGestorRef">
+                        ${getAvaliacoesGestorDaTurma().map(a => `<option value="${a.id}" ${t?.id_avaliacao_gestor == a.id ? 'selected' : ''}>${a.nome} (${a.bimestre}º Bim.)</option>`).join('') || '<option value="">Nenhuma avaliação da gestão encontrada para esta turma</option>'}
+                    </select>
+                </label>
+            </div>
+
+            ${(t && (t.tipo === 'compensacao' || t.tipo === 'caderno_auto' || t.tipo === 'participacao' || t.tipo === 'avaliacao_gestor')) ? `
                 <div style="margin-top:15px; padding:12px; background:#fff5f5; border:1px solid #feb2b2; border-radius:8px; text-align:center;">
                     <p style="font-size:11px; color:#c53030; margin-bottom:10px; font-weight:bold;">⚠️ Ajustes manuais detectados?</p>
                     <p style="font-size:10px; color:#742a2a; margin-bottom:10px;">Clique abaixo para apagar suas edições manuais e voltar a seguir o cálculo dinâmico do sistema.</p>
@@ -4434,12 +4444,14 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
         toggleCamposTrabalho('caderno_auto');
     } else if (t && t.tipo === 'participacao') {
         toggleCamposTrabalho('participacao');
+    } else if (t && t.tipo === 'avaliacao_gestor') {
+        toggleCamposTrabalho('avaliacao_gestor');
     } else if (!t) {
         toggleCamposTrabalho('comum');
     }
 
     // Se estiver editando uma compensação, o tipo não pode ser alterado
-    if (t && (t.tipo === 'compensacao' || t.tipo === 'caderno_auto' || t.tipo === 'participacao')) {
+    if (t && (t.tipo === 'compensacao' || t.tipo === 'caderno_auto' || t.tipo === 'participacao' || t.tipo === 'avaliacao_gestor')) {
         document.getElementById('trabalhoTipo').disabled = true;
     }
 
@@ -4447,11 +4459,12 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
 }
 
 function toggleCamposTrabalho(tipo) {
-    document.getElementById('campoPesoComum').style.display = (tipo === 'rubrica' || tipo === 'compensacao' || tipo === 'caderno_auto' || tipo === 'participacao') ? 'none' : 'block';
+    document.getElementById('campoPesoComum').style.display = (tipo === 'rubrica' || tipo === 'compensacao' || tipo === 'caderno_auto' || tipo === 'participacao' || tipo === 'avaliacao_gestor') ? 'none' : 'block';
     document.getElementById('camposRubrica').style.display = tipo === 'rubrica' ? 'block' : 'none';
     document.getElementById('infoCompensacao').style.display = tipo === 'compensacao' ? 'block' : 'none';
     document.getElementById('infoCadernoAuto').style.display = tipo === 'caderno_auto' ? 'block' : 'none';
     document.getElementById('infoParticipacao').style.display = tipo === 'participacao' ? 'block' : 'none';
+    document.getElementById('infoAvaliacaoGestor').style.display = tipo === 'avaliacao_gestor' ? 'block' : 'none';
 
     if (tipo === 'rubrica' && document.getElementById('listaRubricasInputs').children.length === 0) {
         adicionarRubricaInput();
@@ -4481,6 +4494,7 @@ async function salvarTrabalho(e) {
     
     let pesoTotal = 0;
     let rubricas = [];
+    let idAvaliacaoGestor = null;
 
     if (tipo === 'rubrica') {
         const nomes = document.querySelectorAll('.rubrica-nome');
@@ -4495,6 +4509,11 @@ async function salvarTrabalho(e) {
     } else if (tipo === 'compensacao' || tipo === 'caderno_auto' || tipo === 'participacao') {
         pesoTotal = 10; // Peso fixo para compensação
         rubricas = []; // Sem rubricas para compensação
+    } else if (tipo === 'avaliacao_gestor') {
+        pesoTotal = 10; // Peso fixo, mesma convenção dos demais tipos automáticos
+        rubricas = [];
+        idAvaliacaoGestor = document.getElementById('trabalhoAvaliacaoGestorRef').value;
+        if (!idAvaliacaoGestor) return alert('Selecione uma avaliação da gestão.');
     } else {
         pesoTotal = parseFloat(document.getElementById('trabalhoPeso').value) || 0;
     }
@@ -4507,6 +4526,7 @@ async function salvarTrabalho(e) {
             t.titulo = titulo;
             t.peso = pesoTotal; // Atualiza peso (será 10 para compensação)
             t.rubricas = rubricas; // Atualiza rubricas (vazio para compensação)
+            if (t.tipo === 'avaliacao_gestor') t.id_avaliacao_gestor = idAvaliacaoGestor;
 
             if (t.tipo === 'rubrica') {
                 atualizarNotasRubricaPosEdicao(t.id);
@@ -4522,6 +4542,7 @@ async function salvarTrabalho(e) {
             rubricas: rubricas,
             bimestre: currentBimestreTrabalhos
         };
+        if (tipo === 'avaliacao_gestor') novoTrabalho.id_avaliacao_gestor = idAvaliacaoGestor;
         data.trabalhos.push(novoTrabalho);
     }
     
@@ -6631,6 +6652,7 @@ function renderEstudanteGeral() {
                     <p style="margin:2px 0;"><strong>Clube:</strong> ${t.clube_1 || '-'} / ${t.clube_2 || '-'}</p>
                     <p style="margin:2px 0;"><strong>Eletiva:</strong> ${t.eletiva_1 || '-'} / ${t.eletiva_2 || '-'}</p>
                 </div>
+                <div id="notasOficiaisTutoriaCard" style="margin-top:8px;"></div>
             </div>
         `;
     }
@@ -6680,17 +6702,32 @@ function renderEstudanteGeral() {
     
     const divNotas = document.getElementById('estudanteGeralNotas');
     const h3Notas = divNotas.previousElementSibling; // Seleciona o título <h3>Notas...
-    
+
     const divComp = document.getElementById('estudanteGeralCompensacoes');
     const h3Comp = divComp.previousElementSibling; // Seleciona o título <h3>Compensações...
 
     // Garante que tudo esteja visível para Professor e Gestor
     if(h3Notas) h3Notas.style.display = 'block';
     divNotas.style.display = 'block';
-    
+
     if(h3Comp) h3Comp.style.display = 'block';
     divComp.style.display = 'block';
-    
+
+    // Notas Oficiais (Mapão Bimestral / Avaliações da Gestão): vivem no doc do gestor. Se o usuário
+    // atual JÁ é o gestor, os dados estão em `data` direto; senão, busca entre-documentos (assíncrono).
+    if (isGestor) {
+        const htmlNotasOficiais = montarTabelaNotasOficiaisHtml({
+            notasBimestraisOficiais: data.notasBimestraisOficiais,
+            avaliacoesGestor: data.avaliacoesGestor,
+            notasAvaliacoesGestor: data.notasAvaliacoesGestor
+        }, nomeNorm);
+        divNotas.innerHTML = htmlNotasOficiais;
+        const elNotasTutoria = document.getElementById('notasOficiaisTutoriaCard');
+        if (elNotasTutoria) elNotasTutoria.innerHTML = htmlNotasOficiais;
+    } else {
+        preencherNotasOficiaisEstudante(nomeNorm);
+    }
+
     // Preenche com placeholders se estiver vazio (caso o gestor não tenha dados de notas carregados)
     if (!divNotas.innerHTML || divNotas.innerHTML.trim() === '') {
         divNotas.innerHTML = '<p class="empty-state">Sem notas registradas.</p>';
@@ -6698,6 +6735,32 @@ function renderEstudanteGeral() {
     if (!divComp.innerHTML || divComp.innerHTML.trim() === '') {
         divComp.innerHTML = '<p class="empty-state">Sem compensações.</p>';
     }
+}
+
+// Busca as Notas Oficiais (Mapão/Avaliações da Gestão) entre-documentos, para quem não é gestor
+// (mesmo padrão de getGradeEscola(), app.js:737-744). Roda de forma assíncrona/não-bloqueante -
+// não impede o resto de renderEstudanteGeral(), só preenche a seção quando a busca terminar.
+async function preencherNotasOficiaisEstudante(nomeNorm) {
+    if (!currentUser || !currentUser.schoolId) return;
+    const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+    const gestorData = await getData('app_data', key);
+    if (!gestorData) return;
+
+    // Evita sobrescrever se o usuário já navegou para outro estudante enquanto a busca rodava
+    if (!estudanteAtualDetalhe || estudanteAtualDetalhe.nome_completo.trim().toUpperCase() !== nomeNorm) return;
+
+    const html = montarTabelaNotasOficiaisHtml({
+        notasBimestraisOficiais: gestorData.notasBimestraisOficiais,
+        avaliacoesGestor: gestorData.avaliacoesGestor,
+        notasAvaliacoesGestor: gestorData.notasAvaliacoesGestor
+    }, nomeNorm);
+
+    if (!html) return;
+
+    const divNotas = document.getElementById('estudanteGeralNotas');
+    if (divNotas) divNotas.innerHTML = html;
+    const elNotasTutoria = document.getElementById('notasOficiaisTutoriaCard');
+    if (elNotasTutoria) elNotasTutoria.innerHTML = html;
 }
 
 async function buscarFichaTutoriaGlobal(alunoId) {
