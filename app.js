@@ -716,6 +716,7 @@ function showScreen(screenId, evt) {
     if (screenId === 'aeeVisaoGeral') renderAeeVisaoGeral();
     if (screenId === 'ocorrenciasGestor') renderOcorrenciasGestor();
     if (screenId === 'tutoriasGestor') renderTutoriasGestor();
+    if (screenId === 'notasOficiaisGestor') renderNotasOficiaisGestor();
     if (screenId === 'horariosGestor') renderHorariosGestor();
 }
 
@@ -2409,7 +2410,10 @@ function showTurmaTab(tab, evt) {
         renderOcorrencias();
     }
     if (tab === 'atrasos') renderAtrasos();
-    if (tab === 'trabalhos') renderTrabalhos();
+    if (tab === 'trabalhos') {
+        renderTrabalhos();
+        carregarCacheAvaliacoesGestor().then(() => renderTrabalhos());
+    }
     if (tab === 'compensacoes') renderCompensacoes();
     if (tab === 'caderno') renderCaderno();
     if (tab === 'mapeamento') renderMapeamento();
@@ -4115,6 +4119,62 @@ function getNotaParticipacao(estudanteId, bimestre) {
     return Math.max(0, Math.min(10, parseFloat(notaFinal.toFixed(1))));
 }
 
+// --- AVALIAÇÕES DO GESTOR (ex: Prova Paulista) — usadas como tipo automático de atividade ---
+// Vivem no doc do GESTOR (app_data_school_<schoolId>_gestor), separado do doc pessoal do professor,
+// por isso precisam ser buscadas entre-documentos (mesmo padrão de getGradeEscola(), app.js:737-744).
+let cacheAvaliacoesGestorEscola = null; // { avaliacoesGestor: [], notasAvaliacoesGestor: [] }
+
+async function carregarCacheAvaliacoesGestor() {
+    if (currentViewMode === 'gestor') {
+        cacheAvaliacoesGestorEscola = {
+            avaliacoesGestor: data.avaliacoesGestor || [],
+            notasAvaliacoesGestor: data.notasAvaliacoesGestor || []
+        };
+        return;
+    }
+    if (!currentUser || !currentUser.schoolId) {
+        cacheAvaliacoesGestorEscola = { avaliacoesGestor: [], notasAvaliacoesGestor: [] };
+        return;
+    }
+    const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+    const gestorData = await getData('app_data', key);
+    cacheAvaliacoesGestorEscola = {
+        avaliacoesGestor: (gestorData && gestorData.avaliacoesGestor) ? gestorData.avaliacoesGestor : [],
+        notasAvaliacoesGestor: (gestorData && gestorData.notasAvaliacoesGestor) ? gestorData.notasAvaliacoesGestor : []
+    };
+}
+
+// Turmas do professor guardam `masterId` apontando para a turma-base do gestor (app.js:2228,2240);
+// turmas do próprio gestor não têm masterId, então usam o próprio id.
+function getAvaliacoesGestorDaTurma() {
+    if (!cacheAvaliacoesGestorEscola) return [];
+    const turma = (data.turmas || []).find(t => t.id == turmaAtual);
+    const idTurmaGrupo = turma ? (turma.masterId || turma.id) : null;
+    if (!idTurmaGrupo) return [];
+    return cacheAvaliacoesGestorEscola.avaliacoesGestor.filter(a => a.id_turma == idTurmaGrupo);
+}
+
+function getNotaAvaliacaoGestor(estudanteId, idAvaliacaoGestor, disciplinaDaTurma) {
+    if (!cacheAvaliacoesGestorEscola || !idAvaliacaoGestor) return '';
+    const estudante = (data.estudantes || []).find(e => e.id == estudanteId);
+    if (!estudante) return '';
+    const nomeNorm = normNomeNotasOficiais(estudante.nome_completo);
+
+    const registros = cacheAvaliacoesGestorEscola.notasAvaliacoesGestor.filter(n =>
+        n.id_avaliacao == idAvaliacaoGestor && normNomeNotasOficiais(n.nome_estudante_norm) === nomeNorm
+    );
+    if (registros.length === 0) return '';
+
+    // Disciplina foi testada especificamente nesta avaliação -> usa a nota exata
+    const especifico = registros.find(n => disciplinasSaoSemelhantes(n.disciplina, disciplinaDaTurma || ''));
+    if (especifico) return especifico.valor;
+
+    // Disciplina não testada (ex: Artes na Prova Paulista) -> usa a média geral do aluno nesta avaliação
+    const soma = registros.reduce((acc, n) => acc + (parseFloat(String(n.valor).replace(',', '.')) || 0), 0);
+    const media = soma / registros.length;
+    return Math.min(10, parseFloat(media.toFixed(1)));
+}
+
 function renderTrabalhos() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
     const trabalhos = (data.trabalhos || []).filter(t => t.id_turma == turmaAtual && (t.bimestre == currentBimestreTrabalhos || (!t.bimestre && currentBimestreTrabalhos == 1)));
@@ -4214,6 +4274,10 @@ function renderTrabalhos() {
                                 if (t.tipo === 'compensacao') valor = getNotaCompensacao(e.id, currentBimestreTrabalhos);
                                 if (t.tipo === 'caderno_auto') valor = getNotaCaderno(e.id, currentBimestreTrabalhos);
                                 if (t.tipo === 'participacao') valor = getNotaParticipacao(e.id, currentBimestreTrabalhos);
+                                if (t.tipo === 'avaliacao_gestor') {
+                                    const turmaObj = (data.turmas || []).find(tu => tu.id == turmaAtual);
+                                    valor = getNotaAvaliacaoGestor(e.id, t.id_avaliacao_gestor, turmaObj ? turmaObj.disciplina : '');
+                                }
                             }
 
                             const peso = parseFloat(t.peso) || 0;
@@ -4527,6 +4591,10 @@ function recalcularMediaUI(estudanteId) {
             if (t.tipo === 'compensacao') valor = getNotaCompensacao(estudanteId, currentBimestreTrabalhos);
             if (t.tipo === 'caderno_auto') valor = getNotaCaderno(estudanteId, currentBimestreTrabalhos);
             if (t.tipo === 'participacao') valor = getNotaParticipacao(estudanteId, currentBimestreTrabalhos);
+            if (t.tipo === 'avaliacao_gestor') {
+                const turmaObj = (data.turmas || []).find(tu => tu.id == turmaAtual);
+                valor = getNotaAvaliacaoGestor(estudanteId, t.id_avaliacao_gestor, turmaObj ? turmaObj.disciplina : '');
+            }
         }
 
         const peso = parseFloat(t.peso) || 0;
