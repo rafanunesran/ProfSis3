@@ -1,5 +1,216 @@
 // --- MÓDULO: ESTAGIÁRIO (IA E GERAÇÃO DE DOCUMENTOS) ---
 
+// --- FUNDAMENTAÇÃO NO CURRÍCULO OFICIAL (Tier 1: planilha de escopo-sequência / Tier 2: PDFs com
+// busca semântica) - ver Base Curricular Oficial no Super Admin (admin.js) pra como esses dados
+// chegam nas coleções curriculo_escopo_sequencia / curriculo_chunks_embeddings. Compartilhado entre
+// todas as escolas (sem schoolId), ao contrário do catálogo de Material Digital.
+
+const cacheCurriculoTier1Estagiario = new Map(); // chave serieChave -> linhas (todas as disciplinas)
+const cacheCurriculoTier2Estagiario = new Map(); // chave serieChave -> chunks com embedding (todas as disciplinas)
+const CONFIANCA_MINIMA_TIER1_ESTAGIARIO = 0.55;
+const LIMIAR_SIMILARIDADE_TIER2_ESTAGIARIO = 0.68;
+const TOP_K_CHUNKS_TIER2_ESTAGIARIO = 4;
+
+async function buscarLinhasCurriculoOficial(serie) {
+    if (typeof db === 'undefined' || !db) return [];
+    const serieChave = extrairSerieChaveMaterialDigital(serie);
+    if (!serieChave) return [];
+
+    try {
+        let linhas = cacheCurriculoTier1Estagiario.get(serieChave);
+        if (!linhas) {
+            const snap = await db.collection('curriculo_escopo_sequencia').where('serieChave', '==', serieChave).get();
+            linhas = snap.docs.map(d => d.data());
+            cacheCurriculoTier1Estagiario.set(serieChave, linhas);
+        }
+        return linhas;
+    } catch (e) {
+        console.warn('[Estagiário][Tier1] Erro ao buscar planilha oficial:', e);
+        return [];
+    }
+}
+
+async function buscarChunksCurriculoEmbedding(serie) {
+    if (typeof db === 'undefined' || !db) return [];
+    const serieChave = extrairSerieChaveMaterialDigital(serie);
+    if (!serieChave) return [];
+
+    try {
+        let chunks = cacheCurriculoTier2Estagiario.get(serieChave);
+        if (!chunks) {
+            const snap = await db.collection('curriculo_chunks_embeddings').where('serieChaves', 'array-contains', serieChave).get();
+            chunks = snap.docs.map(d => d.data());
+            cacheCurriculoTier2Estagiario.set(serieChave, chunks);
+        }
+        return chunks;
+    } catch (e) {
+        console.warn('[Estagiário][Tier2] Erro ao buscar trechos com embedding:', e);
+        return [];
+    }
+}
+
+// Pontua a melhor linha da planilha oficial contra o "Tema" digitado pelo professor, reaproveitando
+// os mesmos utilitários de comparação de texto já usados pro catálogo de Material Digital (em vez de
+// criar uma segunda lógica de fuzzy-match no mesmo arquivo). Cascata: cobertura de tokens exata ->
+// prefixo -> Levenshtein (via disciplinasSaoSemelhantes, que já encapsula essa cascata pra strings
+// curtas) aplicada token a token contra o texto pré-normalizado de cada linha.
+function selecionarMelhorLinhaCurriculo(tema, linhasDaDisciplina) {
+    const temaNorm = normalizarTextoComparacaoMaterialDigital(tema);
+    if (!temaNorm || !linhasDaDisciplina || linhasDaDisciplina.length === 0) return { linha: null, confiante: false };
+
+    const tokensTema = temaNorm.split(' ').filter(t => t.length >= 3);
+    if (tokensTema.length === 0) return { linha: null, confiante: false };
+
+    let melhor = null;
+    let melhorScore = 0;
+
+    linhasDaDisciplina.forEach(linha => {
+        const textoLinha = linha.textoBuscavel || '';
+        if (!textoLinha) return;
+
+        if (textoLinha.includes(temaNorm)) {
+            const score = 1;
+            if (score > melhorScore) { melhorScore = score; melhor = linha; }
+            return;
+        }
+
+        const tokensBatidos = tokensTema.filter(tok => textoLinha.includes(tok)).length;
+        const score = tokensBatidos / tokensTema.length;
+        if (score > melhorScore) { melhorScore = score; melhor = linha; }
+    });
+
+    return { linha: melhor, score: melhorScore, confiante: melhorScore >= CONFIANCA_MINIMA_TIER1_ESTAGIARIO };
+}
+
+function similaridadeCossenoEstagiario(vecA, vecB) {
+    if (!vecA || !vecB || vecA.length !== vecB.length) return 0;
+    let produto = 0, normaA = 0, normaB = 0;
+    for (let i = 0; i < vecA.length; i++) {
+        produto += vecA[i] * vecB[i];
+        normaA += vecA[i] * vecA[i];
+        normaB += vecB[i] * vecB[i];
+    }
+    if (normaA === 0 || normaB === 0) return 0;
+    return produto / (Math.sqrt(normaA) * Math.sqrt(normaB));
+}
+
+// Mesma classificação de prefixo já usada no roteador multi-IA (linha ~235 mais abaixo), extraída
+// aqui como predicado reutilizável só pra identificar qual chave configurada é do Gemini (a única que
+// serve pra gerar embeddings hoje).
+function identificarProvedorChaveEstagiario(key) {
+    if (key.startsWith('sk-') && !key.startsWith('sk-ant-')) return 'openai';
+    if (key.startsWith('gsk_')) return 'groq';
+    return 'gemini';
+}
+
+async function obterEmbeddingTemaEstagiario(texto, apiKey) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: { parts: [{ text: texto }] }, taskType: 'RETRIEVAL_QUERY' }),
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (!response.ok) return null;
+        const json = await response.json();
+        return (json.embedding && json.embedding.values) ? json.embedding.values : null;
+    } catch (e) {
+        clearTimeout(timeoutId);
+        return null;
+    }
+}
+
+// Orquestra a busca nas duas fontes oficiais (planilha + PDFs) uma única vez por clique em "Gerar
+// Estrutura". Nunca lança erro pra fora - qualquer falha em qualquer uma das duas fontes só reduz o
+// quanto a geração fica fundamentada, nunca bloqueia o professor de gerar o plano.
+async function montarContextoCurriculoOficial(disciplina, serie, tema, apiKeys) {
+    const contexto = { tier1: null, tier1Confiante: false, tier2Trechos: [], grounded: false };
+
+    try {
+        const linhas = (await buscarLinhasCurriculoOficial(serie))
+            .filter(l => disciplinasSaoSemelhantes(disciplina, l.disciplinaOriginal));
+        if (linhas.length > 0) {
+            const { linha, confiante } = selecionarMelhorLinhaCurriculo(tema, linhas);
+            if (linha) {
+                contexto.tier1 = linha;
+                contexto.tier1Confiante = confiante;
+                contexto.grounded = true;
+            }
+        }
+    } catch (e) {
+        console.warn('[Estagiário][Tier1] Erro ao montar contexto:', e);
+    }
+
+    try {
+        const chaveGemini = (apiKeys || []).find(k => identificarProvedorChaveEstagiario(k) === 'gemini');
+        if (chaveGemini) {
+            const chunks = (await buscarChunksCurriculoEmbedding(serie))
+                .filter(c => !c.disciplinaOriginal || disciplinasSaoSemelhantes(disciplina, c.disciplinaOriginal));
+            if (chunks.length > 0) {
+                const embeddingTema = await obterEmbeddingTemaEstagiario(`${disciplina} - ${serie} - ${tema}`, chaveGemini);
+                if (embeddingTema) {
+                    const top = chunks
+                        .map(c => ({ chunk: c, similaridade: similaridadeCossenoEstagiario(embeddingTema, c.embedding) }))
+                        .filter(r => r.similaridade >= LIMIAR_SIMILARIDADE_TIER2_ESTAGIARIO)
+                        .sort((a, b) => b.similaridade - a.similaridade)
+                        .slice(0, TOP_K_CHUNKS_TIER2_ESTAGIARIO);
+                    if (top.length > 0) {
+                        contexto.tier2Trechos = top.map(r => r.chunk);
+                        contexto.grounded = true;
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('[Estagiário][Tier2] Erro ao montar contexto:', e);
+    }
+
+    return contexto;
+}
+
+const ROTULOS_TIPO_DOCUMENTO_ESTAGIARIO = {
+    caderno_aluno: 'Caderno do Aluno',
+    caderno_professor: 'Caderno do Professor',
+    material_digital_pdf: 'Material Digital',
+    guia_priorizado: 'Guia Priorizado'
+};
+
+// Monta o bloco de texto injetado no prompt, instruindo a IA a reaproveitar os dados reais em vez de
+// inventar. Quando não há nada fundamentado, ainda assim retorna um aviso explícito no prompt (em vez
+// de simplesmente omitir a seção), pra IA não tratar o silêncio como "invente à vontade".
+function montarBlocoContextoOficial(contexto) {
+    if (!contexto || !contexto.grounded) {
+        return '\n\n[CONTEXTO OFICIAL]\nNenhuma correspondência foi encontrada na base curricular oficial pra este tema. Gere o conteúdo com cautela e deixe claro que os códigos de habilidade são uma sugestão a ser revisada pelo professor.';
+    }
+
+    let bloco = '\n\n[CONTEXTO OFICIAL - USE ESTES DADOS REAIS, NÃO INVENTE OUTROS CÓDIGOS OU CONTEÚDOS]\n';
+
+    if (contexto.tier1) {
+        const l = contexto.tier1;
+        const habilidadesStr = (l.habilidades || []).map(h => `${h.codigo} - ${h.texto}`).join('\n');
+        bloco += `Fonte: planilha oficial de escopo-sequência (${l.fonteArquivo || ''}, aba ${l.fonteAba || ''}).\n`;
+        bloco += `Título da aula oficial: ${l.titulo || ''}\n`;
+        bloco += `Unidade Temática: ${l.unidadeTematica || ''}\n`;
+        bloco += `Objeto de Conhecimento: ${l.objetoConhecimento || ''}\n`;
+        bloco += `Conteúdo oficial: ${l.conteudo || ''}\n`;
+        bloco += `Objetivos oficiais: ${l.objetivos || ''}\n`;
+        bloco += `Habilidades (código - texto):\n${habilidadesStr}\n`;
+    }
+
+    if (contexto.tier2Trechos && contexto.tier2Trechos.length > 0) {
+        bloco += '\nTrechos de documentos oficiais relacionados ao tema:\n';
+        contexto.tier2Trechos.forEach(chunk => {
+            const rotulo = ROTULOS_TIPO_DOCUMENTO_ESTAGIARIO[chunk.tipoDocumento] || chunk.tipoDocumento || 'Material Oficial';
+            bloco += `- [${rotulo} - ${chunk.fonteArquivo || ''}, p.${chunk.paginaInicio || '?'}]: ${chunk.texto}\n`;
+        });
+    }
+
+    return bloco;
+}
+
 function abrirModalGerarDocumentoIA() {
     // Extrai nomes de série de forma inteligente, ignorando formatos colados ou separados (ex: "7º Ano A", "7A", "7ºA" -> "7º Ano", "7", "7º")
     const getSerieNome = (nome) => {
@@ -189,6 +400,11 @@ async function gerarDocumentoIA() {
         let dadosEstruturados = {};
         let promptText = '';
 
+        // Busca a fundamentação oficial (planilha de escopo-sequência + PDFs com busca semântica)
+        // antes de montar o prompt, pra IA usar dados reais em vez de "conhecimento profundo" de
+        // memória - ver montarContextoCurriculoOficial no topo do arquivo.
+        const contextoOficial = await montarContextoCurriculoOficial(disciplina, serie, tema, apiKeys);
+
         if (tipo === 'plano_aula') {
             let templateBase = document.getElementById('iaDocPrompt') ? document.getElementById('iaDocPrompt').value : '';
             if (!templateBase || templateBase.trim() === '') {
@@ -211,6 +427,10 @@ async function gerarDocumentoIA() {
             if (faltaEstruturaJson) {
                 promptText += `\n\n[FORMATO DE SAÍDA OBRIGATÓRIO]\nRetorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:\n{"aprendizagem_essencial": "Habilidade central", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades com códigos", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
             }
+
+            // Injeta a fundamentação oficial (planilha/PDFs) sempre, independente do prompt usado -
+            // mesmo princípio dos blocos [DADOS OBRIGATÓRIOS]/[FORMATO...] acima.
+            promptText += montarBlocoContextoOficial(contextoOficial);
         }
 
         let success = false;
@@ -329,12 +549,31 @@ async function gerarDocumentoIA() {
             throw new Error("A IA não retornou os dados no formato esperado. Por favor, tente gerar novamente.");
         }
 
+        // Quando a planilha oficial deu uma correspondência confiante, os campos com fonte 1:1 na
+        // planilha (habilidades/conteúdos/objetivos) são sobrescritos com o dado real - não passam
+        // pela IA, que ocasionalmente parafraseia ou corrompe um código alfanumérico mesmo tendo o
+        // contexto correto no prompt.
+        if (contextoOficial.tier1Confiante && contextoOficial.tier1) {
+            const linhaOficial = contextoOficial.tier1;
+            if ((linhaOficial.habilidades || []).length > 0) {
+                dadosEstruturados.habilidades = linhaOficial.habilidades.map(h => `${h.codigo} - ${h.texto}`).join('\n');
+            }
+            if (linhaOficial.conteudo) dadosEstruturados.conteudos = linhaOficial.conteudo;
+            if (linhaOficial.objetivos) dadosEstruturados.objetivos = linhaOficial.objetivos;
+        }
+
         closeModal('modalGerarDocumentoIA');
         // Catálogo de Material Digital compartilhado pra essa disciplina+série (mesma coleção que
         // qualquer turma/professor da escola alimenta) - buscado aqui (função já é async) pra não
         // precisar tornar abrirModalRevisaoDocumento assíncrona.
         const cardsMaterialDigitalDisponiveis = await obterCardsCatalogoCompartilhado(disciplina, serie);
-        abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasNomesStr, duracaoAulasStr, bimestreAtual, dadosEstruturados, semanaInicioISO, semanaFimISO, cardsMaterialDigitalDisponiveis);
+        const resumoFundamentacao = {
+            grounded: contextoOficial.grounded,
+            tier1Confiante: contextoOficial.tier1Confiante,
+            fonte: contextoOficial.tier1 ? `${contextoOficial.tier1.fonteArquivo || ''} (aba ${contextoOficial.tier1.fonteAba || ''})` : null,
+            qtdTrechosTier2: (contextoOficial.tier2Trechos || []).length
+        };
+        abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasNomesStr, duracaoAulasStr, bimestreAtual, dadosEstruturados, semanaInicioISO, semanaFimISO, cardsMaterialDigitalDisponiveis, resumoFundamentacao);
 
     } catch (e) {
         console.error(e);
@@ -345,7 +584,7 @@ async function gerarDocumentoIA() {
     }
 }
 
-function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasStr, duracaoAulas, bimestreAtual, dados, semanaInicioISO, semanaFimISO, cardsMaterialDigitalDisponiveis) {
+function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasStr, duracaoAulas, bimestreAtual, dados, semanaInicioISO, semanaFimISO, cardsMaterialDigitalDisponiveis, resumoFundamentacao) {
     if (!document.getElementById('modalRevisaoDocumento')) {
         const div = document.createElement('div');
         div.id = 'modalRevisaoDocumento';
@@ -410,6 +649,11 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
     // aos rascunhos de registrosAula (automações).
     const cardsMaterialDigitalHtml = renderizarSeletorCardsMaterialDigitalDeLista(cardsMaterialDigitalDisponiveis || [], [], 'revDocCardsMaterialDigital');
 
+    // Aviso de fundamentação na base curricular oficial (planilha/PDFs) - ver montarContextoCurriculoOficial.
+    const fundamentacaoHtml = resumoFundamentacao && resumoFundamentacao.grounded
+        ? `<div style="background:#f0fff4; border:1px solid #9ae6b4; color:#276749; padding:8px 12px; border-radius:6px; margin-bottom:15px; font-size:13px;">✅ Fundamentado no Currículo Paulista${resumoFundamentacao.fonte ? ` (${resumoFundamentacao.fonte})` : ''}${resumoFundamentacao.qtdTrechosTier2 ? ` + ${resumoFundamentacao.qtdTrechosTier2} trecho(s) de material oficial` : ''}.</div>`
+        : `<div style="background:#fffaf0; border:1px solid #fbd38d; color:#975a16; padding:8px 12px; border-radius:6px; margin-bottom:15px; font-size:13px;">⚠️ Gerado sem fundamentação na base curricular oficial — revise os códigos de habilidade com atenção.</div>`;
+
     document.getElementById('modalRevisaoDocumento').innerHTML = `
         <div class="modal-content" style="max-width: 700px;">
             <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
@@ -428,6 +672,7 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
                 </div>
             </div>
             <p style="font-size:13px; color:#666; margin-bottom:15px;">Abaixo está a estrutura pré-gerada. Fique à vontade para ajustar o texto antes de exportar o arquivo final.</p>
+            ${fundamentacaoHtml}
             ${formHtml}
             ${cardsMaterialDigitalHtml}
             <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">

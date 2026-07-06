@@ -515,6 +515,12 @@ function renderBackupOptions() {
                         <p style="font-size: 13px; color: #666;">Configure a chave da API para evitar vazamentos no GitHub.</p>
                         <button class="btn btn-primary" onclick="configurarChaveIA()">🔑 Configurar Chave</button>
                     </div>
+
+                    <div style="flex: 1; background: #f0fff4; padding: 15px; border-radius: 8px; border: 1px solid #9ae6b4;">
+                        <h3>📚 Base Curricular Oficial</h3>
+                        <p style="font-size: 13px; color: #666;">Envie a planilha de escopo-sequência e os PDFs oficiais (Cadernos, Material Digital, Guia Priorizado) que o Estagiário IA usa como fonte de verdade.</p>
+                        <button class="btn btn-success" onclick="abrirModalBaseCurricular()">📚 Gerenciar Base Curricular</button>
+                    </div>
                 </div>
             </div>
         `;
@@ -643,12 +649,563 @@ async function migrarDadosAEECompartilhado() {
 async function configurarChaveIA() {
     const configData = await getData('system', 'config_ia') || {};
     const chaveAtual = configData.apiKey || '';
-    
+
     const novaChave = prompt("Insira a chave da API do Google Gemini:\n(Se quiser adicionar mais de uma, separe por vírgula)", chaveAtual);
-    
+
     if (novaChave !== null) {
         configData.apiKey = novaChave.trim();
         await saveData('system', 'config_ia', configData);
         alert('Chave de API salva com segurança no banco de dados!');
+    }
+}
+
+// --- BASE CURRICULAR OFICIAL (fundamentação do Estagiário IA) ---
+// Coleções compartilhadas entre TODAS as escolas (Currículo Paulista é o mesmo pra rede toda, ao
+// contrário do catálogo de Material Digital que é por escola): curriculo_escopo_sequencia (linhas da
+// planilha oficial), curriculo_chunks_embeddings (trechos de PDF com embedding pra busca semântica) e
+// curriculo_ingest_manifest (um doc por arquivo já enviado, pra saber o que já foi processado).
+
+function abrirModalBaseCurricular() {
+    if (!document.getElementById('modalBaseCurricular')) {
+        const div = document.createElement('div');
+        div.id = 'modalBaseCurricular';
+        div.className = 'modal';
+        document.body.appendChild(div);
+    }
+
+    const seriesCheckboxes = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
+        .map(s => `<label style="font-size:12px; display:inline-flex; align-items:center; gap:3px; margin-right:8px;"><input type="checkbox" class="chk-serie-base-curricular" value="${s}">${s}º</label>`)
+        .join('');
+
+    document.getElementById('modalBaseCurricular').innerHTML = `
+        <div class="modal-content" style="max-width: 750px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
+                <h2 style="margin:0;">📚 Base Curricular Oficial</h2>
+                <button class="btn btn-sm btn-danger" style="padding:2px 8px;" onclick="closeModal('modalBaseCurricular')">×</button>
+            </div>
+            <p style="font-size:13px; color:#666; margin-bottom:15px;">Os documentos enviados aqui ficam disponíveis pra todas as escolas da rede usarem como fonte de verdade no Estagiário IA (não precisa reenviar por escola).</p>
+
+            <div style="display:flex; gap:15px; margin-bottom:15px; flex-wrap:wrap;">
+                <div style="flex:1; min-width:260px; background:#f7fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">
+                    <h3 style="margin-top:0; font-size:15px;">📊 Planilha de Escopo-Sequência (.xlsx)</h3>
+                    <p style="font-size:12px; color:#718096;">Cada aba = uma disciplina. As colunas de Bimestre/Aula/Habilidade/Conteúdo são lidas automaticamente.</p>
+                    <input type="file" id="baseCurricularArquivoXlsx" accept=".xlsx" style="width:100%; margin-bottom:10px; font-size:12px;">
+                    <button class="btn btn-primary btn-sm" onclick="processarPlanilhaCurriculo()">Processar e Enviar</button>
+                </div>
+                <div style="flex:1; min-width:260px; background:#fffaf0; padding:15px; border-radius:8px; border:1px solid #fbd38d;">
+                    <h3 style="margin-top:0; font-size:15px;">📄 Documento em PDF</h3>
+                    <select id="baseCurricularTipoPdf" style="width:100%; padding:6px; margin-bottom:8px; font-size:12px;">
+                        <option value="caderno_aluno">Caderno do Aluno</option>
+                        <option value="caderno_professor">Caderno do Professor</option>
+                        <option value="material_digital_pdf">Material Digital</option>
+                        <option value="guia_priorizado">Guia Priorizado</option>
+                    </select>
+                    <input type="text" id="baseCurricularDisciplinaPdf" placeholder="Disciplina (deixe em branco se cobrir várias)" style="width:100%; padding:6px; margin-bottom:8px; font-size:12px; box-sizing:border-box;">
+                    <div style="margin-bottom:8px;">
+                        <label style="font-size:11px; font-weight:bold; display:block; margin-bottom:3px;">Série(s):</label>
+                        ${seriesCheckboxes}
+                        <label style="font-size:12px; display:inline-flex; align-items:center; gap:3px; font-weight:bold;"><input type="checkbox" id="chkSerieTodasBaseCurricular">Todas</label>
+                    </div>
+                    <input type="file" id="baseCurricularArquivoPdf" accept=".pdf" style="width:100%; margin-bottom:10px; font-size:12px;">
+                    <button class="btn btn-primary btn-sm" onclick="processarPdfCurriculo()">Processar e Enviar</button>
+                </div>
+            </div>
+
+            <div id="baseCurricularProgresso" style="display:none; margin-bottom:15px;">
+                <div style="background:#e2e8f0; border-radius:6px; overflow:hidden; height:18px;">
+                    <div id="baseCurricularBarraProgresso" style="background:#4299e1; height:100%; width:0%; transition:width .2s;"></div>
+                </div>
+                <p id="baseCurricularProgressoTexto" style="font-size:12px; color:#666; margin-top:4px;"></p>
+            </div>
+
+            <h3 style="font-size:15px; border-top:1px solid #e2e8f0; padding-top:15px;">Documentos já enviados</h3>
+            <div id="listaBaseCurricular" style="max-height:220px; overflow-y:auto;">Carregando...</div>
+        </div>
+    `;
+    showModal('modalBaseCurricular');
+    listarDocumentosBaseCurricular();
+}
+
+function carregarScriptBaseCurricular(src) {
+    return new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) return resolve();
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Falha ao carregar biblioteca: ' + src));
+        document.head.appendChild(script);
+    });
+}
+
+async function carregarBibliotecaBaseCurricular(tipo) {
+    if (tipo === 'xlsx' && typeof XLSX === 'undefined') {
+        await carregarScriptBaseCurricular('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+    }
+    if (tipo === 'pdf' && typeof pdfjsLib === 'undefined') {
+        await carregarScriptBaseCurricular('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+}
+
+async function calcularHashArquivoBaseCurricular(arrayBuffer) {
+    const buffer = await crypto.subtle.digest('SHA-1', arrayBuffer);
+    return Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function sanitizarIdManifestoBaseCurricular(nomeArquivo) {
+    return nomeArquivo.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').slice(0, 120);
+}
+
+function definirProgressoBaseCurricular(texto, percentual) {
+    const container = document.getElementById('baseCurricularProgresso');
+    const barra = document.getElementById('baseCurricularBarraProgresso');
+    const label = document.getElementById('baseCurricularProgressoTexto');
+    if (!container) return;
+    container.style.display = 'block';
+    if (barra && typeof percentual === 'number') barra.style.width = Math.round(percentual) + '%';
+    if (label) label.textContent = texto || '';
+}
+
+function esconderProgressoBaseCurricular() {
+    const container = document.getElementById('baseCurricularProgresso');
+    if (container) container.style.display = 'none';
+}
+
+// Salva o arquivo original no Firebase Storage pra auditoria/reprocessamento futuro - best-effort,
+// nunca bloqueia nem falha o processamento principal (os dados já foram gravados no Firestore antes
+// desta chamada acontecer).
+async function arquivarOriginalBaseCurricular(arquivo, tipoDocumento) {
+    if (typeof storage === 'undefined' || !storage) return;
+    try {
+        const ref = storage.ref().child(`curriculo_fontes/${tipoDocumento}/${arquivo.name}`);
+        await ref.put(arquivo);
+    } catch (e) {
+        console.warn('[Base Curricular] Não foi possível arquivar o arquivo original no Storage:', e);
+    }
+}
+
+async function apagarDocsEmLotesBaseCurricular(snap) {
+    if (snap.empty) return;
+    const lotes = [];
+    let loteAtual = db.batch();
+    let contador = 0;
+    snap.forEach(doc => {
+        loteAtual.delete(doc.ref);
+        contador++;
+        if (contador === 450) { lotes.push(loteAtual); loteAtual = db.batch(); contador = 0; }
+    });
+    if (contador > 0) lotes.push(loteAtual);
+    for (const lote of lotes) await lote.commit();
+}
+
+// --- Planilha de Escopo-Sequência ---
+
+// Formatos de coluna conhecidos das planilhas oficiais. A planilha "Anos Iniciais" traz código+texto
+// da habilidade juntos numa célula (HABILIDADES); a planilha "Anos Finais" (eletivas complementares)
+// traz em colunas separadas (HABILIDADE - CÓDIGO / HABILIDADE - TEXTO). Uma aba com cabeçalhos que não
+// batem com nenhum formato conhecido é ignorada (com aviso) em vez de gravar dado errado.
+const FORMATOS_PLANILHA_CURRICULO = [
+    {
+        chave: 'AI_PADRAO',
+        detectar: headers => headers.includes('HABILIDADES') && !headers.includes('HABILIDADE - CÓDIGO'),
+        campos: { ciclo: 'CICLO', ano: 'ANO', bimestre: 'BIMESTRE', aula: 'AULA', unidadeTematica: 'UNIDADE TEMÁTICA', objetoConhecimento: 'OBJETO DE CONHECIMENTO', titulo: 'TÍTULO', conteudo: 'CONTEÚDO', objetivos: 'OBJETIVOS' },
+        habilidadesTipo: 'combinada', colunaHabilidade: 'HABILIDADES'
+    },
+    {
+        chave: 'AF_COMPLEMENTAR',
+        detectar: headers => headers.includes('HABILIDADE - CÓDIGO') && headers.includes('HABILIDADE - TEXTO'),
+        campos: { ciclo: 'CICLO', ano: 'ANO', bimestre: 'BIMESTRE', aula: 'AULA', unidadeTematica: 'UNIDADE TEMÁTICA', objetoConhecimento: 'OBJETO DE CONHECIMENTO', titulo: 'TÍTULO DA AULA', conteudo: 'CONTEÚDO', objetivos: 'OBJETIVOS' },
+        habilidadesTipo: 'separada', colunaCodigo: 'HABILIDADE - CÓDIGO', colunaTexto: 'HABILIDADE - TEXTO'
+    }
+];
+
+function detectarFormatoPlanilhaCurriculo(headers) {
+    return FORMATOS_PLANILHA_CURRICULO.find(f => f.detectar(headers)) || null;
+}
+
+function extrairHabilidadesCombinadasCurriculo(celula) {
+    if (!celula) return [];
+    const linhas = String(celula).split(/\n+/).map(l => l.trim()).filter(Boolean);
+    const resultado = [];
+    linhas.forEach(linha => {
+        const m = linha.match(/EF\d{2}[A-Z]{2,4}\d{2,3}[A-Z]?/);
+        if (m) {
+            const texto = linha.replace(m[0], '').replace(/^[\s()\-–:]+/, '').replace(/[)\s]+$/, '').trim();
+            resultado.push({ codigo: m[0], texto: texto || linha });
+        } else if (resultado.length > 0) {
+            resultado[resultado.length - 1].texto += ' ' + linha;
+        } else {
+            resultado.push({ codigo: '', texto: linha });
+        }
+    });
+    return resultado;
+}
+
+function extrairHabilidadesSeparadasCurriculo(celulaCodigo, celulaTexto) {
+    if (!celulaCodigo && !celulaTexto) return [];
+    const limpa = s => String(s || '').replace(/^[\s\-–]+/, '').trim();
+    const codigos = String(celulaCodigo || '').split(/\n+/).map(limpa).filter(Boolean);
+    const textos = String(celulaTexto || '').split(/\n+/).map(limpa).filter(Boolean);
+    const tamanho = Math.max(codigos.length, textos.length);
+    const resultado = [];
+    for (let i = 0; i < tamanho; i++) resultado.push({ codigo: codigos[i] || '', texto: textos[i] || '' });
+    return resultado;
+}
+
+// Normaliza uma linha bruta da planilha (já lida pelo SheetJS como objeto {coluna: valor}) pro schema
+// comum de curriculo_escopo_sequencia. Retorna null pra linhas "ruído" (ex: linhas espaçadoras de
+// vendor tipo "MATIFIC", que não têm título nem conteúdo preenchidos).
+function normalizarLinhaPlanilhaCurriculo(linhaBruta, formato, nomeAba, numeroLinha) {
+    const val = campo => (linhaBruta[campo] !== undefined && linhaBruta[campo] !== null) ? String(linhaBruta[campo]).trim() : '';
+    const c = formato.campos;
+    const titulo = val(c.titulo);
+    const conteudo = val(c.conteudo);
+    if (!titulo && !conteudo) return null;
+
+    const habilidades = formato.habilidadesTipo === 'combinada'
+        ? extrairHabilidadesCombinadasCurriculo(val(formato.colunaHabilidade))
+        : extrairHabilidadesSeparadasCurriculo(val(formato.colunaCodigo), val(formato.colunaTexto));
+
+    const serieOriginal = val(c.ano);
+    const unidadeTematica = val(c.unidadeTematica);
+    const objetoConhecimento = val(c.objetoConhecimento);
+    const objetivos = val(c.objetivos);
+    const textoBuscavel = normalizarTextoComparacaoMaterialDigital(
+        [titulo, unidadeTematica, objetoConhecimento, conteudo, objetivos].filter(Boolean).join(' ')
+    );
+
+    return {
+        serieChave: extrairSerieChaveMaterialDigital(serieOriginal),
+        serieOriginal,
+        ciclo: val(c.ciclo),
+        bimestre: val(c.bimestre).replace(/\D/g, ''),
+        aula: val(c.aula),
+        unidadeTematica,
+        objetoConhecimento,
+        titulo,
+        conteudo,
+        objetivos,
+        habilidades,
+        textoBuscavel,
+        fonteAba: nomeAba,
+        fonteLinha: numeroLinha,
+        atualizadoEm: Date.now()
+    };
+}
+
+async function gravarLinhasCurriculoEmLotes(linhas, fonteArquivo, fonteAba) {
+    const TAMANHO_LOTE = 450;
+    for (let i = 0; i < linhas.length; i += TAMANHO_LOTE) {
+        const fatia = linhas.slice(i, i + TAMANHO_LOTE);
+        const lote = db.batch();
+        fatia.forEach(linha => {
+            const ref = db.collection('curriculo_escopo_sequencia').doc();
+            lote.set(ref, Object.assign({}, linha, { fonteArquivo, fonteAba }));
+        });
+        await lote.commit();
+    }
+}
+
+async function apagarLinhasAbaCurriculo(fonteArquivo, fonteAba) {
+    const snap = await db.collection('curriculo_escopo_sequencia')
+        .where('fonteArquivo', '==', fonteArquivo)
+        .where('fonteAba', '==', fonteAba)
+        .get();
+    await apagarDocsEmLotesBaseCurricular(snap);
+}
+
+async function processarPlanilhaCurriculo() {
+    if (typeof db === 'undefined' || !db) return alert('Sem conexão com o banco de dados.');
+    const input = document.getElementById('baseCurricularArquivoXlsx');
+    if (!input.files || !input.files[0]) return alert('Selecione um arquivo .xlsx primeiro.');
+    const arquivo = input.files[0];
+
+    try {
+        definirProgressoBaseCurricular('Carregando biblioteca de leitura de planilhas...', 0);
+        await carregarBibliotecaBaseCurricular('xlsx');
+
+        definirProgressoBaseCurricular('Lendo planilha...', 5);
+        const bytes = await arquivo.arrayBuffer();
+        const hash = await calcularHashArquivoBaseCurricular(bytes.slice(0));
+        const manifestId = 'xlsx_' + sanitizarIdManifestoBaseCurricular(arquivo.name);
+        const manifestExistente = await getData('curriculo_ingest_manifest', manifestId);
+
+        if (manifestExistente && manifestExistente.hashConteudo === hash) {
+            if (!confirm(`O arquivo "${arquivo.name}" já foi enviado antes com o mesmo conteúdo (${manifestExistente.totalUnidades} linhas). Deseja reprocessar mesmo assim?`)) {
+                esconderProgressoBaseCurricular();
+                return;
+            }
+        }
+
+        const workbook = XLSX.read(bytes, { type: 'array' });
+        let totalLinhas = 0;
+        const abasIgnoradas = [];
+        const nomesAbas = workbook.SheetNames;
+
+        for (let i = 0; i < nomesAbas.length; i++) {
+            const nomeAba = nomesAbas[i];
+            definirProgressoBaseCurricular(`Processando aba "${nomeAba}" (${i + 1}/${nomesAbas.length})...`, ((i + 1) / nomesAbas.length) * 90);
+
+            const planilha = workbook.Sheets[nomeAba];
+            const linhasBrutas = XLSX.utils.sheet_to_json(planilha, { defval: '' });
+            if (linhasBrutas.length === 0) continue;
+
+            const formato = detectarFormatoPlanilhaCurriculo(Object.keys(linhasBrutas[0]));
+            if (!formato) { abasIgnoradas.push(nomeAba); continue; }
+
+            const linhasNormalizadas = linhasBrutas
+                .map((linha, idx) => normalizarLinhaPlanilhaCurriculo(linha, formato, nomeAba, idx + 2))
+                .filter(Boolean);
+
+            await apagarLinhasAbaCurriculo(arquivo.name, nomeAba);
+            await gravarLinhasCurriculoEmLotes(linhasNormalizadas, arquivo.name, nomeAba);
+            totalLinhas += linhasNormalizadas.length;
+        }
+
+        await saveData('curriculo_ingest_manifest', manifestId, {
+            chaveArquivo: arquivo.name,
+            tipoDocumento: 'escopo_sequencia_xlsx',
+            hashConteudo: hash,
+            totalUnidades: totalLinhas,
+            ingeridoEm: Date.now()
+        });
+
+        arquivarOriginalBaseCurricular(arquivo, 'escopo_sequencia');
+
+        esconderProgressoBaseCurricular();
+        let msg = `Planilha processada! ${totalLinhas} linhas gravadas.`;
+        if (abasIgnoradas.length) msg += `\n\nAbas não reconhecidas (ignoradas): ${abasIgnoradas.join(', ')}`;
+        alert(msg);
+        input.value = '';
+        listarDocumentosBaseCurricular();
+    } catch (e) {
+        console.error(e);
+        esconderProgressoBaseCurricular();
+        alert('Erro ao processar planilha: ' + e.message);
+    }
+}
+
+// --- Documentos em PDF (Cadernos, Material Digital, Guia Priorizado) ---
+
+async function extrairTextoPdfPorPagina(arrayBuffer) {
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const paginas = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const conteudo = await page.getTextContent();
+        paginas.push(conteudo.items.map(item => item.str).join(' '));
+    }
+    return paginas;
+}
+
+// Divisor de texto em chunks (~1000-1200 caracteres, sobreposição de ~150-200) sem depender de
+// biblioteca externa: quebra por parágrafo (ou por frase, se o parágrafo sozinho já for grande demais)
+// e carrega uma "cauda" do chunk anterior pro próximo, pra não perder contexto na fronteira.
+function dividirEmChunksCurriculo(paginas, tamanhoAlvo = 1100, sobreposicao = 180) {
+    const chunks = [];
+    let atual = '';
+    let paginaInicioAtual = 1;
+
+    const empurrarChunk = (paginaFim) => {
+        const texto = atual.trim();
+        if (texto) chunks.push({ texto, paginaInicio: paginaInicioAtual, paginaFim });
+    };
+
+    paginas.forEach((textoPagina, idx) => {
+        const numeroPagina = idx + 1;
+        const trechos = textoPagina.split(/(?<=[.!?])\s+(?=[A-ZÀ-Ý0-9])/).filter(Boolean);
+        trechos.forEach(trecho => {
+            if (atual.length > 0 && (atual.length + trecho.length + 1) > tamanhoAlvo) {
+                empurrarChunk(numeroPagina);
+                atual = atual.slice(-sobreposicao) + ' ' + trecho;
+                paginaInicioAtual = numeroPagina;
+            } else {
+                atual = (atual + ' ' + trecho).trim();
+            }
+        });
+    });
+    empurrarChunk(paginas.length || paginaInicioAtual);
+    return chunks;
+}
+
+async function obterEmbeddingGeminiBaseCurricular(texto, apiKey, taskType) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: { parts: [{ text: texto }] }, taskType }),
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+            const errObj = await response.json().catch(() => ({}));
+            throw new Error(errObj.error ? errObj.error.message : response.statusText);
+        }
+        const json = await response.json();
+        return (json.embedding && json.embedding.values) ? json.embedding.values : null;
+    } catch (e) {
+        clearTimeout(timeoutId);
+        throw e;
+    }
+}
+
+async function apagarChunksArquivoCurriculo(fonteArquivo) {
+    const snap = await db.collection('curriculo_chunks_embeddings').where('fonteArquivo', '==', fonteArquivo).get();
+    await apagarDocsEmLotesBaseCurricular(snap);
+}
+
+async function processarPdfCurriculo() {
+    if (typeof db === 'undefined' || !db) return alert('Sem conexão com o banco de dados.');
+    const inputArquivo = document.getElementById('baseCurricularArquivoPdf');
+    if (!inputArquivo.files || !inputArquivo.files[0]) return alert('Selecione um arquivo PDF primeiro.');
+    const arquivo = inputArquivo.files[0];
+
+    const tipoDocumento = document.getElementById('baseCurricularTipoPdf').value;
+    const disciplina = document.getElementById('baseCurricularDisciplinaPdf').value.trim();
+    const todasSeries = document.getElementById('chkSerieTodasBaseCurricular').checked;
+    const serieChaves = todasSeries
+        ? ['1', '2', '3', '4', '5', '6', '7', '8', '9']
+        : Array.from(document.querySelectorAll('.chk-serie-base-curricular:checked')).map(chk => chk.value);
+    if (serieChaves.length === 0) return alert('Selecione ao menos uma série (ou marque "Todas").');
+
+    const configData = await getData('system', 'config_ia') || {};
+    const apiKeys = (configData.apiKey || '').split(',').map(k => k.trim()).filter(Boolean);
+    const chaveGemini = apiKeys.find(k => !k.startsWith('sk-') && !k.startsWith('gsk_'));
+    if (!chaveGemini) return alert('É necessário ter uma chave do Google Gemini configurada (card "Chave de IA" acima) pra gerar os embeddings de busca.');
+
+    try {
+        definirProgressoBaseCurricular('Carregando biblioteca de leitura de PDF...', 0);
+        await carregarBibliotecaBaseCurricular('pdf');
+
+        definirProgressoBaseCurricular('Extraindo texto do PDF...', 5);
+        const bytes = await arquivo.arrayBuffer();
+        const hash = await calcularHashArquivoBaseCurricular(bytes.slice(0));
+        const manifestId = 'pdf_' + sanitizarIdManifestoBaseCurricular(arquivo.name);
+        const manifestExistente = await getData('curriculo_ingest_manifest', manifestId);
+
+        if (manifestExistente && manifestExistente.hashConteudo === hash) {
+            if (!confirm(`O arquivo "${arquivo.name}" já foi enviado antes com o mesmo conteúdo (${manifestExistente.totalUnidades} trechos). Deseja reprocessar mesmo assim?`)) {
+                esconderProgressoBaseCurricular();
+                return;
+            }
+        }
+
+        const paginas = await extrairTextoPdfPorPagina(bytes);
+        const textoTotal = paginas.join(' ').trim();
+        if (textoTotal.length < 200) {
+            esconderProgressoBaseCurricular();
+            return alert('Não foi possível extrair texto suficiente deste PDF (pode ser um PDF escaneado sem OCR, que este processo não suporta ainda).');
+        }
+
+        const chunks = dividirEmChunksCurriculo(paginas);
+        await apagarChunksArquivoCurriculo(arquivo.name);
+
+        let processados = 0;
+        let falhas = 0;
+        for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            definirProgressoBaseCurricular(`Processando trecho ${i + 1}/${chunks.length}...`, ((i + 1) / chunks.length) * 90);
+
+            let embedding = null;
+            try {
+                embedding = await obterEmbeddingGeminiBaseCurricular(chunk.texto, chaveGemini, 'RETRIEVAL_DOCUMENT');
+            } catch (e) {
+                console.warn('[Base Curricular] Falha ao gerar embedding de um trecho, pulando:', e);
+                falhas++;
+                continue;
+            }
+            if (!embedding) { falhas++; continue; }
+
+            await db.collection('curriculo_chunks_embeddings').add({
+                serieChaves,
+                disciplinaOriginal: disciplina || null,
+                tipoDocumento,
+                fonteArquivo: arquivo.name,
+                chunkIndex: i,
+                paginaInicio: chunk.paginaInicio,
+                paginaFim: chunk.paginaFim,
+                texto: chunk.texto,
+                embedding,
+                embeddingModel: 'text-embedding-004',
+                atualizadoEm: Date.now()
+            });
+            processados++;
+        }
+
+        await saveData('curriculo_ingest_manifest', manifestId, {
+            chaveArquivo: arquivo.name,
+            tipoDocumento: 'pdf_chunk',
+            hashConteudo: hash,
+            totalUnidades: processados,
+            ingeridoEm: Date.now()
+        });
+
+        arquivarOriginalBaseCurricular(arquivo, tipoDocumento);
+
+        esconderProgressoBaseCurricular();
+        let msg = `PDF processado! ${processados} trechos gravados.`;
+        if (falhas > 0) msg += `\n\n⚠️ ${falhas} trecho(s) falharam ao gerar embedding e foram pulados.`;
+        alert(msg);
+        inputArquivo.value = '';
+        listarDocumentosBaseCurricular();
+    } catch (e) {
+        console.error(e);
+        esconderProgressoBaseCurricular();
+        alert('Erro ao processar PDF: ' + e.message);
+    }
+}
+
+// --- Lista e remoção de documentos já enviados ---
+
+async function listarDocumentosBaseCurricular() {
+    const container = document.getElementById('listaBaseCurricular');
+    if (!container) return;
+    if (typeof db === 'undefined' || !db) { container.innerHTML = '<p>Sem conexão com o banco.</p>'; return; }
+
+    try {
+        const snap = await db.collection('curriculo_ingest_manifest').orderBy('ingeridoEm', 'desc').get();
+        if (snap.empty) { container.innerHTML = '<p class="empty-state">Nenhum documento enviado ainda.</p>'; return; }
+
+        let html = '<table style="font-size:12px;"><thead><tr><th>Arquivo</th><th>Tipo</th><th>Unidades</th><th>Enviado em</th><th>Ações</th></tr></thead><tbody>';
+        snap.forEach(doc => {
+            const d = doc.data();
+            const dataFormatada = d.ingeridoEm ? new Date(d.ingeridoEm).toLocaleString('pt-BR') : '-';
+            html += `<tr>
+                <td>${d.chaveArquivo || '-'}</td>
+                <td>${d.tipoDocumento || '-'}</td>
+                <td>${d.totalUnidades ?? '-'}</td>
+                <td>${dataFormatada}</td>
+                <td><button class="btn btn-danger btn-sm" onclick="removerDocumentoBaseCurricular('${doc.id}')">🗑️</button></td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = '<p>Erro ao carregar lista de documentos.</p>';
+    }
+}
+
+async function removerDocumentoBaseCurricular(manifestDocId) {
+    if (!confirm('Remover este documento e todos os dados gerados a partir dele? Essa ação não pode ser desfeita.')) return;
+    try {
+        const doc = await db.collection('curriculo_ingest_manifest').doc(manifestDocId).get();
+        if (!doc.exists) return;
+        const d = doc.data();
+
+        const snap = d.tipoDocumento === 'escopo_sequencia_xlsx'
+            ? await db.collection('curriculo_escopo_sequencia').where('fonteArquivo', '==', d.chaveArquivo).get()
+            : await db.collection('curriculo_chunks_embeddings').where('fonteArquivo', '==', d.chaveArquivo).get();
+
+        await apagarDocsEmLotesBaseCurricular(snap);
+        await db.collection('curriculo_ingest_manifest').doc(manifestDocId).delete();
+
+        alert('Documento removido.');
+        listarDocumentosBaseCurricular();
+    } catch (e) {
+        console.error(e);
+        alert('Erro ao remover: ' + e.message);
     }
 }
