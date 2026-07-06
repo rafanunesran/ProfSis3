@@ -771,19 +771,6 @@ function esconderProgressoBaseCurricular() {
     if (container) container.style.display = 'none';
 }
 
-// Salva o arquivo original no Firebase Storage pra auditoria/reprocessamento futuro - best-effort,
-// nunca bloqueia nem falha o processamento principal (os dados já foram gravados no Firestore antes
-// desta chamada acontecer).
-async function arquivarOriginalBaseCurricular(arquivo, tipoDocumento) {
-    if (typeof storage === 'undefined' || !storage) return;
-    try {
-        const ref = storage.ref().child(`curriculo_fontes/${tipoDocumento}/${arquivo.name}`);
-        await ref.put(arquivo);
-    } catch (e) {
-        console.warn('[Base Curricular] Não foi possível arquivar o arquivo original no Storage:', e);
-    }
-}
-
 async function apagarDocsEmLotesBaseCurricular(snap) {
     if (snap.empty) return;
     const lotes = [];
@@ -970,8 +957,6 @@ async function processarPlanilhaCurriculo() {
             ingeridoEm: Date.now()
         });
 
-        arquivarOriginalBaseCurricular(arquivo, 'escopo_sequencia');
-
         esconderProgressoBaseCurricular();
         let msg = `Planilha processada! ${totalLinhas} linhas gravadas.`;
         if (abasIgnoradas.length) msg += `\n\nAbas não reconhecidas (ignoradas): ${abasIgnoradas.join(', ')}`;
@@ -1141,8 +1126,6 @@ async function processarPdfCurriculo() {
             totalUnidades: processados,
             ingeridoEm: Date.now()
         });
-
-        arquivarOriginalBaseCurricular(arquivo, tipoDocumento);
 
         esconderProgressoBaseCurricular();
         let msg = `PDF processado! ${processados} trechos gravados.`;
