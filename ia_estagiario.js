@@ -11,6 +11,8 @@ const CONFIANCA_MINIMA_TIER1_ESTAGIARIO = 0.55;
 const LIMIAR_SIMILARIDADE_TIER2_ESTAGIARIO = 0.68;
 const TOP_K_CHUNKS_TIER2_ESTAGIARIO = 4;
 
+const MESES_AGENDA = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
 async function buscarLinhasCurriculoOficial(serie) {
     if (typeof db === 'undefined' || !db) return [];
     const serieChave = extrairSerieChaveMaterialDigital(serie);
@@ -236,6 +238,10 @@ function abrirModalGerarDocumentoIA() {
     const semanaInicioISO = toISO(proximaSegunda);
     const semanaFimISO = toISO(proximaSexta);
 
+    // Mês/Ano padrão sugeridos para a Agenda Mensal
+    const defaultMonth = hoje.getMonth();
+    const defaultYear = hoje.getFullYear();
+
     const defaultPromptTemplate = `Você é um professor/coordenador pedagógico experiente do Estado de São Paulo. Crie a estrutura de um Plano de Aula de {{disciplina}} para a série/ano {{serie}} sobre o tema: "{{tema}}".\nUtilize seus profundos conhecimentos sobre o Currículo Paulista e os Materiais de Apoio (Caderno do Aluno/Professor) da SEDUC-SP.\nAs habilidades devem seguir estritamente o código e formato do Currículo Paulista específicos da disciplina de {{disciplina}} (ex: se for Matemática, use EF...MA..., se for Arte, EF...AR..., etc.).\nA Aprendizagem Essencial deve ser compatível com os documentos curriculares oficiais da disciplina.\nRetorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:\n{"aprendizagem_essencial": "Habilidade central do Currículo Paulista", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades cognitivas a desenvolver com os códigos do Currículo Paulista da disciplina solicitada", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
     const savedPrompt = localStorage.getItem('ia_prompt_template') || defaultPromptTemplate;
 
@@ -253,52 +259,64 @@ function abrirModalGerarDocumentoIA() {
                 <div style="display: flex; gap: 15px; margin-bottom: 15px;">
                     <div style="flex: 1;">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Tipo de Documento:</label>
-                        <select id="iaDocTipo" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                        <select id="iaDocTipo" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;" onchange="toggleTipoDocumentoIA()">
                             <option value="plano_aula">Plano de Aula</option>
+                            <option value="agenda_mensal">📅 Agenda Mensal</option>
                         </select>
                     </div>
-                    <div style="flex: 1;">
+                    <div style="flex: 1;" id="campoSemanaVigente">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Semana Vigente:</label>
                         <input type="text" id="iaDocSemana" value="${semanaSugerida}" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
                         <input type="hidden" id="iaDocSemanaInicio" value="${semanaInicioISO}">
                         <input type="hidden" id="iaDocSemanaFim" value="${semanaFimISO}">
                     </div>
+                    <div style="flex: 1; display:none;" id="campoMesAnoAgenda">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Mês / Ano da Agenda:</label>
+                        <div style="display:flex; gap:8px;">
+                            <select id="iaAgendaMes" style="flex:1; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                                ${MESES_AGENDA.map((m, i) => `<option value="${i}" ${i === defaultMonth ? 'selected' : ''}>${m}</option>`).join('')}
+                            </select>
+                            <input type="number" id="iaAgendaAno" value="${defaultYear}" style="width:90px; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                        </div>
+                    </div>
                 </div>
 
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom: 15px;">
-                    <div>
-                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Série / Ano:</label>
-                        <select id="iaDocSerie" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
-                            <option value="">Selecione...</option>
-                            ${seriesUnicas.map(s => `<option value="${s}">${s}</option>`).join('')}
-                        </select>
+                <div id="camposPlanoAula">
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom: 15px;">
+                        <div>
+                            <label style="font-weight:bold; display:block; margin-bottom:5px;">Série / Ano:</label>
+                            <select id="iaDocSerie" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                                <option value="">Selecione...</option>
+                                ${seriesUnicas.map(s => `<option value="${s}">${s}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-weight:bold; display:block; margin-bottom:5px;">Disciplina:</label>
+                            <select id="iaDocDisciplina" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                                <option value="">Selecione...</option>
+                                ${disciplinasUnicas.map(d => `<option value="${d}">${d}</option>`).join('')}
+                            </select>
+                        </div>
                     </div>
-                    <div>
-                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Disciplina:</label>
-                        <select id="iaDocDisciplina" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
-                            <option value="">Selecione...</option>
-                            ${disciplinasUnicas.map(d => `<option value="${d}">${d}</option>`).join('')}
-                        </select>
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 15px;">
-                    <label style="font-weight:bold; display:block; margin-bottom:5px;">Tema / Assunto:</label>
-                    <input type="text" id="iaDocTema" placeholder="Ex: Revolução Francesa" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
-                </div>
 
-                <div style="margin-bottom: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
-                        <label style="font-weight:bold; margin:0;">Comando do Estagiário:</label>
-                        <button class="btn btn-sm btn-secondary" style="font-size:10px; padding:2px 5px;" onclick="restaurarPromptPadraoIA()">Restaurar Padrão</button>
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Tema / Assunto:</label>
+                        <input type="text" id="iaDocTema" placeholder="Ex: Revolução Francesa" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
                     </div>
-                    <p style="font-size:11px; color:#718096; margin-bottom:5px;">Você pode modificar com seu prompt pessoal ou usar o nativo</p>
-                    <textarea id="iaDocPrompt" rows="6" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; font-family:monospace; font-size:11px; line-height:1.4;" onchange="localStorage.setItem('ia_prompt_template', this.value)"></textarea>
+
+                    <div style="margin-bottom: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                            <label style="font-weight:bold; margin:0;">Comando do Estagiário:</label>
+                            <button class="btn btn-sm btn-secondary" style="font-size:10px; padding:2px 5px;" onclick="restaurarPromptPadraoIA()">Restaurar Padrão</button>
+                        </div>
+                        <p style="font-size:11px; color:#718096; margin-bottom:5px;">Você pode modificar com seu prompt pessoal ou usar o nativo</p>
+                        <textarea id="iaDocPrompt" rows="6" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; font-family:monospace; font-size:11px; line-height:1.4;" onchange="localStorage.setItem('ia_prompt_template', this.value)"></textarea>
+                    </div>
                 </div>
 
                 <div style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
                     <button class="btn btn-secondary" onclick="closeModal('modalGerarDocumentoIA')">Cancelar</button>
-                    <button class="btn btn-primary" onclick="gerarDocumentoIA()">Gerar Estrutura</button>
+                    <button class="btn btn-primary" id="btnGerarDocumentoIA" onclick="gerarDocumentoIA()">Gerar Estrutura</button>
                 </div>
             </div>
         `;
@@ -328,7 +346,31 @@ function abrirModalGerarDocumentoIA() {
     const docPrompt = document.getElementById('iaDocPrompt');
     if (docPrompt) docPrompt.value = savedPrompt;
 
+    const docAgendaMes = document.getElementById('iaAgendaMes');
+    if (docAgendaMes) docAgendaMes.value = defaultMonth;
+    const docAgendaAno = document.getElementById('iaAgendaAno');
+    if (docAgendaAno) docAgendaAno.value = defaultYear;
+
+    toggleTipoDocumentoIA();
     showModal('modalGerarDocumentoIA');
+}
+
+// Alterna os campos do modal do Estagiário conforme o Tipo de Documento escolhido: Plano de Aula usa
+// IA (série/disciplina/tema/prompt), Agenda Mensal é só um preenchimento mecânico da grade do
+// professor - pede apenas Mês/Ano e pula a etapa de revisão por IA.
+function toggleTipoDocumentoIA() {
+    const tipo = document.getElementById('iaDocTipo').value;
+    const isAgenda = tipo === 'agenda_mensal';
+
+    const campoSemana = document.getElementById('campoSemanaVigente');
+    if (campoSemana) campoSemana.style.display = isAgenda ? 'none' : '';
+    const campoMesAno = document.getElementById('campoMesAnoAgenda');
+    if (campoMesAno) campoMesAno.style.display = isAgenda ? 'block' : 'none';
+    const camposPlano = document.getElementById('camposPlanoAula');
+    if (camposPlano) camposPlano.style.display = isAgenda ? 'none' : '';
+
+    const btn = document.getElementById('btnGerarDocumentoIA');
+    if (btn) btn.textContent = isAgenda ? '🖨️ Gerar e Imprimir Agenda' : 'Gerar Estrutura';
 }
 
 function restaurarPromptPadraoIA() {
@@ -340,8 +382,222 @@ function restaurarPromptPadraoIA() {
     }
 }
 
+// Gera e imprime a Agenda Mensal de Trabalho a partir do modelo Docs/AgendaNova.html: só pede
+// Mês/Ano (sem passar pela IA nem pela tela de revisão, já que aqui não há texto pra redigir - é um
+// preenchimento mecânico da grade horária + aulas que o professor já organizou no Dashboard/Grade).
+// Segue o mesmo esquema de placeholders {{REGIÃO}}/{{NOME COMPLETO DA ESCOLA}}/{{LOGO_ESTADO}}/
+// {{LOGO_ESCOLA}} já usado no Plano de Aula (Docs/Base_Plano_Aula.html), pra reaproveitar as mesmas
+// configurações da escola/sistema.
+async function gerarAgendaMensalEstagiario() {
+    const mes = parseInt(document.getElementById('iaAgendaMes').value);
+    const ano = parseInt(document.getElementById('iaAgendaAno').value);
+    if (isNaN(mes) || isNaN(ano) || ano < 2000) return alert('Informe um Mês e Ano válidos.');
+
+    const btn = document.getElementById('btnGerarDocumentoIA');
+    const originalText = btn.textContent;
+    btn.textContent = 'Gerando agenda... ⏳';
+    btn.disabled = true;
+
+    try {
+        // 1. Carrega o modelo (template) da agenda
+        let templateHtml = '';
+        try {
+            const response = await fetch('Docs/AgendaNova.html');
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            templateHtml = await response.text();
+        } catch (fetchErr) {
+            console.error(fetchErr);
+            return alert('Erro ao carregar o modelo Docs/AgendaNova.html. Verifique se o arquivo está na pasta do sistema.');
+        }
+
+        // 2. Busca configurações globais e da escola (mesmo padrão do Plano de Aula)
+        let configSistema = {};
+        let configEscola = {};
+        try {
+            configSistema = await getData('system', 'config_sistema') || {};
+            if (currentUser && currentUser.schoolId) {
+                const sData = await getData('system', 'schools_list');
+                const schools = (sData && sData.list) ? sData.list : [];
+                configEscola = schools.find(s => s.id == currentUser.schoolId) || {};
+            }
+        } catch (e) { console.warn('Erro ao buscar configs da escola', e); }
+
+        const fallbackLogo = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+        const regiao = configSistema.regiao || 'REGIÃO NÃO CONFIGURADA';
+        const logoEstado = configSistema.logoEstado || fallbackLogo;
+        const nomeCompletoEscola = configEscola.nomeCompleto || configEscola.nome || 'ESCOLA NÃO CONFIGURADA';
+        const logoEscola = configEscola.logoEscola || fallbackLogo;
+
+        // 3. Substitui os marcadores globais do cabeçalho (uma única vez, texto puro)
+        let htmlFinal = templateHtml
+            // AgendaNova.html foi exportado do Google Docs, que grava acentos como entidades HTML
+            // (Ã -> &Atilde;, ê -> &ecirc;) mesmo dentro dos marcadores {{ }} - por isso os dois
+            // primeiros casamentos usam a forma decimal/entidade em vez do caractere acentuado.
+            .replace(/{{REGI&Atilde;O}}/g, regiao)
+            .replace(/{{NOME COMPLETO DA ESCOLA}}/g, nomeCompletoEscola)
+            .replace(/{{TIPO DE DOC}}/g, 'AGENDA MENSAL DE TRABALHO')
+            .replace(/{{Professor}}/g, currentUser.nome)
+            .replace(/{{M&ecirc;s}}/g, MESES_AGENDA[mes])
+            .replace(/{{Ano}}/g, ano);
+
+        // 4. Carrega a grade fixa (definida pelo Gestor), exceções (dias atípicos) e as aulas que o
+        // próprio professor organizou em sua Grade de Horários dentro do SisProf.
+        const gradeEscola = await getGradeEscola();
+        if (gradeEscola.length === 0) return alert('A grade de horários ainda não foi configurada pela gestão.');
+
+        let excecoesGrade = [];
+        if (currentUser && currentUser.schoolId) {
+            const keyGestor = 'app_data_school_' + currentUser.schoolId + '_gestor';
+            const gestorData = await getData('app_data', keyGestor);
+            if (gestorData) excecoesGrade = gestorData.gradeHorariaExcecoes || [];
+        }
+        const minhasAulas = data.horariosAulas || [];
+        const turmas = data.turmas || [];
+
+        const mapFixed = { tutoria: 'Tutoria', almoco: 'Almoço', cafe: 'Café', atpca: 'ATPCA', apcg: 'APCG', reuniao: 'Reunião' };
+        const mapProf = { tutoria: 'Tutoria', estudo: 'Estudo', apcg: 'APCG', atpca: 'ATPCA', reuniao: 'Reunião', almoco: 'Almoço', cafe: 'Café', ped_presenc: 'Ped. Presenç.', eletiva: 'Eletiva' };
+
+        // Acha o bloco da grade correspondente a uma "N-ésima aula" de um dia (1=Seg...5=Sex), dando
+        // preferência ao rótulo (label) configurado pelo gestor e caindo pra ordem de horário quando
+        // não houver rótulo - e resolve o conteúdo (turma/disciplina ou tipo fixo) daquele bloco.
+        function montarConteudoCelula(diaSemana, aulaNum, dataStr) {
+            const excecao = excecoesGrade.find(e => e.data === dataStr);
+            let bloco = null;
+
+            if (excecao) {
+                if (excecao.blocos && excecao.blocos.length >= aulaNum) bloco = excecao.blocos[aulaNum - 1];
+            } else {
+                bloco = gradeEscola.find(g => g.diaSemana == diaSemana && (g.label || '').trim().startsWith(aulaNum.toString()));
+                if (!bloco) {
+                    const blocosDoDia = gradeEscola.filter(g => g.diaSemana == diaSemana).sort((a, b) => a.inicio.localeCompare(b.inicio));
+                    if (blocosDoDia.length >= aulaNum) bloco = blocosDoDia[aulaNum - 1];
+                }
+            }
+            if (!bloco) return '';
+
+            if (bloco.tipo) return mapFixed[bloco.tipo] || bloco.tipo.toUpperCase();
+
+            const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
+            if (!aula) return '';
+            if (aula.tipo === 'aula' && aula.id_turma) {
+                const t = turmas.find(x => x.id == aula.id_turma);
+                if (!t) return 'Turma Excluída';
+                return t.disciplina ? `${t.nome}<br><span style="font-size:8pt;">${t.disciplina}</span>` : t.nome;
+            }
+            const rotulo = mapProf[aula.tipo] || aula.tipo;
+            return aula.tema ? `${rotulo}<br><span style="font-size:8pt;">${aula.tema}</span>` : rotulo;
+        }
+
+        // 5. Faz o parse do modelo e localiza os logos + a tabela semanal (que será duplicada)
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlFinal, 'text/html');
+
+        const imgEstado = doc.querySelector('img.image-1');
+        if (imgEstado) imgEstado.src = logoEstado;
+        const imgEscola = doc.querySelector('img.image-2');
+        if (imgEscola) imgEscola.src = logoEscola;
+
+        const templateTable = doc.querySelector('table.c22');
+        if (!templateTable) return alert('Modelo Docs/AgendaNova.html inválido: tabela semanal não encontrada.');
+
+        // 6. Calcula quantas semanas (segunda a sábado) o mês precisa e clona a tabela-modelo pra cada uma
+        const primeiroDia = new Date(ano, mes, 1);
+        const ultimoDia = new Date(ano, mes + 1, 0);
+        const folgaPrimeiraSemana = (primeiroDia.getDay() + 6) % 7; // 0=Seg ... 6=Dom
+        const semanasNecessarias = Math.ceil((ultimoDia.getDate() + folgaPrimeiraSemana) / 7);
+        const primeiraSegunda = new Date(ano, mes, 1 - folgaPrimeiraSemana);
+
+        const tabelasSemana = [templateTable];
+        let ultimaInserida = templateTable;
+        for (let i = 1; i < semanasNecessarias; i++) {
+            const clone = templateTable.cloneNode(true);
+            clone.style.marginTop = '12px';
+            ultimaInserida.parentNode.insertBefore(clone, ultimaInserida.nextSibling);
+            ultimaInserida = clone;
+            tabelasSemana.push(clone);
+        }
+
+        // 7. Preenche cada semana com as datas do mês e as aulas/compromissos do professor
+        tabelasSemana.forEach((tabela, semanaIdx) => {
+            const segunda = new Date(primeiraSegunda);
+            segunda.setDate(primeiraSegunda.getDate() + semanaIdx * 7);
+
+            const diasDaSemana = [];
+            let temDiaNoMes = false;
+            for (let d = 0; d < 6; d++) { // 0=Seg ... 5=Sáb
+                const dt = new Date(segunda);
+                dt.setDate(segunda.getDate() + d);
+                diasDaSemana.push(dt);
+                if (dt.getMonth() === mes) temDiaNoMes = true;
+            }
+
+            if (!temDiaNoMes) { tabela.remove(); return; }
+
+            const linhas = Array.from(tabela.querySelectorAll('tr'));
+            const linhaDatas = linhas[1]; // thead: [0]=nomes dos dias, [1]=números dos dias
+            const celulasDatas = linhaDatas ? Array.from(linhaDatas.cells) : [];
+
+            for (let d = 0; d < 6; d++) {
+                const dt = diasDaSemana[d];
+                const isMesAtual = dt.getMonth() === mes;
+                const celula = celulasDatas[d + 1];
+                const span = celula ? celula.querySelector('span') : null;
+                if (span) span.textContent = isMesAtual ? dt.getDate() : '';
+            }
+
+            // tbody: linhas de "1ª Aula" a "9ª Aula" (a de Almoço não tem número e é ignorada, mantendo
+            // seu texto fixo do modelo)
+            linhas.slice(2).forEach(linha => {
+                const rotuloLinha = linha.cells[0] ? linha.cells[0].textContent.trim() : '';
+                const match = rotuloLinha.match(/(\d+)/);
+                if (!match) return;
+                const aulaNum = parseInt(match[1]);
+
+                for (let d = 0; d < 5; d++) { // Segunda a Sexta (Sábado não tem aula fixa)
+                    const dt = diasDaSemana[d];
+                    const celula = linha.cells[d + 1];
+                    const span = celula ? celula.querySelector('span') : null;
+                    if (!span) continue;
+
+                    if (dt.getMonth() !== mes) { span.innerHTML = ''; continue; }
+
+                    const dataStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+                    span.innerHTML = montarConteudoCelula(d + 1, aulaNum, dataStr);
+                }
+            });
+        });
+
+        // 8. Garante que o CSS relativo do modelo (Docs/style.css) carregue na janela de impressão.
+        // Precisa ser o primeiro elemento do <head> - o navegador já dispara o fetch do <link
+        // rel="stylesheet"> ao encontrá-lo durante o parse do document.write(), antes de processar
+        // qualquer <base> que viesse depois dele.
+        const base = doc.createElement('base');
+        base.href = new URL('Docs/AgendaNova.html', window.location.href).href;
+        doc.head.insertBefore(base, doc.head.firstChild);
+
+        const printStyle = doc.createElement('style');
+        printStyle.textContent = '@media print { body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } }';
+        doc.head.appendChild(printStyle);
+
+        const win = window.open('', '', 'width=1200,height=800');
+        if (!win) throw new Error('O navegador bloqueou a abertura da janela (Pop-up). Permita pop-ups no seu navegador para gerar a agenda.');
+        win.document.write(doc.documentElement.outerHTML);
+        win.document.close();
+        setTimeout(() => { win.print(); }, 500);
+
+        closeModal('modalGerarDocumentoIA');
+    } catch (e) {
+        alert('Erro ao gerar a agenda: ' + e.message);
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
 async function gerarDocumentoIA() {
     const tipo = document.getElementById('iaDocTipo').value;
+    if (tipo === 'agenda_mensal') return gerarAgendaMensalEstagiario();
+
     const tema = document.getElementById('iaDocTema').value;
     const serie = document.getElementById('iaDocSerie') ? document.getElementById('iaDocSerie').value : '';
     const disciplina = document.getElementById('iaDocDisciplina') ? document.getElementById('iaDocDisciplina').value : '';
