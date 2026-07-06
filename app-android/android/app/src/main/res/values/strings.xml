@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ProfSis3 SED</string>
+    <string name="title_activity_main">ProfSis3 SED</string>
+    <string name="package_name">com.profsis3.sed</string>
+    <string name="custom_url_scheme">com.profsis3.sed</string>
+</resources>

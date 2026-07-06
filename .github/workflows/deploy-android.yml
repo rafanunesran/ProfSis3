@@ -1,0 +1,88 @@
+name: Build Android APK (ProfSis3 SED)
+
+# Workflow independente de deploy.yml (CRX da extensao Chrome) - nao toca em nada
+# relacionado a extensao. So builda o app-android/, gera um APK e sobe como artifact/
+# release do GitHub para distribuicao via sideload (ver Riscos no plano: sem Play
+# Store nesta fase).
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "app-android/**"
+      - ".github/workflows/deploy-android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app-android
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync extension sources + build bundles
+        run: npm run prebuild
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build debug APK (sempre - assinado com a chave debug padrao, pronto p/ sideload)
+        working-directory: app-android/android
+        run: ./gradlew assembleDebug
+
+      - name: Decode release keystore (se configurada)
+        id: keystore
+        env:
+          RELEASE_KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$RELEASE_KEYSTORE_B64" ]; then
+            echo "ANDROID_RELEASE_KEYSTORE_B64 não configurado - pulando build de release assinado."
+            echo "has_keystore=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$RELEASE_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/profsis3-release.keystore"
+          echo "has_keystore=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build release APK assinado (so roda se a keystore estiver configurada)
+        if: steps.keystore.outputs.has_keystore == 'true'
+        working-directory: app-android/android
+        env:
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease \
+            -PPROFSIS_RELEASE_STORE_FILE="$RUNNER_TEMP/profsis3-release.keystore" \
+            -PPROFSIS_RELEASE_STORE_PASSWORD="$ANDROID_RELEASE_STORE_PASSWORD" \
+            -PPROFSIS_RELEASE_KEY_ALIAS="$ANDROID_RELEASE_KEY_ALIAS" \
+            -PPROFSIS_RELEASE_KEY_PASSWORD="$ANDROID_RELEASE_KEY_PASSWORD"
+          rm -f "$RUNNER_TEMP/profsis3-release.keystore"
+
+      - name: Upload APK(s) como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: profsis3-sed-apk
+          path: |
+            app-android/android/app/build/outputs/apk/debug/*.apk
+            app-android/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: warn
