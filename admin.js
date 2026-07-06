@@ -1114,7 +1114,10 @@ async function obterEmbeddingGeminiBaseCurricular(texto, apiKey, taskType) {
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: { parts: [{ text: texto }] }, taskType }),
+            // "model" precisa vir também no corpo (além de já estar na URL) - o endpoint embedContent
+            // exige esse campo, diferente do generateContent usado no roteador multi-IA. Sem ele a
+            // API retorna erro em toda chamada (era a causa do "0 trechos gravados").
+            body: JSON.stringify({ model: 'models/text-embedding-004', content: { parts: [{ text: texto }] }, taskType }),
             signal: controller.signal
         });
         clearTimeout(timeoutId);
@@ -1195,30 +1198,35 @@ async function processarPdfCurriculo() {
             const chunk = chunks[i];
             definirProgressoBaseCurricular(`Processando trecho ${i + 1}/${chunks.length}...`, ((i + 1) / chunks.length) * 90);
 
-            let embedding = null;
             try {
-                embedding = await obterEmbeddingGeminiBaseCurricular(chunk.texto, chaveGemini, 'RETRIEVAL_DOCUMENT');
+                const embedding = await obterEmbeddingGeminiBaseCurricular(chunk.texto, chaveGemini, 'RETRIEVAL_DOCUMENT');
+                if (embedding) {
+                    await db.collection('curriculo_chunks_embeddings').add({
+                        serieChaves,
+                        disciplinaOriginal: disciplina || null,
+                        tipoDocumento,
+                        fonteArquivo: arquivo.name,
+                        chunkIndex: i,
+                        paginaInicio: chunk.paginaInicio,
+                        paginaFim: chunk.paginaFim,
+                        texto: chunk.texto,
+                        embedding,
+                        embeddingModel: 'text-embedding-004',
+                        atualizadoEm: Date.now()
+                    });
+                    processados++;
+                } else {
+                    falhas++;
+                }
             } catch (e) {
                 console.warn('[Base Curricular] Falha ao gerar embedding de um trecho, pulando:', e);
                 falhas++;
-                continue;
             }
-            if (!embedding) { falhas++; continue; }
 
-            await db.collection('curriculo_chunks_embeddings').add({
-                serieChaves,
-                disciplinaOriginal: disciplina || null,
-                tipoDocumento,
-                fonteArquivo: arquivo.name,
-                chunkIndex: i,
-                paginaInicio: chunk.paginaInicio,
-                paginaFim: chunk.paginaFim,
-                texto: chunk.texto,
-                embedding,
-                embeddingModel: 'text-embedding-004',
-                atualizadoEm: Date.now()
-            });
-            processados++;
+            // Pequeno intervalo entre chamadas de embedding (mesmo em caso de falha, já que o
+            // limite de taxa da API conta a tentativa) - proteção extra ao processar muitos
+            // trechos em sequência.
+            if (i < chunks.length - 1) await new Promise(resolve => setTimeout(resolve, 150));
         }
 
         await saveData('curriculo_ingest_manifest', manifestId, {

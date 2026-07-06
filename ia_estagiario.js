@@ -129,7 +129,9 @@ async function obterEmbeddingTemaEstagiario(texto, apiKey) {
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: { parts: [{ text: texto }] }, taskType: 'RETRIEVAL_QUERY' }),
+            // "model" precisa vir também no corpo (além de já estar na URL) - o endpoint embedContent
+            // exige esse campo, diferente do generateContent. Sem ele a API rejeita a chamada.
+            body: JSON.stringify({ model: 'models/text-embedding-004', content: { parts: [{ text: texto }] }, taskType: 'RETRIEVAL_QUERY' }),
             signal: controller.signal
         });
         clearTimeout(timeoutId);
