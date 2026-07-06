@@ -405,9 +405,9 @@ async function abrirModalPerfil() {
             </div>
 
             <div style="background:#edf2f7; padding:10px; border-radius:6px; border:1px solid #cbd5e0; margin-top:10px;">
-                <strong style="font-size:12px; color:#2d3748; display:block; margin-bottom:5px;">📱 Extensão no Celular (Lemur Browser)</strong>
-                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Baixa o pacote compactado (.crx) para instalar no Lemur Browser.</p>
-                <button class="btn btn-sm btn-info" onclick="baixarExtensaoMobile()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">⬇️ Baixar Extensão para o Celular</button>
+                <strong style="font-size:12px; color:#2d3748; display:block; margin-bottom:5px;">📱 App Android (APK)</strong>
+                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Instala o app do ProfSis3 no celular, restrito à Sala do Futuro e ao login gov.br.</p>
+                <button class="btn btn-sm btn-info" onclick="baixarApkAndroid()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">⬇️ Baixar APK</button>
             </div>
         </div>
     `;
@@ -1517,23 +1517,22 @@ window.baixarInstaladorExtensaoDesktop = async function() {
     alert('Baixando instalar_profsis3.bat\\n\\nCOMO INSTALAR:\\n1. Dê dois cliques no arquivo baixado (não precisa descompactar nada).\\n2. Se o Windows avisar "Editor desconhecido", clique em "Mais informações" e depois "Executar assim mesmo".\\n3. O Windows vai pedir permissão de administrador (tela azul/cinza) - clique em "Sim". Isso é necessário para configurar o Chrome corretamente.\\n4. Siga as instruções na tela (em português) e feche/reabra o Chrome quando pedido.\\n\\n✅ A partir daí a extensão se atualiza sozinha - você não vai precisar baixar nada de novo.\\n\\n⚠️ Se você já tinha instalado a extensão manualmente antes, remova a versão antiga em chrome://extensions para evitar conflito.\\n\\n💡 Se o computador não permitir dar permissão de administrador (ex: conta de escola), use o link "Modo avançado" abaixo do botão.');
 };
 
-// Baixa o pacote compactado (.crx) assinado, pensado para navegadores mobile como o Lemur Browser,
-// que aceitam carregar uma extensão "compactada" diretamente (sem passar por pasta extraída).
-window.baixarExtensaoMobile = function() {
-    const urlApp = window.location.href.split('?')[0].split('#')[0];
-    const baseUrl = urlApp.substring(0, urlApp.lastIndexOf('/') + 1);
-    const crxUrl = baseUrl + 'extensao-profsis/dist/profsis3-extension.crx?nocache=' + Date.now();
+// Baixa o APK do app Android do ProfSis3 (WebView restrita à Sala do Futuro + login gov.br,
+// ver app-android/), publicado como asset da release "android-latest" pelo workflow
+// .github/workflows/deploy-android.yml a cada mudança em app-android/.
+window.baixarApkAndroid = function() {
+    const apkUrl = 'https://github.com/rafanunesran/ProfSis3/releases/download/android-latest/profsis3-sed-debug.apk';
 
-    if (!confirm('Isso vai baixar o pacote da extensão (.crx) para instalar no Lemur Browser (ou outro navegador mobile compatível).\\n\\nDeseja prosseguir?')) return;
+    if (!confirm('Isso vai baixar o APK do app ProfSis3 para Android (fora da Play Store).\\n\\nDeseja prosseguir?')) return;
 
     const a = document.createElement('a');
-    a.href = crxUrl;
-    a.download = 'profsis3-extension.crx';
+    a.href = apkUrl;
+    a.download = 'profsis3-sed.apk';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
 
-    alert('Baixando profsis3-extension.crx\\n\\nCOMO INSTALAR NO LEMUR BROWSER:\\n1. Abra o menu de extensões do Lemur.\\n2. Procure a opção de carregar/instalar uma extensão compactada.\\n3. Selecione o arquivo profsis3-extension.crx baixado.\\n\\nDica: de vez em quando, use o botão de atualizar extensões do Lemur para checar se saiu uma versão nova.');
+    alert('Baixando profsis3-sed.apk\\n\\nCOMO INSTALAR:\\n1. Abra o arquivo baixado (pode precisar permitir "instalar apps de fontes desconhecidas" na primeira vez).\\n2. Conclua a instalação normalmente.\\n3. Abra o app "ProfSis3 SED" - ele já entra direto na Sala do Futuro.\\n\\nDica: de vez em quando baixe de novo para pegar uma versão mais recente (o APK ainda não se atualiza sozinho).');
 };
 
 async function sincronizarAlunosNuvem() {

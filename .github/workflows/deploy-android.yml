@@ -78,11 +78,28 @@ jobs:
             -PPROFSIS_RELEASE_KEY_PASSWORD="$ANDROID_RELEASE_KEY_PASSWORD"
           rm -f "$RUNNER_TEMP/profsis3-release.keystore"
 
+      - name: Preparar APK(s) para distribuição (nomes estáveis, independente do output padrão do Gradle)
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist/profsis3-sed-debug.apk
+          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk dist/profsis3-sed-release.apk
+          fi
+
       - name: Upload APK(s) como artifact
         uses: actions/upload-artifact@v4
         with:
           name: profsis3-sed-apk
-          path: |
-            app-android/android/app/build/outputs/apk/debug/*.apk
-            app-android/android/app/build/outputs/apk/release/*.apk
+          path: app-android/dist/*.apk
           if-no-files-found: warn
+
+      - name: Publicar APK(s) em Release do GitHub (link estável para sideload)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-latest
+          name: "ProfSis3 SED (Android) - build automático"
+          body: |
+            APK gerado automaticamente pelo workflow deploy-android.yml a partir do commit ${{ github.sha }}.
+            Distribuição via sideload (sem Play Store nesta fase) - ver app-android/TESTING.md antes de instalar.
+          make_latest: true
+          files: app-android/dist/*.apk
