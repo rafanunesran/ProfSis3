@@ -665,6 +665,50 @@ async function configurarChaveIA() {
 // planilha oficial), curriculo_chunks_embeddings (trechos de PDF com embedding pra busca semântica) e
 // curriculo_ingest_manifest (um doc por arquivo já enviado, pra saber o que já foi processado).
 
+// Estado "armado" dos botões de reenvio (planilha/PDF já enviados antes com o mesmo conteúdo) e da
+// remoção por linha - tudo via UI inline no próprio modal, sem depender de confirm()/alert() nativos
+// do navegador (que o Chrome pode passar a suprimir silenciosamente numa aba depois que o usuário marca
+// "impedir que esta página crie caixas de diálogo adicionais" num popup anterior).
+let uploadXlsxArmadoBaseCurricular = false;
+let uploadPdfArmadoBaseCurricular = false;
+const docsArmadosParaRemocaoBaseCurricular = new Map(); // manifestDocId -> timeoutId
+
+function mostrarMensagemBaseCurricular(texto, tipo) {
+    const el = document.getElementById('baseCurricularMensagem');
+    if (!el) return;
+    const estilos = {
+        sucesso: { bg: '#f0fff4', border: '#9ae6b4', cor: '#276749' },
+        erro: { bg: '#fff5f5', border: '#feb2b2', cor: '#c53030' },
+        aviso: { bg: '#fffaf0', border: '#fbd38d', cor: '#975a16' },
+        info: { bg: '#ebf8ff', border: '#bee3f8', cor: '#2b6cb0' }
+    };
+    const estilo = estilos[tipo] || estilos.info;
+    el.style.display = 'block';
+    el.style.background = estilo.bg;
+    el.style.border = `1px solid ${estilo.border}`;
+    el.style.color = estilo.cor;
+    el.textContent = texto;
+}
+
+function esconderMensagemBaseCurricular() {
+    const el = document.getElementById('baseCurricularMensagem');
+    if (el) el.style.display = 'none';
+}
+
+function resetUploadArmadoBaseCurricular(tipo) {
+    if (tipo === 'xlsx') {
+        uploadXlsxArmadoBaseCurricular = false;
+        const btn = document.getElementById('btnProcessarXlsxBaseCurricular');
+        if (btn) btn.textContent = 'Processar e Enviar';
+    }
+    if (tipo === 'pdf') {
+        uploadPdfArmadoBaseCurricular = false;
+        const btn = document.getElementById('btnProcessarPdfBaseCurricular');
+        if (btn) btn.textContent = 'Processar e Enviar';
+    }
+    esconderMensagemBaseCurricular();
+}
+
 function abrirModalBaseCurricular() {
     if (!document.getElementById('modalBaseCurricular')) {
         const div = document.createElement('div');
@@ -672,6 +716,12 @@ function abrirModalBaseCurricular() {
         div.className = 'modal';
         document.body.appendChild(div);
     }
+
+    // Reseta qualquer estado "armado" de uma sessão anterior do modal.
+    uploadXlsxArmadoBaseCurricular = false;
+    uploadPdfArmadoBaseCurricular = false;
+    docsArmadosParaRemocaoBaseCurricular.forEach(timeoutId => clearTimeout(timeoutId));
+    docsArmadosParaRemocaoBaseCurricular.clear();
 
     const seriesCheckboxes = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
         .map(s => `<label style="font-size:12px; display:inline-flex; align-items:center; gap:3px; margin-right:8px;"><input type="checkbox" class="chk-serie-base-curricular" value="${s}">${s}º</label>`)
@@ -685,12 +735,14 @@ function abrirModalBaseCurricular() {
             </div>
             <p style="font-size:13px; color:#666; margin-bottom:15px;">Os documentos enviados aqui ficam disponíveis pra todas as escolas da rede usarem como fonte de verdade no Estagiário IA (não precisa reenviar por escola).</p>
 
+            <div id="baseCurricularMensagem" style="display:none; margin-bottom:15px; padding:10px 12px; border-radius:6px; font-size:13px;"></div>
+
             <div style="display:flex; gap:15px; margin-bottom:15px; flex-wrap:wrap;">
                 <div style="flex:1; min-width:260px; background:#f7fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">
                     <h3 style="margin-top:0; font-size:15px;">📊 Planilha de Escopo-Sequência (.xlsx)</h3>
                     <p style="font-size:12px; color:#718096;">Cada aba = uma disciplina. As colunas de Bimestre/Aula/Habilidade/Conteúdo são lidas automaticamente.</p>
-                    <input type="file" id="baseCurricularArquivoXlsx" accept=".xlsx" style="width:100%; margin-bottom:10px; font-size:12px;">
-                    <button class="btn btn-primary btn-sm" onclick="processarPlanilhaCurriculo()">Processar e Enviar</button>
+                    <input type="file" id="baseCurricularArquivoXlsx" accept=".xlsx" style="width:100%; margin-bottom:10px; font-size:12px;" onchange="resetUploadArmadoBaseCurricular('xlsx')">
+                    <button class="btn btn-primary btn-sm" id="btnProcessarXlsxBaseCurricular" onclick="processarPlanilhaCurriculo()">Processar e Enviar</button>
                 </div>
                 <div style="flex:1; min-width:260px; background:#fffaf0; padding:15px; border-radius:8px; border:1px solid #fbd38d;">
                     <h3 style="margin-top:0; font-size:15px;">📄 Documento em PDF</h3>
@@ -706,8 +758,8 @@ function abrirModalBaseCurricular() {
                         ${seriesCheckboxes}
                         <label style="font-size:12px; display:inline-flex; align-items:center; gap:3px; font-weight:bold;"><input type="checkbox" id="chkSerieTodasBaseCurricular">Todas</label>
                     </div>
-                    <input type="file" id="baseCurricularArquivoPdf" accept=".pdf" style="width:100%; margin-bottom:10px; font-size:12px;">
-                    <button class="btn btn-primary btn-sm" onclick="processarPdfCurriculo()">Processar e Enviar</button>
+                    <input type="file" id="baseCurricularArquivoPdf" accept=".pdf" style="width:100%; margin-bottom:10px; font-size:12px;" onchange="resetUploadArmadoBaseCurricular('pdf')">
+                    <button class="btn btn-primary btn-sm" id="btnProcessarPdfBaseCurricular" onclick="processarPdfCurriculo()">Processar e Enviar</button>
                 </div>
             </div>
 
@@ -902,28 +954,37 @@ async function apagarLinhasAbaCurriculo(fonteArquivo, fonteAba) {
 }
 
 async function processarPlanilhaCurriculo() {
-    if (typeof db === 'undefined' || !db) return alert('Sem conexão com o banco de dados.');
+    if (typeof db === 'undefined' || !db) return mostrarMensagemBaseCurricular('Sem conexão com o banco de dados.', 'erro');
     const input = document.getElementById('baseCurricularArquivoXlsx');
-    if (!input.files || !input.files[0]) return alert('Selecione um arquivo .xlsx primeiro.');
+    if (!input.files || !input.files[0]) return mostrarMensagemBaseCurricular('Selecione um arquivo .xlsx primeiro.', 'aviso');
     const arquivo = input.files[0];
+    const btn = document.getElementById('btnProcessarXlsxBaseCurricular');
 
     try {
-        definirProgressoBaseCurricular('Carregando biblioteca de leitura de planilhas...', 0);
-        await carregarBibliotecaBaseCurricular('xlsx');
-
-        definirProgressoBaseCurricular('Lendo planilha...', 5);
+        esconderMensagemBaseCurricular();
+        definirProgressoBaseCurricular('Verificando arquivo...', 0);
         const bytes = await arquivo.arrayBuffer();
         const hash = await calcularHashArquivoBaseCurricular(bytes.slice(0));
         const manifestId = 'xlsx_' + sanitizarIdManifestoBaseCurricular(arquivo.name);
         const manifestExistente = await getData('curriculo_ingest_manifest', manifestId);
 
-        if (manifestExistente && manifestExistente.hashConteudo === hash) {
-            if (!confirm(`O arquivo "${arquivo.name}" já foi enviado antes com o mesmo conteúdo (${manifestExistente.totalUnidades} linhas). Deseja reprocessar mesmo assim?`)) {
-                esconderProgressoBaseCurricular();
-                return;
-            }
+        // Em vez de um confirm() nativo (que o navegador pode passar a suprimir silenciosamente),
+        // o próprio botão "armar" - primeiro clique avisa e troca o texto do botão; o clique
+        // seguinte no botão já armado é que efetivamente reprocessa.
+        if (manifestExistente && manifestExistente.hashConteudo === hash && !uploadXlsxArmadoBaseCurricular) {
+            esconderProgressoBaseCurricular();
+            uploadXlsxArmadoBaseCurricular = true;
+            if (btn) btn.textContent = '⚠️ Já enviado — Confirmar Substituição';
+            mostrarMensagemBaseCurricular(`O arquivo "${arquivo.name}" já foi enviado antes com o mesmo conteúdo (${manifestExistente.totalUnidades} linhas). Clique em "Confirmar Substituição" pra reprocessar mesmo assim.`, 'aviso');
+            return;
         }
+        uploadXlsxArmadoBaseCurricular = false;
+        if (btn) btn.textContent = 'Processar e Enviar';
 
+        definirProgressoBaseCurricular('Carregando biblioteca de leitura de planilhas...', 2);
+        await carregarBibliotecaBaseCurricular('xlsx');
+
+        definirProgressoBaseCurricular('Lendo planilha...', 5);
         const workbook = XLSX.read(bytes, { type: 'array' });
         let totalLinhas = 0;
         const abasIgnoradas = [];
@@ -958,15 +1019,19 @@ async function processarPlanilhaCurriculo() {
         });
 
         esconderProgressoBaseCurricular();
+        uploadXlsxArmadoBaseCurricular = false;
+        if (btn) btn.textContent = 'Processar e Enviar';
         let msg = `Planilha processada! ${totalLinhas} linhas gravadas.`;
-        if (abasIgnoradas.length) msg += `\n\nAbas não reconhecidas (ignoradas): ${abasIgnoradas.join(', ')}`;
-        alert(msg);
+        if (abasIgnoradas.length) msg += ` Abas não reconhecidas (ignoradas): ${abasIgnoradas.join(', ')}.`;
+        mostrarMensagemBaseCurricular(msg, abasIgnoradas.length ? 'aviso' : 'sucesso');
         input.value = '';
         listarDocumentosBaseCurricular();
     } catch (e) {
         console.error(e);
         esconderProgressoBaseCurricular();
-        alert('Erro ao processar planilha: ' + e.message);
+        uploadXlsxArmadoBaseCurricular = false;
+        if (btn) btn.textContent = 'Processar e Enviar';
+        mostrarMensagemBaseCurricular('Erro ao processar planilha: ' + e.message, 'erro');
     }
 }
 
@@ -1042,10 +1107,11 @@ async function apagarChunksArquivoCurriculo(fonteArquivo) {
 }
 
 async function processarPdfCurriculo() {
-    if (typeof db === 'undefined' || !db) return alert('Sem conexão com o banco de dados.');
+    if (typeof db === 'undefined' || !db) return mostrarMensagemBaseCurricular('Sem conexão com o banco de dados.', 'erro');
     const inputArquivo = document.getElementById('baseCurricularArquivoPdf');
-    if (!inputArquivo.files || !inputArquivo.files[0]) return alert('Selecione um arquivo PDF primeiro.');
+    if (!inputArquivo.files || !inputArquivo.files[0]) return mostrarMensagemBaseCurricular('Selecione um arquivo PDF primeiro.', 'aviso');
     const arquivo = inputArquivo.files[0];
+    const btn = document.getElementById('btnProcessarPdfBaseCurricular');
 
     const tipoDocumento = document.getElementById('baseCurricularTipoPdf').value;
     const disciplina = document.getElementById('baseCurricularDisciplinaPdf').value.trim();
@@ -1053,35 +1119,42 @@ async function processarPdfCurriculo() {
     const serieChaves = todasSeries
         ? ['1', '2', '3', '4', '5', '6', '7', '8', '9']
         : Array.from(document.querySelectorAll('.chk-serie-base-curricular:checked')).map(chk => chk.value);
-    if (serieChaves.length === 0) return alert('Selecione ao menos uma série (ou marque "Todas").');
+    if (serieChaves.length === 0) return mostrarMensagemBaseCurricular('Selecione ao menos uma série (ou marque "Todas").', 'aviso');
 
     const configData = await getData('system', 'config_ia') || {};
     const apiKeys = (configData.apiKey || '').split(',').map(k => k.trim()).filter(Boolean);
     const chaveGemini = apiKeys.find(k => !k.startsWith('sk-') && !k.startsWith('gsk_'));
-    if (!chaveGemini) return alert('É necessário ter uma chave do Google Gemini configurada (card "Chave de IA" acima) pra gerar os embeddings de busca.');
+    if (!chaveGemini) return mostrarMensagemBaseCurricular('É necessário ter uma chave do Google Gemini configurada (card "Chave de IA" acima) pra gerar os embeddings de busca.', 'aviso');
 
     try {
-        definirProgressoBaseCurricular('Carregando biblioteca de leitura de PDF...', 0);
-        await carregarBibliotecaBaseCurricular('pdf');
-
-        definirProgressoBaseCurricular('Extraindo texto do PDF...', 5);
+        esconderMensagemBaseCurricular();
+        definirProgressoBaseCurricular('Verificando arquivo...', 0);
         const bytes = await arquivo.arrayBuffer();
         const hash = await calcularHashArquivoBaseCurricular(bytes.slice(0));
         const manifestId = 'pdf_' + sanitizarIdManifestoBaseCurricular(arquivo.name);
         const manifestExistente = await getData('curriculo_ingest_manifest', manifestId);
 
-        if (manifestExistente && manifestExistente.hashConteudo === hash) {
-            if (!confirm(`O arquivo "${arquivo.name}" já foi enviado antes com o mesmo conteúdo (${manifestExistente.totalUnidades} trechos). Deseja reprocessar mesmo assim?`)) {
-                esconderProgressoBaseCurricular();
-                return;
-            }
+        // Mesmo padrão de botão "armado" usado na planilha - ver processarPlanilhaCurriculo.
+        if (manifestExistente && manifestExistente.hashConteudo === hash && !uploadPdfArmadoBaseCurricular) {
+            esconderProgressoBaseCurricular();
+            uploadPdfArmadoBaseCurricular = true;
+            if (btn) btn.textContent = '⚠️ Já enviado — Confirmar Substituição';
+            mostrarMensagemBaseCurricular(`O arquivo "${arquivo.name}" já foi enviado antes com o mesmo conteúdo (${manifestExistente.totalUnidades} trechos). Clique em "Confirmar Substituição" pra reprocessar mesmo assim.`, 'aviso');
+            return;
         }
+        uploadPdfArmadoBaseCurricular = false;
+        if (btn) btn.textContent = 'Processar e Enviar';
 
+        definirProgressoBaseCurricular('Carregando biblioteca de leitura de PDF...', 2);
+        await carregarBibliotecaBaseCurricular('pdf');
+
+        definirProgressoBaseCurricular('Extraindo texto do PDF...', 5);
         const paginas = await extrairTextoPdfPorPagina(bytes);
         const textoTotal = paginas.join(' ').trim();
         if (textoTotal.length < 200) {
             esconderProgressoBaseCurricular();
-            return alert('Não foi possível extrair texto suficiente deste PDF (pode ser um PDF escaneado sem OCR, que este processo não suporta ainda).');
+            mostrarMensagemBaseCurricular('Não foi possível extrair texto suficiente deste PDF (pode ser um PDF escaneado sem OCR, que este processo não suporta ainda).', 'erro');
+            return;
         }
 
         const chunks = dividirEmChunksCurriculo(paginas);
@@ -1128,15 +1201,19 @@ async function processarPdfCurriculo() {
         });
 
         esconderProgressoBaseCurricular();
+        uploadPdfArmadoBaseCurricular = false;
+        if (btn) btn.textContent = 'Processar e Enviar';
         let msg = `PDF processado! ${processados} trechos gravados.`;
-        if (falhas > 0) msg += `\n\n⚠️ ${falhas} trecho(s) falharam ao gerar embedding e foram pulados.`;
-        alert(msg);
+        if (falhas > 0) msg += ` ⚠️ ${falhas} trecho(s) falharam ao gerar embedding e foram pulados.`;
+        mostrarMensagemBaseCurricular(msg, falhas > 0 ? 'aviso' : 'sucesso');
         inputArquivo.value = '';
         listarDocumentosBaseCurricular();
     } catch (e) {
         console.error(e);
         esconderProgressoBaseCurricular();
-        alert('Erro ao processar PDF: ' + e.message);
+        uploadPdfArmadoBaseCurricular = false;
+        if (btn) btn.textContent = 'Processar e Enviar';
+        mostrarMensagemBaseCurricular('Erro ao processar PDF: ' + e.message, 'erro');
     }
 }
 
@@ -1155,12 +1232,16 @@ async function listarDocumentosBaseCurricular() {
         snap.forEach(doc => {
             const d = doc.data();
             const dataFormatada = d.ingeridoEm ? new Date(d.ingeridoEm).toLocaleString('pt-BR') : '-';
+            // Padrão de dois cliques em vez de confirm() nativo - ver onCliqueRemoverBaseCurricular.
+            const acaoHtml = docsArmadosParaRemocaoBaseCurricular.has(doc.id)
+                ? `<button class="btn btn-danger btn-sm" onclick="onCliqueRemoverBaseCurricular('${doc.id}')">⚠️ Confirmar</button> <button class="btn btn-secondary btn-sm" onclick="cancelarRemocaoBaseCurricular('${doc.id}')">Cancelar</button>`
+                : `<button class="btn btn-danger btn-sm" onclick="onCliqueRemoverBaseCurricular('${doc.id}')">🗑️ Remover</button>`;
             html += `<tr>
                 <td>${d.chaveArquivo || '-'}</td>
                 <td>${d.tipoDocumento || '-'}</td>
                 <td>${d.totalUnidades ?? '-'}</td>
                 <td>${dataFormatada}</td>
-                <td><button class="btn btn-danger btn-sm" onclick="removerDocumentoBaseCurricular('${doc.id}')">🗑️</button></td>
+                <td>${acaoHtml}</td>
             </tr>`;
         });
         html += '</tbody></table>';
@@ -1171,8 +1252,34 @@ async function listarDocumentosBaseCurricular() {
     }
 }
 
+// Primeiro clique "arma" a remoção (troca o botão pra um estado de confirmação, com timeout que
+// reverte sozinho); clicar de novo enquanto armado é que efetivamente remove. Substitui o confirm()
+// nativo, que pode ser suprimido silenciosamente pelo navegador depois de várias caixas de diálogo
+// nessa mesma aba.
+function onCliqueRemoverBaseCurricular(manifestDocId) {
+    if (docsArmadosParaRemocaoBaseCurricular.has(manifestDocId)) {
+        clearTimeout(docsArmadosParaRemocaoBaseCurricular.get(manifestDocId));
+        docsArmadosParaRemocaoBaseCurricular.delete(manifestDocId);
+        removerDocumentoBaseCurricular(manifestDocId);
+        return;
+    }
+    const timeoutId = setTimeout(() => {
+        docsArmadosParaRemocaoBaseCurricular.delete(manifestDocId);
+        listarDocumentosBaseCurricular();
+    }, 5000);
+    docsArmadosParaRemocaoBaseCurricular.set(manifestDocId, timeoutId);
+    listarDocumentosBaseCurricular();
+}
+
+function cancelarRemocaoBaseCurricular(manifestDocId) {
+    if (docsArmadosParaRemocaoBaseCurricular.has(manifestDocId)) {
+        clearTimeout(docsArmadosParaRemocaoBaseCurricular.get(manifestDocId));
+        docsArmadosParaRemocaoBaseCurricular.delete(manifestDocId);
+    }
+    listarDocumentosBaseCurricular();
+}
+
 async function removerDocumentoBaseCurricular(manifestDocId) {
-    if (!confirm('Remover este documento e todos os dados gerados a partir dele? Essa ação não pode ser desfeita.')) return;
     try {
         const doc = await db.collection('curriculo_ingest_manifest').doc(manifestDocId).get();
         if (!doc.exists) return;
@@ -1185,10 +1292,10 @@ async function removerDocumentoBaseCurricular(manifestDocId) {
         await apagarDocsEmLotesBaseCurricular(snap);
         await db.collection('curriculo_ingest_manifest').doc(manifestDocId).delete();
 
-        alert('Documento removido.');
+        mostrarMensagemBaseCurricular(`Documento "${d.chaveArquivo || ''}" removido.`, 'sucesso');
         listarDocumentosBaseCurricular();
     } catch (e) {
         console.error(e);
-        alert('Erro ao remover: ' + e.message);
+        mostrarMensagemBaseCurricular('Erro ao remover: ' + e.message, 'erro');
     }
 }

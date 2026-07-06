@@ -16,14 +16,15 @@ function renderGestorPanel() {
         <button onclick="showScreen('registrosGestor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('ocorrenciasGestor', event)"><span class="icon">⚠️</span><span class="label">Ocorrências</span></button>
         <button onclick="showScreen('tutoriasGestor', event)"><span class="icon">🎓</span><span class="label">Tutorias</span></button>
+        <button onclick="showScreen('notasOficiaisGestor', event)"><span class="icon">🧮</span><span class="label">Notas Oficiais</span></button>
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
         <button onclick="showScreen('horariosGestor', event)"><span class="icon">⏰</span><span class="label">Horários</span></button>
     `;
-    
+
     // Criar telas do Gestor se não existirem
     const container = document.getElementById('appContainer');
     const innerContainer = container.querySelector('.container') || container;
-    
+
     if (!document.getElementById('registrosGestor')) {
         const reg = document.createElement('div');
         reg.id = 'registrosGestor';
@@ -43,6 +44,13 @@ function renderGestorPanel() {
         tut.id = 'tutoriasGestor';
         tut.className = 'screen';
         innerContainer.appendChild(tut);
+    }
+
+    if (!document.getElementById('notasOficiaisGestor')) {
+        const not = document.createElement('div');
+        not.id = 'notasOficiaisGestor';
+        not.className = 'screen';
+        innerContainer.appendChild(not);
     }
 
     if (!document.getElementById('horariosGestor')) {
@@ -2478,4 +2486,513 @@ async function imprimirTodosRelatoriosTutoriaGestor(profId, profNome) {
     const win = window.open('', '', 'width=900,height=800');
     win.document.write(html);
     win.document.close();
+}
+
+// --- NOTAS OFICIAIS (GESTOR) — Upload de Avaliações e Mapão Bimestral via IA ---
+
+let notasOficiaisModo = 'avaliacao'; // 'avaliacao' | 'mapao'
+let notasOficiaisRegistrosPendentes = []; // linhas extraídas pela IA, editáveis antes de confirmar
+
+function normNomeNotasOficiais(s) {
+    // Mesma convenção de normalização de nome usada no resto do app (gestor.js:1938, app.js:6460)
+    return (s || '').trim().toUpperCase();
+}
+
+function renderNotasOficiaisGestor() {
+    const container = document.getElementById('notasOficiaisGestor');
+    if (!container) return;
+
+    const turmas = data.turmas || [];
+    const avaliacoes = (data.avaliacoesGestor || []).slice().sort((a, b) => b.criadoEm - a.criadoEm);
+
+    container.innerHTML = `
+        <div class="card">
+            <h2>🧮 Notas Oficiais (Upload por IA)</h2>
+            <p style="color:#666; margin-bottom:20px; font-size:13px;">
+                Envie a planilha/PDF de uma <strong>avaliação</strong> (ex: Prova Paulista) ou do <strong>mapão bimestral</strong>.
+                Uma IA extrai as notas por aluno/disciplina/bimestre; você revisa antes de salvar.
+            </p>
+
+            <div class="form-row" style="margin-bottom: 10px;">
+                <label style="flex:1;">Turma:
+                    <select id="notasOficiaisTurma">
+                        <option value="">Selecione...</option>
+                        ${turmas.map(t => `<option value="${t.id}">${t.nome}</option>`).join('')}
+                    </select>
+                </label>
+            </div>
+
+            <div style="margin-bottom: 15px; display:flex; gap: 15px;">
+                <label><input type="radio" name="notasOficiaisModoRadio" value="avaliacao" checked onchange="toggleModoNotasOficiais('avaliacao')"> Avaliação (ex: Prova Paulista, Simulado)</label>
+                <label><input type="radio" name="notasOficiaisModoRadio" value="mapao" onchange="toggleModoNotasOficiais('mapao')"> Mapão Bimestral (notas oficiais)</label>
+            </div>
+
+            <div id="camposAvaliacaoNotasOficiais" style="margin-bottom: 15px; background:#f8fafc; padding:12px; border-radius:8px; border:1px solid #e2e8f0;">
+                <div class="form-row">
+                    <label style="flex:2;">Nome da Avaliação:
+                        <input type="text" id="notasOficiaisNomeAvaliacao" placeholder="Ex: Prova Paulista - 2º Bimestre">
+                    </label>
+                    <label style="flex:1;">Bimestre:
+                        <select id="notasOficiaisBimestre">
+                            <option value="1">1º Bimestre</option>
+                            <option value="2">2º Bimestre</option>
+                            <option value="3">3º Bimestre</option>
+                            <option value="4">4º Bimestre</option>
+                        </select>
+                    </label>
+                </div>
+            </div>
+
+            <div id="infoMapaoNotasOficiais" style="display:none; margin-bottom: 15px; background:#ebf8ff; padding:12px; border-radius:8px; border:1px solid #bee3f8; font-size:12px; color:#2c5282;">
+                O mapão normalmente já traz todas as notas bimestrais lançadas até agora. Não é preciso escolher o bimestre — a IA identifica cada coluna/bimestre presente no arquivo. Reenviar um mapão mais atualizado apenas corrige as notas já registradas, sem duplicar.
+            </div>
+
+            <div class="form-row" style="margin-bottom: 10px;">
+                <label style="flex:1;">Arquivo (.xlsx ou .pdf):
+                    <input type="file" id="notasOficiaisArquivo" accept=".xlsx,.pdf">
+                </label>
+            </div>
+
+            <button class="btn btn-primary" id="btnProcessarNotasOficiais" onclick="processarArquivoNotasOficiais()">🤖 Processar com IA</button>
+
+            <div id="progressoNotasOficiais" style="display:none; margin-top:15px;">
+                <div style="background:#e2e8f0; border-radius:6px; overflow:hidden; height:18px;">
+                    <div id="barraProgressoNotasOficiais" style="background:#4299e1; height:100%; width:30%; transition:width .2s;"></div>
+                </div>
+                <p id="textoProgressoNotasOficiais" style="font-size:12px; color:#666; margin-top:4px;"></p>
+            </div>
+
+            <div id="revisaoNotasOficiais" style="margin-top:20px;"></div>
+
+            <h3 style="margin-top:30px; border-top:1px solid #e2e8f0; padding-top:15px;">Avaliações Cadastradas</h3>
+            <div id="listaAvaliacoesGestor">
+                ${avaliacoes.length === 0 ? '<p class="empty-state">Nenhuma avaliação cadastrada ainda.</p>' : `
+                    <table style="font-size:13px;">
+                        <thead><tr><th>Nome</th><th>Turma</th><th>Bimestre</th><th>Disciplinas</th><th>Ações</th></tr></thead>
+                        <tbody>
+                            ${avaliacoes.map(a => {
+                                const t = turmas.find(x => x.id == a.id_turma);
+                                return `<tr>
+                                    <td>${a.nome}</td>
+                                    <td>${t ? t.nome : 'Turma removida'}</td>
+                                    <td>${a.bimestre}º</td>
+                                    <td>${(a.disciplinas || []).join(', ') || '-'}</td>
+                                    <td><button class="btn btn-sm btn-danger" onclick="removerAvaliacaoGestor(${a.id})">🗑️</button></td>
+                                </tr>`;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                `}
+            </div>
+        </div>
+    `;
+}
+
+function toggleModoNotasOficiais(modo) {
+    notasOficiaisModo = modo;
+    document.getElementById('camposAvaliacaoNotasOficiais').style.display = modo === 'avaliacao' ? 'block' : 'none';
+    document.getElementById('infoMapaoNotasOficiais').style.display = modo === 'mapao' ? 'block' : 'none';
+}
+
+function removerAvaliacaoGestor(id) {
+    if (!confirm('Excluir esta avaliação e todas as notas vinculadas a ela?')) return;
+    data.avaliacoesGestor = (data.avaliacoesGestor || []).filter(a => a.id != id);
+    data.notasAvaliacoesGestor = (data.notasAvaliacoesGestor || []).filter(n => n.id_avaliacao != id);
+    persistirDados();
+    renderNotasOficiaisGestor();
+}
+
+function definirProgressoNotasOficiais(texto, percentual) {
+    const container = document.getElementById('progressoNotasOficiais');
+    const barra = document.getElementById('barraProgressoNotasOficiais');
+    const label = document.getElementById('textoProgressoNotasOficiais');
+    if (!container) return;
+    container.style.display = 'block';
+    if (barra && typeof percentual === 'number') barra.style.width = Math.round(percentual) + '%';
+    if (label) label.textContent = texto || '';
+}
+
+async function extrairTextoXlsxNotasOficiais(arrayBuffer) {
+    const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
+    let texto = '';
+    workbook.SheetNames.forEach(nomeAba => {
+        const sheet = workbook.Sheets[nomeAba];
+        const linhas = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, blankrows: false });
+        texto += `\n--- Aba: ${nomeAba} ---\n`;
+        linhas.forEach(linha => { texto += linha.join(' | ') + '\n'; });
+    });
+    return texto;
+}
+
+async function extrairTextoPdfNotasOficiais(arrayBuffer) {
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    let texto = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        texto += content.items.map(it => it.str).join(' ') + '\n';
+    }
+    return texto;
+}
+
+function montarPromptNotasOficiais(modo, nomeAvaliacao, bimestreSelecionado, conteudo, nomesAlunos) {
+    const listaNomes = nomesAlunos.join(', ');
+    let conteudoTruncado = conteudo;
+    if (conteudoTruncado.length > 15000) {
+        conteudoTruncado = conteudoTruncado.slice(0, 15000) + '\n[...conteúdo truncado...]';
+    }
+
+    const instrucao = modo === 'mapao'
+        ? `Este é o "mapão bimestral": um mapa oficial de notas por aluno, por disciplina, por bimestre. O arquivo pode conter colunas de mais de um bimestre (ex: 1ºBim, 2ºBim, 3ºBim). Extraia UMA linha para cada combinação existente de aluno + disciplina + bimestre.`
+        : `Esta é a avaliação nomeada "${nomeAvaliacao}", referente ao ${bimestreSelecionado}º bimestre. Nem toda disciplina é necessariamente testada - extraia apenas as disciplinas que realmente aparecem no arquivo para cada aluno, não invente notas para disciplinas ausentes. Use bimestre=${bimestreSelecionado} em todas as linhas.`;
+
+    return `Você é um assistente que extrai notas escolares de planilhas/PDFs para um sistema de gestão escolar.
+
+${instrucao}
+
+Alunos conhecidos nesta turma (use estes nomes exatos ao identificar o aluno no arquivo, mesmo que o arquivo tenha nomes abreviados, com erro de digitação ou fora de ordem):
+${listaNomes}
+
+Conteúdo extraído do arquivo:
+"""
+${conteudoTruncado}
+"""
+
+Retorne APENAS um JSON válido, sem marcação markdown, no formato exato:
+{"registros": [{"nome_estudante": "...", "disciplina": "...", "bimestre": 1, "valor": "..."}]}
+
+Regras: não invente notas que não estão no arquivo; "valor" deve ser o texto da nota exatamente como aparece (ex: "7,5"); "disciplina" deve ser o nome da matéria como aparece no arquivo (ex: "Matemática", "Língua Portuguesa").`;
+}
+
+async function chamarIAExtracaoNotas(promptText) {
+    let apiKeys = [];
+    const configData = await getData('system', 'config_ia');
+    if (configData && configData.apiKey) {
+        apiKeys = configData.apiKey.split(',').map(k => k.trim()).filter(k => k);
+    }
+    if (apiKeys.length === 0) {
+        throw new Error('A chave da API não foi configurada. Peça ao Administrador para entrar no painel Super Admin e adicioná-la na aba Migração.');
+    }
+
+    let success = false;
+    let lastError = '';
+    let respostaTexto = '';
+
+    const tentativas = 3;
+    const modelosFallback = ['gemini-1.5-flash-latest', 'gemini-1.5-pro-latest', 'gemini-1.5-flash'];
+
+    for (let i = 0; i < tentativas && !success; i++) {
+        const modeloAtual = modelosFallback[i % modelosFallback.length];
+
+        for (const currentKey of apiKeys) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+                if (currentKey.startsWith('sk-') && !currentKey.startsWith('sk-ant-')) {
+                    const response = await fetch(`https://api.openai.com/v1/chat/completions`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentKey}` },
+                        body: JSON.stringify({
+                            model: 'gpt-4o-mini',
+                            messages: [
+                                { role: 'system', content: 'Você deve retornar APENAS um JSON válido. Nenhuma formatação markdown.' },
+                                { role: 'user', content: promptText }
+                            ],
+                            temperature: 0.2,
+                            response_format: { type: "json_object" }
+                        }),
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+                    if (!response.ok) throw new Error(`OpenAI Erro: ${response.statusText}`);
+                    const apiDataObj = await response.json();
+                    respostaTexto = apiDataObj.choices[0].message.content;
+
+                } else if (currentKey.startsWith('gsk_')) {
+                    const response = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentKey}` },
+                        body: JSON.stringify({
+                            model: 'llama-3.3-70b-versatile',
+                            messages: [
+                                { role: 'system', content: 'Você deve retornar APENAS um JSON válido. Nenhuma formatação markdown.' },
+                                { role: 'user', content: promptText }
+                            ],
+                            temperature: 0.2,
+                            response_format: { type: "json_object" }
+                        }),
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+                    if (!response.ok) throw new Error(`Groq Erro: ${response.statusText}`);
+                    const apiDataObj = await response.json();
+                    respostaTexto = apiDataObj.choices[0].message.content;
+
+                } else {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modeloAtual}:generateContent?key=${currentKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: promptText }] }],
+                            generationConfig: { temperature: 0.2, response_mime_type: "application/json" }
+                        }),
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+                    if (!response.ok) {
+                        const errorObj = await response.json();
+                        throw new Error(errorObj.error ? errorObj.error.message : response.statusText);
+                    }
+                    const apiDataObj = await response.json();
+                    if (!apiDataObj.candidates || apiDataObj.candidates.length === 0 || !apiDataObj.candidates[0].content) {
+                        throw new Error('A IA não retornou um conteúdo válido.');
+                    }
+                    respostaTexto = apiDataObj.candidates[0].content.parts[0].text;
+                }
+
+                success = true;
+                break;
+            } catch (err) {
+                lastError = err.name === 'AbortError' ? 'Tempo de resposta esgotado.' : err.message;
+                console.warn(`⚠️ Falha na API de extração de notas (Tentativa ${i + 1}):`, lastError);
+            }
+        }
+        if (!success && i < tentativas - 1) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+    }
+
+    if (!success) {
+        throw new Error(`A Inteligência Artificial falhou ou rejeitou o pedido.\nMotivo: ${lastError}`);
+    }
+
+    let jsonLimpo = respostaTexto.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').trim();
+    const jsonMatch = jsonLimpo.match(/\{[\s\S]*\}/);
+    if (jsonMatch) jsonLimpo = jsonMatch[0];
+
+    return JSON.parse(jsonLimpo);
+}
+
+async function processarArquivoNotasOficiais() {
+    const turmaId = document.getElementById('notasOficiaisTurma').value;
+    const arquivoInput = document.getElementById('notasOficiaisArquivo');
+    const arquivo = arquivoInput.files[0];
+
+    if (!turmaId) return alert('Selecione a turma.');
+    if (!arquivo) return alert('Selecione um arquivo (.xlsx ou .pdf).');
+
+    const modo = notasOficiaisModo;
+    const nomeAvaliacao = document.getElementById('notasOficiaisNomeAvaliacao').value.trim();
+    const bimestreSelecionado = parseInt(document.getElementById('notasOficiaisBimestre').value);
+
+    if (modo === 'avaliacao' && !nomeAvaliacao) return alert('Informe o nome da avaliação.');
+
+    const btn = document.getElementById('btnProcessarNotasOficiais');
+    btn.disabled = true;
+    document.getElementById('revisaoNotasOficiais').innerHTML = '';
+
+    try {
+        const ext = arquivo.name.split('.').pop().toLowerCase();
+        definirProgressoNotasOficiais('Carregando leitor de arquivo...', 10);
+        await carregarBibliotecaBaseCurricular(ext === 'pdf' ? 'pdf' : 'xlsx');
+
+        definirProgressoNotasOficiais('Lendo arquivo...', 30);
+        const arrayBuffer = await arquivo.arrayBuffer();
+        const conteudo = ext === 'pdf'
+            ? await extrairTextoPdfNotasOficiais(arrayBuffer)
+            : await extrairTextoXlsxNotasOficiais(arrayBuffer);
+
+        const roster = (data.estudantes || []).filter(e => e.id_turma == turmaId && (!e.status || e.status === 'Ativo'));
+        if (roster.length === 0) {
+            alert('Esta turma não possui estudantes cadastrados.');
+            return;
+        }
+
+        definirProgressoNotasOficiais('Processando com IA... (pode levar alguns segundos)', 60);
+        const prompt = montarPromptNotasOficiais(modo, nomeAvaliacao, bimestreSelecionado, conteudo, roster.map(e => e.nome_completo));
+        const resultado = await chamarIAExtracaoNotas(prompt);
+
+        const registros = Array.isArray(resultado.registros) ? resultado.registros : [];
+        if (registros.length === 0) {
+            alert('A IA não conseguiu extrair nenhum registro deste arquivo. Verifique se o arquivo contém as notas esperadas.');
+            return;
+        }
+
+        definirProgressoNotasOficiais(`${registros.length} registros extraídos. Revise antes de salvar.`, 100);
+        montarRevisaoNotasOficiais(registros, turmaId, roster, modo, nomeAvaliacao, bimestreSelecionado);
+    } catch (err) {
+        console.error(err);
+        alert('Erro ao processar o arquivo: ' + err.message);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function montarRevisaoNotasOficiais(registros, turmaId, roster, modo, nomeAvaliacao, bimestreSelecionado) {
+    notasOficiaisRegistrosPendentes = registros.map((r, idx) => {
+        const nomeNorm = normNomeNotasOficiais(r.nome_estudante);
+        let candidato = roster.find(e => normNomeNotasOficiais(e.nome_completo) === nomeNorm);
+
+        if (!candidato) {
+            // Sugestão por similaridade (nome com acento/abreviação diferente)
+            const normA = normalizarTextoComparacaoMaterialDigital(r.nome_estudante);
+            let melhor = null, melhorSimilaridade = 0;
+            roster.forEach(e => {
+                const normB = normalizarTextoComparacaoMaterialDigital(e.nome_completo);
+                const dist = distanciaLevenshteinMaterialDigital(normA, normB);
+                const sim = 1 - (dist / Math.max(normA.length, normB.length, 1));
+                if (sim > melhorSimilaridade) { melhorSimilaridade = sim; melhor = e; }
+            });
+            if (melhor && melhorSimilaridade >= 0.6) candidato = melhor;
+        }
+
+        return {
+            _idx: idx,
+            nome_original: r.nome_estudante || '',
+            estudanteId: candidato ? candidato.id : '',
+            disciplina: r.disciplina || '',
+            bimestre: parseInt(r.bimestre) || bimestreSelecionado || 1,
+            valor: r.valor != null ? String(r.valor) : '',
+            ignorar: !candidato
+        };
+    });
+
+    const container = document.getElementById('revisaoNotasOficiais');
+    container.innerHTML = `
+        <h3>Revisão antes de salvar (${notasOficiaisRegistrosPendentes.length} linhas)</h3>
+        <p style="font-size:12px; color:#666;">Confira o aluno de cada linha (a IA pode errar o casamento de nomes). Linhas marcadas "Ignorar" não serão salvas.</p>
+        <div style="overflow-x:auto;">
+            <table style="font-size:13px;">
+                <thead><tr><th>Nome no Arquivo</th><th>Aluno</th><th>Disciplina</th><th>Bimestre</th><th>Nota</th><th>Ignorar</th></tr></thead>
+                <tbody id="tbodyRevisaoNotasOficiais">
+                    ${notasOficiaisRegistrosPendentes.map(r => `
+                        <tr style="${r.ignorar ? 'background:#fff5f5;' : ''}">
+                            <td>${r.nome_original}</td>
+                            <td>
+                                <select onchange="atualizarCampoRevisaoNotas(${r._idx}, 'estudanteId', this.value)">
+                                    <option value="">Não encontrado</option>
+                                    ${roster.map(e => `<option value="${e.id}" ${e.id == r.estudanteId ? 'selected' : ''}>${e.nome_completo}</option>`).join('')}
+                                </select>
+                            </td>
+                            <td><input type="text" value="${r.disciplina}" style="width:120px;" onchange="atualizarCampoRevisaoNotas(${r._idx}, 'disciplina', this.value)"></td>
+                            <td><input type="number" min="1" max="4" value="${r.bimestre}" style="width:50px;" onchange="atualizarCampoRevisaoNotas(${r._idx}, 'bimestre', this.value)"></td>
+                            <td><input type="text" value="${r.valor}" style="width:60px;" onchange="atualizarCampoRevisaoNotas(${r._idx}, 'valor', this.value)"></td>
+                            <td><input type="checkbox" ${r.ignorar ? 'checked' : ''} onchange="atualizarCampoRevisaoNotas(${r._idx}, 'ignorar', this.checked)"></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+        <button class="btn btn-success" style="margin-top:15px;" onclick="confirmarGravacaoNotasOficiais('${turmaId}', '${modo}', '${(nomeAvaliacao || '').replace(/'/g, "\\'")}', ${bimestreSelecionado})">✅ Confirmar e Salvar</button>
+    `;
+}
+
+function atualizarCampoRevisaoNotas(idx, campo, valor) {
+    const registro = notasOficiaisRegistrosPendentes.find(r => r._idx === idx);
+    if (!registro) return;
+    if (campo === 'ignorar') {
+        registro.ignorar = valor;
+    } else if (campo === 'bimestre') {
+        registro.bimestre = parseInt(valor) || 1;
+    } else {
+        registro[campo] = valor;
+    }
+    if (campo === 'estudanteId') {
+        registro.ignorar = !valor;
+    }
+}
+
+async function confirmarGravacaoNotasOficiais(turmaId, modo, nomeAvaliacao, bimestreSelecionado) {
+    const validos = notasOficiaisRegistrosPendentes.filter(r => !r.ignorar && r.estudanteId && r.valor !== '');
+    if (validos.length === 0) return alert('Nenhuma linha válida para salvar (verifique o casamento de alunos).');
+
+    const agora = Date.now();
+    const nomeArquivoInput = document.getElementById('notasOficiaisArquivo');
+    const nomeArquivo = nomeArquivoInput.files[0] ? nomeArquivoInput.files[0].name : '';
+
+    if (modo === 'mapao') {
+        if (!data.notasBimestraisOficiais) data.notasBimestraisOficiais = [];
+
+        validos.forEach(r => {
+            const estudante = (data.estudantes || []).find(e => e.id == r.estudanteId);
+            if (!estudante) return;
+            const nomeNorm = normNomeNotasOficiais(estudante.nome_completo);
+            const disciplinaNorm = normalizarTextoComparacaoMaterialDigital(r.disciplina);
+
+            let existente = data.notasBimestraisOficiais.find(n =>
+                n.id_turma == turmaId &&
+                n.bimestre == r.bimestre &&
+                normNomeNotasOficiais(n.nome_estudante_norm) === nomeNorm &&
+                normalizarTextoComparacaoMaterialDigital(n.disciplina) === disciplinaNorm
+            );
+
+            if (existente) {
+                existente.valor = r.valor;
+                existente.origem = { tipo: 'mapao', nomeArquivo, dataImportacao: agora };
+            } else {
+                data.notasBimestraisOficiais.push({
+                    id: agora + Math.random(),
+                    nome_estudante_norm: nomeNorm,
+                    nome_estudante_display: estudante.nome_completo,
+                    disciplina: r.disciplina,
+                    bimestre: r.bimestre,
+                    valor: r.valor,
+                    id_turma: turmaId,
+                    origem: { tipo: 'mapao', nomeArquivo, dataImportacao: agora }
+                });
+            }
+        });
+    } else {
+        if (!data.avaliacoesGestor) data.avaliacoesGestor = [];
+        if (!data.notasAvaliacoesGestor) data.notasAvaliacoesGestor = [];
+
+        const disciplinasEnvolvidas = [...new Set(validos.map(r => r.disciplina).filter(Boolean))];
+
+        let avaliacao = data.avaliacoesGestor.find(a =>
+            a.id_turma == turmaId && a.bimestre == bimestreSelecionado && a.nome.trim().toLowerCase() === nomeAvaliacao.trim().toLowerCase()
+        );
+
+        if (!avaliacao) {
+            avaliacao = { id: agora, nome: nomeAvaliacao, bimestre: bimestreSelecionado, id_turma: turmaId, disciplinas: disciplinasEnvolvidas, criadoEm: agora };
+            data.avaliacoesGestor.push(avaliacao);
+        } else {
+            avaliacao.disciplinas = [...new Set([...(avaliacao.disciplinas || []), ...disciplinasEnvolvidas])];
+        }
+
+        validos.forEach(r => {
+            const estudante = (data.estudantes || []).find(e => e.id == r.estudanteId);
+            if (!estudante) return;
+            const nomeNorm = normNomeNotasOficiais(estudante.nome_completo);
+            const disciplinaNorm = normalizarTextoComparacaoMaterialDigital(r.disciplina);
+
+            let existente = data.notasAvaliacoesGestor.find(n =>
+                n.id_avaliacao == avaliacao.id &&
+                normNomeNotasOficiais(n.nome_estudante_norm) === nomeNorm &&
+                normalizarTextoComparacaoMaterialDigital(n.disciplina) === disciplinaNorm
+            );
+
+            if (existente) {
+                existente.valor = r.valor;
+                existente.atualizadoEm = agora;
+            } else {
+                data.notasAvaliacoesGestor.push({
+                    id: agora + Math.random(),
+                    id_avaliacao: avaliacao.id,
+                    nome_estudante_norm: nomeNorm,
+                    nome_estudante_display: estudante.nome_completo,
+                    disciplina: r.disciplina,
+                    valor: r.valor,
+                    atualizadoEm: agora
+                });
+            }
+        });
+    }
+
+    await persistirDados();
+    alert(`Notas salvas com sucesso! (${validos.length} registros)`);
+    notasOficiaisRegistrosPendentes = [];
+    document.getElementById('notasOficiaisArquivo').value = '';
+    document.getElementById('progressoNotasOficiais').style.display = 'none';
+    renderNotasOficiaisGestor();
 }
