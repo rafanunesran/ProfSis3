@@ -17,6 +17,7 @@ const FORCE_FIREBASE_LOCAL = true;
 const USE_FIREBASE = !isLocalhost || FORCE_FIREBASE_LOCAL;
 
 let db; // Variável global para o Firestore
+let storage; // Variável global para o Firebase Storage (arquivos de origem da Base Curricular)
 
 // Variáveis Globais
 let currentUser = null;
@@ -39,6 +40,7 @@ if (USE_FIREBASE) {
         if (typeof firebase !== 'undefined') {
             firebase.initializeApp(firebaseConfig);
             db = firebase.firestore();
+            storage = firebase.storage();
             firebase.auth(); // Inicializa o serviço de Autenticação
             firebase.analytics();
             console.log("🔥 Modo Produção: Firebase Ativado");
