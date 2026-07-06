@@ -723,8 +723,15 @@ function abrirModalBaseCurricular() {
     docsArmadosParaRemocaoBaseCurricular.forEach(timeoutId => clearTimeout(timeoutId));
     docsArmadosParaRemocaoBaseCurricular.clear();
 
-    const seriesCheckboxes = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
+    const seriesCheckboxesFundamental = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
         .map(s => `<label style="font-size:12px; display:inline-flex; align-items:center; gap:3px; margin-right:8px;"><input type="checkbox" class="chk-serie-base-curricular" value="${s}">${s}º</label>`)
+        .join('');
+    // Ensino Médio usa "EM1/EM2/EM3" (não "1/2/3") porque turmas de EM aqui também são nomeadas com
+    // "Ano" (ex: "1º Ano EM") - reaproveitar os mesmos valores 1/2/3 do Fundamental colidiria com o
+    // 1º/2º/3º Ano do Fundamental na hora de buscar. Ver resolverSerieChaveCurriculoOficial (mesmo
+    // critério aplicado do lado da busca, em ia_estagiario.js).
+    const seriesCheckboxesMedio = ['1', '2', '3']
+        .map(s => `<label style="font-size:12px; display:inline-flex; align-items:center; gap:3px; margin-right:8px;"><input type="checkbox" class="chk-serie-base-curricular" value="EM${s}">${s}ª EM</label>`)
         .join('');
 
     document.getElementById('modalBaseCurricular').innerHTML = `
@@ -751,12 +758,17 @@ function abrirModalBaseCurricular() {
                         <option value="caderno_professor">Caderno do Professor</option>
                         <option value="material_digital_pdf">Material Digital</option>
                         <option value="guia_priorizado">Guia Priorizado</option>
+                        <option value="outros">Outros (documento esporádico)</option>
                     </select>
                     <input type="text" id="baseCurricularDisciplinaPdf" placeholder="Disciplina (deixe em branco se cobrir várias)" style="width:100%; padding:6px; margin-bottom:8px; font-size:12px; box-sizing:border-box;">
                     <div style="margin-bottom:8px;">
-                        <label style="font-size:11px; font-weight:bold; display:block; margin-bottom:3px;">Série(s):</label>
-                        ${seriesCheckboxes}
-                        <label style="font-size:12px; display:inline-flex; align-items:center; gap:3px; font-weight:bold;"><input type="checkbox" id="chkSerieTodasBaseCurricular">Todas</label>
+                        <label style="font-size:11px; font-weight:bold; display:block; margin-bottom:3px;">Série(s) - Ensino Fundamental:</label>
+                        ${seriesCheckboxesFundamental}
+                    </div>
+                    <div style="margin-bottom:8px;">
+                        <label style="font-size:11px; font-weight:bold; display:block; margin-bottom:3px;">Série(s) - Ensino Médio:</label>
+                        ${seriesCheckboxesMedio}
+                        <label style="font-size:12px; display:inline-flex; align-items:center; gap:3px; font-weight:bold; margin-left:10px;"><input type="checkbox" id="chkSerieTodasBaseCurricular">Todas (Fund. + Médio)</label>
                     </div>
                     <input type="file" id="baseCurricularArquivoPdf" accept=".pdf" style="width:100%; margin-bottom:10px; font-size:12px;" onchange="resetUploadArmadoBaseCurricular('pdf')">
                     <button class="btn btn-primary btn-sm" id="btnProcessarPdfBaseCurricular" onclick="processarPdfCurriculo()">Processar e Enviar</button>
@@ -891,6 +903,23 @@ function extrairHabilidadesSeparadasCurriculo(celulaCodigo, celulaTexto) {
     return resultado;
 }
 
+// Diferencia Ensino Médio de Ensino Fundamental quando os dois usam "Ano" pro mesmo número (ex: "1º
+// Ano" do Fundamental vs "1º Ano EM"/"1º Ano do Ensino Médio") - sem isso, extrairSerieChaveMaterialDigital
+// sozinha devolveria "1" pros dois, misturando os documentos dos dois segmentos na busca do Estagiário.
+// Prefixa com "EM" só quando o texto original menciona "EM" ou "Médio". Duplicada em ia_estagiario.js
+// (mesma convenção já usada no projeto pra funções pequenas usadas em contextos/arquivos diferentes).
+function resolverSerieChaveCurriculoOficial(serieOriginal) {
+    const digito = extrairSerieChaveMaterialDigital(serieOriginal);
+    if (!digito) return '';
+    const original = String(serieOriginal || '');
+    // Sigla "EM" só em maiúsculas (ex: "1º Ano EM") - em minúsculas "em" é só a preposição comum do
+    // português (ex: "6º Ano em Período Integral"), que não deve disparar a detecção.
+    const temSiglaEM = /\bEM\b/.test(original);
+    const semAcento = original.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const temPalavraMedio = /medio/.test(semAcento);
+    return (temSiglaEM || temPalavraMedio) ? ('EM' + digito) : digito;
+}
+
 // Normaliza uma linha bruta da planilha (já lida pelo SheetJS como objeto {coluna: valor}) pro schema
 // comum de curriculo_escopo_sequencia. Retorna null pra linhas "ruído" (ex: linhas espaçadoras de
 // vendor tipo "MATIFIC", que não têm título nem conteúdo preenchidos).
@@ -914,7 +943,7 @@ function normalizarLinhaPlanilhaCurriculo(linhaBruta, formato, nomeAba, numeroLi
     );
 
     return {
-        serieChave: extrairSerieChaveMaterialDigital(serieOriginal),
+        serieChave: resolverSerieChaveCurriculoOficial(serieOriginal),
         serieOriginal,
         ciclo: val(c.ciclo),
         bimestre: val(c.bimestre).replace(/\D/g, ''),
@@ -1117,7 +1146,7 @@ async function processarPdfCurriculo() {
     const disciplina = document.getElementById('baseCurricularDisciplinaPdf').value.trim();
     const todasSeries = document.getElementById('chkSerieTodasBaseCurricular').checked;
     const serieChaves = todasSeries
-        ? ['1', '2', '3', '4', '5', '6', '7', '8', '9']
+        ? ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'EM1', 'EM2', 'EM3']
         : Array.from(document.querySelectorAll('.chk-serie-base-curricular:checked')).map(chk => chk.value);
     if (serieChaves.length === 0) return mostrarMensagemBaseCurricular('Selecione ao menos uma série (ou marque "Todas").', 'aviso');
 

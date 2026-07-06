@@ -2219,12 +2219,20 @@ async function verRelatorioTutoriaAluno(profId, profNome, alunoId, alunoNome) {
         </div>
     ` : '';
 
+    // Notas Oficiais (Mapão/Avaliações da Gestão) — vivem no `data` do próprio gestor, sem necessidade
+    // de busca adicional (esta função já roda na sessão do gestor).
+    const notasHtml = montarTabelaNotasOficiaisHtml({
+        notasBimestraisOficiais: data.notasBimestraisOficiais,
+        avaliacoesGestor: data.avaliacoesGestor,
+        notasAvaliacoesGestor: data.notasAvaliacoesGestor
+    }, normNomeNotasOficiais(alunoNome));
+
     const html = `
         <div class="card">
             <div class="no-print">
                 <button class="btn btn-secondary" onclick="verTutoradosProfessor('${profId}', '${profNome}')">← Voltar para Lista</button>
             </div>
-            
+
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:15px; border-bottom: 1px solid #eee; padding-bottom:10px;">
                 <div>
                     <h2 style="margin:0;">Relatório de Tutoria</h2>
@@ -2242,6 +2250,8 @@ async function verRelatorioTutoriaAluno(profId, profNome, alunoId, alunoNome) {
 
             ${infoHtml}
 
+            ${notasHtml ? `<div style="margin-top:15px;">${notasHtml}</div>` : ''}
+
             <div id="listaEncontrosRelatorio" style="margin-top: 20px;">
                 <!-- Preenchido via JS -->
             </div>
@@ -2252,10 +2262,11 @@ async function verRelatorioTutoriaAluno(profId, profNome, alunoId, alunoNome) {
 
     // Armazena dados temporariamente no DOM para filtragem
     // Filtra encontros onde o ID do tutorado bate (pode ser string ou number, comparamos solto)
-    const encontrosAluno = encontros.filter(e => e.tutoradoId == alunoId || e.encontroTutorado == alunoId); 
+    const encontrosAluno = encontros.filter(e => e.tutoradoId == alunoId || e.encontroTutorado == alunoId);
     container.dataset.encontros = JSON.stringify(encontrosAluno);
     container.dataset.tutoradoInfo = JSON.stringify(tutoradoInfo || {});
-    
+    container.dataset.notasOficiaisHtml = notasHtml || '';
+
     filtrarRelatorioTutoriaUI();
 }
 
@@ -2297,7 +2308,8 @@ function imprimirRelatorioTutoriaGestorSimplificado(profNome, alunoNome) {
     const semestreVal = document.getElementById('filtroSemestre').value;
     const encontros = JSON.parse(container.dataset.encontros || '[]');
     const t = JSON.parse(container.dataset.tutoradoInfo || '{}');
-    
+    const notasHtml = container.dataset.notasOficiaisHtml || '';
+
     const calcIdade = (dn) => {
         if(!dn) return '';
         const today = new Date();
@@ -2368,6 +2380,8 @@ function imprimirRelatorioTutoriaGestorSimplificado(profNome, alunoNome) {
                     <p style="margin:2px 0;"><strong>Eletiva:</strong> ${t.eletiva_1 || '-'} / ${t.eletiva_2 || '-'}</p>
                 </div>
             </div>
+
+            ${notasHtml ? `<div class="info">${notasHtml}</div>` : ''}
 
             ${filtrados.length > 0 ? filtrados.map(e => `
                 <div class="registro">
@@ -2458,6 +2472,12 @@ async function imprimirTodosRelatoriosTutoriaGestor(profId, profNome) {
             return false;
         }).sort((a,b) => new Date(a.data) - new Date(b.data));
 
+        const notasHtmlAluno = montarTabelaNotasOficiaisHtml({
+            notasBimestraisOficiais: data.notasBimestraisOficiais,
+            avaliacoesGestor: data.avaliacoesGestor,
+            notasAvaliacoesGestor: data.notasAvaliacoesGestor
+        }, normNomeNotasOficiais(t.nome_estudante));
+
         html += `<div class="page-break">
             <div class="header">
                 <h1>${nomeEscola}</h1>
@@ -2476,6 +2496,7 @@ async function imprimirTodosRelatoriosTutoriaGestor(profId, profNome) {
                     <p style="margin:2px 0;"><strong>Projeto de Vida:</strong> ${t.projeto_vida || '-'}</p>
                 </div>
             </div>
+            ${notasHtmlAluno ? `<div class="info">${notasHtmlAluno}</div>` : ''}
             ${encontrosAluno.length > 0 ? encontrosAluno.map(e => `<div class="registro"><div class="registro-data">📅 ${formatDate(e.data)}</div><div class="registro-titulo">${e.tema || 'Sem Título'}</div><div class="registro-texto">${e.resumo || ''}</div></div>`).join('') : '<p style="text-align:center; font-style:italic; color:#777;">Nenhum registro encontrado neste semestre.</p>'}
             <div style="margin-top:50px; border-top:1px solid #000; width:200px; text-align:center; font-size:10px; padding-top:5px;">Visto da Coordenação</div>
         </div>`;
@@ -2820,7 +2841,7 @@ async function processarArquivoNotasOficiais() {
         }
 
         definirProgressoNotasOficiais(`${registros.length} registros extraídos. Revise antes de salvar.`, 100);
-        montarRevisaoNotasOficiais(registros, turmaId, roster, modo, nomeAvaliacao, bimestreSelecionado);
+        montarRevisaoNotasOficiais(registros, roster, bimestreSelecionado);
     } catch (err) {
         console.error(err);
         alert('Erro ao processar o arquivo: ' + err.message);
@@ -2829,7 +2850,7 @@ async function processarArquivoNotasOficiais() {
     }
 }
 
-function montarRevisaoNotasOficiais(registros, turmaId, roster, modo, nomeAvaliacao, bimestreSelecionado) {
+function montarRevisaoNotasOficiais(registros, roster, bimestreSelecionado) {
     notasOficiaisRegistrosPendentes = registros.map((r, idx) => {
         const nomeNorm = normNomeNotasOficiais(r.nome_estudante);
         let candidato = roster.find(e => normNomeNotasOficiais(e.nome_completo) === nomeNorm);
@@ -2884,8 +2905,19 @@ function montarRevisaoNotasOficiais(registros, turmaId, roster, modo, nomeAvalia
                 </tbody>
             </table>
         </div>
-        <button class="btn btn-success" style="margin-top:15px;" onclick="confirmarGravacaoNotasOficiais('${turmaId}', '${modo}', '${(nomeAvaliacao || '').replace(/'/g, "\\'")}', ${bimestreSelecionado})">✅ Confirmar e Salvar</button>
+        <div style="margin-top:15px; display:flex; gap:10px;">
+            <button class="btn btn-success" onclick="confirmarGravacaoNotasOficiais()">✅ Confirmar e Salvar</button>
+            <button class="btn btn-secondary" onclick="renderNotasOficiaisGestor()">Cancelar</button>
+        </div>
     `;
+
+    // Trava turma/modo/bimestre/nome enquanto a revisão está aberta: como confirmarGravacaoNotasOficiais()
+    // relê esses campos do formulário (para não interpolar texto livre do gestor num onclick), eles não
+    // podem mudar entre "Processar com IA" (que casou os alunos deste roster) e "Confirmar e Salvar".
+    document.getElementById('notasOficiaisTurma').disabled = true;
+    document.getElementById('notasOficiaisNomeAvaliacao').disabled = true;
+    document.getElementById('notasOficiaisBimestre').disabled = true;
+    document.querySelectorAll('input[name="notasOficiaisModoRadio"]').forEach(r => r.disabled = true);
 }
 
 function atualizarCampoRevisaoNotas(idx, campo, valor) {
@@ -2903,7 +2935,12 @@ function atualizarCampoRevisaoNotas(idx, campo, valor) {
     }
 }
 
-async function confirmarGravacaoNotasOficiais(turmaId, modo, nomeAvaliacao, bimestreSelecionado) {
+async function confirmarGravacaoNotasOficiais() {
+    const turmaId = document.getElementById('notasOficiaisTurma').value;
+    const modo = notasOficiaisModo;
+    const nomeAvaliacao = document.getElementById('notasOficiaisNomeAvaliacao').value.trim();
+    const bimestreSelecionado = parseInt(document.getElementById('notasOficiaisBimestre').value);
+
     const validos = notasOficiaisRegistrosPendentes.filter(r => !r.ignorar && r.estudanteId && r.valor !== '');
     if (validos.length === 0) return alert('Nenhuma linha válida para salvar (verifique o casamento de alunos).');
 
@@ -2995,4 +3032,65 @@ async function confirmarGravacaoNotasOficiais(turmaId, modo, nomeAvaliacao, bime
     document.getElementById('notasOficiaisArquivo').value = '';
     document.getElementById('progressoNotasOficiais').style.display = 'none';
     renderNotasOficiaisGestor();
+}
+
+// Monta o HTML de notas oficiais (mapão + avaliações da gestão) de um único aluno, reaproveitado
+// tanto na ficha do estudante (app.js:renderEstudanteGeral/preencherNotasOficiaisEstudante) quanto
+// na ficha de tutoria (card inline e relatório imprimível do gestor). `dadosGestor` é sempre o
+// formato {notasBimestraisOficiais, avaliacoesGestor, notasAvaliacoesGestor}, vindo do `data` do
+// próprio gestor ou buscado entre-documentos quando quem vê é professor/tutor.
+function montarTabelaNotasOficiaisHtml(dadosGestor, nomeNorm) {
+    const mapao = (dadosGestor.notasBimestraisOficiais || []).filter(n => normNomeNotasOficiais(n.nome_estudante_norm) === nomeNorm);
+    const notasAvaliacoes = (dadosGestor.notasAvaliacoesGestor || []).filter(n => normNomeNotasOficiais(n.nome_estudante_norm) === nomeNorm);
+
+    if (mapao.length === 0 && notasAvaliacoes.length === 0) return '';
+
+    let html = '';
+
+    if (mapao.length > 0) {
+        const porDisciplina = {};
+        mapao.forEach(n => {
+            if (!porDisciplina[n.disciplina]) porDisciplina[n.disciplina] = {};
+            porDisciplina[n.disciplina][n.bimestre] = n.valor;
+        });
+        html += `
+            <div style="margin-bottom:15px;">
+                <p style="font-weight:bold; font-size:13px; margin-bottom:5px;">📋 Notas Oficiais (Mapão Bimestral)</p>
+                <table style="font-size:12px;">
+                    <thead><tr><th>Disciplina</th><th>1º Bim</th><th>2º Bim</th><th>3º Bim</th><th>4º Bim</th></tr></thead>
+                    <tbody>
+                        ${Object.keys(porDisciplina).sort().map(disc => `
+                            <tr>
+                                <td>${disc}</td>
+                                ${[1, 2, 3, 4].map(b => `<td style="text-align:center;">${porDisciplina[disc][b] || '-'}</td>`).join('')}
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    if (notasAvaliacoes.length > 0) {
+        const porAvaliacao = {};
+        notasAvaliacoes.forEach(n => {
+            if (!porAvaliacao[n.id_avaliacao]) porAvaliacao[n.id_avaliacao] = [];
+            porAvaliacao[n.id_avaliacao].push(n);
+        });
+        html += `
+            <div>
+                <p style="font-weight:bold; font-size:13px; margin-bottom:5px;">📝 Avaliações da Gestão</p>
+                ${Object.keys(porAvaliacao).map(idAval => {
+                    const avaliacao = (dadosGestor.avaliacoesGestor || []).find(a => a.id == idAval);
+                    const registros = porAvaliacao[idAval];
+                    return `<div style="font-size:12px; margin-bottom:6px;">
+                        <strong>${avaliacao ? avaliacao.nome : 'Avaliação'}</strong>${avaliacao ? ` (${avaliacao.bimestre}º Bim.)` : ''}:
+                        ${registros.map(r => `${r.disciplina}: <strong>${r.valor}</strong>`).join(' | ')}
+                    </div>`;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    return html;
 }
