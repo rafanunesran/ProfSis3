@@ -45,7 +45,9 @@ class MainActivity : AppCompatActivity() {
         profsisWebView = createWebView(Tab.PROFSIS)
 
         setContentView(buildLayout())
-        showTab(Tab.SED)
+        // Nao usar bottomNav.selectedItemId aqui: o menu ja comeca com nav_sed selecionado
+        // (primeiro item de bottom_nav_menu.xml) - so precisa aplicar a visibilidade.
+        switchWebViewVisibility(Tab.SED)
 
         if (savedInstanceState == null) {
             sedWebView.loadUrl(SED_START_URL)
@@ -101,7 +103,11 @@ class MainActivity : AppCompatActivity() {
         webView.addJavascriptInterface(ProfSisStorageBridge(this), "ProfSisNativeStorage")
         if (tab == Tab.SED) {
             webView.addJavascriptInterface(
-                ProfSisNavigationBridge { runOnUiThread { showTab(Tab.PROFSIS) } },
+                // So mexe na selecao da barra inferior - o listener dela e' quem troca a
+                // visibilidade das WebViews (ver switchWebViewVisibility). Chamar
+                // switchWebViewVisibility() direto aqui deixaria a barra "dessincronizada"
+                // da aba realmente visivel (ela so' reage a toque do usuario/selectedItemId).
+                ProfSisNavigationBridge { runOnUiThread { bottomNav.selectedItemId = R.id.nav_profsis } },
                 "ProfSisNativeNav",
             )
         }
@@ -133,7 +139,9 @@ class MainActivity : AppCompatActivity() {
             if (tab == Tab.SED) sedWebView = fresh else profsisWebView = fresh
 
             fresh.loadUrl(if (tab == Tab.SED) SED_START_URL else PROFSIS_START_URL)
-            showTab(currentTab())
+            // Reaplica a visibilidade da aba atualmente selecionada (nao mudou) - so' a
+            // instancia da WebView foi trocada.
+            switchWebViewVisibility(currentTab())
         } catch (e: Exception) {
             // Este e' o proprio tratamento de crash do WebView (onRenderProcessGone) -
             // se ele mesmo falhar, so' loga; nao pode propagar e derrubar o app de novo.
@@ -158,14 +166,17 @@ class MainActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             )
             inflateMenu(R.menu.bottom_nav_menu)
+            // So troca a visibilidade das WebViews aqui - nunca reescrever
+            // bottomNav.selectedItemId dentro deste listener (isso re-dispara o proprio
+            // listener e causa StackOverflowError, ja visto em producao).
             setOnItemSelectedListener { item ->
                 when (item.itemId) {
                     R.id.nav_sed -> {
-                        showTab(Tab.SED)
+                        switchWebViewVisibility(Tab.SED)
                         true
                     }
                     R.id.nav_profsis -> {
-                        showTab(Tab.PROFSIS)
+                        switchWebViewVisibility(Tab.PROFSIS)
                         true
                     }
                     else -> false
@@ -184,14 +195,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showTab(tab: Tab) {
+    /** So mexe na visibilidade das WebViews - nunca no bottomNav (ver comentário no listener). */
+    private fun switchWebViewVisibility(tab: Tab) {
         sedWebView.visibility = if (tab == Tab.SED) View.VISIBLE else View.GONE
         profsisWebView.visibility = if (tab == Tab.PROFSIS) View.VISIBLE else View.GONE
-
-        val targetId = if (tab == Tab.SED) R.id.nav_sed else R.id.nav_profsis
-        if (bottomNav.selectedItemId != targetId) {
-            bottomNav.selectedItemId = targetId
-        }
     }
 
     private fun currentTab(): Tab = if (sedWebView.visibility == View.VISIBLE) Tab.SED else Tab.PROFSIS
@@ -211,7 +218,9 @@ class MainActivity : AppCompatActivity() {
         val current = if (currentTab() == Tab.SED) sedWebView else profsisWebView
         when {
             current.canGoBack() -> current.goBack()
-            currentTab() == Tab.PROFSIS -> showTab(Tab.SED)
+            // Seta a selecao da barra (nao chama switchWebViewVisibility direto): isso
+            // dispara o listener do bottomNav, que e' quem troca a visibilidade.
+            currentTab() == Tab.PROFSIS -> bottomNav.selectedItemId = R.id.nav_sed
             else -> super.onBackPressed()
         }
     }

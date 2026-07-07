@@ -60,19 +60,27 @@ via CI, ou `./gradlew assembleDebug` localmente com Android Studio/JDK instalado
    consegue instalar de fato (o download agora é feito por conta própria e a Uri de
    instalação vem do nosso `FileProvider`, não mais do `DownloadManager` do sistema -
    ver `UpdateChecker.kt`).
-8. **App fechando sozinho ao logar/usar o ProfSis**: comparado com a versão anterior
-   (antes da barra inferior), a única diferença de configuração de WebView era
-   `setSupportMultipleWindows`/`javaScriptCanOpenWindowsAutomatically` +
-   `onCreateWindow` (adicionados numa tentativa de suportar `window.open()`, muito
-   usado pelo ProfSis em preview de relatório/PDF) - removidos de novo, já que a
-   versão sem eles nunca fechava sozinha. Preview de relatório/PDF (que dependia de
-   `window.open()`) volta a não funcionar (era assim antes também) até isso ser
-   reimplementado com mais cuidado. Testar login e a "engrenagem" do ProfSis
-   normalmente agora. **Se o app fechar sozinho mesmo assim**: reabrir o app -
-   aparece automaticamente um diálogo "O app fechou da última vez" com o stack trace
-   real e um botão "Copiar" (`CrashLogger`) - mas note que isso só captura excecões
-   Kotlin/Java não tratadas; se for um crash nativo do motor do WebView (Chromium),
-   esse diálogo não vai aparecer, e aí só um `adb logcat` real resolve.
+8. **App fechando sozinho ao logar/usar o ProfSis (causa real encontrada via
+   `CrashLogger`)**: era um `StackOverflowError` por recursão infinita entre
+   `switchWebViewVisibility`/o listener do `BottomNavigationView` — setar
+   `bottomNav.selectedItemId` de dentro do próprio listener disparava o listener de
+   novo (o valor interno só é atualizado depois do listener rodar, então a checagem
+   "já está selecionado" não evitava o loop). Corrigido separando as duas
+   responsabilidades: o listener do `bottomNav` só troca a visibilidade das
+   WebViews (`switchWebViewVisibility`), e só código externo (botão "Abrir ProfSis",
+   botão "voltar") escreve em `bottomNav.selectedItemId`. Testar: logar no ProfSis,
+   usar a "engrenagem", trocar de aba repetidamente, usar o botão "voltar" nas duas
+   abas — nada disso deve fechar o app agora.
+
+   (`setSupportMultipleWindows`/`onCreateWindow` para `window.open()` também tinham
+   sido removidos numa tentativa anterior de corrigir isso - ainda estão desativados;
+   o preview de relatório/PDF via `window.open()` continua não funcionando até ser
+   reimplementado com cuidado, já que a causa real era outra.)
+
+   Se o app fechar sozinho de novo por qualquer motivo: reabrir o app - aparece
+   automaticamente um diálogo "O app fechou da última vez" com o stack trace real e
+   um botão "Copiar" (`CrashLogger`) - só não captura crash nativo do motor do
+   WebView (Chromium), aí só um `adb logcat` real resolve.
 
 ## Coisas para observar (podem indicar regressão)
 
