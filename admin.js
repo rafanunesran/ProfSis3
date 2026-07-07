@@ -771,10 +771,7 @@ function abrirModalBaseCurricular() {
                         <label style="font-size:12px; display:inline-flex; align-items:center; gap:3px; font-weight:bold; margin-left:10px;"><input type="checkbox" id="chkSerieTodasBaseCurricular">Todas (Fund. + Médio)</label>
                     </div>
                     <input type="file" id="baseCurricularArquivoPdf" accept=".pdf" style="width:100%; margin-bottom:8px; font-size:12px;" onchange="resetUploadArmadoBaseCurricular('pdf')">
-                    <label style="font-size:12px; display:flex; align-items:center; gap:5px; margin-bottom:10px;">
-                        <input type="checkbox" id="baseCurricularUsarIA">
-                        🤖 Extrair texto com IA (Gemini) - recomendado pra PDFs com colunas/tabelas (usa a mesma chave já configurada na "Chave de IA")
-                    </label>
+                    <p style="font-size:11px; color:#718096; margin-bottom:10px;">🤖 O texto é extraído com IA (Gemini), que lida bem com colunas/tabelas - usa a mesma chave já configurada na "Chave de IA".</p>
                     <button class="btn btn-primary btn-sm" id="btnProcessarPdfBaseCurricular" onclick="processarPdfCurriculo()">Processar e Enviar</button>
                 </div>
             </div>
@@ -808,10 +805,6 @@ function carregarScriptBaseCurricular(src) {
 async function carregarBibliotecaBaseCurricular(tipo) {
     if (tipo === 'xlsx' && typeof XLSX === 'undefined') {
         await carregarScriptBaseCurricular('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
-    }
-    if (tipo === 'pdf' && typeof pdfjsLib === 'undefined') {
-        await carregarScriptBaseCurricular('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
 }
 
@@ -1070,17 +1063,6 @@ async function processarPlanilhaCurriculo() {
 
 // --- Documentos em PDF (Cadernos, Material Digital, Guia Priorizado) ---
 
-async function extrairTextoPdfPorPagina(arrayBuffer) {
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    const paginas = [];
-    for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const conteudo = await page.getTextContent();
-        paginas.push(conteudo.items.map(item => item.str).join(' '));
-    }
-    return paginas;
-}
-
 // Divisor de texto em chunks (~1000-1200 caracteres, sobreposição de ~150-200) sem depender de
 // biblioteca externa: quebra por parágrafo (ou por frase, se o parágrafo sozinho já for grande demais)
 // e carrega uma "cauda" do chunk anterior pro próximo, pra não perder contexto na fronteira.
@@ -1178,7 +1160,7 @@ async function extrairTextoPdfComGemini(arrayBuffer, apiKey) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000);
     try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1222,8 +1204,6 @@ async function processarPdfCurriculo() {
         : Array.from(document.querySelectorAll('.chk-serie-base-curricular:checked')).map(chk => chk.value);
     if (serieChaves.length === 0) return mostrarMensagemBaseCurricular('Selecione ao menos uma série (ou marque "Todas").', 'aviso');
 
-    const usarIA = document.getElementById('baseCurricularUsarIA') && document.getElementById('baseCurricularUsarIA').checked;
-
     const configData = await getData('system', 'config_ia') || {};
     const apiKeys = (configData.apiKey || '').split(',').map(k => k.trim()).filter(Boolean);
     const chaveGemini = apiKeys.find(k => !k.startsWith('sk-') && !k.startsWith('gsk_'));
@@ -1248,17 +1228,9 @@ async function processarPdfCurriculo() {
         uploadPdfArmadoBaseCurricular = false;
         if (btn) btn.textContent = 'Processar e Enviar';
 
-        let paginas;
-        if (usarIA) {
-            definirProgressoBaseCurricular('Extraindo texto do PDF com IA (Gemini, pode levar mais tempo)...', 5);
-            const textoIa = await extrairTextoPdfComGemini(bytes, chaveGemini);
-            paginas = converterTranscricaoIaEmPaginas(textoIa);
-        } else {
-            definirProgressoBaseCurricular('Carregando biblioteca de leitura de PDF...', 2);
-            await carregarBibliotecaBaseCurricular('pdf');
-            definirProgressoBaseCurricular('Extraindo texto do PDF...', 5);
-            paginas = await extrairTextoPdfPorPagina(bytes);
-        }
+        definirProgressoBaseCurricular('Extraindo texto do PDF com IA (Gemini, pode levar mais tempo)...', 5);
+        const textoIa = await extrairTextoPdfComGemini(bytes, chaveGemini);
+        const paginas = converterTranscricaoIaEmPaginas(textoIa);
 
         const textoTotal = paginas.join(' ').trim();
         if (textoTotal.length < 200) {

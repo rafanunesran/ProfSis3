@@ -714,7 +714,7 @@ async function gerarDocumentoIA() {
         let respostaTexto = '';
 
         let tentativas = 3; // Tenta até 3 vezes
-        const modelosFallback = ['gemini-1.5-flash-latest', 'gemini-1.5-pro-latest', 'gemini-1.5-flash'];
+        const modelosFallback = ['gemini-1.5-flash', 'gemini-1.5-pro-latest', 'gemini-2.0-flash'];
         
         for (let i = 0; i < tentativas && !success; i++) {
             const modeloAtual = modelosFallback[i % modelosFallback.length];
