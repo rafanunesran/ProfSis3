@@ -2700,7 +2700,7 @@ async function chamarIAExtracaoNotas(promptText) {
     let respostaTexto = '';
 
     const tentativas = 3;
-    const modelosFallback = ['gemini-1.5-flash', 'gemini-1.5-pro-latest', 'gemini-2.0-flash'];
+    const modelosFallback = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
 
     for (let i = 0; i < tentativas && !success; i++) {
         const modeloAtual = modelosFallback[i % modelosFallback.length];
