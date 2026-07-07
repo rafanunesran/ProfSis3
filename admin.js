@@ -772,8 +772,8 @@ function abrirModalBaseCurricular() {
                     </div>
                     <input type="file" id="baseCurricularArquivoPdf" accept=".pdf" style="width:100%; margin-bottom:8px; font-size:12px;" onchange="resetUploadArmadoBaseCurricular('pdf')">
                     <label style="font-size:12px; display:flex; align-items:center; gap:5px; margin-bottom:10px;">
-                        <input type="checkbox" id="baseCurricularUsarClaude">
-                        🤖 Extrair texto com a Claude (recomendado pra PDFs com colunas/tabelas - exige uma chave da Anthropic, prefixo <code>sk-ant-</code>, configurada na "Chave de IA")
+                        <input type="checkbox" id="baseCurricularUsarIA">
+                        🤖 Extrair texto com IA (Gemini) - recomendado pra PDFs com colunas/tabelas (usa a mesma chave já configurada na "Chave de IA")
                     </label>
                     <button class="btn btn-primary btn-sm" id="btnProcessarPdfBaseCurricular" onclick="processarPdfCurriculo()">Processar e Enviar</button>
                 </div>
@@ -1142,11 +1142,10 @@ async function apagarChunksArquivoCurriculo(fonteArquivo) {
     await apagarDocsEmLotesBaseCurricular(snap);
 }
 
-// --- Extração de PDF via Claude (alternativa ao PDF.js pra documentos com layout complexo) ---
-// A Claude lê o PDF como documento nativo (texto + imagem de cada página ao mesmo tempo), então lida
-// melhor com colunas/tabelas do que a extração crua do PDF.js. Só faz a extração - os embeddings
-// continuam sendo gerados pela API do Google (obterEmbeddingGeminiBaseCurricular), já que a Anthropic
-// não tem endpoint de embeddings.
+// --- Extração de PDF via Gemini (alternativa ao PDF.js pra documentos com layout complexo) ---
+// O Gemini lê o PDF como documento nativo/multimodal (texto + imagem de cada página ao mesmo tempo),
+// então lida melhor com colunas/tabelas do que a extração crua do PDF.js. Usa a mesma chave já
+// exigida pros embeddings - sem provedor/custo novo.
 
 function arrayBufferParaBase64BaseCurricular(buffer) {
     const bytes = new Uint8Array(buffer);
@@ -1159,10 +1158,10 @@ function arrayBufferParaBase64BaseCurricular(buffer) {
     return btoa(binario);
 }
 
-// A Claude devolve o texto com marcadores "===PAGINA N===" (pedido no prompt) pra preservar a
-// numeração de página nos chunks depois - se por algum motivo ela não seguir o formato, cai pro
-// fallback de tratar a resposta inteira como uma única "página".
-function converterTranscricaoClaudeEmPaginas(texto) {
+// A IA devolve o texto com marcadores "===PAGINA N===" (pedido no prompt) pra preservar a numeração
+// de página nos chunks depois - se por algum motivo ela não seguir o formato, cai pro fallback de
+// tratar a resposta inteira como uma única "página".
+function converterTranscricaoIaEmPaginas(texto) {
     const partes = String(texto || '').split(/===\s*PAGINA\s*(\d+)\s*===/i);
     const paginas = [];
     for (let i = 1; i < partes.length; i += 2) {
@@ -1174,33 +1173,19 @@ function converterTranscricaoClaudeEmPaginas(texto) {
     return paginas.length > 0 ? paginas : [String(texto || '').trim()];
 }
 
-async function extrairTextoPdfComClaude(arrayBuffer, apiKey) {
+async function extrairTextoPdfComGemini(arrayBuffer, apiKey) {
     const base64 = arrayBufferParaBase64BaseCurricular(arrayBuffer);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000);
     try {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': apiKey,
-                'anthropic-version': '2023-06-01',
-                // Necessário pra permitir a chamada direto do navegador (sem backend) - a chave fica
-                // exposta no client, mesma exposição que já existe hoje pras chaves de Gemini/OpenAI/
-                // Groq configuradas em system/config_ia.
-                'anthropic-dangerous-direct-browser-access': 'true'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                model: 'claude-sonnet-5',
-                max_tokens: 8192,
-                messages: [{
-                    role: 'user',
-                    content: [
-                        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
-                        {
-                            type: 'text',
-                            text: 'Transcreva TODO o texto deste documento, respeitando a ordem de leitura correta (colunas, tabelas, seções) e sem resumir, traduzir ou comentar nada. Para cada página do documento, comece uma linha exatamente no formato ===PAGINA N=== (N = número da página, começando em 1), seguida do texto transcrito daquela página. Retorne apenas o texto transcrito com esses marcadores, nada mais.'
-                        }
+                contents: [{
+                    parts: [
+                        { inline_data: { mime_type: 'application/pdf', data: base64 } },
+                        { text: 'Transcreva TODO o texto deste documento, respeitando a ordem de leitura correta (colunas, tabelas, seções) e sem resumir, traduzir ou comentar nada. Para cada página do documento, comece uma linha exatamente no formato ===PAGINA N=== (N = número da página, começando em 1), seguida do texto transcrito daquela página. Retorne apenas o texto transcrito com esses marcadores, nada mais.' }
                     ]
                 }]
             }),
@@ -1212,7 +1197,10 @@ async function extrairTextoPdfComClaude(arrayBuffer, apiKey) {
             throw new Error(errObj.error ? errObj.error.message : response.statusText);
         }
         const json = await response.json();
-        return (json.content && json.content[0] && json.content[0].text) ? json.content[0].text : '';
+        if (!json.candidates || json.candidates.length === 0 || !json.candidates[0].content) {
+            throw new Error('A IA não retornou um conteúdo válido.');
+        }
+        return json.candidates[0].content.parts[0].text || '';
     } catch (e) {
         clearTimeout(timeoutId);
         throw e;
@@ -1234,15 +1222,12 @@ async function processarPdfCurriculo() {
         : Array.from(document.querySelectorAll('.chk-serie-base-curricular:checked')).map(chk => chk.value);
     if (serieChaves.length === 0) return mostrarMensagemBaseCurricular('Selecione ao menos uma série (ou marque "Todas").', 'aviso');
 
-    const usarClaude = document.getElementById('baseCurricularUsarClaude') && document.getElementById('baseCurricularUsarClaude').checked;
+    const usarIA = document.getElementById('baseCurricularUsarIA') && document.getElementById('baseCurricularUsarIA').checked;
 
     const configData = await getData('system', 'config_ia') || {};
     const apiKeys = (configData.apiKey || '').split(',').map(k => k.trim()).filter(Boolean);
     const chaveGemini = apiKeys.find(k => !k.startsWith('sk-') && !k.startsWith('gsk_'));
     if (!chaveGemini) return mostrarMensagemBaseCurricular('É necessário ter uma chave do Google Gemini configurada (card "Chave de IA" acima) pra gerar os embeddings de busca.', 'aviso');
-
-    const chaveClaude = apiKeys.find(k => k.startsWith('sk-ant-'));
-    if (usarClaude && !chaveClaude) return mostrarMensagemBaseCurricular('Marque uma chave da Anthropic (prefixo sk-ant-) na "Chave de IA" pra usar a extração com Claude.', 'aviso');
 
     try {
         esconderMensagemBaseCurricular();
@@ -1264,10 +1249,10 @@ async function processarPdfCurriculo() {
         if (btn) btn.textContent = 'Processar e Enviar';
 
         let paginas;
-        if (usarClaude) {
-            definirProgressoBaseCurricular('Extraindo texto do PDF com a Claude (pode levar mais tempo)...', 5);
-            const textoClaude = await extrairTextoPdfComClaude(bytes, chaveClaude);
-            paginas = converterTranscricaoClaudeEmPaginas(textoClaude);
+        if (usarIA) {
+            definirProgressoBaseCurricular('Extraindo texto do PDF com IA (Gemini, pode levar mais tempo)...', 5);
+            const textoIa = await extrairTextoPdfComGemini(bytes, chaveGemini);
+            paginas = converterTranscricaoIaEmPaginas(textoIa);
         } else {
             definirProgressoBaseCurricular('Carregando biblioteca de leitura de PDF...', 2);
             await carregarBibliotecaBaseCurricular('pdf');
