@@ -770,7 +770,11 @@ function abrirModalBaseCurricular() {
                         ${seriesCheckboxesMedio}
                         <label style="font-size:12px; display:inline-flex; align-items:center; gap:3px; font-weight:bold; margin-left:10px;"><input type="checkbox" id="chkSerieTodasBaseCurricular">Todas (Fund. + Médio)</label>
                     </div>
-                    <input type="file" id="baseCurricularArquivoPdf" accept=".pdf" style="width:100%; margin-bottom:10px; font-size:12px;" onchange="resetUploadArmadoBaseCurricular('pdf')">
+                    <input type="file" id="baseCurricularArquivoPdf" accept=".pdf" style="width:100%; margin-bottom:8px; font-size:12px;" onchange="resetUploadArmadoBaseCurricular('pdf')">
+                    <label style="font-size:12px; display:flex; align-items:center; gap:5px; margin-bottom:10px;">
+                        <input type="checkbox" id="baseCurricularUsarClaude">
+                        🤖 Extrair texto com a Claude (recomendado pra PDFs com colunas/tabelas - exige uma chave da Anthropic, prefixo <code>sk-ant-</code>, configurada na "Chave de IA")
+                    </label>
                     <button class="btn btn-primary btn-sm" id="btnProcessarPdfBaseCurricular" onclick="processarPdfCurriculo()">Processar e Enviar</button>
                 </div>
             </div>
@@ -1138,6 +1142,83 @@ async function apagarChunksArquivoCurriculo(fonteArquivo) {
     await apagarDocsEmLotesBaseCurricular(snap);
 }
 
+// --- Extração de PDF via Claude (alternativa ao PDF.js pra documentos com layout complexo) ---
+// A Claude lê o PDF como documento nativo (texto + imagem de cada página ao mesmo tempo), então lida
+// melhor com colunas/tabelas do que a extração crua do PDF.js. Só faz a extração - os embeddings
+// continuam sendo gerados pela API do Google (obterEmbeddingGeminiBaseCurricular), já que a Anthropic
+// não tem endpoint de embeddings.
+
+function arrayBufferParaBase64BaseCurricular(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binario = '';
+    const TAMANHO_BLOCO = 0x8000;
+    for (let i = 0; i < bytes.length; i += TAMANHO_BLOCO) {
+        const bloco = bytes.subarray(i, i + TAMANHO_BLOCO);
+        binario += String.fromCharCode.apply(null, bloco);
+    }
+    return btoa(binario);
+}
+
+// A Claude devolve o texto com marcadores "===PAGINA N===" (pedido no prompt) pra preservar a
+// numeração de página nos chunks depois - se por algum motivo ela não seguir o formato, cai pro
+// fallback de tratar a resposta inteira como uma única "página".
+function converterTranscricaoClaudeEmPaginas(texto) {
+    const partes = String(texto || '').split(/===\s*PAGINA\s*(\d+)\s*===/i);
+    const paginas = [];
+    for (let i = 1; i < partes.length; i += 2) {
+        const numero = parseInt(partes[i], 10);
+        const conteudo = (partes[i + 1] || '').trim();
+        if (numero > 0) paginas[numero - 1] = conteudo;
+    }
+    for (let i = 0; i < paginas.length; i++) if (!paginas[i]) paginas[i] = '';
+    return paginas.length > 0 ? paginas : [String(texto || '').trim()];
+}
+
+async function extrairTextoPdfComClaude(arrayBuffer, apiKey) {
+    const base64 = arrayBufferParaBase64BaseCurricular(arrayBuffer);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
+    try {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                // Necessário pra permitir a chamada direto do navegador (sem backend) - a chave fica
+                // exposta no client, mesma exposição que já existe hoje pras chaves de Gemini/OpenAI/
+                // Groq configuradas em system/config_ia.
+                'anthropic-dangerous-direct-browser-access': 'true'
+            },
+            body: JSON.stringify({
+                model: 'claude-sonnet-5',
+                max_tokens: 8192,
+                messages: [{
+                    role: 'user',
+                    content: [
+                        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+                        {
+                            type: 'text',
+                            text: 'Transcreva TODO o texto deste documento, respeitando a ordem de leitura correta (colunas, tabelas, seções) e sem resumir, traduzir ou comentar nada. Para cada página do documento, comece uma linha exatamente no formato ===PAGINA N=== (N = número da página, começando em 1), seguida do texto transcrito daquela página. Retorne apenas o texto transcrito com esses marcadores, nada mais.'
+                        }
+                    ]
+                }]
+            }),
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+            const errObj = await response.json().catch(() => ({}));
+            throw new Error(errObj.error ? errObj.error.message : response.statusText);
+        }
+        const json = await response.json();
+        return (json.content && json.content[0] && json.content[0].text) ? json.content[0].text : '';
+    } catch (e) {
+        clearTimeout(timeoutId);
+        throw e;
+    }
+}
+
 async function processarPdfCurriculo() {
     if (typeof db === 'undefined' || !db) return mostrarMensagemBaseCurricular('Sem conexão com o banco de dados.', 'erro');
     const inputArquivo = document.getElementById('baseCurricularArquivoPdf');
@@ -1153,10 +1234,15 @@ async function processarPdfCurriculo() {
         : Array.from(document.querySelectorAll('.chk-serie-base-curricular:checked')).map(chk => chk.value);
     if (serieChaves.length === 0) return mostrarMensagemBaseCurricular('Selecione ao menos uma série (ou marque "Todas").', 'aviso');
 
+    const usarClaude = document.getElementById('baseCurricularUsarClaude') && document.getElementById('baseCurricularUsarClaude').checked;
+
     const configData = await getData('system', 'config_ia') || {};
     const apiKeys = (configData.apiKey || '').split(',').map(k => k.trim()).filter(Boolean);
     const chaveGemini = apiKeys.find(k => !k.startsWith('sk-') && !k.startsWith('gsk_'));
     if (!chaveGemini) return mostrarMensagemBaseCurricular('É necessário ter uma chave do Google Gemini configurada (card "Chave de IA" acima) pra gerar os embeddings de busca.', 'aviso');
+
+    const chaveClaude = apiKeys.find(k => k.startsWith('sk-ant-'));
+    if (usarClaude && !chaveClaude) return mostrarMensagemBaseCurricular('Marque uma chave da Anthropic (prefixo sk-ant-) na "Chave de IA" pra usar a extração com Claude.', 'aviso');
 
     try {
         esconderMensagemBaseCurricular();
@@ -1177,11 +1263,18 @@ async function processarPdfCurriculo() {
         uploadPdfArmadoBaseCurricular = false;
         if (btn) btn.textContent = 'Processar e Enviar';
 
-        definirProgressoBaseCurricular('Carregando biblioteca de leitura de PDF...', 2);
-        await carregarBibliotecaBaseCurricular('pdf');
+        let paginas;
+        if (usarClaude) {
+            definirProgressoBaseCurricular('Extraindo texto do PDF com a Claude (pode levar mais tempo)...', 5);
+            const textoClaude = await extrairTextoPdfComClaude(bytes, chaveClaude);
+            paginas = converterTranscricaoClaudeEmPaginas(textoClaude);
+        } else {
+            definirProgressoBaseCurricular('Carregando biblioteca de leitura de PDF...', 2);
+            await carregarBibliotecaBaseCurricular('pdf');
+            definirProgressoBaseCurricular('Extraindo texto do PDF...', 5);
+            paginas = await extrairTextoPdfPorPagina(bytes);
+        }
 
-        definirProgressoBaseCurricular('Extraindo texto do PDF...', 5);
-        const paginas = await extrairTextoPdfPorPagina(bytes);
         const textoTotal = paginas.join(' ').trim();
         if (textoTotal.length < 200) {
             esconderProgressoBaseCurricular();
@@ -1194,6 +1287,7 @@ async function processarPdfCurriculo() {
 
         let processados = 0;
         let falhas = 0;
+        let ultimoErroEmbedding = '';
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i];
             definirProgressoBaseCurricular(`Processando trecho ${i + 1}/${chunks.length}...`, ((i + 1) / chunks.length) * 90);
@@ -1217,10 +1311,15 @@ async function processarPdfCurriculo() {
                     processados++;
                 } else {
                     falhas++;
+                    ultimoErroEmbedding = 'A API retornou sem os valores do embedding (resposta vazia/inesperada).';
                 }
             } catch (e) {
                 console.warn('[Base Curricular] Falha ao gerar embedding de um trecho, pulando:', e);
                 falhas++;
+                // Guarda a mensagem real (não só a contagem) pra mostrar no final - antes disso só
+                // dava pra ver o motivo abrindo o console (F12), o que escondia do Super Admin se
+                // era chave inválida, modelo não encontrado, cota excedida, CORS etc.
+                ultimoErroEmbedding = e.message || String(e);
             }
 
             // Pequeno intervalo entre chamadas de embedding (mesmo em caso de falha, já que o
@@ -1241,7 +1340,7 @@ async function processarPdfCurriculo() {
         uploadPdfArmadoBaseCurricular = false;
         if (btn) btn.textContent = 'Processar e Enviar';
         let msg = `PDF processado! ${processados} trechos gravados.`;
-        if (falhas > 0) msg += ` ⚠️ ${falhas} trecho(s) falharam ao gerar embedding e foram pulados.`;
+        if (falhas > 0) msg += ` ⚠️ ${falhas} trecho(s) falharam ao gerar embedding. Último erro: ${ultimoErroEmbedding}`;
         mostrarMensagemBaseCurricular(msg, falhas > 0 ? 'aviso' : 'sucesso');
         inputArquivo.value = '';
         listarDocumentosBaseCurricular();
