@@ -4,17 +4,17 @@ import android.annotation.SuppressLint
 import android.os.Bundle
 import android.webkit.CookieManager
 import android.webkit.WebView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.profsis3.sed.bridge.ProfSisNavigationBridge
 import com.profsis3.sed.bridge.ProfSisStorageBridge
-import com.profsis3.sed.kiosk.AllowedHosts
-import com.profsis3.sed.kiosk.KioskWebViewClient
+import com.profsis3.sed.webview.BundleInjectingWebViewClient
 
 /**
- * Tela principal (kiosk): WebView nativa restrita ao Sala do Futuro + login gov.br,
- * com o bundle de automacao (chrome-shim + background.js + content_sed.js, ver
- * scripts/build-bundles.mjs) injetado a cada carregamento de pagina.
+ * Tela principal: WebView nativa que abre direto no Sala do Futuro, com navegação
+ * livre (sem whitelist de domínios - o login gov.br às vezes passa por domínios não
+ * previstos e a restrição estava quebrando o próprio login) e o bundle de automação
+ * (chrome-shim + background.js + content_sed.js, ver scripts/build-bundles.mjs)
+ * injetado a cada carregamento de página.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -36,11 +36,7 @@ class MainActivity : AppCompatActivity() {
         webView.addJavascriptInterface(ProfSisStorageBridge(this), "ProfSisNativeStorage")
         webView.addJavascriptInterface(ProfSisNavigationBridge(this), "ProfSisNativeNav")
 
-        webView.webViewClient = KioskWebViewClient(
-            allowedHosts = AllowedHosts.SED_HOSTS + AllowedHosts.LOGIN_HOSTS,
-            onBlocked = { blockedUrl ->
-                Toast.makeText(this, "Domínio não permitido: $blockedUrl", Toast.LENGTH_SHORT).show()
-            },
+        webView.webViewClient = BundleInjectingWebViewClient(
             onPageFinishedExtra = { view, _ -> injectBundle(view, "bundles/sed-bundle.js") },
         )
 
