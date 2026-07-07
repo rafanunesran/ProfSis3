@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -20,7 +21,6 @@ import com.profsis3.sed.bridge.ProfSisStorageBridge
 import com.profsis3.sed.diagnostics.CrashLogger
 import com.profsis3.sed.update.UpdateChecker
 import com.profsis3.sed.webview.BundleInjectingWebViewClient
-import com.profsis3.sed.webview.PopupWebChromeClient
 
 /**
  * Tela unica do app: duas WebViews (Sala do Futuro e ProfSis) vivas o tempo todo desde
@@ -86,9 +86,14 @@ class MainActivity : AppCompatActivity() {
         webView.visibility = View.GONE
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
-        webView.settings.javaScriptCanOpenWindowsAutomatically = true
-        webView.settings.setSupportMultipleWindows(true)
-        webView.webChromeClient = PopupWebChromeClient(this)
+        // NAO habilitar setSupportMultipleWindows/javaScriptCanOpenWindowsAutomatically nem
+        // usar um WebChromeClient com onCreateWindow aqui: a versao anterior (sem nenhum dos
+        // dois) nunca fechava sozinha; assim que isso foi habilitado (pra tentar suportar
+        // window.open(), muito usado pelo ProfSis em preview de relatorio/PDF), o app passou a
+        // fechar sozinho ao logar/abrir a "engrenagem" do ProfSis. Sem suporte a multiplas
+        // janelas, window.open() volta a ser um no-op inofensivo (como era antes) em vez de
+        // acionar esse caminho de codigo.
+        webView.webChromeClient = WebChromeClient()
 
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)

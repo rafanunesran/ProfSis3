@@ -60,15 +60,19 @@ via CI, ou `./gradlew assembleDebug` localmente com Android Studio/JDK instalado
    consegue instalar de fato (o download agora é feito por conta própria e a Uri de
    instalação vem do nosso `FileProvider`, não mais do `DownloadManager` do sistema -
    ver `UpdateChecker.kt`).
-8. **App fechando sozinho ao logar/usar o ProfSis**: entrar no ProfSis, logar, e abrir
-   uma tela que use `window.open()` (ex: preview de relatório/PDF) → confirmar que
-   abre um popup em tela cheia em vez de travar/fechar o app (`PopupWebChromeClient`,
-   agora com try/catch pra nunca derrubar o app mesmo se algo dentro falhar). Deixar
-   o app aberto por bastante tempo alternando entre as abas (memória sob pressão com
-   2 WebViews vivas). **Se o app fechar sozinho mesmo assim**: reabrir o app - agora
+8. **App fechando sozinho ao logar/usar o ProfSis**: comparado com a versão anterior
+   (antes da barra inferior), a única diferença de configuração de WebView era
+   `setSupportMultipleWindows`/`javaScriptCanOpenWindowsAutomatically` +
+   `onCreateWindow` (adicionados numa tentativa de suportar `window.open()`, muito
+   usado pelo ProfSis em preview de relatório/PDF) - removidos de novo, já que a
+   versão sem eles nunca fechava sozinha. Preview de relatório/PDF (que dependia de
+   `window.open()`) volta a não funcionar (era assim antes também) até isso ser
+   reimplementado com mais cuidado. Testar login e a "engrenagem" do ProfSis
+   normalmente agora. **Se o app fechar sozinho mesmo assim**: reabrir o app -
    aparece automaticamente um diálogo "O app fechou da última vez" com o stack trace
-   real e um botão "Copiar" (`CrashLogger`) - copiar e enviar esse texto pra
-   investigação em vez de tentar adivinhar de novo às cegas.
+   real e um botão "Copiar" (`CrashLogger`) - mas note que isso só captura excecões
+   Kotlin/Java não tratadas; se for um crash nativo do motor do WebView (Chromium),
+   esse diálogo não vai aparecer, e aí só um `adb logcat` real resolve.
 
 ## Coisas para observar (podem indicar regressão)
 
