@@ -22,13 +22,21 @@ via CI, ou `./gradlew assembleDebug` localmente com Android Studio/JDK instalado
 2. **Persistência de sessão**: matar o app completamente (remover dos recentes) e
    reabrir → sessão do SED/gov.br continua logada (valida `CookieManager`/`flush()`
    em `MainActivity.onPause`).
-3. **Login inicial do ProfSis**: tocar "Abrir ProfSis" no painel do SED → abre
-   `ProfSisLoginActivity` → fazer login → conferir (via `adb shell run-as
-   com.profsis3.sed cat /data/data/com.profsis3.sed/shared_prefs/profsis_storage.xml`
-   ou logs) que `profsis_logged_in`/`profsis_user`/`profsis_firebase_session` foram
-   gravados → fechar essa tela (seta "up") → voltar para o SED e recarregar a página →
-   o painel deve reconhecer o login (`CHECK_PROFSIS_LOGIN` resolvendo `loggedIn: true`
-   só via storage, sem precisar abrir a tela do ProfSis de novo).
+3. **Login inicial do ProfSis + sincronismo de aulas/registros**: tocar na aba
+   "ProfSis" da barra inferior (ou deixar o botão "Abrir ProfSis" do painel do SED
+   trocar de aba sozinho) → fazer login → **voltar pra aba "Sala do Futuro"
+   imediatamente, sem esperar** → aguardar uns 15s com o app em primeiro plano (a
+   WebView do ProfSis continua rodando escondida, com `visibility=GONE`, não é
+   destruída) → conferir (via `adb shell run-as com.profsis3.sed cat
+   /data/data/com.profsis3.sed/shared_prefs/profsis_storage.xml` ou `chrome://inspect`)
+   que `profsis_logged_in`/`profsis_user`/`profsis_app_data` foram gravados — isso
+   valida que o poll de 10s do `content_profsis.js` (que só roda enquanto a WebView
+   está viva, mesmo escondida) teve tempo de disparar. Recarregar o painel do SED →
+   "aulas do dia" devem aparecer. Se não aparecerem mesmo depois de esperar, testar
+   de novo com uma conta de **professor** (não gestor) — o usuário observou que o
+   teste inicial foi feito com uma conta de gestor, e nesse caso o ProfSis deveria
+   puxar os dados de professor associados a essa conta; se isso não acontecer, o
+   problema está do lado do ProfSis (`core.js`), fora do escopo deste app.
 4. **Extração de alunos** (teste mais crítico): numa turma real, usar "Extrair Alunos"
    → confirmar que os dados aparecem no Firestore do projeto ProfSis (banco real) via
    o caminho `atualizarAlunosDiretoFirebase` — isso valida a premissa central do
@@ -40,6 +48,15 @@ via CI, ou `./gradlew assembleDebug` localmente com Android Studio/JDK instalado
    listeners/intervals (guard `window.__sisprofSedInjected` no bundle) e que o estado
    do fluxo (`rpa_auto_workflow`, armazenado via `chrome.storage.local`) sobrevive à
    reabertura.
+6. **Barra inferior**: trocar entre "Sala do Futuro" e "ProfSis" várias vezes →
+   confirmar que nenhuma das duas WebViews recarrega do zero (sessão/scroll
+   preservados) e que o botão "voltar" do Android navega no histórico da aba atual,
+   volta pra aba do SED se estiver na do ProfSis sem mais histórico, e só fecha o
+   app se estiver na aba do SED sem mais histórico.
+7. **Atualização automática**: publicar uma nova versão (novo `versionCode` gerado
+   pelo CI) → abrir o app numa instalação com versão antiga → confirmar que aparece
+   o diálogo "Nova versão disponível" → tocar "Atualizar" → confirmar notificação de
+   download → ao concluir, confirmar que o instalador do Android abre sozinho.
 
 ## Coisas para observar (podem indicar regressão)
 

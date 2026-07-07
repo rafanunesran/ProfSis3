@@ -24,11 +24,6 @@
 
         </activity>
 
-        <activity
-            android:name=".profsis.ProfSisLoginActivity"
-            android:label="Login ProfSis"
-            android:exported="false" />
-
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -43,4 +38,9 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Necessaria para o UpdateChecker abrir o instalador do Android sozinho depois de
+         baixar um APK mais novo (ver com.profsis3.sed.update.UpdateChecker). O Android
+         ainda pede confirmacao do usuario na tela do instalador do sistema - essa
+         permissao so libera o app pedir pra abrir essa tela. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>
