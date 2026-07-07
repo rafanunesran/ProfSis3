@@ -1,6 +1,6 @@
 // Concatena shim + background.js + content script (copias em vendor/, geradas por
 // sync-extension-sources.mjs) em um unico arquivo por tela, para uma unica chamada
-// de evaluateJavascript com ordem garantida. Ver MainActivity.kt / ProfSisLoginActivity.kt.
+// de evaluateJavascript com ordem garantida. Ver MainActivity.kt (as duas WebViews).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

@@ -5,8 +5,8 @@ import android.webkit.JavascriptInterface
 
 /**
  * Substitui chrome.storage.local: um unico blob JSON em SharedPreferences, global ao
- * app (compartilhado entre MainActivity e ProfSisLoginActivity, iguais a
- * chrome.storage.local ser compartilhado entre background e content scripts).
+ * app (compartilhado entre as duas WebViews de MainActivity, igual a chrome.storage.local
+ * ser compartilhado entre background e content scripts).
  *
  * chrome-shim.js sempre le o blob inteiro antes de get/set/remove e regrava o blob
  * inteiro depois, entao nao ha necessidade de expor chaves individuais aqui.

@@ -24,6 +24,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # fetch-depth 0 (historico completo) - necessario para "git rev-list --count HEAD"
+          # no passo de build do APK Android gerar um versionCode sempre crescente de verdade
+          # (um clone raso sempre contaria 1 commit).
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -79,13 +84,21 @@ jobs:
         continue-on-error: true
         run: |
           (
+            VERSION_CODE=$(git rev-list --count HEAD)
+            VERSION_NAME="1.0.$VERSION_CODE"
             cd app-android
             npm ci
             npm run cap:sync
             chmod +x android/gradlew
-            (cd android && ./gradlew assembleDebug)
+            (cd android && ./gradlew assembleDebug \
+              -PPROFSIS_VERSION_CODE="$VERSION_CODE" \
+              -PPROFSIS_VERSION_NAME="$VERSION_NAME")
             mkdir -p dist
             cp android/app/build/outputs/apk/debug/app-debug.apk dist/profsis3-sed-debug.apk
+            # version.json e checado pelo UpdateChecker (com.profsis3.sed.update) a cada
+            # abertura do app, pra saber se ha uma versao mais nova pra baixar sozinho.
+            printf '{"versionCode": %s, "versionName": "%s", "apkUrl": "https://rafanunesran.github.io/ProfSis3/app-android/dist/profsis3-sed-debug.apk"}\n' \
+              "$VERSION_CODE" "$VERSION_NAME" > dist/version.json
           ) || echo "Build do APK Android falhou - publicando o site sem atualizar o APK desta vez."
           # node_modules/ e as pastas de build do Gradle não devem ir pro Pages (path: '.' abaixo
           # sobe o repo inteiro) - limpa sempre, mesmo se o build acima falhou.
