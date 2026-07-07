@@ -1,14 +1,18 @@
 // --- MÓDULO: ESTAGIÁRIO (IA E GERAÇÃO DE DOCUMENTOS) ---
 
 // --- FUNDAMENTAÇÃO NO CURRÍCULO OFICIAL (Tier 1: planilha de escopo-sequência / Tier 2: PDFs com
-// busca semântica) - ver Base Curricular Oficial no Super Admin (admin.js) pra como esses dados
-// chegam nas coleções curriculo_escopo_sequencia / curriculo_chunks_embeddings. Compartilhado entre
-// todas as escolas (sem schoolId), ao contrário do catálogo de Material Digital.
+// busca por palavra-chave) - ver Base Curricular Oficial no Super Admin (admin.js) pra como esses
+// dados chegam nas coleções curriculo_escopo_sequencia / curriculo_chunks_embeddings. Compartilhado
+// entre todas as escolas (sem schoolId), ao contrário do catálogo de Material Digital.
+//
+// A Tier 2 já foi busca semântica (embeddings do Google) - removida porque a chave de IA configurada
+// não tinha cota gratuita pra nenhuma chamada de IA (erro real: "quota exceeded... limit: 0"), então
+// virou busca por palavra-chave (mesma lógica da Tier 1), sem nenhuma dependência de IA.
 
 const cacheCurriculoTier1Estagiario = new Map(); // chave serieChave -> linhas (todas as disciplinas)
-const cacheCurriculoTier2Estagiario = new Map(); // chave serieChave -> chunks com embedding (todas as disciplinas)
+const cacheCurriculoTier2Estagiario = new Map(); // chave serieChave -> chunks de texto (todas as disciplinas)
 const CONFIANCA_MINIMA_TIER1_ESTAGIARIO = 0.55;
-const LIMIAR_SIMILARIDADE_TIER2_ESTAGIARIO = 0.68;
+const CONFIANCA_MINIMA_TIER2_ESTAGIARIO = 0.4; // mais permissivo que a Tier1 - trechos de PDF são mais longos/variados, cobertura parcial já é um bom sinal
 const TOP_K_CHUNKS_TIER2_ESTAGIARIO = 4;
 
 const MESES_AGENDA = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -49,7 +53,7 @@ async function buscarLinhasCurriculoOficial(serie) {
     }
 }
 
-async function buscarChunksCurriculoEmbedding(serie) {
+async function buscarChunksCurriculoTexto(serie) {
     if (typeof db === 'undefined' || !db) return [];
     const serieChave = resolverSerieChaveCurriculoOficial(serie);
     if (!serieChave) return [];
@@ -63,16 +67,26 @@ async function buscarChunksCurriculoEmbedding(serie) {
         }
         return chunks;
     } catch (e) {
-        console.warn('[Estagiário][Tier2] Erro ao buscar trechos com embedding:', e);
+        console.warn('[Estagiário][Tier2] Erro ao buscar trechos de PDF:', e);
         return [];
     }
 }
 
+// Pontua um texto já normalizado (normalizarTextoComparacaoMaterialDigital) contra o "Tema" digitado
+// pelo professor: 1.0 se o texto contém o tema inteiro, senão a proporção de tokens do tema (>=3
+// letras) encontrados no texto. Reaproveitada tanto pra achar a melhor linha da planilha (Tier 1)
+// quanto os melhores trechos de PDF (Tier 2) - mesma busca por palavra-chave nas duas fontes, sem IA.
+function pontuarTextoBuscavelContraTema(temaNorm, tokensTema, textoBuscavel) {
+    if (!textoBuscavel) return 0;
+    if (textoBuscavel.includes(temaNorm)) return 1;
+    if (tokensTema.length === 0) return 0;
+    const tokensBatidos = tokensTema.filter(tok => textoBuscavel.includes(tok)).length;
+    return tokensBatidos / tokensTema.length;
+}
+
 // Pontua a melhor linha da planilha oficial contra o "Tema" digitado pelo professor, reaproveitando
 // os mesmos utilitários de comparação de texto já usados pro catálogo de Material Digital (em vez de
-// criar uma segunda lógica de fuzzy-match no mesmo arquivo). Cascata: cobertura de tokens exata ->
-// prefixo -> Levenshtein (via disciplinasSaoSemelhantes, que já encapsula essa cascata pra strings
-// curtas) aplicada token a token contra o texto pré-normalizado de cada linha.
+// criar uma segunda lógica de fuzzy-match no mesmo arquivo).
 function selecionarMelhorLinhaCurriculo(tema, linhasDaDisciplina) {
     const temaNorm = normalizarTextoComparacaoMaterialDigital(tema);
     if (!temaNorm || !linhasDaDisciplina || linhasDaDisciplina.length === 0) return { linha: null, confiante: false };
@@ -84,70 +98,36 @@ function selecionarMelhorLinhaCurriculo(tema, linhasDaDisciplina) {
     let melhorScore = 0;
 
     linhasDaDisciplina.forEach(linha => {
-        const textoLinha = linha.textoBuscavel || '';
-        if (!textoLinha) return;
-
-        if (textoLinha.includes(temaNorm)) {
-            const score = 1;
-            if (score > melhorScore) { melhorScore = score; melhor = linha; }
-            return;
-        }
-
-        const tokensBatidos = tokensTema.filter(tok => textoLinha.includes(tok)).length;
-        const score = tokensBatidos / tokensTema.length;
+        const score = pontuarTextoBuscavelContraTema(temaNorm, tokensTema, linha.textoBuscavel || '');
         if (score > melhorScore) { melhorScore = score; melhor = linha; }
     });
 
     return { linha: melhor, score: melhorScore, confiante: melhorScore >= CONFIANCA_MINIMA_TIER1_ESTAGIARIO };
 }
 
-function similaridadeCossenoEstagiario(vecA, vecB) {
-    if (!vecA || !vecB || vecA.length !== vecB.length) return 0;
-    let produto = 0, normaA = 0, normaB = 0;
-    for (let i = 0; i < vecA.length; i++) {
-        produto += vecA[i] * vecB[i];
-        normaA += vecA[i] * vecA[i];
-        normaB += vecB[i] * vecB[i];
-    }
-    if (normaA === 0 || normaB === 0) return 0;
-    return produto / (Math.sqrt(normaA) * Math.sqrt(normaB));
-}
+// Mesma pontuação por palavra-chave da Tier 1, aplicada aos chunks de PDF - pega os top ~4 acima de
+// um limiar mínimo de confiança (mais permissivo que a Tier1: trechos de PDF são mais longos/
+// variados, então cobertura parcial de tokens já é um bom sinal de relevância).
+function selecionarMelhoresTrechosCurriculo(tema, chunks) {
+    const temaNorm = normalizarTextoComparacaoMaterialDigital(tema);
+    if (!temaNorm || !chunks || chunks.length === 0) return [];
 
-// Mesma classificação de prefixo já usada no roteador multi-IA (linha ~235 mais abaixo), extraída
-// aqui como predicado reutilizável só pra identificar qual chave configurada é do Gemini (a única que
-// serve pra gerar embeddings hoje).
-function identificarProvedorChaveEstagiario(key) {
-    if (key.startsWith('sk-') && !key.startsWith('sk-ant-')) return 'openai';
-    if (key.startsWith('gsk_')) return 'groq';
-    return 'gemini';
-}
+    const tokensTema = temaNorm.split(' ').filter(t => t.length >= 3);
+    if (tokensTema.length === 0) return [];
 
-async function obterEmbeddingTemaEstagiario(texto, apiKey) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-    try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            // "model" precisa vir também no corpo (além de já estar na URL) - o endpoint embedContent
-            // exige esse campo, diferente do generateContent. Sem ele a API rejeita a chamada.
-            body: JSON.stringify({ model: 'models/text-embedding-004', content: { parts: [{ text: texto }] }, taskType: 'RETRIEVAL_QUERY' }),
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        if (!response.ok) return null;
-        const json = await response.json();
-        return (json.embedding && json.embedding.values) ? json.embedding.values : null;
-    } catch (e) {
-        clearTimeout(timeoutId);
-        return null;
-    }
+    return chunks
+        .map(chunk => ({ chunk, score: pontuarTextoBuscavelContraTema(temaNorm, tokensTema, chunk.textoBuscavel || '') }))
+        .filter(r => r.score >= CONFIANCA_MINIMA_TIER2_ESTAGIARIO)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, TOP_K_CHUNKS_TIER2_ESTAGIARIO)
+        .map(r => r.chunk);
 }
 
 // Orquestra a busca nas duas fontes oficiais (planilha + PDFs) uma única vez por clique em "Gerar
 // Estrutura". Nunca lança erro pra fora - qualquer falha em qualquer uma das duas fontes só reduz o
-// quanto a geração fica fundamentada, nunca bloqueia o professor de gerar o plano.
-async function montarContextoCurriculoOficial(disciplina, serie, tema, apiKeys) {
+// quanto a geração fica fundamentada, nunca bloqueia o professor de gerar o plano. Nenhuma das duas
+// fontes depende de chave de IA - é tudo Firestore + comparação de texto em JS puro.
+async function montarContextoCurriculoOficial(disciplina, serie, tema) {
     const contexto = { tier1: null, tier1Confiante: false, tier2Trechos: [], grounded: false };
 
     try {
@@ -166,23 +146,13 @@ async function montarContextoCurriculoOficial(disciplina, serie, tema, apiKeys) 
     }
 
     try {
-        const chaveGemini = (apiKeys || []).find(k => identificarProvedorChaveEstagiario(k) === 'gemini');
-        if (chaveGemini) {
-            const chunks = (await buscarChunksCurriculoEmbedding(serie))
-                .filter(c => !c.disciplinaOriginal || disciplinasSaoSemelhantes(disciplina, c.disciplinaOriginal));
-            if (chunks.length > 0) {
-                const embeddingTema = await obterEmbeddingTemaEstagiario(`${disciplina} - ${serie} - ${tema}`, chaveGemini);
-                if (embeddingTema) {
-                    const top = chunks
-                        .map(c => ({ chunk: c, similaridade: similaridadeCossenoEstagiario(embeddingTema, c.embedding) }))
-                        .filter(r => r.similaridade >= LIMIAR_SIMILARIDADE_TIER2_ESTAGIARIO)
-                        .sort((a, b) => b.similaridade - a.similaridade)
-                        .slice(0, TOP_K_CHUNKS_TIER2_ESTAGIARIO);
-                    if (top.length > 0) {
-                        contexto.tier2Trechos = top.map(r => r.chunk);
-                        contexto.grounded = true;
-                    }
-                }
+        const chunks = (await buscarChunksCurriculoTexto(serie))
+            .filter(c => !c.disciplinaOriginal || disciplinasSaoSemelhantes(disciplina, c.disciplinaOriginal));
+        if (chunks.length > 0) {
+            const trechos = selecionarMelhoresTrechosCurriculo(tema, chunks);
+            if (trechos.length > 0) {
+                contexto.tier2Trechos = trechos;
+                contexto.grounded = true;
             }
         }
     } catch (e) {
@@ -676,10 +646,11 @@ async function gerarDocumentoIA() {
         let dadosEstruturados = {};
         let promptText = '';
 
-        // Busca a fundamentação oficial (planilha de escopo-sequência + PDFs com busca semântica)
+        // Busca a fundamentação oficial (planilha de escopo-sequência + PDFs por palavra-chave)
         // antes de montar o prompt, pra IA usar dados reais em vez de "conhecimento profundo" de
-        // memória - ver montarContextoCurriculoOficial no topo do arquivo.
-        const contextoOficial = await montarContextoCurriculoOficial(disciplina, serie, tema, apiKeys);
+        // memória - ver montarContextoCurriculoOficial no topo do arquivo. Não depende de chave de
+        // IA (só Firestore + comparação de texto).
+        const contextoOficial = await montarContextoCurriculoOficial(disciplina, serie, tema);
 
         if (tipo === 'plano_aula') {
             let templateBase = document.getElementById('iaDocPrompt') ? document.getElementById('iaDocPrompt').value : '';

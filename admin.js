@@ -771,7 +771,7 @@ function abrirModalBaseCurricular() {
                         <label style="font-size:12px; display:inline-flex; align-items:center; gap:3px; font-weight:bold; margin-left:10px;"><input type="checkbox" id="chkSerieTodasBaseCurricular">Todas (Fund. + Médio)</label>
                     </div>
                     <input type="file" id="baseCurricularArquivoPdf" accept=".pdf" style="width:100%; margin-bottom:8px; font-size:12px;" onchange="resetUploadArmadoBaseCurricular('pdf')">
-                    <p style="font-size:11px; color:#718096; margin-bottom:10px;">🤖 O texto é extraído com IA (Gemini), que lida bem com colunas/tabelas - usa a mesma chave já configurada na "Chave de IA".</p>
+                    <p style="font-size:11px; color:#718096; margin-bottom:10px;">O texto é extraído automaticamente do PDF (sem IA) e buscado depois por palavra-chave no Estagiário.</p>
                     <button class="btn btn-primary btn-sm" id="btnProcessarPdfBaseCurricular" onclick="processarPdfCurriculo()">Processar e Enviar</button>
                 </div>
             </div>
@@ -805,6 +805,10 @@ function carregarScriptBaseCurricular(src) {
 async function carregarBibliotecaBaseCurricular(tipo) {
     if (tipo === 'xlsx' && typeof XLSX === 'undefined') {
         await carregarScriptBaseCurricular('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+    }
+    if (tipo === 'pdf' && typeof pdfjsLib === 'undefined') {
+        await carregarScriptBaseCurricular('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
 }
 
@@ -1093,100 +1097,25 @@ function dividirEmChunksCurriculo(paginas, tamanhoAlvo = 1100, sobreposicao = 18
     return chunks;
 }
 
-async function obterEmbeddingGeminiBaseCurricular(texto, apiKey, taskType) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
-    try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            // "model" precisa vir também no corpo (além de já estar na URL) - o endpoint embedContent
-            // exige esse campo, diferente do generateContent usado no roteador multi-IA. Sem ele a
-            // API retorna erro em toda chamada (era a causa do "0 trechos gravados").
-            body: JSON.stringify({ model: 'models/text-embedding-004', content: { parts: [{ text: texto }] }, taskType }),
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        if (!response.ok) {
-            const errObj = await response.json().catch(() => ({}));
-            throw new Error(errObj.error ? errObj.error.message : response.statusText);
-        }
-        const json = await response.json();
-        return (json.embedding && json.embedding.values) ? json.embedding.values : null;
-    } catch (e) {
-        clearTimeout(timeoutId);
-        throw e;
-    }
-}
-
 async function apagarChunksArquivoCurriculo(fonteArquivo) {
     const snap = await db.collection('curriculo_chunks_embeddings').where('fonteArquivo', '==', fonteArquivo).get();
     await apagarDocsEmLotesBaseCurricular(snap);
 }
 
-// --- Extração de PDF via Gemini (alternativa ao PDF.js pra documentos com layout complexo) ---
-// O Gemini lê o PDF como documento nativo/multimodal (texto + imagem de cada página ao mesmo tempo),
-// então lida melhor com colunas/tabelas do que a extração crua do PDF.js. Usa a mesma chave já
-// exigida pros embeddings - sem provedor/custo novo.
-
-function arrayBufferParaBase64BaseCurricular(buffer) {
-    const bytes = new Uint8Array(buffer);
-    let binario = '';
-    const TAMANHO_BLOCO = 0x8000;
-    for (let i = 0; i < bytes.length; i += TAMANHO_BLOCO) {
-        const bloco = bytes.subarray(i, i + TAMANHO_BLOCO);
-        binario += String.fromCharCode.apply(null, bloco);
-    }
-    return btoa(binario);
-}
-
-// A IA devolve o texto com marcadores "===PAGINA N===" (pedido no prompt) pra preservar a numeração
-// de página nos chunks depois - se por algum motivo ela não seguir o formato, cai pro fallback de
-// tratar a resposta inteira como uma única "página".
-function converterTranscricaoIaEmPaginas(texto) {
-    const partes = String(texto || '').split(/===\s*PAGINA\s*(\d+)\s*===/i);
+// Extração de texto do PDF só com PDF.js - sem nenhuma chamada de IA. Testamos extrair via Claude e
+// depois via Gemini (documento multimodal) pra lidar melhor com colunas/tabelas, mas a chave de IA
+// configurada não tem cota gratuita pra chamadas de IA da Google (erro real: "quota exceeded...
+// limit: 0"), então a busca na Tier 2 virou por palavra-chave (ver ia_estagiario.js) e a extração
+// não depende mais de IA nenhuma.
+async function extrairTextoPdfPorPagina(arrayBuffer) {
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     const paginas = [];
-    for (let i = 1; i < partes.length; i += 2) {
-        const numero = parseInt(partes[i], 10);
-        const conteudo = (partes[i + 1] || '').trim();
-        if (numero > 0) paginas[numero - 1] = conteudo;
+    for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const conteudo = await page.getTextContent();
+        paginas.push(conteudo.items.map(item => item.str).join(' '));
     }
-    for (let i = 0; i < paginas.length; i++) if (!paginas[i]) paginas[i] = '';
-    return paginas.length > 0 ? paginas : [String(texto || '').trim()];
-}
-
-async function extrairTextoPdfComGemini(arrayBuffer, apiKey) {
-    const base64 = arrayBufferParaBase64BaseCurricular(arrayBuffer);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000);
-    try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [
-                        { inline_data: { mime_type: 'application/pdf', data: base64 } },
-                        { text: 'Transcreva TODO o texto deste documento, respeitando a ordem de leitura correta (colunas, tabelas, seções) e sem resumir, traduzir ou comentar nada. Para cada página do documento, comece uma linha exatamente no formato ===PAGINA N=== (N = número da página, começando em 1), seguida do texto transcrito daquela página. Retorne apenas o texto transcrito com esses marcadores, nada mais.' }
-                    ]
-                }]
-            }),
-            signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        if (!response.ok) {
-            const errObj = await response.json().catch(() => ({}));
-            throw new Error(errObj.error ? errObj.error.message : response.statusText);
-        }
-        const json = await response.json();
-        if (!json.candidates || json.candidates.length === 0 || !json.candidates[0].content) {
-            throw new Error('A IA não retornou um conteúdo válido.');
-        }
-        return json.candidates[0].content.parts[0].text || '';
-    } catch (e) {
-        clearTimeout(timeoutId);
-        throw e;
-    }
+    return paginas;
 }
 
 async function processarPdfCurriculo() {
@@ -1203,11 +1132,6 @@ async function processarPdfCurriculo() {
         ? ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'EM1', 'EM2', 'EM3']
         : Array.from(document.querySelectorAll('.chk-serie-base-curricular:checked')).map(chk => chk.value);
     if (serieChaves.length === 0) return mostrarMensagemBaseCurricular('Selecione ao menos uma série (ou marque "Todas").', 'aviso');
-
-    const configData = await getData('system', 'config_ia') || {};
-    const apiKeys = (configData.apiKey || '').split(',').map(k => k.trim()).filter(Boolean);
-    const chaveGemini = apiKeys.find(k => !k.startsWith('sk-') && !k.startsWith('gsk_'));
-    if (!chaveGemini) return mostrarMensagemBaseCurricular('É necessário ter uma chave do Google Gemini configurada (card "Chave de IA" acima) pra gerar os embeddings de busca.', 'aviso');
 
     try {
         esconderMensagemBaseCurricular();
@@ -1228,9 +1152,11 @@ async function processarPdfCurriculo() {
         uploadPdfArmadoBaseCurricular = false;
         if (btn) btn.textContent = 'Processar e Enviar';
 
-        definirProgressoBaseCurricular('Extraindo texto do PDF com IA (Gemini, pode levar mais tempo)...', 5);
-        const textoIa = await extrairTextoPdfComGemini(bytes, chaveGemini);
-        const paginas = converterTranscricaoIaEmPaginas(textoIa);
+        definirProgressoBaseCurricular('Carregando biblioteca de leitura de PDF...', 2);
+        await carregarBibliotecaBaseCurricular('pdf');
+
+        definirProgressoBaseCurricular('Extraindo texto do PDF...', 5);
+        const paginas = await extrairTextoPdfPorPagina(bytes);
 
         const textoTotal = paginas.join(' ').trim();
         if (textoTotal.length < 200) {
@@ -1242,63 +1168,28 @@ async function processarPdfCurriculo() {
         const chunks = dividirEmChunksCurriculo(paginas);
         await apagarChunksArquivoCurriculo(arquivo.name);
 
-        let processados = 0;
-        let falhas = 0;
-        let ultimoErroEmbedding = '';
-        for (let i = 0; i < chunks.length; i++) {
-            const chunk = chunks[i];
-            definirProgressoBaseCurricular(`Processando trecho ${i + 1}/${chunks.length}...`, ((i + 1) / chunks.length) * 90);
-
-            try {
-                const embedding = await obterEmbeddingGeminiBaseCurricular(chunk.texto, chaveGemini, 'RETRIEVAL_DOCUMENT');
-                if (embedding) {
-                    await db.collection('curriculo_chunks_embeddings').add({
-                        serieChaves,
-                        disciplinaOriginal: disciplina || null,
-                        tipoDocumento,
-                        fonteArquivo: arquivo.name,
-                        chunkIndex: i,
-                        paginaInicio: chunk.paginaInicio,
-                        paginaFim: chunk.paginaFim,
-                        texto: chunk.texto,
-                        embedding,
-                        embeddingModel: 'text-embedding-004',
-                        atualizadoEm: Date.now()
-                    });
-                    processados++;
-                } else {
-                    falhas++;
-                    ultimoErroEmbedding = 'A API retornou sem os valores do embedding (resposta vazia/inesperada).';
-                }
-            } catch (e) {
-                console.warn('[Base Curricular] Falha ao gerar embedding de um trecho, pulando:', e);
-                falhas++;
-                // Guarda a mensagem real (não só a contagem) pra mostrar no final - antes disso só
-                // dava pra ver o motivo abrindo o console (F12), o que escondia do Super Admin se
-                // era chave inválida, modelo não encontrado, cota excedida, CORS etc.
-                ultimoErroEmbedding = e.message || String(e);
-            }
-
-            // Pequeno intervalo entre chamadas de embedding (mesmo em caso de falha, já que o
-            // limite de taxa da API conta a tentativa) - proteção extra ao processar muitos
-            // trechos em sequência.
-            if (i < chunks.length - 1) await new Promise(resolve => setTimeout(resolve, 150));
-        }
+        // Sem IA nenhuma nessa etapa - grava o texto de cada chunk direto no Firestore, com uma
+        // versão normalizada (sem acento/minúscula) pra busca por palavra-chave no Estagiário (ver
+        // selecionarMelhoresTrechosCurriculo em ia_estagiario.js).
+        await gravarChunksCurriculoEmLotes(chunks, {
+            serieChaves,
+            disciplinaOriginal: disciplina || null,
+            tipoDocumento,
+            fonteArquivo: arquivo.name
+        });
 
         await saveData('curriculo_ingest_manifest', manifestId, {
             chaveArquivo: arquivo.name,
             tipoDocumento: 'pdf_chunk',
             hashConteudo: hash,
-            totalUnidades: processados,
+            totalUnidades: chunks.length,
             ingeridoEm: Date.now()
         });
 
         esconderProgressoBaseCurricular();
         uploadPdfArmadoBaseCurricular = false;
         if (btn) btn.textContent = 'Processar e Enviar';
-        let msg = `PDF processado! ${processados} trechos gravados.`;
-        if (falhas > 0) msg += ` ⚠️ ${falhas} trecho(s) falharam ao gerar embedding. Último erro: ${ultimoErroEmbedding}`;
-        mostrarMensagemBaseCurricular(msg, falhas > 0 ? 'aviso' : 'sucesso');
+        mostrarMensagemBaseCurricular(`PDF processado! ${chunks.length} trecho(s) gravados.`, 'sucesso');
         inputArquivo.value = '';
         listarDocumentosBaseCurricular();
     } catch (e) {
@@ -1307,6 +1198,30 @@ async function processarPdfCurriculo() {
         uploadPdfArmadoBaseCurricular = false;
         if (btn) btn.textContent = 'Processar e Enviar';
         mostrarMensagemBaseCurricular('Erro ao processar PDF: ' + e.message, 'erro');
+    }
+}
+
+async function gravarChunksCurriculoEmLotes(chunks, metadados) {
+    const TAMANHO_LOTE = 450;
+    for (let i = 0; i < chunks.length; i += TAMANHO_LOTE) {
+        const fatia = chunks.slice(i, i + TAMANHO_LOTE);
+        const lote = db.batch();
+        fatia.forEach((chunk, idx) => {
+            const ref = db.collection('curriculo_chunks_embeddings').doc();
+            lote.set(ref, {
+                serieChaves: metadados.serieChaves,
+                disciplinaOriginal: metadados.disciplinaOriginal,
+                tipoDocumento: metadados.tipoDocumento,
+                fonteArquivo: metadados.fonteArquivo,
+                chunkIndex: i + idx,
+                paginaInicio: chunk.paginaInicio,
+                paginaFim: chunk.paginaFim,
+                texto: chunk.texto,
+                textoBuscavel: normalizarTextoComparacaoMaterialDigital(chunk.texto),
+                atualizadoEm: Date.now()
+            });
+        });
+        await lote.commit();
     }
 }
 
