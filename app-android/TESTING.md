@@ -55,15 +55,20 @@ via CI, ou `./gradlew assembleDebug` localmente com Android Studio/JDK instalado
    app se estiver na aba do SED sem mais histórico.
 7. **Atualização automática**: publicar uma nova versão (novo `versionCode` gerado
    pelo CI) → abrir o app numa instalação com versão antiga → confirmar que aparece
-   o diálogo "Nova versão disponível" → tocar "Atualizar" → confirmar notificação de
-   download → ao concluir, confirmar que o instalador do Android abre sozinho.
-8. **App fechando sozinho ao logar/usar o ProfSis (corrigido nesta sessão)**: entrar
-   no ProfSis, logar, e abrir uma tela que use `window.open()` (ex: preview de
-   relatório/PDF) → confirmar que abre um popup em tela cheia em vez de travar/fechar
-   o app (`PopupWebChromeClient`). Deixar o app aberto por bastante tempo alternando
-   entre as abas (memória sob pressão com 2 WebViews vivas) → se o app fechar sozinho
-   mesmo assim, é sinal de que `onRenderProcessGone` não está sendo suficiente — puxar
-   o logcat (`adb logcat` filtrando `AndroidRuntime`/`chromium`) pra ver a causa real.
+   o diálogo "Nova versão disponível" → tocar "Atualizar" → confirmar Toast de
+   download → ao concluir, confirmar que o instalador do Android abre sozinho e
+   consegue instalar de fato (o download agora é feito por conta própria e a Uri de
+   instalação vem do nosso `FileProvider`, não mais do `DownloadManager` do sistema -
+   ver `UpdateChecker.kt`).
+8. **App fechando sozinho ao logar/usar o ProfSis**: entrar no ProfSis, logar, e abrir
+   uma tela que use `window.open()` (ex: preview de relatório/PDF) → confirmar que
+   abre um popup em tela cheia em vez de travar/fechar o app (`PopupWebChromeClient`,
+   agora com try/catch pra nunca derrubar o app mesmo se algo dentro falhar). Deixar
+   o app aberto por bastante tempo alternando entre as abas (memória sob pressão com
+   2 WebViews vivas). **Se o app fechar sozinho mesmo assim**: reabrir o app - agora
+   aparece automaticamente um diálogo "O app fechou da última vez" com o stack trace
+   real e um botão "Copiar" (`CrashLogger`) - copiar e enviar esse texto pra
+   investigação em vez de tentar adivinhar de novo às cegas.
 
 ## Coisas para observar (podem indicar regressão)
 
