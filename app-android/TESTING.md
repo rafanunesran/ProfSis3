@@ -9,17 +9,16 @@ via CI, ou `./gradlew assembleDebug` localmente com Android Studio/JDK instalado
 - [ ] Rodar `npm run prebuild` (ou deixar o CI rodar) para garantir que `vendor/*.js` e
       os bundles em `android/app/src/main/assets/bundles/` estão atualizados com a
       versão mais recente de `extensao-profsis/`.
-- [x] Domínios de login gov.br confirmados com captura real de um login: `sso.acesso.gov.br`
-      (`https://sso.acesso.gov.br/login?client_id=idp.sp.gov.br&authorization_id=...`) e o
-      próprio SED pós-login em `saladofuturoprofessor.educacao.sp.gov.br/diario-classe__home`
-      — ambos já cobertos por `AllowedHosts.LOGIN_HOSTS`/`SED_HOSTS`.
+- [x] Navegação é livre (sem whitelist de domínios) desde que o login gov.br mostrou
+      dificuldade passando por domínios não previstos (ex: verificação/MFA). O app não
+      bloqueia mais nenhum domínio — ver `webview/BundleInjectingWebViewClient.kt`.
 
 ## Fluxo principal
 
 1. **Instalação limpa** → abrir o app → SED carrega direto na WebView (sem passar por
-   nenhuma tela intermediária) → login gov.br completa sem a tela de "domínio não
-   permitido" aparecer → o painel flutuante do `content_sed.js` aparece com a versão
-   correta (`chrome.runtime.getManifest().version`).
+   nenhuma tela intermediária) → login gov.br completa normalmente (navegação livre,
+   sem bloqueio de domínio) → o painel flutuante do `content_sed.js` aparece com a
+   versão correta (`chrome.runtime.getManifest().version`).
 2. **Persistência de sessão**: matar o app completamente (remover dos recentes) e
    reabrir → sessão do SED/gov.br continua logada (valida `CookieManager`/`flush()`
    em `MainActivity.onPause`).
@@ -36,11 +35,7 @@ via CI, ou `./gradlew assembleDebug` localmente com Android Studio/JDK instalado
    projeto: com `chrome.tabs.query` sempre retornando `[]`, o background.js precisa
    cair automaticamente no fallback de escrita direta via REST, sem qualquer edição
    de código.
-5. **Whitelist de navegação**: tentar (via algum link na própria página, se existir,
-   ou digitando manualmente não é possível pois não há barra de endereço) navegar
-   para um domínio fora da lista permitida → confirmar que a navegação é bloqueada e
-   aparece o Toast "Domínio não permitido".
-6. **Robustez do fluxo "Auto"**: iniciar o preenchimento automático de Chamada/Registro,
+5. **Robustez do fluxo "Auto"**: iniciar o preenchimento automático de Chamada/Registro,
    matar o app no meio do processo, reabrir → conferir que o painel não duplica
    listeners/intervals (guard `window.__sisprofSedInjected` no bundle) e que o estado
    do fluxo (`rpa_auto_workflow`, armazenado via `chrome.storage.local`) sobrevive à
@@ -54,4 +49,5 @@ via CI, ou `./gradlew assembleDebug` localmente com Android Studio/JDK instalado
   código real de `vendor/background.js`/`vendor/content_sed.js`/`vendor/content_profsis.js`.
 - SPA do SED pode não redisparar `onPageFinished` em navegação interna de rota — se o
   painel sumir depois de navegar dentro do próprio SED, pode ser necessário revisar o
-  gatilho de reinjeção do bundle (hoje só listener em `onPageFinished`/`shouldOverrideUrlLoading`).
+  gatilho de reinjeção do bundle (hoje só o listener `onPageFinished` em
+  `BundleInjectingWebViewClient`).

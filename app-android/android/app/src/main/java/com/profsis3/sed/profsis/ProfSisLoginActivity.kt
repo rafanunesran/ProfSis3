@@ -4,11 +4,9 @@ import android.annotation.SuppressLint
 import android.os.Bundle
 import android.webkit.CookieManager
 import android.webkit.WebView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.profsis3.sed.bridge.ProfSisStorageBridge
-import com.profsis3.sed.kiosk.AllowedHosts
-import com.profsis3.sed.kiosk.KioskWebViewClient
+import com.profsis3.sed.webview.BundleInjectingWebViewClient
 
 /**
  * "Aba do ProfSis": usada so para o login inicial/reautenticacao (chrome.tabs.create
@@ -39,11 +37,7 @@ class ProfSisLoginActivity : AppCompatActivity() {
         // Mesmo bridge de storage da MainActivity - mesmo SharedPreferences, global ao app.
         webView.addJavascriptInterface(ProfSisStorageBridge(this), "ProfSisNativeStorage")
 
-        webView.webViewClient = KioskWebViewClient(
-            allowedHosts = AllowedHosts.PROFSIS_HOSTS,
-            onBlocked = { blockedUrl ->
-                Toast.makeText(this, "Domínio não permitido: $blockedUrl", Toast.LENGTH_SHORT).show()
-            },
+        webView.webViewClient = BundleInjectingWebViewClient(
             onPageFinishedExtra = { view, _ -> injectBundle(view, "bundles/profsis-bundle.js") },
         )
 
