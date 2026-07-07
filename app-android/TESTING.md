@@ -57,6 +57,13 @@ via CI, ou `./gradlew assembleDebug` localmente com Android Studio/JDK instalado
    pelo CI) → abrir o app numa instalação com versão antiga → confirmar que aparece
    o diálogo "Nova versão disponível" → tocar "Atualizar" → confirmar notificação de
    download → ao concluir, confirmar que o instalador do Android abre sozinho.
+8. **App fechando sozinho ao logar/usar o ProfSis (corrigido nesta sessão)**: entrar
+   no ProfSis, logar, e abrir uma tela que use `window.open()` (ex: preview de
+   relatório/PDF) → confirmar que abre um popup em tela cheia em vez de travar/fechar
+   o app (`PopupWebChromeClient`). Deixar o app aberto por bastante tempo alternando
+   entre as abas (memória sob pressão com 2 WebViews vivas) → se o app fechar sozinho
+   mesmo assim, é sinal de que `onRenderProcessGone` não está sendo suficiente — puxar
+   o logcat (`adb logcat` filtrando `AndroidRuntime`/`chromium`) pra ver a causa real.
 
 ## Coisas para observar (podem indicar regressão)
 

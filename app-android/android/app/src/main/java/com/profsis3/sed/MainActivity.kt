@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
-import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -15,6 +14,7 @@ import com.profsis3.sed.bridge.ProfSisNavigationBridge
 import com.profsis3.sed.bridge.ProfSisStorageBridge
 import com.profsis3.sed.update.UpdateChecker
 import com.profsis3.sed.webview.BundleInjectingWebViewClient
+import com.profsis3.sed.webview.PopupWebChromeClient
 
 /**
  * Tela unica do app: duas WebViews (Sala do Futuro e ProfSis) vivas o tempo todo desde
@@ -28,28 +28,14 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var sedWebView: WebView
     private lateinit var profsisWebView: WebView
+    private lateinit var webContainer: FrameLayout
     private lateinit var bottomNav: BottomNavigationView
 
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        sedWebView = createWebView()
-        profsisWebView = createWebView()
-
-        sedWebView.addJavascriptInterface(ProfSisStorageBridge(this), "ProfSisNativeStorage")
-        sedWebView.addJavascriptInterface(
-            ProfSisNavigationBridge { runOnUiThread { showTab(Tab.PROFSIS) } },
-            "ProfSisNativeNav",
-        )
-        profsisWebView.addJavascriptInterface(ProfSisStorageBridge(this), "ProfSisNativeStorage")
-
-        sedWebView.webViewClient = BundleInjectingWebViewClient(
-            onPageFinishedExtra = { view, _ -> injectBundle(view, "bundles/sed-bundle.js") },
-        )
-        profsisWebView.webViewClient = BundleInjectingWebViewClient(
-            onPageFinishedExtra = { view, _ -> injectBundle(view, "bundles/profsis-bundle.js") },
-        )
+        sedWebView = createWebView(Tab.SED)
+        profsisWebView = createWebView(Tab.PROFSIS)
 
         setContentView(buildLayout())
         showTab(Tab.SED)
@@ -62,24 +48,62 @@ class MainActivity : AppCompatActivity() {
         UpdateChecker.checkForUpdate(this)
     }
 
-    private fun createWebView(): WebView {
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun createWebView(tab: Tab): WebView {
         val webView = WebView(this)
         webView.layoutParams = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
         )
+        webView.visibility = View.GONE
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
-        webView.webChromeClient = WebChromeClient()
+        webView.settings.javaScriptCanOpenWindowsAutomatically = true
+        webView.settings.setSupportMultipleWindows(true)
+        webView.webChromeClient = PopupWebChromeClient(this)
 
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
+        webView.addJavascriptInterface(ProfSisStorageBridge(this), "ProfSisNativeStorage")
+        if (tab == Tab.SED) {
+            webView.addJavascriptInterface(
+                ProfSisNavigationBridge { runOnUiThread { showTab(Tab.PROFSIS) } },
+                "ProfSisNativeNav",
+            )
+        }
+
+        val bundleAsset = if (tab == Tab.SED) "bundles/sed-bundle.js" else "bundles/profsis-bundle.js"
+        webView.webViewClient = BundleInjectingWebViewClient(
+            onPageFinishedExtra = { view, _ -> injectBundle(view, bundleAsset) },
+            onRenderProcessGoneExtra = { recreateWebView(tab) },
+        )
+
         return webView
     }
 
+    /**
+     * Sem isso, quando o processo de renderizacao do WebView cai (comum sob pressao de
+     * memoria - ha duas WebViews vivas ao mesmo tempo agora), o Android mata o app
+     * inteiro (ver BundleInjectingWebViewClient.onRenderProcessGone). Recria só a
+     * WebView afetada, preservando a outra e a sessao/cookies (que sao globais ao app).
+     */
+    private fun recreateWebView(tab: Tab) {
+        val old = if (tab == Tab.SED) sedWebView else profsisWebView
+        webContainer.removeView(old)
+        old.destroy()
+
+        val fresh = createWebView(tab)
+        webContainer.addView(fresh)
+
+        if (tab == Tab.SED) sedWebView = fresh else profsisWebView = fresh
+
+        fresh.loadUrl(if (tab == Tab.SED) SED_START_URL else PROFSIS_START_URL)
+        showTab(currentTab())
+    }
+
     private fun buildLayout(): View {
-        val webContainer = FrameLayout(this).apply {
+        webContainer = FrameLayout(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
