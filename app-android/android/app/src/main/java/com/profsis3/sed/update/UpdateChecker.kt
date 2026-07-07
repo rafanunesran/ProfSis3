@@ -2,15 +2,13 @@ package com.profsis3.sed.update
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.app.DownloadManager
-import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.net.Uri
-import android.os.Build
+import android.widget.Toast
+import androidx.core.content.FileProvider
 import com.profsis3.sed.BuildConfig
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
@@ -19,12 +17,19 @@ import kotlin.concurrent.thread
  * Checagem de atualização para o APK distribuído fora da Play Store. O Android nunca
  * permite instalação 100% silenciosa de um app sideloaded (sempre exige confirmação do
  * usuário na tela do instalador do sistema - proteção do próprio SO); isso aqui
- * automatiza tudo até esse último passo: checa versão, baixa e abre o instalador
- * sozinho assim que o download termina.
+ * automatiza tudo até esse último passo.
+ *
+ * O download é feito por conta própria (HTTP simples, em background) e salvo no cache
+ * privado do app - não usa o DownloadManager do sistema: a Uri que ele devolve
+ * (`getUriForDownloadedFile`) depende de onde o arquivo foi salvo e, em testes reais,
+ * o instalador do Android às vezes não consegue ler esse arquivo (baixa mas não
+ * instala). Gerando a Uri nós mesmos via FileProvider, sobre um arquivo que nós mesmos
+ * acabamos de escrever, elimina essa ambiguidade.
  */
 object UpdateChecker {
 
     private const val VERSION_URL = "https://rafanunesran.github.io/ProfSis3/app-android/dist/version.json"
+    private const val APK_FILE_NAME = "profsis3-sed-update.apk"
 
     fun checkForUpdate(activity: Activity) {
         thread {
@@ -59,36 +64,37 @@ object UpdateChecker {
     }
 
     private fun downloadAndInstall(activity: Activity, apkUrl: String) {
-        val downloadManager = activity.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        val request = DownloadManager.Request(Uri.parse(apkUrl))
-            .setTitle("Atualizando ProfSis3 SED")
-            .setMimeType("application/vnd.android.package-archive")
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalFilesDir(activity, null, "profsis3-sed-update.apk")
+        Toast.makeText(activity, "Baixando atualização...", Toast.LENGTH_SHORT).show()
 
-        val downloadId = downloadManager.enqueue(request)
+        thread {
+            try {
+                val apkFile = File(activity.cacheDir, APK_FILE_NAME)
 
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                val finishedId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
-                if (finishedId != downloadId) return
-                context.unregisterReceiver(this)
-
-                val uri = downloadManager.getUriForDownloadedFile(downloadId) ?: return
-                val installIntent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.android.package-archive")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                (URL(apkUrl).openConnection() as HttpURLConnection).run {
+                    connectTimeout = 15000
+                    readTimeout = 15000
+                    inputStream.use { input ->
+                        FileOutputStream(apkFile).use { output -> input.copyTo(output) }
+                    }
                 }
-                activity.startActivity(installIntent)
-            }
-        }
 
-        val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            activity.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
-        } else {
-            @Suppress("UnspecifiedRegisterReceiverFlag")
-            activity.registerReceiver(receiver, filter)
+                activity.runOnUiThread {
+                    val uri = FileProvider.getUriForFile(
+                        activity,
+                        "${activity.packageName}.fileprovider",
+                        apkFile,
+                    )
+                    val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, "application/vnd.android.package-archive")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    activity.startActivity(installIntent)
+                }
+            } catch (e: Exception) {
+                activity.runOnUiThread {
+                    Toast.makeText(activity, "Falha ao baixar a atualização: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 }

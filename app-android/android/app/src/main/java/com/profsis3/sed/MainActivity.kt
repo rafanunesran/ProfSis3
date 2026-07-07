@@ -1,6 +1,10 @@
 package com.profsis3.sed
 
 import android.annotation.SuppressLint
+import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
@@ -8,10 +12,12 @@ import android.webkit.CookieManager
 import android.webkit.WebView
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.profsis3.sed.bridge.ProfSisNavigationBridge
 import com.profsis3.sed.bridge.ProfSisStorageBridge
+import com.profsis3.sed.diagnostics.CrashLogger
 import com.profsis3.sed.update.UpdateChecker
 import com.profsis3.sed.webview.BundleInjectingWebViewClient
 import com.profsis3.sed.webview.PopupWebChromeClient
@@ -33,6 +39,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashLogger.install(this)
 
         sedWebView = createWebView(Tab.SED)
         profsisWebView = createWebView(Tab.PROFSIS)
@@ -46,6 +53,27 @@ class MainActivity : AppCompatActivity() {
         }
 
         UpdateChecker.checkForUpdate(this)
+
+        CrashLogger.consumeLastCrash(this)?.let { crashText -> showLastCrashDialog(crashText) }
+    }
+
+    /**
+     * Sem acesso a logcat do aparelho do usuario pra diagnosticar os crashes reportados -
+     * isso mostra o stack trace do ultimo crash (capturado por CrashLogger) com um botao
+     * de copiar, pra dar pra colar de volta na conversa com o dev sem precisar de adb.
+     */
+    private fun showLastCrashDialog(crashText: String) {
+        AlertDialog.Builder(this)
+            .setTitle("O app fechou da última vez")
+            .setMessage(crashText.take(4000))
+            .setPositiveButton("Copiar") { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Crash ProfSis3 SED", crashText))
+                Toast.makeText(this, "Copiado!", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Fechar", null)
+            .setCancelable(true)
+            .show()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -89,17 +117,23 @@ class MainActivity : AppCompatActivity() {
      * WebView afetada, preservando a outra e a sessao/cookies (que sao globais ao app).
      */
     private fun recreateWebView(tab: Tab) {
-        val old = if (tab == Tab.SED) sedWebView else profsisWebView
-        webContainer.removeView(old)
-        old.destroy()
+        try {
+            val old = if (tab == Tab.SED) sedWebView else profsisWebView
+            webContainer.removeView(old)
+            old.destroy()
 
-        val fresh = createWebView(tab)
-        webContainer.addView(fresh)
+            val fresh = createWebView(tab)
+            webContainer.addView(fresh)
 
-        if (tab == Tab.SED) sedWebView = fresh else profsisWebView = fresh
+            if (tab == Tab.SED) sedWebView = fresh else profsisWebView = fresh
 
-        fresh.loadUrl(if (tab == Tab.SED) SED_START_URL else PROFSIS_START_URL)
-        showTab(currentTab())
+            fresh.loadUrl(if (tab == Tab.SED) SED_START_URL else PROFSIS_START_URL)
+            showTab(currentTab())
+        } catch (e: Exception) {
+            // Este e' o proprio tratamento de crash do WebView (onRenderProcessGone) -
+            // se ele mesmo falhar, so' loga; nao pode propagar e derrubar o app de novo.
+            android.util.Log.e("MainActivity", "Falha ao recriar WebView apos crash do processo de renderizacao.", e)
+        }
     }
 
     private fun buildLayout(): View {
