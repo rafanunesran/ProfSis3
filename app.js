@@ -1518,10 +1518,14 @@ window.baixarInstaladorExtensaoDesktop = async function() {
 };
 
 // Baixa o APK do app Android do ProfSis3 (WebView restrita à Sala do Futuro + login gov.br,
-// ver app-android/), publicado como asset da release "android-latest" pelo workflow
-// .github/workflows/deploy-android.yml a cada mudança em app-android/.
+// ver app-android/), servido do MESMO domínio do site (GitHub Pages, gerado a cada deploy
+// por .github/workflows/deploy.yml). Importante: NÃO usar o link direto do GitHub Releases
+// aqui - é cross-origin (github.com) e alguns navegadores mobile mais simples (ex: Lemur
+// Browser) travam no meio do download por causa da cadeia de redirecionamento assinada.
 window.baixarApkAndroid = function() {
-    const apkUrl = 'https://github.com/rafanunesran/ProfSis3/releases/download/android-latest/profsis3-sed-debug.apk';
+    const urlApp = window.location.href.split('?')[0].split('#')[0];
+    const baseUrl = urlApp.substring(0, urlApp.lastIndexOf('/') + 1);
+    const apkUrl = baseUrl + 'app-android/dist/profsis3-sed-debug.apk?nocache=' + Date.now();
 
     if (!confirm('Isso vai baixar o APK do app ProfSis3 para Android (fora da Play Store).\\n\\nDeseja prosseguir?')) return;
 
