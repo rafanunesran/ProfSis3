@@ -2534,13 +2534,13 @@ function renderNotasOficiaisGestor() {
                 Uma IA extrai as notas por aluno/disciplina/bimestre; você revisa antes de salvar.
             </p>
 
-            <div class="form-row" style="margin-bottom: 10px;">
-                <label style="flex:1;">Turma:
-                    <select id="notasOficiaisTurma">
-                        <option value="">Selecione...</option>
-                        ${turmas.map(t => `<option value="${t.id}">${t.nome}</option>`).join('')}
-                    </select>
-                </label>
+            <div style="margin-bottom: 10px;">
+                <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:5px;">Turmas (pode marcar mais de uma):</label>
+                <div style="max-height:150px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px; padding:8px; background:#fff;">
+                    ${turmas.length === 0 ? '<p class="empty-state" style="margin:0;">Nenhuma turma cadastrada.</p>' : turmas.map(t => `
+                        <label style="display:block; font-size:13px; padding:2px 0;"><input type="checkbox" class="chk-turma-notas-oficiais" value="${t.id}"> ${t.nome}</label>
+                    `).join('')}
+                </div>
             </div>
 
             <div style="margin-bottom: 15px; display:flex; gap: 15px;">
@@ -2589,13 +2589,13 @@ function renderNotasOficiaisGestor() {
             <div id="listaAvaliacoesGestor">
                 ${avaliacoes.length === 0 ? '<p class="empty-state">Nenhuma avaliação cadastrada ainda.</p>' : `
                     <table style="font-size:13px;">
-                        <thead><tr><th>Nome</th><th>Turma</th><th>Bimestre</th><th>Disciplinas</th><th>Ações</th></tr></thead>
+                        <thead><tr><th>Nome</th><th>Turmas</th><th>Bimestre</th><th>Disciplinas</th><th>Ações</th></tr></thead>
                         <tbody>
                             ${avaliacoes.map(a => {
-                                const t = turmas.find(x => x.id == a.id_turma);
+                                const nomesTurmas = (a.id_turmas || []).map(id => turmas.find(x => x.id == id)).filter(Boolean).map(t => t.nome);
                                 return `<tr>
                                     <td>${a.nome}</td>
-                                    <td>${t ? t.nome : 'Turma removida'}</td>
+                                    <td>${nomesTurmas.join(', ') || 'Turma removida'}</td>
                                     <td>${a.bimestre}º</td>
                                     <td>${(a.disciplinas || []).join(', ') || '-'}</td>
                                     <td><button class="btn btn-sm btn-danger" onclick="removerAvaliacaoGestor(${a.id})">🗑️</button></td>
@@ -2656,22 +2656,24 @@ async function extrairTextoPdfNotasOficiais(arrayBuffer) {
     return texto;
 }
 
+const LIMITE_CONTEUDO_NOTAS_OFICIAIS = 50000;
+
 function montarPromptNotasOficiais(modo, nomeAvaliacao, bimestreSelecionado, conteudo, nomesAlunos) {
     const listaNomes = nomesAlunos.join(', ');
     let conteudoTruncado = conteudo;
-    if (conteudoTruncado.length > 15000) {
-        conteudoTruncado = conteudoTruncado.slice(0, 15000) + '\n[...conteúdo truncado...]';
+    if (conteudoTruncado.length > LIMITE_CONTEUDO_NOTAS_OFICIAIS) {
+        conteudoTruncado = conteudoTruncado.slice(0, LIMITE_CONTEUDO_NOTAS_OFICIAIS) + '\n[...conteúdo truncado...]';
     }
 
     const instrucao = modo === 'mapao'
-        ? `Este é o "mapão bimestral": um mapa oficial de notas por aluno, por disciplina, por bimestre. O arquivo pode conter colunas de mais de um bimestre (ex: 1ºBim, 2ºBim, 3ºBim). Extraia UMA linha para cada combinação existente de aluno + disciplina + bimestre.`
-        : `Esta é a avaliação nomeada "${nomeAvaliacao}", referente ao ${bimestreSelecionado}º bimestre. Nem toda disciplina é necessariamente testada - extraia apenas as disciplinas que realmente aparecem no arquivo para cada aluno, não invente notas para disciplinas ausentes. Use bimestre=${bimestreSelecionado} em todas as linhas.`;
+        ? `Este é o "mapão bimestral": um mapa oficial de notas por aluno, por disciplina, por bimestre. O arquivo pode conter colunas de mais de um bimestre (ex: 1ºBim, 2ºBim, 3ºBim) e pode conter alunos de outras turmas além da lista abaixo. Extraia UMA linha para cada combinação existente de aluno + disciplina + bimestre.`
+        : `Esta é a avaliação nomeada "${nomeAvaliacao}", referente ao ${bimestreSelecionado}º bimestre. O arquivo pode conter alunos de outras turmas além da lista abaixo. Nem toda disciplina é necessariamente testada - extraia apenas as disciplinas que realmente aparecem no arquivo para cada aluno, não invente notas para disciplinas ausentes. Use bimestre=${bimestreSelecionado} em todas as linhas.`;
 
-    return `Você é um assistente que extrai notas escolares de planilhas/PDFs para um sistema de gestão escolar.
+    return `Você é um assistente extremamente preciso que extrai notas escolares de planilhas/PDFs para um sistema de gestão escolar. Precisão é mais importante que completude: é melhor omitir uma linha duvidosa do que inventar ou arredondar um valor.
 
 ${instrucao}
 
-Alunos conhecidos nesta turma (use estes nomes exatos ao identificar o aluno no arquivo, mesmo que o arquivo tenha nomes abreviados, com erro de digitação ou fora de ordem):
+Lista de alunos desta turma (só extraia linhas para alunos desta lista; ignore qualquer nome que não esteja aqui, mesmo que apareça no arquivo — pode ser aluno de outra turma. Use estes nomes exatos ao identificar o aluno no arquivo, mesmo que o arquivo tenha nomes abreviados, com erro de digitação ou fora de ordem):
 ${listaNomes}
 
 Conteúdo extraído do arquivo:
@@ -2682,7 +2684,12 @@ ${conteudoTruncado}
 Retorne APENAS um JSON válido, sem marcação markdown, no formato exato:
 {"registros": [{"nome_estudante": "...", "disciplina": "...", "bimestre": 1, "valor": "..."}]}
 
-Regras: não invente notas que não estão no arquivo; "valor" deve ser o texto da nota exatamente como aparece (ex: "7,5"); "disciplina" deve ser o nome da matéria como aparece no arquivo (ex: "Matemática", "Língua Portuguesa").`;
+Regras estritas:
+- Copie o valor da nota EXATAMENTE como está escrito na fonte, sem arredondar e sem converter formato (ex: se está "7,5" retorne "7,5", não "7.5" nem "8").
+- Se a célula indicar ausência/dispensa (ex: "-", "FALTOU", "AUSENTE", "ISENTO", "NC"), copie esse texto literal em "valor" — não invente um número.
+- Se uma célula estiver ilegível, vazia, ou você não tiver certeza do valor, OMITA a linha inteira — não adivinhe.
+- Não invente notas para aluno/disciplina/bimestre que não estão claramente no arquivo.
+- "disciplina" deve ser o nome da matéria como aparece no arquivo (ex: "Matemática", "Língua Portuguesa").`;
 }
 
 async function chamarIAExtracaoNotas(promptText) {
@@ -2720,7 +2727,7 @@ async function chamarIAExtracaoNotas(promptText) {
                                 { role: 'system', content: 'Você deve retornar APENAS um JSON válido. Nenhuma formatação markdown.' },
                                 { role: 'user', content: promptText }
                             ],
-                            temperature: 0.2,
+                            temperature: 0.1,
                             response_format: { type: "json_object" }
                         }),
                         signal: controller.signal
@@ -2740,7 +2747,7 @@ async function chamarIAExtracaoNotas(promptText) {
                                 { role: 'system', content: 'Você deve retornar APENAS um JSON válido. Nenhuma formatação markdown.' },
                                 { role: 'user', content: promptText }
                             ],
-                            temperature: 0.2,
+                            temperature: 0.1,
                             response_format: { type: "json_object" }
                         }),
                         signal: controller.signal
@@ -2756,7 +2763,7 @@ async function chamarIAExtracaoNotas(promptText) {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             contents: [{ parts: [{ text: promptText }] }],
-                            generationConfig: { temperature: 0.2, response_mime_type: "application/json" }
+                            generationConfig: { temperature: 0.1, response_mime_type: "application/json" }
                         }),
                         signal: controller.signal
                     });
@@ -2796,11 +2803,11 @@ async function chamarIAExtracaoNotas(promptText) {
 }
 
 async function processarArquivoNotasOficiais() {
-    const turmaId = document.getElementById('notasOficiaisTurma').value;
+    const turmasSelecionadas = Array.from(document.querySelectorAll('.chk-turma-notas-oficiais:checked')).map(chk => chk.value);
     const arquivoInput = document.getElementById('notasOficiaisArquivo');
     const arquivo = arquivoInput.files[0];
 
-    if (!turmaId) return alert('Selecione a turma.');
+    if (turmasSelecionadas.length === 0) return alert('Selecione ao menos uma turma.');
     if (!arquivo) return alert('Selecione um arquivo (.xlsx ou .pdf).');
 
     const modo = notasOficiaisModo;
@@ -2815,33 +2822,49 @@ async function processarArquivoNotasOficiais() {
 
     try {
         const ext = arquivo.name.split('.').pop().toLowerCase();
-        definirProgressoNotasOficiais('Carregando leitor de arquivo...', 10);
+        definirProgressoNotasOficiais('Carregando leitor de arquivo...', 5);
         await carregarBibliotecaBaseCurricular(ext === 'pdf' ? 'pdf' : 'xlsx');
 
-        definirProgressoNotasOficiais('Lendo arquivo...', 30);
+        definirProgressoNotasOficiais('Lendo arquivo...', 15);
         const arrayBuffer = await arquivo.arrayBuffer();
         const conteudo = ext === 'pdf'
             ? await extrairTextoPdfNotasOficiais(arrayBuffer)
             : await extrairTextoXlsxNotasOficiais(arrayBuffer);
 
-        const roster = (data.estudantes || []).filter(e => e.id_turma == turmaId && (!e.status || e.status === 'Ativo'));
-        if (roster.length === 0) {
-            alert('Esta turma não possui estudantes cadastrados.');
-            return;
+        if (conteudo.length > LIMITE_CONTEUDO_NOTAS_OFICIAIS) {
+            document.getElementById('revisaoNotasOficiais').innerHTML = `
+                <div style="background:#fffaf0; border:1px solid #fbd38d; color:#7b341e; padding:10px; border-radius:6px; font-size:12px; margin-bottom:10px;">
+                    ⚠️ Este arquivo é grande (${conteudo.length.toLocaleString('pt-BR')} caracteres) e parte do conteúdo pode ter sido cortada antes de ir para a IA. Confira com atenção se todas as linhas esperadas aparecem na revisão abaixo.
+                </div>
+            `;
         }
 
-        definirProgressoNotasOficiais('Processando com IA... (pode levar alguns segundos)', 60);
-        const prompt = montarPromptNotasOficiais(modo, nomeAvaliacao, bimestreSelecionado, conteudo, roster.map(e => e.nome_completo));
-        const resultado = await chamarIAExtracaoNotas(prompt);
+        // Uma chamada de IA por turma selecionada, cada uma com o roster restrito àquela turma —
+        // é isso que permite distinguir turmas dentro de um arquivo só (ex: mapão com várias classes),
+        // sem precisar cortar/filtrar o conteúdo do arquivo (arriscaria perder linhas legítimas).
+        let todosRegistros = [];
+        for (let i = 0; i < turmasSelecionadas.length; i++) {
+            const idTurma = turmasSelecionadas[i];
+            const turmaObj = (data.turmas || []).find(t => t.id == idTurma);
+            const roster = (data.estudantes || []).filter(e => e.id_turma == idTurma && (!e.status || e.status === 'Ativo'));
 
-        const registros = Array.isArray(resultado.registros) ? resultado.registros : [];
-        if (registros.length === 0) {
+            if (roster.length === 0) continue;
+
+            definirProgressoNotasOficiais(`Processando com IA... turma ${i + 1} de ${turmasSelecionadas.length}${turmaObj ? ' (' + turmaObj.nome + ')' : ''}`, 20 + Math.round((i / turmasSelecionadas.length) * 70));
+
+            const prompt = montarPromptNotasOficiais(modo, nomeAvaliacao, bimestreSelecionado, conteudo, roster.map(e => e.nome_completo));
+            const resultado = await chamarIAExtracaoNotas(prompt);
+            const registrosTurma = (Array.isArray(resultado.registros) ? resultado.registros : []).map(r => ({ ...r, _id_turma_origem: idTurma }));
+            todosRegistros = todosRegistros.concat(registrosTurma);
+        }
+
+        if (todosRegistros.length === 0) {
             alert('A IA não conseguiu extrair nenhum registro deste arquivo. Verifique se o arquivo contém as notas esperadas.');
             return;
         }
 
-        definirProgressoNotasOficiais(`${registros.length} registros extraídos. Revise antes de salvar.`, 100);
-        montarRevisaoNotasOficiais(registros, roster, bimestreSelecionado);
+        definirProgressoNotasOficiais(`${todosRegistros.length} registros extraídos. Revise antes de salvar.`, 100);
+        montarRevisaoNotasOficiais(todosRegistros, bimestreSelecionado);
     } catch (err) {
         console.error(err);
         alert('Erro ao processar o arquivo: ' + err.message);
@@ -2850,16 +2873,31 @@ async function processarArquivoNotasOficiais() {
     }
 }
 
-function montarRevisaoNotasOficiais(registros, roster, bimestreSelecionado) {
+const TEXTOS_AUSENCIA_NOTA_OFICIAL = ['-', 'FALTOU', 'AUSENTE', 'ISENTO', 'NC', 'N/A', 'DISPENSADO'];
+
+function valorNotaOficialPareceValido(valor) {
+    const v = String(valor || '').trim().toUpperCase();
+    if (v === '') return false;
+    if (TEXTOS_AUSENCIA_NOTA_OFICIAL.includes(v)) return true;
+    const num = parseFloat(v.replace(',', '.'));
+    return !isNaN(num) && num >= 0 && num <= 10;
+}
+
+function montarRevisaoNotasOficiais(registros, bimestreSelecionado) {
+    // Cada linha guarda a turma de origem (definida na chamada de IA que a gerou) e resolve seu
+    // candidato de aluno só dentro do roster daquela turma — evita colisão de nomes entre turmas
+    // diferentes selecionadas na mesma leva de upload.
     notasOficiaisRegistrosPendentes = registros.map((r, idx) => {
+        const idTurmaOrigem = r._id_turma_origem;
+        const rosterTurma = (data.estudantes || []).filter(e => e.id_turma == idTurmaOrigem && (!e.status || e.status === 'Ativo'));
         const nomeNorm = normNomeNotasOficiais(r.nome_estudante);
-        let candidato = roster.find(e => normNomeNotasOficiais(e.nome_completo) === nomeNorm);
+        let candidato = rosterTurma.find(e => normNomeNotasOficiais(e.nome_completo) === nomeNorm);
 
         if (!candidato) {
             // Sugestão por similaridade (nome com acento/abreviação diferente)
             const normA = normalizarTextoComparacaoMaterialDigital(r.nome_estudante);
             let melhor = null, melhorSimilaridade = 0;
-            roster.forEach(e => {
+            rosterTurma.forEach(e => {
                 const normB = normalizarTextoComparacaoMaterialDigital(e.nome_completo);
                 const dist = distanciaLevenshteinMaterialDigital(normA, normB);
                 const sim = 1 - (dist / Math.max(normA.length, normB.length, 1));
@@ -2870,6 +2908,7 @@ function montarRevisaoNotasOficiais(registros, roster, bimestreSelecionado) {
 
         return {
             _idx: idx,
+            id_turma_origem: idTurmaOrigem,
             nome_original: r.nome_estudante || '',
             estudanteId: candidato ? candidato.id : '',
             disciplina: r.disciplina || '',
@@ -2879,29 +2918,38 @@ function montarRevisaoNotasOficiais(registros, roster, bimestreSelecionado) {
         };
     });
 
+    const turmas = data.turmas || [];
     const container = document.getElementById('revisaoNotasOficiais');
-    container.innerHTML = `
+    const htmlAviso = container.innerHTML; // preserva o aviso de truncamento, se houver
+    container.innerHTML = htmlAviso + `
         <h3>Revisão antes de salvar (${notasOficiaisRegistrosPendentes.length} linhas)</h3>
-        <p style="font-size:12px; color:#666;">Confira o aluno de cada linha (a IA pode errar o casamento de nomes). Linhas marcadas "Ignorar" não serão salvas.</p>
+        <p style="font-size:12px; color:#666;">Confira o aluno de cada linha (a IA pode errar o casamento de nomes). Linhas em laranja têm um valor de nota que não parece válido — confira antes de salvar. Linhas marcadas "Ignorar" não serão salvas.</p>
         <div style="overflow-x:auto;">
             <table style="font-size:13px;">
-                <thead><tr><th>Nome no Arquivo</th><th>Aluno</th><th>Disciplina</th><th>Bimestre</th><th>Nota</th><th>Ignorar</th></tr></thead>
+                <thead><tr><th>Turma</th><th>Nome no Arquivo</th><th>Aluno</th><th>Disciplina</th><th>Bimestre</th><th>Nota</th><th>Ignorar</th></tr></thead>
                 <tbody id="tbodyRevisaoNotasOficiais">
-                    ${notasOficiaisRegistrosPendentes.map(r => `
-                        <tr style="${r.ignorar ? 'background:#fff5f5;' : ''}">
+                    ${notasOficiaisRegistrosPendentes.map(r => {
+                        const rosterTurma = (data.estudantes || []).filter(e => e.id_turma == r.id_turma_origem && (!e.status || e.status === 'Ativo'));
+                        const turmaObj = turmas.find(t => t.id == r.id_turma_origem);
+                        const valorSuspeito = !valorNotaOficialPareceValido(r.valor);
+                        const corFundo = r.ignorar ? 'background:#fff5f5;' : (valorSuspeito ? 'background:#fffaf0;' : '');
+                        return `
+                        <tr style="${corFundo}">
+                            <td>${turmaObj ? turmaObj.nome : '-'}</td>
                             <td>${r.nome_original}</td>
                             <td>
                                 <select onchange="atualizarCampoRevisaoNotas(${r._idx}, 'estudanteId', this.value)">
                                     <option value="">Não encontrado</option>
-                                    ${roster.map(e => `<option value="${e.id}" ${e.id == r.estudanteId ? 'selected' : ''}>${e.nome_completo}</option>`).join('')}
+                                    ${rosterTurma.map(e => `<option value="${e.id}" ${e.id == r.estudanteId ? 'selected' : ''}>${e.nome_completo}</option>`).join('')}
                                 </select>
                             </td>
                             <td><input type="text" value="${r.disciplina}" style="width:120px;" onchange="atualizarCampoRevisaoNotas(${r._idx}, 'disciplina', this.value)"></td>
                             <td><input type="number" min="1" max="4" value="${r.bimestre}" style="width:50px;" onchange="atualizarCampoRevisaoNotas(${r._idx}, 'bimestre', this.value)"></td>
-                            <td><input type="text" value="${r.valor}" style="width:60px;" onchange="atualizarCampoRevisaoNotas(${r._idx}, 'valor', this.value)"></td>
+                            <td><input type="text" value="${r.valor}" style="width:60px; ${valorSuspeito ? 'border-color:#dd6b20;' : ''}" title="${valorSuspeito ? 'Valor não parece uma nota válida (0-10 ou texto de ausência)' : ''}" onchange="atualizarCampoRevisaoNotas(${r._idx}, 'valor', this.value)"></td>
                             <td><input type="checkbox" ${r.ignorar ? 'checked' : ''} onchange="atualizarCampoRevisaoNotas(${r._idx}, 'ignorar', this.checked)"></td>
                         </tr>
-                    `).join('')}
+                    `;
+                    }).join('')}
                 </tbody>
             </table>
         </div>
@@ -2911,10 +2959,10 @@ function montarRevisaoNotasOficiais(registros, roster, bimestreSelecionado) {
         </div>
     `;
 
-    // Trava turma/modo/bimestre/nome enquanto a revisão está aberta: como confirmarGravacaoNotasOficiais()
+    // Trava modo/bimestre/nome enquanto a revisão está aberta: como confirmarGravacaoNotasOficiais()
     // relê esses campos do formulário (para não interpolar texto livre do gestor num onclick), eles não
-    // podem mudar entre "Processar com IA" (que casou os alunos deste roster) e "Confirmar e Salvar".
-    document.getElementById('notasOficiaisTurma').disabled = true;
+    // podem mudar entre "Processar com IA" e "Confirmar e Salvar". A turma de cada linha já ficou fixada
+    // em `id_turma_origem` no momento da extração, então as turmas não precisam ficar travadas.
     document.getElementById('notasOficiaisNomeAvaliacao').disabled = true;
     document.getElementById('notasOficiaisBimestre').disabled = true;
     document.querySelectorAll('input[name="notasOficiaisModoRadio"]').forEach(r => r.disabled = true);
@@ -2936,7 +2984,6 @@ function atualizarCampoRevisaoNotas(idx, campo, valor) {
 }
 
 async function confirmarGravacaoNotasOficiais() {
-    const turmaId = document.getElementById('notasOficiaisTurma').value;
     const modo = notasOficiaisModo;
     const nomeAvaliacao = document.getElementById('notasOficiaisNomeAvaliacao').value.trim();
     const bimestreSelecionado = parseInt(document.getElementById('notasOficiaisBimestre').value);
@@ -2958,7 +3005,7 @@ async function confirmarGravacaoNotasOficiais() {
             const disciplinaNorm = normalizarTextoComparacaoMaterialDigital(r.disciplina);
 
             let existente = data.notasBimestraisOficiais.find(n =>
-                n.id_turma == turmaId &&
+                n.id_turma == estudante.id_turma &&
                 n.bimestre == r.bimestre &&
                 normNomeNotasOficiais(n.nome_estudante_norm) === nomeNorm &&
                 normalizarTextoComparacaoMaterialDigital(n.disciplina) === disciplinaNorm
@@ -2975,7 +3022,7 @@ async function confirmarGravacaoNotasOficiais() {
                     disciplina: r.disciplina,
                     bimestre: r.bimestre,
                     valor: r.valor,
-                    id_turma: turmaId,
+                    id_turma: estudante.id_turma,
                     origem: { tipo: 'mapao', nomeArquivo, dataImportacao: agora }
                 });
             }
@@ -2985,16 +3032,18 @@ async function confirmarGravacaoNotasOficiais() {
         if (!data.notasAvaliacoesGestor) data.notasAvaliacoesGestor = [];
 
         const disciplinasEnvolvidas = [...new Set(validos.map(r => r.disciplina).filter(Boolean))];
+        const turmasEnvolvidas = [...new Set(validos.map(r => r.id_turma_origem).filter(Boolean))];
 
         let avaliacao = data.avaliacoesGestor.find(a =>
-            a.id_turma == turmaId && a.bimestre == bimestreSelecionado && a.nome.trim().toLowerCase() === nomeAvaliacao.trim().toLowerCase()
+            a.bimestre == bimestreSelecionado && a.nome.trim().toLowerCase() === nomeAvaliacao.trim().toLowerCase()
         );
 
         if (!avaliacao) {
-            avaliacao = { id: agora, nome: nomeAvaliacao, bimestre: bimestreSelecionado, id_turma: turmaId, disciplinas: disciplinasEnvolvidas, criadoEm: agora };
+            avaliacao = { id: agora, nome: nomeAvaliacao, bimestre: bimestreSelecionado, id_turmas: turmasEnvolvidas, disciplinas: disciplinasEnvolvidas, criadoEm: agora };
             data.avaliacoesGestor.push(avaliacao);
         } else {
             avaliacao.disciplinas = [...new Set([...(avaliacao.disciplinas || []), ...disciplinasEnvolvidas])];
+            avaliacao.id_turmas = [...new Set([...(avaliacao.id_turmas || []), ...turmasEnvolvidas])];
         }
 
         validos.forEach(r => {
