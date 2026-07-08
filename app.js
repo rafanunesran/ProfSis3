@@ -4154,7 +4154,7 @@ function getAvaliacoesGestorDaTurma() {
     const turma = (data.turmas || []).find(t => t.id == turmaAtual);
     const idTurmaGrupo = turma ? (turma.masterId || turma.id) : null;
     if (!idTurmaGrupo) return [];
-    return cacheAvaliacoesGestorEscola.avaliacoesGestor.filter(a => a.id_turma == idTurmaGrupo);
+    return cacheAvaliacoesGestorEscola.avaliacoesGestor.filter(a => (a.id_turmas || []).some(id => id == idTurmaGrupo));
 }
 
 function getNotaAvaliacaoGestor(estudanteId, idAvaliacaoGestor, disciplinaDaTurma) {
