@@ -5631,13 +5631,18 @@ function abrirFichaTutorado(id) {
         }
         aeeContainer.style.display = 'block';
         
-        const diagnostico = t.aee_diagnostico || '';
-        const relatorio = t.aee_relatorio || '';
-
         // Seção de Upload de Arquivo
         const reportUrl = t.aee_report_url || '';
         const anexoPaee = t.anexoPaee;
-        const anexoPaeeStatusHtml = anexoPaee ? (() => {
+        // Substitui os antigos campos de texto livre "Diagnóstico / Voar" e "Relatório" - agora esse
+        // espaço mostra os dados estruturados do Anexo III-PAEE (enviado por Word ou pelo wizard
+        // Estagiário) direto na página, sempre visíveis (sem precisar expandir nenhuma seta).
+        const anexoPaeeSectionHtml = !anexoPaee ? `
+            <div style="margin-top:20px;">
+                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Anexo III - PAEE</label>
+                <p style="margin:0; font-size:13px; color:#718096; background:#f7fafc; padding:15px; border-radius:6px; border:1px solid #e2e8f0;">Nenhum Anexo III-PAEE enviado ainda. Envie o Word (.docx) pelo botão "Enviar Novo Arquivo" abaixo, ou gere pelo "✨ Estagiário".</p>
+            </div>
+        ` : (() => {
             const db = anexoPaee.dadosBasicos || {};
             const elegibilidadeLabels = (typeof ANEXO_PAEE_ELEGIBILIDADE !== 'undefined')
                 ? ANEXO_PAEE_ELEGIBILIDADE.filter(o => (db.elegibilidade || []).includes(o.token)).map(o => o.label)
@@ -5656,15 +5661,15 @@ function abrirFichaTutorado(id) {
                 : '';
 
             return `
-                <div style="margin-top:15px; border-top:1px dashed #cbd5e0; padding-top:15px;">
-                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-                        <span style="font-size:12px; color:#2f855a;">✅ Anexo III-PAEE salvo (atualizado em ${formatDate(anexoPaee.atualizadoEm)})</span>
-                        <button class="btn btn-sm btn-info" style="padding:2px 8px; font-size:12px;" onclick="reimprimirAnexoPaeeSalvo(${t.id})">🖨️ Reimprimir</button>
-                        <button class="btn btn-sm btn-secondary" style="padding:2px 8px; font-size:12px;" onclick="editarAnexoPaeeSalvo(${t.id})">✏️ Editar</button>
-                    </div>
-                    <details style="margin-top:10px;">
-                        <summary style="cursor:pointer; font-size:12px; color:#2c5282; font-weight:bold;">👁️ Ver dados enviados</summary>
-                        <div style="margin-top:10px; display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:12px;">
+                <div style="margin-top:20px;">
+                    <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Anexo III - PAEE</label>
+                    <div style="background:#f7fafc; padding:15px; border-radius:6px; border:1px solid #e2e8f0;">
+                        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                            <span style="font-size:12px; color:#2f855a;">✅ Salvo (atualizado em ${formatDate(anexoPaee.atualizadoEm)})</span>
+                            <button class="btn btn-sm btn-info" style="padding:2px 8px; font-size:12px;" onclick="reimprimirAnexoPaeeSalvo(${t.id})">🖨️ Reimprimir</button>
+                            <button class="btn btn-sm btn-secondary" style="padding:2px 8px; font-size:12px;" onclick="editarAnexoPaeeSalvo(${t.id})">✏️ Editar</button>
+                        </div>
+                        <div style="margin-top:12px; display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:12px;">
                             <div><strong>Nascimento:</strong> ${db.dataNascimento || 'Não informado'}</div>
                             <div><strong>Escolaridade:</strong> ${db.escolaridade || 'Não informado'}</div>
                             <div><strong>Turno:</strong> ${db.turno || 'Não informado'}</div>
@@ -5676,10 +5681,10 @@ function abrirFichaTutorado(id) {
                             <strong>Apoios/Recursos/Serviços:</strong> ${apoiosLabels.join(', ') || 'Nenhum'}
                         </div>
                         ${camposIaHtml}
-                    </details>
+                    </div>
                 </div>
             `;
-        })() : '';
+        })();
         const fileHtml = `
             <div style="margin-top:20px;">
                 <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Arquivo de Relatório</label>
@@ -5698,7 +5703,6 @@ function abrirFichaTutorado(id) {
                         <span id="uploadStatus_${t.id}" style="margin-left:10px; font-size:12px; color:#4a5568;"></span>
                         <p style="margin:8px 0 0 0; font-size:11px; color:#a0aec0;">Arquivos .docx (Word) são analisados automaticamente: o sistema extrai os dados do Anexo III-PAEE, abre pra você revisar e salva na ficha (o Word em si não fica guardado). Outros tipos de arquivo são enviados normalmente pro Google Drive.</p>
                     </div>
-                    ${anexoPaeeStatusHtml}
                 </div>
             </div>
         `;
@@ -5720,14 +5724,7 @@ function abrirFichaTutorado(id) {
                     </label>
                 </div>
             </div>
-            <div style="margin-top:20px;">
-                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Diagnóstico / Voar</label>
-                <textarea id="aeeDiagnostico" rows="3" style="width:100%; border:1px solid #cbd5e0; padding:10px; border-radius:5px; font-family:inherit;" placeholder="Digite o diagnóstico..." onblur="salvarDadosAee(${t.id})">${diagnostico}</textarea>
-            </div>
-            <div style="margin-top:20px;">
-                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Relatório</label>
-                <textarea id="aeeRelatorio" rows="15" style="width:100%; border:1px solid #cbd5e0; padding:10px; border-radius:5px; font-family:inherit;" placeholder="Digite o relatório..." onblur="salvarDadosAee(${t.id})">${relatorio}</textarea>
-            </div>
+            ${anexoPaeeSectionHtml}
             ${fileHtml}
         `;
 
@@ -5896,8 +5893,14 @@ function salvarDadosAee(id) {
     const t = data.tutorados.find(x => x.id == id);
     if (!t) return;
     
-    t.aee_diagnostico = document.getElementById('aeeDiagnostico').value;
-    t.aee_relatorio = document.getElementById('aeeRelatorio').value;
+    // Os campos de texto livre "Diagnóstico/Voar" e "Relatório" saíram da ficha (substituídos pelos
+    // dados estruturados do Anexo III-PAEE) - só atualiza t.aee_diagnostico/aee_relatorio se os
+    // elementos ainda existirem na tela (ex: outra tela que ainda os use), preservando o valor salvo
+    // caso contrário, já que essa função também é chamada pelos checkboxes de Categoria.
+    const elDiagnostico = document.getElementById('aeeDiagnostico');
+    const elRelatorio = document.getElementById('aeeRelatorio');
+    if (elDiagnostico) t.aee_diagnostico = elDiagnostico.value;
+    if (elRelatorio) t.aee_relatorio = elRelatorio.value;
     t.aee_categoria_diagnostico = document.getElementById('aeeCategoriaDiagnostico').checked;
     t.aee_categoria_projeto = document.getElementById('aeeCategoriaProjeto').checked;
 
