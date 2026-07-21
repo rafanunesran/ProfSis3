@@ -2558,6 +2558,7 @@ function renderNotasOficiaisGestor() {
 
     const turmas = data.turmas || [];
     const avaliacoes = (data.avaliacoesGestor || []).slice().sort((a, b) => b.criadoEm - a.criadoEm);
+    const lotesMapao = (data.lotesMapaoGestor || []).slice().sort((a, b) => b.dataImportacao - a.dataImportacao);
 
     container.innerHTML = `
         <div class="card">
@@ -2641,6 +2642,24 @@ function renderNotasOficiaisGestor() {
                     </table>
                 `}
             </div>
+
+            <h3 style="margin-top:30px; border-top:1px solid #e2e8f0; padding-top:15px;">Histórico de Mapões Enviados</h3>
+            <div id="listaLotesMapaoGestor">
+                ${lotesMapao.length === 0 ? '<p class="empty-state">Nenhum mapão enviado ainda.</p>' : `
+                    <table style="font-size:13px;">
+                        <thead><tr><th>Arquivo</th><th>Turmas</th><th>Enviado em</th><th>Registros</th><th>Ações</th></tr></thead>
+                        <tbody>
+                            ${lotesMapao.map(l => `<tr>
+                                <td>${l.nomeArquivo || '-'}</td>
+                                <td>${(l.turmas || []).join(', ') || '-'}</td>
+                                <td>${new Date(l.dataImportacao).toLocaleString('pt-BR')}</td>
+                                <td>${l.totalRegistros}</td>
+                                <td><button class="btn btn-sm btn-danger" onclick="removerLoteMapaoGestor(${l.id})">🗑️ Excluir</button></td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                `}
+            </div>
         </div>
     `;
 }
@@ -2655,6 +2674,18 @@ function removerAvaliacaoGestor(id) {
     if (!confirm('Excluir esta avaliação e todas as notas vinculadas a ela?')) return;
     data.avaliacoesGestor = (data.avaliacoesGestor || []).filter(a => a.id != id);
     data.notasAvaliacoesGestor = (data.notasAvaliacoesGestor || []).filter(n => n.id_avaliacao != id);
+    persistirDados();
+    renderNotasOficiaisGestor();
+}
+
+// Remove só os registros de data.notasBimestraisOficiais que ainda pertencem a este lote (ou seja,
+// que não foram sobrescritos por um mapão mais novo desde então - reenviar um mapão mais atualizado
+// por cima já atualiza o loteId do registro, então excluir um lote antigo nunca apaga um valor que
+// já foi corrigido por um envio posterior).
+function removerLoteMapaoGestor(id) {
+    if (!confirm('Excluir este mapão enviado? Isso remove as notas oficiais lançadas por ele (as que não foram atualizadas por um envio mais recente).')) return;
+    data.notasBimestraisOficiais = (data.notasBimestraisOficiais || []).filter(n => !(n.origem && n.origem.loteId == id));
+    data.lotesMapaoGestor = (data.lotesMapaoGestor || []).filter(l => l.id != id);
     persistirDados();
     renderNotasOficiaisGestor();
 }
@@ -2683,6 +2714,115 @@ function extrairAbasXlsxNotasOficiais(arrayBuffer) {
         aba.linhas.forEach(linha => { texto += linha.join(' | ') + '\n'; });
     });
     return { abas, texto };
+}
+
+// --- Parser específico do formato oficial SED ("Registro e Controle do Rendimento Escolar") ---
+// Esse export tem um bloco de metadados (rótulo na coluna A / valor na coluna B, incluindo "Turma:"
+// e "Tipo Fechamento:" - é daqui que sai o bimestre, não de uma coluna) e um cabeçalho em DUAS linhas:
+// nome da disciplina em célula mesclada (só a 1ª coluna do trio vem preenchida - "forward-fill" pega
+// as próximas duas) e, na linha seguinte, os sub-cabeçalhos M/F/AC (Média/Faltas/Atividade
+// Complementar) repetidos por disciplina. Só a coluna M interessa pra nota.
+
+const MESES_FECHAMENTO_BIMESTRE = {
+    primeiro: 1, primeira: 1,
+    segundo: 2, segunda: 2,
+    terceiro: 3, terceira: 3,
+    quarto: 4, quarta: 4
+};
+
+function detectarMetadadosSed(linhas) {
+    let turma = null;
+    let bimestre = null;
+    for (let i = 0; i < Math.min(linhas.length, 15); i++) {
+        const linha = linhas[i] || [];
+        const rotulo = normalizarTextoComparacaoMaterialDigital(String(linha[0] || ''));
+        if (!turma && /\bturma\b/.test(rotulo)) {
+            turma = String(linha[1] || '').trim() || null;
+        }
+        if (!bimestre && /fechamento/.test(rotulo)) {
+            const valorNorm = normalizarTextoComparacaoMaterialDigital(String(linha[1] || ''));
+            const chave = Object.keys(MESES_FECHAMENTO_BIMESTRE).find(k => valorNorm.includes(k));
+            if (chave) bimestre = MESES_FECHAMENTO_BIMESTRE[chave];
+        }
+    }
+    return { turma, bimestre };
+}
+
+function detectarCabecalhoSed(linhas) {
+    for (let i = 0; i < Math.min(linhas.length, 20) - 1; i++) {
+        const linhaDisciplinas = linhas[i] || [];
+        const normalizados = linhaDisciplinas.map(c => normalizarTextoComparacaoMaterialDigital(String(c || '')));
+        const idxNome = normalizados.findIndex(c => /\baluno\b/.test(c));
+        if (idxNome === -1) continue;
+
+        const linhaSubHeader = linhas[i + 1] || [];
+        const subNormalizados = linhaSubHeader.map(c => normalizarTextoComparacaoMaterialDigital(String(c || '')).trim());
+        if (!subNormalizados.some(c => c === 'm')) continue; // confirma que é o par de linhas certo (disciplina + M/F/AC)
+
+        // Forward-fill: célula mesclada só preenche a 1ª coluna do trio da disciplina.
+        let disciplinaAtual = null;
+        const colunasM = [];
+        linhaDisciplinas.forEach((celula, idx) => {
+            if (idx === idxNome) return;
+            const texto = String(celula || '').trim();
+            if (texto) disciplinaAtual = texto;
+            if (subNormalizados[idx] === 'm' && disciplinaAtual) {
+                colunasM.push({ idx, disciplina: disciplinaAtual });
+            }
+        });
+        if (colunasM.length === 0) continue;
+
+        return { linhaHeader: i + 1, idxNome, idxSituacao: idxNome + 1, colunasM };
+    }
+    return null;
+}
+
+function extrairRegistrosSed(linhas, cabecalho, bimestreDoArquivo) {
+    const registros = [];
+    for (let i = cabecalho.linhaHeader + 1; i < linhas.length; i++) {
+        const linha = linhas[i];
+        if (!linha || !linha[cabecalho.idxNome]) continue;
+        const nome = String(linha[cabecalho.idxNome] || '').trim();
+        if (!nome) continue;
+
+        const situacao = normalizarTextoComparacaoMaterialDigital(String(linha[cabecalho.idxSituacao] || ''));
+        if (situacao && !situacao.includes('ativo')) continue;
+
+        cabecalho.colunasM.forEach(cm => {
+            const valorBruto = linha[cm.idx];
+            if (valorBruto === undefined || valorBruto === null || String(valorBruto).trim() === '') return;
+            registros.push({ nome_estudante: nome, disciplina: cm.disciplina, bimestre: bimestreDoArquivo, valor: String(valorBruto).trim() });
+        });
+    }
+    return registros;
+}
+
+// Filtra pra correspondência plausível contra o roster desta turma - evita ruído de outras
+// turmas/abas quando o workbook compila a escola inteira num arquivo só.
+function filtrarRegistrosPorRoster(registros, roster) {
+    return registros.filter(r => {
+        const nomeNorm = normNomeNotasOficiais(r.nome_estudante);
+        if (roster.some(e => normNomeNotasOficiais(e.nome_completo) === nomeNorm)) return true;
+        const normA = normalizarTextoComparacaoMaterialDigital(r.nome_estudante);
+        return roster.some(e => {
+            const normB = normalizarTextoComparacaoMaterialDigital(e.nome_completo);
+            const dist = distanciaLevenshteinMaterialDigital(normA, normB);
+            const sim = 1 - (dist / Math.max(normA.length, normB.length, 1));
+            return sim >= 0.6;
+        });
+    });
+}
+
+function tentarExtracaoSed(abas, roster) {
+    let registros = [];
+    abas.forEach(aba => {
+        const cabecalho = detectarCabecalhoSed(aba.linhas);
+        if (!cabecalho) return;
+        const metadados = detectarMetadadosSed(aba.linhas);
+        if (!metadados.bimestre) return; // sem "Tipo Fechamento" reconhecível, não dá pra saber o bimestre
+        registros = registros.concat(extrairRegistrosSed(aba.linhas, cabecalho, metadados.bimestre));
+    });
+    return filtrarRegistrosPorRoster(registros, roster);
 }
 
 // --- Extração determinística de planilha (sem IA) ---
@@ -2748,13 +2888,6 @@ function extrairRegistrosDeterministicos(linhas, header, modo, nomeAba, bimestre
     return registros;
 }
 
-function calcularConfiancaExtracaoDeterministica(registros, roster) {
-    if (roster.length === 0) return 0;
-    const nomesExtraidos = new Set(registros.map(r => normNomeNotasOficiais(r.nome_estudante)));
-    const encontrados = roster.filter(e => nomesExtraidos.has(normNomeNotasOficiais(e.nome_completo)));
-    return encontrados.length / roster.length;
-}
-
 function tentarExtracaoDeterministicaXlsx(abas, modo, roster, bimestreSelecionado) {
     let registros = [];
     abas.forEach(aba => {
@@ -2762,22 +2895,7 @@ function tentarExtracaoDeterministicaXlsx(abas, modo, roster, bimestreSelecionad
         if (!header) return;
         registros = registros.concat(extrairRegistrosDeterministicos(aba.linhas, header, modo, aba.nome, bimestreSelecionado));
     });
-
-    // Mantém só linhas com correspondência plausível no roster desta turma - evita acumular ruído
-    // de outras turmas/abas quando o mesmo arquivo cobre a escola inteira.
-    registros = registros.filter(r => {
-        const nomeNorm = normNomeNotasOficiais(r.nome_estudante);
-        if (roster.some(e => normNomeNotasOficiais(e.nome_completo) === nomeNorm)) return true;
-        const normA = normalizarTextoComparacaoMaterialDigital(r.nome_estudante);
-        return roster.some(e => {
-            const normB = normalizarTextoComparacaoMaterialDigital(e.nome_completo);
-            const dist = distanciaLevenshteinMaterialDigital(normA, normB);
-            const sim = 1 - (dist / Math.max(normA.length, normB.length, 1));
-            return sim >= 0.6;
-        });
-    });
-
-    return { registros, confianca: calcularConfiancaExtracaoDeterministica(registros, roster) };
+    return filtrarRegistrosPorRoster(registros, roster);
 }
 
 async function extrairTextoPdfNotasOficiais(arrayBuffer) {
@@ -2984,12 +3102,17 @@ async function processarArquivoNotasOficiais() {
             `;
         }
 
-        // Uma turma por vez. Planilha (.xlsx) tenta primeiro ler as colunas direto do código (rápido,
-        // grátis, sem limite de tamanho); só cai pra IA se o formato não for reconhecido pra aquela
-        // turma. PDF não tem coluna estruturada, então vai direto pra IA. Cada chamada de IA (quando
-        // acontece) usa o roster restrito àquela turma, o que permite distinguir turmas dentro de um
-        // arquivo só sem precisar cortar/filtrar o conteúdo (arriscaria perder linhas legítimas).
+        // Uma turma por vez, em cadeia: (1) parser do formato oficial SED ("Registro e Controle do
+        // Rendimento Escolar"), (2) parser genérico de colunas (v3), (3) IA - só avança pro próximo
+        // se o anterior não achar NADA pra essa turma (sem gate de confiança: o que for achado é
+        // aceito, e quem não aparecer em nenhuma linha fica visível no resumo de cobertura abaixo,
+        // sem chamar IA pra completar - decisão do usuário, pra manter controle total com o gestor).
+        // PDF não tem coluna estruturada, então vai direto pra IA. Cada chamada de IA usa o roster
+        // restrito àquela turma, o que permite distinguir turmas dentro de um arquivo só sem precisar
+        // cortar/filtrar o conteúdo (arriscaria perder linhas legítimas).
         let todosRegistros = [];
+        const resumosCobertura = [];
+
         for (let i = 0; i < turmasSelecionadas.length; i++) {
             const idTurma = turmasSelecionadas[i];
             const turmaObj = (data.turmas || []).find(t => t.id == idTurma);
@@ -3000,12 +3123,21 @@ async function processarArquivoNotasOficiais() {
             const progressoBase = 20 + Math.round((i / turmasSelecionadas.length) * 70);
             const labelTurma = turmaObj ? turmaObj.nome : `turma ${i + 1}`;
             let registrosTurma = [];
+            let metodoUsado = null;
 
             if (abas) {
-                definirProgressoNotasOficiais(`Lendo planilha... turma ${i + 1} de ${turmasSelecionadas.length} (${labelTurma})`, progressoBase);
-                const { registros, confianca } = tentarExtracaoDeterministicaXlsx(abas, modo, roster, bimestreSelecionado);
-                if (confianca >= 0.5) {
-                    registrosTurma = registros.map(r => ({ ...r, _id_turma_origem: idTurma, _metodo: 'planilha' }));
+                definirProgressoNotasOficiais(`Lendo planilha (formato SED)... turma ${i + 1} de ${turmasSelecionadas.length} (${labelTurma})`, progressoBase);
+                const registrosSed = tentarExtracaoSed(abas, roster);
+                if (registrosSed.length > 0) {
+                    registrosTurma = registrosSed;
+                    metodoUsado = 'planilha';
+                } else {
+                    definirProgressoNotasOficiais(`Lendo planilha (formato genérico)... turma ${i + 1} de ${turmasSelecionadas.length} (${labelTurma})`, progressoBase);
+                    const registrosGenericos = tentarExtracaoDeterministicaXlsx(abas, modo, roster, bimestreSelecionado);
+                    if (registrosGenericos.length > 0) {
+                        registrosTurma = registrosGenericos;
+                        metodoUsado = 'planilha';
+                    }
                 }
             }
 
@@ -3013,8 +3145,20 @@ async function processarArquivoNotasOficiais() {
                 definirProgressoNotasOficiais(`Processando com IA... turma ${i + 1} de ${turmasSelecionadas.length} (${labelTurma})`, progressoBase);
                 const prompt = montarPromptNotasOficiais(modo, nomeAvaliacao, bimestreSelecionado, conteudoTexto, roster.map(e => e.nome_completo));
                 const resultado = await chamarIAExtracaoNotas(prompt);
-                registrosTurma = (Array.isArray(resultado.registros) ? resultado.registros : []).map(r => ({ ...r, _id_turma_origem: idTurma, _metodo: 'ia' }));
+                registrosTurma = Array.isArray(resultado.registros) ? resultado.registros : [];
+                metodoUsado = 'ia';
             }
+
+            registrosTurma = registrosTurma.map(r => ({ ...r, _id_turma_origem: idTurma, _metodo: metodoUsado }));
+
+            const nomesEncontrados = new Set(registrosTurma.map(r => normNomeNotasOficiais(r.nome_estudante)));
+            const faltantes = roster.filter(e => !nomesEncontrados.has(normNomeNotasOficiais(e.nome_completo)));
+            resumosCobertura.push({
+                turmaNome: labelTurma,
+                total: roster.length,
+                encontrados: roster.length - faltantes.length,
+                faltantes: faltantes.map(e => e.nome_completo)
+            });
 
             todosRegistros = todosRegistros.concat(registrosTurma);
         }
@@ -3025,7 +3169,7 @@ async function processarArquivoNotasOficiais() {
         }
 
         definirProgressoNotasOficiais(`${todosRegistros.length} registros extraídos. Revise antes de salvar.`, 100);
-        montarRevisaoNotasOficiais(todosRegistros, bimestreSelecionado);
+        montarRevisaoNotasOficiais(todosRegistros, bimestreSelecionado, resumosCobertura);
     } catch (err) {
         console.error(err);
         alert('Erro ao processar o arquivo: ' + err.message);
@@ -3044,7 +3188,7 @@ function valorNotaOficialPareceValido(valor) {
     return !isNaN(num) && num >= 0 && num <= 10;
 }
 
-function montarRevisaoNotasOficiais(registros, bimestreSelecionado) {
+function montarRevisaoNotasOficiais(registros, bimestreSelecionado, resumosCobertura) {
     // Cada linha guarda a turma de origem (definida na chamada de IA que a gerou) e resolve seu
     // candidato de aluno só dentro do roster daquela turma — evita colisão de nomes entre turmas
     // diferentes selecionadas na mesma leva de upload.
@@ -3083,7 +3227,21 @@ function montarRevisaoNotasOficiais(registros, bimestreSelecionado) {
     const turmas = data.turmas || [];
     const container = document.getElementById('revisaoNotasOficiais');
     const htmlAviso = container.innerHTML; // preserva o aviso de truncamento, se houver
-    container.innerHTML = htmlAviso + `
+
+    // Resumo de cobertura por turma: não tenta completar via IA (decisão do usuário) - só deixa
+    // visível quem ficou sem nenhuma linha extraída, pra o gestor decidir o que fazer.
+    const htmlCobertura = (resumosCobertura || []).map(r => {
+        const cor = r.faltantes.length === 0 ? '#276749' : '#7b341e';
+        const fundo = r.faltantes.length === 0 ? '#f0fff4' : '#fffaf0';
+        return `
+            <div style="background:${fundo}; border:1px solid #e2e8f0; color:${cor}; padding:8px 12px; border-radius:6px; font-size:12px; margin-bottom:6px;">
+                <strong>${r.turmaNome}:</strong> ${r.encontrados} de ${r.total} alunos com nota lançada nesta leitura.
+                ${r.faltantes.length > 0 ? `<br>Sem nenhuma linha: ${r.faltantes.join(', ')}` : ''}
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = htmlAviso + htmlCobertura + `
         <h3>Revisão antes de salvar (${notasOficiaisRegistrosPendentes.length} linhas)</h3>
         <p style="font-size:12px; color:#666;">Confira o aluno de cada linha (a extração pode errar o casamento de nomes). Linhas em laranja têm um valor de nota que não parece válido — confira antes de salvar. Linhas marcadas "Ignorar" não serão salvas.</p>
         <div style="overflow-x:auto;">
@@ -3163,6 +3321,10 @@ async function confirmarGravacaoNotasOficiais() {
 
     if (modo === 'mapao') {
         if (!data.notasBimestraisOficiais) data.notasBimestraisOficiais = [];
+        if (!data.lotesMapaoGestor) data.lotesMapaoGestor = [];
+
+        const loteId = agora;
+        const turmasDoLote = new Set();
 
         validos.forEach(r => {
             const estudante = (data.estudantes || []).find(e => e.id == r.estudanteId);
@@ -3179,7 +3341,7 @@ async function confirmarGravacaoNotasOficiais() {
 
             if (existente) {
                 existente.valor = r.valor;
-                existente.origem = { tipo: 'mapao', nomeArquivo, dataImportacao: agora };
+                existente.origem = { tipo: 'mapao', nomeArquivo, dataImportacao: agora, loteId };
             } else {
                 data.notasBimestraisOficiais.push({
                     id: agora + Math.random(),
@@ -3189,9 +3351,22 @@ async function confirmarGravacaoNotasOficiais() {
                     bimestre: r.bimestre,
                     valor: r.valor,
                     id_turma: estudante.id_turma,
-                    origem: { tipo: 'mapao', nomeArquivo, dataImportacao: agora }
+                    origem: { tipo: 'mapao', nomeArquivo, dataImportacao: agora, loteId }
                 });
             }
+            turmasDoLote.add(estudante.id_turma);
+        });
+
+        const nomesTurmasDoLote = [...turmasDoLote].map(id => {
+            const t = (data.turmas || []).find(x => x.id == id);
+            return t ? t.nome : 'Turma removida';
+        });
+        data.lotesMapaoGestor.push({
+            id: loteId,
+            nomeArquivo,
+            turmas: nomesTurmasDoLote,
+            dataImportacao: agora,
+            totalRegistros: validos.length
         });
     } else {
         if (!data.avaliacoesGestor) data.avaliacoesGestor = [];
