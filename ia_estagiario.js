@@ -170,6 +170,42 @@ const ROTULOS_TIPO_DOCUMENTO_ESTAGIARIO = {
     outros: 'Outros'
 };
 
+// --- ANEXO III - PAEE (Plano de AEE) ---
+// Só aparece no Estagiário pra quem está no Modo AEE (currentViewMode === 'aee'). Os tokens abaixo
+// batem 1:1 com os marcadores {{TOKEN}} de Docs/anexoIIIPAEE2026TEA.docx.html.
+const ANEXO_PAEE_ELEGIBILIDADE = [
+    { token: 'CHECK_ELEG_DI', label: 'Deficiência Intelectual' },
+    { token: 'CHECK_ELEG_DV', label: 'Deficiência Visual' },
+    { token: 'CHECK_ELEG_DF', label: 'Deficiência Física' },
+    { token: 'CHECK_ELEG_DA', label: 'Deficiência Auditiva/Surdez' },
+    { token: 'CHECK_ELEG_SC', label: 'Surdocegueira' },
+    { token: 'CHECK_ELEG_DM', label: 'Deficiência Múltipla' },
+    { token: 'CHECK_ELEG_AH', label: 'Altas habilidades/superdotação' },
+    { token: 'CHECK_ELEG_TEA', label: 'Transtorno do Espectro Autista' }
+];
+const ANEXO_PAEE_APOIOS = [
+    { token: 'CHECK_APOIO_RECURSOS', label: 'Recursos Pedagógicos, de Acessibilidade e de Tecnologia Assistiva' },
+    { token: 'CHECK_APOIO_LIBRAS', label: 'Professor de Libras ou Professor interlocutor de Libras' },
+    { token: 'CHECK_APOIO_GUIA', label: 'Professor Instrutor mediador ou Guia-intérprete' },
+    { token: 'CHECK_APOIO_PROFISSIONAL', label: 'Serviço de Profissional de Apoio Escolar' }
+];
+// Campos descritivos que a IA rascunha a partir das notas do Estudo de Caso - chave usada no JSON
+// pedido à IA, token usado na substituição final do template.
+const ANEXO_PAEE_CAMPOS_IA = [
+    { key: 'informacoes_identificadas', token: 'INFORMACOES_IDENTIFICADAS', label: 'Informações identificadas no Estudo de Caso' },
+    { key: 'apoios_recursos_servicos', token: 'APOIOS_RECURSOS_SERVICOS', label: 'Texto introdutório sobre os Apoios, Recursos e Serviços indicados' },
+    { key: 'indicacao_apoio_escolar', token: 'INDICACAO_APOIO_ESCOLAR', label: 'Motivos para indicação de Profissional de Apoio Escolar' },
+    { key: 'habilidades_desenvolvidas', token: 'HABILIDADES_DESENVOLVIDAS', label: 'Habilidades a serem desenvolvidas no AEE, complementares/suplementares ao currículo' },
+    { key: 'estrategias_utilizadas', token: 'ESTRATEGIAS_UTILIZADAS', label: 'Estratégias a serem utilizadas no AEE (Sala de Recursos ou Modalidade Itinerante)' },
+    { key: 'planejamento_bimestral', token: 'PLANEJAMENTO_BIMESTRAL', label: 'Planejamento bimestral: ações pedagógicas propostas' },
+    { key: 'recomendacao_professor', token: 'RECOMENDACAO_PROFESSOR', label: 'Recomendações ao Professor Regente / professores de componentes curriculares' },
+    { key: 'ensino_colaborativo', token: 'ENSINO_COLABORATIVO', label: 'Recomendações sobre o Projeto Ensino Colaborativo' },
+    { key: 'recomendacao_equipe_gestora', token: 'RECOMENDACAO_EQUIPE_GESTORA', label: 'Recomendações à equipe gestora e demais profissionais da escola' },
+    { key: 'materiais_pedagogicos', token: 'MATERIAIS_PEDAGOGICOS', label: 'Materiais pedagógicos, recursos de acessibilidade e tecnologias assistivas' },
+    { key: 'materiais_equipamentos', token: 'MATERIAIS_EQUIPAMENTOS', label: 'Materiais e equipamentos a adquirir via PDDE-Paulista' },
+    { key: 'superar_barreiras', token: 'SUPERAR_BARREIRAS', label: 'Medidas para a escola superar as barreiras identificadas no Estudo de Caso' }
+];
+
 // Monta o bloco de texto injetado no prompt, instruindo a IA a reaproveitar os dados reais em vez de
 // inventar. Quando não há nada fundamentado, ainda assim retorna um aviso explícito no prompt (em vez
 // de simplesmente omitir a seção), pra IA não tratar o silêncio como "invente à vontade".
@@ -216,6 +252,17 @@ function abrirModalGerarDocumentoIA() {
     const seriesUnicas = [...new Set((data.turmas || []).map(t => getSerieNome(t.ano_serie || t.nome)))].filter(Boolean);
     const disciplinasUnicas = [...new Set((data.turmas || []).map(t => t.disciplina))].filter(Boolean);
 
+    // O Anexo III - PAEE só faz sentido pra quem está no Modo AEE (professor especializado) - fica
+    // fora do dropdown pra qualquer outro perfil/modo, inclusive Gestor alternando pra outros modos.
+    const isAeeView = currentViewMode === 'aee';
+    const opcoesTipoDocHtml = `
+        <option value="plano_aula">Plano de Aula</option>
+        <option value="agenda_mensal">📅 Agenda Mensal</option>
+        ${isAeeView ? '<option value="anexo3_paee">📋 Anexo III - PAEE</option>' : ''}
+    `;
+    const alunosAeeOptionsHtml = '<option value="">Selecione...</option>' + (data.tutorados || [])
+        .map(t => `<option value="${t.id}">${t.nome_estudante}</option>`).join('');
+
     // Calcula a próxima semana de segunda a sexta
     const hoje = new Date();
     const proximaSegunda = new Date(hoje);
@@ -250,8 +297,7 @@ function abrirModalGerarDocumentoIA() {
                     <div style="flex: 1;">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Tipo de Documento:</label>
                         <select id="iaDocTipo" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;" onchange="toggleTipoDocumentoIA()">
-                            <option value="plano_aula">Plano de Aula</option>
-                            <option value="agenda_mensal">📅 Agenda Mensal</option>
+                            ${opcoesTipoDocHtml}
                         </select>
                     </div>
                     <div style="flex: 1;" id="campoSemanaVigente">
@@ -304,6 +350,58 @@ function abrirModalGerarDocumentoIA() {
                     </div>
                 </div>
 
+                <div id="camposAnexoPaee" style="display:none;">
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Estudante (AEE):</label>
+                        <select id="anexoPaeeAluno" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;" onchange="preencherDadosEstudanteAnexoPaee()">
+                            ${alunosAeeOptionsHtml}
+                        </select>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:15px; margin-bottom: 15px;">
+                        <div>
+                            <label style="font-weight:bold; display:block; margin-bottom:5px; font-size:12px;">Data de Nascimento:</label>
+                            <input type="text" id="anexoPaeeNascimento" placeholder="dd/mm/aaaa" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                        </div>
+                        <div>
+                            <label style="font-weight:bold; display:block; margin-bottom:5px; font-size:12px;">Escolaridade / Série:</label>
+                            <input type="text" id="anexoPaeeEscolaridade" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                        </div>
+                        <div>
+                            <label style="font-weight:bold; display:block; margin-bottom:5px; font-size:12px;">Turno:</label>
+                            <input type="text" id="anexoPaeeTurno" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:20px; margin-bottom:15px; font-size:13px;">
+                        <label><input type="radio" name="anexoPaeeSexo" value="F"> Feminino</label>
+                        <label><input type="radio" name="anexoPaeeSexo" value="M"> Masculino</label>
+                    </div>
+                    <div style="margin-bottom:15px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Elegibilidade aos serviços da Educação Especial:</label>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; font-size:13px;">
+                            ${ANEXO_PAEE_ELEGIBILIDADE.map(o => `<label><input type="checkbox" id="anexoEleg_${o.token}" ${o.token === 'CHECK_ELEG_TEA' ? 'checked' : ''}> ${o.label}</label>`).join('')}
+                        </div>
+                    </div>
+                    <div style="margin-bottom:15px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Nível de Apoio:</label>
+                        <div style="display:flex; gap:20px; font-size:13px;">
+                            <label><input type="radio" name="anexoPaeeNivel" value="1"> Nível 1</label>
+                            <label><input type="radio" name="anexoPaeeNivel" value="2"> Nível 2</label>
+                            <label><input type="radio" name="anexoPaeeNivel" value="3"> Nível 3</label>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:15px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Apoios / Recursos / Serviços indicados:</label>
+                        <div style="display:flex; flex-direction:column; gap:5px; font-size:13px;">
+                            ${ANEXO_PAEE_APOIOS.map(o => `<label><input type="checkbox" id="anexoApoio_${o.token}"> ${o.label}</label>`).join('')}
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Notas do Estudo de Caso / Diagnóstico (contexto para a IA):</label>
+                        <p style="font-size:11px; color:#718096; margin-bottom:5px;">A IA vai usar essas notas (pré-preenchidas com o diagnóstico/relatório já salvos do aluno, se houver) pra rascunhar os campos descritivos do Anexo III. Você revisa e edita tudo antes de gerar o documento final.</p>
+                        <textarea id="anexoPaeeNotas" rows="6" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; font-size:12px; line-height:1.4;"></textarea>
+                    </div>
+                </div>
+
                 <div style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
                     <button class="btn btn-secondary" onclick="closeModal('modalGerarDocumentoIA')">Cancelar</button>
                     <button class="btn btn-primary" id="btnGerarDocumentoIA" onclick="gerarDocumentoIA()">Gerar Estrutura</button>
@@ -315,11 +413,19 @@ function abrirModalGerarDocumentoIA() {
         // Atualiza os dropdowns caso o professor tenha adicionado/removido turmas
         const selSerie = document.getElementById('iaDocSerie');
         if(selSerie) selSerie.innerHTML = '<option value="">Selecione...</option>' + seriesUnicas.map(s => `<option value="${s}">${s}</option>`).join('');
-        
+
         const selDisc = document.getElementById('iaDocDisciplina');
         if(selDisc) selDisc.innerHTML = '<option value="">Selecione...</option>' + disciplinasUnicas.map(d => `<option value="${d}">${d}</option>`).join('');
+
+        // Atualiza o Tipo de Documento (visibilidade do Anexo III - PAEE muda com o modo/perfil) e a
+        // lista de alunos AEE (pode ter mudado desde a última abertura do modal).
+        const selTipo = document.getElementById('iaDocTipo');
+        if (selTipo) selTipo.innerHTML = opcoesTipoDocHtml;
+
+        const selAluno = document.getElementById('anexoPaeeAluno');
+        if (selAluno) selAluno.innerHTML = alunosAeeOptionsHtml;
     }
-    
+
     const docTema = document.getElementById('iaDocTema');
     if (docTema) docTema.value = '';
     const docSerie = document.getElementById('iaDocSerie');
@@ -341,6 +447,15 @@ function abrirModalGerarDocumentoIA() {
     const docAgendaAno = document.getElementById('iaAgendaAno');
     if (docAgendaAno) docAgendaAno.value = defaultYear;
 
+    const anexoAluno = document.getElementById('anexoPaeeAluno');
+    if (anexoAluno) anexoAluno.value = '';
+    ['anexoPaeeNascimento', 'anexoPaeeEscolaridade', 'anexoPaeeTurno', 'anexoPaeeNotas'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+    document.querySelectorAll('input[name="anexoPaeeSexo"], input[name="anexoPaeeNivel"]').forEach(el => el.checked = false);
+    document.querySelectorAll('#camposAnexoPaee input[type="checkbox"]').forEach(el => { el.checked = el.id === 'anexoEleg_CHECK_ELEG_TEA'; });
+
     toggleTipoDocumentoIA();
     showModal('modalGerarDocumentoIA');
 }
@@ -351,16 +466,50 @@ function abrirModalGerarDocumentoIA() {
 function toggleTipoDocumentoIA() {
     const tipo = document.getElementById('iaDocTipo').value;
     const isAgenda = tipo === 'agenda_mensal';
+    const isAnexoPaee = tipo === 'anexo3_paee';
 
     const campoSemana = document.getElementById('campoSemanaVigente');
-    if (campoSemana) campoSemana.style.display = isAgenda ? 'none' : '';
+    if (campoSemana) campoSemana.style.display = (isAgenda || isAnexoPaee) ? 'none' : '';
     const campoMesAno = document.getElementById('campoMesAnoAgenda');
     if (campoMesAno) campoMesAno.style.display = isAgenda ? 'block' : 'none';
     const camposPlano = document.getElementById('camposPlanoAula');
-    if (camposPlano) camposPlano.style.display = isAgenda ? 'none' : '';
+    if (camposPlano) camposPlano.style.display = (isAgenda || isAnexoPaee) ? 'none' : '';
+    const camposAnexo = document.getElementById('camposAnexoPaee');
+    if (camposAnexo) camposAnexo.style.display = isAnexoPaee ? '' : 'none';
 
     const btn = document.getElementById('btnGerarDocumentoIA');
     if (btn) btn.textContent = isAgenda ? '🖨️ Gerar e Imprimir Agenda' : 'Gerar Estrutura';
+}
+
+// Preenche automaticamente os campos do Anexo III - PAEE com os dados já cadastrados do aluno
+// selecionado (Ficha do Tutorado + turma vinculada), deixando tudo editável antes de gerar.
+function preencherDadosEstudanteAnexoPaee() {
+    const sel = document.getElementById('anexoPaeeAluno');
+    const nascInput = document.getElementById('anexoPaeeNascimento');
+    const escInput = document.getElementById('anexoPaeeEscolaridade');
+    const turnoInput = document.getElementById('anexoPaeeTurno');
+    const notasInput = document.getElementById('anexoPaeeNotas');
+    if (!sel || !sel.value) {
+        if (nascInput) nascInput.value = '';
+        if (escInput) escInput.value = '';
+        if (turnoInput) turnoInput.value = '';
+        if (notasInput) notasInput.value = '';
+        return;
+    }
+
+    const t = (data.tutorados || []).find(x => x.id == sel.value);
+    if (!t) return;
+
+    if (nascInput) nascInput.value = t.data_nascimento ? formatDate(t.data_nascimento) : '';
+
+    const turmaInfo = (data.turmas || []).find(x => x.nome === t.turma);
+    if (escInput) escInput.value = (turmaInfo && turmaInfo.ano_serie) ? turmaInfo.ano_serie : (t.turma || '');
+    if (turnoInput) turnoInput.value = turmaInfo ? (turmaInfo.turno || '') : '';
+
+    let notas = '';
+    if (t.aee_diagnostico) notas += `Diagnóstico: ${t.aee_diagnostico}\n`;
+    if (t.aee_relatorio) notas += `Relatório/Observações: ${t.aee_relatorio}`;
+    if (notasInput) notasInput.value = notas;
 }
 
 function restaurarPromptPadraoIA() {
@@ -584,21 +733,12 @@ async function gerarAgendaMensalEstagiario() {
     }
 }
 
-async function gerarDocumentoIA() {
-    const tipo = document.getElementById('iaDocTipo').value;
-    if (tipo === 'agenda_mensal') return gerarAgendaMensalEstagiario();
-
-    const tema = document.getElementById('iaDocTema').value;
-    const serie = document.getElementById('iaDocSerie') ? document.getElementById('iaDocSerie').value : '';
-    const disciplina = document.getElementById('iaDocDisciplina') ? document.getElementById('iaDocDisciplina').value : '';
-    const semana = document.getElementById('iaDocSemana') ? document.getElementById('iaDocSemana').value : '';
-    const semanaInicioISO = document.getElementById('iaDocSemanaInicio') ? document.getElementById('iaDocSemanaInicio').value : '';
-    const semanaFimISO = document.getElementById('iaDocSemanaFim') ? document.getElementById('iaDocSemanaFim').value : '';
-
-    if (!serie || !disciplina) return alert('Por favor, selecione a série e a disciplina.');
-    if (!tema) return alert('Por favor, informe o tema/assunto.');
-
-    // Busca a chave da API configurada com segurança no banco de dados
+// Chamada de IA compartilhada por qualquer Tipo de Documento do Estagiário que precise de um JSON
+// estruturado como saída (Plano de Aula, Anexo III - PAEE...): busca a(s) chave(s) configuradas,
+// tenta os provedores/modelos com fallback e devolve o objeto já parseado. Lança erro (pro chamador
+// tratar com alert) se a chave não estiver configurada, se todas as tentativas falharem ou se a IA
+// não devolver um JSON válido.
+async function chamarIAEstruturada(promptText, btn) {
     let apiKeys = [];
     try {
         const configData = await getData('system', 'config_ia');
@@ -609,7 +749,139 @@ async function gerarDocumentoIA() {
         console.warn('Erro ao buscar chave da IA:', e);
     }
 
-    if (apiKeys.length === 0) return alert('⚠️ A chave da API não foi configurada. Peça ao Administrador para entrar no painel Super Admin e adicioná-la na aba Migração.');
+    if (apiKeys.length === 0) throw new Error('⚠️ A chave da API não foi configurada. Peça ao Administrador para entrar no painel Super Admin e adicioná-la na aba Migração.');
+
+    let success = false;
+    let lastError = '';
+    let respostaTexto = '';
+
+    let tentativas = 3; // Tenta até 3 vezes
+    const modelosFallback = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+
+    for (let i = 0; i < tentativas && !success; i++) {
+        const modeloAtual = modelosFallback[i % modelosFallback.length];
+
+        for (const currentKey of apiKeys) {
+            try {
+                if (btn) btn.textContent = `Gerando estrutura... ⏳ (Tentativa ${i+1}/3)`;
+
+                // Implementa limite de tempo (20 segundos) para evitar congelamento da tela
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+                // --- ROTEADOR MULTI-IA AUTOMÁTICO ---
+                if (currentKey.startsWith('sk-') && !currentKey.startsWith('sk-ant-')) {
+                    // 1. OPENAI (ChatGPT - GPT-4o-mini)
+                    const response = await fetch(`https://api.openai.com/v1/chat/completions`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentKey}` },
+                        body: JSON.stringify({
+                            model: 'gpt-4o-mini',
+                            messages: [
+                                { role: 'system', content: 'Você deve retornar APENAS um JSON válido. Nenhuma formatação markdown.' },
+                                { role: 'user', content: promptText }
+                            ],
+                            temperature: 0.7,
+                            response_format: { type: "json_object" }
+                        }),
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+                    if (!response.ok) throw new Error(`OpenAI Erro: ${response.statusText}`);
+                    const apiDataObj = await response.json();
+                    respostaTexto = apiDataObj.choices[0].message.content;
+
+                } else if (currentKey.startsWith('gsk_')) {
+                    // 2. GROQ (Llama-3 - Super Rápido)
+                    const response = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentKey}` },
+                        body: JSON.stringify({
+                            model: 'llama-3.3-70b-versatile',
+                            messages: [
+                                { role: 'system', content: 'Você deve retornar APENAS um JSON válido. Nenhuma formatação markdown.' },
+                                { role: 'user', content: promptText }
+                            ],
+                            temperature: 0.7,
+                            response_format: { type: "json_object" }
+                        }),
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+                    if (!response.ok) throw new Error(`Groq Erro: ${response.statusText}`);
+                    const apiDataObj = await response.json();
+                    respostaTexto = apiDataObj.choices[0].message.content;
+
+                } else {
+                    // 3. GOOGLE GEMINI (Padrão)
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modeloAtual}:generateContent?key=${currentKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: promptText }] }],
+                            generationConfig: { temperature: 0.7, response_mime_type: "application/json" }
+                        }),
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+                    if (!response.ok) {
+                        const errorObj = await response.json();
+                        throw new Error(errorObj.error ? errorObj.error.message : response.statusText);
+                    }
+                    const apiDataObj = await response.json();
+                    if (!apiDataObj.candidates || apiDataObj.candidates.length === 0 || !apiDataObj.candidates[0].content) {
+                        throw new Error('A IA não retornou um conteúdo válido.');
+                    }
+                    respostaTexto = apiDataObj.candidates[0].content.parts[0].text;
+                }
+
+                success = true;
+                break; // Sucesso, sai do loop de chaves
+            } catch (err) {
+                lastError = err.name === 'AbortError' ? 'Tempo de resposta esgotado.' : err.message;
+                console.warn(`⚠️ Falha na API (Tentativa ${i+1}):`, lastError);
+            }
+        }
+        if (!success && i < tentativas - 1) {
+            // Aguarda 2 segundos (2000ms) antes de tentar novamente, para dar tempo da API desafogar
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+    }
+
+    if (!success) {
+        throw new Error(`A Inteligência Artificial falhou ou rejeitou o pedido.\nMotivo: ${lastError}`);
+    }
+
+    // Limpa potenciais blocos markdown que a IA possa enviar por teimosia e converte para objeto
+    let jsonLimpo = respostaTexto.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').trim();
+
+    const jsonMatch = jsonLimpo.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+        jsonLimpo = jsonMatch[0];
+    }
+
+    try {
+        return JSON.parse(jsonLimpo);
+    } catch (parseErr) {
+        console.error("Erro no JSON retornado pela IA:", respostaTexto);
+        throw new Error("A IA não retornou os dados no formato esperado. Por favor, tente gerar novamente.");
+    }
+}
+
+async function gerarDocumentoIA() {
+    const tipo = document.getElementById('iaDocTipo').value;
+    if (tipo === 'agenda_mensal') return gerarAgendaMensalEstagiario();
+    if (tipo === 'anexo3_paee') return gerarAnexoPaeeEstagiario();
+
+    const tema = document.getElementById('iaDocTema').value;
+    const serie = document.getElementById('iaDocSerie') ? document.getElementById('iaDocSerie').value : '';
+    const disciplina = document.getElementById('iaDocDisciplina') ? document.getElementById('iaDocDisciplina').value : '';
+    const semana = document.getElementById('iaDocSemana') ? document.getElementById('iaDocSemana').value : '';
+    const semanaInicioISO = document.getElementById('iaDocSemanaInicio') ? document.getElementById('iaDocSemanaInicio').value : '';
+    const semanaFimISO = document.getElementById('iaDocSemanaFim') ? document.getElementById('iaDocSemanaFim').value : '';
+
+    if (!serie || !disciplina) return alert('Por favor, selecione a série e a disciplina.');
+    if (!tema) return alert('Por favor, informe o tema/assunto.');
 
     const btn = document.querySelector('#modalGerarDocumentoIA .btn-primary');
     const originalText = btn.textContent;
@@ -652,149 +924,33 @@ async function gerarDocumentoIA() {
         // IA (só Firestore + comparação de texto).
         const contextoOficial = await montarContextoCurriculoOficial(disciplina, serie, tema);
 
-        if (tipo === 'plano_aula') {
-            let templateBase = document.getElementById('iaDocPrompt') ? document.getElementById('iaDocPrompt').value : '';
-            if (!templateBase || templateBase.trim() === '') {
-                templateBase = `Você é um professor/coordenador pedagógico experiente do Estado de São Paulo. Crie a estrutura de um Plano de Aula de {{disciplina}} para a série/ano {{serie}} sobre o tema: "{{tema}}".\nUtilize seus profundos conhecimentos sobre o Currículo Paulista e os Materiais de Apoio (Caderno do Aluno/Professor) da SEDUC-SP.\nAs habilidades devem seguir estritamente o código e formato do Currículo Paulista específicos da disciplina de {{disciplina}} (ex: se for Matemática, use EF...MA..., se for Arte, EF...AR..., etc.).\nA Aprendizagem Essencial deve ser compatível com os documentos curriculares oficiais da disciplina.\nRetorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:\n{"aprendizagem_essencial": "Habilidade central do Currículo Paulista", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades cognitivas a desenvolver com os códigos do Currículo Paulista da disciplina solicitada", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
-            }
-
-            promptText = templateBase
-                .replace(/{{disciplina}}/g, disciplina)
-                .replace(/{{serie}}/g, serie)
-                .replace(/{{tema}}/g, tema);
-                
-            // Verifica se o usuário colou um prompt externo que não contém os marcadores ou a estrutura JSON necessária
-            const faltaMarcador = !templateBase.includes('{{disciplina}}') || !templateBase.includes('{{serie}}') || !templateBase.includes('{{tema}}');
-            const faltaEstruturaJson = !templateBase.includes('{"aprendizagem_essencial"');
-
-            // Injeta as diretrizes obrigatórias de forma invisível caso o prompt colado não as tenha
-            if (faltaMarcador) {
-                promptText += `\n\n[DADOS OBRIGATÓRIOS]\nO plano de aula DEVE ser sobre a disciplina de ${disciplina}, para a série/ano ${serie}, com o tema "${tema}".\nAs habilidades devem seguir o código e formato do Currículo Paulista específicos da disciplina de ${disciplina} (ex: se for Matemática, use EF...MA..., se for Arte, EF...AR...).`;
-            }
-            if (faltaEstruturaJson) {
-                promptText += `\n\n[FORMATO DE SAÍDA OBRIGATÓRIO]\nRetorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:\n{"aprendizagem_essencial": "Habilidade central", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades com códigos", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
-            }
-
-            // Injeta a fundamentação oficial (planilha/PDFs) sempre, independente do prompt usado -
-            // mesmo princípio dos blocos [DADOS OBRIGATÓRIOS]/[FORMATO...] acima.
-            promptText += montarBlocoContextoOficial(contextoOficial);
+        let templateBase = document.getElementById('iaDocPrompt') ? document.getElementById('iaDocPrompt').value : '';
+        if (!templateBase || templateBase.trim() === '') {
+            templateBase = `Você é um professor/coordenador pedagógico experiente do Estado de São Paulo. Crie a estrutura de um Plano de Aula de {{disciplina}} para a série/ano {{serie}} sobre o tema: "{{tema}}".\nUtilize seus profundos conhecimentos sobre o Currículo Paulista e os Materiais de Apoio (Caderno do Aluno/Professor) da SEDUC-SP.\nAs habilidades devem seguir estritamente o código e formato do Currículo Paulista específicos da disciplina de {{disciplina}} (ex: se for Matemática, use EF...MA..., se for Arte, EF...AR..., etc.).\nA Aprendizagem Essencial deve ser compatível com os documentos curriculares oficiais da disciplina.\nRetorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:\n{"aprendizagem_essencial": "Habilidade central do Currículo Paulista", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades cognitivas a desenvolver com os códigos do Currículo Paulista da disciplina solicitada", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
         }
 
-        let success = false;
-        let lastError = '';
-        let respostaTexto = '';
+        promptText = templateBase
+            .replace(/{{disciplina}}/g, disciplina)
+            .replace(/{{serie}}/g, serie)
+            .replace(/{{tema}}/g, tema);
 
-        let tentativas = 3; // Tenta até 3 vezes
-        const modelosFallback = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
-        
-        for (let i = 0; i < tentativas && !success; i++) {
-            const modeloAtual = modelosFallback[i % modelosFallback.length];
-            
-            for (const currentKey of apiKeys) {
-                try {
-                    btn.textContent = `Gerando estrutura... ⏳ (Tentativa ${i+1}/3)`;
-                    
-                    // Implementa limite de tempo (20 segundos) para evitar congelamento da tela
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 20000);
+        // Verifica se o usuário colou um prompt externo que não contém os marcadores ou a estrutura JSON necessária
+        const faltaMarcador = !templateBase.includes('{{disciplina}}') || !templateBase.includes('{{serie}}') || !templateBase.includes('{{tema}}');
+        const faltaEstruturaJson = !templateBase.includes('{"aprendizagem_essencial"');
 
-                    // --- ROTEADOR MULTI-IA AUTOMÁTICO ---
-                    if (currentKey.startsWith('sk-') && !currentKey.startsWith('sk-ant-')) {
-                        // 1. OPENAI (ChatGPT - GPT-4o-mini)
-                        const response = await fetch(`https://api.openai.com/v1/chat/completions`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentKey}` },
-                            body: JSON.stringify({
-                                model: 'gpt-4o-mini',
-                                messages: [
-                                    { role: 'system', content: 'Você deve retornar APENAS um JSON válido. Nenhuma formatação markdown.' },
-                                    { role: 'user', content: promptText }
-                                ],
-                                temperature: 0.7,
-                                response_format: { type: "json_object" }
-                            }),
-                            signal: controller.signal
-                        });
-                        clearTimeout(timeoutId);
-                        if (!response.ok) throw new Error(`OpenAI Erro: ${response.statusText}`);
-                        const apiDataObj = await response.json();
-                        respostaTexto = apiDataObj.choices[0].message.content;
-
-                    } else if (currentKey.startsWith('gsk_')) {
-                        // 2. GROQ (Llama-3 - Super Rápido)
-                        const response = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentKey}` },
-                            body: JSON.stringify({
-                                model: 'llama-3.3-70b-versatile',
-                                messages: [
-                                    { role: 'system', content: 'Você deve retornar APENAS um JSON válido. Nenhuma formatação markdown.' },
-                                    { role: 'user', content: promptText }
-                                ],
-                                temperature: 0.7,
-                                response_format: { type: "json_object" }
-                            }),
-                            signal: controller.signal
-                        });
-                        clearTimeout(timeoutId);
-                        if (!response.ok) throw new Error(`Groq Erro: ${response.statusText}`);
-                        const apiDataObj = await response.json();
-                        respostaTexto = apiDataObj.choices[0].message.content;
-
-                    } else {
-                        // 3. GOOGLE GEMINI (Padrão)
-                        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modeloAtual}:generateContent?key=${currentKey}`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                contents: [{ parts: [{ text: promptText }] }],
-                                generationConfig: { temperature: 0.7, response_mime_type: "application/json" }
-                            }),
-                            signal: controller.signal
-                        });
-                        clearTimeout(timeoutId);
-                        if (!response.ok) {
-                            const errorObj = await response.json();
-                            throw new Error(errorObj.error ? errorObj.error.message : response.statusText);
-                        }
-                        const apiDataObj = await response.json();
-                        if (!apiDataObj.candidates || apiDataObj.candidates.length === 0 || !apiDataObj.candidates[0].content) {
-                            throw new Error('A IA não retornou um conteúdo válido.');
-                        }
-                        respostaTexto = apiDataObj.candidates[0].content.parts[0].text;
-                    }
-                    
-                    success = true;
-                    break; // Sucesso, sai do loop de chaves
-                } catch (err) {
-                    lastError = err.name === 'AbortError' ? 'Tempo de resposta esgotado.' : err.message;
-                    console.warn(`⚠️ Falha na API (Tentativa ${i+1}):`, lastError);
-                }
-            }
-            if (!success && i < tentativas - 1) {
-                // Aguarda 2 segundos (2000ms) antes de tentar novamente, para dar tempo da API desafogar
-                await new Promise(resolve => setTimeout(resolve, 2000));
-            }
+        // Injeta as diretrizes obrigatórias de forma invisível caso o prompt colado não as tenha
+        if (faltaMarcador) {
+            promptText += `\n\n[DADOS OBRIGATÓRIOS]\nO plano de aula DEVE ser sobre a disciplina de ${disciplina}, para a série/ano ${serie}, com o tema "${tema}".\nAs habilidades devem seguir o código e formato do Currículo Paulista específicos da disciplina de ${disciplina} (ex: se for Matemática, use EF...MA..., se for Arte, EF...AR...).`;
+        }
+        if (faltaEstruturaJson) {
+            promptText += `\n\n[FORMATO DE SAÍDA OBRIGATÓRIO]\nRetorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:\n{"aprendizagem_essencial": "Habilidade central", "conteudos": "lista de conteúdos", "habilidades": "lista de habilidades com códigos", "objetivos": "objetivos da aula", "desenvolvimento": "introdução, desenvolvimento e conclusão com tempos sugeridos", "materiais": "recursos utilizados", "avaliacao": "critérios e instrumentos"}`;
         }
 
-        if (!success) {
-            throw new Error(`A Inteligência Artificial falhou ou rejeitou o pedido.\nMotivo: ${lastError}`);
-        }
+        // Injeta a fundamentação oficial (planilha/PDFs) sempre, independente do prompt usado -
+        // mesmo princípio dos blocos [DADOS OBRIGATÓRIOS]/[FORMATO...] acima.
+        promptText += montarBlocoContextoOficial(contextoOficial);
 
-        // Limpa potenciais blocos markdown que a IA possa enviar por teimosia e converte para objeto
-        let jsonLimpo = respostaTexto.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').trim();
-        
-        const jsonMatch = jsonLimpo.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            jsonLimpo = jsonMatch[0];
-        }
-        
-        try {
-            dadosEstruturados = JSON.parse(jsonLimpo);
-        } catch (parseErr) {
-            console.error("Erro no JSON retornado pela IA:", respostaTexto);
-            throw new Error("A IA não retornou os dados no formato esperado. Por favor, tente gerar novamente.");
-        }
+        dadosEstruturados = await chamarIAEstruturada(promptText, btn);
 
         // Quando a planilha oficial deu uma correspondência confiante, os campos com fonte 1:1 na
         // planilha (habilidades/conteúdos/objetivos) são sobrescritos com o dado real - não passam
@@ -822,6 +978,67 @@ async function gerarDocumentoIA() {
         };
         abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasNomesStr, duracaoAulasStr, bimestreAtual, dadosEstruturados, semanaInicioISO, semanaFimISO, cardsMaterialDigitalDisponiveis, resumoFundamentacao);
 
+    } catch (e) {
+        console.error(e);
+        alert('Erro ao gerar documento com IA:\n' + e.message);
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
+// Coleta os dados básicos + checkboxes preenchidos no formulário do Anexo III - PAEE, pede pra IA
+// rascunhar os campos descritivos (com base nas notas do Estudo de Caso/diagnóstico do aluno) e abre
+// a tela de revisão - mesmo fluxo do Plano de Aula (formulário -> IA -> revisão -> exportar).
+async function gerarAnexoPaeeEstagiario() {
+    const alunoId = document.getElementById('anexoPaeeAluno').value;
+    if (!alunoId) return alert('Selecione o estudante.');
+    const tutorado = (data.tutorados || []).find(t => t.id == alunoId);
+    if (!tutorado) return alert('Estudante não encontrado.');
+
+    const dadosBasicos = {
+        nomeEstudante: tutorado.nome_estudante,
+        dataNascimento: document.getElementById('anexoPaeeNascimento').value || '',
+        escolaridade: document.getElementById('anexoPaeeEscolaridade').value || '',
+        turno: document.getElementById('anexoPaeeTurno').value || '',
+        sexo: document.querySelector('input[name="anexoPaeeSexo"]:checked') ? document.querySelector('input[name="anexoPaeeSexo"]:checked').value : '',
+        nivelApoio: document.querySelector('input[name="anexoPaeeNivel"]:checked') ? document.querySelector('input[name="anexoPaeeNivel"]:checked').value : '',
+        elegibilidade: ANEXO_PAEE_ELEGIBILIDADE.filter(o => document.getElementById('anexoEleg_' + o.token).checked).map(o => o.token),
+        apoios: ANEXO_PAEE_APOIOS.filter(o => document.getElementById('anexoApoio_' + o.token).checked).map(o => o.token)
+    };
+    const notas = document.getElementById('anexoPaeeNotas').value || '';
+
+    const hoje = getTodayString();
+    const configBimestres = data.configBimestres || [];
+    const configAtual = configBimestres.find(c => hoje >= c.inicio && hoje <= c.fim);
+    const bimestreAtual = configAtual ? `${configAtual.bim}º BIMESTRE` : 'BIMESTRE VIGENTE';
+
+    const btn = document.querySelector('#modalGerarDocumentoIA .btn-primary');
+    const originalText = btn.textContent;
+    btn.textContent = 'Gerando estrutura... ⏳';
+    btn.disabled = true;
+
+    try {
+        const elegibilidadeLabels = ANEXO_PAEE_ELEGIBILIDADE.filter(o => dadosBasicos.elegibilidade.includes(o.token)).map(o => o.label);
+        const apoiosLabels = ANEXO_PAEE_APOIOS.filter(o => dadosBasicos.apoios.includes(o.token)).map(o => o.label);
+
+        const promptText = `Você é um Professor Especializado de Atendimento Educacional Especializado (AEE) do Estado de São Paulo, redigindo o Anexo III - Plano de AEE (PAEE) de um estudante.
+Dados do estudante: ${dadosBasicos.nomeEstudante}, ${dadosBasicos.escolaridade || 'série não informada'}, turno ${dadosBasicos.turno || 'não informado'}.
+Categoria(s) de elegibilidade à Educação Especial: ${elegibilidadeLabels.join(', ') || 'não informada'}.
+Nível de apoio: ${dadosBasicos.nivelApoio || 'não informado'}.
+Apoios/Recursos/Serviços já indicados: ${apoiosLabels.join(', ') || 'nenhum indicado'}.
+Bimestre vigente: ${bimestreAtual}.
+Notas do Estudo de Caso / diagnóstico e relatório já registrados pelo professor:
+"""${notas || 'Nenhuma nota registrada - use cautela e deixe claro nos campos que o professor precisa detalhar melhor o caso.'}"""
+
+Com base nesses dados, redija os campos abaixo do Anexo III - PAEE, em português, de forma técnica, objetiva e alinhada às diretrizes da Educação Especial da SEDUC-SP. Não invente diagnósticos, laudos ou informações que não constam nas notas acima.
+Retorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:
+{${ANEXO_PAEE_CAMPOS_IA.map(c => `"${c.key}": "${c.label}"`).join(', ')}}`;
+
+        const dadosEstruturados = await chamarIAEstruturada(promptText, btn);
+
+        closeModal('modalGerarDocumentoIA');
+        abrirModalRevisaoAnexoPaee(dadosBasicos, dadosEstruturados);
     } catch (e) {
         console.error(e);
         alert('Erro ao gerar documento com IA:\n' + e.message);
@@ -929,6 +1146,151 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
         </div>
     `;
     showModal('modalRevisaoDocumento');
+}
+
+// Tela de revisão do Anexo III - PAEE: mostra um resumo dos dados básicos/checkboxes preenchidos no
+// formulário (não editáveis aqui - volte pro formulário pra corrigi-los) e uma textarea editável por
+// campo descritivo rascunhado pela IA. Segue o mesmo padrão de abrirModalRevisaoDocumento.
+function abrirModalRevisaoAnexoPaee(dadosBasicos, dados) {
+    if (!document.getElementById('modalRevisaoAnexoPaee')) {
+        const div = document.createElement('div');
+        div.id = 'modalRevisaoAnexoPaee';
+        div.className = 'modal';
+        document.body.appendChild(div);
+    }
+
+    const modal = document.getElementById('modalRevisaoAnexoPaee');
+    modal.dataset.basicos = JSON.stringify(dadosBasicos);
+
+    const elegibilidadeLabels = ANEXO_PAEE_ELEGIBILIDADE.filter(o => dadosBasicos.elegibilidade.includes(o.token)).map(o => o.label);
+    const apoiosLabels = ANEXO_PAEE_APOIOS.filter(o => dadosBasicos.apoios.includes(o.token)).map(o => o.label);
+    const sexoLabel = dadosBasicos.sexo === 'F' ? 'Feminino' : (dadosBasicos.sexo === 'M' ? 'Masculino' : 'Não informado');
+
+    const camposHtml = ANEXO_PAEE_CAMPOS_IA.map(c => `
+        <div style="margin-bottom: 15px;">
+            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">${c.label}:</label>
+            <textarea id="revAnexo_${c.key}" rows="3" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados[c.key] || ''}</textarea>
+        </div>
+    `).join('');
+
+    document.getElementById('modalRevisaoAnexoPaee').innerHTML = `
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
+                <h2 style="margin: 0;">📝 Revisar Anexo III - PAEE</h2>
+                <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalRevisaoAnexoPaee')">×</button>
+            </div>
+            <div style="background:#ebf8ff; border:1px solid #bee3f8; padding:12px; border-radius:6px; margin-bottom:20px; font-size:14px;">
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:5px;">
+                    <div><strong style="color:#2b6cb0;">Estudante:</strong> <span>${dadosBasicos.nomeEstudante}</span></div>
+                    <div><strong style="color:#2b6cb0;">Nascimento:</strong> <span>${dadosBasicos.dataNascimento || 'Não informado'}</span></div>
+                    <div><strong style="color:#2b6cb0;">Escolaridade:</strong> <span>${dadosBasicos.escolaridade || 'Não informado'}</span></div>
+                    <div><strong style="color:#2b6cb0;">Turno:</strong> <span>${dadosBasicos.turno || 'Não informado'}</span></div>
+                    <div><strong style="color:#2b6cb0;">Sexo:</strong> <span>${sexoLabel}</span></div>
+                    <div><strong style="color:#2b6cb0;">Nível de Apoio:</strong> <span>${dadosBasicos.nivelApoio ? 'Nível ' + dadosBasicos.nivelApoio : 'Não informado'}</span></div>
+                </div>
+                <div style="border-top:1px dashed #bee3f8; margin-top:5px; padding-top:5px; font-size:13px;">
+                    <strong style="color:#2b6cb0;">Elegibilidade:</strong> <span>${elegibilidadeLabels.join(', ') || 'Não informado'}</span><br>
+                    <strong style="color:#2b6cb0;">Apoios/Recursos/Serviços:</strong> <span>${apoiosLabels.join(', ') || 'Nenhum'}</span>
+                </div>
+            </div>
+            <p style="font-size:13px; color:#666; margin-bottom:15px;">Os dados básicos acima vêm do formulário anterior (volte pra corrigi-los). Revise e ajuste abaixo o texto rascunhado pela IA antes de exportar o documento final.</p>
+            <div style="max-height: 50vh; overflow-y: auto; padding-right: 10px;">
+                ${camposHtml}
+            </div>
+            <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
+                <button class="btn btn-secondary" onclick="closeModal('modalRevisaoAnexoPaee'); showModal('modalGerarDocumentoIA')">← Voltar</button>
+                <button class="btn btn-success" onclick="exportarAnexoPaeeFinal()" id="btnExportarAnexoPaee">💾 Gerar Documento Final</button>
+            </div>
+        </div>
+    `;
+    showModal('modalRevisaoAnexoPaee');
+}
+
+// Exporta o Anexo III - PAEE final: busca o modelo Docs/anexoIIIPAEE2026TEA.docx.html, substitui os
+// marcadores {{TOKEN}} (texto, checkboxes marcados como "X" e logos) e abre a janela de impressão -
+// mesmo esquema de {{REGIAO}}/{{ESCOLA}}/{{LOGO_ESTADO}}/{{LOGO_ESCOLA}} já usado nos outros modelos.
+async function exportarAnexoPaeeFinal() {
+    const btn = document.getElementById('btnExportarAnexoPaee');
+    const originalText = btn.textContent;
+    btn.textContent = 'Gerando Documento... ⏳';
+    btn.disabled = true;
+
+    const modal = document.getElementById('modalRevisaoAnexoPaee');
+    const dadosBasicos = JSON.parse(modal.dataset.basicos);
+    const dados = {};
+    ANEXO_PAEE_CAMPOS_IA.forEach(c => {
+        const el = document.getElementById('revAnexo_' + c.key);
+        dados[c.key] = el ? el.value : '';
+    });
+
+    try {
+        const response = await fetch('Docs/anexoIIIPAEE2026TEA.docx.html');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const templateHtml = await response.text();
+
+        let configSistema = {};
+        let configEscola = {};
+        try {
+            configSistema = await getData('system', 'config_sistema') || {};
+            if (currentUser && currentUser.schoolId) {
+                const sData = await getData('system', 'schools_list');
+                const schools = (sData && sData.list) ? sData.list : [];
+                configEscola = schools.find(s => s.id == currentUser.schoolId) || {};
+            }
+        } catch(e) { console.warn("Erro ao buscar configs da escola", e); }
+
+        const fallbackLogo = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+        const regiao = configSistema.regiao || 'REGIÃO NÃO CONFIGURADA';
+        const logoEstado = configSistema.logoEstado || fallbackLogo;
+        const nomeCompletoEscola = configEscola.nomeCompleto || configEscola.nome || 'ESCOLA NÃO CONFIGURADA';
+        const logoEscola = configEscola.logoEscola || fallbackLogo;
+
+        const escapeHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const paraTexto = (s) => escapeHtml(s).replace(/\n/g, '<br>');
+        const marca = (v) => v ? 'X' : '';
+
+        let htmlFinal = templateHtml
+            .replace(/{{REGIAO}}/g, escapeHtml(regiao))
+            .replace(/{{ESCOLA}}/g, escapeHtml(nomeCompletoEscola))
+            .replace(/{{LOGO_ESTADO}}/g, logoEstado)
+            .replace(/{{LOGO_ESCOLA}}/g, logoEscola)
+            .replace(/{{NOME_ESTUDANTE}}/g, escapeHtml(dadosBasicos.nomeEstudante))
+            .replace(/{{DATA_NASCIMENTO}}/g, escapeHtml(dadosBasicos.dataNascimento))
+            .replace(/{{ESCOLARIDADE}}/g, escapeHtml(dadosBasicos.escolaridade))
+            .replace(/{{TURNO}}/g, escapeHtml(dadosBasicos.turno))
+            .replace(/{{CHECK_SEXO_F}}/g, marca(dadosBasicos.sexo === 'F'))
+            .replace(/{{CHECK_SEXO_M}}/g, marca(dadosBasicos.sexo === 'M'))
+            .replace(/{{CHECK_NIVEL_1}}/g, marca(dadosBasicos.nivelApoio === '1'))
+            .replace(/{{CHECK_NIVEL_2}}/g, marca(dadosBasicos.nivelApoio === '2'))
+            .replace(/{{CHECK_NIVEL_3}}/g, marca(dadosBasicos.nivelApoio === '3'));
+
+        ANEXO_PAEE_ELEGIBILIDADE.forEach(o => {
+            htmlFinal = htmlFinal.replace(new RegExp(`{{${o.token}}}`, 'g'), marca(dadosBasicos.elegibilidade.includes(o.token)));
+        });
+        ANEXO_PAEE_APOIOS.forEach(o => {
+            htmlFinal = htmlFinal.replace(new RegExp(`{{${o.token}}}`, 'g'), marca(dadosBasicos.apoios.includes(o.token)));
+        });
+        ANEXO_PAEE_CAMPOS_IA.forEach(c => {
+            htmlFinal = htmlFinal.replace(new RegExp(`{{${c.token}}}`, 'g'), paraTexto(dados[c.key]));
+        });
+
+        if (!htmlFinal.includes('window.print')) {
+            htmlFinal += '<script>window.onload = function() { setTimeout(function(){ window.print(); }, 500); }</script>';
+        }
+
+        const win = window.open('', '', 'width=900,height=800');
+        if (!win) throw new Error('O navegador bloqueou a abertura da janela (Pop-up). Permita pop-ups no seu navegador para gerar o documento.');
+        win.document.write(htmlFinal);
+        win.document.close();
+
+        closeModal('modalRevisaoAnexoPaee');
+    } catch (e) {
+        console.error(e);
+        alert('Erro ao gerar o documento: ' + e.message);
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
 }
 
 async function exportarDocumentoFinal(tipo) {
