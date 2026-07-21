@@ -5726,6 +5726,7 @@ function abrirFichaTutorado(id) {
             </div>
             ${anexoPaeeSectionHtml}
             ${fileHtml}
+            ${renderAnexosIVHtml(t)}
         `;
 
     } else {
@@ -7846,6 +7847,41 @@ async function renderAeeVisaoGeral() {
     }
 }
 
+// Monta o bloco "Anexo IV - PEI" (lista de PEIs já gerados pra esse estudante, um por Disciplina +
+// Bimestre - ver ia_estagiario.js: salvarAnexoIVSchoolWide) reaproveitado tanto pela ficha só-leitura
+// do Painel AEE (abrirFichaAeeReadOnly) quanto pela ficha editável (abrirFichaTutorado, Modo AEE/Projeto).
+function renderAnexosIVHtml(t) {
+    const anexosIV = Array.isArray(t.anexosIV) ? t.anexosIV : [];
+    if (anexosIV.length === 0) {
+        return `
+            <div style="margin-top:20px;">
+                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Anexo IV - PEI</label>
+                <p style="margin:0; font-size:13px; color:#718096; background:#f7fafc; padding:15px; border-radius:6px; border:1px solid #e2e8f0;">Nenhum Anexo IV - PEI gerado ainda para este estudante. Gere pelo "✨ Estagiário" (Modo Professor ou AEE).</p>
+            </div>
+        `;
+    }
+    const itensHtml = anexosIV.map(a => `
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding:10px 0; border-bottom:1px dashed #cbd5e0;">
+            <div>
+                <strong>${a.dadosBasicos.disciplina}</strong>
+                <span style="font-size:12px; color:#718096;"> — ${a.dadosBasicos.bimestre ? a.dadosBasicos.bimestre + 'º Bimestre' : 'Bimestre não informado'} — Prof. AEE: ${a.dadosBasicos.nomeProfAee || 'não informado'}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+                <span style="font-size:12px; color:#718096;">Atualizado em ${formatDate(a.atualizadoEm)}</span>
+                <button class="btn btn-sm btn-info" style="padding:2px 8px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${t.id}, ${a.id})">🖨️ Reimprimir</button>
+            </div>
+        </div>
+    `).join('');
+    return `
+        <div style="margin-top:20px;">
+            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Anexo IV - PEI</label>
+            <div style="background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                ${itensHtml}
+            </div>
+        </div>
+    `;
+}
+
 async function abrirFichaAeeReadOnly(tutoradoId) {
     const container = document.getElementById('aeeVisaoGeral');
     const tutorados = JSON.parse(container.dataset.aeeTutorados || '[]');
@@ -7974,6 +8010,7 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
         </div>
         ${fileHtml}
         ${anexoPaeeHtml}
+        ${renderAnexosIVHtml(t)}
     `;
 
     showScreen('tutoradoDetalhe');
@@ -8024,6 +8061,53 @@ function atualizarFichaAeeReadOnlyAposSalvar(tutoradoId, anexoPaee) {
             const tutorados = JSON.parse(container.dataset.aeeTutorados || '[]');
             const t = tutorados.find(x => x.id == tutoradoId);
             if (t) t.anexoPaee = anexoPaee;
+            container.dataset.aeeTutorados = JSON.stringify(tutorados);
+        } catch (e) {
+            console.warn('Erro ao atualizar snapshot do Painel AEE:', e);
+        }
+    }
+
+    const titleEl = document.getElementById('tutoradoFichaNome');
+    const telaAberta = document.getElementById('tutoradoDetalhe') && document.getElementById('tutoradoDetalhe').classList.contains('active');
+    if (!titleEl || !telaAberta) return;
+
+    if (titleEl.dataset.aeeReadOnlyId == tutoradoId) {
+        abrirFichaAeeReadOnly(tutoradoId);
+    } else if (titleEl.dataset.tutoradoId == tutoradoId) {
+        abrirFichaTutorado(tutoradoId);
+    }
+}
+
+// Reimprime um Anexo IV-PEI já salvo (sem rodar IA de novo) - delega o preenchimento do template pra
+// ia_estagiario.js. anexoIVId identifica qual Anexo IV (o estudante pode ter vários, um por
+// Disciplina+Bimestre - ver ia_estagiario.js: salvarAnexoIVSchoolWide).
+function reimprimirAnexoIVSalvo(tutoradoId, anexoIVId) {
+    const t = encontrarTutoradoAeeEmQualquerContexto(tutoradoId);
+    const anexoIV = t && Array.isArray(t.anexosIV) ? t.anexosIV.find(a => a.id == anexoIVId) : null;
+    if (!anexoIV) return alert('Anexo IV - PEI não encontrado para este estudante.');
+
+    montarEImprimirAnexoIV(anexoIV.dadosBasicos, anexoIV.dados).catch(e => {
+        console.error(e);
+        alert('Erro ao reimprimir o documento: ' + e.message);
+    });
+}
+
+// Chamada por ia_estagiario.js (exportarAnexoIVFinal) depois de salvar um Anexo IV-PEI, pra manter o
+// snapshot do Painel AEE (#aeeVisaoGeral) atualizado e, se a ficha desse estudante estiver aberta na
+// tela (editável ou só-leitura), recarregá-la na hora - sem precisar recarregar a página. Mesmo padrão
+// de atualizarFichaAeeReadOnlyAposSalvar, mas grava na lista `anexosIV` (upsert por id) em vez de um
+// campo único, já que o PEI é por Disciplina+Bimestre.
+function atualizarFichaAeeReadOnlyAposSalvarAnexoIV(tutoradoId, anexoIV) {
+    const container = document.getElementById('aeeVisaoGeral');
+    if (container) {
+        try {
+            const tutorados = JSON.parse(container.dataset.aeeTutorados || '[]');
+            const t = tutorados.find(x => x.id == tutoradoId);
+            if (t) {
+                if (!Array.isArray(t.anexosIV)) t.anexosIV = [];
+                const idx = t.anexosIV.findIndex(a => a.id == anexoIV.id);
+                if (idx >= 0) t.anexosIV[idx] = anexoIV; else t.anexosIV.push(anexoIV);
+            }
             container.dataset.aeeTutorados = JSON.stringify(tutorados);
         } catch (e) {
             console.warn('Erro ao atualizar snapshot do Painel AEE:', e);
