@@ -206,6 +206,17 @@ const ANEXO_PAEE_CAMPOS_IA = [
     { key: 'superar_barreiras', token: 'SUPERAR_BARREIRAS', label: 'Medidas para a escola superar as barreiras identificadas no Estudo de Caso' }
 ];
 
+// --- ANEXO IV - PEI (Plano Educacional Individualizado) ---
+// Preenchido pelo Professor Regente/de componente curricular (não pelo especialista AEE) sobre um
+// aluno já classificado no Painel AEE da escola - um documento por Disciplina+Bimestre, por isso o
+// estudante pode acumular vários (ver ANEXO_PEI_CAMPOS_IA e t.anexosIV em app.js). Os tokens abaixo
+// batem 1:1 com os marcadores {{TOKEN}} de Docs/AnexoIV.docx.html.
+const ANEXO_PEI_CAMPOS_IA = [
+    { key: 'habilidades_curriculo', token: 'HABILIDADES_CURRICULO', label: 'Conteúdos e habilidades do Currículo da Rede Estadual Paulista a serem desenvolvidos no bimestre' },
+    { key: 'estrategias_intervencoes', token: 'ESTRATEGIAS_INTERVENCOES', label: 'Estratégias, intervenções pedagógicas e recursos de acessibilidade para favorecer o acesso, a participação e a aprendizagem do estudante' },
+    { key: 'instrumentos', token: 'INSTRUMENTOS', label: 'Instrumentos utilizados para acompanhar o aprendizado do estudante de forma inclusiva e individualizada' }
+];
+
 // Monta o bloco de texto injetado no prompt, instruindo a IA a reaproveitar os dados reais em vez de
 // inventar. Quando não há nada fundamentado, ainda assim retorna um aviso explícito no prompt (em vez
 // de simplesmente omitir a seção), pra IA não tratar o silêncio como "invente à vontade".
@@ -239,7 +250,7 @@ function montarBlocoContextoOficial(contexto) {
     return bloco;
 }
 
-function abrirModalGerarDocumentoIA() {
+async function abrirModalGerarDocumentoIA() {
     // Extrai nomes de série de forma inteligente, ignorando formatos colados ou separados (ex: "7º Ano A", "7A", "7ºA" -> "7º Ano", "7", "7º")
     const getSerieNome = (nome) => {
         if (!nome) return '';
@@ -255,13 +266,38 @@ function abrirModalGerarDocumentoIA() {
     // O Anexo III - PAEE só faz sentido pra quem está no Modo AEE (professor especializado) - fica
     // fora do dropdown pra qualquer outro perfil/modo, inclusive Gestor alternando pra outros modos.
     const isAeeView = currentViewMode === 'aee';
+    // O Anexo IV - PEI já é preenchido pelo Professor Regente/de componente curricular sobre um aluno
+    // do Painel AEE (não pelo especialista) - por isso fica disponível em Modo Professor e em Modo AEE
+    // (um especialista que também lecione uma disciplina também pode preenchê-lo).
+    const isProfessorOuAeeView = currentViewMode === 'professor' || currentViewMode === 'aee';
     const opcoesTipoDocHtml = `
         <option value="plano_aula">Plano de Aula</option>
         <option value="agenda_mensal">📅 Agenda Mensal</option>
         ${isAeeView ? '<option value="anexo3_paee">📋 Anexo III - PAEE</option>' : ''}
+        ${isProfessorOuAeeView ? '<option value="anexo4_pei">📘 Anexo IV - PEI</option>' : ''}
     `;
     const alunosAeeOptionsHtml = '<option value="">Selecione...</option>' + (data.tutorados || [])
         .map(t => `<option value="${t.id}">${t.nome_estudante}</option>`).join('');
+
+    // Anexo IV - PEI: busca a lista de estudantes classificada no Painel AEE compartilhado da escola
+    // (não a lista pessoal de tutorados do professor - o professor comum não mantém essa lista) e os
+    // professores com o papel 'aee' (classificados pelo Super Admin) pra popular o {{PROF_AEE}}.
+    let alunosPeiOptionsHtml = '<option value="">Selecione...</option>';
+    let professoresAeeOptionsHtml = '<option value="">Selecione...</option>';
+    if (currentUser && currentUser.schoolId) {
+        try {
+            const aeeSchoolData = await getData('app_data', `app_data_school_${currentUser.schoolId}_aee`);
+            const tutoradosEscola = (aeeSchoolData && Array.isArray(aeeSchoolData.tutorados)) ? aeeSchoolData.tutorados : [];
+            alunosPeiOptionsHtml += tutoradosEscola.map(t => `<option value="${t.id}">${t.nome_estudante}</option>`).join('');
+        } catch (e) { console.warn('Erro ao buscar estudantes do Painel AEE:', e); }
+
+        try {
+            const usersData = await getData('system', 'users_list');
+            const users = (usersData && usersData.list) ? usersData.list : [];
+            const professoresAee = users.filter(u => u.role === 'aee' && String(u.schoolId || '') === String(currentUser.schoolId));
+            professoresAeeOptionsHtml += professoresAee.map(u => `<option value="${u.id}">${u.nome}</option>`).join('');
+        } catch (e) { console.warn('Erro ao buscar professores AEE da escola:', e); }
+    }
 
     // Calcula a próxima semana de segunda a sexta
     const hoje = new Date();
@@ -402,6 +438,36 @@ function abrirModalGerarDocumentoIA() {
                     </div>
                 </div>
 
+                <div id="camposAnexoIV" style="display:none;">
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Estudante (Painel AEE):</label>
+                        <select id="anexoIVAluno" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                            ${alunosPeiOptionsHtml}
+                        </select>
+                    </div>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom: 15px;">
+                        <div>
+                            <label style="font-weight:bold; display:block; margin-bottom:5px;">Disciplina que você leciona para o estudante:</label>
+                            <select id="anexoIVDisciplina" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                                <option value="">Selecione...</option>
+                                ${disciplinasUnicas.map(d => `<option value="${d}">${d}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-weight:bold; display:block; margin-bottom:5px;">Professor Especializado (AEE):</label>
+                            <select id="anexoIVProfAee" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                                ${professoresAeeOptionsHtml}
+                            </select>
+                            <p style="font-size:10px; color:#a0aec0; margin-top:3px;">Lista de professores com o papel "AEE" definido pelo Super Admin nesta escola.</p>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Breve descrição da atividade (contexto para a IA):</label>
+                        <p style="font-size:11px; color:#718096; margin-bottom:5px;">Descreva em poucas linhas a atividade/conteúdo planejado. A IA usa isso pra rascunhar os campos do PEI abaixo. Você revisa e edita tudo antes de gerar o documento final.</p>
+                        <textarea id="anexoIVDescricao" rows="4" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; font-size:12px; line-height:1.4;"></textarea>
+                    </div>
+                </div>
+
                 <div style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
                     <button class="btn btn-secondary" onclick="closeModal('modalGerarDocumentoIA')">Cancelar</button>
                     <button class="btn btn-primary" id="btnGerarDocumentoIA" onclick="gerarDocumentoIA()">Gerar Estrutura</button>
@@ -424,6 +490,15 @@ function abrirModalGerarDocumentoIA() {
 
         const selAluno = document.getElementById('anexoPaeeAluno');
         if (selAluno) selAluno.innerHTML = alunosAeeOptionsHtml;
+
+        // Anexo IV - PEI: mesma lógica de refresh (lista de alunos do Painel AEE e de professores AEE
+        // podem ter mudado desde a última abertura do modal).
+        const selDiscIV = document.getElementById('anexoIVDisciplina');
+        if (selDiscIV) selDiscIV.innerHTML = '<option value="">Selecione...</option>' + disciplinasUnicas.map(d => `<option value="${d}">${d}</option>`).join('');
+        const selAlunoIV = document.getElementById('anexoIVAluno');
+        if (selAlunoIV) selAlunoIV.innerHTML = alunosPeiOptionsHtml;
+        const selProfAeeIV = document.getElementById('anexoIVProfAee');
+        if (selProfAeeIV) selProfAeeIV.innerHTML = professoresAeeOptionsHtml;
     }
 
     const docTema = document.getElementById('iaDocTema');
@@ -456,6 +531,11 @@ function abrirModalGerarDocumentoIA() {
     document.querySelectorAll('input[name="anexoPaeeSexo"], input[name="anexoPaeeNivel"]').forEach(el => el.checked = false);
     document.querySelectorAll('#camposAnexoPaee input[type="checkbox"]').forEach(el => { el.checked = el.id === 'anexoEleg_CHECK_ELEG_TEA'; });
 
+    ['anexoIVAluno', 'anexoIVDisciplina', 'anexoIVProfAee', 'anexoIVDescricao'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+
     toggleTipoDocumentoIA();
     showModal('modalGerarDocumentoIA');
 }
@@ -467,15 +547,18 @@ function toggleTipoDocumentoIA() {
     const tipo = document.getElementById('iaDocTipo').value;
     const isAgenda = tipo === 'agenda_mensal';
     const isAnexoPaee = tipo === 'anexo3_paee';
+    const isAnexoIV = tipo === 'anexo4_pei';
 
     const campoSemana = document.getElementById('campoSemanaVigente');
-    if (campoSemana) campoSemana.style.display = (isAgenda || isAnexoPaee) ? 'none' : '';
+    if (campoSemana) campoSemana.style.display = (isAgenda || isAnexoPaee || isAnexoIV) ? 'none' : '';
     const campoMesAno = document.getElementById('campoMesAnoAgenda');
     if (campoMesAno) campoMesAno.style.display = isAgenda ? 'block' : 'none';
     const camposPlano = document.getElementById('camposPlanoAula');
-    if (camposPlano) camposPlano.style.display = (isAgenda || isAnexoPaee) ? 'none' : '';
+    if (camposPlano) camposPlano.style.display = (isAgenda || isAnexoPaee || isAnexoIV) ? 'none' : '';
     const camposAnexo = document.getElementById('camposAnexoPaee');
     if (camposAnexo) camposAnexo.style.display = isAnexoPaee ? '' : 'none';
+    const camposAnexoIV = document.getElementById('camposAnexoIV');
+    if (camposAnexoIV) camposAnexoIV.style.display = isAnexoIV ? '' : 'none';
 
     const btn = document.getElementById('btnGerarDocumentoIA');
     if (btn) btn.textContent = isAgenda ? '🖨️ Gerar e Imprimir Agenda' : 'Gerar Estrutura';
@@ -872,6 +955,7 @@ async function gerarDocumentoIA() {
     const tipo = document.getElementById('iaDocTipo').value;
     if (tipo === 'agenda_mensal') return gerarAgendaMensalEstagiario();
     if (tipo === 'anexo3_paee') return gerarAnexoPaeeEstagiario();
+    if (tipo === 'anexo4_pei') return gerarAnexoIVEstagiario();
 
     const tema = document.getElementById('iaDocTema').value;
     const serie = document.getElementById('iaDocSerie') ? document.getElementById('iaDocSerie').value : '';
@@ -1048,6 +1132,70 @@ Retorne APENAS um objeto JSON válido (sem marcações markdown e escape correta
     }
 }
 
+// Coleta os dados básicos do formulário do Anexo IV - PEI (estudante do Painel AEE, disciplina que o
+// Professor Regente leciona pra ele, Professor Especializado escolhido e a breve descrição da
+// atividade), pede pra IA rascunhar os 3 campos descritivos do PEI e abre a tela de revisão - mesmo
+// fluxo do Anexo III - PAEE (formulário -> IA -> revisão -> exportar).
+async function gerarAnexoIVEstagiario() {
+    const selAluno = document.getElementById('anexoIVAluno');
+    const alunoId = selAluno ? selAluno.value : '';
+    if (!alunoId) return alert('Selecione o estudante.');
+    const nomeEstudante = selAluno.options[selAluno.selectedIndex].textContent;
+
+    const disciplina = document.getElementById('anexoIVDisciplina').value;
+    if (!disciplina) return alert('Selecione a disciplina.');
+
+    const selProfAee = document.getElementById('anexoIVProfAee');
+    const profAeeId = selProfAee ? selProfAee.value : '';
+    if (!profAeeId) return alert('Selecione o Professor Especializado (AEE).');
+    const nomeProfAee = selProfAee.options[selProfAee.selectedIndex].textContent;
+
+    const descricaoAtividade = document.getElementById('anexoIVDescricao').value || '';
+
+    const hoje = getTodayString();
+    const configBimestres = data.configBimestres || [];
+    const configAtual = configBimestres.find(c => hoje >= c.inicio && hoje <= c.fim);
+    const bimestreNum = configAtual ? String(configAtual.bim) : '';
+    const bimestreAtual = configAtual ? `${configAtual.bim}º BIMESTRE` : 'BIMESTRE VIGENTE';
+
+    const dadosBasicos = {
+        nomeEstudante,
+        disciplina,
+        professorRegente: currentUser.nome,
+        profAeeId,
+        nomeProfAee,
+        bimestre: bimestreNum,
+        descricaoAtividade
+    };
+
+    const btn = document.querySelector('#modalGerarDocumentoIA .btn-primary');
+    const originalText = btn.textContent;
+    btn.textContent = 'Gerando estrutura... ⏳';
+    btn.disabled = true;
+
+    try {
+        const promptText = `Você é um professor de ${disciplina} do Estado de São Paulo, redigindo o Anexo IV - Plano Educacional Individualizado (PEI) de um estudante atendido pelo AEE (Atendimento Educacional Especializado).
+Estudante: ${nomeEstudante}. Componente Curricular: ${disciplina}. Bimestre: ${bimestreAtual}.
+Breve descrição da atividade/conteúdo planejado pelo professor:
+"""${descricaoAtividade || 'Nenhuma descrição informada - use cautela e sugira conteúdos e estratégias gerais e acessíveis, deixando claro que o professor precisa detalhar melhor a atividade.'}"""
+
+Com base nesses dados, redija os campos abaixo do Anexo IV - PEI, em português, de forma técnica, objetiva e alinhada às diretrizes da Educação Especial da SEDUC-SP, adaptando conteúdos e estratégias às necessidades de acessibilidade do estudante. Não invente diagnósticos ou informações que não constam acima.
+Retorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:
+{${ANEXO_PEI_CAMPOS_IA.map(c => `"${c.key}": "${c.label}"`).join(', ')}}`;
+
+        const dadosEstruturados = await chamarIAEstruturada(promptText, btn);
+
+        closeModal('modalGerarDocumentoIA');
+        abrirModalRevisaoAnexoIV(dadosBasicos, dadosEstruturados, alunoId);
+    } catch (e) {
+        console.error(e);
+        alert('Erro ao gerar documento com IA:\n' + e.message);
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
 function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasStr, duracaoAulas, bimestreAtual, dados, semanaInicioISO, semanaFimISO, cardsMaterialDigitalDisponiveis, resumoFundamentacao) {
     if (!document.getElementById('modalRevisaoDocumento')) {
         const div = document.createElement('div');
@@ -1207,6 +1355,55 @@ function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId) {
     showModal('modalRevisaoAnexoPaee');
 }
 
+// Tela de revisão do Anexo IV - PEI: mesmo padrão de abrirModalRevisaoAnexoPaee - resumo dos dados
+// básicos do formulário (não editáveis aqui - volte pro formulário pra corrigi-los) e uma textarea
+// editável por campo descritivo rascunhado pela IA.
+function abrirModalRevisaoAnexoIV(dadosBasicos, dados, alunoId) {
+    if (!document.getElementById('modalRevisaoAnexoIV')) {
+        const div = document.createElement('div');
+        div.id = 'modalRevisaoAnexoIV';
+        div.className = 'modal';
+        document.body.appendChild(div);
+    }
+
+    const modal = document.getElementById('modalRevisaoAnexoIV');
+    modal.dataset.basicos = JSON.stringify(dadosBasicos);
+    modal.dataset.alunoId = alunoId;
+
+    const camposHtml = ANEXO_PEI_CAMPOS_IA.map(c => `
+        <div style="margin-bottom: 15px;">
+            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">${c.label}:</label>
+            <textarea id="revAnexoIV_${c.key}" rows="3" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados[c.key] || ''}</textarea>
+        </div>
+    `).join('');
+
+    document.getElementById('modalRevisaoAnexoIV').innerHTML = `
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
+                <h2 style="margin: 0;">📝 Revisar Anexo IV - PEI</h2>
+                <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalRevisaoAnexoIV')">×</button>
+            </div>
+            <div style="background:#ebf8ff; border:1px solid #bee3f8; padding:12px; border-radius:6px; margin-bottom:20px; font-size:14px;">
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <div><strong style="color:#2b6cb0;">Estudante:</strong> <span>${dadosBasicos.nomeEstudante}</span></div>
+                    <div><strong style="color:#2b6cb0;">Componente Curricular:</strong> <span>${dadosBasicos.disciplina}</span></div>
+                    <div><strong style="color:#2b6cb0;">Professor Regente:</strong> <span>${dadosBasicos.professorRegente}</span></div>
+                    <div><strong style="color:#2b6cb0;">Professor Especializado:</strong> <span>${dadosBasicos.nomeProfAee}</span></div>
+                </div>
+            </div>
+            <p style="font-size:13px; color:#666; margin-bottom:15px;">Os dados básicos acima vêm do formulário anterior (volte pra corrigi-los). Revise e ajuste abaixo o texto rascunhado pela IA antes de exportar o documento final.</p>
+            <div style="max-height: 50vh; overflow-y: auto; padding-right: 10px;">
+                ${camposHtml}
+            </div>
+            <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
+                <button class="btn btn-secondary" onclick="closeModal('modalRevisaoAnexoIV'); showModal('modalGerarDocumentoIA')">← Voltar</button>
+                <button class="btn btn-success" onclick="exportarAnexoIVFinal()" id="btnExportarAnexoIV">💾 Gerar Documento Final</button>
+            </div>
+        </div>
+    `;
+    showModal('modalRevisaoAnexoIV');
+}
+
 // Preenche o modelo Docs/anexoIIIPAEE2026TEA.docx.html com os dados informados (substitui os
 // marcadores {{TOKEN}} - texto, checkboxes marcados como "X" e logos) e abre a janela de impressão -
 // mesmo esquema de {{REGIAO}}/{{ESCOLA}}/{{LOGO_ESTADO}}/{{LOGO_ESCOLA}} já usado nos outros modelos.
@@ -1333,6 +1530,143 @@ async function exportarAnexoPaeeFinal() {
         }
 
         closeModal('modalRevisaoAnexoPaee');
+    } catch (e) {
+        console.error(e);
+        alert('Erro ao gerar o documento: ' + e.message);
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
+// Preenche o modelo Docs/AnexoIV.docx.html com os dados informados (substitui os marcadores {{TOKEN}}
+// - texto, checkboxes de bimestre marcados como "X" e logos) e abre a janela de impressão - mesmo
+// esquema de {{REGIAO}}/{{ESCOLA}}/{{LOGO_ESTADO}}/{{LOGO_ESCOLA}} já usado nos outros modelos. Função
+// pura (não lê nada do DOM) - usada tanto pela exportação normal do wizard quanto por uma futura
+// reimpressão de um Anexo IV já salvo no perfil do estudante (app.js: abrirFichaAeeReadOnly).
+async function montarEImprimirAnexoIV(dadosBasicos, dados) {
+    const response = await fetch('Docs/AnexoIV.docx.html');
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const templateHtml = await response.text();
+
+    let configSistema = {};
+    let configEscola = {};
+    try {
+        configSistema = await getData('system', 'config_sistema') || {};
+        if (currentUser && currentUser.schoolId) {
+            const sData = await getData('system', 'schools_list');
+            const schools = (sData && sData.list) ? sData.list : [];
+            configEscola = schools.find(s => s.id == currentUser.schoolId) || {};
+        }
+    } catch(e) { console.warn("Erro ao buscar configs da escola", e); }
+
+    const fallbackLogo = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+    const regiao = configSistema.regiao || 'REGIÃO NÃO CONFIGURADA';
+    const logoEstado = configSistema.logoEstado || fallbackLogo;
+    const nomeCompletoEscola = configEscola.nomeCompleto || configEscola.nome || 'ESCOLA NÃO CONFIGURADA';
+    const logoEscola = configEscola.logoEscola || fallbackLogo;
+
+    const escapeHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const paraTexto = (s) => escapeHtml(s).replace(/\n/g, '<br>');
+    const marca = (v) => v ? 'X' : '';
+
+    let htmlFinal = templateHtml
+        .replace(/{{REGIAO}}/g, escapeHtml(regiao))
+        .replace(/{{ESCOLA}}/g, escapeHtml(nomeCompletoEscola))
+        .replace(/{{LOGO_ESTADO}}/g, logoEstado)
+        .replace(/{{LOGO_ESCOLA}}/g, logoEscola)
+        .replace(/{{NOME_ESTUDANTE}}/g, escapeHtml(dadosBasicos.nomeEstudante))
+        .replace(/{{PROFESSOR}}/g, escapeHtml(dadosBasicos.professorRegente))
+        .replace(/{{PROF_AEE}}/g, escapeHtml(dadosBasicos.nomeProfAee))
+        .replace(/{{DISCIPLINA}}/g, escapeHtml(dadosBasicos.disciplina))
+        .replace(/{{CHECK_BIM_1}}/g, marca(String(dadosBasicos.bimestre) === '1'))
+        .replace(/{{CHECK_BIM_2}}/g, marca(String(dadosBasicos.bimestre) === '2'))
+        .replace(/{{CHECK_BIM_3}}/g, marca(String(dadosBasicos.bimestre) === '3'))
+        .replace(/{{CHECK_BIM_4}}/g, marca(String(dadosBasicos.bimestre) === '4'));
+
+    ANEXO_PEI_CAMPOS_IA.forEach(c => {
+        htmlFinal = htmlFinal.replace(new RegExp(`{{${c.token}}}`, 'g'), paraTexto(dados[c.key]));
+    });
+
+    if (!htmlFinal.includes('window.print')) {
+        htmlFinal += '<script>window.onload = function() { setTimeout(function(){ window.print(); }, 500); }</script>';
+    }
+
+    const win = window.open('', '', 'width=900,height=800');
+    if (!win) throw new Error('O navegador bloqueou a abertura da janela (Pop-up). Permita pop-ups no seu navegador para gerar o documento.');
+    win.document.write(htmlFinal);
+    win.document.close();
+}
+
+// Grava o Anexo IV-PEI direto no documento AEE da escola (chave app_data_school_<id>_aee), na lista
+// `anexosIV` do tutorado - diferente do Anexo III (um só por estudante), o PEI é por
+// Disciplina+Bimestre, então o estudante pode acumular vários (um por componente curricular que o
+// atende). Atualiza a entrada existente se já houver um Anexo IV para a mesma disciplina+bimestre,
+// senão adiciona uma nova. getData/saveData (core.js) não fazem merge parcial: busca o documento
+// inteiro, altera e regrava.
+async function salvarAnexoIVSchoolWide(schoolId, tutoradoId, dadosBasicos, dados) {
+    const aeeKey = `app_data_school_${schoolId}_aee`;
+    const aeeData = await getData('app_data', aeeKey);
+    if (!aeeData || !Array.isArray(aeeData.tutorados)) throw new Error('Não foi possível localizar os dados AEE da escola.');
+
+    const t = aeeData.tutorados.find(x => x.id == tutoradoId);
+    if (!t) throw new Error('Estudante não encontrado nos dados AEE da escola.');
+
+    if (!Array.isArray(t.anexosIV)) t.anexosIV = [];
+    const anexoIV = { id: Date.now(), dadosBasicos, dados, atualizadoEm: getTodayString() };
+    const idxExistente = t.anexosIV.findIndex(a => a.dadosBasicos.disciplina === dadosBasicos.disciplina && String(a.dadosBasicos.bimestre) === String(dadosBasicos.bimestre));
+    if (idxExistente >= 0) {
+        anexoIV.id = t.anexosIV[idxExistente].id;
+        t.anexosIV[idxExistente] = anexoIV;
+    } else {
+        t.anexosIV.push(anexoIV);
+    }
+    await saveData('app_data', aeeKey, aeeData);
+
+    // Se quem salvou estiver em Modo AEE, o objeto `data` global em memória usa essa mesma chave -
+    // atualiza também pra não ficar desatualizado até o próximo reload.
+    if (typeof data !== 'undefined' && data && Array.isArray(data.tutorados)) {
+        const tLocal = data.tutorados.find(x => x.id == tutoradoId);
+        if (tLocal) tLocal.anexosIV = t.anexosIV;
+    }
+
+    return anexoIV;
+}
+
+// Exporta o Anexo IV - PEI final: preenche o modelo e abre a impressão (montarEImprimirAnexoIV) e
+// salva os dados estruturados no perfil do estudante, pra aparecer depois no Painel AEE sem precisar
+// gerar tudo de novo (app.js: abrirFichaAeeReadOnly).
+async function exportarAnexoIVFinal() {
+    const btn = document.getElementById('btnExportarAnexoIV');
+    const originalText = btn.textContent;
+    btn.textContent = 'Gerando Documento... ⏳';
+    btn.disabled = true;
+
+    const modal = document.getElementById('modalRevisaoAnexoIV');
+    const dadosBasicos = JSON.parse(modal.dataset.basicos);
+    const alunoId = modal.dataset.alunoId;
+    const dados = {};
+    ANEXO_PEI_CAMPOS_IA.forEach(c => {
+        const el = document.getElementById('revAnexoIV_' + c.key);
+        dados[c.key] = el ? el.value : '';
+    });
+
+    try {
+        await montarEImprimirAnexoIV(dadosBasicos, dados);
+
+        if (alunoId && currentUser && currentUser.schoolId) {
+            try {
+                const anexoIVSalvo = await salvarAnexoIVSchoolWide(currentUser.schoolId, alunoId, dadosBasicos, dados);
+                if (typeof atualizarFichaAeeReadOnlyAposSalvarAnexoIV === 'function') {
+                    atualizarFichaAeeReadOnlyAposSalvarAnexoIV(alunoId, anexoIVSalvo);
+                }
+            } catch (eSalvar) {
+                console.error(eSalvar);
+                alert('O documento foi impresso, mas houve um erro ao salvar no perfil do estudante:\n' + eSalvar.message);
+            }
+        }
+
+        closeModal('modalRevisaoAnexoIV');
     } catch (e) {
         console.error(e);
         alert('Erro ao gerar o documento: ' + e.message);
