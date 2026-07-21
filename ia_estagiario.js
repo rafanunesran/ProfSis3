@@ -1038,7 +1038,7 @@ Retorne APENAS um objeto JSON válido (sem marcações markdown e escape correta
         const dadosEstruturados = await chamarIAEstruturada(promptText, btn);
 
         closeModal('modalGerarDocumentoIA');
-        abrirModalRevisaoAnexoPaee(dadosBasicos, dadosEstruturados);
+        abrirModalRevisaoAnexoPaee(dadosBasicos, dadosEstruturados, alunoId);
     } catch (e) {
         console.error(e);
         alert('Erro ao gerar documento com IA:\n' + e.message);
@@ -1151,7 +1151,7 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
 // Tela de revisão do Anexo III - PAEE: mostra um resumo dos dados básicos/checkboxes preenchidos no
 // formulário (não editáveis aqui - volte pro formulário pra corrigi-los) e uma textarea editável por
 // campo descritivo rascunhado pela IA. Segue o mesmo padrão de abrirModalRevisaoDocumento.
-function abrirModalRevisaoAnexoPaee(dadosBasicos, dados) {
+function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId) {
     if (!document.getElementById('modalRevisaoAnexoPaee')) {
         const div = document.createElement('div');
         div.id = 'modalRevisaoAnexoPaee';
@@ -1161,6 +1161,7 @@ function abrirModalRevisaoAnexoPaee(dadosBasicos, dados) {
 
     const modal = document.getElementById('modalRevisaoAnexoPaee');
     modal.dataset.basicos = JSON.stringify(dadosBasicos);
+    modal.dataset.alunoId = alunoId;
 
     const elegibilidadeLabels = ANEXO_PAEE_ELEGIBILIDADE.filter(o => dadosBasicos.elegibilidade.includes(o.token)).map(o => o.label);
     const apoiosLabels = ANEXO_PAEE_APOIOS.filter(o => dadosBasicos.apoios.includes(o.token)).map(o => o.label);
@@ -1206,9 +1207,101 @@ function abrirModalRevisaoAnexoPaee(dadosBasicos, dados) {
     showModal('modalRevisaoAnexoPaee');
 }
 
-// Exporta o Anexo III - PAEE final: busca o modelo Docs/anexoIIIPAEE2026TEA.docx.html, substitui os
-// marcadores {{TOKEN}} (texto, checkboxes marcados como "X" e logos) e abre a janela de impressão -
+// Preenche o modelo Docs/anexoIIIPAEE2026TEA.docx.html com os dados informados (substitui os
+// marcadores {{TOKEN}} - texto, checkboxes marcados como "X" e logos) e abre a janela de impressão -
 // mesmo esquema de {{REGIAO}}/{{ESCOLA}}/{{LOGO_ESTADO}}/{{LOGO_ESCOLA}} já usado nos outros modelos.
+// Função pura (não lê nada do DOM) - usada tanto pela exportação normal do wizard quanto pela
+// reimpressão de um Anexo III-PAEE já salvo no perfil do estudante (app.js: abrirFichaAeeReadOnly).
+async function montarEImprimirAnexoPaee(dadosBasicos, dados) {
+    const response = await fetch('Docs/anexoIIIPAEE2026TEA.docx.html');
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const templateHtml = await response.text();
+
+    let configSistema = {};
+    let configEscola = {};
+    try {
+        configSistema = await getData('system', 'config_sistema') || {};
+        if (currentUser && currentUser.schoolId) {
+            const sData = await getData('system', 'schools_list');
+            const schools = (sData && sData.list) ? sData.list : [];
+            configEscola = schools.find(s => s.id == currentUser.schoolId) || {};
+        }
+    } catch(e) { console.warn("Erro ao buscar configs da escola", e); }
+
+    const fallbackLogo = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+    const regiao = configSistema.regiao || 'REGIÃO NÃO CONFIGURADA';
+    const logoEstado = configSistema.logoEstado || fallbackLogo;
+    const nomeCompletoEscola = configEscola.nomeCompleto || configEscola.nome || 'ESCOLA NÃO CONFIGURADA';
+    const logoEscola = configEscola.logoEscola || fallbackLogo;
+
+    const escapeHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const paraTexto = (s) => escapeHtml(s).replace(/\n/g, '<br>');
+    const marca = (v) => v ? 'X' : '';
+
+    let htmlFinal = templateHtml
+        .replace(/{{REGIAO}}/g, escapeHtml(regiao))
+        .replace(/{{ESCOLA}}/g, escapeHtml(nomeCompletoEscola))
+        .replace(/{{LOGO_ESTADO}}/g, logoEstado)
+        .replace(/{{LOGO_ESCOLA}}/g, logoEscola)
+        .replace(/{{NOME_ESTUDANTE}}/g, escapeHtml(dadosBasicos.nomeEstudante))
+        .replace(/{{DATA_NASCIMENTO}}/g, escapeHtml(dadosBasicos.dataNascimento))
+        .replace(/{{ESCOLARIDADE}}/g, escapeHtml(dadosBasicos.escolaridade))
+        .replace(/{{TURNO}}/g, escapeHtml(dadosBasicos.turno))
+        .replace(/{{CHECK_SEXO_F}}/g, marca(dadosBasicos.sexo === 'F'))
+        .replace(/{{CHECK_SEXO_M}}/g, marca(dadosBasicos.sexo === 'M'))
+        .replace(/{{CHECK_NIVEL_1}}/g, marca(dadosBasicos.nivelApoio === '1'))
+        .replace(/{{CHECK_NIVEL_2}}/g, marca(dadosBasicos.nivelApoio === '2'))
+        .replace(/{{CHECK_NIVEL_3}}/g, marca(dadosBasicos.nivelApoio === '3'));
+
+    ANEXO_PAEE_ELEGIBILIDADE.forEach(o => {
+        htmlFinal = htmlFinal.replace(new RegExp(`{{${o.token}}}`, 'g'), marca((dadosBasicos.elegibilidade || []).includes(o.token)));
+    });
+    ANEXO_PAEE_APOIOS.forEach(o => {
+        htmlFinal = htmlFinal.replace(new RegExp(`{{${o.token}}}`, 'g'), marca((dadosBasicos.apoios || []).includes(o.token)));
+    });
+    ANEXO_PAEE_CAMPOS_IA.forEach(c => {
+        htmlFinal = htmlFinal.replace(new RegExp(`{{${c.token}}}`, 'g'), paraTexto(dados[c.key]));
+    });
+
+    if (!htmlFinal.includes('window.print')) {
+        htmlFinal += '<script>window.onload = function() { setTimeout(function(){ window.print(); }, 500); }</script>';
+    }
+
+    const win = window.open('', '', 'width=900,height=800');
+    if (!win) throw new Error('O navegador bloqueou a abertura da janela (Pop-up). Permita pop-ups no seu navegador para gerar o documento.');
+    win.document.write(htmlFinal);
+    win.document.close();
+}
+
+// Grava o Anexo III-PAEE (dadosBasicos + dados) direto no documento AEE da escola (chave
+// app_data_school_<id>_aee) - a ficha do Painel AEE (app.js: abrirFichaAeeReadOnly) lê exatamente
+// dessa chave, então é preciso gravar ali mesmo que quem esteja salvando não esteja em Modo AEE.
+// getData/saveData (core.js) não fazem merge parcial: busca o documento inteiro, altera e regrava.
+async function salvarAnexoPaeeSchoolWide(schoolId, tutoradoId, dadosBasicos, dados) {
+    const aeeKey = `app_data_school_${schoolId}_aee`;
+    const aeeData = await getData('app_data', aeeKey);
+    if (!aeeData || !Array.isArray(aeeData.tutorados)) throw new Error('Não foi possível localizar os dados AEE da escola.');
+
+    const t = aeeData.tutorados.find(x => x.id == tutoradoId);
+    if (!t) throw new Error('Estudante não encontrado nos dados AEE da escola.');
+
+    const anexoPaee = { dadosBasicos, dados, atualizadoEm: getTodayString() };
+    t.anexoPaee = anexoPaee;
+    await saveData('app_data', aeeKey, aeeData);
+
+    // Se quem salvou estiver em Modo AEE, o objeto `data` global em memória usa essa mesma chave -
+    // atualiza também pra não ficar desatualizado até o próximo reload.
+    if (typeof data !== 'undefined' && data && Array.isArray(data.tutorados)) {
+        const tLocal = data.tutorados.find(x => x.id == tutoradoId);
+        if (tLocal) tLocal.anexoPaee = anexoPaee;
+    }
+
+    return anexoPaee;
+}
+
+// Exporta o Anexo III - PAEE final: preenche o modelo e abre a impressão (montarEImprimirAnexoPaee) e
+// salva os dados estruturados no perfil do estudante, pra aparecer depois no Painel AEE sem precisar
+// gerar tudo de novo (app.js: abrirFichaAeeReadOnly).
 async function exportarAnexoPaeeFinal() {
     const btn = document.getElementById('btnExportarAnexoPaee');
     const originalText = btn.textContent;
@@ -1217,6 +1310,7 @@ async function exportarAnexoPaeeFinal() {
 
     const modal = document.getElementById('modalRevisaoAnexoPaee');
     const dadosBasicos = JSON.parse(modal.dataset.basicos);
+    const alunoId = modal.dataset.alunoId;
     const dados = {};
     ANEXO_PAEE_CAMPOS_IA.forEach(c => {
         const el = document.getElementById('revAnexo_' + c.key);
@@ -1224,64 +1318,19 @@ async function exportarAnexoPaeeFinal() {
     });
 
     try {
-        const response = await fetch('Docs/anexoIIIPAEE2026TEA.docx.html');
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        const templateHtml = await response.text();
+        await montarEImprimirAnexoPaee(dadosBasicos, dados);
 
-        let configSistema = {};
-        let configEscola = {};
-        try {
-            configSistema = await getData('system', 'config_sistema') || {};
-            if (currentUser && currentUser.schoolId) {
-                const sData = await getData('system', 'schools_list');
-                const schools = (sData && sData.list) ? sData.list : [];
-                configEscola = schools.find(s => s.id == currentUser.schoolId) || {};
+        if (alunoId && currentUser && currentUser.schoolId) {
+            try {
+                const anexoPaeeSalvo = await salvarAnexoPaeeSchoolWide(currentUser.schoolId, alunoId, dadosBasicos, dados);
+                if (typeof atualizarFichaAeeReadOnlyAposSalvar === 'function') {
+                    atualizarFichaAeeReadOnlyAposSalvar(alunoId, anexoPaeeSalvo);
+                }
+            } catch (eSalvar) {
+                console.error(eSalvar);
+                alert('O documento foi impresso, mas houve um erro ao salvar no perfil do estudante:\n' + eSalvar.message);
             }
-        } catch(e) { console.warn("Erro ao buscar configs da escola", e); }
-
-        const fallbackLogo = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
-        const regiao = configSistema.regiao || 'REGIÃO NÃO CONFIGURADA';
-        const logoEstado = configSistema.logoEstado || fallbackLogo;
-        const nomeCompletoEscola = configEscola.nomeCompleto || configEscola.nome || 'ESCOLA NÃO CONFIGURADA';
-        const logoEscola = configEscola.logoEscola || fallbackLogo;
-
-        const escapeHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        const paraTexto = (s) => escapeHtml(s).replace(/\n/g, '<br>');
-        const marca = (v) => v ? 'X' : '';
-
-        let htmlFinal = templateHtml
-            .replace(/{{REGIAO}}/g, escapeHtml(regiao))
-            .replace(/{{ESCOLA}}/g, escapeHtml(nomeCompletoEscola))
-            .replace(/{{LOGO_ESTADO}}/g, logoEstado)
-            .replace(/{{LOGO_ESCOLA}}/g, logoEscola)
-            .replace(/{{NOME_ESTUDANTE}}/g, escapeHtml(dadosBasicos.nomeEstudante))
-            .replace(/{{DATA_NASCIMENTO}}/g, escapeHtml(dadosBasicos.dataNascimento))
-            .replace(/{{ESCOLARIDADE}}/g, escapeHtml(dadosBasicos.escolaridade))
-            .replace(/{{TURNO}}/g, escapeHtml(dadosBasicos.turno))
-            .replace(/{{CHECK_SEXO_F}}/g, marca(dadosBasicos.sexo === 'F'))
-            .replace(/{{CHECK_SEXO_M}}/g, marca(dadosBasicos.sexo === 'M'))
-            .replace(/{{CHECK_NIVEL_1}}/g, marca(dadosBasicos.nivelApoio === '1'))
-            .replace(/{{CHECK_NIVEL_2}}/g, marca(dadosBasicos.nivelApoio === '2'))
-            .replace(/{{CHECK_NIVEL_3}}/g, marca(dadosBasicos.nivelApoio === '3'));
-
-        ANEXO_PAEE_ELEGIBILIDADE.forEach(o => {
-            htmlFinal = htmlFinal.replace(new RegExp(`{{${o.token}}}`, 'g'), marca(dadosBasicos.elegibilidade.includes(o.token)));
-        });
-        ANEXO_PAEE_APOIOS.forEach(o => {
-            htmlFinal = htmlFinal.replace(new RegExp(`{{${o.token}}}`, 'g'), marca(dadosBasicos.apoios.includes(o.token)));
-        });
-        ANEXO_PAEE_CAMPOS_IA.forEach(c => {
-            htmlFinal = htmlFinal.replace(new RegExp(`{{${c.token}}}`, 'g'), paraTexto(dados[c.key]));
-        });
-
-        if (!htmlFinal.includes('window.print')) {
-            htmlFinal += '<script>window.onload = function() { setTimeout(function(){ window.print(); }, 500); }</script>';
         }
-
-        const win = window.open('', '', 'width=900,height=800');
-        if (!win) throw new Error('O navegador bloqueou a abertura da janela (Pop-up). Permita pop-ups no seu navegador para gerar o documento.');
-        win.document.write(htmlFinal);
-        win.document.close();
 
         closeModal('modalRevisaoAnexoPaee');
     } catch (e) {
@@ -1290,6 +1339,95 @@ async function exportarAnexoPaeeFinal() {
     } finally {
         btn.textContent = originalText;
         btn.disabled = false;
+    }
+}
+
+// Lê um Anexo III-PAEE já preenchido em Word (.docx) - extrai o texto no navegador (mammoth.js, sem
+// enviar o arquivo a lugar nenhum), pede pra IA ESTRUTURAR (não redigir) os mesmos campos que o
+// formulário/wizard preenchem manualmente, e abre a mesma tela de revisão pra o professor conferir
+// antes de salvar. Chamada pelo input de arquivo da ficha do Painel AEE (app.js: abrirFichaAeeReadOnly).
+// O arquivo nunca é enviado a lugar nenhum: só o texto extraído (variável local) segue pro prompt da
+// IA, e some junto com o resto do escopo da função quando ela termina.
+async function analisarAnexoPaeeWord(tutoradoId) {
+    const fileInput = document.getElementById(`anexoPaeeWordFile_${tutoradoId}`);
+    const file = fileInput && fileInput.files[0];
+    if (!file) return;
+
+    // Nome do estudante vem do mesmo snapshot já carregado pelo Painel AEE (container #aeeVisaoGeral)
+    // - evita ter que passar texto livre (nome do aluno) por atributo HTML onchange.
+    const aeeContainer = document.getElementById('aeeVisaoGeral');
+    const tutoradosSnapshot = aeeContainer ? JSON.parse(aeeContainer.dataset.aeeTutorados || '[]') : [];
+    const tutoradoInfo = tutoradosSnapshot.find(x => x.id == tutoradoId);
+    const nomeEstudante = tutoradoInfo ? tutoradoInfo.nome_estudante : '';
+
+    const statusEl = document.getElementById(`anexoPaeeStatus_${tutoradoId}`);
+    const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
+
+    if (typeof mammoth === 'undefined') {
+        alert('Erro: biblioteca de leitura de Word não carregou. Recarregue a página e tente novamente.');
+        fileInput.value = '';
+        return;
+    }
+
+    try {
+        setStatus('Lendo arquivo... ⏳');
+        const arrayBuffer = await file.arrayBuffer();
+        const { value: textoExtraido } = await mammoth.extractRawText({ arrayBuffer });
+        if (!textoExtraido || !textoExtraido.trim()) throw new Error('Não foi possível extrair texto do arquivo. Confirme que é um .docx válido.');
+
+        setStatus('Analisando com IA... ⏳');
+
+        const elegibilidadeOpcoes = ANEXO_PAEE_ELEGIBILIDADE.map(o => `${o.token}: ${o.label}`).join('\n');
+        const apoiosOpcoes = ANEXO_PAEE_APOIOS.map(o => `${o.token}: ${o.label}`).join('\n');
+
+        const promptText = `Você é um assistente que EXTRAI dados estruturados de um Anexo III - Plano de AEE (PAEE) do Estado de São Paulo já preenchido, colado abaixo como texto puro (extraído de um Word). Não redija nada novo, não invente - extraia exatamente o que já está escrito no documento. Se algum dado não aparecer no texto, retorne string vazia (ou array vazio) para ele.
+
+TEXTO DO DOCUMENTO:
+"""
+${textoExtraido}
+"""
+
+Retorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com estas chaves:
+{
+  "dataNascimento": "data de nascimento do estudante, formato DD/MM/AAAA se encontrada",
+  "escolaridade": "série/ano escolar",
+  "turno": "turno (Manhã/Tarde/Integral etc)",
+  "sexo": "F ou M, conforme marcado no documento",
+  "nivelApoio": "1, 2 ou 3, conforme o nível de apoio marcado",
+  "elegibilidade": "array com os tokens (dentre a lista abaixo) que estiverem marcados como elegibilidade do estudante",
+  "apoios": "array com os tokens (dentre a lista abaixo) que estiverem marcados como apoios/recursos/serviços indicados",
+  ${ANEXO_PAEE_CAMPOS_IA.map(c => `"${c.key}": "${c.label} - copie o texto correspondente do documento"`).join(',\n  ')}
+}
+
+Tokens possíveis de elegibilidade:
+${elegibilidadeOpcoes}
+
+Tokens possíveis de apoios/recursos/serviços:
+${apoiosOpcoes}`;
+
+        const extraido = await chamarIAEstruturada(promptText);
+
+        const dadosBasicos = {
+            nomeEstudante: nomeEstudante,
+            dataNascimento: extraido.dataNascimento || '',
+            escolaridade: extraido.escolaridade || '',
+            turno: extraido.turno || '',
+            sexo: (extraido.sexo === 'F' || extraido.sexo === 'M') ? extraido.sexo : '',
+            nivelApoio: ['1', '2', '3'].includes(String(extraido.nivelApoio)) ? String(extraido.nivelApoio) : '',
+            elegibilidade: Array.isArray(extraido.elegibilidade) ? extraido.elegibilidade.filter(tok => ANEXO_PAEE_ELEGIBILIDADE.some(o => o.token === tok)) : [],
+            apoios: Array.isArray(extraido.apoios) ? extraido.apoios.filter(tok => ANEXO_PAEE_APOIOS.some(o => o.token === tok)) : []
+        };
+        const dados = {};
+        ANEXO_PAEE_CAMPOS_IA.forEach(c => { dados[c.key] = extraido[c.key] || ''; });
+
+        setStatus('');
+        fileInput.value = '';
+        abrirModalRevisaoAnexoPaee(dadosBasicos, dados, tutoradoId);
+    } catch (e) {
+        console.error(e);
+        setStatus('');
+        alert('Erro ao analisar o arquivo:\n' + e.message);
+        fileInput.value = '';
     }
 }
 
