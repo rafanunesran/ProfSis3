@@ -1690,6 +1690,29 @@ async function salvarAnexoIVSchoolWide(schoolId, tutoradoId, dadosBasicos, dados
     return anexoIV;
 }
 
+// Remove um Anexo IV-PEI específico (por id) da lista `anexosIV` do tutorado, direto no documento AEE
+// compartilhado da escola - usado quando o professor quer apagar um PEI gerado (ex: pra gerar de novo
+// do zero) pela ficha editável "Meus Alunos" (app.js: excluirAnexoIVSalvo). Mesmo padrão de
+// salvarAnexoIVSchoolWide: busca o documento inteiro, altera e regrava.
+async function excluirAnexoIVSchoolWide(schoolId, tutoradoId, anexoIVId) {
+    const aeeKey = `app_data_school_${schoolId}_aee`;
+    const aeeData = await getData('app_data', aeeKey);
+    if (!aeeData || !Array.isArray(aeeData.tutorados)) throw new Error('Não foi possível localizar os dados AEE da escola.');
+
+    const t = aeeData.tutorados.find(x => x.id == tutoradoId);
+    if (!t) throw new Error('Estudante não encontrado nos dados AEE da escola.');
+
+    t.anexosIV = (Array.isArray(t.anexosIV) ? t.anexosIV : []).filter(a => a.id != anexoIVId);
+    await saveData('app_data', aeeKey, aeeData);
+
+    // Se quem excluiu estiver em Modo AEE, o objeto `data` global em memória usa essa mesma chave -
+    // atualiza também pra não ficar desatualizado até o próximo reload.
+    if (typeof data !== 'undefined' && data && Array.isArray(data.tutorados)) {
+        const tLocal = data.tutorados.find(x => x.id == tutoradoId);
+        if (tLocal) tLocal.anexosIV = t.anexosIV;
+    }
+}
+
 // Exporta o Anexo IV - PEI final: preenche o modelo e abre a impressão (montarEImprimirAnexoIV) e
 // salva os dados estruturados no perfil do estudante, pra aparecer depois no Painel AEE sem precisar
 // gerar tudo de novo (app.js: abrirFichaAeeReadOnly).

@@ -5728,7 +5728,7 @@ function abrirFichaTutorado(id) {
             </div>
             ${anexoPaeeSectionHtml}
             ${fileHtml}
-            ${renderAnexosIVHtml(t)}
+            ${renderAnexosIVHtml(t, true)}
         `;
 
     } else {
@@ -7892,7 +7892,9 @@ async function renderAeeVisaoGeral() {
 // Monta o bloco "Anexo IV - PEI" (lista de PEIs já gerados pra esse estudante, um por Disciplina +
 // Bimestre - ver ia_estagiario.js: salvarAnexoIVSchoolWide) reaproveitado tanto pela ficha só-leitura
 // do Painel AEE (abrirFichaAeeReadOnly) quanto pela ficha editável (abrirFichaTutorado, Modo AEE/Projeto).
-function renderAnexosIVHtml(t) {
+// permitirExcluir mostra o botão de excluir só na ficha editável - o Painel AEE compartilhado é
+// só-leitura pra Gestor/equipe (ver abrirFichaAeeReadOnly), excluir não deve estar disponível ali.
+function renderAnexosIVHtml(t, permitirExcluir) {
     const anexosIV = Array.isArray(t.anexosIV) ? t.anexosIV : [];
     if (anexosIV.length === 0) {
         return `
@@ -7911,6 +7913,7 @@ function renderAnexosIVHtml(t) {
             <div style="display:flex; align-items:center; gap:10px;">
                 <span style="font-size:12px; color:#718096;">Atualizado em ${formatDate(a.atualizadoEm)}</span>
                 <button class="btn btn-sm btn-info" style="padding:2px 8px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${t.id}, ${a.id})">🖨️ Reimprimir</button>
+                ${permitirExcluir ? `<button class="btn btn-sm btn-danger" style="padding:2px 8px; font-size:12px;" onclick="excluirAnexoIVSalvo(${t.id}, ${a.id})">🗑️ Excluir</button>` : ''}
             </div>
         </div>
     `).join('');
@@ -8130,6 +8133,23 @@ function reimprimirAnexoIVSalvo(tutoradoId, anexoIVId) {
         console.error(e);
         alert('Erro ao reimprimir o documento: ' + e.message);
     });
+}
+
+// Apaga um Anexo IV - PEI salvo (ex: pra gerar de novo do zero) - só disponível na ficha editável
+// "Meus Alunos" (renderAnexosIVHtml chamada com permitirExcluir=true), nunca no Painel AEE
+// compartilhado (só-leitura pra Gestor/equipe). Delega a remoção pra ia_estagiario.js
+// (excluirAnexoIVSchoolWide), que já mantém `data.tutorados` em memória sincronizado.
+async function excluirAnexoIVSalvo(tutoradoId, anexoIVId) {
+    if (!confirm('Tem certeza que deseja excluir este Anexo IV - PEI? Essa ação não pode ser desfeita.')) return;
+    if (!currentUser || !currentUser.schoolId) return alert('Escola não identificada.');
+
+    try {
+        await excluirAnexoIVSchoolWide(currentUser.schoolId, tutoradoId, anexoIVId);
+        abrirFichaTutorado(tutoradoId);
+    } catch (e) {
+        console.error(e);
+        alert('Erro ao excluir o Anexo IV - PEI: ' + e.message);
+    }
 }
 
 // Chamada por ia_estagiario.js (exportarAnexoIVFinal) depois de salvar um Anexo IV-PEI, pra manter o
