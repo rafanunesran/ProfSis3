@@ -205,6 +205,11 @@ function renderListaArquivados() {
             }
         }
 
+        if (r.arquivado) {
+            status = 'Arquivado';
+            cor = '#718096';
+        }
+
         return { ...r, estudanteNome: estudante.nome_completo, turmaNome: turma.nome, status, cor, bim };
     });
 
@@ -236,7 +241,10 @@ function renderListaArquivados() {
                                     <td><span class="badge" style="background:${r.status === 'Vencido' ? '#e2e8f0' : '#ebf8ff'}; color:${r.cor}; font-size:10px;">${r.status}</span></td>
                                     <td>${getAeePrefix((data.estudantes || []).find(e => e.id == r.estudanteId))}${r.estudanteNome}</td>
                                     <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
-                                    <td><button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})">🗑️</button></td>
+                                    <td>
+                                        ${r.arquivado ? `<button class="btn btn-secondary btn-sm" onclick="desarquivarRegistroGestao(${r.id})" title="Reativar registro">↩️</button>` : ''}
+                                        <button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})" title="Excluir permanentemente">🗑️</button>
+                                    </td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -686,7 +694,11 @@ function renderAbaRegistrosAdministrativos() {
         if (estudante.status && estudante.status !== 'Ativo') {
             return null;
         }
-        
+
+        if (r.arquivado) {
+            return null;
+        }
+
         const turma = (data.turmas || []).find(t => t.id == r.turmaId) || { nome: '?' };
         
         let status = 'Ativo';
@@ -750,7 +762,8 @@ function renderAbaRegistrosAdministrativos() {
                                         <td>${getAeePrefix((data.estudantes || []).find(e => e.id == r.estudanteId))}${r.estudanteNome}</td>
                                         <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
                                         <td>
-                                            <button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})">🗑️</button>
+                                            <button class="btn btn-secondary btn-sm" onclick="arquivarRegistroGestao(${r.id})" title="Arquivar (mantém no histórico)">🗄️ Arquivar</button>
+                                            <button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})" title="Excluir permanentemente">🗑️</button>
                                         </td>
                                     </tr>
                                 `).join('')}
@@ -855,6 +868,26 @@ function removerRegistroGestao(id) {
         persistirDados();
         renderRegistrosGestor();
     }
+}
+
+function arquivarRegistroGestao(id) {
+    const registro = (data.registrosAdministrativos || []).find(r => r.id === id);
+    if (!registro) return;
+    if (confirm('Arquivar este registro? Ele sairá da lista de registros ativos, mas continuará disponível no Arquivo Histórico.')) {
+        registro.arquivado = true;
+        registro.arquivadoEm = getTodayString();
+        persistirDados();
+        renderRegistrosGestor();
+    }
+}
+
+function desarquivarRegistroGestao(id) {
+    const registro = (data.registrosAdministrativos || []).find(r => r.id === id);
+    if (!registro) return;
+    registro.arquivado = false;
+    delete registro.arquivadoEm;
+    persistirDados();
+    renderRegistrosGestor();
 }
 
 let currentOcorrenciaTab = 'disciplinares'; // disciplinares, rapidas, config
