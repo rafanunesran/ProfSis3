@@ -17,6 +17,11 @@ const TOP_K_CHUNKS_TIER2_ESTAGIARIO = 4;
 
 const MESES_AGENDA = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
+// Snapshot da última lista de estudantes do Painel AEE buscada por abrirModalGerarDocumentoIA -
+// reaproveitado por gerarAnexoIVEstagiario pra ler a Ficha AEE (aee_diagnostico/aee_relatorio) do
+// estudante escolhido no <select id="anexoIVAluno"> sem precisar buscar tudo de novo no Firestore.
+let ultimaListaTutoradosAeeParaAnexoIV = [];
+
 // Diferencia Ensino Médio de Ensino Fundamental quando os dois usam "Ano" pro mesmo número (ex: "1º
 // Ano" do Fundamental vs "1º Ano EM"/"1º Ano do Ensino Médio") - sem isso, extrairSerieChaveMaterialDigital
 // sozinha devolveria "1" pros dois, misturando os documentos dos dois segmentos na busca. Prefixa com
@@ -212,7 +217,7 @@ const ANEXO_PAEE_CAMPOS_IA = [
 // estudante pode acumular vários (ver ANEXO_PEI_CAMPOS_IA e t.anexosIV em app.js). Os tokens abaixo
 // batem 1:1 com os marcadores {{TOKEN}} de Docs/AnexoIV.docx.html.
 const ANEXO_PEI_CAMPOS_IA = [
-    { key: 'habilidades_curriculo', token: 'HABILIDADES_CURRICULO', label: 'Conteúdos e habilidades do Currículo da Rede Estadual Paulista a serem desenvolvidos no bimestre' },
+    { key: 'habilidades_curriculo', token: 'HABILIDADES_CURRICULO', label: 'Conteúdos e habilidades do Currículo da Rede Estadual Paulista a serem desenvolvidos no bimestre, sempre citando o código oficial da habilidade (ex: EF69AR11)' },
     { key: 'estrategias_intervencoes', token: 'ESTRATEGIAS_INTERVENCOES', label: 'Estratégias, intervenções pedagógicas e recursos de acessibilidade para favorecer o acesso, a participação e a aprendizagem do estudante' },
     { key: 'instrumentos', token: 'INSTRUMENTOS', label: 'Instrumentos utilizados para acompanhar o aprendizado do estudante de forma inclusiva e individualizada' }
 ];
@@ -295,6 +300,7 @@ async function abrirModalGerarDocumentoIA() {
             const aeeSchoolData = await getData('app_data', `app_data_school_${currentUser.schoolId}_aee`);
             const tutoradosEscola = (aeeSchoolData && Array.isArray(aeeSchoolData.tutorados)) ? aeeSchoolData.tutorados : [];
             alunosPeiOptionsHtml += tutoradosEscola.map(t => `<option value="${t.id}">${t.nome_estudante}</option>`).join('');
+            ultimaListaTutoradosAeeParaAnexoIV = tutoradosEscola;
         } catch (e) { console.warn('Erro ao buscar estudantes do Painel AEE:', e); }
 
         try {
@@ -1174,6 +1180,15 @@ async function gerarAnexoIVEstagiario() {
     const bimestreNum = bimestreSelecionado.value;
     const bimestreAtual = `${bimestreNum}º BIMESTRE`;
 
+    // Ficha AEE do estudante (aee_diagnostico/aee_relatorio, preenchidos no Painel AEE) - usada como
+    // contexto real pra IA propor adaptações condizentes com o perfil do estudante. Vem do snapshot
+    // buscado em abrirModalGerarDocumentoIA (ultimaListaTutoradosAeeParaAnexoIV), não do Firestore de
+    // novo, já que o estudante escolhido é o mesmo da lista carregada na abertura do modal.
+    const tutoradoSelecionado = ultimaListaTutoradosAeeParaAnexoIV.find(t => t.id == alunoId);
+    const diagnosticoAee = (tutoradoSelecionado && tutoradoSelecionado.aee_diagnostico) || '';
+    const relatorioAee = (tutoradoSelecionado && tutoradoSelecionado.aee_relatorio) || '';
+    const fichaAeeVazia = !diagnosticoAee && !relatorioAee;
+
     const dadosBasicos = {
         nomeEstudante,
         disciplina,
@@ -1181,7 +1196,8 @@ async function gerarAnexoIVEstagiario() {
         profAeeId,
         nomeProfAee,
         bimestre: bimestreNum,
-        descricaoAtividade
+        descricaoAtividade,
+        fichaAeeVazia
     };
 
     const btn = document.querySelector('#modalGerarDocumentoIA .btn-primary');
@@ -1190,12 +1206,18 @@ async function gerarAnexoIVEstagiario() {
     btn.disabled = true;
 
     try {
+        const fichaAeeBloco = fichaAeeVazia
+            ? '\nA Ficha AEE deste estudante ainda não tem diagnóstico/relatório preenchido - gere as adaptações de forma geral, adequada a estudantes atendidos pelo AEE, sem inventar um diagnóstico específico.'
+            : `\nFicha AEE do estudante (diagnóstico/relatório já registrados pelo Professor Especializado):\n"""${[diagnosticoAee, relatorioAee].filter(Boolean).join('\n')}"""\nUse essas informações pra adequar as estratégias, intervenções pedagógicas e recursos de acessibilidade ao perfil real do estudante - não invente nada além do que consta aqui.`;
+
         const promptText = `Você é um professor de ${disciplina} do Estado de São Paulo, redigindo o Anexo IV - Plano Educacional Individualizado (PEI) de um estudante atendido pelo AEE (Atendimento Educacional Especializado).
 Estudante: ${nomeEstudante}. Componente Curricular: ${disciplina}. Bimestre: ${bimestreAtual}.
 Breve descrição da atividade/conteúdo planejado pelo professor:
 """${descricaoAtividade || 'Nenhuma descrição informada - use cautela e sugira conteúdos e estratégias gerais e acessíveis, deixando claro que o professor precisa detalhar melhor a atividade.'}"""
+${fichaAeeBloco}
 
 Com base nesses dados, redija os campos abaixo do Anexo IV - PEI, em português, de forma técnica, objetiva e alinhada às diretrizes da Educação Especial da SEDUC-SP, adaptando conteúdos e estratégias às necessidades de acessibilidade do estudante. Não invente diagnósticos ou informações que não constam acima.
+No campo de conteúdos e habilidades do currículo, cite sempre o(s) código(s) oficial(is) de habilidade do Currículo Paulista específicos da disciplina de ${disciplina} (ex: EF69AR11 pra Arte, EF67MA... pra Matemática etc.), seguido(s) da descrição da habilidade - nunca deixe esse campo sem pelo menos um código.
 Retorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:
 {${ANEXO_PEI_CAMPOS_IA.map(c => `"${c.key}": "${c.label}"`).join(', ')}}`;
 
@@ -1393,6 +1415,10 @@ function abrirModalRevisaoAnexoIV(dadosBasicos, dados, alunoId) {
         </div>
     `).join('');
 
+    const fichaAeeAvisoHtml = dadosBasicos.fichaAeeVazia
+        ? `<div style="background:#fffaf0; border:1px solid #fbd38d; color:#975a16; padding:8px 12px; border-radius:6px; margin-bottom:15px; font-size:13px;">⚠️ Este estudante ainda não tem diagnóstico/relatório preenchido na Ficha AEE - as adaptações abaixo foram geradas de forma geral. Preencha a Ficha AEE do aluno pra rascunhos mais precisos da próxima vez.</div>`
+        : `<div style="background:#f0fff4; border:1px solid #9ae6b4; color:#276749; padding:8px 12px; border-radius:6px; margin-bottom:15px; font-size:13px;">✅ As adaptações abaixo consideraram o diagnóstico/relatório já preenchido na Ficha AEE do estudante.</div>`;
+
     document.getElementById('modalRevisaoAnexoIV').innerHTML = `
         <div class="modal-content" style="max-width: 700px;">
             <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
@@ -1409,6 +1435,7 @@ function abrirModalRevisaoAnexoIV(dadosBasicos, dados, alunoId) {
                 </div>
             </div>
             <p style="font-size:13px; color:#666; margin-bottom:15px;">Os dados básicos acima vêm do formulário anterior (volte pra corrigi-los). Revise e ajuste abaixo o texto rascunhado pela IA antes de exportar o documento final.</p>
+            ${fichaAeeAvisoHtml}
             <div style="max-height: 50vh; overflow-y: auto; padding-right: 10px;">
                 ${camposHtml}
             </div>
