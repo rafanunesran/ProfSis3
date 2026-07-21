@@ -5637,12 +5637,49 @@ function abrirFichaTutorado(id) {
         // Seção de Upload de Arquivo
         const reportUrl = t.aee_report_url || '';
         const anexoPaee = t.anexoPaee;
-        const anexoPaeeStatusHtml = anexoPaee ? `
-            <div style="margin-top:15px; border-top:1px dashed #cbd5e0; padding-top:15px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-                <span style="font-size:12px; color:#2f855a;">✅ Anexo III-PAEE salvo (atualizado em ${formatDate(anexoPaee.atualizadoEm)})</span>
-                <button class="btn btn-sm btn-info" style="padding:2px 8px; font-size:12px;" onclick="reimprimirAnexoPaeeSalvo(${t.id})">🖨️ Reimprimir</button>
-            </div>
-        ` : '';
+        const anexoPaeeStatusHtml = anexoPaee ? (() => {
+            const db = anexoPaee.dadosBasicos || {};
+            const elegibilidadeLabels = (typeof ANEXO_PAEE_ELEGIBILIDADE !== 'undefined')
+                ? ANEXO_PAEE_ELEGIBILIDADE.filter(o => (db.elegibilidade || []).includes(o.token)).map(o => o.label)
+                : [];
+            const apoiosLabels = (typeof ANEXO_PAEE_APOIOS !== 'undefined')
+                ? ANEXO_PAEE_APOIOS.filter(o => (db.apoios || []).includes(o.token)).map(o => o.label)
+                : [];
+            const sexoLabel = db.sexo === 'F' ? 'Feminino' : (db.sexo === 'M' ? 'Masculino' : 'Não informado');
+            const camposIaHtml = (typeof ANEXO_PAEE_CAMPOS_IA !== 'undefined')
+                ? ANEXO_PAEE_CAMPOS_IA.map(c => `
+                    <div style="margin-top:12px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:4px; font-size:12px; color:#2c5282;">${c.label}</label>
+                        <textarea readonly rows="3" style="width:100%; border:1px solid #cbd5e0; padding:8px; border-radius:4px; font-family:inherit; font-size:12px; background-color:white;">${(anexoPaee.dados || {})[c.key] || ''}</textarea>
+                    </div>
+                `).join('')
+                : '';
+
+            return `
+                <div style="margin-top:15px; border-top:1px dashed #cbd5e0; padding-top:15px;">
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                        <span style="font-size:12px; color:#2f855a;">✅ Anexo III-PAEE salvo (atualizado em ${formatDate(anexoPaee.atualizadoEm)})</span>
+                        <button class="btn btn-sm btn-info" style="padding:2px 8px; font-size:12px;" onclick="reimprimirAnexoPaeeSalvo(${t.id})">🖨️ Reimprimir</button>
+                        <button class="btn btn-sm btn-secondary" style="padding:2px 8px; font-size:12px;" onclick="editarAnexoPaeeSalvo(${t.id})">✏️ Editar</button>
+                    </div>
+                    <details style="margin-top:10px;">
+                        <summary style="cursor:pointer; font-size:12px; color:#2c5282; font-weight:bold;">👁️ Ver dados enviados</summary>
+                        <div style="margin-top:10px; display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:12px;">
+                            <div><strong>Nascimento:</strong> ${db.dataNascimento || 'Não informado'}</div>
+                            <div><strong>Escolaridade:</strong> ${db.escolaridade || 'Não informado'}</div>
+                            <div><strong>Turno:</strong> ${db.turno || 'Não informado'}</div>
+                            <div><strong>Sexo:</strong> ${sexoLabel}</div>
+                            <div><strong>Nível de Apoio:</strong> ${db.nivelApoio ? 'Nível ' + db.nivelApoio : 'Não informado'}</div>
+                        </div>
+                        <div style="margin-top:8px; font-size:12px;">
+                            <strong>Elegibilidade:</strong> ${elegibilidadeLabels.join(', ') || 'Não informado'}<br>
+                            <strong>Apoios/Recursos/Serviços:</strong> ${apoiosLabels.join(', ') || 'Nenhum'}
+                        </div>
+                        ${camposIaHtml}
+                    </details>
+                </div>
+            `;
+        })() : '';
         const fileHtml = `
             <div style="margin-top:20px;">
                 <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Arquivo de Relatório</label>
@@ -7963,6 +8000,15 @@ function reimprimirAnexoPaeeSalvo(tutoradoId) {
         console.error(e);
         alert('Erro ao reimprimir o documento: ' + e.message);
     });
+}
+
+// Reabre a tela de revisão do Anexo III-PAEE (ia_estagiario.js: abrirModalRevisaoAnexoPaee) já
+// preenchida com os dados salvos, pra editar sem precisar subir o Word de novo. Salvar por ali já
+// atualiza o registro (exportarAnexoPaeeFinal chama salvarAnexoPaeeSchoolWide) e reimprime.
+function editarAnexoPaeeSalvo(tutoradoId) {
+    const t = encontrarTutoradoAeeEmQualquerContexto(tutoradoId);
+    if (!t || !t.anexoPaee) return alert('Anexo III-PAEE não encontrado para este estudante.');
+    abrirModalRevisaoAnexoPaee(t.anexoPaee.dadosBasicos, t.anexoPaee.dados, tutoradoId);
 }
 
 // Chamada por ia_estagiario.js (exportarAnexoPaeeFinal) depois de salvar um Anexo III-PAEE, pra manter
