@@ -263,6 +263,12 @@ async function abrirModalGerarDocumentoIA() {
     const seriesUnicas = [...new Set((data.turmas || []).map(t => getSerieNome(t.ano_serie || t.nome)))].filter(Boolean);
     const disciplinasUnicas = [...new Set((data.turmas || []).map(t => t.disciplina))].filter(Boolean);
 
+    // Bimestre vigente (mesmo cálculo usado em gerarDocumentoIA/gerarAnexoPaeeEstagiario) - usado só
+    // pra pré-selecionar o seletor de Bimestre do Anexo IV - PEI; o professor pode trocar antes de gerar.
+    const hojeStr = getTodayString();
+    const configBimestresAtual = (data.configBimestres || []).find(c => hojeStr >= c.inicio && hojeStr <= c.fim);
+    const bimestreAtualNum = configBimestresAtual ? String(configBimestresAtual.bim) : '';
+
     // O Anexo III - PAEE só faz sentido pra quem está no Modo AEE (professor especializado) - fica
     // fora do dropdown pra qualquer outro perfil/modo, inclusive Gestor alternando pra outros modos.
     const isAeeView = currentViewMode === 'aee';
@@ -461,6 +467,16 @@ async function abrirModalGerarDocumentoIA() {
                             <p style="font-size:10px; color:#a0aec0; margin-top:3px;">Lista de professores com o papel "AEE" definido pelo Super Admin nesta escola.</p>
                         </div>
                     </div>
+                    <div style="margin-bottom:15px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Bimestre:</label>
+                        <div style="display:flex; gap:15px; font-size:13px;">
+                            <label><input type="radio" name="anexoIVBimestre" value="1" ${bimestreAtualNum === '1' ? 'checked' : ''}> 1º Bimestre</label>
+                            <label><input type="radio" name="anexoIVBimestre" value="2" ${bimestreAtualNum === '2' ? 'checked' : ''}> 2º Bimestre</label>
+                            <label><input type="radio" name="anexoIVBimestre" value="3" ${bimestreAtualNum === '3' ? 'checked' : ''}> 3º Bimestre</label>
+                            <label><input type="radio" name="anexoIVBimestre" value="4" ${bimestreAtualNum === '4' ? 'checked' : ''}> 4º Bimestre</label>
+                        </div>
+                        <p style="font-size:10px; color:#a0aec0; margin-top:3px;">Vem pré-selecionado conforme a data de hoje - troque se estiver gerando pra outro bimestre.</p>
+                    </div>
                     <div style="margin-bottom: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Breve descrição da atividade (contexto para a IA):</label>
                         <p style="font-size:11px; color:#718096; margin-bottom:5px;">Descreva em poucas linhas a atividade/conteúdo planejado. A IA usa isso pra rascunhar os campos do PEI abaixo. Você revisa e edita tudo antes de gerar o documento final.</p>
@@ -535,6 +551,7 @@ async function abrirModalGerarDocumentoIA() {
         const el = document.getElementById(id);
         if (el) el.value = '';
     });
+    document.querySelectorAll('input[name="anexoIVBimestre"]').forEach(el => { el.checked = el.value === bimestreAtualNum; });
 
     toggleTipoDocumentoIA();
     showModal('modalGerarDocumentoIA');
@@ -1152,11 +1169,10 @@ async function gerarAnexoIVEstagiario() {
 
     const descricaoAtividade = document.getElementById('anexoIVDescricao').value || '';
 
-    const hoje = getTodayString();
-    const configBimestres = data.configBimestres || [];
-    const configAtual = configBimestres.find(c => hoje >= c.inicio && hoje <= c.fim);
-    const bimestreNum = configAtual ? String(configAtual.bim) : '';
-    const bimestreAtual = configAtual ? `${configAtual.bim}º BIMESTRE` : 'BIMESTRE VIGENTE';
+    const bimestreSelecionado = document.querySelector('input[name="anexoIVBimestre"]:checked');
+    if (!bimestreSelecionado) return alert('Selecione o Bimestre.');
+    const bimestreNum = bimestreSelecionado.value;
+    const bimestreAtual = `${bimestreNum}º BIMESTRE`;
 
     const dadosBasicos = {
         nomeEstudante,
@@ -1389,6 +1405,7 @@ function abrirModalRevisaoAnexoIV(dadosBasicos, dados, alunoId) {
                     <div><strong style="color:#2b6cb0;">Componente Curricular:</strong> <span>${dadosBasicos.disciplina}</span></div>
                     <div><strong style="color:#2b6cb0;">Professor Regente:</strong> <span>${dadosBasicos.professorRegente}</span></div>
                     <div><strong style="color:#2b6cb0;">Professor Especializado:</strong> <span>${dadosBasicos.nomeProfAee}</span></div>
+                    <div><strong style="color:#2b6cb0;">Bimestre:</strong> <span>${dadosBasicos.bimestre}º Bimestre</span></div>
                 </div>
             </div>
             <p style="font-size:13px; color:#666; margin-bottom:15px;">Os dados básicos acima vêm do formulário anterior (volte pra corrigi-los). Revise e ajuste abaixo o texto rascunhado pela IA antes de exportar o documento final.</p>
