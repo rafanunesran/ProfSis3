@@ -7979,52 +7979,59 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
     }
     aeeContainer.style.display = 'block';
     
-    const diagnostico = t.aee_diagnostico || '';
-    const relatorio = t.aee_relatorio || '';
-    const reportUrl = t.aee_report_url || '';
-
-    const fileHtml = `
-        <div style="margin-top:20px;">
-            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Arquivo de Relatório</label>
-            <div style="background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
-                ${reportUrl ? `
-                    <button class="btn btn-sm btn-info" onclick="window.open('https://drive.google.com/file/d/${t.aee_report_path}/view', '_blank')">👁️ Visualizar no Drive</button>
-                ` : `
-                    <p style="margin:0; font-size:13px; color:#718096;">Nenhum arquivo enviado.</p>
-                `}
-            </div>
-        </div>
-    `;
-
     const isDiagnostico = t.aee_categoria_diagnostico || false;
     const isProjeto = t.aee_categoria_projeto || false;
 
+    // Mesmo conteúdo estruturado do Anexo III - PAEE exibido em "Meus Alunos" (abrirFichaTutorado),
+    // mantendo só o Reimprimir (não altera dados) e removendo tudo que edita (✏️ Editar, upload/
+    // substituição de Word) - este painel é só-leitura pra Gestor/equipe; editar continua só em
+    // "Meus Alunos" (Modo AEE do próprio professor).
     const anexoPaee = t.anexoPaee;
-    const anexoPaeeHtml = anexoPaee ? `
-        <div style="margin-top:20px;">
-            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Anexo III - PAEE</label>
-            <div style="background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
-                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-                    <button class="btn btn-sm btn-info" onclick="reimprimirAnexoPaeeSalvo(${t.id})">🖨️ Reimprimir Anexo III - PAEE</button>
-                    <span style="font-size:12px; color:#718096;">Atualizado em ${formatDate(anexoPaee.atualizadoEm)}</span>
+    const anexoPaeeHtml = anexoPaee ? (() => {
+        const db = anexoPaee.dadosBasicos || {};
+        const elegibilidadeLabels = (typeof ANEXO_PAEE_ELEGIBILIDADE !== 'undefined')
+            ? ANEXO_PAEE_ELEGIBILIDADE.filter(o => (db.elegibilidade || []).includes(o.token)).map(o => o.label)
+            : [];
+        const apoiosLabels = (typeof ANEXO_PAEE_APOIOS !== 'undefined')
+            ? ANEXO_PAEE_APOIOS.filter(o => (db.apoios || []).includes(o.token)).map(o => o.label)
+            : [];
+        const sexoLabel = db.sexo === 'F' ? 'Feminino' : (db.sexo === 'M' ? 'Masculino' : 'Não informado');
+        const camposIaHtml = (typeof ANEXO_PAEE_CAMPOS_IA !== 'undefined')
+            ? ANEXO_PAEE_CAMPOS_IA.map(c => `
+                <div style="margin-top:12px;">
+                    <label style="font-weight:bold; display:block; margin-bottom:4px; font-size:12px; color:#2c5282;">${c.label}</label>
+                    <textarea readonly rows="3" style="width:100%; border:1px solid #cbd5e0; padding:8px; border-radius:4px; font-family:inherit; font-size:12px; background-color:white;">${(anexoPaee.dados || {})[c.key] || ''}</textarea>
                 </div>
-                <div style="margin-top:15px; border-top:1px dashed #cbd5e0; padding-top:15px;">
-                    <label for="anexoPaeeWordFile_${t.id}" class="btn btn-sm btn-secondary" style="font-size:12px;">🔄 Substituir por novo Word</label>
-                    <input type="file" id="anexoPaeeWordFile_${t.id}" accept=".docx" style="display:none;" onchange="analisarAnexoPaeeWord(${t.id}, 'anexoPaeeWordFile_${t.id}', 'anexoPaeeStatus_${t.id}')">
-                    <span id="anexoPaeeStatus_${t.id}" style="margin-left:10px; font-size:12px; color:#4a5568;"></span>
+            `).join('')
+            : '';
+
+        return `
+            <div style="margin-top:20px;">
+                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Anexo III - PAEE</label>
+                <div style="background:#f7fafc; padding:15px; border-radius:6px; border:1px solid #e2e8f0;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                        <button class="btn btn-sm btn-info" onclick="reimprimirAnexoPaeeSalvo(${t.id})">🖨️ Reimprimir</button>
+                        <span style="font-size:12px; color:#2f855a;">✅ Salvo (atualizado em ${formatDate(anexoPaee.atualizadoEm)})</span>
+                    </div>
+                    <div style="margin-top:12px; display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:12px;">
+                        <div><strong>Nascimento:</strong> ${db.dataNascimento || 'Não informado'}</div>
+                        <div><strong>Escolaridade:</strong> ${db.escolaridade || 'Não informado'}</div>
+                        <div><strong>Turno:</strong> ${db.turno || 'Não informado'}</div>
+                        <div><strong>Sexo:</strong> ${sexoLabel}</div>
+                        <div><strong>Nível de Apoio:</strong> ${db.nivelApoio ? 'Nível ' + db.nivelApoio : 'Não informado'}</div>
+                    </div>
+                    <div style="margin-top:8px; font-size:12px;">
+                        <strong>Elegibilidade:</strong> ${elegibilidadeLabels.join(', ') || 'Não informado'}<br>
+                        <strong>Apoios/Recursos/Serviços:</strong> ${apoiosLabels.join(', ') || 'Nenhum'}
+                    </div>
+                    ${camposIaHtml}
                 </div>
             </div>
-        </div>
-    ` : `
+        `;
+    })() : `
         <div style="margin-top:20px;">
             <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Anexo III - PAEE</label>
-            <div style="background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
-                <p style="margin:0 0 10px 0; font-size:13px; color:#718096;">Nenhum Anexo III-PAEE salvo para este estudante.</p>
-                <label for="anexoPaeeWordFile_${t.id}" class="btn btn-sm btn-primary">📤 Enviar Anexo III - PAEE (Word)</label>
-                <input type="file" id="anexoPaeeWordFile_${t.id}" accept=".docx" style="display:none;" onchange="analisarAnexoPaeeWord(${t.id}, 'anexoPaeeWordFile_${t.id}', 'anexoPaeeStatus_${t.id}')">
-                <span id="anexoPaeeStatus_${t.id}" style="margin-left:10px; font-size:12px; color:#4a5568;"></span>
-                <p style="margin:8px 0 0 0; font-size:11px; color:#a0aec0;">Envie o arquivo .docx já preenchido — o sistema lê os dados, você confere na tela seguinte, e o arquivo não fica salvo, só os dados extraídos.</p>
-            </div>
+            <p style="margin:0; font-size:13px; color:#718096; background:#f7fafc; padding:15px; border-radius:6px; border:1px solid #e2e8f0;">Nenhum Anexo III-PAEE gerado ainda para este estudante.</p>
         </div>
     `;
 
@@ -8042,15 +8049,6 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
                 </label>
             </div>
         </div>
-        <div style="margin-top:20px;">
-            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Diagnóstico / Voar</label>
-            <textarea readonly rows="3" style="width:100%; border:1px solid #cbd5e0; padding:10px; border-radius:5px; font-family:inherit; background-color:#f7fafc;">${diagnostico}</textarea>
-        </div>
-        <div style="margin-top:20px;">
-            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Relatório</label>
-            <textarea readonly rows="15" style="width:100%; border:1px solid #cbd5e0; padding:10px; border-radius:5px; font-family:inherit; background-color:#f7fafc;">${relatorio}</textarea>
-        </div>
-        ${fileHtml}
         ${anexoPaeeHtml}
         ${renderAnexosIVHtml(t)}
     `;
