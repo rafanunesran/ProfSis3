@@ -5556,14 +5556,16 @@ function salvarTutorado(e) {
         return alert(msg);
     }
 
-    data.tutorados.push({ 
-        id: Date.now(), 
-        nome_estudante: estudanteNome, 
+    const novoTutorado = {
+        id: Date.now(),
+        nome_estudante: estudanteNome,
         turma: turmaNome,
-        id_estudante_origem: estudanteId 
-    });
+        id_estudante_origem: estudanteId
+    };
+    data.tutorados.push(novoTutorado);
 
     persistirDados();
+    sincronizarTutoradoComPainelAeeCompartilhado(novoTutorado).catch(e => console.warn('Erro ao sincronizar com Painel AEE:', e));
     closeModal('modalNovoTutorado');
     renderTutoria();
 }
@@ -5890,6 +5892,45 @@ function salvarDadosTutorado(id) {
     persistirDados();
 }
 
+// Sincroniza um tutorado editado em "Meus Alunos" (Modo AEE) com o Painel AEE compartilhado da escola
+// (app_data_school_{schoolId}_aee) - sem isso, edições feitas aqui (categoria, upload/exclusão de
+// relatório, novo aluno adicionado) ficavam só no documento pessoal do professor (app_data_{uid},
+// gravado por persistirDados) e nunca apareciam pro Gestor/colegas no Painel AEE nem entravam no
+// contexto do Anexo IV - só existia uma migração manual única (admin.js: migrarDadosAEECompartilhado)
+// que copiou uma foto antiga uma única vez, sem manter isso sincronizado depois.
+// Casa a entrada pelo id_estudante_origem (estável entre a cópia pessoal e a compartilhada, é o que a
+// migração usa) e cai pro id local só se não houver id_estudante_origem. Nunca mexe em anexoPaee/
+// anexosIV (só a wizard do Estagiário escreve neles).
+async function sincronizarTutoradoComPainelAeeCompartilhado(tutorado) {
+    if (!tutorado || !currentUser || !currentUser.schoolId || currentViewMode !== 'aee') return;
+
+    const camposSincronizados = ['nome_estudante', 'turma', 'id_estudante_origem', 'data_nascimento',
+        'aee_diagnostico', 'aee_relatorio', 'aee_categoria_diagnostico', 'aee_categoria_projeto',
+        'aee_report_url', 'aee_report_path'];
+
+    try {
+        const aeeKey = `app_data_school_${currentUser.schoolId}_aee`;
+        const aeeData = await getData('app_data', aeeKey) || {};
+        if (!Array.isArray(aeeData.tutorados)) aeeData.tutorados = [];
+
+        let entry = tutorado.id_estudante_origem
+            ? aeeData.tutorados.find(t => t.id_estudante_origem == tutorado.id_estudante_origem)
+            : aeeData.tutorados.find(t => t.id == tutorado.id);
+
+        if (!entry) {
+            entry = { id: tutorado.id };
+            aeeData.tutorados.push(entry);
+        }
+        camposSincronizados.forEach(campo => {
+            if (tutorado[campo] !== undefined) entry[campo] = tutorado[campo];
+        });
+
+        await saveData('app_data', aeeKey, aeeData);
+    } catch (e) {
+        console.warn('Erro ao sincronizar tutorado com o Painel AEE compartilhado:', e);
+    }
+}
+
 function salvarDadosAee(id) {
     const t = data.tutorados.find(x => x.id == id);
     if (!t) return;
@@ -5923,6 +5964,7 @@ function salvarDadosAee(id) {
     }
 
     persistirDados();
+    sincronizarTutoradoComPainelAeeCompartilhado(t).catch(e => console.warn('Erro ao sincronizar com Painel AEE:', e));
 }
 
 function imprimirRelatorioTutorado(id, nome) {
@@ -8628,6 +8670,7 @@ async function uploadAeeReport(tutoradoId) {
             }
 
             await persistirDados();
+            sincronizarTutoradoComPainelAeeCompartilhado(t).catch(e => console.warn('Erro ao sincronizar com Painel AEE:', e));
             if (statusEl) statusEl.textContent = '✅ Enviado!';
             alert('Arquivo enviado com sucesso para o Google Drive!');
             abrirFichaTutorado(tutoradoId);
