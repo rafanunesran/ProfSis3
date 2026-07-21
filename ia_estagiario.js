@@ -1180,14 +1180,27 @@ async function gerarAnexoIVEstagiario() {
     const bimestreNum = bimestreSelecionado.value;
     const bimestreAtual = `${bimestreNum}º BIMESTRE`;
 
-    // Ficha AEE do estudante (aee_diagnostico/aee_relatorio, preenchidos no Painel AEE) - usada como
-    // contexto real pra IA propor adaptações condizentes com o perfil do estudante. Vem do snapshot
-    // buscado em abrirModalGerarDocumentoIA (ultimaListaTutoradosAeeParaAnexoIV), não do Firestore de
-    // novo, já que o estudante escolhido é o mesmo da lista carregada na abertura do modal.
+    // Contexto real do estudante pra IA propor adaptações condizentes com o perfil dele - a fonte
+    // principal é o Anexo III - PAEE já estruturado (t.anexoPaee.dados: habilidades desenvolvidas,
+    // estratégias, planejamento bimestral etc. - ver ANEXO_PAEE_CAMPOS_IA), já que os campos de texto
+    // livre aee_diagnostico/aee_relatorio saíram da ficha e não são mais editados (ver comentário em
+    // app.js: salvarDadosAee). Cai pros campos legados só se o Anexo III ainda não tiver sido gerado.
+    // Vem do snapshot buscado em abrirModalGerarDocumentoIA (ultimaListaTutoradosAeeParaAnexoIV), não
+    // do Firestore de novo, já que o estudante escolhido é o mesmo da lista carregada na abertura do modal.
     const tutoradoSelecionado = ultimaListaTutoradosAeeParaAnexoIV.find(t => t.id == alunoId);
-    const diagnosticoAee = (tutoradoSelecionado && tutoradoSelecionado.aee_diagnostico) || '';
-    const relatorioAee = (tutoradoSelecionado && tutoradoSelecionado.aee_relatorio) || '';
-    const fichaAeeVazia = !diagnosticoAee && !relatorioAee;
+    const anexoPaeeDoAluno = tutoradoSelecionado && tutoradoSelecionado.anexoPaee;
+    const camposAnexoPaeePreenchidos = (anexoPaeeDoAluno && anexoPaeeDoAluno.dados)
+        ? ANEXO_PAEE_CAMPOS_IA
+            .filter(c => (anexoPaeeDoAluno.dados[c.key] || '').trim())
+            .map(c => `${c.label}: ${anexoPaeeDoAluno.dados[c.key].trim()}`)
+        : [];
+    const fichaAnexoIIITexto = camposAnexoPaeePreenchidos.join('\n');
+    const diagnosticoLegado = [
+        tutoradoSelecionado && tutoradoSelecionado.aee_diagnostico,
+        tutoradoSelecionado && tutoradoSelecionado.aee_relatorio
+    ].filter(Boolean).join('\n');
+    const fichaAeeTexto = fichaAnexoIIITexto || diagnosticoLegado;
+    const fichaAeeVazia = !fichaAeeTexto;
 
     const dadosBasicos = {
         nomeEstudante,
@@ -1207,8 +1220,8 @@ async function gerarAnexoIVEstagiario() {
 
     try {
         const fichaAeeBloco = fichaAeeVazia
-            ? '\nA Ficha AEE deste estudante ainda não tem diagnóstico/relatório preenchido - gere as adaptações de forma geral, adequada a estudantes atendidos pelo AEE, sem inventar um diagnóstico específico.'
-            : `\nFicha AEE do estudante (diagnóstico/relatório já registrados pelo Professor Especializado):\n"""${[diagnosticoAee, relatorioAee].filter(Boolean).join('\n')}"""\nUse essas informações pra adequar as estratégias, intervenções pedagógicas e recursos de acessibilidade ao perfil real do estudante - não invente nada além do que consta aqui.`;
+            ? '\nO Anexo III - PAEE deste estudante ainda não foi preenchido/gerado - gere as adaptações de forma geral, adequada a estudantes atendidos pelo AEE, sem inventar um diagnóstico específico.'
+            : `\nInformações do Anexo III - Plano de AEE (PAEE) já registrado pelo Professor Especializado para este estudante:\n"""${fichaAeeTexto}"""\nUse essas informações pra adequar as estratégias, intervenções pedagógicas e recursos de acessibilidade ao perfil real do estudante - não invente nada além do que consta aqui.`;
 
         const promptText = `Você é um professor de ${disciplina} do Estado de São Paulo, redigindo o Anexo IV - Plano Educacional Individualizado (PEI) de um estudante atendido pelo AEE (Atendimento Educacional Especializado).
 Estudante: ${nomeEstudante}. Componente Curricular: ${disciplina}. Bimestre: ${bimestreAtual}.
@@ -1416,8 +1429,8 @@ function abrirModalRevisaoAnexoIV(dadosBasicos, dados, alunoId) {
     `).join('');
 
     const fichaAeeAvisoHtml = dadosBasicos.fichaAeeVazia
-        ? `<div style="background:#fffaf0; border:1px solid #fbd38d; color:#975a16; padding:8px 12px; border-radius:6px; margin-bottom:15px; font-size:13px;">⚠️ Este estudante ainda não tem diagnóstico/relatório preenchido na Ficha AEE - as adaptações abaixo foram geradas de forma geral. Preencha a Ficha AEE do aluno pra rascunhos mais precisos da próxima vez.</div>`
-        : `<div style="background:#f0fff4; border:1px solid #9ae6b4; color:#276749; padding:8px 12px; border-radius:6px; margin-bottom:15px; font-size:13px;">✅ As adaptações abaixo consideraram o diagnóstico/relatório já preenchido na Ficha AEE do estudante.</div>`;
+        ? `<div style="background:#fffaf0; border:1px solid #fbd38d; color:#975a16; padding:8px 12px; border-radius:6px; margin-bottom:15px; font-size:13px;">⚠️ Este estudante ainda não tem o Anexo III - PAEE preenchido/gerado - as adaptações abaixo foram geradas de forma geral. Gere o Anexo III - PAEE do aluno pra rascunhos mais precisos da próxima vez.</div>`
+        : `<div style="background:#f0fff4; border:1px solid #9ae6b4; color:#276749; padding:8px 12px; border-radius:6px; margin-bottom:15px; font-size:13px;">✅ As adaptações abaixo consideraram o Anexo III - PAEE já preenchido do estudante.</div>`;
 
     document.getElementById('modalRevisaoAnexoIV').innerHTML = `
         <div class="modal-content" style="max-width: 700px;">
