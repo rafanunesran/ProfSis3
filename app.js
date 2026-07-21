@@ -7809,7 +7809,8 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
 
     const titleEl = document.getElementById('tutoradoFichaNome');
     titleEl.textContent = t.nome_estudante;
-    
+    titleEl.dataset.aeeReadOnlyId = tutoradoId; // Usado por atualizarFichaAeeReadOnlyAposSalvar para recarregar esta ficha após salvar o Anexo III-PAEE
+
     let actionContainer = document.getElementById('tutoradoAcoesContainer');
     if (!actionContainer) {
         actionContainer = document.createElement('div');
@@ -7871,16 +7872,45 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
     const isDiagnostico = t.aee_categoria_diagnostico || false;
     const isProjeto = t.aee_categoria_projeto || false;
 
+    const anexoPaee = t.anexoPaee;
+    const anexoPaeeHtml = anexoPaee ? `
+        <div style="margin-top:20px;">
+            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Anexo III - PAEE</label>
+            <div style="background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <button class="btn btn-sm btn-info" onclick="reimprimirAnexoPaeeSalvo(${t.id})">🖨️ Reimprimir Anexo III - PAEE</button>
+                    <span style="font-size:12px; color:#718096;">Atualizado em ${formatDate(anexoPaee.atualizadoEm)}</span>
+                </div>
+                <div style="margin-top:15px; border-top:1px dashed #cbd5e0; padding-top:15px;">
+                    <label for="anexoPaeeWordFile_${t.id}" class="btn btn-sm btn-secondary" style="font-size:12px;">🔄 Substituir por novo Word</label>
+                    <input type="file" id="anexoPaeeWordFile_${t.id}" accept=".docx" style="display:none;" onchange="analisarAnexoPaeeWord(${t.id})">
+                    <span id="anexoPaeeStatus_${t.id}" style="margin-left:10px; font-size:12px; color:#4a5568;"></span>
+                </div>
+            </div>
+        </div>
+    ` : `
+        <div style="margin-top:20px;">
+            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Anexo III - PAEE</label>
+            <div style="background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                <p style="margin:0 0 10px 0; font-size:13px; color:#718096;">Nenhum Anexo III-PAEE salvo para este estudante.</p>
+                <label for="anexoPaeeWordFile_${t.id}" class="btn btn-sm btn-primary">📤 Enviar Anexo III - PAEE (Word)</label>
+                <input type="file" id="anexoPaeeWordFile_${t.id}" accept=".docx" style="display:none;" onchange="analisarAnexoPaeeWord(${t.id})">
+                <span id="anexoPaeeStatus_${t.id}" style="margin-left:10px; font-size:12px; color:#4a5568;"></span>
+                <p style="margin:8px 0 0 0; font-size:11px; color:#a0aec0;">Envie o arquivo .docx já preenchido — o sistema lê os dados, você confere na tela seguinte, e o arquivo não fica salvo, só os dados extraídos.</p>
+            </div>
+        </div>
+    `;
+
     aeeContainer.innerHTML = `
         <div style="margin-top:20px; margin-bottom: 20px; background: #f0fff4; padding: 10px; border: 1px solid #c6f6d5; border-radius: 5px;">
             <label style="font-weight:bold; display:block; margin-bottom:5px; font-size:14px; color:#276749;">Categoria:</label>
             <div style="display:flex; gap:20px;">
                 <label style="cursor:default; display:flex; align-items:center; gap:5px;">
-                    <input type="checkbox" disabled ${isDiagnostico ? 'checked' : ''}> 
+                    <input type="checkbox" disabled ${isDiagnostico ? 'checked' : ''}>
                     <span>Diagnóstico</span>
                 </label>
                 <label style="cursor:default; display:flex; align-items:center; gap:5px;">
-                    <input type="checkbox" disabled ${isProjeto ? 'checked' : ''}> 
+                    <input type="checkbox" disabled ${isProjeto ? 'checked' : ''}>
                     <span>Projeto</span>
                 </label>
             </div>
@@ -7894,9 +7924,46 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
             <textarea readonly rows="15" style="width:100%; border:1px solid #cbd5e0; padding:10px; border-radius:5px; font-family:inherit; background-color:#f7fafc;">${relatorio}</textarea>
         </div>
         ${fileHtml}
+        ${anexoPaeeHtml}
     `;
 
     showScreen('tutoradoDetalhe');
+}
+
+// Reimprime um Anexo III-PAEE já salvo (sem rodar IA de novo) - lê do mesmo snapshot carregado pelo
+// Painel AEE (container #aeeVisaoGeral) e delega o preenchimento do template pra ia_estagiario.js.
+function reimprimirAnexoPaeeSalvo(tutoradoId) {
+    const container = document.getElementById('aeeVisaoGeral');
+    const tutorados = container ? JSON.parse(container.dataset.aeeTutorados || '[]') : [];
+    const t = tutorados.find(x => x.id == tutoradoId);
+    if (!t || !t.anexoPaee) return alert('Anexo III-PAEE não encontrado para este estudante.');
+
+    montarEImprimirAnexoPaee(t.anexoPaee.dadosBasicos, t.anexoPaee.dados).catch(e => {
+        console.error(e);
+        alert('Erro ao reimprimir o documento: ' + e.message);
+    });
+}
+
+// Chamada por ia_estagiario.js (exportarAnexoPaeeFinal) depois de salvar um Anexo III-PAEE, pra manter
+// o snapshot do Painel AEE (#aeeVisaoGeral) atualizado e, se a ficha desse estudante estiver aberta na
+// tela, recarregá-la na hora - sem precisar voltar pro Painel AEE nem recarregar a página.
+function atualizarFichaAeeReadOnlyAposSalvar(tutoradoId, anexoPaee) {
+    const container = document.getElementById('aeeVisaoGeral');
+    if (!container) return;
+
+    try {
+        const tutorados = JSON.parse(container.dataset.aeeTutorados || '[]');
+        const t = tutorados.find(x => x.id == tutoradoId);
+        if (t) t.anexoPaee = anexoPaee;
+        container.dataset.aeeTutorados = JSON.stringify(tutorados);
+    } catch (e) {
+        console.warn('Erro ao atualizar snapshot do Painel AEE:', e);
+    }
+
+    const titleEl = document.getElementById('tutoradoFichaNome');
+    const fichaAberta = titleEl && titleEl.dataset.aeeReadOnlyId == tutoradoId &&
+        document.getElementById('tutoradoDetalhe') && document.getElementById('tutoradoDetalhe').classList.contains('active');
+    if (fichaAberta) abrirFichaAeeReadOnly(tutoradoId);
 }
 
 // --- AVISOS MURAL (GESTOR) ---
