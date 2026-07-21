@@ -2568,14 +2568,23 @@ function renderNotasOficiaisGestor() {
                 Uma IA extrai as notas por aluno/disciplina/bimestre; você revisa antes de salvar.
             </p>
 
-            <div style="margin-bottom: 10px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
-                    <label style="font-size:12px; font-weight:bold;">Turmas (pode marcar mais de uma):</label>
-                    ${turmas.length > 0 ? `<label style="font-size:12px;"><input type="checkbox" onchange="document.querySelectorAll('.chk-turma-notas-oficiais').forEach(c => c.checked = this.checked)"> Selecionar todas</label>` : ''}
+            <div style="margin-bottom: 15px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
+                    <label style="font-size:12px; font-weight:bold;">Turmas <span id="contadorTurmasNotasOficiais" style="font-weight:normal; color:#3182ce;"></span></label>
+                    ${turmas.length > 0 ? `
+                        <div style="display:flex; gap:8px;">
+                            <button type="button" class="btn btn-xs btn-secondary" onclick="marcarTodasTurmasVisiveisNotasOficiais()">Marcar todas</button>
+                            <button type="button" class="btn btn-xs btn-secondary" onclick="limparSelecaoTurmasNotasOficiais()">Limpar</button>
+                        </div>
+                    ` : ''}
                 </div>
-                <div style="max-height:180px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px; padding:8px; background:#fff; display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:4px;">
-                    ${turmas.length === 0 ? '<p class="empty-state" style="margin:0;">Nenhuma turma cadastrada.</p>' : turmas.map(t => `
-                        <label style="display:block; font-size:13px; padding:2px 0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${t.nome}"><input type="checkbox" class="chk-turma-notas-oficiais" value="${t.id}"> ${t.nome}</label>
+                ${turmas.length > 0 ? `<input type="text" placeholder="🔍 Buscar turma..." oninput="filtrarListaTurmasNotasOficiais(this.value)" style="width:100%; padding:8px; margin-bottom:6px; border:1px solid #cbd5e0; border-radius:6px; box-sizing:border-box; font-size:13px;">` : ''}
+                <div id="listaTurmasNotasOficiaisContainer" style="max-height:260px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px; background:#fff;">
+                    ${turmas.length === 0 ? '<p class="empty-state" style="margin:0; padding:10px;">Nenhuma turma cadastrada.</p>' : turmas.map(t => `
+                        <label class="linha-turma-notas-oficiais" data-nome="${normalizarTextoComparacaoMaterialDigital(t.nome)}" style="display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid #f1f5f9; cursor:pointer; font-size:13px;">
+                            <input type="checkbox" class="chk-turma-notas-oficiais" value="${t.id}" onchange="atualizarEstadoLinhaTurmaNotasOficiais(this)">
+                            <span>${t.nome}</span>
+                        </label>
                     `).join('')}
                 </div>
             </div>
@@ -2668,6 +2677,40 @@ function toggleModoNotasOficiais(modo) {
     notasOficiaisModo = modo;
     document.getElementById('camposAvaliacaoNotasOficiais').style.display = modo === 'avaliacao' ? 'block' : 'none';
     document.getElementById('infoMapaoNotasOficiais').style.display = modo === 'mapao' ? 'block' : 'none';
+}
+
+// Destaca a linha marcada/desmarcada e atualiza o contador - dá feedback visual claro de quais
+// turmas estão selecionadas (a versão anterior, uma grade de checkboxes sem destaque, não deixava
+// isso claro e cortava nomes de turma longos).
+function atualizarEstadoLinhaTurmaNotasOficiais(checkbox) {
+    const linha = checkbox.closest('.linha-turma-notas-oficiais');
+    if (linha) linha.style.background = checkbox.checked ? '#ebf8ff' : '';
+    const total = document.querySelectorAll('.chk-turma-notas-oficiais:checked').length;
+    const contador = document.getElementById('contadorTurmasNotasOficiais');
+    if (contador) contador.textContent = total > 0 ? `(${total} selecionada${total > 1 ? 's' : ''})` : '';
+}
+
+function filtrarListaTurmasNotasOficiais(termo) {
+    const termoNorm = normalizarTextoComparacaoMaterialDigital(termo);
+    document.querySelectorAll('.linha-turma-notas-oficiais').forEach(linha => {
+        linha.style.display = (linha.dataset.nome || '').includes(termoNorm) ? 'flex' : 'none';
+    });
+}
+
+function marcarTodasTurmasVisiveisNotasOficiais() {
+    document.querySelectorAll('.linha-turma-notas-oficiais').forEach(linha => {
+        if (linha.style.display === 'none') return;
+        const chk = linha.querySelector('.chk-turma-notas-oficiais');
+        chk.checked = true;
+        atualizarEstadoLinhaTurmaNotasOficiais(chk);
+    });
+}
+
+function limparSelecaoTurmasNotasOficiais() {
+    document.querySelectorAll('.chk-turma-notas-oficiais').forEach(chk => {
+        chk.checked = false;
+        atualizarEstadoLinhaTurmaNotasOficiais(chk);
+    });
 }
 
 function removerAvaliacaoGestor(id) {
