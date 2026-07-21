@@ -1345,22 +1345,26 @@ async function exportarAnexoPaeeFinal() {
 // Lê um Anexo III-PAEE já preenchido em Word (.docx) - extrai o texto no navegador (mammoth.js, sem
 // enviar o arquivo a lugar nenhum), pede pra IA ESTRUTURAR (não redigir) os mesmos campos que o
 // formulário/wizard preenchem manualmente, e abre a mesma tela de revisão pra o professor conferir
-// antes de salvar. Chamada pelo input de arquivo da ficha do Painel AEE (app.js: abrirFichaAeeReadOnly).
+// antes de salvar. Chamada tanto do botão "Enviar Novo Arquivo" na ficha editável do aluno (app.js:
+// abrirFichaTutorado, via handleArquivoRelatorioSelecionado) quanto do upload da ficha só-leitura do
+// Painel AEE (app.js: abrirFichaAeeReadOnly) - por isso recebe o id do input/status como parâmetro,
+// já que os dois pontos de entrada usam elementos com ids diferentes.
 // O arquivo nunca é enviado a lugar nenhum: só o texto extraído (variável local) segue pro prompt da
 // IA, e some junto com o resto do escopo da função quando ela termina.
-async function analisarAnexoPaeeWord(tutoradoId) {
-    const fileInput = document.getElementById(`anexoPaeeWordFile_${tutoradoId}`);
+async function analisarAnexoPaeeWord(tutoradoId, fileInputId, statusElId) {
+    const fileInput = document.getElementById(fileInputId);
     const file = fileInput && fileInput.files[0];
     if (!file) return;
 
-    // Nome do estudante vem do mesmo snapshot já carregado pelo Painel AEE (container #aeeVisaoGeral)
-    // - evita ter que passar texto livre (nome do aluno) por atributo HTML onchange.
-    const aeeContainer = document.getElementById('aeeVisaoGeral');
-    const tutoradosSnapshot = aeeContainer ? JSON.parse(aeeContainer.dataset.aeeTutorados || '[]') : [];
-    const tutoradoInfo = tutoradosSnapshot.find(x => x.id == tutoradoId);
+    // Nome do estudante: usa o objeto `data` global se disponível (ficha editável) ou o snapshot do
+    // Painel AEE (ficha só-leitura) - evita ter que passar texto livre (nome do aluno) por atributo
+    // HTML onchange. Ver encontrarTutoradoAeeEmQualquerContexto em app.js.
+    const tutoradoInfo = (typeof encontrarTutoradoAeeEmQualquerContexto === 'function')
+        ? encontrarTutoradoAeeEmQualquerContexto(tutoradoId)
+        : null;
     const nomeEstudante = tutoradoInfo ? tutoradoInfo.nome_estudante : '';
 
-    const statusEl = document.getElementById(`anexoPaeeStatus_${tutoradoId}`);
+    const statusEl = document.getElementById(statusElId);
     const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
 
     if (typeof mammoth === 'undefined') {
