@@ -5636,6 +5636,13 @@ function abrirFichaTutorado(id) {
 
         // Seção de Upload de Arquivo
         const reportUrl = t.aee_report_url || '';
+        const anexoPaee = t.anexoPaee;
+        const anexoPaeeStatusHtml = anexoPaee ? `
+            <div style="margin-top:15px; border-top:1px dashed #cbd5e0; padding-top:15px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                <span style="font-size:12px; color:#2f855a;">✅ Anexo III-PAEE salvo (atualizado em ${formatDate(anexoPaee.atualizadoEm)})</span>
+                <button class="btn btn-sm btn-info" style="padding:2px 8px; font-size:12px;" onclick="reimprimirAnexoPaeeSalvo(${t.id})">🖨️ Reimprimir</button>
+            </div>
+        ` : '';
         const fileHtml = `
             <div style="margin-top:20px;">
                 <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Arquivo de Relatório</label>
@@ -5650,9 +5657,11 @@ function abrirFichaTutorado(id) {
                     `}
                     <div style="margin-top:15px; border-top:1px dashed #cbd5e0; padding-top:15px;">
                         <label for="aeeReportFile_${t.id}" class="btn btn-sm btn-primary">📤 Enviar Novo Arquivo</label>
-                        <input type="file" id="aeeReportFile_${t.id}" style="display:none;" onchange="uploadAeeReport(${t.id})">
+                        <input type="file" id="aeeReportFile_${t.id}" style="display:none;" onchange="handleArquivoRelatorioSelecionado(${t.id})">
                         <span id="uploadStatus_${t.id}" style="margin-left:10px; font-size:12px; color:#4a5568;"></span>
+                        <p style="margin:8px 0 0 0; font-size:11px; color:#a0aec0;">Arquivos .docx (Word) são analisados automaticamente: o sistema extrai os dados do Anexo III-PAEE, abre pra você revisar e salva na ficha (o Word em si não fica guardado). Outros tipos de arquivo são enviados normalmente pro Google Drive.</p>
                     </div>
+                    ${anexoPaeeStatusHtml}
                 </div>
             </div>
         `;
@@ -7883,7 +7892,7 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
                 </div>
                 <div style="margin-top:15px; border-top:1px dashed #cbd5e0; padding-top:15px;">
                     <label for="anexoPaeeWordFile_${t.id}" class="btn btn-sm btn-secondary" style="font-size:12px;">🔄 Substituir por novo Word</label>
-                    <input type="file" id="anexoPaeeWordFile_${t.id}" accept=".docx" style="display:none;" onchange="analisarAnexoPaeeWord(${t.id})">
+                    <input type="file" id="anexoPaeeWordFile_${t.id}" accept=".docx" style="display:none;" onchange="analisarAnexoPaeeWord(${t.id}, 'anexoPaeeWordFile_${t.id}', 'anexoPaeeStatus_${t.id}')">
                     <span id="anexoPaeeStatus_${t.id}" style="margin-left:10px; font-size:12px; color:#4a5568;"></span>
                 </div>
             </div>
@@ -7894,7 +7903,7 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
             <div style="background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
                 <p style="margin:0 0 10px 0; font-size:13px; color:#718096;">Nenhum Anexo III-PAEE salvo para este estudante.</p>
                 <label for="anexoPaeeWordFile_${t.id}" class="btn btn-sm btn-primary">📤 Enviar Anexo III - PAEE (Word)</label>
-                <input type="file" id="anexoPaeeWordFile_${t.id}" accept=".docx" style="display:none;" onchange="analisarAnexoPaeeWord(${t.id})">
+                <input type="file" id="anexoPaeeWordFile_${t.id}" accept=".docx" style="display:none;" onchange="analisarAnexoPaeeWord(${t.id}, 'anexoPaeeWordFile_${t.id}', 'anexoPaeeStatus_${t.id}')">
                 <span id="anexoPaeeStatus_${t.id}" style="margin-left:10px; font-size:12px; color:#4a5568;"></span>
                 <p style="margin:8px 0 0 0; font-size:11px; color:#a0aec0;">Envie o arquivo .docx já preenchido — o sistema lê os dados, você confere na tela seguinte, e o arquivo não fica salvo, só os dados extraídos.</p>
             </div>
@@ -7930,12 +7939,24 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
     showScreen('tutoradoDetalhe');
 }
 
-// Reimprime um Anexo III-PAEE já salvo (sem rodar IA de novo) - lê do mesmo snapshot carregado pelo
-// Painel AEE (container #aeeVisaoGeral) e delega o preenchimento do template pra ia_estagiario.js.
-function reimprimirAnexoPaeeSalvo(tutoradoId) {
+// Acha um tutorado pelo id em qualquer um dos dois lugares onde a ficha AEE pode estar sendo vista:
+// o objeto `data` global (ficha editável, "Meus Alunos" -> abrirFichaTutorado) ou o snapshot carregado
+// pelo Painel AEE (container #aeeVisaoGeral -> abrirFichaAeeReadOnly). Os dois cobrem os pontos de
+// entrada do Anexo III-PAEE hoje.
+function encontrarTutoradoAeeEmQualquerContexto(tutoradoId) {
+    if (typeof data !== 'undefined' && data && Array.isArray(data.tutorados)) {
+        const tLocal = data.tutorados.find(x => x.id == tutoradoId);
+        if (tLocal) return tLocal;
+    }
     const container = document.getElementById('aeeVisaoGeral');
     const tutorados = container ? JSON.parse(container.dataset.aeeTutorados || '[]') : [];
-    const t = tutorados.find(x => x.id == tutoradoId);
+    return tutorados.find(x => x.id == tutoradoId) || null;
+}
+
+// Reimprime um Anexo III-PAEE já salvo (sem rodar IA de novo) - delega o preenchimento do template
+// pra ia_estagiario.js.
+function reimprimirAnexoPaeeSalvo(tutoradoId) {
+    const t = encontrarTutoradoAeeEmQualquerContexto(tutoradoId);
     if (!t || !t.anexoPaee) return alert('Anexo III-PAEE não encontrado para este estudante.');
 
     montarEImprimirAnexoPaee(t.anexoPaee.dadosBasicos, t.anexoPaee.dados).catch(e => {
@@ -7946,24 +7967,29 @@ function reimprimirAnexoPaeeSalvo(tutoradoId) {
 
 // Chamada por ia_estagiario.js (exportarAnexoPaeeFinal) depois de salvar um Anexo III-PAEE, pra manter
 // o snapshot do Painel AEE (#aeeVisaoGeral) atualizado e, se a ficha desse estudante estiver aberta na
-// tela, recarregá-la na hora - sem precisar voltar pro Painel AEE nem recarregar a página.
+// tela (editável ou só-leitura), recarregá-la na hora - sem precisar recarregar a página.
 function atualizarFichaAeeReadOnlyAposSalvar(tutoradoId, anexoPaee) {
     const container = document.getElementById('aeeVisaoGeral');
-    if (!container) return;
-
-    try {
-        const tutorados = JSON.parse(container.dataset.aeeTutorados || '[]');
-        const t = tutorados.find(x => x.id == tutoradoId);
-        if (t) t.anexoPaee = anexoPaee;
-        container.dataset.aeeTutorados = JSON.stringify(tutorados);
-    } catch (e) {
-        console.warn('Erro ao atualizar snapshot do Painel AEE:', e);
+    if (container) {
+        try {
+            const tutorados = JSON.parse(container.dataset.aeeTutorados || '[]');
+            const t = tutorados.find(x => x.id == tutoradoId);
+            if (t) t.anexoPaee = anexoPaee;
+            container.dataset.aeeTutorados = JSON.stringify(tutorados);
+        } catch (e) {
+            console.warn('Erro ao atualizar snapshot do Painel AEE:', e);
+        }
     }
 
     const titleEl = document.getElementById('tutoradoFichaNome');
-    const fichaAberta = titleEl && titleEl.dataset.aeeReadOnlyId == tutoradoId &&
-        document.getElementById('tutoradoDetalhe') && document.getElementById('tutoradoDetalhe').classList.contains('active');
-    if (fichaAberta) abrirFichaAeeReadOnly(tutoradoId);
+    const telaAberta = document.getElementById('tutoradoDetalhe') && document.getElementById('tutoradoDetalhe').classList.contains('active');
+    if (!titleEl || !telaAberta) return;
+
+    if (titleEl.dataset.aeeReadOnlyId == tutoradoId) {
+        abrirFichaAeeReadOnly(tutoradoId);
+    } else if (titleEl.dataset.tutoradoId == tutoradoId) {
+        abrirFichaTutorado(tutoradoId);
+    }
 }
 
 // --- AVISOS MURAL (GESTOR) ---
@@ -8385,6 +8411,22 @@ async function restaurarUltimoBackup() {
 }
 
 // --- UPLOAD/DELETE DE ARQUIVOS AEE ---
+
+// Dispara a partir do botão único "Enviar Novo Arquivo" da ficha do aluno (Meus Alunos): arquivos
+// .docx (Word) são analisados pela IA e preenchem o Anexo III-PAEE (analisarAnexoPaeeWord, em
+// ia_estagiario.js); qualquer outro tipo de arquivo segue o comportamento original, enviado pro
+// Google Drive (uploadAeeReport).
+function handleArquivoRelatorioSelecionado(tutoradoId) {
+    const fileInput = document.getElementById(`aeeReportFile_${tutoradoId}`);
+    const file = fileInput && fileInput.files[0];
+    if (!file) return;
+
+    if (file.name.toLowerCase().endsWith('.docx')) {
+        analisarAnexoPaeeWord(tutoradoId, `aeeReportFile_${tutoradoId}`, `uploadStatus_${tutoradoId}`);
+    } else {
+        uploadAeeReport(tutoradoId);
+    }
+}
 
 async function uploadAeeReport(tutoradoId) {
     // !!! IMPORTANTE: URL do script publicado !!!
