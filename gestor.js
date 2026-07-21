@@ -2561,7 +2561,7 @@ function renderNotasOficiaisGestor() {
 
     container.innerHTML = `
         <div class="card">
-            <h2>🧮 Notas Oficiais (Upload por IA)</h2>
+            <h2>🧮 Notas Oficiais</h2>
             <p style="color:#666; margin-bottom:20px; font-size:13px;">
                 Envie a planilha/PDF de uma <strong>avaliação</strong> (ex: Prova Paulista) ou do <strong>mapão bimestral</strong>.
                 Uma IA extrai as notas por aluno/disciplina/bimestre; você revisa antes de salvar.
@@ -2610,7 +2610,7 @@ function renderNotasOficiaisGestor() {
                 </label>
             </div>
 
-            <button class="btn btn-primary" id="btnProcessarNotasOficiais" onclick="processarArquivoNotasOficiais()">🤖 Processar com IA</button>
+            <button class="btn btn-primary" id="btnProcessarNotasOficiais" onclick="processarArquivoNotasOficiais()">Processar</button>
 
             <div id="progressoNotasOficiais" style="display:none; margin-top:15px;">
                 <div style="background:#e2e8f0; border-radius:6px; overflow:hidden; height:18px;">
