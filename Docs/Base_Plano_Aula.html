@@ -14,6 +14,7 @@
     .header-left { text-align: left; width: 250px; }
     .header-right { text-align: right; width: 150px; }
     .header-center { font-weight: bold; font-size: 14px; }
+    .header-sub { font-weight: normal; font-size: 10px; margin-top: 3px; }
     .subtitle { text-align: center; font-weight: bold; margin-bottom: 10px; font-size: 13px; }
     .gray-bg { background-color: #f2f2f2; font-weight: bold; text-align: center; }
     .center { text-align: center; }
@@ -29,7 +30,7 @@
     <table class="header-table">
         <tr>
             <td class="header-left"><img src="{{LOGO_ESTADO}}" style="max-width: 220px; max-height: 80px;"></td>
-            <td class="header-center">UNIDADE REGIONAL DE ENSINO - {{REGIÃO}}<br>{{NOME COMPLETO DA ESCOLA}}<br>{{TIPO DE DOC}}</td>
+            <td class="header-center">UNIDADE REGIONAL DE ENSINO - {{REGIÃO}}<br>{{NOME COMPLETO DA ESCOLA}}<br>{{TIPO DE DOC}}<div class="header-sub">{{EMAIL_ESCOLA}}<br>{{ENDERECO_ESCOLA}}<br>Fone: {{TELEFONE_ESCOLA}}</div></td>
             <td class="header-right"><img src="{{LOGO_ESCOLA}}" style="max-width: 120px; max-height: 80px;"></td>
         </tr>
     </table>
