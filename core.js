@@ -104,6 +104,14 @@ async function getData(collectionName, docId) {
 }
 
 async function saveData(collectionName, docId, dataObj) {
+    // [MODO SOMENTE LEITURA] Professor inativado pela gestão acessa o sistema, mas não
+    // pode gravar alterações. Este é o ponto único de persistência (Firebase e localStorage),
+    // então basta bloquear aqui. O super_admin nunca é afetado.
+    if (currentUser && currentUser.active === false && currentUser.role !== 'super_admin') {
+        alert('Sua conta está inativada. Você está em modo somente leitura e não pode salvar alterações.\n\nFale com a gestão da sua escola para reativar seu acesso.');
+        return;
+    }
+
     if (USE_FIREBASE) {
         if (!db) {
             alert("ERRO CRÍTICO: Banco de dados não conectado. Suas alterações NÃO serão salvas online.\nRecarregue a página.");

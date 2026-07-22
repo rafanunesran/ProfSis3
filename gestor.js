@@ -19,6 +19,7 @@ function renderGestorPanel() {
         <button onclick="showScreen('notasOficiaisGestor', event)"><span class="icon">🧮</span><span class="label">Notas Oficiais</span></button>
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
         <button onclick="showScreen('horariosGestor', event)"><span class="icon">⏰</span><span class="label">Horários</span></button>
+        <button onclick="showScreen('escolaGestor', event)"><span class="icon">🏫</span><span class="label">Escola</span></button>
     `;
 
     // Criar telas do Gestor se não existirem
@@ -58,6 +59,13 @@ function renderGestorPanel() {
         hor.id = 'horariosGestor';
         hor.className = 'screen';
         innerContainer.appendChild(hor);
+    }
+
+    if (!document.getElementById('escolaGestor')) {
+        const esc = document.createElement('div');
+        esc.id = 'escolaGestor';
+        esc.className = 'screen';
+        innerContainer.appendChild(esc);
     }
 
     renderDashboard();
@@ -3526,4 +3534,247 @@ function montarTabelaNotasOficiaisHtml(dadosGestor, nomeNorm) {
     }
 
     return html;
+}
+// ==================== PÁGINA "ESCOLA" (VISÃO GESTOR) ====================
+// Permite ao gestor configurar a própria escola (nome, região, logo) e gerenciar
+// os perfis dos professores (alterar perfil e ativar/inativar). O gestor NÃO vê
+// e-mail e NÃO exclui usuários (exclusão é exclusiva do super admin).
+
+const ROLE_MAP_GESTOR = {
+    'gestor': { label: 'Gestor', class: 'badge-warning' },
+    'aee': { label: 'AEE', class: 'badge-success' },
+    'projeto': { label: 'Projeto', class: 'badge-info' },
+    'professor': { label: 'Professor', class: 'badge-info' }
+};
+
+async function renderEscolaGestor() {
+    const tela = document.getElementById('escolaGestor');
+    if (!tela) return;
+
+    if (!currentUser || !currentUser.schoolId) {
+        tela.innerHTML = `
+            <div class="card" style="margin:20px 0;">
+                <h2>🏫 Escola</h2>
+                <p class="empty-state">Seu usuário não está vinculado a nenhuma escola. Peça ao administrador para vincular você a uma escola.</p>
+            </div>`;
+        return;
+    }
+
+    const sData = await getData('system', 'schools_list');
+    const schools = (sData && sData.list && Array.isArray(sData.list)) ? sData.list : [];
+    const escola = schools.find(s => s.id == currentUser.schoolId);
+
+    if (!escola) {
+        tela.innerHTML = `
+            <div class="card" style="margin:20px 0;">
+                <h2>🏫 Escola</h2>
+                <p class="empty-state">A escola vinculada ao seu usuário ainda não foi cadastrada pelo administrador. A lista de professores continua disponível abaixo.</p>
+            </div>
+            <div class="card" style="margin:20px 0;">
+                <h2>👥 Professores da Escola</h2>
+                <div id="listaProfessoresGestor"></div>
+            </div>`;
+        renderListaProfessoresGestor();
+        return;
+    }
+
+    const logoPreview = escola.logoEscola
+        ? `<img id="previewLogoEscolaGestor" src="${escola.logoEscola}" style="max-height:80px; display:block; border-radius:4px; margin-top:8px;">`
+        : `<img id="previewLogoEscolaGestor" style="max-height:80px; display:none; border-radius:4px; margin-top:8px;">`;
+
+    tela.innerHTML = `
+        <div class="card" style="margin:20px 0;">
+            <h2>🏫 Configurações da Escola</h2>
+            <p style="color:#666; font-size:14px; margin-bottom:15px;">Ajuste os dados da sua escola. Essas informações aparecem no cabeçalho do sistema e em documentos.</p>
+            <form onsubmit="salvarConfigEscolaGestor(event)">
+                <label>Nome da Escola:
+                    <input type="text" id="escolaGestorNome" value="${escola.nome || ''}" required style="width:100%; padding:8px; margin-bottom:10px;">
+                </label>
+                <label>Nome Completo (para documentos):
+                    <input type="text" id="escolaGestorNomeCompleto" value="${escola.nomeCompleto || ''}" placeholder="Ex: E.E. PEI PROFESSORA FRANCISCA LISBOA PERALTA" style="width:100%; padding:8px; margin-bottom:10px;">
+                </label>
+                <label>Região:
+                    <input type="text" id="escolaGestorRegiao" value="${escola.regiao || ''}" placeholder="Ex: REGIÃO OSASCO" style="width:100%; padding:8px; margin-bottom:10px;">
+                </label>
+                <label>Logo da Escola:
+                    <input type="file" accept="image/*" style="width:100%; margin-bottom:5px;" onchange="converterImagemBase64(this, 'escolaGestorLogoBase64', 'previewLogoEscolaGestor')">
+                    <input type="hidden" id="escolaGestorLogoBase64" value="${escola.logoEscola || ''}">
+                    ${logoPreview}
+                </label>
+                <button type="submit" class="btn btn-primary" style="margin-top:15px;">💾 Salvar Configurações</button>
+            </form>
+        </div>
+
+        <div class="card" style="margin:20px 0;">
+            <h2>👥 Professores da Escola</h2>
+            <p style="color:#666; font-size:14px; margin-bottom:15px;">Altere o perfil ou ative/inative o acesso de edição. Professores inativos continuam acessando o sistema em modo somente leitura.</p>
+            <div id="listaProfessoresGestor"></div>
+        </div>`;
+
+    renderListaProfessoresGestor();
+}
+
+async function salvarConfigEscolaGestor(e) {
+    if (e) e.preventDefault();
+    if (!currentUser || !currentUser.schoolId) return;
+
+    const sData = await getData('system', 'schools_list');
+    const schools = (sData && sData.list && Array.isArray(sData.list)) ? sData.list : [];
+    const escola = schools.find(s => s.id == currentUser.schoolId);
+
+    if (!escola) {
+        alert('A escola ainda não foi cadastrada pelo administrador. Não é possível salvar as configurações.');
+        return;
+    }
+
+    escola.nome = document.getElementById('escolaGestorNome').value.trim();
+    escola.nomeCompleto = document.getElementById('escolaGestorNomeCompleto').value.trim();
+    escola.regiao = document.getElementById('escolaGestorRegiao').value.trim();
+    escola.logoEscola = document.getElementById('escolaGestorLogoBase64').value;
+
+    await saveData('system', 'schools_list', { list: schools });
+    alert('Configurações da escola salvas com sucesso!');
+    renderEscolaGestor();
+}
+
+async function renderListaProfessoresGestor() {
+    const container = document.getElementById('listaProfessoresGestor');
+    if (!container) return;
+
+    const data = await getData('system', 'users_list');
+    const users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
+    const professores = users.filter(u => u.schoolId == currentUser.schoolId && u.role !== 'super_admin');
+
+    if (professores.length === 0) {
+        container.innerHTML = '<p class="empty-state">Nenhum professor vinculado a esta escola.</p>';
+        return;
+    }
+
+    container.innerHTML = `
+        <table>
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>Perfil</th>
+                    <th>Status</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${professores.map(u => {
+                    const roleInfo = ROLE_MAP_GESTOR[u.role] || ROLE_MAP_GESTOR['professor'];
+                    const ativo = (u.active !== false); // undefined = ativo
+                    const isSelf = (currentUser && (String(u.id) === String(currentUser.id) || (u.email && currentUser.email && u.email.toLowerCase() === currentUser.email.toLowerCase())));
+                    const statusBadge = ativo
+                        ? `<span class="badge badge-success">Ativo</span>`
+                        : `<span class="badge badge-danger">Inativo</span>`;
+                    let acoes;
+                    if (isSelf) {
+                        acoes = `<span style="color:#999; font-size:12px;">Você (edite pelo admin)</span>`;
+                    } else {
+                        acoes = `
+                            <button class="btn btn-secondary btn-sm" onclick="editarPerfilProfessorGestor('${u.id}')" title="Alterar Perfil">✏️ Perfil</button>
+                            <button class="btn ${ativo ? 'btn-danger' : 'btn-success'} btn-sm" onclick="toggleAtivoProfessorGestor('${u.id}')" title="${ativo ? 'Inativar acesso de edição' : 'Reativar'}">${ativo ? '🚫 Inativar' : '✅ Ativar'}</button>`;
+                    }
+                    return `
+                    <tr>
+                        <td>${u.nome || '(sem nome)'}</td>
+                        <td><span class="badge ${roleInfo.class}">${roleInfo.label}</span></td>
+                        <td>${statusBadge}</td>
+                        <td>${acoes}</td>
+                    </tr>`;
+                }).join('')}
+            </tbody>
+        </table>`;
+}
+
+function garantirModalPerfilProfessorGestor() {
+    if (document.getElementById('modalPerfilProfessorGestor')) return;
+    const modal = document.createElement('div');
+    modal.id = 'modalPerfilProfessorGestor';
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Alterar Perfil</h2>
+                <button class="close-btn" onclick="closeModal('modalPerfilProfessorGestor')">×</button>
+            </div>
+            <form onsubmit="salvarPerfilProfessorGestor(event)">
+                <input type="hidden" id="perfilProfessorGestorId">
+                <p id="perfilProfessorGestorNome" style="font-weight:bold; margin-bottom:10px;"></p>
+                <label>Tipo de Perfil:
+                    <select id="perfilProfessorGestorRole" style="width:100%; padding:8px; margin-bottom:10px;">
+                        <option value="professor">Professor</option>
+                        <option value="gestor">Gestor</option>
+                        <option value="aee">AEE</option>
+                        <option value="projeto">Projeto</option>
+                    </select>
+                </label>
+                <button type="submit" class="btn btn-primary" style="width:100%;">Salvar</button>
+            </form>
+        </div>`;
+    document.body.appendChild(modal);
+}
+
+async function editarPerfilProfessorGestor(id) {
+    garantirModalPerfilProfessorGestor();
+    const data = await getData('system', 'users_list');
+    const users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
+    const user = users.find(u => String(u.id) === String(id));
+    if (!user) return;
+
+    if (user.schoolId != currentUser.schoolId || user.role === 'super_admin') {
+        alert('Você só pode alterar professores da sua própria escola.');
+        return;
+    }
+
+    document.getElementById('perfilProfessorGestorId').value = user.id;
+    document.getElementById('perfilProfessorGestorNome').textContent = user.nome || '(sem nome)';
+    document.getElementById('perfilProfessorGestorRole').value = user.role || 'professor';
+    showModal('modalPerfilProfessorGestor');
+}
+
+async function salvarPerfilProfessorGestor(e) {
+    if (e) e.preventDefault();
+    const id = document.getElementById('perfilProfessorGestorId').value;
+    const role = document.getElementById('perfilProfessorGestorRole').value;
+
+    const data = await getData('system', 'users_list');
+    const users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
+    const user = users.find(u => String(u.id) === String(id));
+    if (!user) return;
+
+    // Guarda de segurança: só a própria escola, nunca o próprio usuário, nunca super_admin
+    const isSelf = (String(user.id) === String(currentUser.id) || (user.email && currentUser.email && user.email.toLowerCase() === currentUser.email.toLowerCase()));
+    if (user.schoolId != currentUser.schoolId || user.role === 'super_admin' || isSelf) {
+        alert('Ação não permitida.');
+        return;
+    }
+
+    user.role = role;
+    await saveData('system', 'users_list', { list: users });
+    closeModal('modalPerfilProfessorGestor');
+    renderListaProfessoresGestor();
+}
+
+async function toggleAtivoProfessorGestor(id) {
+    const data = await getData('system', 'users_list');
+    const users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
+    const user = users.find(u => String(u.id) === String(id));
+    if (!user) return;
+
+    const isSelf = (String(user.id) === String(currentUser.id) || (user.email && currentUser.email && user.email.toLowerCase() === currentUser.email.toLowerCase()));
+    if (user.schoolId != currentUser.schoolId || user.role === 'super_admin' || isSelf) {
+        alert('Ação não permitida.');
+        return;
+    }
+
+    const ativoAtual = (user.active !== false);
+    const novoEstado = !ativoAtual;
+    const acao = novoEstado ? 'reativar' : 'inativar';
+    if (!confirm(`Deseja ${acao} o acesso de edição de "${user.nome || 'este professor'}"?${novoEstado ? '' : '\n\nEle continuará acessando o sistema, mas em modo somente leitura.'}`)) return;
+
+    user.active = novoEstado;
+    await saveData('system', 'users_list', { list: users });
+    renderListaProfessoresGestor();
 }
