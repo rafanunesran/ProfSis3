@@ -980,6 +980,25 @@ async function chamarIAEstruturada(promptText, btn) {
     }
 }
 
+// Calcula o bimestre vigente a partir das datas configuradas pelo gestor (aba Escola > Períodos
+// Bimestrais). Fora de um intervalo exato (ex: período de recesso entre bimestres) usa o bimestre
+// cujo início/fim está mais próximo de hoje, em vez de um texto genérico sem número.
+function calcularBimestreAtual(hoje) {
+    const configBimestres = data.configBimestres || [];
+    if (configBimestres.length === 0) return '1º Bimestre';
+
+    let configAtual = configBimestres.find(c => hoje >= c.inicio && hoje <= c.fim);
+    if (!configAtual) {
+        const distanciaAteHoje = (dataStr) => Math.abs(new Date(hoje) - new Date(dataStr));
+        configAtual = configBimestres.reduce((maisProximo, c) => {
+            const distancia = Math.min(distanciaAteHoje(c.inicio), distanciaAteHoje(c.fim));
+            const distanciaAtual = maisProximo ? Math.min(distanciaAteHoje(maisProximo.inicio), distanciaAteHoje(maisProximo.fim)) : Infinity;
+            return distancia < distanciaAtual ? c : maisProximo;
+        }, null);
+    }
+    return configAtual ? `${configAtual.bim}º Bimestre` : '1º Bimestre';
+}
+
 async function gerarDocumentoIA() {
     const tipo = document.getElementById('iaDocTipo').value;
     if (tipo === 'agenda_mensal') return gerarAgendaMensalEstagiario();
@@ -1023,9 +1042,7 @@ async function gerarDocumentoIA() {
     const duracaoAulasStr = duracaoAulas > 0 ? `${duracaoAulas} aula(s) (${duracaoAulas * 50} min)` : 'Não definida';
 
     const hoje = getTodayString();
-    const configBimestres = data.configBimestres || [];
-    const configAtual = configBimestres.find(c => hoje >= c.inicio && hoje <= c.fim);
-    const bimestreAtual = configAtual ? `${configAtual.bim}º BIMESTRE` : 'BIMESTRE VIGENTE';
+    const bimestreAtual = calcularBimestreAtual(hoje);
 
     try {
         let dadosEstruturados = {};
@@ -1122,9 +1139,7 @@ async function gerarAnexoPaeeEstagiario() {
     const notas = document.getElementById('anexoPaeeNotas').value || '';
 
     const hoje = getTodayString();
-    const configBimestres = data.configBimestres || [];
-    const configAtual = configBimestres.find(c => hoje >= c.inicio && hoje <= c.fim);
-    const bimestreAtual = configAtual ? `${configAtual.bim}º BIMESTRE` : 'BIMESTRE VIGENTE';
+    const bimestreAtual = calcularBimestreAtual(hoje);
 
     const btn = document.querySelector('#modalGerarDocumentoIA .btn-primary');
     const originalText = btn.textContent;
