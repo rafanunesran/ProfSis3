@@ -3596,6 +3596,15 @@ async function renderEscolaGestor() {
                 <label>Região:
                     <input type="text" id="escolaGestorRegiao" value="${escola.regiao || ''}" placeholder="Ex: REGIÃO OSASCO" style="width:100%; padding:8px; margin-bottom:10px;">
                 </label>
+                <label>E-mail da Escola:
+                    <input type="email" id="escolaGestorEmail" value="${escola.email || ''}" placeholder="Ex: e010790a@educacao.sp.gov.br" style="width:100%; padding:8px; margin-bottom:10px;">
+                </label>
+                <label>Endereço:
+                    <input type="text" id="escolaGestorEndereco" value="${escola.endereco || ''}" placeholder="Ex: Av. Prof. Lourenço Filho, 560 – Jd. Elvira, Osasco – SP" style="width:100%; padding:8px; margin-bottom:10px;">
+                </label>
+                <label>Telefone(s):
+                    <input type="text" id="escolaGestorTelefone" value="${escola.telefone || ''}" placeholder="Ex: (11) 3686-3167 / (11) 3686-1671" style="width:100%; padding:8px; margin-bottom:10px;">
+                </label>
                 <label>Logo da Escola:
                     <input type="file" accept="image/*" style="width:100%; margin-bottom:5px;" onchange="converterImagemBase64(this, 'escolaGestorLogoBase64', 'previewLogoEscolaGestor')">
                     <input type="hidden" id="escolaGestorLogoBase64" value="${escola.logoEscola || ''}">
@@ -3630,6 +3639,9 @@ async function salvarConfigEscolaGestor(e) {
     escola.nome = document.getElementById('escolaGestorNome').value.trim();
     escola.nomeCompleto = document.getElementById('escolaGestorNomeCompleto').value.trim();
     escola.regiao = document.getElementById('escolaGestorRegiao').value.trim();
+    escola.email = document.getElementById('escolaGestorEmail').value.trim();
+    escola.endereco = document.getElementById('escolaGestorEndereco').value.trim();
+    escola.telefone = document.getElementById('escolaGestorTelefone').value.trim();
     escola.logoEscola = document.getElementById('escolaGestorLogoBase64').value;
 
     await saveData('system', 'schools_list', { list: schools });

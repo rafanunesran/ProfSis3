@@ -672,6 +672,9 @@ async function gerarAgendaMensalEstagiario() {
         const logoEstado = configSistema.logoEstado || fallbackLogo;
         const nomeCompletoEscola = configEscola.nomeCompleto || configEscola.nome || 'ESCOLA NÃO CONFIGURADA';
         const logoEscola = configEscola.logoEscola || fallbackLogo;
+        const emailEscola = configEscola.email || '';
+        const enderecoEscola = configEscola.endereco || '';
+        const telefoneEscola = configEscola.telefone || '';
 
         // 3. Substitui os marcadores globais do cabeçalho (uma única vez, texto puro)
         let htmlFinal = templateHtml
@@ -680,6 +683,9 @@ async function gerarAgendaMensalEstagiario() {
             // primeiros casamentos usam a forma decimal/entidade em vez do caractere acentuado.
             .replace(/{{REGI&Atilde;O}}/g, regiao)
             .replace(/{{NOME COMPLETO DA ESCOLA}}/g, nomeCompletoEscola)
+            .replace(/{{EMAIL_ESCOLA}}/g, emailEscola)
+            .replace(/{{ENDERECO_ESCOLA}}/g, enderecoEscola)
+            .replace(/{{TELEFONE_ESCOLA}}/g, telefoneEscola)
             .replace(/{{TIPO DE DOC}}/g, 'AGENDA MENSAL DE TRABALHO')
             .replace(/{{Professor}}/g, currentUser.nome)
             .replace(/{{M&ecirc;s}}/g, MESES_AGENDA[mes])
@@ -1487,6 +1493,9 @@ async function montarEImprimirAnexoPaee(dadosBasicos, dados) {
     const logoEstado = configSistema.logoEstado || fallbackLogo;
     const nomeCompletoEscola = configEscola.nomeCompleto || configEscola.nome || 'ESCOLA NÃO CONFIGURADA';
     const logoEscola = configEscola.logoEscola || fallbackLogo;
+    const emailEscola = configEscola.email || '';
+    const enderecoEscola = configEscola.endereco || '';
+    const telefoneEscola = configEscola.telefone || '';
 
     const escapeHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const paraTexto = (s) => escapeHtml(s).replace(/\n/g, '<br>');
@@ -1497,6 +1506,9 @@ async function montarEImprimirAnexoPaee(dadosBasicos, dados) {
         .replace(/{{ESCOLA}}/g, escapeHtml(nomeCompletoEscola))
         .replace(/{{LOGO_ESTADO}}/g, logoEstado)
         .replace(/{{LOGO_ESCOLA}}/g, logoEscola)
+        .replace(/{{EMAIL_ESCOLA}}/g, escapeHtml(emailEscola))
+        .replace(/{{ENDERECO_ESCOLA}}/g, escapeHtml(enderecoEscola))
+        .replace(/{{TELEFONE_ESCOLA}}/g, escapeHtml(telefoneEscola))
         .replace(/{{NOME_ESTUDANTE}}/g, escapeHtml(dadosBasicos.nomeEstudante))
         .replace(/{{DATA_NASCIMENTO}}/g, escapeHtml(dadosBasicos.dataNascimento))
         .replace(/{{ESCOLARIDADE}}/g, escapeHtml(dadosBasicos.escolaridade))
@@ -1622,6 +1634,9 @@ async function montarEImprimirAnexoIV(dadosBasicos, dados) {
     const logoEstado = configSistema.logoEstado || fallbackLogo;
     const nomeCompletoEscola = configEscola.nomeCompleto || configEscola.nome || 'ESCOLA NÃO CONFIGURADA';
     const logoEscola = configEscola.logoEscola || fallbackLogo;
+    const emailEscola = configEscola.email || '';
+    const enderecoEscola = configEscola.endereco || '';
+    const telefoneEscola = configEscola.telefone || '';
 
     const escapeHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const paraTexto = (s) => escapeHtml(s).replace(/\n/g, '<br>');
@@ -1632,6 +1647,9 @@ async function montarEImprimirAnexoIV(dadosBasicos, dados) {
         .replace(/{{ESCOLA}}/g, escapeHtml(nomeCompletoEscola))
         .replace(/{{LOGO_ESTADO}}/g, logoEstado)
         .replace(/{{LOGO_ESCOLA}}/g, logoEscola)
+        .replace(/{{EMAIL_ESCOLA}}/g, escapeHtml(emailEscola))
+        .replace(/{{ENDERECO_ESCOLA}}/g, escapeHtml(enderecoEscola))
+        .replace(/{{TELEFONE_ESCOLA}}/g, escapeHtml(telefoneEscola))
         .replace(/{{NOME_ESTUDANTE}}/g, escapeHtml(dadosBasicos.nomeEstudante))
         .replace(/{{PROFESSOR}}/g, escapeHtml(dadosBasicos.professorRegente))
         .replace(/{{PROF_AEE}}/g, escapeHtml(dadosBasicos.nomeProfAee))
@@ -1902,6 +1920,7 @@ async function exportarDocumentoFinal(tipo) {
     .header-left { text-align: left; width: 250px; }
     .header-right { text-align: right; width: 150px; }
     .header-center { font-weight: bold; font-size: 14px; }
+    .header-sub { font-weight: normal; font-size: 10px; margin-top: 3px; }
     .subtitle { text-align: center; font-weight: bold; margin-bottom: 10px; font-size: 13px; }
     .gray-bg { background-color: #f2f2f2; font-weight: bold; text-align: center; }
     .center { text-align: center; }
@@ -1912,7 +1931,7 @@ async function exportarDocumentoFinal(tipo) {
     <table class="header-table">
         <tr>
             <td class="header-left"><img src="{{LOGO_ESTADO}}" style="max-width: 220px; max-height: 80px;"></td>
-            <td class="header-center">UNIDADE REGIONAL DE ENSINO - {{REGIÃO}}<br>{{NOME COMPLETO DA ESCOLA}}<br>{{TIPO DE DOC}}</td>
+            <td class="header-center">UNIDADE REGIONAL DE ENSINO - {{REGIÃO}}<br>{{NOME COMPLETO DA ESCOLA}}<br>{{TIPO DE DOC}}<div class="header-sub">{{EMAIL_ESCOLA}}<br>{{ENDERECO_ESCOLA}}<br>Fone: {{TELEFONE_ESCOLA}}</div></td>
             <td class="header-right"><img src="{{LOGO_ESCOLA}}" style="max-width: 120px; max-height: 80px;"></td>
         </tr>
     </table>
@@ -1979,6 +1998,9 @@ async function exportarDocumentoFinal(tipo) {
         const logoEstado = configSistema.logoEstado || fallbackLogo;
         const nomeCompletoEscola = configEscola.nomeCompleto || configEscola.nome || 'ESCOLA NÃO CONFIGURADA';
         const logoEscola = configEscola.logoEscola || fallbackLogo;
+        const emailEscola = configEscola.email || '';
+        const enderecoEscola = configEscola.endereco || '';
+        const telefoneEscola = configEscola.telefone || '';
         const tipoDoc = payload.tipo === 'plano_aula' ? 'PLANO DE AULA' : payload.tipo.toUpperCase().replace('_', ' ');
 
         // Substitui todos os marcadores (placeholders) pelos dados reais globalmente (/g)
@@ -1988,6 +2010,9 @@ async function exportarDocumentoFinal(tipo) {
             .replace(/{{TIPO DE DOC}}/g, tipoDoc)
             .replace(/{{LOGO_ESTADO}}/g, logoEstado)
             .replace(/{{LOGO_ESCOLA}}/g, logoEscola)
+            .replace(/{{EMAIL_ESCOLA}}/g, emailEscola)
+            .replace(/{{ENDERECO_ESCOLA}}/g, enderecoEscola)
+            .replace(/{{TELEFONE_ESCOLA}}/g, telefoneEscola)
             .replace(/{{PROFESSOR}}/g, payload.professor || '')
             .replace(/{{DISCIPLINA}}/g, payload.disciplina || '')
             .replace(/{{SERIE}}/g, payload.serie || '')
