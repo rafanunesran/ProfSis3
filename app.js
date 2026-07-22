@@ -109,6 +109,9 @@ async function iniciarApp() {
             }
         }
 
+        // [MODO SOMENTE LEITURA] Aviso fixo para professor inativado pela gestão
+        atualizarBannerContaInativa();
+
         // Injeta o botão de alternância se for Gestor
         if (currentUser.role === 'gestor') {
             injectGestorToggleButton();
@@ -718,6 +721,7 @@ function showScreen(screenId, evt) {
     if (screenId === 'tutoriasGestor') renderTutoriasGestor();
     if (screenId === 'notasOficiaisGestor') renderNotasOficiaisGestor();
     if (screenId === 'horariosGestor') renderHorariosGestor();
+    if (screenId === 'escolaGestor') renderEscolaGestor();
 }
 
 function showModal(modalId) {
@@ -732,6 +736,27 @@ function showModal(modalId) {
 
 function closeModal(modalId) {
     document.getElementById(modalId).classList.remove('active');
+}
+
+// [MODO SOMENTE LEITURA] Exibe/oculta um banner fixo no topo quando a conta do
+// usuário foi inativada pela gestão. O bloqueio real das gravações acontece em
+// saveData() (core.js); este banner é o aviso visível.
+function atualizarBannerContaInativa() {
+    const inativo = (currentUser && currentUser.active === false && currentUser.role !== 'super_admin');
+    let banner = document.getElementById('bannerContaInativa');
+
+    if (!inativo) {
+        if (banner) banner.remove();
+        return;
+    }
+
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'bannerContaInativa';
+        banner.style.cssText = 'position:sticky; top:0; z-index:9999; background:#e53e3e; color:#fff; padding:10px 16px; text-align:center; font-weight:bold; font-size:14px; box-shadow:0 2px 6px rgba(0,0,0,0.2);';
+        banner.innerHTML = '⚠️ Sua conta está inativada — modo somente leitura. Você pode visualizar, mas não salvar alterações. Fale com a gestão da sua escola.';
+        document.body.insertBefore(banner, document.body.firstChild);
+    }
 }
 
 // Helper para buscar grade da escola
