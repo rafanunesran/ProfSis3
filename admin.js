@@ -7,6 +7,7 @@ function iniciarAdmin() {
     document.getElementById('adminContainer').style.display = 'block';
     renderAdminEscolas();
     renderBackupOptions(); // Nova função
+    renderChavesIANav();
 }
 
 async function fetchEscolas() {
@@ -23,6 +24,7 @@ async function renderAdminEscolas() {
     document.getElementById('adminEscolasScreen').style.display = 'block';
     document.getElementById('adminEscolaDetalheScreen').style.display = 'none';
     document.getElementById('adminBackupScreen').style.display = 'none';
+    if (document.getElementById('adminChavesIAScreen')) document.getElementById('adminChavesIAScreen').style.display = 'none';
 
     let html = `
         <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom: 15px;">
@@ -227,7 +229,8 @@ async function verUsuariosEscola(escolaId) {
     document.getElementById('adminEscolasScreen').style.display = 'none';
     document.getElementById('adminEscolaDetalheScreen').style.display = 'block';
     document.getElementById('adminBackupScreen').style.display = 'none';
-    
+    if (document.getElementById('adminChavesIAScreen')) document.getElementById('adminChavesIAScreen').style.display = 'none';
+
     const container = document.getElementById('adminEscolaDetalheScreen');
     container.innerHTML = `
         <div class="card">
@@ -511,9 +514,9 @@ function renderBackupOptions() {
                     </div>
 
                     <div style="flex: 1; background: #faf5ff; padding: 15px; border-radius: 8px; border: 1px solid #d6bcfa;">
-                        <h3>🤖 Chave de IA (Gemini)</h3>
-                        <p style="font-size: 13px; color: #666;">Configure a chave da API para evitar vazamentos no GitHub.</p>
-                        <button class="btn btn-primary" onclick="configurarChaveIA()">🔑 Configurar Chave</button>
+                        <h3>🔑 Chaves de IA</h3>
+                        <p style="font-size: 13px; color: #666;">Gerencie as chaves de API (Gemini/OpenAI/Groq/Nvidia) usadas pelo Estagiário IA e pela extração de notas.</p>
+                        <button class="btn btn-primary" onclick="renderChavesIAScreen()">🔑 Gerenciar Chaves</button>
                     </div>
 
                     <div style="flex: 1; background: #f0fff4; padding: 15px; border-radius: 8px; border: 1px solid #9ae6b4;">
@@ -539,6 +542,7 @@ function renderBackupOptions() {
             document.getElementById('adminEscolasScreen').style.display = 'none';
             document.getElementById('adminEscolaDetalheScreen').style.display = 'none';
             document.getElementById('adminBackupScreen').style.display = 'block';
+            if (document.getElementById('adminChavesIAScreen')) document.getElementById('adminChavesIAScreen').style.display = 'none';
         };
         header.insertBefore(btn, header.lastElementChild); // Antes do Sair
     }
@@ -646,17 +650,141 @@ async function migrarDadosAEECompartilhado() {
     }
 }
 
-async function configurarChaveIA() {
+// --- CHAVES DE IA ---
+// Substitui o antigo configurarChaveIA() (um prompt() só com string separada por vírgula, sem nomes)
+// por uma tela de gerenciamento: nomeia, mascara e permite excluir/adicionar chaves isoladamente.
+// Guarda em system/config_ia.chaves (array de {id, nome, chave}) - e mantém config_ia.apiKey (a
+// mesma lista, achatada em string separada por vírgula) sempre sincronizado, porque gestor.js
+// (chamarIAExtracaoNotas) e a extensão do Chrome ainda leem só esse campo legado.
+
+function rotularProvedorChave(chave) {
+    if (chave.startsWith('sk-') && !chave.startsWith('sk-ant-')) return 'OpenAI';
+    if (chave.startsWith('gsk_')) return 'Groq';
+    if (chave.startsWith('nvapi-')) return 'Nvidia';
+    return 'Gemini';
+}
+
+function mascararChaveIA(chave) {
+    if (!chave || chave.length <= 8) return '••••••••';
+    return chave.slice(0, 4) + '••••••••' + chave.slice(-4);
+}
+
+async function fetchChavesIA() {
     const configData = await getData('system', 'config_ia') || {};
-    const chaveAtual = configData.apiKey || '';
+    if (Array.isArray(configData.chaves)) return configData.chaves;
 
-    const novaChave = prompt("Insira a chave da API de IA:\nAceita Gemini, OpenAI (sk-...), Groq (gsk_...) ou Nvidia NIM (nvapi-...) - o provedor é detectado automaticamente pelo formato da chave.\n(Se quiser adicionar mais de uma, separe por vírgula - o Gemini é tentado primeiro)", chaveAtual);
-
-    if (novaChave !== null) {
-        configData.apiKey = novaChave.trim();
+    // Migra do formato antigo (string única separada por vírgula) e já persiste - se recalculasse os
+    // ids a cada chamada (em vez de salvar aqui), excluirChaveIA/renomearChaveIA pegariam ids
+    // diferentes dos que a tela acabou de mostrar, e a ação não encontraria a chave certa.
+    const legado = (configData.apiKey || '').split(',').map(k => k.trim()).filter(k => k);
+    const chaves = legado.map((chave, i) => ({ id: Date.now() + i, nome: `${rotularProvedorChave(chave)} ${i + 1}`, chave }));
+    if (chaves.length > 0) {
+        configData.chaves = chaves;
         await saveData('system', 'config_ia', configData);
-        alert('Chave de API salva com segurança no banco de dados!');
     }
+    return chaves;
+}
+
+async function salvarChavesIA(chaves) {
+    const configData = await getData('system', 'config_ia') || {};
+    configData.chaves = chaves;
+    configData.apiKey = chaves.map(c => c.chave).join(',');
+    await saveData('system', 'config_ia', configData);
+}
+
+async function adicionarChaveIA() {
+    const nomeInput = document.getElementById('novaChaveIANome');
+    const chaveInput = document.getElementById('novaChaveIAValor');
+    const nome = nomeInput.value.trim();
+    const chave = chaveInput.value.trim();
+    if (!chave) return alert('Cole a chave antes de adicionar.');
+
+    const chaves = await fetchChavesIA();
+    chaves.push({ id: Date.now(), nome: nome || rotularProvedorChave(chave), chave });
+    await salvarChavesIA(chaves);
+    renderChavesIAScreen();
+}
+
+async function excluirChaveIA(id) {
+    if (!confirm('Tem certeza que deseja excluir esta chave?')) return;
+    const chaves = await fetchChavesIA();
+    await salvarChavesIA(chaves.filter(c => c.id != id));
+    renderChavesIAScreen();
+}
+
+async function renomearChaveIA(id, novoNome) {
+    const chaves = await fetchChavesIA();
+    const c = chaves.find(x => x.id == id);
+    if (c) c.nome = novoNome.trim();
+    await salvarChavesIA(chaves);
+}
+
+// Cria o container da tela (vazio, oculto) e injeta o botão de navegação "🔑 Chaves de IA" no
+// cabeçalho (mesmo padrão de renderBackupOptions / btnNavBackup) - chamada uma vez na inicialização
+// do Super Admin, pra que outras telas já encontrem #adminChavesIAScreen ao ocultá-la.
+function renderChavesIANav() {
+    if (!document.getElementById('adminChavesIAScreen')) {
+        const div = document.createElement('div');
+        div.id = 'adminChavesIAScreen';
+        div.style.display = 'none';
+        document.querySelector('#adminContainer .container').appendChild(div);
+    }
+
+    const header = document.querySelector('#adminContainer header div');
+    if (!header || document.getElementById('btnNavChavesIA')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'btnNavChavesIA';
+    btn.className = 'btn btn-secondary';
+    btn.style.marginRight = '10px';
+    btn.textContent = '🔑 Chaves de IA';
+    btn.onclick = () => renderChavesIAScreen();
+    header.insertBefore(btn, header.lastElementChild); // Antes do Sair
+}
+
+async function renderChavesIAScreen() {
+    document.getElementById('adminEscolasScreen').style.display = 'none';
+    document.getElementById('adminEscolaDetalheScreen').style.display = 'none';
+    document.getElementById('adminBackupScreen').style.display = 'none';
+
+    if (!document.getElementById('adminChavesIAScreen')) {
+        const div = document.createElement('div');
+        div.id = 'adminChavesIAScreen';
+        document.querySelector('#adminContainer .container').appendChild(div);
+    }
+    document.getElementById('adminChavesIAScreen').style.display = 'block';
+
+    const chaves = await fetchChavesIA();
+    const linhasHtml = chaves.length > 0 ? chaves.map(c => `
+        <tr>
+            <td><input type="text" value="${(c.nome || '').replace(/"/g, '&quot;')}" style="width:100%; padding:6px; border:1px solid #cbd5e0; border-radius:4px;" onchange="renomearChaveIA(${c.id}, this.value)"></td>
+            <td><code>${mascararChaveIA(c.chave)}</code></td>
+            <td><span class="badge">${rotularProvedorChave(c.chave)}</span></td>
+            <td><button class="btn btn-sm btn-danger" onclick="excluirChaveIA(${c.id})">🗑️ Excluir</button></td>
+        </tr>
+    `).join('') : `<tr><td colspan="4" style="text-align:center; color:#718096;">Nenhuma chave cadastrada.</td></tr>`;
+
+    document.getElementById('adminChavesIAScreen').innerHTML = `
+        <div class="card" style="margin-top: 20px; border-left: 5px solid #d6bcfa;">
+            <h2>🔑 Chaves de IA</h2>
+            <p style="font-size: 13px; color: #666;">Usadas pelo Estagiário IA (Plano de Aula, Anexo III, Anexo IV) e pela extração de notas do Gestor. O provedor é detectado automaticamente pelo formato da chave (Gemini, OpenAI <code>sk-</code>, Groq <code>gsk_</code>, Nvidia NIM <code>nvapi-</code>) - o Gemini é sempre tentado primeiro; as demais entram como reserva, na ordem em que aparecem aqui.</p>
+            <table style="margin-top:15px;">
+                <thead><tr><th>Nome</th><th>Chave</th><th>Provedor</th><th>Ações</th></tr></thead>
+                <tbody>${linhasHtml}</tbody>
+            </table>
+            <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e2e8f0; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+                <div>
+                    <label style="display:block; font-size:12px; font-weight:bold; margin-bottom:4px;">Nome</label>
+                    <input type="text" id="novaChaveIANome" placeholder="Ex: Gemini principal" style="padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                </div>
+                <div style="flex:1; min-width:250px;">
+                    <label style="display:block; font-size:12px; font-weight:bold; margin-bottom:4px;">Chave</label>
+                    <input type="password" id="novaChaveIAValor" placeholder="Cole a chave aqui" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                </div>
+                <button class="btn btn-primary" onclick="adicionarChaveIA()">+ Adicionar Chave</button>
+            </div>
+        </div>
+    `;
 }
 
 // --- BASE CURRICULAR OFICIAL (fundamentação do Estagiário IA) ---
