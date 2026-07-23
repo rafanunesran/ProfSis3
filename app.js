@@ -5671,8 +5671,6 @@ function abrirFichaTutorado(id) {
         }
         aeeContainer.style.display = 'block';
         
-        // Seção de Upload de Arquivo
-        const reportUrl = t.aee_report_url || '';
         const anexoPaee = t.anexoPaee;
         // Controle de envio do Anexo III já preenchido em Word - lê o texto no navegador e pede pra IA
         // ESTRUTURAR os campos (ia_estagiario.js: analisarAnexoPaeeWord); o arquivo em si nunca é
@@ -5740,28 +5738,6 @@ function abrirFichaTutorado(id) {
                 </div>
             </div>
         `;
-        const fileHtml = `
-            <div style="margin-top:20px;">
-                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Arquivo de Relatório</label>
-                <div style="background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
-                    ${reportUrl ? `
-                        <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <button class="btn btn-sm btn-info" onclick="window.open('https://drive.google.com/file/d/${t.aee_report_path}/view', '_blank')">👁️ Visualizar no Drive</button>
-                            <button class="btn btn-sm btn-danger" onclick="deleteAeeReport(${t.id})">🗑️ Excluir</button>
-                        </div>
-                    ` : `
-                        <p style="margin:0; font-size:13px; color:#718096;">Nenhum arquivo enviado.</p>
-                    `}
-                    <div style="margin-top:15px; border-top:1px dashed #cbd5e0; padding-top:15px;">
-                        <label for="aeeReportFile_${t.id}" class="btn btn-sm btn-primary">📤 Enviar Novo Arquivo</label>
-                        <input type="file" id="aeeReportFile_${t.id}" style="display:none;" onchange="uploadAeeReport(${t.id})">
-                        <span id="uploadStatus_${t.id}" style="margin-left:10px; font-size:12px; color:#4a5568;"></span>
-                        <p style="margin:8px 0 0 0; font-size:11px; color:#a0aec0;">Pra enviar o Anexo III - PAEE, use o botão específico na seção acima. Este aqui é pra qualquer outro arquivo/relatório do estudante.</p>
-                    </div>
-                </div>
-            </div>
-        `;
-
         const isDiagnostico = t.aee_categoria_diagnostico || false;
         const isProjeto = t.aee_categoria_projeto || false;
 
@@ -5780,7 +5756,6 @@ function abrirFichaTutorado(id) {
                 </div>
             </div>
             ${anexoPaeeSectionHtml}
-            ${fileHtml}
             ${renderAnexosIVHtml(t, true)}
         `;
 
@@ -5958,8 +5933,7 @@ async function sincronizarTutoradoComPainelAeeCompartilhado(tutorado) {
     if (!tutorado || !currentUser || !currentUser.schoolId || currentViewMode !== 'aee') return;
 
     const camposSincronizados = ['nome_estudante', 'turma', 'id_estudante_origem', 'data_nascimento',
-        'aee_diagnostico', 'aee_relatorio', 'aee_categoria_diagnostico', 'aee_categoria_projeto',
-        'aee_report_url', 'aee_report_path'];
+        'aee_diagnostico', 'aee_relatorio', 'aee_categoria_diagnostico', 'aee_categoria_projeto'];
 
     try {
         const aeeKey = `app_data_school_${currentUser.schoolId}_aee`;
@@ -6008,11 +5982,6 @@ function salvarDadosAee(id) {
             // Sincroniza categorias também
             est.aee_categoria_diagnostico = t.aee_categoria_diagnostico;
             est.aee_categoria_projeto = t.aee_categoria_projeto;
-            // Preserva info de arquivo
-            if (t.aee_report_url) est.aee_report_url = t.aee_report_url;
-            else delete est.aee_report_url;
-            if (t.aee_report_path) est.aee_report_path = t.aee_report_path;
-            else delete est.aee_report_path;
         }
     }
 
@@ -8656,143 +8625,6 @@ async function restaurarUltimoBackup() {
         restaurarBackupNuvem(latest.id, dataStr);
     } catch (e) {
         alert('Erro ao buscar último backup: ' + e.message);
-    }
-}
-
-// --- UPLOAD/DELETE DE ARQUIVOS AEE ---
-
-async function uploadAeeReport(tutoradoId) {
-    // !!! IMPORTANTE: URL do script publicado !!!
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzN3BOYAFsBPZXx2CN9_QD-7ng-5ac7UZwEkdiEI5o9vEnSgXX2r0jMIaBLXhP6gvut/exec";
-
-    const fileInput = document.getElementById(`aeeReportFile_${tutoradoId}`);
-    const file = fileInput.files[0];
-    if (!file) return;
-
-    // [NOVO] Verificação de Tamanho (Limite de 5MB para evitar erros silenciosos do Apps Script)
-    if (file.size > 5 * 1024 * 1024) {
-        alert(`O arquivo é muito grande (${(file.size / 1024 / 1024).toFixed(1)}MB).\nO limite para upload pelo sistema é de 5MB.\n\nPor favor, envie um arquivo menor ou faça o upload diretamente no Google Drive.`);
-        fileInput.value = '';
-        return;
-    }
-
-    const statusEl = document.getElementById(`uploadStatus_${tutoradoId}`);
-    if (statusEl) statusEl.textContent = 'Enviando para o Google Drive...';
-
-    const t = data.tutorados.find(x => x.id == tutoradoId);
-    if (!t) {
-        if (statusEl) statusEl.textContent = 'Erro: Dados do aluno não encontrados.';
-        return;
-    }
-
-    // Se já existe um arquivo, apaga o antigo primeiro
-    if (t.aee_report_url) {
-        await deleteAeeReport(tutoradoId, true); // true para modo silencioso
-    }
-
-    // Converte arquivo para Base64
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = async () => {
-        const fileData = reader.result;
-        
-        try {
-            const response = await fetch(SCRIPT_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'text/plain;charset=utf-8', // Requisito do Apps Script
-                },
-                body: JSON.stringify({
-                    fileName: file.name,
-                    contentType: file.type,
-                    fileData: fileData
-                })
-            });
-
-            const result = await response.json();
-
-            if (result.status === 'error') {
-                throw new Error(result.message);
-            }
-
-            // Salva a URL de download direto retornada pelo script
-            t.aee_report_url = result.downloadUrl;
-            // Salva o ID do arquivo para facilitar a exclusão
-            t.aee_report_path = result.fileId; 
-
-            // Sincroniza com o cadastro principal do estudante
-            const est = data.estudantes.find(e => e.id == t.id_estudante_origem);
-            if (est) {
-                est.aee_report_url = result.downloadUrl;
-                est.aee_report_path = result.fileId;
-            }
-
-            await persistirDados();
-            sincronizarTutoradoComPainelAeeCompartilhado(t).catch(e => console.warn('Erro ao sincronizar com Painel AEE:', e));
-            if (statusEl) statusEl.textContent = '✅ Enviado!';
-            alert('Arquivo enviado com sucesso para o Google Drive!');
-            abrirFichaTutorado(tutoradoId);
-
-        } catch (error) {
-            console.error("Erro no upload:", error);
-            if (statusEl) statusEl.textContent = '❌ Erro no envio.';
-            
-            let msg = 'Erro ao enviar arquivo: ' + error.message;
-            // Diagnóstico específico para o erro de permissão de "Outro Usuário"
-            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-                msg = 'Erro de Conexão com o Google Drive.\n\nCausa provável: Permissão do Script.\nSolução: O dono do sistema deve acessar o Apps Script e implantar como "Executar como: Eu" e "Quem tem acesso: Qualquer pessoa".';
-            }
-            alert(msg);
-        }
-    };
-    reader.onerror = () => {
-        if (statusEl) statusEl.textContent = '❌ Erro ao ler o arquivo.';
-        alert('Não foi possível ler o arquivo selecionado.');
-    };
-}
-
-async function deleteAeeReport(tutoradoId, silent = false) {
-    // !!! IMPORTANTE: URL do script publicado !!!
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzN3BOYAFsBPZXx2CN9_QD-7ng-5ac7UZwEkdiEI5o9vEnSgXX2r0jMIaBLXhP6gvut/exec";
-
-    if (!silent && !confirm('Tem certeza que deseja excluir o arquivo de relatório do Google Drive?')) return;
-
-    const t = data.tutorados.find(x => x.id == tutoradoId);
-    if (!t || !t.aee_report_path) {
-        if (!silent) alert('Nenhum arquivo vinculado para excluir.');
-        // Limpa a referência local mesmo se não houver path, por segurança
-        delete t.aee_report_url;
-        delete t.aee_report_path;
-        await salvarDadosAee(tutoradoId);
-        if (!silent) abrirFichaTutorado(tutoradoId);
-        return;
-    }
-
-    const fileId = t.aee_report_path; // Usamos o ID salvo diretamente
-
-    try {
-        // Faz a requisição para o script de exclusão
-        const response = await fetch(`${SCRIPT_URL}?action=delete&fileId=${fileId}`);
-        const result = await response.json();
-
-        if (result.status === 'error') {
-            // Mesmo com erro (ex: arquivo já deletado no Drive), limpa a referência local
-            console.warn(`Erro no script ao deletar (pode já ter sido removido): ${result.message}`);
-        }
-
-    } catch (error) {
-        console.error("Erro ao contatar script de exclusão:", error);
-        if (!silent) alert('Erro ao contatar o serviço de exclusão: ' + error.message);
-        // Continua para limpar a referência local mesmo com erro de rede
-    }
-
-    delete t.aee_report_url;
-    delete t.aee_report_path;
-    await salvarDadosAee(tutoradoId); // Usa a função existente para garantir a sincronia
-
-    if (!silent) {
-        alert('Arquivo excluído com sucesso do Google Drive!');
-        abrirFichaTutorado(tutoradoId); // Atualiza a UI
     }
 }
 
