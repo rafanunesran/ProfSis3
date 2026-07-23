@@ -3,8 +3,8 @@ const { chromium } = require('playwright');
 const cors = require('cors');
 
 const app = express();
-app.use(express.json());
-app.use(cors()); // Permite que o Front-End no navegador converse com o servidor
+app.use(express.json({ limit: '2mb' })); // prompts do Estagiário podem ser grandes (contexto oficial)
+app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' })); // restrinja ao domínio do site em produção
 
 // Banco de dados temporário em memória para salvar os cookies roubados da sessão do professor.
 // Em um ambiente de produção real, o ideal é salvar isso no Firestore vinculado à ID do professor.
@@ -213,6 +213,119 @@ app.post('/api/fetch-turmas-estado', async (req, res) => {
         if (browser) await browser.close();
         return res.status(500).json({ success: false, error: error.message });
     }
+});
+
+// ==================== PROXY DA IA ====================
+// Contorna o bloqueio do domínio da API do Google na rede da escola: o navegador do professor chama
+// ESTE servidor (fora da rede), que fala com a IA (Gemini/OpenAI/Groq/Nvidia) e devolve o texto. As
+// chaves ficam só aqui (env IA_API_KEYS, separadas por vírgula). Ver ia_estagiario.js:chamarIAEstruturada.
+const SYS_JSON = 'Você deve retornar APENAS um JSON válido. Nenhuma formatação markdown.';
+
+app.get('/api/ia-health', (req, res) => {
+    const temChave = (process.env.IA_API_KEYS || '').split(',').filter(k => k.trim()).length > 0;
+    res.json({ ok: true, temChave });
+});
+
+app.post('/api/ia-generate', async (req, res) => {
+    // Anti-abuso opcional: se IA_PROXY_TOKEN estiver definido no servidor, exige o header x-ia-token.
+    if (process.env.IA_PROXY_TOKEN && req.headers['x-ia-token'] !== process.env.IA_PROXY_TOKEN) {
+        return res.status(401).json({ ok: false, error: 'Token inválido.' });
+    }
+
+    const prompt = req.body && req.body.prompt;
+    if (!prompt || typeof prompt !== 'string') {
+        return res.status(400).json({ ok: false, error: 'Prompt ausente.' });
+    }
+
+    let apiKeys = (process.env.IA_API_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
+    if (apiKeys.length === 0) {
+        return res.status(500).json({ ok: false, error: 'Nenhuma chave de IA configurada no servidor (defina IA_API_KEYS).' });
+    }
+    // Gemini primeiro, demais como reserva (mesma preferência do cliente).
+    const ehGemini = (k) => !(k.startsWith('sk-') && !k.startsWith('sk-ant-')) && !k.startsWith('gsk_') && !k.startsWith('nvapi-');
+    apiKeys = [...apiKeys.filter(ehGemini), ...apiKeys.filter(k => !ehGemini(k))];
+
+    let lastError = 'desconhecido';
+
+    for (const key of apiKeys) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        try {
+            let text = '';
+
+            if (key.startsWith('sk-') && !key.startsWith('sk-ant-')) {
+                const r = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+                    body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'system', content: SYS_JSON }, { role: 'user', content: prompt }], temperature: 0.7, response_format: { type: 'json_object' } }),
+                    signal: controller.signal
+                });
+                if (!r.ok) throw new Error(`OpenAI ${r.status}`);
+                text = (await r.json()).choices[0].message.content;
+
+            } else if (key.startsWith('gsk_')) {
+                const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+                    body: JSON.stringify({ model: 'llama-3.3-70b-versatile', messages: [{ role: 'system', content: SYS_JSON }, { role: 'user', content: prompt }], temperature: 0.7, response_format: { type: 'json_object' } }),
+                    signal: controller.signal
+                });
+                if (!r.ok) throw new Error(`Groq ${r.status}`);
+                text = (await r.json()).choices[0].message.content;
+
+            } else if (key.startsWith('nvapi-')) {
+                const r = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+                    body: JSON.stringify({ model: 'meta/llama-3.1-70b-instruct', messages: [{ role: 'system', content: SYS_JSON }, { role: 'user', content: prompt }], temperature: 0.7 }),
+                    signal: controller.signal
+                });
+                if (!r.ok) throw new Error(`Nvidia ${r.status}`);
+                text = (await r.json()).choices[0].message.content;
+
+            } else {
+                // GOOGLE GEMINI (padrão) — mesmos safetySettings do cliente (documentos de AEE são
+                // conteúdo legítimo que os limiares padrão costumam bloquear por engano).
+                let ok = false;
+                for (const modelo of ['gemini-2.0-flash', 'gemini-2.5-flash']) {
+                    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${key}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: prompt }] }],
+                            generationConfig: { temperature: 0.7, response_mime_type: 'application/json' },
+                            safetySettings: [
+                                { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+                                { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                                { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                                { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+                            ]
+                        }),
+                        signal: controller.signal
+                    });
+                    if (!r.ok) { lastError = `Gemini ${r.status}`; continue; }
+                    const j = await r.json();
+                    if (j.candidates && j.candidates[0] && j.candidates[0].content) {
+                        text = j.candidates[0].content.parts[0].text;
+                        ok = true;
+                        break;
+                    }
+                    lastError = 'Gemini retornou resposta vazia/bloqueada pelo filtro.';
+                }
+                if (!ok) throw new Error(lastError);
+            }
+
+            clearTimeout(timeoutId);
+            if (text) return res.json({ ok: true, text });
+            lastError = 'Resposta vazia.';
+        } catch (e) {
+            clearTimeout(timeoutId);
+            lastError = (e && e.name === 'AbortError') ? 'Tempo esgotado (30s).' : (e.message || String(e));
+            console.warn('[IA proxy] falha com uma chave:', lastError);
+        }
+    }
+
+    return res.status(502).json({ ok: false, error: lastError });
 });
 
 const PORT = process.env.PORT || 3000;

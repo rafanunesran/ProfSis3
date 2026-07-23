@@ -755,6 +755,7 @@ async function renderChavesIAScreen() {
     document.getElementById('adminChavesIAScreen').style.display = 'block';
 
     const chaves = await fetchChavesIA();
+    const configIA = await getData('system', 'config_ia') || {};
     const linhasHtml = chaves.length > 0 ? chaves.map(c => `
         <tr>
             <td><input type="text" value="${(c.nome || '').replace(/"/g, '&quot;')}" style="width:100%; padding:6px; border:1px solid #cbd5e0; border-radius:4px;" onchange="renomearChaveIA(${c.id}, this.value)"></td>
@@ -783,8 +784,28 @@ async function renderChavesIAScreen() {
                 </div>
                 <button class="btn btn-primary" onclick="adicionarChaveIA()">+ Adicionar Chave</button>
             </div>
+
+            <div style="margin-top:25px; padding-top:15px; border-top:1px solid #e2e8f0;">
+                <h3 style="margin:0 0 6px;">🌐 Servidor de IA (proxy)</h3>
+                <p style="font-size:13px; color:#666; margin-bottom:10px;">Use quando a rede da escola <strong>bloqueia a API do Google</strong>. O site passa a chamar este servidor (fora da rede da escola), que fala com a IA e devolve o documento pronto. Deixe em branco para usar a IA direta. Instruções de publicação em <code>backend-rpa/README.md</code>.</p>
+                <label style="display:block; font-size:12px; font-weight:bold; margin-bottom:4px;">URL do servidor (ex: https://meu-app.onrender.com)</label>
+                <input type="text" id="proxyIAUrl" value="${(configIA.proxyUrl || '').replace(/"/g, '&quot;')}" placeholder="https://..." style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; margin-bottom:10px;">
+                <label style="display:block; font-size:12px; font-weight:bold; margin-bottom:4px;">Token do proxy (opcional, anti-abuso)</label>
+                <input type="password" id="proxyIAToken" value="${(configIA.proxyToken || '').replace(/"/g, '&quot;')}" placeholder="deve ser igual ao IA_PROXY_TOKEN do servidor" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; margin-bottom:10px;">
+                <button class="btn btn-primary" onclick="salvarProxyIA()">💾 Salvar servidor</button>
+            </div>
         </div>
     `;
+}
+
+async function salvarProxyIA() {
+    const configData = await getData('system', 'config_ia') || {};
+    configData.proxyUrl = document.getElementById('proxyIAUrl').value.trim();
+    configData.proxyToken = document.getElementById('proxyIAToken').value.trim();
+    await saveData('system', 'config_ia', configData);
+    alert(configData.proxyUrl
+        ? 'Servidor de IA salvo! O site passará a gerar os documentos pelo servidor.'
+        : 'Servidor de IA removido — voltando a usar a IA direta.');
 }
 
 // --- BASE CURRICULAR OFICIAL (fundamentação do Estagiário IA) ---

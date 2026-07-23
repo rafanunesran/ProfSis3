@@ -906,15 +906,60 @@ async function gerarAgendaMensalEstagiario() {
 // tenta os provedores/modelos com fallback e devolve o objeto já parseado. Lança erro (pro chamador
 // tratar com alert) se a chave não estiver configurada, se todas as tentativas falharem ou se a IA
 // não devolver um JSON válido.
+// Limpa a resposta da IA (remove cercas markdown, isola o primeiro objeto {...}) e devolve o objeto.
+// Usada tanto no caminho direto (fetch aos provedores) quanto no caminho via servidor (proxy).
+function parseJsonRespostaIA(respostaTexto) {
+    let jsonLimpo = (respostaTexto || '').replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').trim();
+    const jsonMatch = jsonLimpo.match(/\{[\s\S]*\}/);
+    if (jsonMatch) jsonLimpo = jsonMatch[0];
+    try {
+        return JSON.parse(jsonLimpo);
+    } catch (parseErr) {
+        console.error("Erro no JSON retornado pela IA:", respostaTexto);
+        throw new Error("A IA não retornou os dados no formato esperado. Por favor, tente gerar novamente.");
+    }
+}
+
 async function chamarIAEstruturada(promptText, btn) {
     let apiKeys = [];
+    let configData = null;
     try {
-        const configData = await getData('system', 'config_ia');
+        configData = await getData('system', 'config_ia');
         if (configData && configData.apiKey) {
             apiKeys = configData.apiKey.split(',').map(k => k.trim()).filter(k => k);
         }
     } catch(e) {
         console.warn('Erro ao buscar chave da IA:', e);
+    }
+
+    // [PROXY IA] Quando a rede da escola bloqueia o domínio da API do Google, o site fala com um
+    // servidor nosso (fora da rede), que chama a IA e devolve o texto. Configurado pelo Super Admin
+    // em system/config_ia.proxyUrl (e proxyToken opcional). Vale pra todos os documentos, pois todos
+    // passam por aqui. Nesse modo o cliente NÃO precisa de chave (ela vive no servidor).
+    const proxyUrl = (configData && configData.proxyUrl) ? String(configData.proxyUrl).trim().replace(/\/+$/, '') : '';
+    if (proxyUrl) {
+        if (btn) btn.textContent = 'Gerando via servidor... ⏳';
+        const headers = { 'Content-Type': 'application/json' };
+        if (configData.proxyToken) headers['x-ia-token'] = configData.proxyToken;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
+        let resp;
+        try {
+            resp = await fetch(`${proxyUrl}/api/ia-generate`, {
+                method: 'POST', headers, body: JSON.stringify({ prompt: promptText }), signal: controller.signal
+            });
+        } catch (e) {
+            clearTimeout(timeoutId);
+            throw new Error(`Não consegui falar com o servidor de IA (${proxyUrl}). Verifique se ele está no ar e se a rede libera esse endereço.\nDetalhe: ${e.message}`);
+        }
+        clearTimeout(timeoutId);
+        let dados = null;
+        try { dados = await resp.json(); } catch (e) { /* corpo não-JSON */ }
+        if (!resp.ok || !dados || !dados.ok) {
+            const motivo = (dados && dados.error) ? dados.error : `HTTP ${resp.status}`;
+            throw new Error(`O servidor de IA retornou erro: ${motivo}.`);
+        }
+        return parseJsonRespostaIA(dados.text || '');
     }
 
     if (apiKeys.length === 0) throw new Error('⚠️ A chave da API não foi configurada. Peça ao Administrador para entrar no painel Super Admin e adicioná-la na aba Migração.');
@@ -1075,20 +1120,8 @@ async function chamarIAEstruturada(promptText, btn) {
         throw new Error(`A Inteligência Artificial falhou ou rejeitou o pedido.\nMotivo: ${lastError}`);
     }
 
-    // Limpa potenciais blocos markdown que a IA possa enviar por teimosia e converte para objeto
-    let jsonLimpo = respostaTexto.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').trim();
-
-    const jsonMatch = jsonLimpo.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-        jsonLimpo = jsonMatch[0];
-    }
-
-    try {
-        return JSON.parse(jsonLimpo);
-    } catch (parseErr) {
-        console.error("Erro no JSON retornado pela IA:", respostaTexto);
-        throw new Error("A IA não retornou os dados no formato esperado. Por favor, tente gerar novamente.");
-    }
+    // Limpa a resposta e converte para objeto (mesma lógica reusada no caminho via servidor).
+    return parseJsonRespostaIA(respostaTexto);
 }
 
 // Calcula o bimestre vigente a partir das datas configuradas pelo gestor (aba Escola > Períodos
