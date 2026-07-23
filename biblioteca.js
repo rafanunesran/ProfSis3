@@ -8,6 +8,8 @@
 // - De PDF/Word(.docx)/Excel(.xlsx) extraímos o texto no navegador (pdf.js / mammoth / SheetJS)
 //   e guardamos junto, pra IA usar o conteúdo. PPT/imagens/links entram pela IA só via metadados
 //   (título, descrição, tags, disciplina, série) — ver ia_estagiario.js (Tier 3).
+// - Dois modos de postar: ⚡ Rápido (sobe o arquivo e a IA classifica título/descrição/tags,
+//   com prévia editável) e ✍️ Detalhado (o professor preenche tudo, e aceita link).
 // - Modelo aberto: qualquer um posta e todos usam; autor e super admin podem excluir.
 
 const BIBLIOTECA_MAX_FILE_MB = 20;
@@ -23,7 +25,10 @@ const BIBLIOTECA_DISCIPLINAS = [
     'Filosofia', 'Sociologia', 'Projeto de Vida', 'Ensino Religioso', 'AEE'
 ];
 
-let bibliotecaCacheMateriais = null; // cache simples da última busca
+let bibliotecaCacheMateriais = null;   // cache simples da última busca de materiais
+let bibliotecaDisciplinas = [];        // lista gerenciável de disciplinas (defaults + criadas)
+let bibliotecaArquivoPendente = null;  // File aguardando publicação (vindo do modo rápido)
+let bibliotecaTextoPendente = null;    // texto já extraído do arquivo pendente (evita reextrair)
 
 // ---------------------------------------------------------------------------
 // Carregamento sob demanda de bibliotecas de extração (só quando precisa)
@@ -86,6 +91,61 @@ async function extrairTextoArquivoBiblioteca(file) {
 }
 
 // ---------------------------------------------------------------------------
+// Lista de disciplinas gerenciável (persistida em system/biblioteca_config)
+// ---------------------------------------------------------------------------
+async function carregarDisciplinasBiblioteca() {
+    let saved = [];
+    try {
+        const c = await getData('system', 'biblioteca_config');
+        if (c && Array.isArray(c.disciplinas)) saved = c.disciplinas;
+    } catch (e) { console.warn('[Biblioteca] Erro ao carregar disciplinas:', e); }
+    bibliotecaDisciplinas = Array.from(new Set([...BIBLIOTECA_DISCIPLINAS, ...saved]))
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, 'pt'));
+    return bibliotecaDisciplinas;
+}
+
+async function adicionarDisciplinaBiblioteca(nome) {
+    nome = (nome || '').trim();
+    if (!nome) return false;
+    if (!bibliotecaDisciplinas.some(d => d.toLowerCase() === nome.toLowerCase())) {
+        bibliotecaDisciplinas.push(nome);
+        bibliotecaDisciplinas.sort((a, b) => a.localeCompare(b, 'pt'));
+        try { await saveData('system', 'biblioteca_config', { disciplinas: bibliotecaDisciplinas }); }
+        catch (e) { console.warn('[Biblioteca] Erro ao salvar disciplina:', e); }
+    }
+    return true;
+}
+
+function bibOpcoesDisciplina(selecionada) {
+    const esc = (s) => (s || '').replace(/"/g, '&quot;');
+    let html = `<option value="">Geral (sem disciplina)</option>`;
+    html += bibliotecaDisciplinas.map(d =>
+        `<option value="${esc(d)}" ${d === selecionada ? 'selected' : ''}>${d}</option>`
+    ).join('');
+    return html;
+}
+
+// Re-popula todos os selects de disciplina (classe bib-disc-select) preservando a seleção atual.
+function bibAtualizarSelectsDisciplina() {
+    document.querySelectorAll('.bib-disc-select').forEach(sel => {
+        const atual = sel.value;
+        sel.innerHTML = bibOpcoesDisciplina(atual);
+        sel.value = atual;
+    });
+}
+
+// Botão "➕ nova": pergunta o nome, salva na lista global e seleciona no campo alvo.
+async function bibNovaDisciplina(targetSelectId) {
+    const nome = prompt('Nome da nova disciplina:');
+    if (!nome || !nome.trim()) return;
+    await adicionarDisciplinaBiblioteca(nome.trim());
+    bibAtualizarSelectsDisciplina();
+    const alvo = document.getElementById(targetSelectId);
+    if (alvo) alvo.value = nome.trim();
+}
+
+// ---------------------------------------------------------------------------
 // Renderização da página
 // ---------------------------------------------------------------------------
 function garantirTelaBiblioteca() {
@@ -109,8 +169,12 @@ async function renderBiblioteca() {
     tela.classList.add('active');
     tela.style.display = '';
 
+    await carregarDisciplinasBiblioteca();
+    bibliotecaArquivoPendente = null;
+    bibliotecaTextoPendente = null;
+
     const optSeries = BIBLIOTECA_SERIES.map(s => `<option value="${s}">${s}</option>`).join('');
-    const optDisc = BIBLIOTECA_DISCIPLINAS.map(d => `<option value="${d}">${d}</option>`).join('');
+    const optDisc = bibOpcoesDisciplina('');
 
     tela.innerHTML = `
         <div class="card" style="margin:20px 0;">
@@ -119,30 +183,66 @@ async function renderBiblioteca() {
                 Materiais de referência compartilhados entre todos os professores. O que você postar aqui
                 pode ser usado automaticamente pelo <strong>Estagiário (IA)</strong> na construção dos documentos.
             </p>
-            <details style="margin-bottom:10px;">
-                <summary style="cursor:pointer; font-weight:bold; color:#2c5282;">➕ Postar novo material</summary>
-                <form onsubmit="bibliotecaAdicionarMaterial(event)" style="margin-top:12px;">
+
+            <div style="display:flex; gap:8px; margin-bottom:14px;">
+                <button type="button" id="bibTabRapido" class="btn btn-primary btn-sm" onclick="bibSetModo('rapido')">⚡ Rápido (a IA classifica)</button>
+                <button type="button" id="bibTabDetalhado" class="btn btn-secondary btn-sm" onclick="bibSetModo('detalhado')">✍️ Detalhado</button>
+            </div>
+
+            <!-- MODO RÁPIDO -->
+            <div id="bibModoRapido">
+                <p style="font-size:13px; color:#555; margin-bottom:10px;">Escolha a disciplina e a série, suba o documento, e a IA gera título, descrição e tags. Você confere antes de publicar.</p>
+                <form onsubmit="bibliotecaEnviarRapido(event)">
+                    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                        <label style="flex:1; min-width:170px;">Disciplina:
+                            <div style="display:flex; gap:6px;">
+                                <select id="bibRapidoDisciplina" class="bib-disc-select" style="flex:1; padding:8px;">${optDisc}</select>
+                                <button type="button" class="btn btn-secondary btn-sm" title="Nova disciplina" onclick="bibNovaDisciplina('bibRapidoDisciplina')">➕</button>
+                            </div>
+                        </label>
+                        <label style="flex:1; min-width:170px;">Série/Ano:
+                            <select id="bibRapidoSerie" style="width:100%; padding:8px;">
+                                <option value="">Geral (todas as séries)</option>${optSeries}
+                            </select>
+                        </label>
+                    </div>
+                    <label style="display:block; margin-top:10px;">Documento (PDF, Word, Excel, PPT, imagem):
+                        <input type="file" id="bibRapidoArquivo" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp" style="width:100%; padding:6px; margin-top:4px;">
+                    </label>
+                    <div id="bibProgressoRapido" style="font-size:13px; color:#2c5282; margin:8px 0;"></div>
+                    <button type="submit" class="btn btn-primary" id="bibBtnRapido">✨ Classificar e revisar</button>
+                </form>
+            </div>
+
+            <!-- MODO DETALHADO (também usado como PRÉVIA do modo rápido) -->
+            <div id="bibModoDetalhado" style="display:none;">
+                <div id="bibBannerClassificacao" style="display:none; background:#ebf8ff; border:1px solid #bee3f8; color:#2c5282; padding:8px 10px; border-radius:6px; font-size:13px; margin-bottom:10px;">
+                    ✨ Classificado automaticamente pela IA — confira/ajuste os campos e publique.
+                </div>
+                <form onsubmit="bibliotecaPublicarDetalhado(event)">
                     <label>Título: <span style="color:#e53e3e;">*</span>
                         <input type="text" id="bibTitulo" required style="width:100%; padding:8px; margin-bottom:10px;" placeholder="Ex: Sequência didática - Frações (6º ano)">
                     </label>
                     <div style="display:flex; gap:10px; flex-wrap:wrap;">
-                        <label style="flex:1; min-width:160px;">Disciplina:
-                            <input list="bibDisciplinasList" id="bibDisciplina" style="width:100%; padding:8px; margin-bottom:10px;" placeholder="Geral se não se aplica">
-                            <datalist id="bibDisciplinasList">${optDisc}</datalist>
+                        <label style="flex:1; min-width:170px;">Disciplina:
+                            <div style="display:flex; gap:6px;">
+                                <select id="bibDisciplina" class="bib-disc-select" style="flex:1; padding:8px;">${optDisc}</select>
+                                <button type="button" class="btn btn-secondary btn-sm" title="Nova disciplina" onclick="bibNovaDisciplina('bibDisciplina')">➕</button>
+                            </div>
                         </label>
-                        <label style="flex:1; min-width:160px;">Série/Ano:
-                            <select id="bibSerie" style="width:100%; padding:8px; margin-bottom:10px;">
-                                <option value="">Geral (todas as séries)</option>
-                                ${optSeries}
+                        <label style="flex:1; min-width:170px;">Série/Ano:
+                            <select id="bibSerie" style="width:100%; padding:8px;">
+                                <option value="">Geral (todas as séries)</option>${optSeries}
                             </select>
                         </label>
                     </div>
-                    <label>Tags / palavras-chave (separadas por vírgula):
+                    <label style="display:block; margin-top:10px;">Tags / palavras-chave (separadas por vírgula):
                         <input type="text" id="bibTags" style="width:100%; padding:8px; margin-bottom:10px;" placeholder="Ex: frações, operações, jogos">
                     </label>
                     <label>Descrição (o que é e como usar — ajuda a IA e os colegas):
                         <textarea id="bibDescricao" rows="2" style="width:100%; padding:8px; margin-bottom:10px;"></textarea>
                     </label>
+                    <div id="bibArquivoPendenteInfo" style="display:none; font-size:13px; background:#f0fff4; border:1px solid #c6f6d5; padding:8px; border-radius:6px; margin-bottom:10px;"></div>
                     <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
                         <label style="flex:1; min-width:200px;">Arquivo (PDF, Word, Excel, PPT, imagem):
                             <input type="file" id="bibArquivo" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp" style="width:100%; padding:6px; margin-bottom:10px;">
@@ -152,16 +252,16 @@ async function renderBiblioteca() {
                         </label>
                     </div>
                     <div id="bibProgresso" style="font-size:13px; color:#2c5282; margin-bottom:8px;"></div>
-                    <button type="submit" class="btn btn-primary" id="bibBtnEnviar">📤 Postar material</button>
+                    <button type="submit" class="btn btn-primary" id="bibBtnEnviar">📤 Publicar material</button>
                 </form>
-            </details>
+            </div>
         </div>
 
         <div class="card" style="margin:20px 0;">
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
                 <input type="text" id="bibBusca" placeholder="🔎 Buscar por título, tags, autor..." style="flex:2; min-width:180px; padding:8px;" oninput="renderListaBiblioteca()">
-                <select id="bibFiltroDisc" style="flex:1; min-width:130px; padding:8px;" onchange="renderListaBiblioteca()">
-                    <option value="">Todas disciplinas</option>${optDisc}
+                <select id="bibFiltroDisc" class="bib-disc-select" style="flex:1; min-width:130px; padding:8px;" onchange="renderListaBiblioteca()">
+                    <option value="">Todas disciplinas</option>${bibliotecaDisciplinas.map(d => `<option value="${d}">${d}</option>`).join('')}
                 </select>
                 <select id="bibFiltroSerie" style="flex:1; min-width:130px; padding:8px;" onchange="renderListaBiblioteca()">
                     <option value="">Todas séries</option>${optSeries}
@@ -171,7 +271,23 @@ async function renderBiblioteca() {
             <div id="bibListaMateriais"><p class="empty-state">Carregando materiais...</p></div>
         </div>`;
 
+    bibSetModo('rapido');
     await recarregarBiblioteca();
+}
+
+function bibSetModo(modo) {
+    const rapido = document.getElementById('bibModoRapido');
+    const detalhado = document.getElementById('bibModoDetalhado');
+    const tabR = document.getElementById('bibTabRapido');
+    const tabD = document.getElementById('bibTabDetalhado');
+    if (!rapido || !detalhado) return;
+    const ehRapido = modo === 'rapido';
+    rapido.style.display = ehRapido ? '' : 'none';
+    detalhado.style.display = ehRapido ? 'none' : '';
+    if (tabR) tabR.className = 'btn btn-sm ' + (ehRapido ? 'btn-primary' : 'btn-secondary');
+    if (tabD) tabD.className = 'btn btn-sm ' + (ehRapido ? 'btn-secondary' : 'btn-primary');
+    // Ao voltar manualmente pro modo rápido, o banner de "classificado" não faz sentido.
+    if (ehRapido) { const b = document.getElementById('bibBannerClassificacao'); if (b) b.style.display = 'none'; }
 }
 
 async function recarregarBiblioteca() {
@@ -261,9 +377,113 @@ function renderListaBiblioteca() {
 }
 
 // ---------------------------------------------------------------------------
-// Postar material
+// Modo RÁPIDO: sobe o arquivo, a IA classifica, abre a prévia editável
 // ---------------------------------------------------------------------------
-async function bibliotecaAdicionarMaterial(e) {
+async function classificarMaterialComIA(texto, disciplina, serie, arquivoNome) {
+    const fallback = { titulo: (arquivoNome || 'Material').replace(/\.[^.]+$/, ''), descricao: '', tags: [] };
+    if (!texto || texto.trim().length < 30) return fallback;
+    if (typeof chamarIAEstruturada !== 'function') return fallback;
+
+    const trecho = texto.slice(0, 6000);
+    const prompt = `Você cataloga materiais pedagógicos para uma biblioteca de professores.` +
+        `${disciplina ? ` Disciplina: ${disciplina}.` : ''}${serie ? ` Série: ${serie}.` : ''}` +
+        ` A partir do TRECHO do documento abaixo, gere metadados. Responda APENAS com um JSON válido, sem markdown, no formato exato:` +
+        ` {"titulo": "título curto e descritivo, no máximo 80 caracteres", "descricao": "1 a 2 frases explicando o que é o material e como o professor pode usá-lo", "tags": ["3 a 6 palavras-chave em minúsculas"]}.\n\nTRECHO:\n${trecho}`;
+
+    try {
+        const r = await chamarIAEstruturada(prompt, null);
+        return {
+            titulo: (r && r.titulo ? String(r.titulo) : fallback.titulo).slice(0, 120),
+            descricao: (r && r.descricao ? String(r.descricao) : ''),
+            tags: (r && Array.isArray(r.tags)) ? r.tags.map(t => String(t).trim()).filter(Boolean).slice(0, 8) : []
+        };
+    } catch (e) {
+        console.warn('[Biblioteca] Classificação por IA falhou, usando nome do arquivo:', e);
+        return fallback;
+    }
+}
+
+function bibAtualizarInfoArquivoPendente() {
+    const info = document.getElementById('bibArquivoPendenteInfo');
+    if (!info) return;
+    if (bibliotecaArquivoPendente) {
+        info.style.display = 'block';
+        info.innerHTML = `📎 Arquivo pronto para publicar: <strong>${bibliotecaArquivoPendente.name}</strong>
+            <button type="button" class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="bibLimparArquivoPendente()">Trocar arquivo</button>`;
+        const fileInput = document.getElementById('bibArquivo');
+        if (fileInput) fileInput.parentElement.style.display = 'none';
+    } else {
+        info.style.display = 'none';
+        info.innerHTML = '';
+        const fileInput = document.getElementById('bibArquivo');
+        if (fileInput) fileInput.parentElement.style.display = '';
+    }
+}
+
+function bibLimparArquivoPendente() {
+    bibliotecaArquivoPendente = null;
+    bibliotecaTextoPendente = null;
+    bibAtualizarInfoArquivoPendente();
+}
+
+async function bibliotecaEnviarRapido(e) {
+    if (e) e.preventDefault();
+    if (!currentUser) { alert('Você precisa estar logado.'); return; }
+
+    const disciplina = document.getElementById('bibRapidoDisciplina').value.trim();
+    const serie = document.getElementById('bibRapidoSerie').value;
+    const arquivoInput = document.getElementById('bibRapidoArquivo');
+    const arquivo = arquivoInput.files && arquivoInput.files[0];
+
+    if (!arquivo) { alert('Selecione um documento para subir.'); return; }
+    if (arquivo.size > BIBLIOTECA_MAX_FILE_MB * 1024 * 1024) {
+        alert(`Arquivo muito grande (máx ${BIBLIOTECA_MAX_FILE_MB}MB).`); return;
+    }
+
+    const btn = document.getElementById('bibBtnRapido');
+    const prog = document.getElementById('bibProgressoRapido');
+    const setProg = (t) => { if (prog) prog.textContent = t; };
+    if (btn) btn.disabled = true;
+
+    try {
+        setProg('Lendo o conteúdo do arquivo...');
+        const texto = (await extrairTextoArquivoBiblioteca(arquivo)).slice(0, BIBLIOTECA_MAX_TEXTO_EXTRAIDO);
+
+        setProg('Classificando com a IA...');
+        const meta = await classificarMaterialComIA(texto, disciplina, serie, arquivo.name);
+
+        // Guarda o arquivo e o texto já extraído para a etapa de publicação
+        bibliotecaArquivoPendente = arquivo;
+        bibliotecaTextoPendente = texto;
+
+        // Preenche o formulário detalhado (que funciona como prévia editável)
+        document.getElementById('bibTitulo').value = meta.titulo || '';
+        document.getElementById('bibDescricao').value = meta.descricao || '';
+        document.getElementById('bibTags').value = (meta.tags || []).join(', ');
+        document.getElementById('bibDisciplina').value = disciplina;
+        document.getElementById('bibSerie').value = serie;
+        document.getElementById('bibLink').value = '';
+        bibAtualizarInfoArquivoPendente();
+
+        setProg('');
+        arquivoInput.value = '';
+        bibSetModo('detalhado');
+        const banner = document.getElementById('bibBannerClassificacao');
+        if (banner) banner.style.display = 'block';
+        document.getElementById('bibTitulo').focus();
+    } catch (err) {
+        console.error('[Biblioteca] Erro no envio rápido:', err);
+        setProg('');
+        alert('Não foi possível processar o arquivo: ' + (err.message || err));
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Publicar (modo detalhado e também a prévia do modo rápido)
+// ---------------------------------------------------------------------------
+async function bibliotecaPublicarDetalhado(e) {
     if (e) e.preventDefault();
     if (!currentUser) { alert('Você precisa estar logado.'); return; }
 
@@ -272,100 +492,111 @@ async function bibliotecaAdicionarMaterial(e) {
     const serie = document.getElementById('bibSerie').value;
     const tags = document.getElementById('bibTags').value.split(',').map(t => t.trim()).filter(Boolean);
     const descricao = document.getElementById('bibDescricao').value.trim();
-    const arquivoInput = document.getElementById('bibArquivo');
+    const fileInput = document.getElementById('bibArquivo');
     const link = document.getElementById('bibLink').value.trim();
-    const arquivo = arquivoInput.files && arquivoInput.files[0];
+
+    // Se o usuário escolheu um arquivo novo no campo, ele tem prioridade sobre o pendente.
+    const arquivoNovo = fileInput.files && fileInput.files[0];
+    const arquivo = arquivoNovo || bibliotecaArquivoPendente || null;
+    // Só reaproveita o texto já extraído se o arquivo for o pendente (não um recém-escolhido).
+    const textoJaExtraido = (!arquivoNovo && bibliotecaArquivoPendente) ? bibliotecaTextoPendente : null;
 
     if (!titulo) { alert('Informe um título.'); return; }
     if (!arquivo && !link) { alert('Anexe um arquivo OU informe um link.'); return; }
     if (arquivo && arquivo.size > BIBLIOTECA_MAX_FILE_MB * 1024 * 1024) {
-        alert(`Arquivo muito grande (máx ${BIBLIOTECA_MAX_FILE_MB}MB).`);
-        return;
+        alert(`Arquivo muito grande (máx ${BIBLIOTECA_MAX_FILE_MB}MB).`); return;
     }
 
     const btn = document.getElementById('bibBtnEnviar');
     const prog = document.getElementById('bibProgresso');
     const setProg = (t) => { if (prog) prog.textContent = t; };
-    if (btn) { btn.disabled = true; }
+    if (btn) btn.disabled = true;
 
     try {
-        let tipo = 'link';
-        let url = link;
-        let downloadURL = '';
-        let storagePath = '';
-        let fileExt = '';
-        let fileName = '';
-        let textoExtraido = '';
-
-        if (arquivo) {
-            tipo = 'arquivo';
-            fileName = arquivo.name;
-            fileExt = (arquivo.name.split('.').pop() || '').toLowerCase();
-
-            // 1) Extrai texto (best-effort) pra alimentar a IA
-            setProg('Lendo o conteúdo do arquivo...');
-            textoExtraido = (await extrairTextoArquivoBiblioteca(arquivo)).slice(0, BIBLIOTECA_MAX_TEXTO_EXTRAIDO);
-
-            // 2) Sobe pro Firebase Storage
-            if (typeof storage === 'undefined' || !storage) {
-                throw new Error('Armazenamento de arquivos indisponível. Verifique se o Firebase Storage está ativo.');
-            }
-            const safe = arquivo.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-            storagePath = `materiais_apoio/${currentUser.uid || currentUser.id || 'anon'}/${Date.now()}_${safe}`;
-            const ref = storage.ref(storagePath);
-            const task = ref.put(arquivo);
-            await new Promise((resolve, reject) => {
-                task.on('state_changed',
-                    (snap) => setProg(`Enviando arquivo... ${Math.round((snap.bytesTransferred / snap.totalBytes) * 100)}%`),
-                    reject,
-                    resolve
-                );
-            });
-            downloadURL = await ref.getDownloadURL();
-        }
-
-        // Chaves de casamento pra IA (mesma lógica do Estagiário). 'GERAL' quando sem série.
-        const serieChave = (typeof resolverSerieChaveCurriculoOficial === 'function' && serie)
-            ? resolverSerieChaveCurriculoOficial(serie) : '';
-        const serieChaves = serieChave ? [serieChave, 'GERAL'] : ['GERAL'];
-
-        const normalizar = (typeof normalizarTextoComparacaoMaterialDigital === 'function')
-            ? normalizarTextoComparacaoMaterialDigital
-            : (s) => (s || '').toString().toLowerCase();
-        const textoBuscavel = normalizar(`${titulo} ${descricao} ${tags.join(' ')} ${textoExtraido}`).slice(0, BIBLIOTECA_MAX_TEXTO_EXTRAIDO);
-
-        setProg('Salvando...');
-        await db.collection('materiais_apoio').add({
-            titulo, descricao, disciplina, serie, tags,
-            disciplinaOriginal: disciplina,
-            serieChaves,
-            tipo, url, downloadURL, storagePath, fileName, fileExt,
-            textoExtraido: textoExtraido || '',
-            textoBuscavel,
-            autorNome: currentUser.nome || 'Professor',
-            autorUid: currentUser.uid || '',
-            autorId: currentUser.id || '',
-            schoolId: currentUser.schoolId || '',
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-            createdAtMs: Date.now()
-        });
+        await salvarMaterialBiblioteca({ titulo, disciplina, serie, tags, descricao, arquivo, link: arquivo ? '' : link, textoJaExtraido, setProg });
 
         setProg('');
-        // Limpa o formulário
-        ['bibTitulo', 'bibDisciplina', 'bibTags', 'bibDescricao', 'bibLink'].forEach(id => {
-            const el = document.getElementById(id); if (el) el.value = '';
-        });
+        // Limpa formulário e pendências
+        ['bibTitulo', 'bibTags', 'bibDescricao', 'bibLink'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+        document.getElementById('bibDisciplina').value = '';
         document.getElementById('bibSerie').value = '';
-        arquivoInput.value = '';
-        alert('Material postado! Já está disponível para todos e para o Estagiário. 📚');
+        if (fileInput) fileInput.value = '';
+        bibLimparArquivoPendente();
+        const banner = document.getElementById('bibBannerClassificacao'); if (banner) banner.style.display = 'none';
+        alert('Material publicado! Já está disponível para todos e para o Estagiário. 📚');
+        bibSetModo('rapido');
         await recarregarBiblioteca();
     } catch (err) {
-        console.error('[Biblioteca] Erro ao postar:', err);
+        console.error('[Biblioteca] Erro ao publicar:', err);
         setProg('');
-        alert('Não foi possível postar o material: ' + (err.message || err));
+        alert('Não foi possível publicar o material: ' + (err.message || err));
     } finally {
         if (btn) btn.disabled = false;
     }
+}
+
+// Faz o upload (se houver arquivo) e grava o documento em materiais_apoio. Reaproveita o texto
+// já extraído quando disponível (evita reprocessar o arquivo vindo do modo rápido).
+async function salvarMaterialBiblioteca({ titulo, disciplina, serie, tags, descricao, arquivo, link, textoJaExtraido, setProg }) {
+    setProg = setProg || (() => {});
+    let tipo = 'link';
+    let url = link || '';
+    let downloadURL = '';
+    let storagePath = '';
+    let fileExt = '';
+    let fileName = '';
+    let textoExtraido = '';
+
+    if (arquivo) {
+        tipo = 'arquivo';
+        fileName = arquivo.name;
+        fileExt = (arquivo.name.split('.').pop() || '').toLowerCase();
+
+        setProg('Lendo o conteúdo do arquivo...');
+        textoExtraido = (textoJaExtraido != null ? textoJaExtraido : await extrairTextoArquivoBiblioteca(arquivo)).slice(0, BIBLIOTECA_MAX_TEXTO_EXTRAIDO);
+
+        if (typeof storage === 'undefined' || !storage) {
+            throw new Error('Armazenamento de arquivos indisponível. Verifique se o Firebase Storage está ativo.');
+        }
+        const safe = arquivo.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        storagePath = `materiais_apoio/${currentUser.uid || currentUser.id || 'anon'}/${Date.now()}_${safe}`;
+        const ref = storage.ref(storagePath);
+        const task = ref.put(arquivo);
+        await new Promise((resolve, reject) => {
+            task.on('state_changed',
+                (snap) => setProg(`Enviando arquivo... ${Math.round((snap.bytesTransferred / snap.totalBytes) * 100)}%`),
+                reject,
+                resolve
+            );
+        });
+        downloadURL = await ref.getDownloadURL();
+    }
+
+    // Chaves de casamento pra IA (mesma lógica do Estagiário). 'GERAL' quando sem série.
+    const serieChave = (typeof resolverSerieChaveCurriculoOficial === 'function' && serie)
+        ? resolverSerieChaveCurriculoOficial(serie) : '';
+    const serieChaves = serieChave ? [serieChave, 'GERAL'] : ['GERAL'];
+
+    const normalizar = (typeof normalizarTextoComparacaoMaterialDigital === 'function')
+        ? normalizarTextoComparacaoMaterialDigital
+        : (s) => (s || '').toString().toLowerCase();
+    const textoBuscavel = normalizar(`${titulo} ${descricao} ${tags.join(' ')} ${textoExtraido}`).slice(0, BIBLIOTECA_MAX_TEXTO_EXTRAIDO);
+
+    setProg('Salvando...');
+    await db.collection('materiais_apoio').add({
+        titulo, descricao, disciplina, serie, tags,
+        disciplinaOriginal: disciplina,
+        serieChaves,
+        tipo, url, downloadURL, storagePath, fileName, fileExt,
+        textoExtraido: textoExtraido || '',
+        textoBuscavel,
+        autorNome: currentUser.nome || 'Professor',
+        autorUid: currentUser.uid || '',
+        autorId: currentUser.id || '',
+        schoolId: currentUser.schoolId || '',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdAtMs: Date.now()
+    });
 }
 
 async function bibliotecaExcluirMaterial(id) {
