@@ -17,6 +17,7 @@ const FORCE_FIREBASE_LOCAL = true;
 const USE_FIREBASE = !isLocalhost || FORCE_FIREBASE_LOCAL;
 
 let db; // Variável global para o Firestore
+let storage; // Variável global para o Firebase Storage (uploads da Biblioteca de Apoio)
 
 // Variáveis Globais
 let currentUser = null;
@@ -40,6 +41,7 @@ if (USE_FIREBASE) {
             firebase.initializeApp(firebaseConfig);
             db = firebase.firestore();
             firebase.auth(); // Inicializa o serviço de Autenticação
+            try { if (typeof firebase.storage === 'function') storage = firebase.storage(); } catch (e) { console.warn('Storage não inicializado:', e); }
             firebase.analytics();
             console.log("🔥 Modo Produção: Firebase Ativado");
             mostrarIndicadorAmbiente('🔥 Online (Firebase)');
