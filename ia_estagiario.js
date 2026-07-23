@@ -1380,7 +1380,7 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
 // Tela de revisão do Anexo III - PAEE: mostra um resumo dos dados básicos/checkboxes preenchidos no
 // formulário (não editáveis aqui - volte pro formulário pra corrigi-los) e uma textarea editável por
 // campo descritivo rascunhado pela IA. Segue o mesmo padrão de abrirModalRevisaoDocumento.
-function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId) {
+function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId, pularImpressao) {
     if (!document.getElementById('modalRevisaoAnexoPaee')) {
         const div = document.createElement('div');
         div.id = 'modalRevisaoAnexoPaee';
@@ -1391,6 +1391,9 @@ function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId) {
     const modal = document.getElementById('modalRevisaoAnexoPaee');
     modal.dataset.basicos = JSON.stringify(dadosBasicos);
     modal.dataset.alunoId = alunoId;
+    // Quando vem da análise de um Word já pronto (analisarAnexoPaeeWord), só salva no perfil do
+    // estudante - não faz sentido reimprimir um documento que o professor já tem em mãos.
+    modal.dataset.pularImpressao = pularImpressao ? '1' : '';
 
     const elegibilidadeLabels = ANEXO_PAEE_ELEGIBILIDADE.filter(o => dadosBasicos.elegibilidade.includes(o.token)).map(o => o.label);
     const apoiosLabels = ANEXO_PAEE_APOIOS.filter(o => dadosBasicos.apoios.includes(o.token)).map(o => o.label);
@@ -1423,13 +1426,15 @@ function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId) {
                     <strong style="color:#2b6cb0;">Apoios/Recursos/Serviços:</strong> <span>${apoiosLabels.join(', ') || 'Nenhum'}</span>
                 </div>
             </div>
-            <p style="font-size:13px; color:#666; margin-bottom:15px;">Os dados básicos acima vêm do formulário anterior (volte pra corrigi-los). Revise e ajuste abaixo o texto rascunhado pela IA antes de exportar o documento final.</p>
+            <p style="font-size:13px; color:#666; margin-bottom:15px;">${pularImpressao
+                ? 'Dados extraídos do Word enviado. Revise e ajuste abaixo antes de salvar no perfil do estudante.'
+                : 'Os dados básicos acima vêm do formulário anterior (volte pra corrigi-los). Revise e ajuste abaixo o texto rascunhado pela IA antes de exportar o documento final.'}</p>
             <div style="max-height: 50vh; overflow-y: auto; padding-right: 10px;">
                 ${camposHtml}
             </div>
             <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
-                <button class="btn btn-secondary" onclick="closeModal('modalRevisaoAnexoPaee'); showModal('modalGerarDocumentoIA')">← Voltar</button>
-                <button class="btn btn-success" onclick="exportarAnexoPaeeFinal()" id="btnExportarAnexoPaee">💾 Gerar Documento Final</button>
+                <button class="btn btn-secondary" onclick="${pularImpressao ? "closeModal('modalRevisaoAnexoPaee')" : "closeModal('modalRevisaoAnexoPaee'); showModal('modalGerarDocumentoIA')"}">${pularImpressao ? 'Cancelar' : '← Voltar'}</button>
+                <button class="btn btn-success" onclick="exportarAnexoPaeeFinal()" id="btnExportarAnexoPaee">${pularImpressao ? '💾 Salvar no Perfil do Estudante' : '💾 Gerar Documento Final'}</button>
             </div>
         </div>
     `;
@@ -1589,58 +1594,19 @@ async function salvarAnexoPaeeSchoolWide(schoolId, tutoradoId, dadosBasicos, dad
     return anexoPaee;
 }
 
-// Grava a referência de um Anexo III-PAEE enviado como arquivo Word pronto (sem passar pela IA) direto
-// no documento AEE da escola - mesmo padrão de salvarAnexoPaeeSchoolWide, mas guarda só {url, path,
-// atualizadoEm} num campo separado (t.anexoPaeeArquivo), já que aqui não há dadosBasicos/dados
-// estruturados pra reimprimir/editar pelo sistema (chamada por app.js: uploadAnexoPaeeArquivo).
-async function salvarAnexoPaeeArquivoSchoolWide(schoolId, tutoradoId, anexoPaeeArquivo) {
-    const aeeKey = `app_data_school_${schoolId}_aee`;
-    const aeeData = await getData('app_data', aeeKey);
-    if (!aeeData || !Array.isArray(aeeData.tutorados)) throw new Error('Não foi possível localizar os dados AEE da escola.');
-
-    const t = aeeData.tutorados.find(x => x.id == tutoradoId);
-    if (!t) throw new Error('Estudante não encontrado nos dados AEE da escola.');
-
-    t.anexoPaeeArquivo = anexoPaeeArquivo;
-    await saveData('app_data', aeeKey, aeeData);
-
-    if (typeof data !== 'undefined' && data && Array.isArray(data.tutorados)) {
-        const tLocal = data.tutorados.find(x => x.id == tutoradoId);
-        if (tLocal) tLocal.anexoPaeeArquivo = anexoPaeeArquivo;
-    }
-
-    return anexoPaeeArquivo;
-}
-
-// Remove a referência de um Anexo III-PAEE enviado como arquivo (t.anexoPaeeArquivo) - mesmo padrão de
-// salvarAnexoPaeeArquivoSchoolWide (chamada por app.js: excluirAnexoPaeeArquivo).
-async function excluirAnexoPaeeArquivoSchoolWide(schoolId, tutoradoId) {
-    const aeeKey = `app_data_school_${schoolId}_aee`;
-    const aeeData = await getData('app_data', aeeKey);
-    if (!aeeData || !Array.isArray(aeeData.tutorados)) throw new Error('Não foi possível localizar os dados AEE da escola.');
-
-    const t = aeeData.tutorados.find(x => x.id == tutoradoId);
-    if (!t) throw new Error('Estudante não encontrado nos dados AEE da escola.');
-
-    delete t.anexoPaeeArquivo;
-    await saveData('app_data', aeeKey, aeeData);
-
-    if (typeof data !== 'undefined' && data && Array.isArray(data.tutorados)) {
-        const tLocal = data.tutorados.find(x => x.id == tutoradoId);
-        if (tLocal) delete tLocal.anexoPaeeArquivo;
-    }
-}
-
-// Exporta o Anexo III - PAEE final: preenche o modelo e abre a impressão (montarEImprimirAnexoPaee) e
-// salva os dados estruturados no perfil do estudante, pra aparecer depois no Painel AEE sem precisar
-// gerar tudo de novo (app.js: abrirFichaAeeReadOnly).
+// Exporta o Anexo III - PAEE final e salva os dados estruturados no perfil do estudante, pra aparecer
+// depois no Painel AEE sem precisar gerar tudo de novo (app.js: abrirFichaAeeReadOnly). Quando vem da
+// análise de um Word já pronto (modal.dataset.pularImpressao), só salva - não reabre a impressão, já
+// que o professor já tem o documento em mãos.
 async function exportarAnexoPaeeFinal() {
+    const modal = document.getElementById('modalRevisaoAnexoPaee');
+    const pularImpressao = modal.dataset.pularImpressao === '1';
+
     const btn = document.getElementById('btnExportarAnexoPaee');
     const originalText = btn.textContent;
-    btn.textContent = 'Gerando Documento... ⏳';
+    btn.textContent = pularImpressao ? 'Salvando... ⏳' : 'Gerando Documento... ⏳';
     btn.disabled = true;
 
-    const modal = document.getElementById('modalRevisaoAnexoPaee');
     const dadosBasicos = JSON.parse(modal.dataset.basicos);
     const alunoId = modal.dataset.alunoId;
     const dados = {};
@@ -1650,7 +1616,9 @@ async function exportarAnexoPaeeFinal() {
     });
 
     try {
-        await montarEImprimirAnexoPaee(dadosBasicos, dados);
+        if (!pularImpressao) {
+            await montarEImprimirAnexoPaee(dadosBasicos, dados);
+        }
 
         if (alunoId && currentUser && currentUser.schoolId) {
             try {
@@ -1658,9 +1626,11 @@ async function exportarAnexoPaeeFinal() {
                 if (typeof atualizarFichaAeeReadOnlyAposSalvar === 'function') {
                     atualizarFichaAeeReadOnlyAposSalvar(alunoId, anexoPaeeSalvo);
                 }
+                if (pularImpressao) alert('Anexo III - PAEE salvo no perfil do estudante!');
             } catch (eSalvar) {
                 console.error(eSalvar);
-                alert('O documento foi impresso, mas houve um erro ao salvar no perfil do estudante:\n' + eSalvar.message);
+                const prefixo = pularImpressao ? '' : 'O documento foi impresso, mas ';
+                alert(`${prefixo}houve um erro ao salvar no perfil do estudante:\n${eSalvar.message}`);
             }
         }
 
@@ -1837,6 +1807,100 @@ async function exportarAnexoIVFinal() {
     } finally {
         btn.textContent = originalText;
         btn.disabled = false;
+    }
+}
+
+// Lê um Anexo III-PAEE já preenchido em Word (.docx) - extrai o texto no navegador (mammoth.js, sem
+// enviar o arquivo a lugar nenhum), pede pra IA ESTRUTURAR (não redigir) os mesmos campos que o
+// formulário/wizard preenchem manualmente, e abre a mesma tela de revisão pra o professor conferir
+// antes de salvar. Só salva no perfil do estudante (pularImpressao=true) - não reimprime, já que o
+// professor preencheu o documento fora do sistema e já tem a cópia dele. Chamada tanto do botão
+// dedicado "Enviar Anexo III (Word)" na ficha editável do aluno (app.js: abrirFichaTutorado) quanto do
+// botão rápido em "Meus Alunos" (app.js: renderTutoria) - por isso recebe o id do input/status como
+// parâmetro, já que os dois pontos de entrada usam elementos com ids diferentes.
+// O arquivo nunca é enviado a lugar nenhum (nem IA, nem Drive): só o texto extraído (variável local)
+// segue pro prompt da IA, e some junto com o resto do escopo da função quando ela termina.
+async function analisarAnexoPaeeWord(tutoradoId, fileInputId, statusElId) {
+    const fileInput = document.getElementById(fileInputId);
+    const file = fileInput && fileInput.files[0];
+    if (!file) return;
+
+    // Nome do estudante: usa o objeto `data` global se disponível (ficha editável) ou o snapshot do
+    // Painel AEE (ficha só-leitura) - evita ter que passar texto livre (nome do aluno) por atributo
+    // HTML onchange. Ver encontrarTutoradoAeeEmQualquerContexto em app.js.
+    const tutoradoInfo = (typeof encontrarTutoradoAeeEmQualquerContexto === 'function')
+        ? encontrarTutoradoAeeEmQualquerContexto(tutoradoId)
+        : null;
+    const nomeEstudante = tutoradoInfo ? tutoradoInfo.nome_estudante : '';
+
+    const statusEl = document.getElementById(statusElId);
+    const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
+
+    if (typeof mammoth === 'undefined') {
+        alert('Erro: biblioteca de leitura de Word não carregou. Recarregue a página e tente novamente.');
+        fileInput.value = '';
+        return;
+    }
+
+    try {
+        setStatus('Lendo arquivo... ⏳');
+        const arrayBuffer = await file.arrayBuffer();
+        const { value: textoExtraido } = await mammoth.extractRawText({ arrayBuffer });
+        if (!textoExtraido || !textoExtraido.trim()) throw new Error('Não foi possível extrair texto do arquivo. Confirme que é um .docx válido.');
+
+        setStatus('Analisando com IA... ⏳');
+
+        const elegibilidadeOpcoes = ANEXO_PAEE_ELEGIBILIDADE.map(o => `${o.token}: ${o.label}`).join('\n');
+        const apoiosOpcoes = ANEXO_PAEE_APOIOS.map(o => `${o.token}: ${o.label}`).join('\n');
+
+        const promptText = `Você é um assistente que EXTRAI dados estruturados de um Anexo III - Plano de AEE (PAEE) do Estado de São Paulo já preenchido, colado abaixo como texto puro (extraído de um Word). Não redija nada novo, não invente - extraia exatamente o que já está escrito no documento. Se algum dado não aparecer no texto, retorne string vazia (ou array vazio) para ele.
+
+TEXTO DO DOCUMENTO:
+"""
+${textoExtraido}
+"""
+
+Retorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com estas chaves:
+{
+  "dataNascimento": "data de nascimento do estudante, formato DD/MM/AAAA se encontrada",
+  "escolaridade": "série/ano escolar",
+  "turno": "turno (Manhã/Tarde/Integral etc)",
+  "sexo": "F ou M, conforme marcado no documento",
+  "nivelApoio": "1, 2 ou 3, conforme o nível de apoio marcado",
+  "elegibilidade": "array com os tokens (dentre a lista abaixo) que estiverem marcados como elegibilidade do estudante",
+  "apoios": "array com os tokens (dentre a lista abaixo) que estiverem marcados como apoios/recursos/serviços indicados",
+  ${ANEXO_PAEE_CAMPOS_IA.map(c => `"${c.key}": "${c.label} - copie o texto correspondente do documento"`).join(',\n  ')}
+}
+
+Tokens possíveis de elegibilidade:
+${elegibilidadeOpcoes}
+
+Tokens possíveis de apoios/recursos/serviços:
+${apoiosOpcoes}`;
+
+        const extraido = await chamarIAEstruturada(promptText);
+
+        const dadosBasicos = {
+            nomeEstudante: nomeEstudante,
+            dataNascimento: extraido.dataNascimento || '',
+            escolaridade: extraido.escolaridade || '',
+            turno: extraido.turno || '',
+            sexo: (extraido.sexo === 'F' || extraido.sexo === 'M') ? extraido.sexo : '',
+            nivelApoio: ['1', '2', '3'].includes(String(extraido.nivelApoio)) ? String(extraido.nivelApoio) : '',
+            elegibilidade: Array.isArray(extraido.elegibilidade) ? extraido.elegibilidade.filter(tok => ANEXO_PAEE_ELEGIBILIDADE.some(o => o.token === tok)) : [],
+            apoios: Array.isArray(extraido.apoios) ? extraido.apoios.filter(tok => ANEXO_PAEE_APOIOS.some(o => o.token === tok)) : []
+        };
+        const dados = {};
+        ANEXO_PAEE_CAMPOS_IA.forEach(c => { dados[c.key] = extraido[c.key] || ''; });
+
+        setStatus('');
+        fileInput.value = '';
+        abrirModalRevisaoAnexoPaee(dadosBasicos, dados, tutoradoId, true);
+    } catch (e) {
+        console.error(e);
+        setStatus('');
+        alert('Erro ao analisar o arquivo:\n' + e.message);
+        fileInput.value = '';
     }
 }
 
