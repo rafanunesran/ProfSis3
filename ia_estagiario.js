@@ -101,12 +101,15 @@ function selecionarMelhoresMateriaisApoio(tema, materiais) {
     const temaNorm = normalizarTextoComparacaoMaterialDigital(tema);
     const tokensTema = temaNorm ? temaNorm.split(' ').filter(t => t.length >= 3) : [];
     if (tokensTema.length === 0) return materiais.slice(0, 3);
-    return materiais
+    const ranqueados = materiais
         .map(m => ({ m, score: pontuarTextoBuscavelContraTema(temaNorm, tokensTema, m.textoBuscavel || '') }))
-        .filter(r => r.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 3)
-        .map(r => r.m);
+        .sort((a, b) => b.score - a.score);
+    // Se algum material bate no tema, usa esses. Senão, como os materiais já vêm filtrados por
+    // disciplina/série no chamador, ainda assim entrega os primeiros como base — o professor os subiu
+    // de propósito pra servir de fonte, então não os descartamos só porque o tema não repete palavras.
+    const relevantes = ranqueados.filter(r => r.score > 0);
+    const escolhidos = relevantes.length > 0 ? relevantes : ranqueados;
+    return escolhidos.slice(0, 3).map(r => r.m);
 }
 
 // Pontua um texto já normalizado (normalizarTextoComparacaoMaterialDigital) contra o "Tema" digitado
@@ -299,7 +302,7 @@ function montarBlocoContextoOficial(contexto) {
     }
 
     if (contexto.tier3Materiais && contexto.tier3Materiais.length > 0) {
-        bloco += '\n[MATERIAIS DE APOIO DA COMUNIDADE - enviados por outros professores na Biblioteca de Apoio; use como referência complementar, com senso crítico, sem tratar como fonte oficial]\n';
+        bloco += '\n[MATERIAIS DE APOIO (BASE) - enviados pelos professores na Biblioteca de Apoio. USE PRIORITARIAMENTE o conteúdo destes materiais como base do documento (conteúdos, exemplos, atividades, desenvolvimento). Só complemente ou improvise com conhecimento próprio se estes materiais NÃO cobrirem o que foi pedido. Os códigos oficiais de habilidade continuam vindo do currículo oficial acima, quando houver.]\n';
         contexto.tier3Materiais.forEach(m => {
             const trecho = (m.textoExtraido || '').replace(/\s+/g, ' ').trim().slice(0, 1500);
             bloco += `- ${m.titulo || 'Material'}${m.disciplina ? ' (' + m.disciplina + ')' : ''}: ${m.descricao || ''}`;
@@ -1387,7 +1390,11 @@ async function gerarAnexoIVEstagiario() {
             ? '\nO Anexo III - PAEE deste estudante ainda não foi preenchido/gerado - gere as adaptações de forma geral, adequada a estudantes atendidos pelo AEE, sem inventar um diagnóstico específico.'
             : `\nInformações do Anexo III - Plano de AEE (PAEE) já registrado pelo Professor Especializado para este estudante:\n"""${fichaAeeTexto}"""\nUse essas informações pra adequar as estratégias, intervenções pedagógicas e recursos de acessibilidade ao perfil real do estudante - não invente nada além do que consta aqui.`;
 
-        const promptText = `Você é um professor de ${disciplina} do Estado de São Paulo, redigindo o Anexo IV - Plano Educacional Individualizado (PEI) de um estudante atendido pelo AEE (Atendimento Educacional Especializado).
+        // Aterra o Anexo IV na base (Biblioteca de Apoio) + currículo oficial, igual ao Plano de Aula.
+        const serieAluno = (tutoradoSelecionado && (tutoradoSelecionado.serie || tutoradoSelecionado.turma)) || '';
+        const contextoOficial = await montarContextoCurriculoOficial(disciplina, serieAluno, descricaoAtividade);
+
+        let promptText = `Você é um professor de ${disciplina} do Estado de São Paulo, redigindo o Anexo IV - Plano Educacional Individualizado (PEI) de um estudante atendido pelo AEE (Atendimento Educacional Especializado).
 Estudante: ${nomeEstudante}. Componente Curricular: ${disciplina}. Bimestre: ${bimestreAtual}.
 Breve descrição da atividade/conteúdo planejado pelo professor:
 """${descricaoAtividade || 'Nenhuma descrição informada - use cautela e sugira conteúdos e estratégias gerais e acessíveis, deixando claro que o professor precisa detalhar melhor a atividade.'}"""
@@ -1397,6 +1404,8 @@ Com base nesses dados, redija os campos abaixo do Anexo IV - PEI, em português,
 No campo de conteúdos e habilidades do currículo, cite sempre o(s) código(s) oficial(is) de habilidade do Currículo Paulista específicos da disciplina de ${disciplina} (ex: EF69AR11 pra Arte, EF67MA... pra Matemática etc.), seguido(s) da descrição da habilidade - nunca deixe esse campo sem pelo menos um código.
 Retorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com as seguintes chaves textuais estritas:
 {${ANEXO_PEI_CAMPOS_IA.map(c => `"${c.key}": "${c.label}"`).join(', ')}}`;
+
+        promptText += montarBlocoContextoOficial(contextoOficial);
 
         const dadosEstruturados = await chamarIAEstruturada(promptText, btn);
 
