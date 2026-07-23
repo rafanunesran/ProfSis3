@@ -28,6 +28,20 @@ android {
         }
     }
     signingConfigs {
+        // v3.2.2: keystore debug FIXA, checada no repo (../profsis3-debug.keystore - nao e
+        // segredo sensivel, so uma chave de auto-assinatura pra build interno/sideload). Sem
+        // isso, o Gradle cai no debug.keystore auto-gerado em ~/.android, que e recriado do
+        // zero em cada runner efemero do GitHub Actions - cada APK publicado ficava assinado
+        // com uma chave diferente da versao anterior instalada no aparelho, e o Android
+        // recusava a atualizacao com "app nao instalado" (UpdateChecker.kt baixava certo, so
+        // a instalacao falhava). Formato PKCS12 (gerado via openssl, nao keytool).
+        debug {
+            storeFile file("../profsis3-debug.keystore")
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+            storeType 'PKCS12'
+        }
         release {
             // Keystore de release, separada da chave CRX da extensao Chrome. Preenchida
             // via -P (ver .github/workflows/deploy-android.yml); sem essas properties,
@@ -41,6 +55,9 @@ android {
         }
     }
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
