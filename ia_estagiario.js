@@ -754,6 +754,34 @@ function restaurarPromptPadraoIA() {
 // Segue o mesmo esquema de placeholders {{REGIÃO}}/{{NOME COMPLETO DA ESCOLA}}/{{LOGO_ESTADO}}/
 // {{LOGO_ESCOLA}} já usado no Plano de Aula (Docs/Base_Plano_Aula.html), pra reaproveitar as mesmas
 // configurações da escola/sistema.
+// ---- Nome sugerido do PDF: o navegador usa o <title> do documento como nome no "Salvar como PDF" ----
+function sanitizarNomeArquivoEstagiario(s) {
+    return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function abreviarDisciplinaEstagiario(disc) {
+    const s = (disc || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z]/g, '');
+    return s.slice(0, 3).toUpperCase();
+}
+function numeroSerieEstagiario(serie) {
+    const m = (serie || '').toString().match(/\d+/);
+    return m ? m[0] : sanitizarNomeArquivoEstagiario(serie);
+}
+// "27a310726" = dia inicial + 'a' + dia final + mês + ano(2 díg.), a partir das datas ISO da semana.
+function dataSemanaArquivoEstagiario(inicioISO, fimISO) {
+    const a = (inicioISO || '').split('-'), b = (fimISO || '').split('-');
+    if (a.length === 3 && b.length === 3) return `${a[2]}a${b[2]}${a[1]}${a[0].slice(2)}`;
+    const d = new Date();
+    return `${String(d.getDate()).padStart(2, '0')}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getFullYear()).slice(2)}`;
+}
+// Injeta/atualiza o <title> do HTML que vai para a janela de impressão.
+function definirTituloPdfEstagiario(html, nome) {
+    const titulo = `<title>${nome}</title>`;
+    if (/<title>[\s\S]*?<\/title>/i.test(html)) return html.replace(/<title>[\s\S]*?<\/title>/i, titulo);
+    if (/<head[^>]*>/i.test(html)) return html.replace(/(<head[^>]*>)/i, `$1${titulo}`);
+    return titulo + html;
+}
+
 async function gerarAgendaMensalEstagiario() {
     const mes = parseInt(document.getElementById('iaAgendaMes').value);
     const ano = parseInt(document.getElementById('iaAgendaAno').value);
@@ -950,6 +978,10 @@ async function gerarAgendaMensalEstagiario() {
         const printStyle = doc.createElement('style');
         printStyle.textContent = '@media print { body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } }';
         doc.head.appendChild(printStyle);
+
+        // Nome sugerido do PDF: Agenda_<Mês>_<Professor>
+        const mesesNomeEstagiario = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+        doc.title = `Agenda_${mesesNomeEstagiario[mes] || (mes + 1)}_${sanitizarNomeArquivoEstagiario(currentUser.nome)}`;
 
         const win = window.open('', '', 'width=1200,height=800');
         if (!win) throw new Error('O navegador bloqueou a abertura da janela (Pop-up). Permita pop-ups no seu navegador para gerar a agenda.');
@@ -1767,6 +1799,9 @@ async function montarEImprimirAnexoPaee(dadosBasicos, dados) {
         htmlFinal = htmlFinal.replace(new RegExp(`{{${c.token}}}`, 'g'), paraTexto(dados[c.key]));
     });
 
+    // Nome sugerido do PDF: AnexoIII_<Estudante>_<Professor>
+    htmlFinal = definirTituloPdfEstagiario(htmlFinal, `AnexoIII_${sanitizarNomeArquivoEstagiario(dadosBasicos.nomeEstudante)}_${sanitizarNomeArquivoEstagiario(dadosBasicos.professor || dadosBasicos.nomeProfAee || currentUser.nome)}`);
+
     if (!htmlFinal.includes('window.print')) {
         htmlFinal += '<script>window.onload = function() { setTimeout(function(){ window.print(); }, 500); }</script>';
     }
@@ -1907,6 +1942,9 @@ async function montarEImprimirAnexoIV(dadosBasicos, dados) {
     ANEXO_PEI_CAMPOS_IA.forEach(c => {
         htmlFinal = htmlFinal.replace(new RegExp(`{{${c.token}}}`, 'g'), paraTexto(dados[c.key]));
     });
+
+    // Nome sugerido do PDF: AnexoIV_<Estudante>_<Disciplina>_<Professor>
+    htmlFinal = definirTituloPdfEstagiario(htmlFinal, `AnexoIV_${sanitizarNomeArquivoEstagiario(dadosBasicos.nomeEstudante)}_${sanitizarNomeArquivoEstagiario(dadosBasicos.disciplina)}_${sanitizarNomeArquivoEstagiario(dadosBasicos.professorRegente)}`);
 
     if (!htmlFinal.includes('window.print')) {
         htmlFinal += '<script>window.onload = function() { setTimeout(function(){ window.print(); }, 500); }</script>';
@@ -2279,6 +2317,9 @@ async function exportarDocumentoFinal(tipo) {
         if (!htmlFinal.includes('window.print')) {
             htmlFinal += '<script>window.onload = function() { setTimeout(function(){ window.print(); }, 500); }</script>';
         }
+
+        // Nome sugerido do PDF: PA_<Disc(3 letras)>_<Série>_<Professor>_<Semana ddAddmmaa>
+        htmlFinal = definirTituloPdfEstagiario(htmlFinal, `PA_${abreviarDisciplinaEstagiario(payload.disciplina)}_${numeroSerieEstagiario(payload.serie)}_${sanitizarNomeArquivoEstagiario(payload.professor)}_${dataSemanaArquivoEstagiario(modal.dataset.semanaInicio, modal.dataset.semanaFim)}`);
 
         const win = window.open('', '', 'width=900,height=800');
         if (!win) {
