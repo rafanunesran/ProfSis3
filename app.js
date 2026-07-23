@@ -5135,7 +5135,13 @@ function renderTutoria() {
     const title = screen ? screen.querySelector('h2') : null;
     const leftPanel = document.getElementById('listaTutorados');
     const rightPanel = document.getElementById('listaEncontros');
-    const tutorados = data.tutorados || [];
+    // Só estudantes ativos: oculta tutorados cujo estudante de origem foi transferido/arquivado
+    // (status ≠ 'Ativo'). Mantém os sem origem/estudante não encontrado (não dá pra verificar).
+    const tutorados = (data.tutorados || []).filter(t => {
+        if (!t.id_estudante_origem) return true;
+        const est = (data.estudantes || []).find(e => e.id == t.id_estudante_origem);
+        return !est || !est.status || est.status === 'Ativo';
+    });
 
     // Parte comum: listar estudantes/tutorados/alunos
     const porTurma = {};
