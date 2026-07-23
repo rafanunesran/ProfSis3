@@ -402,6 +402,15 @@ function normalizeTextoSED(s) {
 // (ex.: "Esporte Musica e Arte" -> iniciais "EMA", ignorando o "e" do meio).
 const STOPWORDS_INICIAIS_DISCIPLINA = ['e', 'de', 'da', 'do', 'das', 'dos', 'em'];
 
+// v3.2.2: formas curtas/coloquiais de disciplina que professores digitam no ProfSis e que não batem
+// nem por igualdade exata nem pelas iniciais (ex.: "Tec" pra "Tecnologia e Inovação" - iniciais dessa
+// disciplina são "TI", não "TEC"). Chaves/valores já em formato normalizeTextoSED (sem espaço/acento).
+const ABREVIACOES_DISCIPLINA = { 'tec': 'tecnologiaeinovacao' };
+
+function expandirAbreviacaoDisciplina(nomeNormalizado) {
+    return ABREVIACOES_DISCIPLINA[nomeNormalizado] || nomeNormalizado;
+}
+
 function iniciaisDisciplina(nome) {
     return (nome || '')
         .split(/[\s\-\/]+/)
@@ -418,7 +427,8 @@ function iniciaisDisciplina(nome) {
 // afrouxa a exigência de exatamente 1 candidato final nas funções que a usam.
 function disciplinasCasam(nomeA, nomeB) {
     if (!nomeA || !nomeB) return false;
-    const normA = normalizeTextoSED(nomeA), normB = normalizeTextoSED(nomeB);
+    const normA = expandirAbreviacaoDisciplina(normalizeTextoSED(nomeA));
+    const normB = expandirAbreviacaoDisciplina(normalizeTextoSED(nomeB));
     if (normA === normB) return true;
     const inicialA = normalizeTextoSED(iniciaisDisciplina(nomeA));
     const inicialB = normalizeTextoSED(iniciaisDisciplina(nomeB));
@@ -958,7 +968,7 @@ function executarPreenchimentoRegistro(payload, opts) {
     // Sincroniza o catálogo de Material Digital silenciosamente antes de preencher - os dois mexem
     // nas mesmas abas de #tabsNavegacao, então precisa terminar a extração antes de começar a
     // navegar de novo pra preencher (ver extrairMaterialDigitalSilencioso).
-    extrairMaterialDigitalSilencioso(() => executarPreenchimentoRegistroDepoisDeExtrair(payload, opts));
+    extrairMaterialDigitalSilencioso((dadosMaterial) => executarPreenchimentoRegistroDepoisDeExtrair(payload, opts, dadosMaterial));
 }
 
 // Lista fixa de atividades genéricas sorteada em executarPreenchimentoRegistroDepoisDeExtrair quando
@@ -977,7 +987,21 @@ const ATIVIDADES_GENERICAS_REGISTRO = [
     'Encerramento e Reflexão'
 ];
 
-function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts) {
+// v3.2.2: sem registro salvo, ainda assim marca um card de Material Digital na tela (em vez de
+// deixar nenhum marcado) - escolhe o primeiro card, na ordem em que aparece nas abas, que NÃO seja
+// "aula com tarefa" (card.temTarefa), pra nunca liberar uma atividade pro aluno sem o professor ter
+// decidido isso explicitamente num registro real.
+function encontrarPrimeiroCardSemTarefa(dadosMaterial) {
+    if (!dadosMaterial || !dadosMaterial.sessoes) return null;
+    for (const sessao of dadosMaterial.sessoes) {
+        for (const card of (sessao.cards || [])) {
+            if (!card.temTarefa) return card;
+        }
+    }
+    return null;
+}
+
+function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts, dadosMaterial) {
     const registro = encontrarRegistroParaTela(payload);
 
     // Preenche o textarea com conteudoTexto, marca o Material Digital (se houver) e salva - mesmo
@@ -994,7 +1018,10 @@ function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts) {
                     const sufixoAviso = (avisoCards && avisoCards.length > 0)
                         ? ('\n\n⚠️ Não encontrei na tela o(s) card(s) do Material Digital: ' + avisoCards.join(', ') + '. Marque manualmente se necessário.')
                         : '';
-                    const sufixoSorteio = foiSorteio ? '\n\n🎲 Sem registro salvo no ProfSis - usei uma atividade genérica sorteada: "' + conteudoTexto + '".' : '';
+                    const sufixoCardAuto = (foiSorteio && cardsMaterialDigital && cardsMaterialDigital.length > 0)
+                        ? (' Marquei o card "' + cardsMaterialDigital[0].titulo + '" (sem tarefa).')
+                        : '';
+                    const sufixoSorteio = foiSorteio ? '\n\n🎲 Sem registro salvo no ProfSis - usei uma atividade genérica sorteada: "' + conteudoTexto + '".' + sufixoCardAuto : '';
                     if (btnSalvar) { btnSalvar.click(); reportarResultado(opts, true, '✅ Registro preenchido e salvo na SED.' + sufixoSorteio + sufixoAviso); }
                     else reportarResultado(opts, false, '✅ Registro preenchido! ⚠️ Clique em "Salvar" manualmente.' + sufixoSorteio + sufixoAviso);
                 }, 400);
@@ -1055,8 +1082,12 @@ function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts) {
     // v3.2.0: sem registro nem rascunho salvo no ProfSis - sorteia uma atividade genérica da lista
     // fixa (ATIVIDADES_GENERICAS_REGISTRO) em vez de abortar - tanto no botão manual quanto no robô
     // automático. Substitui a geração por IA usada antes (não depende mais de rede/chave nenhuma).
+    // v3.2.2: além do texto, marca também um card de Material Digital (o primeiro sem "aula com
+    // tarefa" encontrado nas abas) em vez de deixar a tela sem nenhum card marcado - ver
+    // encontrarPrimeiroCardSemTarefa acima.
     const atividadeSorteada = ATIVIDADES_GENERICAS_REGISTRO[Math.floor(Math.random() * ATIVIDADES_GENERICAS_REGISTRO.length)];
-    prosseguirComConteudo(atividadeSorteada, null, true);
+    const cardFallback = encontrarPrimeiroCardSemTarefa(dadosMaterial);
+    prosseguirComConteudo(atividadeSorteada, cardFallback ? [cardFallback] : null, true);
 }
 
 // v3.1.1: preenche o texto do registro em CADA aba de #tabsNavegacao ("Horário de Aula") - a SED só

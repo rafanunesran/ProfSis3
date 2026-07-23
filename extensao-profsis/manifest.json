@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ProfSis3 - Extensão para Aulas de Hoje",
-  "version": "3.2.1",
+  "version": "3.2.2",
   "update_url": "https://rafanunesran.github.io/ProfSis3/extensao-profsis/dist/update.xml",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA+fkkcbXD+X7T3UzCI30DDqOu92UzpGOwaK7Vf57nKj0y9OM8kXOvAMB5lXk535HizvAnm6wzuZNIJJcOqRBEdqALmjzzX7mmBNMawgXxybnCFpyJXMWL3aHtVlZeQi9a1qbUCca5wjPTd9Vq3dENVf8K48yYHNgJJdXXMTMw+aVggS1rL9Q9KBdTJPouFvdetRnh42lnHvy4qF9wRKEQk0tU9ooRZaFzUSrLzudbbXtiIQn3ODSr/xnWwquTtJdRFtehtw98uc6uVKHimCgkJrZymqkUzTmnGAF7de+0dtknnCTOi9fInaB6+OXKYsdaG8IPPxs53CTr7Zpj6zX3JwIDAQAB",
   "description": "Exibe as aulas do dia do ProfSis em um card de agenda na Sala do Futuro, preenche Chamada e Registro de Aulas conforme a tela (com um botão \"Auto\" que navega e preenche sozinho, sorteando uma atividade genérica quando não há registro salvo), e permite extrair alunos direto para o banco.",
