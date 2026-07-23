@@ -688,7 +688,9 @@ async function fetchChavesIA() {
 async function salvarChavesIA(chaves) {
     const configData = await getData('system', 'config_ia') || {};
     configData.chaves = chaves;
-    configData.apiKey = chaves.map(c => c.chave).join(',');
+    // O campo legado apiKey (lido pelo Estagiário/Gestor/extensão) leva só as chaves ATIVAS, na ordem
+    // de prioridade definida aqui (de cima para baixo). Inativas ficam guardadas em .chaves, sem uso.
+    configData.apiKey = chaves.filter(c => c.ativa !== false).map(c => c.chave).join(',');
     await saveData('system', 'config_ia', configData);
 }
 
@@ -700,7 +702,7 @@ async function adicionarChaveIA() {
     if (!chave) return alert('Cole a chave antes de adicionar.');
 
     const chaves = await fetchChavesIA();
-    chaves.push({ id: Date.now(), nome: nome || rotularProvedorChave(chave), chave });
+    chaves.push({ id: Date.now(), nome: nome || rotularProvedorChave(chave), chave, ativa: true });
     await salvarChavesIA(chaves);
     renderChavesIAScreen();
 }
@@ -717,6 +719,28 @@ async function renomearChaveIA(id, novoNome) {
     const c = chaves.find(x => x.id == id);
     if (c) c.nome = novoNome.trim();
     await salvarChavesIA(chaves);
+}
+
+// Prioridade: reordena a chave para cima (dir=-1) ou para baixo (dir=1). A ordem da lista é a ordem
+// de tentativa da IA.
+async function moverChaveIA(id, dir) {
+    const chaves = await fetchChavesIA();
+    const i = chaves.findIndex(c => c.id == id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= chaves.length) return;
+    [chaves[i], chaves[j]] = [chaves[j], chaves[i]];
+    await salvarChavesIA(chaves);
+    renderChavesIAScreen();
+}
+
+// Ativa/inativa uma chave sem excluí-la (útil para chaves que não dá pra gerar de novo). Chave inativa
+// é preservada, mas fica de fora do uso pela IA.
+async function alternarAtivaChaveIA(id) {
+    const chaves = await fetchChavesIA();
+    const c = chaves.find(x => x.id == id);
+    if (c) c.ativa = (c.ativa === false); // inativa -> ativa; ativa/indefinida -> inativa
+    await salvarChavesIA(chaves);
+    renderChavesIAScreen();
 }
 
 // Cria o container da tela (vazio, oculto) e injeta o botão de navegação "🔑 Chaves de IA" no
@@ -755,21 +779,31 @@ async function renderChavesIAScreen() {
     document.getElementById('adminChavesIAScreen').style.display = 'block';
 
     const chaves = await fetchChavesIA();
-    const linhasHtml = chaves.length > 0 ? chaves.map(c => `
-        <tr>
+    const linhasHtml = chaves.length > 0 ? chaves.map((c, idx) => {
+        const ativa = c.ativa !== false;
+        return `
+        <tr style="${ativa ? '' : 'opacity:0.5;'}">
+            <td style="white-space:nowrap;">
+                <button class="btn btn-sm btn-secondary" title="Subir prioridade" onclick="moverChaveIA(${c.id}, -1)" ${idx === 0 ? 'disabled' : ''}>↑</button>
+                <button class="btn btn-sm btn-secondary" title="Descer prioridade" onclick="moverChaveIA(${c.id}, 1)" ${idx === chaves.length - 1 ? 'disabled' : ''}>↓</button>
+            </td>
             <td><input type="text" value="${(c.nome || '').replace(/"/g, '&quot;')}" style="width:100%; padding:6px; border:1px solid #cbd5e0; border-radius:4px;" onchange="renomearChaveIA(${c.id}, this.value)"></td>
             <td><code>${mascararChaveIA(c.chave)}</code></td>
             <td><span class="badge">${rotularProvedorChave(c.chave)}</span></td>
-            <td><button class="btn btn-sm btn-danger" onclick="excluirChaveIA(${c.id})">🗑️ Excluir</button></td>
-        </tr>
-    `).join('') : `<tr><td colspan="4" style="text-align:center; color:#718096;">Nenhuma chave cadastrada.</td></tr>`;
+            <td>${ativa ? '<span class="badge badge-success">Ativa</span>' : '<span class="badge badge-danger">Inativa</span>'}</td>
+            <td style="white-space:nowrap;">
+                <button class="btn btn-sm ${ativa ? 'btn-secondary' : 'btn-success'}" onclick="alternarAtivaChaveIA(${c.id})">${ativa ? '⏸️ Inativar' : '▶️ Ativar'}</button>
+                <button class="btn btn-sm btn-danger" onclick="excluirChaveIA(${c.id})" title="Excluir">🗑️</button>
+            </td>
+        </tr>`;
+    }).join('') : `<tr><td colspan="6" style="text-align:center; color:#718096;">Nenhuma chave cadastrada.</td></tr>`;
 
     document.getElementById('adminChavesIAScreen').innerHTML = `
         <div class="card" style="margin-top: 20px; border-left: 5px solid #d6bcfa;">
             <h2>🔑 Chaves de IA</h2>
-            <p style="font-size: 13px; color: #666;">Usadas pelo Estagiário IA (Plano de Aula, Anexo III, Anexo IV) e pela extração de notas do Gestor. O provedor é detectado automaticamente pelo formato da chave (Gemini, OpenAI <code>sk-</code>, Groq <code>gsk_</code>, Nvidia NIM <code>nvapi-</code>) - o Gemini é sempre tentado primeiro; as demais entram como reserva, na ordem em que aparecem aqui.</p>
+            <p style="font-size: 13px; color: #666;">Usadas pelo Estagiário IA (Plano de Aula, Anexo III, Anexo IV) e pela extração de notas do Gestor. O provedor é detectado automaticamente pelo formato da chave (Gemini, OpenAI <code>sk-</code>, Groq <code>gsk_</code>, Nvidia NIM <code>nvapi-</code>). A <strong>ordem</strong> (de cima para baixo) define a <strong>prioridade</strong> de tentativa — use as setas ↑/↓. Chaves <strong>inativas</strong> ficam guardadas, mas não são usadas (útil para chaves que você não consegue gerar de novo). Obs: quando há uma chave do Gemini <em>ativa</em>, ela é tentada antes das demais.</p>
             <table style="margin-top:15px;">
-                <thead><tr><th>Nome</th><th>Chave</th><th>Provedor</th><th>Ações</th></tr></thead>
+                <thead><tr><th>Ordem</th><th>Nome</th><th>Chave</th><th>Provedor</th><th>Status</th><th>Ações</th></tr></thead>
                 <tbody>${linhasHtml}</tbody>
             </table>
             <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e2e8f0; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
