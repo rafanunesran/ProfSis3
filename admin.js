@@ -658,6 +658,7 @@ async function migrarDadosAEECompartilhado() {
 // (chamarIAExtracaoNotas) e a extensão do Chrome ainda leem só esse campo legado.
 
 function rotularProvedorChave(chave) {
+    if (chave.startsWith('sk-or-')) return 'OpenRouter';
     if (chave.startsWith('sk-') && !chave.startsWith('sk-ant-')) return 'OpenAI';
     if (chave.startsWith('gsk_')) return 'Groq';
     if (chave.startsWith('nvapi-')) return 'Nvidia';
@@ -779,6 +780,7 @@ async function renderChavesIAScreen() {
     document.getElementById('adminChavesIAScreen').style.display = 'block';
 
     const chaves = await fetchChavesIA();
+    const configIA = await getData('system', 'config_ia') || {};
     const linhasHtml = chaves.length > 0 ? chaves.map((c, idx) => {
         const ativa = c.ativa !== false;
         return `
@@ -801,7 +803,7 @@ async function renderChavesIAScreen() {
     document.getElementById('adminChavesIAScreen').innerHTML = `
         <div class="card" style="margin-top: 20px; border-left: 5px solid #d6bcfa;">
             <h2>🔑 Chaves de IA</h2>
-            <p style="font-size: 13px; color: #666;">Usadas pelo Estagiário IA (Plano de Aula, Anexo III, Anexo IV) e pela extração de notas do Gestor. O provedor é detectado automaticamente pelo formato da chave (Gemini, OpenAI <code>sk-</code>, Groq <code>gsk_</code>, Nvidia NIM <code>nvapi-</code>). A <strong>ordem</strong> (de cima para baixo) define a <strong>prioridade</strong> de tentativa — use as setas ↑/↓. Chaves <strong>inativas</strong> ficam guardadas, mas não são usadas (útil para chaves que você não consegue gerar de novo). Obs: quando há uma chave do Gemini <em>ativa</em>, ela é tentada antes das demais.</p>
+            <p style="font-size: 13px; color: #666;">Usadas pelo Estagiário IA (Plano de Aula, Anexo III, Anexo IV) e pela extração de notas do Gestor. O provedor é detectado automaticamente pelo formato da chave (Gemini, OpenAI <code>sk-</code>, Groq <code>gsk_</code>, Nvidia NIM <code>nvapi-</code>, OpenRouter <code>sk-or-</code>). A <strong>ordem</strong> (de cima para baixo) define a <strong>prioridade</strong> de tentativa — use as setas ↑/↓. Chaves <strong>inativas</strong> ficam guardadas, mas não são usadas (útil para chaves que você não consegue gerar de novo). Obs: quando há uma chave do Gemini <em>ativa</em>, ela é tentada antes das demais.</p>
             <table style="margin-top:15px;">
                 <thead><tr><th>Ordem</th><th>Nome</th><th>Chave</th><th>Provedor</th><th>Status</th><th>Ações</th></tr></thead>
                 <tbody>${linhasHtml}</tbody>
@@ -817,8 +819,24 @@ async function renderChavesIAScreen() {
                 </div>
                 <button class="btn btn-primary" onclick="adicionarChaveIA()">+ Adicionar Chave</button>
             </div>
+
+            <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e2e8f0;">
+                <h3 style="margin:0 0 6px; font-size:15px;">🔀 Modelo do OpenRouter (opcional)</h3>
+                <p style="font-size:12px; color:#666; margin-bottom:8px;">Só se você usa uma chave OpenRouter (<code>sk-or-…</code>). Deixe em branco para o modelo grátis padrão. Ex.: <code>meta-llama/llama-3.3-70b-instruct:free</code> ou <code>deepseek/deepseek-chat-v3-0324:free</code>.</p>
+                <div style="display:flex; gap:10px; align-items:flex-end;">
+                    <input type="text" id="openrouterModelInput" value="${(configIA.openrouterModel || '').replace(/"/g, '&quot;')}" placeholder="modelo :free (opcional)" style="flex:1; min-width:220px; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                    <button class="btn btn-primary" onclick="salvarModeloOpenRouter()">💾 Salvar modelo</button>
+                </div>
+            </div>
         </div>
     `;
+}
+
+async function salvarModeloOpenRouter() {
+    const configData = await getData('system', 'config_ia') || {};
+    configData.openrouterModel = document.getElementById('openrouterModelInput').value.trim();
+    await saveData('system', 'config_ia', configData);
+    alert(configData.openrouterModel ? 'Modelo do OpenRouter salvo!' : 'Modelo do OpenRouter limpo — usando o padrão grátis.');
 }
 
 // --- BASE CURRICULAR OFICIAL (fundamentação do Estagiário IA) ---

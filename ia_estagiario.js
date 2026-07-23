@@ -908,8 +908,9 @@ async function gerarAgendaMensalEstagiario() {
 // não devolver um JSON válido.
 async function chamarIAEstruturada(promptText, btn) {
     let apiKeys = [];
+    let configData = null;
     try {
-        const configData = await getData('system', 'config_ia');
+        configData = await getData('system', 'config_ia');
         if (configData && configData.apiKey) {
             apiKeys = configData.apiKey.split(',').map(k => k.trim()).filter(k => k);
         }
@@ -944,7 +945,38 @@ async function chamarIAEstruturada(promptText, btn) {
                 const timeoutId = setTimeout(() => controller.abort(), 20000);
 
                 // --- ROTEADOR MULTI-IA AUTOMÁTICO ---
-                if (currentKey.startsWith('sk-') && !currentKey.startsWith('sk-ant-')) {
+                if (currentKey.startsWith('sk-or-')) {
+                    // 0. OPENROUTER (agregador; chaves sk-or-...). Endpoint OpenAI-compatível. Modelo
+                    // grátis configurável em config_ia.openrouterModel (padrão: um modelo :free).
+                    const modeloOR = (configData && configData.openrouterModel) ? configData.openrouterModel : 'meta-llama/llama-3.3-70b-instruct:free';
+                    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${currentKey}`,
+                            'HTTP-Referer': 'https://rafanunesran.github.io/ProfSis3/',
+                            'X-Title': 'ProfSis3'
+                        },
+                        body: JSON.stringify({
+                            model: modeloOR,
+                            messages: [
+                                { role: 'system', content: 'Você deve retornar APENAS um JSON válido. Nenhuma formatação markdown.' },
+                                { role: 'user', content: promptText }
+                            ],
+                            temperature: 0.7
+                        }),
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+                    if (!response.ok) {
+                        let msg = response.statusText;
+                        try { const eo = await response.json(); if (eo.error && eo.error.message) msg = eo.error.message; } catch (_) {}
+                        throw new Error(`OpenRouter Erro: ${msg}`);
+                    }
+                    const apiDataObj = await response.json();
+                    respostaTexto = apiDataObj.choices[0].message.content;
+
+                } else if (currentKey.startsWith('sk-') && !currentKey.startsWith('sk-ant-')) {
                     // 1. OPENAI (ChatGPT - GPT-4o-mini)
                     const response = await fetch(`https://api.openai.com/v1/chat/completions`, {
                         method: 'POST',
