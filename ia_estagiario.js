@@ -357,7 +357,20 @@ async function abrirModalGerarDocumentoIA() {
     if (currentUser && currentUser.schoolId) {
         try {
             const aeeSchoolData = await getData('app_data', `app_data_school_${currentUser.schoolId}_aee`);
-            const tutoradosEscola = (aeeSchoolData && Array.isArray(aeeSchoolData.tutorados)) ? aeeSchoolData.tutorados : [];
+            let tutoradosEscola = (aeeSchoolData && Array.isArray(aeeSchoolData.tutorados)) ? aeeSchoolData.tutorados : [];
+
+            // Só alunos das turmas em que ESTE professor dá aula — casa pelo código série+letra da
+            // turma (ex.: "6E"), via extrairCodigoSerieTurmaExtensao (app.js). Se o professor não tem
+            // turmas cadastradas, não filtra (mostra todos) pra não deixar o seletor vazio/inutilizável.
+            if (typeof extrairCodigoSerieTurmaExtensao === 'function') {
+                const meusCodigos = new Set((data.turmas || [])
+                    .map(t => extrairCodigoSerieTurmaExtensao((t.nome || '').split('-')[0]))
+                    .filter(Boolean));
+                if (meusCodigos.size > 0) {
+                    tutoradosEscola = tutoradosEscola.filter(t => meusCodigos.has(extrairCodigoSerieTurmaExtensao(t.turma || '')));
+                }
+            }
+
             alunosPeiOptionsHtml += tutoradosEscola.map(t => `<option value="${t.id}">${t.nome_estudante}</option>`).join('');
             ultimaListaTutoradosAeeParaAnexoIV = tutoradosEscola;
         } catch (e) { console.warn('Erro ao buscar estudantes do Painel AEE:', e); }
