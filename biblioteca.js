@@ -4,10 +4,10 @@
 // logado posta materiais de referência (arquivos ou links) que ficam compartilhados entre
 // todos e alimentam automaticamente os documentos do Estagiário (IA).
 //
-// - Arquivos vão para o Firebase Storage (coleção de metadados: `materiais_apoio` no Firestore).
-// - De PDF/Word(.docx)/Excel(.xlsx) extraímos o texto no navegador (pdf.js / mammoth / SheetJS)
-//   e guardamos junto, pra IA usar o conteúdo. PPT/imagens/links entram pela IA só via metadados
-//   (título, descrição, tags, disciplina, série) — ver ia_estagiario.js (Tier 3).
+// - NÃO guardamos o arquivo enviado (sem Firebase Storage): extraímos o texto no navegador
+//   (pdf.js / mammoth / SheetJS) e salvamos só os metadados + o texto na coleção `materiais_apoio`
+//   (Firestore). É o que a IA usa; e a impressão é montada a partir desse texto. PPT/imagens/links
+//   entram pela IA só via metadados (título, descrição, tags, disciplina, série) — ia_estagiario.js.
 // - Dois modos de postar: ⚡ Rápido (sobe o arquivo e a IA classifica título/descrição/tags,
 //   com prévia editável) e ✍️ Detalhado (o professor preenche tudo, e aceita link).
 // - Modelo aberto: qualquer um posta e todos usam; autor e super admin podem excluir.
@@ -191,7 +191,7 @@ async function renderBiblioteca() {
 
             <!-- MODO RÁPIDO -->
             <div id="bibModoRapido">
-                <p style="font-size:13px; color:#555; margin-bottom:10px;">Escolha a disciplina e a série, suba o documento, e a IA gera título, descrição e tags. Você confere antes de publicar.</p>
+                <p style="font-size:13px; color:#555; margin-bottom:10px;">Escolha a disciplina e a série, suba o documento, e a IA gera título, descrição e tags. Você confere antes de publicar. <em>O arquivo não é guardado — usamos só o conteúdo (texto) para a IA e para a impressão.</em></p>
                 <form onsubmit="bibliotecaEnviarRapido(event)">
                     <div style="display:flex; gap:10px; flex-wrap:wrap;">
                         <label style="flex:1; min-width:170px;">Disciplina:
@@ -351,7 +351,9 @@ function renderListaBiblioteca() {
 
     container.innerHTML = filtrados.map(m => {
         const tags = (m.tags || []).map(t => `<span class="badge badge-info" style="font-size:10px;">${t}</span>`).join(' ');
-        const alvo = m.tipo === 'link' ? m.url : m.downloadURL;
+        const botaoAbrir = m.tipo === 'link'
+            ? (m.url ? `<a href="${m.url}" target="_blank" rel="noopener" class="btn btn-info btn-sm">Abrir link</a>` : '')
+            : `<button class="btn btn-info btn-sm" onclick="bibliotecaImprimirMaterial('${m.id}')">🖨️ Abrir/Imprimir</button>`;
         const data = m.createdAt && m.createdAt.toDate ? m.createdAt.toDate().toLocaleDateString('pt-BR')
                     : (m.createdAtMs ? new Date(m.createdAtMs).toLocaleDateString('pt-BR') : '');
         return `
@@ -368,7 +370,7 @@ function renderListaBiblioteca() {
                     <div style="font-size:11px; color:#999;">Por ${m.autorNome || 'Professor'} ${data ? '• ' + data : ''}</div>
                 </div>
                 <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-end;">
-                    ${alvo ? `<a href="${alvo}" target="_blank" rel="noopener" class="btn btn-info btn-sm">Abrir</a>` : ''}
+                    ${botaoAbrir}
                     ${podeExcluir(m) ? `<button class="btn btn-danger btn-sm" onclick="bibliotecaExcluirMaterial('${m.id}')">🗑️</button>` : ''}
                 </div>
             </div>
@@ -541,35 +543,19 @@ async function salvarMaterialBiblioteca({ titulo, disciplina, serie, tags, descr
     setProg = setProg || (() => {});
     let tipo = 'link';
     let url = link || '';
-    let downloadURL = '';
-    let storagePath = '';
     let fileExt = '';
     let fileName = '';
     let textoExtraido = '';
 
     if (arquivo) {
+        // Não guardamos o arquivo (sem Storage): só extraímos o conteúdo (texto), que é o que a IA
+        // usa e o que o sistema reusa pra montar o documento na hora de imprimir.
         tipo = 'arquivo';
         fileName = arquivo.name;
         fileExt = (arquivo.name.split('.').pop() || '').toLowerCase();
 
         setProg('Lendo o conteúdo do arquivo...');
         textoExtraido = (textoJaExtraido != null ? textoJaExtraido : await extrairTextoArquivoBiblioteca(arquivo)).slice(0, BIBLIOTECA_MAX_TEXTO_EXTRAIDO);
-
-        if (typeof storage === 'undefined' || !storage) {
-            throw new Error('Armazenamento de arquivos indisponível. Verifique se o Firebase Storage está ativo.');
-        }
-        const safe = arquivo.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-        storagePath = `materiais_apoio/${currentUser.uid || currentUser.id || 'anon'}/${Date.now()}_${safe}`;
-        const ref = storage.ref(storagePath);
-        const task = ref.put(arquivo);
-        await new Promise((resolve, reject) => {
-            task.on('state_changed',
-                (snap) => setProg(`Enviando arquivo... ${Math.round((snap.bytesTransferred / snap.totalBytes) * 100)}%`),
-                reject,
-                resolve
-            );
-        });
-        downloadURL = await ref.getDownloadURL();
     }
 
     // Chaves de casamento pra IA (mesma lógica do Estagiário). 'GERAL' quando sem série.
@@ -587,7 +573,7 @@ async function salvarMaterialBiblioteca({ titulo, disciplina, serie, tags, descr
         titulo, descricao, disciplina, serie, tags,
         disciplinaOriginal: disciplina,
         serieChaves,
-        tipo, url, downloadURL, storagePath, fileName, fileExt,
+        tipo, url, fileName, fileExt,
         textoExtraido: textoExtraido || '',
         textoBuscavel,
         autorNome: currentUser.nome || 'Professor',
@@ -597,6 +583,62 @@ async function salvarMaterialBiblioteca({ titulo, disciplina, serie, tags, descr
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         createdAtMs: Date.now()
     });
+}
+
+// Como não guardamos o arquivo, a "abertura" de um material de arquivo monta um documento
+// pronto para impressão a partir dos metadados + texto salvos (com o cabeçalho da escola).
+async function bibliotecaImprimirMaterial(id) {
+    const m = (bibliotecaCacheMateriais || []).find(x => x.id === id);
+    if (!m) return;
+
+    // Cabeçalho da escola (mesmo padrão do app.js: system/schools_list por currentUser.schoolId)
+    let nomeEscola = '';
+    let logoEscola = '';
+    try {
+        if (currentUser && currentUser.schoolId && typeof getData === 'function') {
+            const sData = await getData('system', 'schools_list');
+            const escola = (sData && sData.list) ? sData.list.find(s => s.id == currentUser.schoolId) : null;
+            if (escola) { nomeEscola = escola.nomeCompleto || escola.nome || ''; logoEscola = escola.logoEscola || ''; }
+        }
+    } catch (e) { /* segue sem cabeçalho */ }
+
+    const esc = (s) => (s || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const data = m.createdAtMs ? new Date(m.createdAtMs).toLocaleDateString('pt-BR') : '';
+    const tagsStr = (m.tags || []).join(', ');
+    const corpo = esc(m.textoExtraido || '').replace(/\n/g, '<br>');
+
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(m.titulo || 'Material')}</title>
+    <style>
+      body{font-family:Arial,Helvetica,sans-serif; color:#222; max-width:800px; margin:24px auto; padding:0 20px; line-height:1.5;}
+      header{display:flex; align-items:center; gap:12px; border-bottom:2px solid #2c5282; padding-bottom:10px; margin-bottom:16px;}
+      header img{max-height:60px;}
+      h1{font-size:20px; margin:0 0 4px;}
+      .meta{font-size:12px; color:#666; margin-bottom:16px;}
+      .desc{font-style:italic; color:#444; margin-bottom:16px;}
+      .conteudo{font-size:14px;}
+      @media print { .noprint{display:none;} body{margin:0;} }
+    </style></head><body>
+      <header>
+        ${logoEscola ? `<img src="${logoEscola}" alt="Logo">` : ''}
+        <div>${nomeEscola ? `<div style="font-weight:bold;">${esc(nomeEscola)}</div>` : ''}<div style="font-size:12px;color:#666;">Biblioteca de Apoio — SisProf</div></div>
+      </header>
+      <h1>${esc(m.titulo || 'Material')}</h1>
+      <div class="meta">
+        ${m.disciplina ? 'Disciplina: <strong>' + esc(m.disciplina) + '</strong> · ' : ''}
+        ${m.serie ? 'Série: <strong>' + esc(m.serie) + '</strong> · ' : ''}
+        ${tagsStr ? 'Tags: ' + esc(tagsStr) + ' · ' : ''}
+        Por ${esc(m.autorNome || 'Professor')} ${data ? '· ' + data : ''}
+      </div>
+      ${m.descricao ? `<div class="desc">${esc(m.descricao)}</div>` : ''}
+      <div class="conteudo">${corpo || '<em>(Este material não tem texto extraído para exibir. Formatos como imagem e PPT guardam apenas os metadados.)</em>'}</div>
+      <button class="noprint" onclick="window.print()" style="margin-top:20px; padding:8px 16px; cursor:pointer;">🖨️ Imprimir</button>
+    </body></html>`;
+
+    const win = window.open('', '_blank');
+    if (!win) { alert('Permita pop-ups para abrir a impressão.'); return; }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
 }
 
 async function bibliotecaExcluirMaterial(id) {
@@ -611,9 +653,6 @@ async function bibliotecaExcluirMaterial(id) {
     if (!confirm(`Excluir "${material.titulo}"? Essa ação não pode ser desfeita.`)) return;
 
     try {
-        if (material.storagePath && typeof storage !== 'undefined' && storage) {
-            try { await storage.ref(material.storagePath).delete(); } catch (e) { console.warn('[Biblioteca] Arquivo já removido ou inacessível:', e); }
-        }
         await db.collection('materiais_apoio').doc(id).delete();
         await recarregarBiblioteca();
     } catch (e) {
