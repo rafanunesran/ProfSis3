@@ -866,7 +866,7 @@ async function chamarIAEstruturada(promptText, btn) {
     // Tenta as chaves do Gemini antes das de OpenAI/Groq (mesmo se o Administrador tiver deixado mais
     // de uma cadastrada) - evita bater em limite de outro provedor (ex: Groq) antes de chegar na chave
     // paga/preferida. Sort estável: preserva a ordem relativa dentro de cada grupo.
-    const ehChaveGemini = (k) => !(k.startsWith('sk-') && !k.startsWith('sk-ant-')) && !k.startsWith('gsk_');
+    const ehChaveGemini = (k) => !(k.startsWith('sk-') && !k.startsWith('sk-ant-')) && !k.startsWith('gsk_') && !k.startsWith('nvapi-');
     apiKeys = [...apiKeys.filter(ehChaveGemini), ...apiKeys.filter(k => !ehChaveGemini(k))];
 
     let success = false;
@@ -930,14 +930,46 @@ async function chamarIAEstruturada(promptText, btn) {
                     const apiDataObj = await response.json();
                     respostaTexto = apiDataObj.choices[0].message.content;
 
+                } else if (currentKey.startsWith('nvapi-')) {
+                    // 3. NVIDIA NIM (build.nvidia.com - endpoint compatível com OpenAI). Sem
+                    // response_format json_object porque nem todo modelo do catálogo Nvidia suporta
+                    // modo JSON estrito - a limpeza de markdown + extração por regex logo abaixo já
+                    // cobre isso.
+                    const response = await fetch(`https://integrate.api.nvidia.com/v1/chat/completions`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentKey}` },
+                        body: JSON.stringify({
+                            model: 'meta/llama-3.3-70b-instruct',
+                            messages: [
+                                { role: 'system', content: 'Você deve retornar APENAS um JSON válido. Nenhuma formatação markdown.' },
+                                { role: 'user', content: promptText }
+                            ],
+                            temperature: 0.7
+                        }),
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeoutId);
+                    if (!response.ok) throw new Error(`Nvidia NIM Erro: ${response.statusText}`);
+                    const apiDataObj = await response.json();
+                    respostaTexto = apiDataObj.choices[0].message.content;
+
                 } else {
-                    // 3. GOOGLE GEMINI (Padrão)
+                    // 4. GOOGLE GEMINI (Padrão)
                     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modeloAtual}:generateContent?key=${currentKey}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             contents: [{ parts: [{ text: promptText }] }],
-                            generationConfig: { temperature: 0.7, response_mime_type: "application/json" }
+                            generationConfig: { temperature: 0.7, response_mime_type: "application/json" },
+                            // Limiares no mínimo - o sistema processa documentos sobre deficiência/apoio
+                            // de estudantes (Anexo III/IV), conteúdo legítimo que os limiares padrão do
+                            // Gemini costumam bloquear por engano.
+                            safetySettings: [
+                                { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+                                { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                                { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                                { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+                            ]
                         }),
                         signal: controller.signal
                     });
@@ -948,6 +980,14 @@ async function chamarIAEstruturada(promptText, btn) {
                     }
                     const apiDataObj = await response.json();
                     if (!apiDataObj.candidates || apiDataObj.candidates.length === 0 || !apiDataObj.candidates[0].content) {
+                        // Distingue bloqueio pelo filtro de segurança (comum em documentos sobre
+                        // deficiência/apoio de um estudante, mesmo com os safetySettings acima) de
+                        // qualquer outra resposta vazia, pra dar uma pista útil em vez do erro genérico.
+                        const blockReason = apiDataObj.promptFeedback && apiDataObj.promptFeedback.blockReason;
+                        const finishReason = apiDataObj.candidates && apiDataObj.candidates[0] && apiDataObj.candidates[0].finishReason;
+                        if (blockReason || finishReason === 'SAFETY') {
+                            throw new Error(`O Gemini bloqueou a resposta pelo filtro de segurança (motivo: ${blockReason || finishReason}).`);
+                        }
                         throw new Error('A IA não retornou um conteúdo válido.');
                     }
                     respostaTexto = apiDataObj.candidates[0].content.parts[0].text;
@@ -962,7 +1002,7 @@ async function chamarIAEstruturada(promptText, btn) {
                 if (err.name === 'AbortError') {
                     lastError = 'Tempo de resposta esgotado (20s) - rede lenta ou bloqueando a API.';
                 } else if (err instanceof TypeError) {
-                    lastError = `Falha de conexão com a API de IA (${err.message}). Provável bloqueio de firewall/rede - peça para a equipe de TI/rede liberar o domínio generativelanguage.googleapis.com (ou api.openai.com/api.groq.com, conforme a chave usada).`;
+                    lastError = `Falha de conexão com a API de IA (${err.message}). Provável bloqueio de firewall/rede - peça para a equipe de TI/rede liberar o domínio generativelanguage.googleapis.com (ou api.openai.com/api.groq.com/integrate.api.nvidia.com, conforme a chave usada).`;
                 } else {
                     lastError = err.message;
                 }
