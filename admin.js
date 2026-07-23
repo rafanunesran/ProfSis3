@@ -650,7 +650,7 @@ async function configurarChaveIA() {
     const configData = await getData('system', 'config_ia') || {};
     const chaveAtual = configData.apiKey || '';
 
-    const novaChave = prompt("Insira a chave da API do Google Gemini:\n(Se quiser adicionar mais de uma, separe por vírgula)", chaveAtual);
+    const novaChave = prompt("Insira a chave da API de IA:\nAceita Gemini, OpenAI (sk-...), Groq (gsk_...) ou Nvidia NIM (nvapi-...) - o provedor é detectado automaticamente pelo formato da chave.\n(Se quiser adicionar mais de uma, separe por vírgula - o Gemini é tentado primeiro)", chaveAtual);
 
     if (novaChave !== null) {
         configData.apiKey = novaChave.trim();
