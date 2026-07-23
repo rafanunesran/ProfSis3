@@ -863,6 +863,12 @@ async function chamarIAEstruturada(promptText, btn) {
 
     if (apiKeys.length === 0) throw new Error('⚠️ A chave da API não foi configurada. Peça ao Administrador para entrar no painel Super Admin e adicioná-la na aba Migração.');
 
+    // Tenta as chaves do Gemini antes das de OpenAI/Groq (mesmo se o Administrador tiver deixado mais
+    // de uma cadastrada) - evita bater em limite de outro provedor (ex: Groq) antes de chegar na chave
+    // paga/preferida. Sort estável: preserva a ordem relativa dentro de cada grupo.
+    const ehChaveGemini = (k) => !(k.startsWith('sk-') && !k.startsWith('sk-ant-')) && !k.startsWith('gsk_');
+    apiKeys = [...apiKeys.filter(ehChaveGemini), ...apiKeys.filter(k => !ehChaveGemini(k))];
+
     let success = false;
     let lastError = '';
     let respostaTexto = '';
