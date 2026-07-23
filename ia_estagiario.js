@@ -950,7 +950,16 @@ async function chamarIAEstruturada(promptText, btn) {
                 success = true;
                 break; // Sucesso, sai do loop de chaves
             } catch (err) {
-                lastError = err.name === 'AbortError' ? 'Tempo de resposta esgotado.' : err.message;
+                // Distingue timeout (rede lenta) de falha de conexão (DNS/firewall bloqueando o
+                // domínio da API - comum em redes de escola) do erro de resposta da própria API, pra
+                // dar uma pista útil no alert final em vez do "Failed to fetch" genérico do navegador.
+                if (err.name === 'AbortError') {
+                    lastError = 'Tempo de resposta esgotado (20s) - rede lenta ou bloqueando a API.';
+                } else if (err instanceof TypeError) {
+                    lastError = `Falha de conexão com a API de IA (${err.message}). Provável bloqueio de firewall/rede - peça para a equipe de TI/rede liberar o domínio generativelanguage.googleapis.com (ou api.openai.com/api.groq.com, conforme a chave usada).`;
+                } else {
+                    lastError = err.message;
+                }
                 console.warn(`⚠️ Falha na API (Tentativa ${i+1}):`, lastError);
             }
         }
@@ -1580,6 +1589,48 @@ async function salvarAnexoPaeeSchoolWide(schoolId, tutoradoId, dadosBasicos, dad
     return anexoPaee;
 }
 
+// Grava a referência de um Anexo III-PAEE enviado como arquivo Word pronto (sem passar pela IA) direto
+// no documento AEE da escola - mesmo padrão de salvarAnexoPaeeSchoolWide, mas guarda só {url, path,
+// atualizadoEm} num campo separado (t.anexoPaeeArquivo), já que aqui não há dadosBasicos/dados
+// estruturados pra reimprimir/editar pelo sistema (chamada por app.js: uploadAnexoPaeeArquivo).
+async function salvarAnexoPaeeArquivoSchoolWide(schoolId, tutoradoId, anexoPaeeArquivo) {
+    const aeeKey = `app_data_school_${schoolId}_aee`;
+    const aeeData = await getData('app_data', aeeKey);
+    if (!aeeData || !Array.isArray(aeeData.tutorados)) throw new Error('Não foi possível localizar os dados AEE da escola.');
+
+    const t = aeeData.tutorados.find(x => x.id == tutoradoId);
+    if (!t) throw new Error('Estudante não encontrado nos dados AEE da escola.');
+
+    t.anexoPaeeArquivo = anexoPaeeArquivo;
+    await saveData('app_data', aeeKey, aeeData);
+
+    if (typeof data !== 'undefined' && data && Array.isArray(data.tutorados)) {
+        const tLocal = data.tutorados.find(x => x.id == tutoradoId);
+        if (tLocal) tLocal.anexoPaeeArquivo = anexoPaeeArquivo;
+    }
+
+    return anexoPaeeArquivo;
+}
+
+// Remove a referência de um Anexo III-PAEE enviado como arquivo (t.anexoPaeeArquivo) - mesmo padrão de
+// salvarAnexoPaeeArquivoSchoolWide (chamada por app.js: excluirAnexoPaeeArquivo).
+async function excluirAnexoPaeeArquivoSchoolWide(schoolId, tutoradoId) {
+    const aeeKey = `app_data_school_${schoolId}_aee`;
+    const aeeData = await getData('app_data', aeeKey);
+    if (!aeeData || !Array.isArray(aeeData.tutorados)) throw new Error('Não foi possível localizar os dados AEE da escola.');
+
+    const t = aeeData.tutorados.find(x => x.id == tutoradoId);
+    if (!t) throw new Error('Estudante não encontrado nos dados AEE da escola.');
+
+    delete t.anexoPaeeArquivo;
+    await saveData('app_data', aeeKey, aeeData);
+
+    if (typeof data !== 'undefined' && data && Array.isArray(data.tutorados)) {
+        const tLocal = data.tutorados.find(x => x.id == tutoradoId);
+        if (tLocal) delete tLocal.anexoPaeeArquivo;
+    }
+}
+
 // Exporta o Anexo III - PAEE final: preenche o modelo e abre a impressão (montarEImprimirAnexoPaee) e
 // salva os dados estruturados no perfil do estudante, pra aparecer depois no Painel AEE sem precisar
 // gerar tudo de novo (app.js: abrirFichaAeeReadOnly).
@@ -1786,99 +1837,6 @@ async function exportarAnexoIVFinal() {
     } finally {
         btn.textContent = originalText;
         btn.disabled = false;
-    }
-}
-
-// Lê um Anexo III-PAEE já preenchido em Word (.docx) - extrai o texto no navegador (mammoth.js, sem
-// enviar o arquivo a lugar nenhum), pede pra IA ESTRUTURAR (não redigir) os mesmos campos que o
-// formulário/wizard preenchem manualmente, e abre a mesma tela de revisão pra o professor conferir
-// antes de salvar. Chamada tanto do botão "Enviar Novo Arquivo" na ficha editável do aluno (app.js:
-// abrirFichaTutorado, via handleArquivoRelatorioSelecionado) quanto do upload da ficha só-leitura do
-// Painel AEE (app.js: abrirFichaAeeReadOnly) - por isso recebe o id do input/status como parâmetro,
-// já que os dois pontos de entrada usam elementos com ids diferentes.
-// O arquivo nunca é enviado a lugar nenhum: só o texto extraído (variável local) segue pro prompt da
-// IA, e some junto com o resto do escopo da função quando ela termina.
-async function analisarAnexoPaeeWord(tutoradoId, fileInputId, statusElId) {
-    const fileInput = document.getElementById(fileInputId);
-    const file = fileInput && fileInput.files[0];
-    if (!file) return;
-
-    // Nome do estudante: usa o objeto `data` global se disponível (ficha editável) ou o snapshot do
-    // Painel AEE (ficha só-leitura) - evita ter que passar texto livre (nome do aluno) por atributo
-    // HTML onchange. Ver encontrarTutoradoAeeEmQualquerContexto em app.js.
-    const tutoradoInfo = (typeof encontrarTutoradoAeeEmQualquerContexto === 'function')
-        ? encontrarTutoradoAeeEmQualquerContexto(tutoradoId)
-        : null;
-    const nomeEstudante = tutoradoInfo ? tutoradoInfo.nome_estudante : '';
-
-    const statusEl = document.getElementById(statusElId);
-    const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
-
-    if (typeof mammoth === 'undefined') {
-        alert('Erro: biblioteca de leitura de Word não carregou. Recarregue a página e tente novamente.');
-        fileInput.value = '';
-        return;
-    }
-
-    try {
-        setStatus('Lendo arquivo... ⏳');
-        const arrayBuffer = await file.arrayBuffer();
-        const { value: textoExtraido } = await mammoth.extractRawText({ arrayBuffer });
-        if (!textoExtraido || !textoExtraido.trim()) throw new Error('Não foi possível extrair texto do arquivo. Confirme que é um .docx válido.');
-
-        setStatus('Analisando com IA... ⏳');
-
-        const elegibilidadeOpcoes = ANEXO_PAEE_ELEGIBILIDADE.map(o => `${o.token}: ${o.label}`).join('\n');
-        const apoiosOpcoes = ANEXO_PAEE_APOIOS.map(o => `${o.token}: ${o.label}`).join('\n');
-
-        const promptText = `Você é um assistente que EXTRAI dados estruturados de um Anexo III - Plano de AEE (PAEE) do Estado de São Paulo já preenchido, colado abaixo como texto puro (extraído de um Word). Não redija nada novo, não invente - extraia exatamente o que já está escrito no documento. Se algum dado não aparecer no texto, retorne string vazia (ou array vazio) para ele.
-
-TEXTO DO DOCUMENTO:
-"""
-${textoExtraido}
-"""
-
-Retorne APENAS um objeto JSON válido (sem marcações markdown e escape corretamente aspas e quebras de linha usando \\n) com estas chaves:
-{
-  "dataNascimento": "data de nascimento do estudante, formato DD/MM/AAAA se encontrada",
-  "escolaridade": "série/ano escolar",
-  "turno": "turno (Manhã/Tarde/Integral etc)",
-  "sexo": "F ou M, conforme marcado no documento",
-  "nivelApoio": "1, 2 ou 3, conforme o nível de apoio marcado",
-  "elegibilidade": "array com os tokens (dentre a lista abaixo) que estiverem marcados como elegibilidade do estudante",
-  "apoios": "array com os tokens (dentre a lista abaixo) que estiverem marcados como apoios/recursos/serviços indicados",
-  ${ANEXO_PAEE_CAMPOS_IA.map(c => `"${c.key}": "${c.label} - copie o texto correspondente do documento"`).join(',\n  ')}
-}
-
-Tokens possíveis de elegibilidade:
-${elegibilidadeOpcoes}
-
-Tokens possíveis de apoios/recursos/serviços:
-${apoiosOpcoes}`;
-
-        const extraido = await chamarIAEstruturada(promptText);
-
-        const dadosBasicos = {
-            nomeEstudante: nomeEstudante,
-            dataNascimento: extraido.dataNascimento || '',
-            escolaridade: extraido.escolaridade || '',
-            turno: extraido.turno || '',
-            sexo: (extraido.sexo === 'F' || extraido.sexo === 'M') ? extraido.sexo : '',
-            nivelApoio: ['1', '2', '3'].includes(String(extraido.nivelApoio)) ? String(extraido.nivelApoio) : '',
-            elegibilidade: Array.isArray(extraido.elegibilidade) ? extraido.elegibilidade.filter(tok => ANEXO_PAEE_ELEGIBILIDADE.some(o => o.token === tok)) : [],
-            apoios: Array.isArray(extraido.apoios) ? extraido.apoios.filter(tok => ANEXO_PAEE_APOIOS.some(o => o.token === tok)) : []
-        };
-        const dados = {};
-        ANEXO_PAEE_CAMPOS_IA.forEach(c => { dados[c.key] = extraido[c.key] || ''; });
-
-        setStatus('');
-        fileInput.value = '';
-        abrirModalRevisaoAnexoPaee(dadosBasicos, dados, tutoradoId);
-    } catch (e) {
-        console.error(e);
-        setStatus('');
-        alert('Erro ao analisar o arquivo:\n' + e.message);
-        fileInput.value = '';
     }
 }
 
