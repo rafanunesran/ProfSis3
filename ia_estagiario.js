@@ -314,6 +314,55 @@ function montarBlocoContextoOficial(contexto) {
     return bloco;
 }
 
+// --- APRENDIZADO: preferências do professor a partir das edições feitas na revisão ---
+const CHAVE_PREFERENCIAS_ESTAGIARIO = 'ia_preferencias_aprendidas';
+
+// Bloco injetado nos prompts com as preferências de estilo/formato aprendidas de edições anteriores.
+function montarBlocoPreferenciasEstagiario() {
+    const prefs = (localStorage.getItem(CHAVE_PREFERENCIAS_ESTAGIARIO) || '').trim();
+    if (!prefs) return '';
+    return `\n\n[PREFERÊNCIAS DO PROFESSOR - aprendidas de edições anteriores; siga estas preferências de estilo/formato ao redigir]\n${prefs}`;
+}
+
+// Compara a saída original da IA com a versão final editada pelo professor e atualiza (em silêncio) a
+// lista de preferências aprendidas. Fire-and-forget: nunca bloqueia nem alerta - falha só loga.
+async function aprenderPreferenciasEstagiario(original, editado) {
+    try {
+        if (!original || !editado) return;
+        const norm = (s) => (s || '').toString().replace(/\s+/g, ' ').trim().toLowerCase();
+        const rotulos = {
+            aprendizagem_essencial: 'Aprendizagem Essencial', conteudos: 'Conteúdos', habilidades: 'Habilidades',
+            objetivos: 'Objetivos', desenvolvimento: 'Desenvolvimento', materiais: 'Materiais', avaliacao: 'Avaliação'
+        };
+        const mudancas = [];
+        Object.keys(rotulos).forEach(k => {
+            if (norm(original[k]) !== norm(editado[k])) {
+                mudancas.push(`Campo "${rotulos[k]}":\n- Versão da IA: ${(original[k] || '(vazio)').toString().trim()}\n- Versão final do professor: ${(editado[k] || '(vazio)').toString().trim()}`);
+            }
+        });
+        if (mudancas.length === 0) return; // nada mudou de forma relevante -> não gasta IA
+
+        const prefsAtuais = (localStorage.getItem(CHAVE_PREFERENCIAS_ESTAGIARIO) || '').trim();
+        const prompt = `Você ajuda a personalizar um gerador de Planos de Aula, aprendendo o estilo de um professor a partir das correções que ele faz nos rascunhos da IA.
+Preferências já aprendidas (pode estar vazio):
+"""${prefsAtuais || '(nenhuma ainda)'}"""
+
+Mudanças que o professor fez neste rascunho (compare o que a IA escreveu com a versão final dele):
+"""${mudancas.join('\n\n').slice(0, 6000)}"""
+
+Atualize a lista de preferências DURÁVEIS de estilo/formato deste professor (ex.: "usa linguagem mais simples", "detalha o desenvolvimento em etapas com tempos", "sempre cita os códigos de habilidade"). Ignore mudanças pontuais de conteúdo específico daquele tema. Mantenha a lista curta e objetiva, no máximo 8 itens em tópicos. Responda APENAS um JSON válido: {"preferencias": "- item 1\\n- item 2"}`;
+
+        const resp = await chamarIAEstruturada(prompt, null);
+        const novas = (resp && typeof resp.preferencias === 'string') ? resp.preferencias.trim() : '';
+        if (novas) {
+            localStorage.setItem(CHAVE_PREFERENCIAS_ESTAGIARIO, novas.slice(0, 3000));
+            console.log('[Estagiário] Preferências aprendidas atualizadas.');
+        }
+    } catch (e) {
+        console.warn('[Estagiário] Aprendizado de preferências falhou (ignorado):', e);
+    }
+}
+
 async function abrirModalGerarDocumentoIA() {
     // Extrai nomes de série de forma inteligente, ignorando formatos colados ou separados (ex: "7º Ano A", "7A", "7ºA" -> "7º Ano", "7", "7º")
     const getSerieNome = (nome) => {
@@ -1238,6 +1287,8 @@ async function gerarDocumentoIA() {
         // Injeta a fundamentação oficial (planilha/PDFs) sempre, independente do prompt usado -
         // mesmo princípio dos blocos [DADOS OBRIGATÓRIOS]/[FORMATO...] acima.
         promptText += montarBlocoContextoOficial(contextoOficial);
+        // Preferências de estilo/formato aprendidas das edições anteriores do professor.
+        promptText += montarBlocoPreferenciasEstagiario();
 
         dadosEstruturados = await chamarIAEstruturada(promptText, btn);
 
@@ -1453,6 +1504,8 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
     modal.dataset.bimestre = bimestreAtual;
     modal.dataset.semanaInicio = semanaInicioISO || '';
     modal.dataset.semanaFim = semanaFimISO || '';
+    // Guarda a saída ORIGINAL da IA para comparar com a versão editada na exportação (aprendizado).
+    modal.dataset.dadosOriginais = JSON.stringify(dados || {});
 
     let formHtml = '';
     if (tipo === 'plano_aula') {
@@ -2233,7 +2286,16 @@ async function exportarDocumentoFinal(tipo) {
         }
         win.document.write(htmlFinal);
         win.document.close();
-        
+
+        // [APRENDIZADO] Compara a saída original da IA com a versão editada e atualiza (em silêncio,
+        // sem bloquear a impressão) as preferências aprendidas. Só para Plano de Aula.
+        if (payload.tipo === 'plano_aula') {
+            try {
+                const dadosOriginais = JSON.parse(modal.dataset.dadosOriginais || '{}');
+                aprenderPreferenciasEstagiario(dadosOriginais, payload.dados); // fire-and-forget (sem await)
+            } catch (e) { console.warn('[Estagiário] Não foi possível iniciar o aprendizado:', e); }
+        }
+
         closeModal('modalRevisaoDocumento');
         
         // [NOVO] AUTO-SALVAR DRAFT DO REGISTRO DE AULA
