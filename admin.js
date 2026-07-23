@@ -272,14 +272,16 @@ async function renderListaUsuariosAdmin() {
                         'professor': { label: 'Professor', class: 'badge-info' }
                     };
                     const roleInfo = roleMap[u.role] || roleMap['professor'];
+                    const ehContribuinte = u.contribuidor === true;
                     return `
                     <tr>
-                        <td>${u.nome}</td>
+                        <td>${ehContribuinte ? '💛 ' : ''}${u.nome}</td>
                         <td>${u.email}</td>
                         <td><span class="badge ${roleInfo.class}">${roleInfo.label}</span></td>
                         <td>
                             <button class="btn btn-warning btn-sm" onclick="resetarSenhaAuth('${u.email}')" title="Enviar email de redefinição">📧 Senha</button>
                             <button class="btn btn-secondary btn-sm" onclick="editarUsuarioAdmin('${u.id}')" title="Alterar Perfil/Nome">✏️ Perfil</button>
+                            <button class="btn ${ehContribuinte ? 'btn-success' : 'btn-secondary'} btn-sm" onclick="alternarContribuinteAdmin('${u.id}')" title="${ehContribuinte ? 'Remover marca de contribuinte' : 'Marcar como contribuinte'}">${ehContribuinte ? '💛 Contribuinte' : '💛 Marcar'}</button>
                             <button class="btn btn-danger btn-sm" onclick="excluirUsuarioAdmin(${u.id})">🗑️</button>
                         </td>
                     </tr>
@@ -289,6 +291,18 @@ async function renderListaUsuariosAdmin() {
     ` : '<p class="empty-state">Nenhum usuário vinculado a esta escola.</p>';
 
     document.getElementById('listaUsuariosEscolaAdmin').innerHTML = html;
+}
+
+// Marca/desmarca um usuário como contribuinte (apoio financeiro). Usado para exibir o agradecimento
+// no popup de apoio, esconder a tarja e trocar o botão para "TMJ" para quem já contribui.
+async function alternarContribuinteAdmin(id) {
+    const data = await getData('system', 'users_list');
+    const users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
+    const u = users.find(x => String(x.id) === String(id));
+    if (!u) return;
+    u.contribuidor = !(u.contribuidor === true);
+    await saveData('system', 'users_list', { list: users });
+    renderListaUsuariosAdmin();
 }
 
 function abrirModalUsuarioAdmin() {
