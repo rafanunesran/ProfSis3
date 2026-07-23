@@ -20,6 +20,7 @@ function renderGestorPanel() {
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
         <button onclick="showScreen('horariosGestor', event)"><span class="icon">⏰</span><span class="label">Horários</span></button>
         <button onclick="showScreen('escolaGestor', event)"><span class="icon">🏫</span><span class="label">Escola</span></button>
+        <button onclick="showScreen('biblioteca', event)"><span class="icon">📚</span><span class="label">Biblioteca</span></button>
     `;
 
     // Criar telas do Gestor se não existirem

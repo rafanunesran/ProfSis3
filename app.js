@@ -665,6 +665,7 @@ function renderProfessorPanel() {
         <button onclick="showScreen('agenda', event)"><span class="icon">📅</span><span class="label">Agenda</span></button>
         <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
+        <button onclick="showScreen('biblioteca', event)"><span class="icon">📚</span><span class="label">Biblioteca</span></button>
     `;
     renderDashboard();
     showScreen('dashboard');
@@ -678,6 +679,7 @@ function renderAeePanel() {
         <button onclick="showScreen('agenda', event)"><span class="icon">📅</span><span class="label">Agenda</span></button>
         <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
+        <button onclick="showScreen('biblioteca', event)"><span class="icon">📚</span><span class="label">Biblioteca</span></button>
     `;
     renderDashboard();
     showScreen('dashboard');
@@ -692,6 +694,7 @@ function renderProjetoPanel() {
         <button onclick="showScreen('agenda', event)"><span class="icon">📅</span><span class="label">Agenda</span></button>
         <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
+        <button onclick="showScreen('biblioteca', event)"><span class="icon">📚</span><span class="label">Biblioteca</span></button>
     `;
     renderDashboard();
     showScreen('dashboard');
@@ -722,6 +725,7 @@ function showScreen(screenId, evt) {
     if (screenId === 'notasOficiaisGestor') renderNotasOficiaisGestor();
     if (screenId === 'horariosGestor') renderHorariosGestor();
     if (screenId === 'escolaGestor') renderEscolaGestor();
+    if (screenId === 'biblioteca') renderBiblioteca();
 }
 
 function showModal(modalId) {

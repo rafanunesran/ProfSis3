@@ -77,6 +77,38 @@ async function buscarChunksCurriculoTexto(serie) {
     }
 }
 
+// Tier 3: materiais de referência postados pelos professores na Biblioteca de Apoio (biblioteca.js).
+// Coleção global `materiais_apoio`. Casa por serieChaves (a série pedida + 'GERAL' pra materiais sem
+// série específica). Ver bibliotecaAdicionarMaterial em biblioteca.js pra como esses campos são gravados.
+async function buscarMateriaisApoioEstagiario(serie) {
+    if (typeof db === 'undefined' || !db) return [];
+    const serieChave = resolverSerieChaveCurriculoOficial(serie);
+    const chaves = serieChave ? [serieChave, 'GERAL'] : ['GERAL'];
+    try {
+        const snap = await db.collection('materiais_apoio').where('serieChaves', 'array-contains-any', chaves).limit(200).get();
+        return snap.docs.map(d => d.data());
+    } catch (e) {
+        console.warn('[Estagiário][Tier3] Erro ao buscar materiais de apoio:', e);
+        return [];
+    }
+}
+
+// Mesma pontuação por palavra-chave das outras tiers, aplicada ao textoBuscavel (título+descrição+
+// tags+texto extraído) dos materiais. Sem tema digitado, devolve os primeiros poucos (já filtrados
+// por série/disciplina). Pega no máximo os 3 mais relevantes pra não inflar o prompt.
+function selecionarMelhoresMateriaisApoio(tema, materiais) {
+    if (!materiais || materiais.length === 0) return [];
+    const temaNorm = normalizarTextoComparacaoMaterialDigital(tema);
+    const tokensTema = temaNorm ? temaNorm.split(' ').filter(t => t.length >= 3) : [];
+    if (tokensTema.length === 0) return materiais.slice(0, 3);
+    return materiais
+        .map(m => ({ m, score: pontuarTextoBuscavelContraTema(temaNorm, tokensTema, m.textoBuscavel || '') }))
+        .filter(r => r.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3)
+        .map(r => r.m);
+}
+
 // Pontua um texto já normalizado (normalizarTextoComparacaoMaterialDigital) contra o "Tema" digitado
 // pelo professor: 1.0 se o texto contém o tema inteiro, senão a proporção de tokens do tema (>=3
 // letras) encontrados no texto. Reaproveitada tanto pra achar a melhor linha da planilha (Tier 1)
@@ -133,7 +165,7 @@ function selecionarMelhoresTrechosCurriculo(tema, chunks) {
 // quanto a geração fica fundamentada, nunca bloqueia o professor de gerar o plano. Nenhuma das duas
 // fontes depende de chave de IA - é tudo Firestore + comparação de texto em JS puro.
 async function montarContextoCurriculoOficial(disciplina, serie, tema) {
-    const contexto = { tier1: null, tier1Confiante: false, tier2Trechos: [], grounded: false };
+    const contexto = { tier1: null, tier1Confiante: false, tier2Trechos: [], tier3Materiais: [], grounded: false };
 
     try {
         const linhas = (await buscarLinhasCurriculoOficial(serie))
@@ -162,6 +194,20 @@ async function montarContextoCurriculoOficial(disciplina, serie, tema) {
         }
     } catch (e) {
         console.warn('[Estagiário][Tier2] Erro ao montar contexto:', e);
+    }
+
+    try {
+        const materiais = (await buscarMateriaisApoioEstagiario(serie))
+            .filter(m => !m.disciplinaOriginal || disciplinasSaoSemelhantes(disciplina, m.disciplinaOriginal));
+        if (materiais.length > 0) {
+            const escolhidos = selecionarMelhoresMateriaisApoio(tema, materiais);
+            if (escolhidos.length > 0) {
+                contexto.tier3Materiais = escolhidos;
+                contexto.grounded = true;
+            }
+        }
+    } catch (e) {
+        console.warn('[Estagiário][Tier3] Erro ao montar contexto:', e);
     }
 
     return contexto;
@@ -249,6 +295,16 @@ function montarBlocoContextoOficial(contexto) {
         contexto.tier2Trechos.forEach(chunk => {
             const rotulo = ROTULOS_TIPO_DOCUMENTO_ESTAGIARIO[chunk.tipoDocumento] || chunk.tipoDocumento || 'Material Oficial';
             bloco += `- [${rotulo} - ${chunk.fonteArquivo || ''}, p.${chunk.paginaInicio || '?'}]: ${chunk.texto}\n`;
+        });
+    }
+
+    if (contexto.tier3Materiais && contexto.tier3Materiais.length > 0) {
+        bloco += '\n[MATERIAIS DE APOIO DA COMUNIDADE - enviados por outros professores na Biblioteca de Apoio; use como referência complementar, com senso crítico, sem tratar como fonte oficial]\n';
+        contexto.tier3Materiais.forEach(m => {
+            const trecho = (m.textoExtraido || '').replace(/\s+/g, ' ').trim().slice(0, 1500);
+            bloco += `- ${m.titulo || 'Material'}${m.disciplina ? ' (' + m.disciplina + ')' : ''}: ${m.descricao || ''}`;
+            if (trecho) bloco += `\n  Conteúdo: ${trecho}`;
+            bloco += '\n';
         });
     }
 
