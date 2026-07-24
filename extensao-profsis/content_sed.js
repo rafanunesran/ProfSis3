@@ -988,18 +988,21 @@ const ATIVIDADES_GENERICAS_REGISTRO = [
     'Encerramento e Reflexão'
 ];
 
-// v3.2.2: sem registro salvo, ainda assim marca um card de Material Digital na tela (em vez de
-// deixar nenhum marcado) - escolhe o primeiro card, na ordem em que aparece nas abas, que NÃO seja
-// "aula com tarefa" (card.temTarefa), pra nunca liberar uma atividade pro aluno sem o professor ter
-// decidido isso explicitamente num registro real.
-function encontrarPrimeiroCardSemTarefa(dadosMaterial) {
+// Sorteia (aleatoriamente) um card de Material Digital SEM "aula com tarefa" dentre todos os
+// extraídos das abas - usado como fallback quando o registro do ProfSis não tem card marcado ou
+// quando não há registro salvo. Nunca sorteia "aula com tarefa" (card.temTarefa) pra não liberar
+// uma atividade pro aluno sem o professor ter decidido isso num registro real. null se não houver
+// nenhum card sem tarefa disponível.
+function sortearCardSemTarefa(dadosMaterial) {
     if (!dadosMaterial || !dadosMaterial.sessoes) return null;
+    const semTarefa = [];
     for (const sessao of dadosMaterial.sessoes) {
         for (const card of (sessao.cards || [])) {
-            if (!card.temTarefa) return card;
+            if (!card.temTarefa) semTarefa.push(card);
         }
     }
-    return null;
+    if (semTarefa.length === 0) return null;
+    return semTarefa[Math.floor(Math.random() * semTarefa.length)];
 }
 
 function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts, dadosMaterial) {
@@ -1029,9 +1032,11 @@ function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts, dadosMateri
             };
 
             // Marca de volta os cards do Material Digital selecionados no ProfSis ANTES de salvar,
-            // para que o clique em Salvar grave texto + cards de uma vez só.
+            // para que o clique em Salvar grave texto + cards de uma vez só. O 3º argumento (true)
+            // garante ao menos uma aula marcada em CADA aba (dobradinha) - se o card salvo/sorteado
+            // não existir numa aba, sorteia um card sem tarefa daquela aba.
             if (cardsMaterialDigital && cardsMaterialDigital.length > 0) {
-                marcarCardsMaterialDigitalNaTela(cardsMaterialDigital, finalizarSalvamentoRegistro);
+                marcarCardsMaterialDigitalNaTela(cardsMaterialDigital, finalizarSalvamentoRegistro, true);
             } else {
                 finalizarSalvamentoRegistro([]);
             }
@@ -1076,26 +1081,25 @@ function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts, dadosMateri
     };
 
     if (registro && registro.conteudo) {
-        // v3.2.3: se o registro do ProfSis existe mas NÃO tem card de Material Digital marcado,
-        // ainda assim seleciona um card na SED - o primeiro sem "aula com tarefa" (mesmo fallback do
-        // caminho sem-registro abaixo) - pra nunca salvar um registro sem nenhum card marcado.
+        // Registro salvo no ProfSis: usa o conteúdo salvo. Se ele TEM card marcado, usa o card salvo;
+        // se NÃO tem card, sorteia um card sem tarefa (mesmo fallback do caminho sem-registro abaixo)
+        // pra nunca salvar um registro sem nenhum card marcado.
         let cards = registro.cardsMaterialDigital;
         if (!cards || cards.length === 0) {
-            const cardFallback = encontrarPrimeiroCardSemTarefa(dadosMaterial);
+            const cardFallback = sortearCardSemTarefa(dadosMaterial);
             cards = cardFallback ? [cardFallback] : null;
         }
         prosseguirComConteudo(registro.conteudo, cards);
         return;
     }
 
-    // v3.2.0: sem registro nem rascunho salvo no ProfSis - sorteia uma atividade genérica da lista
-    // fixa (ATIVIDADES_GENERICAS_REGISTRO) em vez de abortar - tanto no botão manual quanto no robô
+    // Sem registro nem rascunho salvo no ProfSis - sorteia uma atividade genérica da lista fixa
+    // (ATIVIDADES_GENERICAS_REGISTRO) em vez de abortar - tanto no botão manual quanto no robô
     // automático. Substitui a geração por IA usada antes (não depende mais de rede/chave nenhuma).
-    // v3.2.2: além do texto, marca também um card de Material Digital (o primeiro sem "aula com
-    // tarefa" encontrado nas abas) em vez de deixar a tela sem nenhum card marcado - ver
-    // encontrarPrimeiroCardSemTarefa acima.
+    // Além do texto, sorteia também um card de Material Digital SEM tarefa (ver sortearCardSemTarefa)
+    // em vez de deixar a tela sem nenhum card marcado.
     const atividadeSorteada = ATIVIDADES_GENERICAS_REGISTRO[Math.floor(Math.random() * ATIVIDADES_GENERICAS_REGISTRO.length)];
-    const cardFallback = encontrarPrimeiroCardSemTarefa(dadosMaterial);
+    const cardFallback = sortearCardSemTarefa(dadosMaterial);
     prosseguirComConteudo(atividadeSorteada, cardFallback ? [cardFallback] : null, true);
 }
 
@@ -1136,7 +1140,7 @@ function preencherTextoRegistroEmTodasAsAbas(tabs, conteudoTexto, callback) {
 // porque o mesmo card ("Aula 1 - ...") tem um id numérico DIFERENTE em cada aba/sessão do
 // #tabsNavegacao, mas o catálogo de títulos é o mesmo em todas as abas. Retorna os títulos de
 // cardsAlvo que foram encontrados e marcados NESTE pane.
-function marcarCardsAlvoNoPane(pane, cardsAlvo) {
+function marcarCardsAlvoNoPane(pane, cardsAlvo, garantirAoMenosUm) {
     const blocos = pane ? Array.from(pane.querySelectorAll(SELETOR_CARDS_MATERIAL_DIGITAL)) : [];
     const encontrados = [];
     cardsAlvo.forEach(alvo => {
@@ -1151,6 +1155,24 @@ function marcarCardsAlvoNoPane(pane, cardsAlvo) {
             encontrados.push(alvo.titulo || alvo.id);
         }
     });
+
+    // Garante pelo menos UM card marcado neste pane (a SED exige uma aula marcada em CADA aba de
+    // dobradinha antes de salvar). Se nenhum card-alvo casou aqui e ainda não há nada marcado neste
+    // pane, sorteia um card SEM "aula com tarefa" que exista NESTE pane e marca. Assim, mesmo que o
+    // card salvo/sorteado pertença a outra aba, cada aba fica com uma aula selecionada.
+    if (garantirAoMenosUm && encontrados.length === 0) {
+        const jaMarcado = blocos.some(b => { const c = b.querySelector('input[type="checkbox"]'); return c && c.checked; });
+        if (!jaMarcado) {
+            const semTarefa = blocos.filter(b => b.querySelector('input[type="checkbox"]') && !/aula com tarefa/i.test(b.textContent || ''));
+            if (semTarefa.length > 0) {
+                const escolhido = semTarefa[Math.floor(Math.random() * semTarefa.length)];
+                const checkbox = escolhido.querySelector('input[type="checkbox"]');
+                if (checkbox && !checkbox.checked) checkbox.click();
+                const tituloEl = escolhido.querySelector('label p b');
+                if (tituloEl && !encontrados.includes(tituloEl.textContent.trim())) encontrados.push(tituloEl.textContent.trim());
+            }
+        }
+    }
     return encontrados;
 }
 
@@ -1161,13 +1183,13 @@ function marcarCardsAlvoNoPane(pane, cardsAlvo) {
 // mesmo(s) card(s)-alvo em cada uma (pode repetir a mesma aula nas duas abas, o que é esperado). Ao
 // final volta pra aba em que o professor estava. Só avisa no callback os títulos que não foram
 // encontrados em NENHUMA aba - nunca interrompe o preenchimento por não achar um card.
-function marcarCardsMaterialDigitalNaTela(cardsAlvo, callback) {
+function marcarCardsMaterialDigitalNaTela(cardsAlvo, callback, garantirAoMenosUm) {
     if (!cardsAlvo || cardsAlvo.length === 0) { callback([]); return; }
 
     const tabs = Array.from(document.querySelectorAll('#tabsNavegacao .nav-link'));
     if (tabs.length === 0) {
         const pane = document.querySelector('.tab-content .tab-pane.show.active') || document.querySelector('.tab-content .tab-pane');
-        const encontrados = marcarCardsAlvoNoPane(pane, cardsAlvo);
+        const encontrados = marcarCardsAlvoNoPane(pane, cardsAlvo, garantirAoMenosUm);
         callback(cardsAlvo.map(a => a.titulo || a.id).filter(t => !encontrados.includes(t)));
         return;
     }
@@ -1189,7 +1211,7 @@ function marcarCardsMaterialDigitalNaTela(cardsAlvo, callback) {
         tab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
         setTimeout(() => {
             const pane = document.querySelector('.tab-content .tab-pane.show.active') || document.querySelector('.tab-content .tab-pane');
-            marcarCardsAlvoNoPane(pane, cardsAlvo).forEach(t => { if (!encontradosGlobal.includes(t)) encontradosGlobal.push(t); });
+            marcarCardsAlvoNoPane(pane, cardsAlvo, garantirAoMenosUm).forEach(t => { if (!encontradosGlobal.includes(t)) encontradosGlobal.push(t); });
             i++;
             proximaAba();
         }, 350);
@@ -1772,7 +1794,10 @@ function iniciarExtrairMaterialDigital() {
 // concorrentes. Sempre chama aoConcluir() ao final (sucesso, erro ou nada pra extrair).
 function extrairMaterialDigitalSilencioso(aoConcluir) {
     coletarSessoesMaterialDigital((dados) => {
-        if (!dados || dados.erro) { aoConcluir(); return; }
+        // IMPORTANTE: repassa `dados` (com .sessoes) ao callback - executarPreenchimentoRegistro usa
+        // isso pra sortear um card sem tarefa quando o registro não tem card. Antes chamávamos
+        // aoConcluir() sem argumento, então dadosMaterial ficava undefined e nenhum card era marcado.
+        if (!dados || dados.erro) { aoConcluir(dados); return; }
 
         const payload = { turmaSED: dados.turmaSelecionada, disciplinaSED: dados.disciplinaSelecionada, sessoes: dados.sessoes, bimestre: detectarBimestreAtual(), timestamp: Date.now(), silencioso: true };
         chrome.runtime.sendMessage({ action: 'UPDATE_MATERIAL_DIGITAL_DB', payload: payload }, (response) => {
@@ -1783,7 +1808,7 @@ function extrairMaterialDigitalSilencioso(aoConcluir) {
             } else {
                 console.warn('[SisProf Ext] Atualização silenciosa do catálogo de Material Digital não teve sucesso:', response && response.error);
             }
-            aoConcluir();
+            aoConcluir(dados);
         });
     });
 }
