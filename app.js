@@ -4018,7 +4018,11 @@ async function obterCardsCatalogoCompartilhado(disciplina, nomeTurmaOuSerie) {
                 .where('serieChave', '==', serieChave)
                 .get();
             candidatosData = snap.docs.map(d => d.data());
-            materialDigitalCacheCompartilhado.set(chaveCache, candidatosData);
+            // Só cacheia quando ACHOU algo. Um array vazio é "truthy", então cachear [] deixava o
+            // catálogo preso em vazio: se a página foi aberta antes da extração do robô, os cards
+            // extraídos depois nunca apareciam sem recarregar a página. Sem cachear o vazio, a próxima
+            // abertura re-consulta o Firestore e já mostra o que foi extraído.
+            if (candidatosData.length > 0) materialDigitalCacheCompartilhado.set(chaveCache, candidatosData);
         }
 
         const cluster = candidatosData.find(d => disciplinasSaoSemelhantes(disciplina, d.disciplinaOriginal));
@@ -4068,17 +4072,49 @@ function renderizarSeletorCardsMaterialDigitalDeLista(cards, selecionadosAtuais,
         </label>`;
     };
 
+    // Aba ativa inicial: a que contém algum card já selecionado; senão a primeira.
+    let abaAtiva = ordemGrupos[0];
+    for (const chave of ordemGrupos) {
+        if (grupos.get(chave).some(c => idsSelecionados.has(c.id))) { abaAtiva = chave; break; }
+    }
+    const rotuloBim = (chave) => chave === 'sem' ? 'Sem bimestre' : `${chave}º Bim`;
+
     let html = `<div id="${containerId}" style="margin-top:10px; border:1px solid #cbd5e0; border-radius:6px; padding:10px; background:#fafafa;">`;
     html += `<label style="font-weight:bold; display:block; margin-bottom:8px; color:#2d3748;">📚 Aula do Material Digital dada (máx. ${LIMITE_CARDS_MATERIAL_DIGITAL}):</label>`;
+
+    // Barra de abas por bimestre (só quando há mais de um grupo). Clicar troca o grupo visível.
+    if (ordemGrupos.length > 1) {
+        html += `<div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:8px;">`;
+        ordemGrupos.forEach(chave => {
+            const ativa = chave === abaAtiva;
+            html += `<button type="button" class="md-aba-btn" data-chave="${chave}" onclick="mostrarAbaBimestreMaterialDigital('${containerId}', '${chave}')" style="border:none; background:${ativa ? '#3182ce' : '#e2e8f0'}; color:${ativa ? '#fff' : '#4a5568'}; font-size:12px; font-weight:bold; padding:6px 12px; border-radius:6px; cursor:pointer;">🗓️ ${rotuloBim(chave)} (${grupos.get(chave).length})</button>`;
+        });
+        html += `</div>`;
+    }
+
     ordemGrupos.forEach(chave => {
-        const tituloGrupo = chave === 'sem' ? '📋 Sem bimestre definido' : `🗓️ ${chave}º Bimestre`;
-        html += `<div style="font-size:12px; font-weight:bold; color:#2b6cb0; margin:10px 0 6px 0; padding-bottom:3px; border-bottom:1px solid #e2e8f0;">${tituloGrupo}</div>`;
-        html += `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:8px;">`;
+        const mostrar = chave === abaAtiva;
+        html += `<div class="md-aba-conteudo" data-chave="${chave}" style="display:${mostrar ? 'grid' : 'none'}; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:8px;">`;
         grupos.get(chave).forEach(card => { html += renderCard(card); });
         html += `</div>`;
     });
     html += `</div>`;
     return html;
+}
+
+// Troca a "aba" de bimestre visível dentro de um seletor de cards de Material Digital (o estado dos
+// checkboxes é preservado mesmo nas abas ocultas, então a seleção não se perde ao trocar de aba).
+function mostrarAbaBimestreMaterialDigital(containerId, chave) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.querySelectorAll('.md-aba-conteudo').forEach(el => {
+        el.style.display = (el.getAttribute('data-chave') === String(chave)) ? 'grid' : 'none';
+    });
+    container.querySelectorAll('.md-aba-btn').forEach(btn => {
+        const ativa = btn.getAttribute('data-chave') === String(chave);
+        btn.style.background = ativa ? '#3182ce' : '#e2e8f0';
+        btn.style.color = ativa ? '#fff' : '#4a5568';
+    });
 }
 
 // Aplica o limite de cards marcados por vez: ao tentar marcar um a mais que o limite, desmarca de novo
@@ -4160,7 +4196,9 @@ async function abrirModalNovoRegistroAula(id = null) {
     }
     const turmaRegistro = (data.turmas || []).find(t => t.id == turmaAtual);
     const cardsCatalogoRegistro = turmaRegistro ? await obterCardsCatalogoCompartilhado(turmaRegistro.disciplina, turmaRegistro.ano_serie || turmaRegistro.nome) : [];
-    document.getElementById('regAulaCardsMaterialDigitalWrap').innerHTML = renderizarSeletorCardsMaterialDigitalDeLista(cardsCatalogoRegistro, cardsAtuais, 'regAulaCardsMaterialDigital');
+    document.getElementById('regAulaCardsMaterialDigitalWrap').innerHTML =
+        renderizarSeletorCardsMaterialDigitalDeLista(cardsCatalogoRegistro, cardsAtuais, 'regAulaCardsMaterialDigital')
+        || '<p style="font-size:11px; color:#a0aec0; margin-top:10px;">📚 Nenhuma aula do Material Digital extraída ainda para esta disciplina/série. Na Sala do Futuro, use o robô (📥 Extrair Material Digital) ou preencha um registro — a extração acontece sozinha.</p>';
     showModal('modalNovoRegistroAula');
 }
 

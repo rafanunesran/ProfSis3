@@ -1607,7 +1607,8 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
     // escola pra essa disciplina+série (já resolvido em gerarDocumentoIA, antes de chamar esta função).
     // Fica de fora do PDF por exigência do usuário - só é lido em exportarDocumentoFinal() pra anexar
     // aos rascunhos de registrosAula (automações).
-    const cardsMaterialDigitalHtml = renderizarSeletorCardsMaterialDigitalDeLista(cardsMaterialDigitalDisponiveis || [], [], 'revDocCardsMaterialDigital');
+    const cardsMaterialDigitalHtml = renderizarSeletorCardsMaterialDigitalDeLista(cardsMaterialDigitalDisponiveis || [], [], 'revDocCardsMaterialDigital')
+        || '<p style="font-size:11px; color:#a0aec0; margin-top:10px;">📚 Nenhuma aula do Material Digital extraída ainda para esta disciplina/série. Na Sala do Futuro, use o robô (📥 Extrair Material Digital) na tela de Registro de Aulas.</p>';
 
     // Aviso de fundamentação na base curricular oficial (planilha/PDFs) - ver montarContextoCurriculoOficial.
     const fundamentacaoHtml = resumoFundamentacao && resumoFundamentacao.grounded
