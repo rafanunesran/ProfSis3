@@ -96,6 +96,9 @@ let profsisAppData = null;
 function mostrarTelaStatus() {
     const oldMenu = document.getElementById('sisprof-menu-flutuante');
     if (oldMenu) oldMenu.remove();
+    // Remove também a bolinha do minimizado, pra não ficar órfã (o painel que ela abre foi removido).
+    const oldBolinha = document.getElementById('sisprof-bolinha');
+    if (oldBolinha) oldBolinha.remove();
     if (document.getElementById('sisprof-status-box')) return;
     if (!document.body) { setTimeout(mostrarTelaStatus, 500); return; }
     
@@ -506,6 +509,22 @@ function encontrarIdTurmaDaTelaAtual() {
 
 // ==================== MENU FLUTUANTE ====================
 
+// Estado "minimizado" persistido (localStorage do domínio da SED), pra sobreviver às reinjeções do
+// menu quando a página da Sala do Futuro atualiza/renavega - antes o menu voltava sempre expandido.
+const SISPROF_MENU_MIN_KEY = 'sisprof_menu_minimizado';
+function sisprofMenuEstaMinimizado() {
+    try { return localStorage.getItem(SISPROF_MENU_MIN_KEY) === '1'; } catch (e) { return false; }
+}
+// Aplica o estado minimizado: esconde o painel e mostra a bolinha (☰), ou o contrário. Também salva
+// a escolha, pra manter minimizado depois de uma atualização de página.
+function aplicarEstadoMenuMinimizado(minimizado) {
+    const painel = document.getElementById('sisprof-menu-flutuante');
+    const bolinha = document.getElementById('sisprof-bolinha');
+    if (painel) painel.style.display = minimizado ? 'none' : 'block';
+    if (bolinha) bolinha.style.display = minimizado ? 'flex' : 'none';
+    try { localStorage.setItem(SISPROF_MENU_MIN_KEY, minimizado ? '1' : '0'); } catch (e) {}
+}
+
 function injetarMenu() {
     if (document.getElementById('sisprof-menu-flutuante')) return;
     if (!document.body) { setTimeout(injetarMenu, 500); return; }
@@ -515,7 +534,7 @@ function injetarMenu() {
     div.innerHTML = '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
             '<span>🤖 SisProf <span style="font-size:10px; opacity:0.7;">v' + chrome.runtime.getManifest().version + '</span></span>' +
         '<div style="display:flex; gap:8px; align-items:center;"><span id="sisprof-user-name" style="font-size:11px; opacity:0.9; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
-        '<span id="sisprof-minimizar" style="cursor:pointer; font-size:16px;">▶</span><span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span></div></div>' +
+        '<span id="sisprof-minimizar" title="Minimizar" style="cursor:pointer; font-size:20px; line-height:1;">—</span><span id="sisprof-fechar" style="cursor:pointer; font-size:20px;">✖</span></div></div>' +
         '<div id="sisprof-conteudo"><p style="margin:0 0 10px 0; color:#4a5568; font-size:13px;">✅ Conectado ao ProfSis!</p>' +
         '<div style="background:#f0fff4; padding:10px; border-radius:8px; border:1px solid #c6f6d5; margin-bottom:10px;"><label style="font-size:12px; font-weight:bold; color:#276749; display:block; margin-bottom:4px;">📅 Selecione o Dia:</label>' +
         '<div style="display:flex; gap:5px;"><input type="date" id="sisprof-data-input" style="flex:1; padding:6px; border:1px solid #cbd5e0; border-radius:4px; font-size:12px;"><button id="sisprof-btn-hoje" style="background:#38a169; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">Hoje</button></div></div>' +
@@ -531,9 +550,28 @@ function injetarMenu() {
         '<hr style="border:0; border-top:1px solid #e2e8f0; margin:10px 0;">' +
         '<button id="sisprof-btn-logout" style="width:100%; background:#718096; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px;">🚪 Desconectar</button></div>';
     document.body.appendChild(div);
+
+    // Bolinha (☰) que aparece no lugar do menu quando minimizado. É um elemento separado (não
+    // recria o painel), então o conteúdo/estado do menu — data selecionada, listas — é preservado
+    // ao minimizar/expandir. Clicar nela expande de volta.
+    var bolinha = document.getElementById('sisprof-bolinha');
+    if (!bolinha) {
+        bolinha = document.createElement('div');
+        bolinha.id = 'sisprof-bolinha';
+        bolinha.title = 'Abrir SisProf';
+        bolinha.style.cssText = 'position:fixed; top:20px; right:20px; width:52px; height:52px; background:#38a169; color:white; border-radius:50%; z-index:999999; box-shadow:0 4px 12px rgba(0,0,0,0.4); cursor:pointer; display:none; align-items:center; justify-content:center; font-size:24px; font-family:Arial;';
+        bolinha.innerHTML = '☰';
+        document.body.appendChild(bolinha);
+    }
+    bolinha.onclick = function() { aplicarEstadoMenuMinimizado(false); };
+
     if (profsisProfile && profsisProfile.nome) { const n = document.getElementById('sisprof-user-name'); if (n) n.textContent = profsisProfile.nome.split(' ')[0]; }
-    document.getElementById('sisprof-fechar').onclick = function() { div.remove(); };
-    document.getElementById('sisprof-minimizar').onclick = function() { const c = document.getElementById('sisprof-conteudo'); c.style.display = c.style.display === 'none' ? 'block' : 'none'; this.innerHTML = c.style.display === 'none' ? '◀' : '▶'; };
+    document.getElementById('sisprof-fechar').onclick = function() { div.remove(); if (bolinha) bolinha.remove(); };
+    document.getElementById('sisprof-minimizar').onclick = function() { aplicarEstadoMenuMinimizado(true); };
+
+    // Reaplica o estado salvo: se estava minimizado, já entra como bolinha (em vez de reexpandir
+    // toda vez que a página da SED atualiza e o menu é reinjetado).
+    if (sisprofMenuEstaMinimizado()) aplicarEstadoMenuMinimizado(true);
     document.getElementById('sisprof-btn-logout').onclick = function() { chrome.runtime.sendMessage({ action: 'PROFSIS_LOGOUT' }, () => { div.remove(); profsisProfile = null; profsisAppData = null; extHistory = {}; mostrarTelaStatus(); }); };
     document.getElementById('sisprof-btn-hoje').onclick = function() { const h = new Date().toISOString().split('T')[0]; document.getElementById('sisprof-data-input').value = h; currentSelectedDate = h; atualizarInterfacePorData(); };
     document.getElementById('sisprof-data-input').addEventListener('change', function() { currentSelectedDate = this.value; atualizarInterfacePorData(); });
