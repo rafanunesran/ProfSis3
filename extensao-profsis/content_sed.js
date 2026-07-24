@@ -227,7 +227,8 @@ function montarPayloadPorData(dataStr) {
     
     // FALTOSOS: apenas alunos classificados como "Faltoso" pela gestão
     // A classificação vem de registrosAdministrativos onde tipo === 'Faltoso'
-    const faltososGestao = registrosAdmin.filter(r => r.tipo === 'Faltoso');
+    // (registros arquivados pela gestão são ignorados - não devem mais marcar falta)
+    const faltososGestao = registrosAdmin.filter(r => r.tipo === 'Faltoso' && !r.arquivado);
     let alunosFaltantesNomes = [];
     
     faltososGestao.forEach(reg => {
