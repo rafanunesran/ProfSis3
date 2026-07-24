@@ -436,13 +436,22 @@ async function abrirModalPerfil() {
         containerTemas.parentNode.appendChild(integrationArea);
     }
     
+    // Versão da extensão instalada, exposta pelo content_profsis.js num data-attribute do <html>
+    // (o professor confere aqui se a extensão dele já se atualizou). Se não houver o atributo, ou a
+    // extensão não está instalada nesta aba, ou é uma versão antiga que ainda não expõe a versão.
+    const versaoRoboInstalada = document.documentElement.getAttribute('data-profsis-ext-versao');
+    const linhaVersaoRobo = versaoRoboInstalada
+        ? `<div style="font-size:11px; color:#276749; background:#f0fff4; border:1px solid #c6f6d5; border-radius:4px; padding:5px 8px; margin-bottom:8px;">🤖 Robô instalado: <strong>v${versaoRoboInstalada}</strong></div>`
+        : `<div style="font-size:11px; color:#975a16; background:#fffaf0; border:1px solid #feebc8; border-radius:4px; padding:5px 8px; margin-bottom:8px;">🤖 Extensão não detectada nesta aba. Se você já instalou, atualize a extensão em <code>chrome://extensions</code> e recarregue esta página.</div>`;
+
     integrationArea.innerHTML = `
         <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cbd5e0;">
             <h4 style="color:#2c5282; margin-bottom:5px; font-size:14px;">🤖 Integração Sala do Futuro (SED)</h4>
             <p style="font-size:11px; color:#718096; margin-bottom:10px;">Use a extensão do Chrome para enviar suas chamadas e registros automaticamente para a SED.</p>
-            
+
             <div style="background:#edf2f7; padding:10px; border-radius:6px; border:1px solid #cbd5e0; margin-top:10px;">
                 <strong style="font-size:12px; color:#2d3748; display:block; margin-bottom:5px;">💻 Extensão do Chrome (Computador)</strong>
+                ${linhaVersaoRobo}
                 <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Instala a extensão e configura o Chrome para ela se atualizar sozinha daqui pra frente (nunca mais precisa baixar de novo).</p>
                 <button class="btn btn-sm btn-info" onclick="baixarInstaladorExtensaoDesktop()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">⬇️ Instalar no Chrome (Computador)</button>
                 <p style="font-size:10px; color:#a0aec0; margin-top:6px; margin-bottom:0;"><a href="#" onclick="baixarArquivosExtensao(); return false;" style="color:#a0aec0;">Modo avançado: baixar só os arquivos (Carregar sem compactação)</a></p>
