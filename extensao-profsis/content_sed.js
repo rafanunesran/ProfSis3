@@ -1071,13 +1071,12 @@ function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts, dadosMateri
 
             // Marca de volta os cards do Material Digital selecionados no ProfSis ANTES de salvar,
             // para que o clique em Salvar grave texto + cards de uma vez só. O 3º argumento (true)
-            // garante ao menos uma aula marcada em CADA aba (dobradinha) - se o card salvo/sorteado
-            // não existir numa aba, sorteia um card sem tarefa daquela aba.
-            if (cardsMaterialDigital && cardsMaterialDigital.length > 0) {
-                marcarCardsMaterialDigitalNaTela(cardsMaterialDigital, finalizarSalvamentoRegistro, true);
-            } else {
-                finalizarSalvamentoRegistro([]);
-            }
+            // GARANTE ao menos uma aula marcada em CADA aba (a SED exige isso pra salvar), mesmo
+            // quando não há card-alvo (cardsMaterialDigital vazio): nesse caso a marcação escolhe
+            // direto na tela um card - de preferência sem tarefa, e em último caso qualquer um.
+            // Por isso passamos sempre por marcarCardsMaterialDigitalNaTela (nunca pula pra salvar
+            // sem tentar marcar).
+            marcarCardsMaterialDigitalNaTela(cardsMaterialDigital || [], finalizarSalvamentoRegistro, true);
         };
 
         const tabs = Array.from(document.querySelectorAll('#tabsNavegacao .nav-link'));
@@ -1181,7 +1180,7 @@ function preencherTextoRegistroEmTodasAsAbas(tabs, conteudoTexto, callback) {
 function marcarCardsAlvoNoPane(pane, cardsAlvo, garantirAoMenosUm) {
     const blocos = pane ? Array.from(pane.querySelectorAll(SELETOR_CARDS_MATERIAL_DIGITAL)) : [];
     const encontrados = [];
-    cardsAlvo.forEach(alvo => {
+    (cardsAlvo || []).forEach(alvo => {
         const tituloAlvo = normalizeTextoSED(alvo.titulo);
         const bloco = blocos.find(b => {
             const tituloEl = b.querySelector('label p b');
@@ -1194,21 +1193,22 @@ function marcarCardsAlvoNoPane(pane, cardsAlvo, garantirAoMenosUm) {
         }
     });
 
-    // Garante pelo menos UM card marcado neste pane (a SED exige uma aula marcada em CADA aba de
-    // dobradinha antes de salvar). Se nenhum card-alvo casou aqui e ainda não há nada marcado neste
-    // pane, sorteia um card SEM "aula com tarefa" que exista NESTE pane e marca. Assim, mesmo que o
-    // card salvo/sorteado pertença a outra aba, cada aba fica com uma aula selecionada.
-    if (garantirAoMenosUm && encontrados.length === 0) {
-        const jaMarcado = blocos.some(b => { const c = b.querySelector('input[type="checkbox"]'); return c && c.checked; });
-        if (!jaMarcado) {
-            const semTarefa = blocos.filter(b => b.querySelector('input[type="checkbox"]') && !/aula com tarefa/i.test(b.textContent || ''));
-            if (semTarefa.length > 0) {
-                const escolhido = semTarefa[Math.floor(Math.random() * semTarefa.length)];
-                const checkbox = escolhido.querySelector('input[type="checkbox"]');
-                if (checkbox && !checkbox.checked) checkbox.click();
-                const tituloEl = escolhido.querySelector('label p b');
-                if (tituloEl && !encontrados.includes(tituloEl.textContent.trim())) encontrados.push(tituloEl.textContent.trim());
-            }
+    // Garante pelo menos UM card marcado neste pane (a SED exige uma aula marcada em CADA aba antes
+    // de salvar). Se nenhum card-alvo casou aqui e ainda não há nada marcado neste pane, escolhe um
+    // card direto da tela: 1ª preferência um SEM "aula com tarefa"; se NÃO houver nenhum sem tarefa,
+    // marca QUALQUER card disponível (último recurso obrigatório) - melhor uma aula marcada do que
+    // deixar o registro sem card e a SED recusar o salvamento.
+    if (garantirAoMenosUm) {
+        const comCheckbox = blocos.filter(b => b.querySelector('input[type="checkbox"]'));
+        const jaMarcado = comCheckbox.some(b => b.querySelector('input[type="checkbox"]').checked);
+        if (!jaMarcado && comCheckbox.length > 0) {
+            const semTarefa = comCheckbox.filter(b => !/aula com tarefa/i.test(b.textContent || ''));
+            const pool = semTarefa.length > 0 ? semTarefa : comCheckbox; // último recurso: qualquer card
+            const escolhido = pool[Math.floor(Math.random() * pool.length)];
+            const checkbox = escolhido.querySelector('input[type="checkbox"]');
+            if (checkbox && !checkbox.checked) checkbox.click();
+            const tituloEl = escolhido.querySelector('label p b');
+            if (tituloEl && !encontrados.includes(tituloEl.textContent.trim())) encontrados.push(tituloEl.textContent.trim());
         }
     }
     return encontrados;
@@ -1222,7 +1222,10 @@ function marcarCardsAlvoNoPane(pane, cardsAlvo, garantirAoMenosUm) {
 // final volta pra aba em que o professor estava. Só avisa no callback os títulos que não foram
 // encontrados em NENHUMA aba - nunca interrompe o preenchimento por não achar um card.
 function marcarCardsMaterialDigitalNaTela(cardsAlvo, callback, garantirAoMenosUm) {
-    if (!cardsAlvo || cardsAlvo.length === 0) { callback([]); return; }
+    cardsAlvo = cardsAlvo || [];
+    // Sem card-alvo e sem exigência de garantir: nada a marcar. Mas se garantirAoMenosUm=true,
+    // seguimos mesmo sem alvo - a marcação escolhe um card direto da tela em cada aba.
+    if (cardsAlvo.length === 0 && !garantirAoMenosUm) { callback([]); return; }
 
     const tabs = Array.from(document.querySelectorAll('#tabsNavegacao .nav-link'));
     if (tabs.length === 0) {
