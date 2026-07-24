@@ -1239,7 +1239,7 @@ function renderTurmas() {
     const html = (data.turmas || []).map(t => `
         <div class="card" style="margin-bottom:10px; border-left: 4px solid #3182ce;">
             <div style="display:flex; justify-content:space-between;">
-                <h3 onclick="abrirTurma(${t.id})" style="cursor:pointer; color:#2c5282;">${t.nome} - ${t.disciplina}</h3>
+                <h3 onclick="abrirTurma(${t.id})" style="cursor:pointer; color:#2c5282;">${t.nome} - ${t.disciplina}${t.tipo === 'eletiva' ? ' <span style="font-size:11px; background:#faf089; color:#744210; padding:1px 6px; border-radius:4px; vertical-align:middle;">🎯 Eletiva</span>' : ''}</h3>
                 <div>
                     <button class="btn btn-sm btn-secondary" onclick="editarTurma(${t.id})">✏️</button>
                     <button class="btn btn-sm btn-danger" onclick="removerTurma(${t.id})">🗑️</button>
@@ -1266,6 +1266,11 @@ async function abrirModalNovaTurma() {
     document.getElementById('turmaDisciplina').value = '';
     document.getElementById('tituloModalTurma').textContent = 'Nova Turma';
     
+    // Eletiva é uma opção só do professor (agrupamento de alunos de outras turmas). Reseta sempre.
+    const chkEletiva = document.getElementById('turmaEletiva');
+    if (chkEletiva) chkEletiva.checked = false;
+    document.getElementById('divTurmaEletiva').style.display = (currentViewMode === 'gestor') ? 'none' : 'block';
+
     // Gestor define apenas Ano/Série; Professor define Disciplina
     if (currentViewMode === 'gestor') {
         document.getElementById('divTurmaDisciplina').style.display = 'none';
@@ -1275,6 +1280,7 @@ async function abrirModalNovaTurma() {
         document.getElementById('divTurmaDisciplina').style.display = 'block';
         document.getElementById('containerTurmaAnoInput').style.display = 'none';
         document.getElementById('containerTurmaAnoSelect').style.display = 'block';
+        toggleModoEletiva(); // garante o estado inicial (não-eletiva) coerente
 
         // Carregar turmas do Gestor (Escola)
         const select = document.getElementById('turmaAnoSelect');
@@ -1294,6 +1300,20 @@ async function abrirModalNovaTurma() {
     showModal('modalNovaTurma');
 }
 
+// Eletiva (só professor): esconde o select de turma da gestão e transforma o campo Disciplina no
+// nome livre da eletiva (ex.: Grafite, Teatro). A turma resultante fica sem masterId, então não é
+// resincronizada/apagada ao abrir (ver abrirTurma) - os alunos importados persistem.
+function toggleModoEletiva() {
+    const chk = document.getElementById('turmaEletiva');
+    const ehEletiva = chk && chk.checked;
+    const selectBox = document.getElementById('containerTurmaAnoSelect');
+    if (selectBox) selectBox.style.display = ehEletiva ? 'none' : 'block';
+    const dica = document.getElementById('dicaEletiva');
+    if (dica) dica.style.display = ehEletiva ? 'block' : 'none';
+    const lbl = document.getElementById('labelTurmaDisciplina');
+    if (lbl) lbl.textContent = ehEletiva ? 'Nome da Eletiva / Disciplina (ex.: Grafite, Teatro):' : 'Disciplina:';
+}
+
 function editarTurma(id) {
     const turma = data.turmas.find(t => t.id == id);
     if (turma) {
@@ -1302,7 +1322,12 @@ function editarTurma(id) {
         document.getElementById('turmaDisciplina').value = turma.disciplina;
         document.getElementById('turmaTurno').value = turma.turno;
         document.getElementById('tituloModalTurma').textContent = 'Editar Turma';
-        
+
+        // Restaura o modo eletiva ao editar (só faz sentido para professor)
+        const chkEletiva = document.getElementById('turmaEletiva');
+        if (chkEletiva) chkEletiva.checked = (turma.tipo === 'eletiva');
+        document.getElementById('divTurmaEletiva').style.display = (currentViewMode === 'gestor') ? 'none' : 'block';
+
         if (currentViewMode === 'gestor') {
             document.getElementById('divTurmaDisciplina').style.display = 'none';
             document.getElementById('containerTurmaAnoInput').style.display = 'block';
@@ -1311,6 +1336,7 @@ function editarTurma(id) {
             document.getElementById('divTurmaDisciplina').style.display = 'block';
             document.getElementById('containerTurmaAnoInput').style.display = 'none';
             document.getElementById('containerTurmaAnoSelect').style.display = 'block';
+            toggleModoEletiva(); // aplica o estado (eletiva esconde o select da gestão)
         }
         showModal('modalNovaTurma');
     }
@@ -2071,6 +2097,14 @@ function encontrarAlvoTurmaExtensao(turmasLocais, turmaSED, normalizeTurma) {
         candidatos = comNorm.filter(x => sedNorm.includes(x.norm) || x.norm.includes(sedNorm));
     }
     if (candidatos.length === 0) {
+        // Fallback eletiva: uma turma de agrupamento (tipo 'eletiva') não casa por nome/série com a
+        // turma da SED. Se existir EXATAMENTE UMA eletiva, a chamada da SED é importada nela (o
+        // professor escolheu esse comportamento). Com 0 ou 2+ eletivas, mantém o erro de "sem match".
+        const eletivas = (turmasLocais || []).filter(t => t.tipo === 'eletiva');
+        if (eletivas.length === 1) {
+            const turma = eletivas[0];
+            return { masterId: null, turmaId: turma.id, turmaNomeLocal: turma.nome, turmaDisciplinaLocal: turma.disciplina || null, viaEletiva: true };
+        }
         return { erro: `Nenhuma turma local corresponde a "${turmaSED}". Verifique se a turma está cadastrada no ProfSis.` };
     }
 
@@ -2324,8 +2358,16 @@ function salvarTurma(e) {
     let nome = '';
     let masterId = null;
 
+    const chkEletiva = document.getElementById('turmaEletiva');
+    const ehEletiva = currentViewMode !== 'gestor' && chkEletiva && chkEletiva.checked;
+
     if (currentViewMode === 'gestor') {
         nome = document.getElementById('turmaAno').value;
+    } else if (ehEletiva) {
+        // Eletiva: sem vínculo com a gestão (masterId null). O nome da turma é a própria disciplina
+        // digitada (ex.: Grafite) - é por ele que o robô casa a chamada da SED com esta eletiva.
+        nome = disciplina;
+        masterId = null;
     } else {
         // Professor pega do Select
         const select = document.getElementById('turmaAnoSelect');
@@ -2335,13 +2377,22 @@ function salvarTurma(e) {
         nome = nome.split(' (')[0];
     }
 
+    if (ehEletiva && !disciplina.trim()) { alert('Dê um nome para a eletiva no campo Disciplina (ex.: Grafite, Teatro).'); return; }
+
     if (id) {
         const t = data.turmas.find(x => x.id == id);
-        if (t) { t.nome = nome; t.ano_serie = nome; t.disciplina = disciplina; t.turno = turno; if(masterId) t.masterId = masterId; }
+        if (t) {
+            t.nome = nome; t.ano_serie = nome; t.disciplina = disciplina; t.turno = turno;
+            if (masterId) t.masterId = masterId;
+            if (ehEletiva) { t.tipo = 'eletiva'; t.masterId = null; }
+            else if (t.tipo === 'eletiva' && !ehEletiva) delete t.tipo;
+        }
     } else {
         if (!data.turmas) data.turmas = [];
         // masterId serve para vincular a turma do professor à turma original da escola
-        data.turmas.push({ id: Date.now(), nome, ano_serie: nome, disciplina, turno, masterId: masterId });
+        const nova = { id: Date.now(), nome, ano_serie: nome, disciplina, turno, masterId: masterId };
+        if (ehEletiva) nova.tipo = 'eletiva';
+        data.turmas.push(nova);
     }
     persistirDados();
     closeModal('modalNovaTurma');
@@ -2525,6 +2576,10 @@ function showTurmaTab(tab, evt) {
 async function renderEstudantes() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual).sort((a, b) => (a.nome_completo || '').localeCompare(b.nome_completo || ''));
     const isGestor = currentViewMode === 'gestor';
+    // Eletiva (agrupamento): o professor gerencia os alunos manualmente (importar de outra turma /
+    // adicionar / remover), já que não há vínculo com a gestão que traga a lista pronta.
+    const turmaEletivaObj = (data.turmas || []).find(t => t.id == turmaAtual);
+    const ehEletiva = !!(turmaEletivaObj && turmaEletivaObj.tipo === 'eletiva');
     const todayStr = getTodayString();
 
     // --- MURAL DE AVISOS (Registros Administrativos) ---
@@ -2681,6 +2736,15 @@ async function renderEstudantes() {
                 ${estudantes.some(e => e.status && e.status !== 'Ativo') ? `<button class="btn btn-success btn-sm" onclick="reativarTodosTransferidosTurma()">🔄 Reativar todos os Transferidos desta turma</button>` : ''}
             </div>
         ` : ''}
+        ${(ehEletiva && !isGestor) ? `
+            <div style="background:#fffff0; border:1px solid #faf089; border-radius:8px; padding:10px; margin-bottom:10px;">
+                <div style="font-size:12px; color:#744210; margin-bottom:8px;">🎯 <strong>Eletiva</strong> — importe alunos de outras turmas ou deixe o robô importá-los pela chamada. O cadastro original não é duplicado.</div>
+                <div style="display:flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-primary btn-sm" onclick="abrirModalImportarDeTurma()">👥 Importar de outra turma</button>
+                    <button class="btn btn-secondary btn-sm" onclick="abrirModalNovoEstudante()">+ Adicionar manualmente</button>
+                </div>
+            </div>
+        ` : ''}
         <table style="margin-top:10px;">
             <thead><tr><th>Nome</th><th>Status</th><th>Ações</th></tr></thead>
             <tbody>
@@ -2713,7 +2777,7 @@ async function renderEstudantes() {
                             ${badgeBimestre}
                         </td>
                         <td><span style="font-size:12px; padding:2px 6px; border-radius:4px; background:#edf2f7;">${e.status || 'Ativo'}</span></td>
-                        <td>${isGestor ? `${e.status && e.status !== 'Ativo' ? `<button class="btn btn-success btn-sm" onclick="reativarEstudante(${e.id})" title="Marcar como Ativo de novo">🔄 Reativar</button> ` : ''}<button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})">🗑️</button>` : '<span style="color:#ccc;">-</span>'}</td>
+                        <td>${isGestor ? `${e.status && e.status !== 'Ativo' ? `<button class="btn btn-success btn-sm" onclick="reativarEstudante(${e.id})" title="Marcar como Ativo de novo">🔄 Reativar</button> ` : ''}<button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})">🗑️</button>` : (ehEletiva ? `<button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})" title="Remover desta eletiva (não afeta a turma de origem)">🗑️</button>` : '<span style="color:#ccc;">-</span>')}</td>
                     </tr>
                 `}).join('')}
             </tbody>
@@ -2757,6 +2821,103 @@ function removerEstudante(id) {
         persistirDados();
         renderEstudantes();
     }
+}
+
+// ==================== ELETIVA: IMPORTAR ALUNOS DE OUTRA TURMA ====================
+// Uma eletiva (agrupamento) reúne alunos de outras turmas SEM duplicar o cadastro original: cada
+// aluno importado vira um "vínculo" leve na eletiva (id_turma = eletiva) que aponta para o aluno de
+// origem (id_estudante_origem). A deduplicação é por origem OU por nome normalizado, então o mesmo
+// aluno nunca aparece duas vezes na eletiva (nem via importação manual, nem via robô na chamada).
+function normNomeImportEletiva(s) {
+    return s ? s.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase().replace(/\s+/g, ' ') : '';
+}
+
+// Chave de origem estável do aluno (se ele mesmo já for um vínculo, herda a origem original).
+function chaveOrigemEletiva(aluno) {
+    return aluno.id_estudante_origem != null ? aluno.id_estudante_origem : aluno.id;
+}
+
+function abrirModalImportarDeTurma() {
+    const select = document.getElementById('importTurmaOrigemSelect');
+    // "Minhas turmas": todas as turmas do professor exceto a própria eletiva aberta.
+    const outras = (data.turmas || []).filter(t => t.id != turmaAtual);
+    select.innerHTML = outras.length
+        ? outras.map(t => `<option value="${t.id}">${t.nome}${t.disciplina ? ' - ' + t.disciplina : ''}</option>`).join('')
+        : '<option value="">Nenhuma outra turma cadastrada</option>';
+    renderAlunosImportarDeTurma();
+    showModal('modalImportarDeTurma');
+}
+
+function renderAlunosImportarDeTurma() {
+    const origemId = document.getElementById('importTurmaOrigemSelect').value;
+    const alvo = document.getElementById('importAlunosDeTurmaLista');
+    if (!origemId) { alvo.innerHTML = '<p class="empty-state">Selecione uma turma de origem.</p>'; return; }
+
+    const jaNaEletiva = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
+    const origemAlunos = (data.estudantes || [])
+        .filter(e => e.id_turma == origemId && (!e.status || e.status === 'Ativo'))
+        .sort((a, b) => (a.nome_completo || '').localeCompare(b.nome_completo || ''));
+
+    if (origemAlunos.length === 0) { alvo.innerHTML = '<p class="empty-state">Esta turma não tem alunos ativos.</p>'; return; }
+
+    const linhas = origemAlunos.map(a => {
+        const jaTem = jaNaEletiva.some(e =>
+            String(chaveOrigemEletiva(e)) === String(chaveOrigemEletiva(a)) ||
+            normNomeImportEletiva(e.nome_completo) === normNomeImportEletiva(a.nome_completo));
+        return `<label style="display:flex; align-items:center; gap:8px; padding:6px 4px; border-bottom:1px solid #edf2f7;">
+            <input type="checkbox" class="chk-import-eletiva" value="${a.id}" ${jaTem ? 'disabled' : ''}>
+            <span>${a.nome_completo}${jaTem ? ' <em style="color:#a0aec0; font-size:11px;">(já na eletiva)</em>' : ''}</span>
+        </label>`;
+    }).join('');
+
+    alvo.innerHTML = linhas +
+        `<div style="margin-top:10px; display:flex; gap:8px; align-items:center;">
+            <button class="btn btn-primary btn-sm" onclick="confirmarImportarDeTurma('${origemId}')">Importar selecionados</button>
+            <label style="font-size:12px; color:#718096; display:flex; align-items:center; gap:4px;"><input type="checkbox" onclick="document.querySelectorAll('.chk-import-eletiva:not(:disabled)').forEach(c=>c.checked=this.checked)"> marcar todos</label>
+        </div>`;
+}
+
+function confirmarImportarDeTurma(origemId) {
+    const ids = Array.from(document.querySelectorAll('.chk-import-eletiva:checked')).map(c => c.value);
+    if (ids.length === 0) { alert('Selecione ao menos um aluno.'); return; }
+    if (!data.estudantes) data.estudantes = [];
+
+    const jaNaEletiva = data.estudantes.filter(e => e.id_turma == turmaAtual);
+    const turmaOrigem = (data.turmas || []).find(t => t.id == origemId);
+    let adicionados = 0;
+
+    ids.forEach(id => {
+        const origem = data.estudantes.find(e => e.id == id && e.id_turma == origemId);
+        if (!origem) return;
+        const jaTem = jaNaEletiva.some(e =>
+            String(chaveOrigemEletiva(e)) === String(chaveOrigemEletiva(origem)) ||
+            normNomeImportEletiva(e.nome_completo) === normNomeImportEletiva(origem.nome_completo));
+        if (jaTem) return;
+
+        const vinculo = {
+            id: Date.now() + Math.floor(Math.random() * 100000),
+            id_turma: turmaAtual,
+            nome_completo: origem.nome_completo,
+            status: 'Ativo',
+            id_estudante_origem: chaveOrigemEletiva(origem),
+            turma_origem_nome: turmaOrigem ? turmaOrigem.nome : ''
+        };
+        // Preserva a marcação AEE para os alertas do painel continuarem funcionando na eletiva.
+        if (origem.is_aee_mapped) {
+            vinculo.is_aee_mapped = true;
+            vinculo.aee_diagnostico = origem.aee_diagnostico;
+            vinculo.aee_categoria_diagnostico = origem.aee_categoria_diagnostico;
+            vinculo.aee_categoria_projeto = origem.aee_categoria_projeto;
+        }
+        data.estudantes.push(vinculo);
+        jaNaEletiva.push(vinculo);
+        adicionados++;
+    });
+
+    persistirDados();
+    closeModal('modalImportarDeTurma');
+    renderEstudantes();
+    alert(adicionados > 0 ? `${adicionados} aluno(s) importado(s) para a eletiva.` : 'Nenhum aluno novo — os selecionados já estavam na eletiva.');
 }
 
 // Reverte um estudante marcado como Transferido/etc. de volta para Ativo.
