@@ -4028,11 +4028,23 @@ async function obterCardsCatalogoCompartilhado(disciplina, nomeTurmaOuSerie) {
         const cluster = candidatosData.find(d => disciplinasSaoSemelhantes(disciplina, d.disciplinaOriginal));
         if (!cluster) return [];
 
+        // Dedup por título. O mesmo card aparece em várias sessões/abas do catálogo; consolidamos os
+        // metadados entre as ocorrências pra não perder informação de uma captura pra outra:
+        // - temTarefa: se QUALQUER sessão marcou "aula com tarefa", o card mostra o marcador (antes,
+        //   ficava só a 1ª ocorrência, que podia ter vindo sem o marcador e escondia o aviso de tarefa);
+        // - bimestre: completa a partir de outra ocorrência se a 1ª estava sem.
         const cardsPorTitulo = new Map();
         (cluster.sessoes || []).forEach(sessao => {
             (sessao.cards || []).forEach(card => {
                 const chaveTitulo = normalizarTextoComparacaoMaterialDigital(card.titulo);
-                if (chaveTitulo && !cardsPorTitulo.has(chaveTitulo)) cardsPorTitulo.set(chaveTitulo, card);
+                if (!chaveTitulo) return;
+                const existente = cardsPorTitulo.get(chaveTitulo);
+                if (!existente) {
+                    cardsPorTitulo.set(chaveTitulo, Object.assign({}, card));
+                } else {
+                    if (card.temTarefa) existente.temTarefa = true;
+                    if ((existente.bimestre == null || existente.bimestre === '') && card.bimestre != null && card.bimestre !== '') existente.bimestre = card.bimestre;
+                }
             });
         });
         return Array.from(cardsPorTitulo.values());
@@ -4068,7 +4080,7 @@ function renderizarSeletorCardsMaterialDigitalDeLista(cards, selecionadosAtuais,
         const tituloAttr = (card.titulo || '').replace(/"/g, '&quot;');
         return `<label style="display:flex; align-items:flex-start; gap:6px; font-size:12px; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#fff; cursor:pointer;">
             <input type="checkbox" class="chk-card-material-digital" data-id="${card.id}" data-titulo="${tituloAttr}" data-codigo="${card.codigo || ''}" ${checked} onchange="onToggleCardMaterialDigital(this, '${containerId}')">
-            <span>${card.titulo}${card.temTarefa ? '<div style="margin-top:4px; display:inline-block; background:#e6fff2; color:#26A95E; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:10px;">Aula com Tarefa</div>' : ''}</span>
+            <span>${card.titulo}${card.temTarefa ? '<div style="margin-top:4px; display:inline-block; background:#fffaf0; color:#c05621; border:1px solid #fbd38d; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:10px;">📌 Aula com Tarefa</div>' : ''}</span>
         </label>`;
     };
 
