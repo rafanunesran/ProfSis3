@@ -8,6 +8,14 @@
 
 console.log("🧩 Extensão ProfSis3 ativa na página do ProfSis! (v" + chrome.runtime.getManifest().version + ")");
 
+// Expõe a versão da extensão para a página (o app.js lê no popup de Perfil para o professor conferir
+// se a extensão dele está atualizada). O content script vive num "mundo isolado", então variáveis de
+// window não são visíveis para o app.js - mas o DOM é compartilhado, então um data-attribute no <html>
+// serve de ponte. Reescreve a cada carga, garantindo sempre a versão realmente instalada.
+try {
+    document.documentElement.setAttribute('data-profsis-ext-versao', chrome.runtime.getManifest().version);
+} catch (e) {}
+
 // ==================== DETECÇÃO DE LOGIN ====================
 
 // Verifica se o usuário está logado no ProfSis
