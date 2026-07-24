@@ -470,8 +470,9 @@ async function abrirModalGerarDocumentoIA() {
                         </select>
                     </div>
                     <div style="flex: 1;" id="campoSemanaVigente">
-                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Semana Vigente:</label>
-                        <input type="text" id="iaDocSemana" value="${semanaSugerida}" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Semana (clique num dia — pega Seg a Sex):</label>
+                        <input type="date" id="iaDocSemanaData" value="${semanaInicioISO}" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;" onchange="atualizarSemanaPorDataEstagiario(this.value)">
+                        <input type="text" id="iaDocSemana" value="${semanaSugerida}" readonly style="width:100%; padding:6px 8px; margin-top:6px; border:1px solid #e2e8f0; border-radius:4px; background:#f7fafc; color:#4a5568; font-size:13px;">
                         <input type="hidden" id="iaDocSemanaInicio" value="${semanaInicioISO}">
                         <input type="hidden" id="iaDocSemanaFim" value="${semanaFimISO}">
                     </div>
@@ -652,6 +653,8 @@ async function abrirModalGerarDocumentoIA() {
     if (docDisciplina) docDisciplina.value = '';
     const docSemana = document.getElementById('iaDocSemana');
     if (docSemana) docSemana.value = semanaSugerida;
+    const docSemanaData = document.getElementById('iaDocSemanaData');
+    if (docSemanaData) docSemanaData.value = semanaInicioISO;
     const docSemanaInicio = document.getElementById('iaDocSemanaInicio');
     if (docSemanaInicio) docSemanaInicio.value = semanaInicioISO;
     const docSemanaFim = document.getElementById('iaDocSemanaFim');
@@ -754,6 +757,29 @@ function restaurarPromptPadraoIA() {
 // Segue o mesmo esquema de placeholders {{REGIÃO}}/{{NOME COMPLETO DA ESCOLA}}/{{LOGO_ESTADO}}/
 // {{LOGO_ESCOLA}} já usado no Plano de Aula (Docs/Base_Plano_Aula.html), pra reaproveitar as mesmas
 // configurações da escola/sistema.
+// Seleção de semana do Plano de Aula: a partir de QUALQUER dia clicado no calendário, encaixa a semana
+// de segunda a sexta e preenche o campo de exibição + as datas ocultas (usadas no PDF/registros).
+function atualizarSemanaPorDataEstagiario(dateStr) {
+    if (!dateStr) return;
+    const [y, m, d] = dateStr.split('-').map(Number);
+    if (!y || !m || !d) return;
+    const base = new Date(y, m - 1, d); // data local (evita shift de fuso do new Date('YYYY-MM-DD'))
+    const offSeg = (base.getDay() + 6) % 7; // 0=Seg ... 6=Dom
+    const seg = new Date(base); seg.setDate(base.getDate() - offSeg);
+    const sex = new Date(seg); sex.setDate(seg.getDate() + 4);
+    const toISO = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    const dm = (dt) => `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}`;
+
+    const ini = document.getElementById('iaDocSemanaInicio');
+    const fim = document.getElementById('iaDocSemanaFim');
+    const disp = document.getElementById('iaDocSemana');
+    const picker = document.getElementById('iaDocSemanaData');
+    if (ini) ini.value = toISO(seg);
+    if (fim) fim.value = toISO(sex);
+    if (disp) disp.value = `${dm(seg)} a ${dm(sex)}`;
+    if (picker) picker.value = toISO(seg); // reencaixa o calendário na segunda-feira (feedback visual)
+}
+
 // ---- Nome sugerido do PDF: o navegador usa o <title> do documento como nome no "Salvar como PDF" ----
 function sanitizarNomeArquivoEstagiario(s) {
     return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '')
