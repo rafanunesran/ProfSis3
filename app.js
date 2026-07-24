@@ -6005,6 +6005,7 @@ function abrirFichaTutorado(id) {
         // --- VISÃO PADRÃO (PROFESSOR) ---
         actionContainer.innerHTML = `
             <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <button class="btn btn-success btn-sm" onclick="registrarEncontroAtalho(${t.id})">📅 Registrar Encontro</button>
                 <button class="btn btn-primary btn-sm" onclick="imprimirRelatorioTutorado(${t.id}, '${t.nome_estudante}')">🖨️ Relatório Semestral</button>
                 <button class="btn btn-danger btn-sm" onclick="desvincularTutorado(${t.id})">Desvincular Tutorado</button>
             </div>
@@ -6848,6 +6849,12 @@ async function salvarEncontro(e) {
 
 function registrarEncontroAtalho(tutoradoId) {
     showModal('modalNovoEncontro');
+    // Garante que é um encontro NOVO (não reaproveita um id de uma edição anterior que ficou no form)
+    // com o aluno certo já selecionado e a data de hoje - o professor só preenche tema/resumo.
+    document.getElementById('encontroId').value = '';
+    document.getElementById('encontroTema').value = '';
+    document.getElementById('encontroResumo').value = '';
+    document.getElementById('tituloModalEncontro').textContent = 'Registrar Encontro';
     const select = document.getElementById('encontroTutorado');
     if (select) select.value = tutoradoId;
     document.getElementById('encontroData').value = getTodayString();
