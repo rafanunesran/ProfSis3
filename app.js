@@ -1196,6 +1196,8 @@ async function renderDashboard() {
         );
         
         const ativos = registrosTurma.filter(r => {
+            // Registros arquivados pela gestão saem dos alertas vigentes (ficam só no Arquivo Histórico do gestor)
+            if (r.arquivado) return false;
             // Verifica se o estudante ainda está ativo para exibir este alerta
             const est = (data.estudantes || []).find(e => e.id == r.estudanteId);
             if (est && est.status && est.status !== 'Ativo') return false;
@@ -2604,6 +2606,8 @@ async function renderEstudantes() {
 
     // Filtra registros relevantes para esta turma
     const avisosTurma = registros.filter(r => {
+        // Registros arquivados pela gestão não aparecem mais no mural do professor
+        if (r.arquivado) return false;
         // Verifica se o aluno pertence a esta turma (pelo ID do aluno na lista filtrada acima)
         const alunoNaTurma = estudantes.find(e => e.id == r.estudanteId);
         if (!alunoNaTurma) return false;
@@ -2753,7 +2757,7 @@ async function renderEstudantes() {
                     
                     // [NOVO] Lógica para exibir atestados por bimestre
                     let badgeBimestre = '';
-                    const atestadosEstudante = registrosGeral.filter(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Atestado');
+                    const atestadosEstudante = registrosGeral.filter(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Atestado' && !r.arquivado);
                     
                     const resumoBimestres = [];
                     configBimestres.forEach(c => {
@@ -2999,8 +3003,8 @@ async function renderChamada() {
                     let badges = '';
                     const registros = data.registrosAdministrativos || [];
                     
-                    // Filtra registros deste aluno
-                    const regsAluno = registros.filter(r => r.estudanteId == e.id);
+                    // Filtra registros deste aluno (arquivados pela gestão não entram)
+                    const regsAluno = registros.filter(r => r.estudanteId == e.id && !r.arquivado);
                     
                     regsAluno.forEach(r => {
                         if (r.tipo === 'Faltoso') {
@@ -3026,7 +3030,7 @@ async function renderChamada() {
                     // [ATUALIZAÇÃO] Soma de todos os dias de atestado (ativos e inativos) por bimestre
                     let badgeBimestre = '';
                     const registrosGeral = data.registrosAdministrativos || [];
-                    const atestadosEstudante = registrosGeral.filter(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Atestado');
+                    const atestadosEstudante = registrosGeral.filter(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Atestado' && !r.arquivado);
                     
                     const resumoBimestres = [];
                     configBimestres.forEach(c => {
@@ -4494,7 +4498,7 @@ function renderTrabalhos() {
                         
                         // Lógica para exibir tag Faltoso e Atestados
                         const registrosGeral = data.registrosAdministrativos || [];
-                        const isFaltoso = registrosGeral.some(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Faltoso');
+                        const isFaltoso = registrosGeral.some(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Faltoso' && !r.arquivado);
                         const tagFaltoso = isFaltoso ? `<span style="background:#fed7d7; color:#c53030; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #feb2b2;" title="Aluno com alerta de Faltoso na Gestão">Faltoso</span>` : '';
 
                         // [CORREÇÃO] Lógica robusta para exibir atestados e faltas no bimestre atual
@@ -4504,7 +4508,7 @@ function renderTrabalhos() {
 
                         if (configAtualBimestre) {
                             // Calcula dias de atestado considerando sobreposição com o período do bimestre
-                            const atestadosEstudante = registrosGeral.filter(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Atestado');
+                            const atestadosEstudante = registrosGeral.filter(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Atestado' && !r.arquivado);
                             
                             const bStart = new Date(configAtualBimestre.inicio + 'T12:00:00');
                             const bEnd = new Date(configAtualBimestre.fim + 'T12:00:00');
@@ -6959,7 +6963,7 @@ function renderEstudanteGeral() {
     
     // Histórico de Atestados (Incluindo expirados)
     const atestadosAluno = (data.registrosAdministrativos || [])
-        .filter(r => todosIds.includes(r.estudanteId) && r.tipo === 'Atestado')
+        .filter(r => todosIds.includes(r.estudanteId) && r.tipo === 'Atestado' && !r.arquivado)
         .sort((a,b) => new Date(b.data) - new Date(a.data));
 
     const htmlAtestados = atestadosAluno.length > 0 ? `
