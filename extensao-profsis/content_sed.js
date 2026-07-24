@@ -1075,7 +1075,15 @@ function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts, dadosMateri
     };
 
     if (registro && registro.conteudo) {
-        prosseguirComConteudo(registro.conteudo, registro.cardsMaterialDigital);
+        // v3.2.3: se o registro do ProfSis existe mas NÃO tem card de Material Digital marcado,
+        // ainda assim seleciona um card na SED - o primeiro sem "aula com tarefa" (mesmo fallback do
+        // caminho sem-registro abaixo) - pra nunca salvar um registro sem nenhum card marcado.
+        let cards = registro.cardsMaterialDigital;
+        if (!cards || cards.length === 0) {
+            const cardFallback = encontrarPrimeiroCardSemTarefa(dadosMaterial);
+            cards = cardFallback ? [cardFallback] : null;
+        }
+        prosseguirComConteudo(registro.conteudo, cards);
         return;
     }
 
