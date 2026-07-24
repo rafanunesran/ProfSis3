@@ -192,6 +192,14 @@ function encontrarAlvoTurma(turmasLocais, turmaSED) {
         candidatos = comNorm.filter(x => sedNorm.includes(x.norm) || x.norm.includes(sedNorm));
     }
     if (candidatos.length === 0) {
+        // Fallback eletiva: uma turma de agrupamento (tipo 'eletiva') não casa por nome/série com a
+        // turma da SED. Se existir EXATAMENTE UMA eletiva, a chamada da SED é importada nela (o
+        // professor escolheu esse comportamento). Com 0 ou 2+ eletivas, mantém o erro de "sem match".
+        const eletivas = (turmasLocais || []).filter(t => t.tipo === 'eletiva');
+        if (eletivas.length === 1) {
+            const turma = eletivas[0];
+            return { masterId: null, turmaId: turma.id, turmaNomeLocal: turma.nome, turmaDisciplinaLocal: turma.disciplina || null, viaEletiva: true };
+        }
         return { erro: 'Nenhuma turma local corresponde a "' + turmaSED + '". Verifique se a turma está cadastrada no ProfSis.' };
     }
 
