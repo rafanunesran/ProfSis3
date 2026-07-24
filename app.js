@@ -4046,18 +4046,38 @@ function renderizarSeletorCardsMaterialDigitalDeLista(cards, selecionadosAtuais,
 
     const idsSelecionados = new Set((selecionadosAtuais || []).map(c => c.id));
 
-    let html = `<div id="${containerId}" style="margin-top:10px; border:1px solid #cbd5e0; border-radius:6px; padding:10px; background:#fafafa;">`;
-    html += `<label style="font-weight:bold; display:block; margin-bottom:8px; color:#2d3748;">📚 Aula do Material Digital dada (máx. ${LIMITE_CARDS_MATERIAL_DIGITAL}):</label>`;
-    html += `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:8px;">`;
+    // Classifica os cards por BIMESTRE (extraído pelo robô e salvo em cada card). Grupos 1..4 e, ao
+    // final, "Sem bimestre definido" pros cards ainda sem essa marcação. A mesma função é usada na
+    // aba Chamada da turma e na pré-visualização do Plano de Aula (Estagiário), então os dois passam
+    // a exibir as aulas agrupadas por bimestre.
+    const grupos = new Map(); // chave: 1|2|3|4 ou 'sem'
     cards.forEach(card => {
+        const n = (card.bimestre != null && card.bimestre !== '') ? parseInt(card.bimestre, 10) : NaN;
+        const chave = (!isNaN(n) && n >= 1 && n <= 4) ? n : 'sem';
+        if (!grupos.has(chave)) grupos.set(chave, []);
+        grupos.get(chave).push(card);
+    });
+    const ordemGrupos = [1, 2, 3, 4, 'sem'].filter(k => grupos.has(k));
+
+    const renderCard = (card) => {
         const checked = idsSelecionados.has(card.id) ? 'checked' : '';
         const tituloAttr = (card.titulo || '').replace(/"/g, '&quot;');
-        html += `<label style="display:flex; align-items:flex-start; gap:6px; font-size:12px; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#fff; cursor:pointer;">
+        return `<label style="display:flex; align-items:flex-start; gap:6px; font-size:12px; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#fff; cursor:pointer;">
             <input type="checkbox" class="chk-card-material-digital" data-id="${card.id}" data-titulo="${tituloAttr}" data-codigo="${card.codigo || ''}" ${checked} onchange="onToggleCardMaterialDigital(this, '${containerId}')">
-            <span>${card.titulo}${card.temTarefa ? '<div style="margin-top:4px; display:inline-block; background:#e6fff2; color:#26A95E; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:10px;">Aula com Tarefa</div>' : ''}${card.bimestre ? `<div style="margin-top:4px; display:inline-block; background:#ebf8ff; color:#2b6cb0; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:10px; margin-left:4px;">${card.bimestre}º Bim</div>` : ''}</span>
+            <span>${card.titulo}${card.temTarefa ? '<div style="margin-top:4px; display:inline-block; background:#e6fff2; color:#26A95E; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:10px;">Aula com Tarefa</div>' : ''}</span>
         </label>`;
+    };
+
+    let html = `<div id="${containerId}" style="margin-top:10px; border:1px solid #cbd5e0; border-radius:6px; padding:10px; background:#fafafa;">`;
+    html += `<label style="font-weight:bold; display:block; margin-bottom:8px; color:#2d3748;">📚 Aula do Material Digital dada (máx. ${LIMITE_CARDS_MATERIAL_DIGITAL}):</label>`;
+    ordemGrupos.forEach(chave => {
+        const tituloGrupo = chave === 'sem' ? '📋 Sem bimestre definido' : `🗓️ ${chave}º Bimestre`;
+        html += `<div style="font-size:12px; font-weight:bold; color:#2b6cb0; margin:10px 0 6px 0; padding-bottom:3px; border-bottom:1px solid #e2e8f0;">${tituloGrupo}</div>`;
+        html += `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:8px;">`;
+        grupos.get(chave).forEach(card => { html += renderCard(card); });
+        html += `</div>`;
     });
-    html += `</div></div>`;
+    html += `</div>`;
     return html;
 }
 

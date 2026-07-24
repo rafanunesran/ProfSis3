@@ -1772,6 +1772,19 @@ function detectarBimestreAtual() {
     return config ? config.bim : null;
 }
 
+// Lê o bimestre selecionado na própria tela de Registro da SED (<select name="Model.NumeroBimestre">).
+// É a fonte MAIS confiável pra classificar o Material Digital extraído, porque os cards mostrados na
+// tela são exatamente os daquele bimestre - diferente de detectarBimestreAtual(), que depende da data
+// selecionada e da config de bimestres estar sincronizada (pode vir null). null se não houver o campo.
+function lerBimestreSelecionadoSED() {
+    const select = document.querySelector('select[name="Model.NumeroBimestre"]');
+    if (select && select.value) {
+        const n = parseInt(select.value, 10);
+        if (!isNaN(n) && n >= 1 && n <= 4) return n;
+    }
+    return null;
+}
+
 // Seleciona o "Bimestre" (<select name="Model.NumeroBimestre">, nativo - diferente do widget
 // "Horário de Aula" da Chamada) da tela de Registro de Aulas Detalhes, com base no bimestre
 // calculado pra data selecionada (detectarBimestreAtual, já usada pro catálogo de Material Digital).
@@ -1812,7 +1825,7 @@ function iniciarExtrairMaterialDigital() {
         if (dados.erro) { alert(dados.erro); return; }
 
         const { sessoes, turmaSelecionada, disciplinaSelecionada } = dados;
-        const payload = { turmaSED: turmaSelecionada, disciplinaSED: disciplinaSelecionada, sessoes: sessoes, bimestre: detectarBimestreAtual(), timestamp: Date.now() };
+        const payload = { turmaSED: turmaSelecionada, disciplinaSED: disciplinaSelecionada, sessoes: sessoes, bimestre: lerBimestreSelecionadoSED() || detectarBimestreAtual(), timestamp: Date.now() };
         chrome.runtime.sendMessage({ action: 'UPDATE_MATERIAL_DIGITAL_DB', payload: payload }, (response) => {
             if (chrome.runtime.lastError) {
                 alert('⚠️ Erro de comunicação com a extensão: ' + chrome.runtime.lastError.message);
@@ -1840,7 +1853,7 @@ function extrairMaterialDigitalSilencioso(aoConcluir) {
         // aoConcluir() sem argumento, então dadosMaterial ficava undefined e nenhum card era marcado.
         if (!dados || dados.erro) { aoConcluir(dados); return; }
 
-        const payload = { turmaSED: dados.turmaSelecionada, disciplinaSED: dados.disciplinaSelecionada, sessoes: dados.sessoes, bimestre: detectarBimestreAtual(), timestamp: Date.now(), silencioso: true };
+        const payload = { turmaSED: dados.turmaSelecionada, disciplinaSED: dados.disciplinaSelecionada, sessoes: dados.sessoes, bimestre: lerBimestreSelecionadoSED() || detectarBimestreAtual(), timestamp: Date.now(), silencioso: true };
         chrome.runtime.sendMessage({ action: 'UPDATE_MATERIAL_DIGITAL_DB', payload: payload }, (response) => {
             if (chrome.runtime.lastError) {
                 console.warn('[SisProf Ext] Atualização silenciosa do catálogo de Material Digital falhou:', chrome.runtime.lastError.message);
