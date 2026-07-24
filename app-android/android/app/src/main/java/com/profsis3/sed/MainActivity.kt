@@ -15,6 +15,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.profsis3.sed.bridge.ProfSisNavigationBridge
 import com.profsis3.sed.bridge.ProfSisStorageBridge
@@ -34,6 +35,11 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var sedWebView: WebView
     private lateinit var profsisWebView: WebView
+    // Cada WebView vive dentro de um SwipeRefreshLayout (puxar pra baixo -> recarrega). O
+    // SwipeRefreshLayout só dispara o gesto quando a WebView está no topo (canChildScrollUp usa
+    // WebView.canScrollVertically), então não atrapalha a rolagem normal da página.
+    private lateinit var sedRefresh: SwipeRefreshLayout
+    private lateinit var profsisRefresh: SwipeRefreshLayout
     private lateinit var webContainer: FrameLayout
     private lateinit var bottomNav: BottomNavigationView
 
@@ -43,6 +49,8 @@ class MainActivity : AppCompatActivity() {
 
         sedWebView = createWebView(Tab.SED)
         profsisWebView = createWebView(Tab.PROFSIS)
+        sedRefresh = wrapInRefresh(sedWebView, Tab.SED)
+        profsisRefresh = wrapInRefresh(profsisWebView, Tab.PROFSIS)
 
         setContentView(buildLayout())
         // Nao usar bottomNav.selectedItemId aqui: o menu ja comeca com nav_sed selecionado
@@ -85,7 +93,8 @@ class MainActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
         )
-        webView.visibility = View.GONE
+        // A visibilidade quem controla é o SwipeRefreshLayout que envolve a WebView (ver
+        // switchWebViewVisibility) - a WebView em si fica sempre VISIBLE dentro do wrapper.
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         // NAO habilitar setSupportMultipleWindows/javaScriptCanOpenWindowsAutomatically nem
@@ -114,11 +123,43 @@ class MainActivity : AppCompatActivity() {
 
         val bundleAsset = if (tab == Tab.SED) "bundles/sed-bundle.js" else "bundles/profsis-bundle.js"
         webView.webViewClient = BundleInjectingWebViewClient(
-            onPageFinishedExtra = { view, _ -> injectBundle(view, bundleAsset) },
+            onPageFinishedExtra = { view, _ ->
+                injectBundle(view, bundleAsset)
+                stopRefresh(tab) // some com o spinner do pull-to-refresh quando a página terminou de carregar
+            },
             onRenderProcessGoneExtra = { recreateWebView(tab) },
         )
 
         return webView
+    }
+
+    /**
+     * Envolve a WebView num SwipeRefreshLayout: puxar a página pra baixo (estando no topo)
+     * recarrega a WebView - útil porque a Sala do Futuro perde a conexão com o tempo. O spinner
+     * é escondido quando a página termina de carregar (ver stopRefresh no onPageFinished).
+     */
+    private fun wrapInRefresh(webView: WebView, tab: Tab): SwipeRefreshLayout {
+        return SwipeRefreshLayout(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+            visibility = View.GONE // switchWebViewVisibility decide qual aparece
+            addView(webView)
+            setOnRefreshListener {
+                val target = if (tab == Tab.SED) sedWebView else profsisWebView
+                target.reload()
+            }
+        }
+    }
+
+    /** Esconde o spinner do pull-to-refresh da aba indicada (chamado quando a página termina). */
+    private fun stopRefresh(tab: Tab) {
+        val wrapper = when (tab) {
+            Tab.SED -> if (::sedRefresh.isInitialized) sedRefresh else null
+            Tab.PROFSIS -> if (::profsisRefresh.isInitialized) profsisRefresh else null
+        }
+        wrapper?.isRefreshing = false
     }
 
     /**
@@ -129,12 +170,15 @@ class MainActivity : AppCompatActivity() {
      */
     private fun recreateWebView(tab: Tab) {
         try {
+            // A WebView vive dentro do seu SwipeRefreshLayout - troca só a WebView, mantendo o wrapper.
+            val wrapper = if (tab == Tab.SED) sedRefresh else profsisRefresh
             val old = if (tab == Tab.SED) sedWebView else profsisWebView
-            webContainer.removeView(old)
+            wrapper.removeView(old)
             old.destroy()
 
             val fresh = createWebView(tab)
-            webContainer.addView(fresh)
+            wrapper.addView(fresh)
+            wrapper.isRefreshing = false
 
             if (tab == Tab.SED) sedWebView = fresh else profsisWebView = fresh
 
@@ -156,8 +200,8 @@ class MainActivity : AppCompatActivity() {
                 0,
                 1f,
             )
-            addView(sedWebView)
-            addView(profsisWebView)
+            addView(sedRefresh)
+            addView(profsisRefresh)
         }
 
         bottomNav = BottomNavigationView(this).apply {
@@ -195,13 +239,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** So mexe na visibilidade das WebViews - nunca no bottomNav (ver comentário no listener). */
+    /** So mexe na visibilidade dos wrappers (SwipeRefreshLayout) - nunca no bottomNav (ver listener). */
     private fun switchWebViewVisibility(tab: Tab) {
-        sedWebView.visibility = if (tab == Tab.SED) View.VISIBLE else View.GONE
-        profsisWebView.visibility = if (tab == Tab.PROFSIS) View.VISIBLE else View.GONE
+        sedRefresh.visibility = if (tab == Tab.SED) View.VISIBLE else View.GONE
+        profsisRefresh.visibility = if (tab == Tab.PROFSIS) View.VISIBLE else View.GONE
     }
 
-    private fun currentTab(): Tab = if (sedWebView.visibility == View.VISIBLE) Tab.SED else Tab.PROFSIS
+    private fun currentTab(): Tab = if (sedRefresh.visibility == View.VISIBLE) Tab.SED else Tab.PROFSIS
 
     private fun injectBundle(view: WebView, assetPath: String) {
         val script = assets.open(assetPath).bufferedReader(Charsets.UTF_8).use { it.readText() }
