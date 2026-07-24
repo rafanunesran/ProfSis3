@@ -886,7 +886,7 @@ async function renderDashboard() {
                 <div class="card">
                     <h2>📂 Administrativo</h2>
                     <div style="font-size: 24px; font-weight: bold; color: #3182ce;">
-                        ${registros.length} <span style="font-size:14px; color:#718096; font-weight:normal;">registros</span>
+                        ${registros.filter(r => !r.arquivado).length} <span style="font-size:14px; color:#718096; font-weight:normal;">registros</span>
                     </div>
                     <button class="btn btn-sm btn-secondary" onclick="showScreen('registrosGestor')" style="margin-top:10px;">Gerenciar</button>
                 </div>
@@ -8028,9 +8028,10 @@ async function renderRegistrosProfessor() {
 
     // Filtra e processa
     let lista = registros.map(r => {
+        if (r.arquivado) return null; // Arquivados pela gestão não aparecem aqui (só no Arquivo Histórico do gestor)
         const est = estudantes.find(e => e.id == r.estudanteId) || { nome_completo: 'Desconhecido' };
         const turma = turmas.find(t => t.id == r.turmaId) || { nome: '?' };
-        
+
         let cor = '#22c55e'; // Verde (Observação/Outros)
 
         if (r.tipo === 'Atestado') {
