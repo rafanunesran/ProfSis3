@@ -218,34 +218,39 @@ function encontrarAlvoTurma(turmasLocais, turmaSED) {
     return { masterId: turma.masterId || null, turmaId: turma.id, turmaNomeLocal: turma.nome, turmaDisciplinaLocal: turma.disciplina || null };
 }
 
-// Cria/reativa alunos em `estudantes` (array mutado in-place) para a turma `turmaId`.
-// Mesma lógica usada na "Importar CSV" do modo Gestor: a checagem de existência é ESCOPADA à
-// turma alvo (não procura o nome em todas as turmas do sistema) - simples e previsível:
+// Cria/reativa alunos em `estudantes` (array mutado in-place) para a turma `turmaId`, casando por
+// nome normalizado ESCOPADO à turma alvo:
 // - Aluno extraído NÃO existe NESTA turma -> cria, status Ativo.
-// - Aluno extraído já existe NESTA turma e está Ativo -> não faz NADA.
-// - Aluno extraído já existe NESTA turma mas não está Ativo -> só atualiza o status para Ativo.
-// Nunca marca ninguém como "Transferido", nunca mexe em id_turma de quem já existe, e nunca
-// mexe em alunos de outras turmas - isso já causou remanejamentos e transferências indevidas.
-function aplicarAtualizacaoAlunos(estudantes, turmaId, alunosExtraidos) {
-    let adicionados = 0, reativados = 0;
-    const estudantesDaTurma = estudantes.filter(e => e.id_turma == turmaId);
+// - Aluno extraído já existe NESTA turma e está Ativo -> não faz NADA (status igual).
+// - Aluno extraído já existe NESTA turma mas não está Ativo -> atualiza o status para Ativo.
+// Remanejamento (só quando permitirRemanejamento=true, i.e. turma vinculada à gestão/masterId): se o
+// mesmo aluno aparece ATIVO em OUTRA turma física, ele foi remanejado para esta - marca a(s)
+// ocorrência(s) da(s) outra(s) turma(s) como 'Remanejado'. Fora do caminho da gestão, NÃO mexe em
+// outras turmas (evita falso remanejamento entre disciplinas da mesma sala do mesmo professor).
+function aplicarAtualizacaoAlunos(estudantes, turmaId, alunosExtraidos, permitirRemanejamento) {
+    let adicionados = 0, reativados = 0, remanejados = 0;
 
     alunosExtraidos.forEach(aExtraido => {
         const nomeUpper = normalizeAlunoNome(aExtraido.nome);
-        const existente = estudantesDaTurma.find(e => normalizeAlunoNome(e.nome_completo) === nomeUpper);
-        if (existente) {
-            if (existente.status !== 'Ativo') {
-                existente.status = 'Ativo';
-                reativados++;
-            }
-            // já ativo: não faz nada
+        const naTurma = estudantes.find(e => e.id_turma == turmaId && normalizeAlunoNome(e.nome_completo) === nomeUpper);
+        if (naTurma) {
+            if (naTurma.status !== 'Ativo') { naTurma.status = 'Ativo'; reativados++; }
         } else {
             estudantes.push({ id: Date.now() + Math.floor(Math.random() * 10000), id_turma: turmaId, nome_completo: aExtraido.nome, status: 'Ativo' });
             adicionados++;
         }
+
+        if (permitirRemanejamento) {
+            estudantes.forEach(e => {
+                if (e.id_turma != turmaId && normalizeAlunoNome(e.nome_completo) === nomeUpper && (!e.status || e.status === 'Ativo')) {
+                    e.status = 'Remanejado';
+                    remanejados++;
+                }
+            });
+        }
     });
 
-    return { adicionados, reativados, turmasAtualizadas: 1 };
+    return { adicionados, reativados, remanejados, turmasAtualizadas: 1 };
 }
 
 // Escreve direto no Firestore: turma vinculada à gestão (masterId) vai para o documento
@@ -304,14 +309,16 @@ async function atualizarAlunosDiretoFirebase(payload) {
         if (!gestorData) throw new Error('Não foi possível ler os dados da escola no Firestore (documento ' + gestorDocId + ').');
         if (!gestorData.estudantes) gestorData.estudantes = [];
 
-        const resultado = aplicarAtualizacaoAlunos(gestorData.estudantes, alvo.masterId, alunos);
+        // Gestão: remanejamento entre turmas físicas da escola habilitado (masterId).
+        const resultado = aplicarAtualizacaoAlunos(gestorData.estudantes, alvo.masterId, alunos, true);
         await firestoreSetDoc(gestorDocId, gestorData, auth.idToken);
         return { ...resultado, debugInfo: { ...debugInfo, gestorDocId } };
     }
 
-    // Turma própria (sem vínculo com a gestão): escreve no documento privado do professor
+    // Turma própria (sem vínculo com a gestão): escreve no documento privado do professor. Sem
+    // remanejamento entre turmas (evita mexer indevidamente em outras turmas do professor).
     if (!profData.estudantes) profData.estudantes = [];
-    const resultado = aplicarAtualizacaoAlunos(profData.estudantes, alvo.turmaId, alunos);
+    const resultado = aplicarAtualizacaoAlunos(profData.estudantes, alvo.turmaId, alunos, false);
     await firestoreSetDoc(profDocId, profData, auth.idToken);
     return { ...resultado, debugInfo };
 }

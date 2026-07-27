@@ -2133,26 +2133,33 @@ function encontrarAlvoTurmaExtensao(turmasLocais, turmaSED, normalizeTurma) {
 // - Aluno extraído já existe NESTA turma mas não está Ativo -> só atualiza o status para Ativo.
 // Nunca marca ninguém como "Transferido", nunca mexe em id_turma de quem já existe, e nunca
 // mexe em alunos de outras turmas - isso já causou remanejamentos e transferências indevidas.
-function aplicarAtualizacaoAlunosExtensao(estudantes, turmaId, alunosExtraidos, normalizeName) {
-    let adicionados = 0, reativados = 0;
-    const estudantesDaTurma = estudantes.filter(e => e.id_turma == turmaId);
+// Espelho de background.js:aplicarAtualizacaoAlunos (mantidas em sincronia). Cria/reativa por nome
+// escopado à turma alvo; com permitirRemanejamento=true (turma da gestão/masterId), marca como
+// 'Remanejado' o mesmo aluno que estiver Ativo em OUTRA turma física (foi remanejado pra esta).
+function aplicarAtualizacaoAlunosExtensao(estudantes, turmaId, alunosExtraidos, normalizeName, permitirRemanejamento) {
+    let adicionados = 0, reativados = 0, remanejados = 0;
 
     alunosExtraidos.forEach(aExtraido => {
         const nomeUpper = normalizeName(aExtraido.nome);
-        const existente = estudantesDaTurma.find(e => normalizeName(e.nome_completo) === nomeUpper);
-        if (existente) {
-            if (existente.status !== 'Ativo') {
-                existente.status = 'Ativo';
-                reativados++;
-            }
-            // já ativo: não faz nada
+        const naTurma = estudantes.find(e => e.id_turma == turmaId && normalizeName(e.nome_completo) === nomeUpper);
+        if (naTurma) {
+            if (naTurma.status !== 'Ativo') { naTurma.status = 'Ativo'; reativados++; }
         } else {
             estudantes.push({ id: Date.now() + Math.floor(Math.random() * 10000), id_turma: turmaId, nome_completo: aExtraido.nome, status: 'Ativo' });
             adicionados++;
         }
+
+        if (permitirRemanejamento) {
+            estudantes.forEach(e => {
+                if (e.id_turma != turmaId && normalizeName(e.nome_completo) === nomeUpper && (!e.status || e.status === 'Ativo')) {
+                    e.status = 'Remanejado';
+                    remanejados++;
+                }
+            });
+        }
     });
 
-    return { adicionados, reativados, turmasAtualizadas: 1 };
+    return { adicionados, reativados, remanejados, turmasAtualizadas: 1 };
 }
 
 // Processa a atualização de alunos vindos da SED (fallback via aba aberta, quando a extensão não tem
@@ -2186,13 +2193,15 @@ async function processarAtualizacaoAlunosExtensao(payload) {
         if (!gestorData) throw new Error('Não foi possível ler os dados da escola (documento ' + key + ').');
         if (!gestorData.estudantes) gestorData.estudantes = [];
 
-        const resultado = aplicarAtualizacaoAlunosExtensao(gestorData.estudantes, alvo.masterId, alunosExtraidos, normalizeName);
+        // Gestão: remanejamento entre turmas físicas da escola habilitado (masterId).
+        const resultado = aplicarAtualizacaoAlunosExtensao(gestorData.estudantes, alvo.masterId, alunosExtraidos, normalizeName, true);
         await saveData('app_data', key, gestorData);
         return { ...resultado, debugInfo: { ...debugInfo, gestorDocId: key } };
     }
 
     if (!data.estudantes) data.estudantes = [];
-    const resultado = aplicarAtualizacaoAlunosExtensao(data.estudantes, alvo.turmaId, alunosExtraidos, normalizeName);
+    // Turma própria (sem masterId): sem remanejamento entre turmas do professor.
+    const resultado = aplicarAtualizacaoAlunosExtensao(data.estudantes, alvo.turmaId, alunosExtraidos, normalizeName, false);
     await persistirDados();
     return { ...resultado, debugInfo };
 }
