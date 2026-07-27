@@ -90,9 +90,6 @@ let extHistory = {};
 // gestão) e salvos em rpa_data_history. O robô PREFERE as faltas daqui às que ele mesmo recalcula do
 // localStorage - restaura o comportamento anterior ao 3.2.6 (mais confiável). Ver obterPayloadDaData.
 let extPushedHistory = {};
-// Guarda o diagnóstico da última marcação de chamada para exibir fixo no painel (visível em qualquer
-// modo, inclusive automático, onde a mensagem de resultado não mostrava esse detalhe).
-let ultimoDiagMarcacao = '';
 let extDoneMarks = {};
 let currentSelectedDate = "";
 let profsisProfile = null;
@@ -727,39 +724,18 @@ function atualizarModoBotaoPreencher() {
 
 // ==================== INTERFACE ====================
 
-// Diagnóstico visível na tela da SED: mostra onde a lista de faltosos se perde (dados brutos que o
-// robô recebeu do ProfSis). Serve pra depurar sem console: o professor lê os números e reporta.
-function montarDiagnosticoFaltoso() {
-    const d = profsisAppData || {};
-    const rAdmin = d.registrosAdministrativos || [];
-    const fals = rAdmin.filter(r => r.tipo === 'Faltoso' && !r.arquivado);
-    const ests = d.estudantes || [];
-    const pushed = extPushedHistory[currentSelectedDate];
-    let casados = 0, comNome = 0;
-    fals.forEach(reg => {
-        if (reg.nomeEstudante) comNome++;
-        let est = ests.find(e => e.id == reg.estudanteId);
-        if (!est && reg.nomeEstudante) est = ests.find(e => normalizeNomeFaltoso(e.nome_completo) === normalizeNomeFaltoso(reg.nomeEstudante));
-        if (est) casados++;
-    });
-    return 'admin:' + rAdmin.length + ' fal:' + fals.length + ' nome:' + comNome + ' casados:' + casados +
-        ' est:' + ests.length + ' pres:' + (d.presencas || []).length + ' push:' + (pushed && pushed.faltas ? pushed.faltas.length : '-');
-}
-
 function atualizarInterfacePorData() {
     const statusEl = document.getElementById('sisprof-status');
     if (!statusEl) return;
-    const diagMarca = ultimoDiagMarcacao ? '<br><span style="font-size:10px; color:#4299e1;">marcação:' + ultimoDiagMarcacao + '</span>' : '';
-    const diag = '<br><span style="font-size:10px; color:#a0aec0;">🧪 ' + montarDiagnosticoFaltoso() + '</span>' + diagMarca;
     const payload = obterPayloadDaData(currentSelectedDate);
     if (!currentSelectedDate || !payload) {
-        statusEl.innerHTML = '⏳ <strong>Sem dados para esta data.</strong><br>Verifique se há chamadas no ProfSis.' + diag;
+        statusEl.innerHTML = '⏳ <strong>Sem dados para esta data.</strong><br>Verifique se há chamadas no ProfSis.';
         renderizarListaTurmasDoDia();
         return;
     }
     const numFaltas = (payload.faltas && payload.faltas.length) ? payload.faltas.length : 0;
     const temRegistro = (payload.registros && payload.registros.length > 0 && payload.registros[0].conteudo) ? 'Sim' : 'Não';
-    statusEl.innerHTML = '<strong>📅 ' + formatarDataBR(currentSelectedDate) + '</strong><br>🔴 Faltosos (Gestão): <strong>' + numFaltas + '</strong><br>📝 Registro: <strong>' + temRegistro + '</strong>' + diag;
+    statusEl.innerHTML = '<strong>📅 ' + formatarDataBR(currentSelectedDate) + '</strong><br>🔴 Faltosos (Gestão): <strong>' + numFaltas + '</strong><br>📝 Registro: <strong>' + temRegistro + '</strong>';
     renderizarListaTurmasDoDia();
 }
 
@@ -956,9 +932,8 @@ function executarPreenchimentoChamada(payload, opts) {
     extrairAlunosSilencioso();
     const normalize = s => s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
     let interagidos = 0;
-    let diagChamada = '';
 
-    // ===== MARCAÇÃO DE FALTAS (reescrito - card-first) =====
+    // ===== MARCAÇÃO DE FALTAS (card-first) =====
     // Em vez de depender de uma lista pré-montada de faltas (que pode conter faltosos de OUTRAS
     // turmas e não os desta tela), olhamos CADA card da tela da SED e verificamos direto nos dados
     // do ProfSis se aquele aluno é faltoso da gestão e não tem presença registrada no dia. Fontes:
@@ -1014,19 +989,9 @@ function executarPreenchimentoChamada(payload, opts) {
             const deveEstarPresente = !levouFalta;
             if (checkbox.checked !== deveEstarPresente) { checkbox.click(); interagidos++; }
         });
-        diagChamada = ' 🧪[cards:' + cards.length + ' chk:' + comCheckbox + ' estCasou:' + estCasou + ' faltosos:' + faltososReg.length + ' listaA:' + faltasSetsA.length + ' marcados:' + casadosNaTela + ' toggles:' + interagidos + ']';
-        const amCard = nomesTela.slice(0, 4).map(n => '«' + n + '»').join(' ');
-        const amEst = estudantesRobo.slice(0, 4).map(e => '«' + normalize(e.nome_completo) + '»').join(' ');
-        diagChamada += '<br>SED: ' + amCard + '<br>EST: ' + amEst;
-        console.log('[SisProf] 🧪 Cards SED:', nomesTela);
-        console.log('[SisProf] 🧪 estCasou:', estCasou, 'de', comCheckbox, '| faltosos reg:', faltososReg.length, '| marcados:', casadosNaTela);
+        // Log discreto só no console (para depuração), sem nada visível ao usuário.
+        console.log('[SisProf] Faltas: ' + casadosNaTela + ' marcada(s) de ' + comCheckbox + ' alunos na tela (estCasou:' + estCasou + ').');
     }
-    // Fixa o diagnóstico da marcação no painel (visível também no modo automático).
-    ultimoDiagMarcacao = diagChamada;
-    try {
-        const stEl = document.getElementById('sisprof-status');
-        if (stEl) stEl.innerHTML += '<br><span style="font-size:10px; color:#4299e1;">marcação:' + diagChamada + '</span>';
-    } catch (e) {}
 
     // Fechamento bimestre se aplicável (tela própria, identificada pelo próprio seletor abaixo)
     if (payload.fechamento && payload.fechamento.length > 0) {
@@ -1053,12 +1018,10 @@ function executarPreenchimentoChamada(payload, opts) {
         }
     }
 
-    // Aula dobradinha (2 aulas da mesma turma+disciplina no dia): marca "Replicar Frequência" pra
-    // frequência valer nas duas. Conta como interação pra garantir o Salvar mesmo sem faltas no dia.
-    const idTurmaTela = encontrarIdTurmaDaTelaAtual();
-    if (idTurmaTela && contarAulasNoDia(idTurmaTela, currentSelectedDate) >= 2) {
-        if (marcarCheckboxReplicarFrequencia()) interagidos++;
-    }
+    // Aula dobradinha: marca "Replicar Frequência" pra frequência valer nas duas aulas. A SED só
+    // exibe esse checkbox quando é dobradinha, então se ele está na tela, marca - sem depender da
+    // grade do ProfSis (contarAulasNoDia), que podia não detectar a dobradinha e deixar de marcar.
+    if (marcarCheckboxReplicarFrequencia()) interagidos++;
 
     const finalizarChamada = () => {
         setTimeout(() => {
@@ -1066,9 +1029,9 @@ function executarPreenchimentoChamada(payload, opts) {
                 const text = (b.innerText || b.value || b.textContent || '').toLowerCase();
                 return text.includes('salvar') || text.includes('cadastrar') || text.includes('gravar') || text.includes('finalizar');
             });
-            if (!btnSalvar) { reportarResultado(opts, false, '✅ Concluído! ⚠️ Clique em "Salvar" manualmente.' + diagChamada); return; }
+            if (!btnSalvar) { reportarResultado(opts, false, '✅ Concluído! ⚠️ Clique em "Salvar" manualmente.'); return; }
             btnSalvar.click();
-            if (!opts.modoAutomatico) { reportarResultado(opts, true, '✅ Concluído! Faltas preenchidas e salvas na SED.' + diagChamada); return; }
+            if (!opts.modoAutomatico) { reportarResultado(opts, true, '✅ Concluído! Faltas preenchidas e salvas na SED.'); return; }
             // Modo automático (v3.0.1): o clique acima só ABRE o modal "Salvar frequência" - a SED
             // exige confirmar de novo dentro dele, e só então mostra "Alterações salvas" (ver
             // confirmarModalSalvarFrequencia/aguardarModalAlteracoesSalvas abaixo).
@@ -1080,7 +1043,7 @@ function executarPreenchimentoChamada(payload, opts) {
     // workflow automático precisa desse Salvar para poder seguir para o Registro. No botão manual
     // mantém o comportamento de sempre (só clica Salvar quando há alguma interação).
     if (opts.modoAutomatico || interagidos > 0) finalizarChamada();
-    else reportarResultado(opts, false, 'Nenhuma falta pendente ou tela de chamada não encontrada.' + diagChamada);
+    else reportarResultado(opts, false, 'Nenhuma falta pendente ou tela de chamada não encontrada.');
 }
 
 // v3.0.1: após clicar em "Salvar" na Chamada, a SED abre um modal de confirmação ("Salvar
