@@ -90,6 +90,9 @@ let extHistory = {};
 // gestão) e salvos em rpa_data_history. O robô PREFERE as faltas daqui às que ele mesmo recalcula do
 // localStorage - restaura o comportamento anterior ao 3.2.6 (mais confiável). Ver obterPayloadDaData.
 let extPushedHistory = {};
+// Guarda o diagnóstico da última marcação de chamada para exibir fixo no painel (visível em qualquer
+// modo, inclusive automático, onde a mensagem de resultado não mostrava esse detalhe).
+let ultimoDiagMarcacao = '';
 let extDoneMarks = {};
 let currentSelectedDate = "";
 let profsisProfile = null;
@@ -720,7 +723,8 @@ function montarDiagnosticoFaltoso() {
 function atualizarInterfacePorData() {
     const statusEl = document.getElementById('sisprof-status');
     if (!statusEl) return;
-    const diag = '<br><span style="font-size:10px; color:#a0aec0;">🧪 ' + montarDiagnosticoFaltoso() + '</span>';
+    const diagMarca = ultimoDiagMarcacao ? '<br><span style="font-size:10px; color:#4299e1;">marcação:' + ultimoDiagMarcacao + '</span>' : '';
+    const diag = '<br><span style="font-size:10px; color:#a0aec0;">🧪 ' + montarDiagnosticoFaltoso() + '</span>' + diagMarca;
     const payload = obterPayloadDaData(currentSelectedDate);
     if (!currentSelectedDate || !payload) {
         statusEl.innerHTML = '⏳ <strong>Sem dados para esta data.</strong><br>Verifique se há chamadas no ProfSis.' + diag;
@@ -956,6 +960,12 @@ function executarPreenchimentoChamada(payload, opts) {
     } else {
         diagChamada = ' 🧪[payload.faltas vazio]';
     }
+    // Fixa o diagnóstico da marcação no painel (visível também no modo automático).
+    ultimoDiagMarcacao = diagChamada;
+    try {
+        const stEl = document.getElementById('sisprof-status');
+        if (stEl) stEl.innerHTML += '<br><span style="font-size:10px; color:#4299e1;">marcação:' + diagChamada + '</span>';
+    } catch (e) {}
 
     // Fechamento bimestre se aplicável (tela própria, identificada pelo próprio seletor abaixo)
     if (payload.fechamento && payload.fechamento.length > 0) {
