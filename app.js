@@ -1060,14 +1060,15 @@ async function renderDashboard() {
             // ou os avisos. Sem isso, um novo faltoso classificado pela gestão ficava só em memória
             // (o persistirDados abaixo só rodava se a grade mudasse) e nunca chegava ao localStorage
             // que o robô da Sala do Futuro lê -> faltoso não era marcado.
-            const registrosMudou = !!gestorData.registrosAdministrativos
-                && JSON.stringify(data.registrosAdministrativos || []) !== JSON.stringify(gestorData.registrosAdministrativos);
+            const registrosGestorEnriquecidos = enriquecerRegistrosComNome(gestorData.registrosAdministrativos, gestorData.estudantes);
+            const registrosMudou = !!registrosGestorEnriquecidos
+                && JSON.stringify(data.registrosAdministrativos || []) !== JSON.stringify(registrosGestorEnriquecidos);
             const avisosMudou = !!gestorData.avisosMural
                 && JSON.stringify(data.avisosMural || []) !== JSON.stringify(gestorData.avisosMural);
             data.schoolGrade = gradeEscola;
             data.schoolExceptions = excecoesGrade;
             if (gestorData.avisosMural) data.avisosMural = gestorData.avisosMural;
-            if (gestorData.registrosAdministrativos) data.registrosAdministrativos = gestorData.registrosAdministrativos;
+            if (registrosGestorEnriquecidos) data.registrosAdministrativos = registrosGestorEnriquecidos;
             if (gradeMudou || registrosMudou || avisosMudou) persistirDados();
         }
     } else { gradeEscola = await getGradeEscola(); }
@@ -1352,6 +1353,21 @@ function editarTurma(id) {
     }
 }
 
+// Grava o nome do aluno em cada registro administrativo (Faltoso/Atestado) ao sincronizar os dados
+// da gestão para o professor. Assim o robô da Sala do Futuro consegue casar o faltoso por NOME
+// quando o id do aluno na lista do professor não bate com o id usado no registro da gestão (o
+// casamento só por id falhava, por ex., quando a lista foi extraída/reimportada pela extensão).
+function enriquecerRegistrosComNome(registros, estudantesGestor) {
+    if (!Array.isArray(registros)) return registros;
+    return registros.map(r => {
+        if ((r.tipo === 'Faltoso' || r.tipo === 'Atestado') && !r.nomeEstudante) {
+            const est = (estudantesGestor || []).find(e => e.id == r.estudanteId);
+            if (est && est.nome_completo) return { ...r, nomeEstudante: est.nome_completo };
+        }
+        return r;
+    });
+}
+
 // Função auxiliar para montar payload de um dia específico
 function montarPayloadPorData(dataStr) {
     let alunosFaltantesNomes = [];
@@ -1363,10 +1379,19 @@ function montarPayloadPorData(dataStr) {
     // - Com chamada e presente -> não marca.
     // (Mesma lógica da extensão em content_sed.js:montarPayloadPorData, mantida em sincronia.)
     const presencas = data.presencas || [];
+    const norm = (s) => s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
     const faltososGestao = (data.registrosAdministrativos || []).filter(r => r.tipo === 'Faltoso' && !r.arquivado);
     faltososGestao.forEach(reg => {
-        const est = (data.estudantes || []).find(e => e.id == reg.estudanteId);
-        if (!est) return;
+        // Casa por id e, como fallback, por nome (id pode divergir se a lista veio da extensão).
+        let est = (data.estudantes || []).find(e => e.id == reg.estudanteId);
+        if (!est && reg.nomeEstudante) {
+            const alvo = norm(reg.nomeEstudante);
+            est = (data.estudantes || []).find(e => norm(e.nome_completo) === alvo);
+        }
+        if (!est) {
+            if (reg.nomeEstudante) alunosFaltantesNomes.push({ nome: reg.nomeEstudante, id_turma: reg.turmaId || null });
+            return;
+        }
         if (est.status && est.status !== 'Ativo') return;
         const presencaDoDia = presencas.find(p => p.id_estudante == est.id && p.data === dataStr);
         if (!presencaDoDia || presencaDoDia.status === 'falta') {
@@ -2473,9 +2498,10 @@ async function abrirTurma(id) {
                 data.estudantes.push(alunoLocal);
             });
 
-            // Sincroniza Registros Administrativos (Atestados/Faltosos) para o Dashboard
+            // Sincroniza Registros Administrativos (Atestados/Faltosos) para o Dashboard, gravando o
+            // nome do aluno em cada registro (para o robô casar o faltoso por nome se o id divergir).
             if (gestorData.registrosAdministrativos) {
-                data.registrosAdministrativos = gestorData.registrosAdministrativos;
+                data.registrosAdministrativos = enriquecerRegistrosComNome(gestorData.registrosAdministrativos, gestorData.estudantes);
             }
             if (gestorData.avisosMural) {
                 data.avisosMural = gestorData.avisosMural;

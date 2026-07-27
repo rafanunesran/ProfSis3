@@ -222,6 +222,12 @@ function montarHistoricoLocal() {
     console.log('[SisProf Ext] Histórico montado:', Object.keys(extHistory).length, 'dias');
 }
 
+// Normaliza nome para casar faltoso (base local do professor x nome enviado pela gestão): sem
+// acentos, espaços colapsados, maiúsculas. Mesmo critério do casamento de alunos do resto do robô.
+function normalizeNomeFaltoso(s) {
+    return s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
+}
+
 function montarPayloadPorData(dataStr) {
     const presencas = (profsisAppData.presencas || []);
     const estudantes = (profsisAppData.estudantes || []);
@@ -233,24 +239,35 @@ function montarPayloadPorData(dataStr) {
     // (registros arquivados pela gestão são ignorados - não devem mais marcar falta)
     const faltososGestao = registrosAdmin.filter(r => r.tipo === 'Faltoso' && !r.arquivado);
     let alunosFaltantesNomes = [];
-    
+
     faltososGestao.forEach(reg => {
-        const est = estudantes.find(e => e.id == reg.estudanteId);
-        if (!est) return;
+        // Casa o faltoso na base local do professor por ID e, como FALLBACK, por NOME. O casamento só
+        // por id falhava quando a lista do professor tinha o aluno com um id diferente do id usado no
+        // registro da gestão (acontece quando a lista foi extraída/reimportada pela extensão, que gera
+        // ids novos) - aí o faltoso, mesmo tendo faltado, nunca era marcado. O nome (reg.nomeEstudante)
+        // é gravado pelo app.js ao sincronizar os registros da gestão.
+        let est = estudantes.find(e => e.id == reg.estudanteId);
+        if (!est && reg.nomeEstudante) {
+            const alvo = normalizeNomeFaltoso(reg.nomeEstudante);
+            est = estudantes.find(e => normalizeNomeFaltoso(e.nome_completo) === alvo);
+        }
+
+        if (!est) {
+            // Sem o aluno na base local (nem por id nem por nome), mas a gestão mandou o nome:
+            // marca por nome mesmo (não dá pra checar presença sem o registro local, então assume
+            // falta - regra do faltoso: leva falta salvo se tiver presença registrada).
+            if (reg.nomeEstudante) alunosFaltantesNomes.push({ nome: reg.nomeEstudante, id_turma: reg.turmaId || null });
+            return;
+        }
         // Apenas alunos ativos
         if (est.status && est.status !== 'Ativo') return;
-        
-        // Verifica se houve chamada neste dia para este aluno
+
+        // Verifica se houve chamada neste dia para este aluno. Só fica presente (não marca) se houver
+        // presença registrada; sem registro de falta -> falta (padrão do faltoso).
         const presencaDoDia = presencas.find(p => p.id_estudante == est.id && p.data === dataStr);
-        
-        if (!presencaDoDia) {
-            // Não houve chamada - considera como falta
-            alunosFaltantesNomes.push({ nome: est.nome_completo, id_turma: est.id_turma, id_estudante: est.id });
-        } else if (presencaDoDia.status === 'falta') {
-            // Houve chamada e o aluno faltou
+        if (!presencaDoDia || presencaDoDia.status === 'falta') {
             alunosFaltantesNomes.push({ nome: est.nome_completo, id_turma: est.id_turma, id_estudante: est.id });
         }
-        // Se houve chamada e o aluno esteve presente, NÃO inclui (não faltou)
     });
     
     const registrosNoDia = registrosAula.filter(r => r.data === dataStr);
