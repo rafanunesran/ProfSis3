@@ -258,6 +258,18 @@ function normalizeNomeFaltoso(s) {
     return s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
 }
 
+// Chave robusta de nome para casar ProfSis x card da SED: remove acentos, números (RA), pontuação e
+// conectores (da/de/do/dos/e...), e ordena os tokens - assim "SILVA, JOAO 123" == "JOÃO DA SILVA".
+const NOME_STOPWORDS = new Set(['DA','DE','DO','DAS','DOS','DI','DU','E']);
+function chaveNomeTokens(s) {
+    return normalizeNomeFaltoso(s)
+        .replace(/[^A-Z\s]/g, ' ')
+        .split(/\s+/)
+        .filter(t => t.length > 1 && !NOME_STOPWORDS.has(t))
+        .sort()
+        .join(' ');
+}
+
 function montarPayloadPorData(dataStr) {
     const presencas = (profsisAppData.presencas || []);
     const estudantes = (profsisAppData.estudantes || []);
@@ -935,7 +947,9 @@ function executarPreenchimentoChamada(payload, opts) {
     // Marca apenas os faltosos classificados pela gestão
     // payload.faltas agora contém apenas os faltosos da gestão que realmente faltaram
     if (payload.faltas && payload.faltas.length > 0) {
+        // Casamento robusto por chave de tokens (ignora ordem, acentos, RA/números e conectores).
         const alunosAlvo = payload.faltas.map(a => normalize(a.nome));
+        const chavesAlvo = new Set(payload.faltas.map(a => chaveNomeTokens(a.nome)).filter(Boolean));
         const cards = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
         let comNome = 0, comCheckbox = 0, casadosNaTela = 0;
         const nomesTela = [];
@@ -948,12 +962,17 @@ function executarPreenchimentoChamada(payload, opts) {
             const checkbox = card.querySelector('.falta_presenca_container input[type="checkbox"], input[type="checkbox"]');
             if (!checkbox) return;
             comCheckbox++;
-            const levouFalta = alunosAlvo.includes(nomeAluno);
+            const chaveCard = chaveNomeTokens(nomeElement.textContent);
+            const levouFalta = chaveCard !== '' && chavesAlvo.has(chaveCard);
             if (levouFalta) casadosNaTela++;
             const deveEstarPresente = !levouFalta;
             if (checkbox.checked !== deveEstarPresente) { checkbox.click(); interagidos++; }
         });
         diagChamada = ' 🧪[cards:' + cards.length + ' nome:' + comNome + ' chk:' + comCheckbox + ' faltas:' + alunosAlvo.length + ' casadosTela:' + casadosNaTela + ' toggles:' + interagidos + ']';
+        // Amostra dos nomes dos dois lados, pra ver o formato e casar certo (mostrada no painel).
+        const amFal = alunosAlvo.slice(0, 3).map(n => '«' + n + '»').join(' ');
+        const amCard = nomesTela.slice(0, 3).map(n => '«' + n + '»').join(' ');
+        diagChamada += '<br>FAL: ' + amFal + '<br>SED: ' + amCard;
         console.log('[SisProf] 🧪 Faltas alvo (' + alunosAlvo.length + '):', alunosAlvo);
         console.log('[SisProf] 🧪 Nomes nos cards da SED (' + nomesTela.length + '):', nomesTela);
         if (casadosNaTela === 0) console.warn('[SisProf] 🧪 NENHUM faltoso casou com os cards da tela - provável divergência de nome ProfSis x SED.');
