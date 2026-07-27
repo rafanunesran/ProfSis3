@@ -926,21 +926,35 @@ function executarPreenchimentoChamada(payload, opts) {
     extrairAlunosSilencioso();
     const normalize = s => s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
     let interagidos = 0;
+    let diagChamada = '';
 
     // Marca apenas os faltosos classificados pela gestão
     // payload.faltas agora contém apenas os faltosos da gestão que realmente faltaram
     if (payload.faltas && payload.faltas.length > 0) {
         const alunosAlvo = payload.faltas.map(a => normalize(a.nome));
-        document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]').forEach(card => {
+        const cards = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
+        let comNome = 0, comCheckbox = 0, casadosNaTela = 0;
+        const nomesTela = [];
+        cards.forEach(card => {
             const nomeElement = card.querySelector('.nome_aluno');
             if (!nomeElement) return;
+            comNome++;
             let nomeAluno = normalize(nomeElement.textContent).replace(/^\d+\s*[-.]?\s*/, '');
+            nomesTela.push(nomeAluno);
             const checkbox = card.querySelector('.falta_presenca_container input[type="checkbox"], input[type="checkbox"]');
             if (!checkbox) return;
+            comCheckbox++;
             const levouFalta = alunosAlvo.includes(nomeAluno);
+            if (levouFalta) casadosNaTela++;
             const deveEstarPresente = !levouFalta;
             if (checkbox.checked !== deveEstarPresente) { checkbox.click(); interagidos++; }
         });
+        diagChamada = ' 🧪[cards:' + cards.length + ' nome:' + comNome + ' chk:' + comCheckbox + ' faltas:' + alunosAlvo.length + ' casadosTela:' + casadosNaTela + ' toggles:' + interagidos + ']';
+        console.log('[SisProf] 🧪 Faltas alvo (' + alunosAlvo.length + '):', alunosAlvo);
+        console.log('[SisProf] 🧪 Nomes nos cards da SED (' + nomesTela.length + '):', nomesTela);
+        if (casadosNaTela === 0) console.warn('[SisProf] 🧪 NENHUM faltoso casou com os cards da tela - provável divergência de nome ProfSis x SED.');
+    } else {
+        diagChamada = ' 🧪[payload.faltas vazio]';
     }
 
     // Fechamento bimestre se aplicável (tela própria, identificada pelo próprio seletor abaixo)
@@ -981,9 +995,9 @@ function executarPreenchimentoChamada(payload, opts) {
                 const text = (b.innerText || b.value || b.textContent || '').toLowerCase();
                 return text.includes('salvar') || text.includes('cadastrar') || text.includes('gravar') || text.includes('finalizar');
             });
-            if (!btnSalvar) { reportarResultado(opts, false, '✅ Concluído! ⚠️ Clique em "Salvar" manualmente.'); return; }
+            if (!btnSalvar) { reportarResultado(opts, false, '✅ Concluído! ⚠️ Clique em "Salvar" manualmente.' + diagChamada); return; }
             btnSalvar.click();
-            if (!opts.modoAutomatico) { reportarResultado(opts, true, '✅ Concluído! Faltas preenchidas e salvas na SED.'); return; }
+            if (!opts.modoAutomatico) { reportarResultado(opts, true, '✅ Concluído! Faltas preenchidas e salvas na SED.' + diagChamada); return; }
             // Modo automático (v3.0.1): o clique acima só ABRE o modal "Salvar frequência" - a SED
             // exige confirmar de novo dentro dele, e só então mostra "Alterações salvas" (ver
             // confirmarModalSalvarFrequencia/aguardarModalAlteracoesSalvas abaixo).
@@ -995,7 +1009,7 @@ function executarPreenchimentoChamada(payload, opts) {
     // workflow automático precisa desse Salvar para poder seguir para o Registro. No botão manual
     // mantém o comportamento de sempre (só clica Salvar quando há alguma interação).
     if (opts.modoAutomatico || interagidos > 0) finalizarChamada();
-    else reportarResultado(opts, false, 'Nenhuma falta pendente ou tela de chamada não encontrada.');
+    else reportarResultado(opts, false, 'Nenhuma falta pendente ou tela de chamada não encontrada.' + diagChamada);
 }
 
 // v3.0.1: após clicar em "Salvar" na Chamada, a SED abre um modal de confirmação ("Salvar
