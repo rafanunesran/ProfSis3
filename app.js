@@ -1056,11 +1056,19 @@ async function renderDashboard() {
             // pegar grade/horário vazios ou desatualizados no localStorage lido pela extensão.
             const gradeMudou = JSON.stringify(data.schoolGrade || []) !== JSON.stringify(gradeEscola)
                 || JSON.stringify(data.schoolExceptions || []) !== JSON.stringify(excecoesGrade);
+            // Também persistir quando a gestão muda os faltosos/atestados (registrosAdministrativos)
+            // ou os avisos. Sem isso, um novo faltoso classificado pela gestão ficava só em memória
+            // (o persistirDados abaixo só rodava se a grade mudasse) e nunca chegava ao localStorage
+            // que o robô da Sala do Futuro lê -> faltoso não era marcado.
+            const registrosMudou = !!gestorData.registrosAdministrativos
+                && JSON.stringify(data.registrosAdministrativos || []) !== JSON.stringify(gestorData.registrosAdministrativos);
+            const avisosMudou = !!gestorData.avisosMural
+                && JSON.stringify(data.avisosMural || []) !== JSON.stringify(gestorData.avisosMural);
             data.schoolGrade = gradeEscola;
             data.schoolExceptions = excecoesGrade;
             if (gestorData.avisosMural) data.avisosMural = gestorData.avisosMural;
             if (gestorData.registrosAdministrativos) data.registrosAdministrativos = gestorData.registrosAdministrativos;
-            if (gradeMudou) persistirDados();
+            if (gradeMudou || registrosMudou || avisosMudou) persistirDados();
         }
     } else { gradeEscola = await getGradeEscola(); }
     
