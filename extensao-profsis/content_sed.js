@@ -86,6 +86,10 @@
 
 // ==================== VARIÁVEIS GLOBAIS ====================
 let extHistory = {};
+// Payloads calculados e EMPURRADOS pelo app.js (dados frescos em memória, sempre com os faltosos da
+// gestão) e salvos em rpa_data_history. O robô PREFERE as faltas daqui às que ele mesmo recalcula do
+// localStorage - restaura o comportamento anterior ao 3.2.6 (mais confiável). Ver obterPayloadDaData.
+let extPushedHistory = {};
 let extDoneMarks = {};
 let currentSelectedDate = "";
 let profsisProfile = null;
@@ -203,9 +207,32 @@ function carregarDadosProfSis() {
     }
     montarHistoricoLocal();
     chrome.runtime.sendMessage({ action: 'GET_DATA' }, (data) => {
-        if (!chrome.runtime.lastError && data) extDoneMarks = data.rpa_done_marks || {};
+        if (!chrome.runtime.lastError && data) {
+            extDoneMarks = data.rpa_done_marks || {};
+            extPushedHistory = data.rpa_data_history || {};
+        }
         injetarMenu();
     });
+    // Mantém os payloads empurrados pelo app.js sempre frescos (o app pode empurrar depois que a
+    // tela da SED já abriu). Barato: só lê o storage e atualiza uma variável.
+    setInterval(() => {
+        chrome.runtime.sendMessage({ action: 'GET_DATA' }, (data) => {
+            if (!chrome.runtime.lastError && data && data.rpa_data_history) extPushedHistory = data.rpa_data_history;
+        });
+    }, 4000);
+}
+
+// Payload usado para marcar/exibir uma data: prefere as FALTAS empurradas pelo app.js (dados frescos,
+// sempre com os faltosos da gestão) e mantém o resto (registros/fechamento) do cálculo local.
+function obterPayloadDaData(dataStr) {
+    const local = extHistory[dataStr];
+    const pushed = extPushedHistory[dataStr];
+    if (!local && !pushed) return null;
+    const base = local || { data: dataStr, faltas: [], registros: [], fechamento: [] };
+    if (pushed && Array.isArray(pushed.faltas)) {
+        return { ...base, faltas: pushed.faltas };
+    }
+    return base;
 }
 
 // ==================== MONTAGEM DE HISTÓRICO ====================
@@ -674,12 +701,12 @@ function atualizarModoBotaoPreencher() {
 function atualizarInterfacePorData() {
     const statusEl = document.getElementById('sisprof-status');
     if (!statusEl) return;
-    if (!currentSelectedDate || !extHistory[currentSelectedDate]) {
+    const payload = obterPayloadDaData(currentSelectedDate);
+    if (!currentSelectedDate || !payload) {
         statusEl.innerHTML = '⏳ <strong>Sem dados para esta data.</strong><br>Verifique se há chamadas no ProfSis.';
         renderizarListaTurmasDoDia();
         return;
     }
-    const payload = extHistory[currentSelectedDate];
     const numFaltas = (payload.faltas && payload.faltas.length) ? payload.faltas.length : 0;
     const temRegistro = (payload.registros && payload.registros.length > 0 && payload.registros[0].conteudo) ? 'Sim' : 'Não';
     statusEl.innerHTML = '<strong>📅 ' + formatarDataBR(currentSelectedDate) + '</strong><br>🔴 Faltosos (Gestão): <strong>' + numFaltas + '</strong><br>📝 Registro: <strong>' + temRegistro + '</strong>';
@@ -814,7 +841,7 @@ function preencherChamadaNaTela(btn, opts) {
                         reportarResultado(opts, false, 'Não consegui selecionar o "Horário de Aula" na tela de Chamada - o campo continuou em "Selecione ...". Tente novamente ou selecione o horário manualmente antes de preencher.');
                         return;
                     }
-                    const payload = extHistory[currentSelectedDate];
+                    const payload = obterPayloadDaData(currentSelectedDate);
                     if (payload) executarPreenchimentoChamada(payload, opts);
                     else reportarResultado(opts, false, 'Sem dados de chamada para esta data.');
                     if (btn) { btn.textContent = oldText; btn.disabled = false; }
@@ -849,7 +876,7 @@ function preencherRegistroNaTela(btn, opts) {
             // antes de todas as abas (ex.: aula dobradinha) terem renderizado. Espera depois do
             // bimestre porque as abas exibidas podem depender de qual bimestre está selecionado.
             aguardarTelaRegistroEstavel(() => {
-                const payload = extHistory[currentSelectedDate];
+                const payload = obterPayloadDaData(currentSelectedDate);
                 if (payload) executarPreenchimentoRegistro(payload, opts);
                 else reportarResultado(opts, false, 'Sem dados de registro para esta data.');
                 if (btn) { btn.textContent = oldText; btn.disabled = false; }

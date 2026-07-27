@@ -1071,6 +1071,10 @@ async function renderDashboard() {
             if (registrosGestorEnriquecidos) data.registrosAdministrativos = registrosGestorEnriquecidos;
             if (gradeMudou || registrosMudou || avisosMudou) persistirDados();
         }
+        // Empurra o payload de hoje para o robô com os dados frescos em memória (já com os faltosos
+        // da gestão recém-sincronizados). O robô usa essas faltas para marcar na SED - mais confiável
+        // do que ele recalcular relendo o localStorage (que pode estar sem os registrosAdministrativos).
+        if (typeof window.enviarDadosParaExtensao === 'function') window.enviarDadosParaExtensao(true);
     } else { gradeEscola = await getGradeEscola(); }
     
     const diaSemanaHoje = new Date().getDay(); // 0=Dom, 1=Seg...
