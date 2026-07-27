@@ -17,6 +17,8 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import java.io.File
+import java.util.concurrent.Executors
 import com.profsis3.sed.bridge.ProfSisNavigationBridge
 import com.profsis3.sed.bridge.ProfSisStorageBridge
 import com.profsis3.sed.diagnostics.CrashLogger
@@ -42,6 +44,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var profsisRefresh: SwipeRefreshLayout
     private lateinit var webContainer: FrameLayout
     private lateinit var bottomNav: BottomNavigationView
+    // Thread única pro download dos bundles do robô (auto-update), fora da UI thread.
+    private val bundleExecutor = Executors.newSingleThreadExecutor()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,6 +67,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         UpdateChecker.checkForUpdate(this)
+        // Atualiza o robô (bundles) em segundo plano; aplica na próxima abertura (ver injectBundle).
+        baixarBundlesEmBackground()
 
         CrashLogger.consumeLastCrash(this)?.let { crashText -> showLastCrashDialog(crashText) }
     }
@@ -121,10 +127,9 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        val bundleAsset = if (tab == Tab.SED) "bundles/sed-bundle.js" else "bundles/profsis-bundle.js"
         webView.webViewClient = BundleInjectingWebViewClient(
             onPageFinishedExtra = { view, _ ->
-                injectBundle(view, bundleAsset)
+                injectBundle(view, tab)
                 stopRefresh(tab) // some com o spinner do pull-to-refresh quando a página terminou de carregar
             },
             onRenderProcessGoneExtra = { recreateWebView(tab) },
@@ -247,9 +252,62 @@ class MainActivity : AppCompatActivity() {
 
     private fun currentTab(): Tab = if (sedRefresh.visibility == View.VISIBLE) Tab.SED else Tab.PROFSIS
 
-    private fun injectBundle(view: WebView, assetPath: String) {
-        val script = assets.open(assetPath).bufferedReader(Charsets.UTF_8).use { it.readText() }
+    private fun bundleFileName(tab: Tab): String =
+        if (tab == Tab.SED) "sed-bundle.js" else "profsis-bundle.js"
+
+    /**
+     * Injeta o robô na página. Prefere a cópia baixada do Pages (filesDir) - assim o robô se
+     * atualiza sozinho, como a extensão do Chrome, sem precisar de um APK novo. Se ainda não houver
+     * cópia baixada (1ª execução / offline), usa a versão embutida nos assets do APK.
+     */
+    private fun injectBundle(view: WebView, tab: Tab) {
+        val fileName = bundleFileName(tab)
+        val script = try {
+            val cached = File(filesDir, fileName)
+            if (cached.exists() && cached.length() > 0) cached.readText(Charsets.UTF_8)
+            else assets.open("bundles/$fileName").bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } catch (e: Exception) {
+            // Qualquer problema ao ler o cache -> volta pro embutido (nunca deixa de injetar o robô).
+            assets.open("bundles/$fileName").bufferedReader(Charsets.UTF_8).use { it.readText() }
+        }
         view.evaluateJavascript(script, null)
+    }
+
+    /**
+     * Baixa em segundo plano a versão mais recente dos bundles do robô (publicada no GitHub Pages
+     * pelo build) e salva em filesDir. É aplicada na PRÓXIMA abertura do app (injectBundle lê o
+     * cache). Falha em silêncio (offline / rede da escola) - o app segue com a versão que já tem.
+     */
+    private fun baixarBundlesEmBackground() {
+        bundleExecutor.execute {
+            for (fileName in listOf("sed-bundle.js", "profsis-bundle.js")) {
+                try {
+                    val conn = (java.net.URL(BUNDLE_BASE_URL + fileName).openConnection() as java.net.HttpURLConnection).apply {
+                        connectTimeout = 8000
+                        readTimeout = 8000
+                        requestMethod = "GET"
+                    }
+                    try {
+                        if (conn.responseCode == 200) {
+                            val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                            // Sanidade: só grava se parece mesmo com o nosso bundle (evita salvar uma
+                            // página de erro/captive portal por cima do robô).
+                            if (text.length > 500 && text.contains("__PROFSIS_APP_VERSION__")) {
+                                // Escrita atômica (tmp + rename) pra injectBundle nunca ler um arquivo
+                                // pela metade se o download coincidir com o carregamento de uma página.
+                                val tmp = File(filesDir, "$fileName.tmp")
+                                tmp.writeText(text, Charsets.UTF_8)
+                                tmp.renameTo(File(filesDir, fileName))
+                            }
+                        }
+                    } finally {
+                        conn.disconnect()
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("MainActivity", "Falha ao baixar bundle $fileName: ${e.message}")
+                }
+            }
+        }
     }
 
     override fun onPause() {
@@ -274,5 +332,8 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val SED_START_URL = "https://saladofuturoprofessor.educacao.sp.gov.br/"
         private const val PROFSIS_START_URL = "https://rafanunesran.github.io/ProfSis3/"
+        // Bundles do robô publicados pelo build (build-bundles.mjs -> dist/bundles), servidos pelo
+        // GitHub Pages. O app baixa daqui pra atualizar o robô sem precisar de um APK novo.
+        private const val BUNDLE_BASE_URL = "https://rafanunesran.github.io/ProfSis3/app-android/dist/bundles/"
     }
 }

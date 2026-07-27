@@ -11,6 +11,9 @@ const repoRoot = path.resolve(appRoot, "..");
 const vendorDir = path.join(appRoot, "vendor");
 const shimPath = path.join(appRoot, "www", "shim", "chrome-shim.js");
 const outDir = path.join(appRoot, "android", "app", "src", "main", "assets", "bundles");
+// Cópia publicada no GitHub Pages: o app baixa daqui pra atualizar o robô sem precisar de um APK
+// novo (o repo inteiro é subido pro Pages no deploy). URL: <pages>/app-android/dist/bundles/<arquivo>.
+const webOutDir = path.join(appRoot, "dist", "bundles");
 
 function readVendorFile(name) {
   const p = path.join(vendorDir, name);
@@ -48,7 +51,10 @@ function buildBundle({ guardFlag, contentFileName, outFileName }) {
 
   mkdirSync(outDir, { recursive: true });
   writeFileSync(path.join(outDir, outFileName), bundle, "utf8");
-  console.log(`[build-bundles] gerado android/app/src/main/assets/bundles/${outFileName} (extensao v${version})`);
+  // Mesma saída publicada no Pages, pro app baixar e atualizar o robô sem novo APK.
+  mkdirSync(webOutDir, { recursive: true });
+  writeFileSync(path.join(webOutDir, outFileName), bundle, "utf8");
+  console.log(`[build-bundles] gerado assets/bundles/${outFileName} e dist/bundles/${outFileName} (extensao v${version})`);
 }
 
 buildBundle({
