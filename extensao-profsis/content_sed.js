@@ -258,16 +258,30 @@ function normalizeNomeFaltoso(s) {
     return s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
 }
 
-// Chave robusta de nome para casar ProfSis x card da SED: remove acentos, números (RA), pontuação e
-// conectores (da/de/do/dos/e...), e ordena os tokens - assim "SILVA, JOAO 123" == "JOÃO DA SILVA".
+// ===== Casamento de nome ProfSis x card da SED (reescrito) =====
+// Não dá pra depender do formato: a SED pode mostrar o nome em ordem diferente, com RA/número junto,
+// rótulos, etc. Então quebramos o nome em TOKENS significativos (sem acento, sem número/pontuação, sem
+// conectores da/de/do...) e casamos por CONTENÇÃO: o conjunto menor de tokens deve caber no maior.
+// Assim "JOÃO DA SILVA" casa com "SILVA SANTOS, JOAO 123456" (todos os tokens do nome menor presentes).
 const NOME_STOPWORDS = new Set(['DA','DE','DO','DAS','DOS','DI','DU','E']);
-function chaveNomeTokens(s) {
+function tokensNome(s) {
     return normalizeNomeFaltoso(s)
         .replace(/[^A-Z\s]/g, ' ')
         .split(/\s+/)
-        .filter(t => t.length > 1 && !NOME_STOPWORDS.has(t))
-        .sort()
-        .join(' ');
+        .filter(t => t.length > 1 && !NOME_STOPWORDS.has(t));
+}
+// Casa se o conjunto MENOR (>=2 tokens) estiver inteiro contido no MAIOR. Com <2 tokens exige
+// igualdade exata (evita falso positivo com nomes de token único). setA/setB são Set de tokens.
+function nomesCasamPorToken(setA, setB) {
+    if (!setA || !setB || setA.size === 0 || setB.size === 0) return false;
+    const [menor, maior] = setA.size <= setB.size ? [setA, setB] : [setB, setA];
+    if (menor.size < 2) {
+        if (setA.size !== setB.size) return false;
+        for (const t of setA) if (!setB.has(t)) return false;
+        return true;
+    }
+    for (const t of menor) if (!maior.has(t)) return false;
+    return true;
 }
 
 function montarPayloadPorData(dataStr) {
@@ -944,12 +958,15 @@ function executarPreenchimentoChamada(payload, opts) {
     let interagidos = 0;
     let diagChamada = '';
 
-    // Marca apenas os faltosos classificados pela gestão
-    // payload.faltas agora contém apenas os faltosos da gestão que realmente faltaram
+    // ===== MARCAÇÃO DE FALTAS (reescrito) =====
+    // Objetivo: para cada aluno na tela da SED, marcar FALTA se ele está na lista de faltas do dia
+    // (faltosos da gestão que não têm presença registrada); senão, deixar presente. O elo entre a
+    // tela da SED e a lista é o NOME - casado por contenção de tokens (robusto a ordem/RA/rótulos).
     if (payload.faltas && payload.faltas.length > 0) {
-        // Casamento robusto por chave de tokens (ignora ordem, acentos, RA/números e conectores).
-        const alunosAlvo = payload.faltas.map(a => normalize(a.nome));
-        const chavesAlvo = new Set(payload.faltas.map(a => chaveNomeTokens(a.nome)).filter(Boolean));
+        // Conjuntos de tokens dos nomes que devem levar falta.
+        const faltasSets = payload.faltas
+            .map(a => new Set(tokensNome(a.nome)))
+            .filter(s => s.size > 0);
         const cards = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
         let comNome = 0, comCheckbox = 0, casadosNaTela = 0;
         const nomesTela = [];
@@ -957,25 +974,25 @@ function executarPreenchimentoChamada(payload, opts) {
             const nomeElement = card.querySelector('.nome_aluno');
             if (!nomeElement) return;
             comNome++;
-            let nomeAluno = normalize(nomeElement.textContent).replace(/^\d+\s*[-.]?\s*/, '');
-            nomesTela.push(nomeAluno);
+            const nomeCard = normalize(nomeElement.textContent).replace(/^\d+\s*[-.]?\s*/, '');
+            nomesTela.push(nomeCard);
             const checkbox = card.querySelector('.falta_presenca_container input[type="checkbox"], input[type="checkbox"]');
             if (!checkbox) return;
             comCheckbox++;
-            const chaveCard = chaveNomeTokens(nomeElement.textContent);
-            const levouFalta = chaveCard !== '' && chavesAlvo.has(chaveCard);
+            const cardSet = new Set(tokensNome(nomeElement.textContent));
+            const levouFalta = faltasSets.some(fs => nomesCasamPorToken(fs, cardSet));
             if (levouFalta) casadosNaTela++;
             const deveEstarPresente = !levouFalta;
             if (checkbox.checked !== deveEstarPresente) { checkbox.click(); interagidos++; }
         });
-        diagChamada = ' 🧪[cards:' + cards.length + ' nome:' + comNome + ' chk:' + comCheckbox + ' faltas:' + alunosAlvo.length + ' casadosTela:' + casadosNaTela + ' toggles:' + interagidos + ']';
-        // Amostra dos nomes dos dois lados, pra ver o formato e casar certo (mostrada no painel).
-        const amFal = alunosAlvo.slice(0, 3).map(n => '«' + n + '»').join(' ');
+        diagChamada = ' 🧪[cards:' + cards.length + ' nome:' + comNome + ' chk:' + comCheckbox + ' faltas:' + faltasSets.length + ' casadosTela:' + casadosNaTela + ' toggles:' + interagidos + ']';
+        // Amostra dos nomes dos dois lados, pra confirmar o formato caso ainda não case.
+        const amFal = payload.faltas.slice(0, 3).map(a => '«' + normalize(a.nome) + '»').join(' ');
         const amCard = nomesTela.slice(0, 3).map(n => '«' + n + '»').join(' ');
         diagChamada += '<br>FAL: ' + amFal + '<br>SED: ' + amCard;
-        console.log('[SisProf] 🧪 Faltas alvo (' + alunosAlvo.length + '):', alunosAlvo);
-        console.log('[SisProf] 🧪 Nomes nos cards da SED (' + nomesTela.length + '):', nomesTela);
-        if (casadosNaTela === 0) console.warn('[SisProf] 🧪 NENHUM faltoso casou com os cards da tela - provável divergência de nome ProfSis x SED.');
+        console.log('[SisProf] 🧪 Faltas alvo:', payload.faltas.map(a => a.nome));
+        console.log('[SisProf] 🧪 Nomes nos cards da SED:', nomesTela);
+        if (casadosNaTela === 0) console.warn('[SisProf] 🧪 NENHUM faltoso casou com os cards da tela - ver amostras FAL/SED no painel.');
     } else {
         diagChamada = ' 🧪[payload.faltas vazio]';
     }
