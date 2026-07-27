@@ -698,18 +698,38 @@ function atualizarModoBotaoPreencher() {
 
 // ==================== INTERFACE ====================
 
+// Diagnóstico visível na tela da SED: mostra onde a lista de faltosos se perde (dados brutos que o
+// robô recebeu do ProfSis). Serve pra depurar sem console: o professor lê os números e reporta.
+function montarDiagnosticoFaltoso() {
+    const d = profsisAppData || {};
+    const rAdmin = d.registrosAdministrativos || [];
+    const fals = rAdmin.filter(r => r.tipo === 'Faltoso' && !r.arquivado);
+    const ests = d.estudantes || [];
+    const pushed = extPushedHistory[currentSelectedDate];
+    let casados = 0, comNome = 0;
+    fals.forEach(reg => {
+        if (reg.nomeEstudante) comNome++;
+        let est = ests.find(e => e.id == reg.estudanteId);
+        if (!est && reg.nomeEstudante) est = ests.find(e => normalizeNomeFaltoso(e.nome_completo) === normalizeNomeFaltoso(reg.nomeEstudante));
+        if (est) casados++;
+    });
+    return 'admin:' + rAdmin.length + ' fal:' + fals.length + ' nome:' + comNome + ' casados:' + casados +
+        ' est:' + ests.length + ' pres:' + (d.presencas || []).length + ' push:' + (pushed && pushed.faltas ? pushed.faltas.length : '-');
+}
+
 function atualizarInterfacePorData() {
     const statusEl = document.getElementById('sisprof-status');
     if (!statusEl) return;
+    const diag = '<br><span style="font-size:10px; color:#a0aec0;">🧪 ' + montarDiagnosticoFaltoso() + '</span>';
     const payload = obterPayloadDaData(currentSelectedDate);
     if (!currentSelectedDate || !payload) {
-        statusEl.innerHTML = '⏳ <strong>Sem dados para esta data.</strong><br>Verifique se há chamadas no ProfSis.';
+        statusEl.innerHTML = '⏳ <strong>Sem dados para esta data.</strong><br>Verifique se há chamadas no ProfSis.' + diag;
         renderizarListaTurmasDoDia();
         return;
     }
     const numFaltas = (payload.faltas && payload.faltas.length) ? payload.faltas.length : 0;
     const temRegistro = (payload.registros && payload.registros.length > 0 && payload.registros[0].conteudo) ? 'Sim' : 'Não';
-    statusEl.innerHTML = '<strong>📅 ' + formatarDataBR(currentSelectedDate) + '</strong><br>🔴 Faltosos (Gestão): <strong>' + numFaltas + '</strong><br>📝 Registro: <strong>' + temRegistro + '</strong>';
+    statusEl.innerHTML = '<strong>📅 ' + formatarDataBR(currentSelectedDate) + '</strong><br>🔴 Faltosos (Gestão): <strong>' + numFaltas + '</strong><br>📝 Registro: <strong>' + temRegistro + '</strong>' + diag;
     renderizarListaTurmasDoDia();
 }
 
