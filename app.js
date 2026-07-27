@@ -1347,25 +1347,25 @@ function editarTurma(id) {
 // Função auxiliar para montar payload de um dia específico
 function montarPayloadPorData(dataStr) {
     let alunosFaltantesNomes = [];
-    
-    const faltasNoDia = (data.presencas || []).filter(p => p.data === dataStr && p.status === 'falta');
-    const presencasNoDia = (data.presencas || []).filter(p => p.data === dataStr);
-    
-    if (presencasNoDia.length > 0) {
-        // Se houve chamada, pega apenas os faltosos registrados
-        faltasNoDia.forEach(f => {
-            const estudante = (data.estudantes || []).find(e => e.id == f.id_estudante);
-            if (estudante) alunosFaltantesNomes.push({ nome: estudante.nome_completo, id_turma: estudante.id_turma });
-        });
-    } else {
-        // Se NÃO houve chamada neste dia, considera TODOS os alunos como faltosos
-        // para garantir que a extensão marque todos como falta
-        const estudantesAtivos = (data.estudantes || []).filter(e => !e.status || e.status === 'Ativo');
-        estudantesAtivos.forEach(e => {
-            alunosFaltantesNomes.push({ nome: e.nome_completo, id_turma: e.id_turma });
-        });
-    }
-    
+
+    // SÓ o aluno "Faltoso" (classificado pela gestão em registrosAdministrativos) leva falta na Sala
+    // do Futuro - nunca um aluno comum. Regra por faltoso ativo (arquivados são ignorados):
+    // - Sem registro de chamada no ProfSis pra ele naquele dia -> considera FALTA (padrão do faltoso);
+    // - Com chamada e marcado falta -> FALTA;
+    // - Com chamada e presente -> não marca.
+    // (Mesma lógica da extensão em content_sed.js:montarPayloadPorData, mantida em sincronia.)
+    const presencas = data.presencas || [];
+    const faltososGestao = (data.registrosAdministrativos || []).filter(r => r.tipo === 'Faltoso' && !r.arquivado);
+    faltososGestao.forEach(reg => {
+        const est = (data.estudantes || []).find(e => e.id == reg.estudanteId);
+        if (!est) return;
+        if (est.status && est.status !== 'Ativo') return;
+        const presencaDoDia = presencas.find(p => p.id_estudante == est.id && p.data === dataStr);
+        if (!presencaDoDia || presencaDoDia.status === 'falta') {
+            alunosFaltantesNomes.push({ nome: est.nome_completo, id_turma: est.id_turma });
+        }
+    });
+
     const registrosNoDia = (data.registrosAula || []).filter(r => r.data === dataStr);
     
     // Monta lista de turmas/disciplinas do professor neste dia
