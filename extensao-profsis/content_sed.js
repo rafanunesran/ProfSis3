@@ -958,17 +958,26 @@ function executarPreenchimentoChamada(payload, opts) {
     let interagidos = 0;
     let diagChamada = '';
 
-    // ===== MARCAÇÃO DE FALTAS (reescrito) =====
-    // Objetivo: para cada aluno na tela da SED, marcar FALTA se ele está na lista de faltas do dia
-    // (faltosos da gestão que não têm presença registrada); senão, deixar presente. O elo entre a
-    // tela da SED e a lista é o NOME - casado por contenção de tokens (robusto a ordem/RA/rótulos).
-    if (payload.faltas && payload.faltas.length > 0) {
-        // Conjuntos de tokens dos nomes que devem levar falta.
-        const faltasSets = payload.faltas
+    // ===== MARCAÇÃO DE FALTAS (reescrito - card-first) =====
+    // Em vez de depender de uma lista pré-montada de faltas (que pode conter faltosos de OUTRAS
+    // turmas e não os desta tela), olhamos CADA card da tela da SED e verificamos direto nos dados
+    // do ProfSis se aquele aluno é faltoso da gestão e não tem presença registrada no dia. Fontes:
+    //  - registrosAdministrativos (tipo Faltoso) -> quem é faltoso (por nome ou id do estudante);
+    //  - presencas -> se há registro de falta/ausência no dia;
+    //  - payload.faltas -> sinal adicional (lista já calculada), por união.
+    {
+        const estudantesRobo = (profsisAppData.estudantes || []);
+        const presencasRobo = (profsisAppData.presencas || []);
+        const estTok = estudantesRobo.map(e => ({ id: e.id, set: new Set(tokensNome(e.nome_completo)) }));
+        const faltososReg = (profsisAppData.registrosAdministrativos || [])
+            .filter(r => r.tipo === 'Faltoso' && !r.arquivado)
+            .map(r => ({ estudanteId: r.estudanteId, nomeSet: r.nomeEstudante ? new Set(tokensNome(r.nomeEstudante)) : null }));
+        const faltasSetsA = (payload.faltas || [])
             .map(a => new Set(tokensNome(a.nome)))
             .filter(s => s.size > 0);
+
         const cards = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
-        let comNome = 0, comCheckbox = 0, casadosNaTela = 0;
+        let comNome = 0, comCheckbox = 0, estCasou = 0, casadosNaTela = 0;
         const nomesTela = [];
         cards.forEach(card => {
             const nomeElement = card.querySelector('.nome_aluno');
@@ -980,21 +989,37 @@ function executarPreenchimentoChamada(payload, opts) {
             if (!checkbox) return;
             comCheckbox++;
             const cardSet = new Set(tokensNome(nomeElement.textContent));
-            const levouFalta = faltasSets.some(fs => nomesCasamPorToken(fs, cardSet));
+
+            // Estudante do ProfSis correspondente a este card (para checar presença e id).
+            const est = estTok.find(x => nomesCasamPorToken(x.set, cardSet));
+            if (est) estCasou++;
+
+            // Este card é um faltoso da gestão? (por nome do registro OU pelo id do estudante casado
+            // OU presente na lista pré-calculada payload.faltas).
+            const ehFaltoso = faltososReg.some(rf =>
+                    (rf.nomeSet && nomesCasamPorToken(rf.nomeSet, cardSet)) ||
+                    (est && String(rf.estudanteId) === String(est.id))
+                ) || faltasSetsA.some(fs => nomesCasamPorToken(fs, cardSet));
+
+            let levouFalta = false;
+            if (ehFaltoso) {
+                // Faltoso leva falta salvo se tiver presença registrada no dia.
+                const idPres = est ? est.id : null;
+                const presDia = idPres != null
+                    ? presencasRobo.find(p => p.id_estudante == idPres && p.data === currentSelectedDate)
+                    : null;
+                levouFalta = !presDia || presDia.status === 'falta';
+            }
             if (levouFalta) casadosNaTela++;
             const deveEstarPresente = !levouFalta;
             if (checkbox.checked !== deveEstarPresente) { checkbox.click(); interagidos++; }
         });
-        diagChamada = ' 🧪[cards:' + cards.length + ' nome:' + comNome + ' chk:' + comCheckbox + ' faltas:' + faltasSets.length + ' casadosTela:' + casadosNaTela + ' toggles:' + interagidos + ']';
-        // Amostra dos nomes dos dois lados, pra confirmar o formato caso ainda não case.
-        const amFal = payload.faltas.slice(0, 3).map(a => '«' + normalize(a.nome) + '»').join(' ');
-        const amCard = nomesTela.slice(0, 3).map(n => '«' + n + '»').join(' ');
-        diagChamada += '<br>FAL: ' + amFal + '<br>SED: ' + amCard;
-        console.log('[SisProf] 🧪 Faltas alvo:', payload.faltas.map(a => a.nome));
-        console.log('[SisProf] 🧪 Nomes nos cards da SED:', nomesTela);
-        if (casadosNaTela === 0) console.warn('[SisProf] 🧪 NENHUM faltoso casou com os cards da tela - ver amostras FAL/SED no painel.');
-    } else {
-        diagChamada = ' 🧪[payload.faltas vazio]';
+        diagChamada = ' 🧪[cards:' + cards.length + ' chk:' + comCheckbox + ' estCasou:' + estCasou + ' faltosos:' + faltososReg.length + ' listaA:' + faltasSetsA.length + ' marcados:' + casadosNaTela + ' toggles:' + interagidos + ']';
+        const amCard = nomesTela.slice(0, 4).map(n => '«' + n + '»').join(' ');
+        const amEst = estudantesRobo.slice(0, 4).map(e => '«' + normalize(e.nome_completo) + '»').join(' ');
+        diagChamada += '<br>SED: ' + amCard + '<br>EST: ' + amEst;
+        console.log('[SisProf] 🧪 Cards SED:', nomesTela);
+        console.log('[SisProf] 🧪 estCasou:', estCasou, 'de', comCheckbox, '| faltosos reg:', faltososReg.length, '| marcados:', casadosNaTela);
     }
     // Fixa o diagnóstico da marcação no painel (visível também no modo automático).
     ultimoDiagMarcacao = diagChamada;
