@@ -86,19 +86,29 @@ jobs:
           (
             VERSION_CODE=$(git rev-list --count HEAD)
             VERSION_NAME="1.0.$VERSION_CODE"
+            # versionCode "nativo": congelado no ULTIMO commit que tocou o codigo Android nativo
+            # (app-android/android/ - Kotlin, AndroidManifest, build.gradle, res, gradle). Mudancas so
+            # de JS (robo/site) sao entregues por OTA e NAO exigem reinstalar - por isso o version.json
+            # (checado pelo UpdateChecker) deve anunciar esse numero, e nao o total de commits, senao o
+            # app pede APK novo a cada commit de JS. Os bundles gerados sao gitignored, entao nao contam.
+            NATIVE_COMMIT=$(git log -1 --format=%H -- app-android/android/)
+            NATIVE_VERSION_CODE=$(git rev-list --count "${NATIVE_COMMIT:-HEAD}")
+            NATIVE_VERSION_NAME="1.0.$NATIVE_VERSION_CODE"
             cd app-android
             npm ci
             npm run cap:sync
             chmod +x android/gradlew
+            # O APK segue com o versionCode full (sempre crescente) - necessario pro Android permitir
+            # instalar por cima. So o version.json usa o versionCode nativo.
             (cd android && ./gradlew assembleDebug \
               -PPROFSIS_VERSION_CODE="$VERSION_CODE" \
               -PPROFSIS_VERSION_NAME="$VERSION_NAME")
             mkdir -p dist
             cp android/app/build/outputs/apk/debug/app-debug.apk dist/profsis3-sed-debug.apk
-            # version.json e checado pelo UpdateChecker (com.profsis3.sed.update) a cada
-            # abertura do app, pra saber se ha uma versao mais nova pra baixar sozinho.
+            # version.json e checado pelo UpdateChecker (com.profsis3.sed.update) a cada abertura do app.
+            # Anuncia a versao NATIVA: so avisa "nova versao" quando ha mudanca que realmente exige APK.
             printf '{"versionCode": %s, "versionName": "%s", "apkUrl": "https://rafanunesran.github.io/ProfSis3/app-android/dist/profsis3-sed-debug.apk"}\n' \
-              "$VERSION_CODE" "$VERSION_NAME" > dist/version.json
+              "$NATIVE_VERSION_CODE" "$NATIVE_VERSION_NAME" > dist/version.json
           ) || echo "Build do APK Android falhou - publicando o site sem atualizar o APK desta vez."
           # node_modules/ e as pastas de build do Gradle não devem ir pro Pages (path: '.' abaixo
           # sobe o repo inteiro) - limpa sempre, mesmo se o build acima falhou.
