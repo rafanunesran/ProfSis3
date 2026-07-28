@@ -2023,7 +2023,7 @@ window.addEventListener('SisProf_Update_Students', async (event) => {
         if (!payload.silencioso) {
             const div = document.createElement('div');
             div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#38a169; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
-            div.innerHTML = `✅ <strong>Alunos Atualizados!</strong><br><span style="font-size:12px; font-weight:normal;">Turma: ${payload.turmaSED}<br>✔️ Novos: ${resultado.adicionados} | 🔄 Reativados: ${resultado.reativados}</span>`;
+            div.innerHTML = `✅ <strong>Alunos Atualizados!</strong><br><span style="font-size:12px; font-weight:normal;">Turma: ${payload.turmaSED}<br>✔️ Novos: ${resultado.adicionados} | 🔄 Reativados: ${resultado.reativados} | ❌ Transferidos: ${resultado.desativados || 0}</span>`;
             document.body.appendChild(div);
             setTimeout(() => div.remove(), 6000);
         }
@@ -2168,13 +2168,23 @@ function encontrarAlvoTurmaExtensao(turmasLocais, turmaSED, normalizeTurma) {
 // - Aluno extraído NÃO existe NESTA turma -> cria, status Ativo.
 // - Aluno extraído já existe NESTA turma e está Ativo -> não faz NADA.
 // - Aluno extraído já existe NESTA turma mas não está Ativo -> só atualiza o status para Ativo.
-// Nunca marca ninguém como "Transferido", nunca mexe em id_turma de quem já existe, e nunca
-// mexe em alunos de outras turmas - isso já causou remanejamentos e transferências indevidas.
-// Espelho de background.js:aplicarAtualizacaoAlunos (mantidas em sincronia). Cria/reativa por nome
-// escopado à turma alvo; com permitirRemanejamento=true (turma da gestão/masterId), marca como
-// 'Remanejado' o mesmo aluno que estiver Ativo em OUTRA turma física (foi remanejado pra esta).
+// - Aluno ATIVO nesta turma que NÃO veio na extração (saiu) -> Transferido (com guarda de tela parcial).
+// Espelho de background.js:aplicarAtualizacaoAlunos (mantidas em sincronia). Casa por nome escopado à
+// turma alvo; com permitirRemanejamento=true (turma da gestão/masterId), marca como 'Remanejado' o
+// mesmo aluno que estiver Ativo em OUTRA turma física (foi remanejado pra esta).
 function aplicarAtualizacaoAlunosExtensao(estudantes, turmaId, alunosExtraidos, normalizeName, permitirRemanejamento) {
-    let adicionados = 0, reativados = 0, remanejados = 0;
+    let adicionados = 0, reativados = 0, remanejados = 0, desativados = 0;
+    const nomesExtraidos = new Set(alunosExtraidos.map(a => normalizeName(a.nome)));
+
+    // Desativa (Transferido) quem está ATIVO nesta turma e não veio na extração (saiu). Não mexe em
+    // inativos nem nos ativos que continuam. Guarda: extraídos < metade dos ativos = tela parcial ->
+    // não desativa (evita transferir a turma toda por engano). Espelho de background.js.
+    const ativosNaTurma = estudantes.filter(e => e.id_turma == turmaId && (!e.status || e.status === 'Ativo'));
+    if (alunosExtraidos.length * 2 >= ativosNaTurma.length) {
+        ativosNaTurma.forEach(e => {
+            if (!nomesExtraidos.has(normalizeName(e.nome_completo))) { e.status = 'Transferido'; desativados++; }
+        });
+    }
 
     alunosExtraidos.forEach(aExtraido => {
         const nomeUpper = normalizeName(aExtraido.nome);
@@ -2196,7 +2206,7 @@ function aplicarAtualizacaoAlunosExtensao(estudantes, turmaId, alunosExtraidos, 
         }
     });
 
-    return { adicionados, reativados, remanejados, turmasAtualizadas: 1 };
+    return { adicionados, reativados, remanejados, desativados, turmasAtualizadas: 1 };
 }
 
 // Processa a atualização de alunos vindos da SED (fallback via aba aberta, quando a extensão não tem

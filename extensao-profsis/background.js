@@ -218,17 +218,31 @@ function encontrarAlvoTurma(turmasLocais, turmaSED) {
     return { masterId: turma.masterId || null, turmaId: turma.id, turmaNomeLocal: turma.nome, turmaDisciplinaLocal: turma.disciplina || null };
 }
 
-// Cria/reativa alunos em `estudantes` (array mutado in-place) para a turma `turmaId`, casando por
-// nome normalizado ESCOPADO à turma alvo:
+// Cria/reativa/desativa alunos em `estudantes` (array mutado in-place) para a turma `turmaId`, casando
+// por nome normalizado ESCOPADO à turma alvo:
 // - Aluno extraído NÃO existe NESTA turma -> cria, status Ativo.
 // - Aluno extraído já existe NESTA turma e está Ativo -> não faz NADA (status igual).
 // - Aluno extraído já existe NESTA turma mas não está Ativo -> atualiza o status para Ativo.
+// - Aluno ATIVO nesta turma que NÃO veio na extração (saiu) -> Transferido (com guarda de tela parcial).
 // Remanejamento (só quando permitirRemanejamento=true, i.e. turma vinculada à gestão/masterId): se o
 // mesmo aluno aparece ATIVO em OUTRA turma física, ele foi remanejado para esta - marca a(s)
 // ocorrência(s) da(s) outra(s) turma(s) como 'Remanejado'. Fora do caminho da gestão, NÃO mexe em
 // outras turmas (evita falso remanejamento entre disciplinas da mesma sala do mesmo professor).
 function aplicarAtualizacaoAlunos(estudantes, turmaId, alunosExtraidos, permitirRemanejamento) {
-    let adicionados = 0, reativados = 0, remanejados = 0;
+    let adicionados = 0, reativados = 0, remanejados = 0, desativados = 0;
+    const nomesExtraidos = new Set(alunosExtraidos.map(a => normalizeAlunoNome(a.nome)));
+
+    // Desativa (Transferido) quem está ATIVO nesta turma e não veio na extração (saiu). Não mexe em
+    // inativos nem nos ativos que continuam na lista. Guarda de segurança: se a extração trouxe menos
+    // da METADE dos ativos, a tela provavelmente carregou parcial -> não desativa ninguém (evita
+    // transferir a turma inteira por engano, ainda mais no doc compartilhado da gestão). A próxima
+    // extração completa reativa quem tiver sido marcado errado.
+    const ativosNaTurma = estudantes.filter(e => e.id_turma == turmaId && (!e.status || e.status === 'Ativo'));
+    if (alunosExtraidos.length * 2 >= ativosNaTurma.length) {
+        ativosNaTurma.forEach(e => {
+            if (!nomesExtraidos.has(normalizeAlunoNome(e.nome_completo))) { e.status = 'Transferido'; desativados++; }
+        });
+    }
 
     alunosExtraidos.forEach(aExtraido => {
         const nomeUpper = normalizeAlunoNome(aExtraido.nome);
@@ -250,7 +264,7 @@ function aplicarAtualizacaoAlunos(estudantes, turmaId, alunosExtraidos, permitir
         }
     });
 
-    return { adicionados, reativados, remanejados, turmasAtualizadas: 1 };
+    return { adicionados, reativados, remanejados, desativados, turmasAtualizadas: 1 };
 }
 
 // Escreve direto no Firestore: turma vinculada à gestão (masterId) vai para o documento

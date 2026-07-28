@@ -1777,7 +1777,7 @@ function iniciarExtrairAlunos() {
             if (response && response.success) {
                 const r = response.resultado;
                 const via = response.direct ? 'direto no banco' : 'via aba do ProfSis';
-                const detalhes = r ? ('\n\n✔️ Novos: ' + r.adicionados + ' | 🔄 Reativados: ' + r.reativados) : '';
+                const detalhes = r ? ('\n\n✔️ Novos: ' + r.adicionados + ' | 🔄 Reativados: ' + r.reativados + ' | ❌ Transferidos (saíram): ' + (r.desativados || 0)) : '';
                 const d = r && r.debugInfo;
                 const diagnostico = d
                     ? '\n\n🔎 Gravado em:\nConta (uid): ' + d.uid + '\nEscola (schoolId): ' + (d.schoolId || '-') +
