@@ -116,6 +116,46 @@ window.addEventListener('storage', (event) => {
 setTimeout(verificarLoginProfSis, 2000);
 setInterval(verificarLoginProfSis, 10000); // A cada 10 segundos
 
+// Pede ao app.js (mesma página) para processar a atualização de alunos e devolve o resultado real
+// (sucesso/erro) via callback. Usado tanto pelo fallback "via aba" da extensão quanto pelo correio do
+// app (poll abaixo). Espera o SisProf_Update_Students_Result de verdade, com timeout de 15s.
+function processarUpdateStudentsViaApp(payload, cb) {
+    let jaRespondeu = false;
+    const onResultado = (event) => {
+        if (jaRespondeu) return;
+        jaRespondeu = true;
+        window.removeEventListener('SisProf_Update_Students_Result', onResultado);
+        cb(event.detail || { success: false, error: 'Sem detalhe de resultado.' });
+    };
+    window.addEventListener('SisProf_Update_Students_Result', onResultado);
+    window.dispatchEvent(new CustomEvent('SisProf_Update_Students', { detail: payload }));
+    setTimeout(() => {
+        if (jaRespondeu) return;
+        jaRespondeu = true;
+        window.removeEventListener('SisProf_Update_Students_Result', onResultado);
+        cb({ success: false, error: 'O ProfSis não respondeu a tempo. Verifique se você está logado e tente novamente.' });
+    }, 15000);
+}
+
+// [APP] Correio de escrita no banco entre as duas WebViews. No app não há "aba do ProfSis", então o
+// background (na WebView da SED) deixa a requisição no storage nativo compartilhado e nós (WebView do
+// ProfSis, que está logada) processamos via app.js e devolvemos o resultado. Só roda no app.
+if (chrome.runtime && chrome.runtime.isProfSisNativeApp) {
+    let ultimoReqProcessado = null;
+    setInterval(() => {
+        chrome.storage.local.get(['sisprof_req_update_students'], (r) => {
+            const req = r && r.sisprof_req_update_students;
+            if (!req || !req.id || req.id === ultimoReqProcessado) return;
+            if (!verificarLoginProfSis()) return; // só processa com o ProfSis logado nesta WebView
+            ultimoReqProcessado = req.id;
+            console.log('[ProfSis Ext] 📥 (app) processando atualização de alunos:', req.payload && req.payload.turmaSED);
+            processarUpdateStudentsViaApp(req.payload, (res) => {
+                chrome.storage.local.set({ sisprof_res_update_students: { id: req.id, success: !!(res && res.success), resultado: res && res.resultado, error: res && res.error } });
+            });
+        });
+    }, 1200);
+}
+
 // ==================== EVENTOS DO APP (postMessage) ====================
 
 // 1. Escuta eventos DOM customizados (disparados pelo app.js)
@@ -197,30 +237,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // ---- Atualizar alunos direto no banco (fallback, quando a extensão não tem sessão Firebase salva) ----
     if (request.action === "PROFSIS_UPDATE_STUDENTS") {
         console.log("[ProfSis Ext] 📥 Atualizar alunos no banco (via aba):", request.payload.turmaSED, "-", (request.payload.alunos || []).length, "alunos");
-
-        // Espera o app.js terminar de processar de verdade (sucesso ou erro) antes de responder à
-        // extensão. Antes disso, respondíamos "sucesso" na hora, sem saber se o app realmente salvou -
-        // se o processamento falhasse (ex: turma não encontrada) ou a aba não tivesse o app carregado,
-        // a extensão mostrava "✅ criado" mesmo sem nada ter sido gravado.
-        let jaRespondeu = false;
-        const onResultado = (event) => {
-            if (jaRespondeu) return;
-            jaRespondeu = true;
-            window.removeEventListener('SisProf_Update_Students_Result', onResultado);
-            sendResponse(event.detail);
-        };
-        window.addEventListener('SisProf_Update_Students_Result', onResultado);
-        window.dispatchEvent(new CustomEvent('SisProf_Update_Students', { detail: request.payload }));
-
-        // Timeout de segurança: se o app não responder em 15s (ex: script não carregou), avisa o erro
-        // em vez de deixar a extensão esperando para sempre.
-        setTimeout(() => {
-            if (jaRespondeu) return;
-            jaRespondeu = true;
-            window.removeEventListener('SisProf_Update_Students_Result', onResultado);
-            sendResponse({ success: false, error: 'O ProfSis não respondeu a tempo nesta aba. Verifique se você está logado e tente novamente.' });
-        }, 15000);
-
+        processarUpdateStudentsViaApp(request.payload, sendResponse);
         return true; // resposta assíncrona
     }
     // ---- Atualizar catálogo de Material Digital direto no banco (fallback, quando a extensão não tem sessão Firebase salva) ----

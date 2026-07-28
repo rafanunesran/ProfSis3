@@ -90,6 +90,10 @@
 
   chrome.runtime = chrome.runtime || {};
   chrome.runtime.lastError = undefined;
+  // Sinaliza que estamos no app Android (WebView), não na extensão real. background.js e
+  // content_profsis.js usam isso para rotear a escrita no banco pela WebView do ProfSis (via storage
+  // nativo compartilhado), já que aqui não existe "aba do ProfSis" e a sessão direta é indisponível.
+  chrome.runtime.isProfSisNativeApp = true;
 
   chrome.runtime.onMessage = {
     addListener(fn) {

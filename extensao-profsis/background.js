@@ -767,6 +767,36 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             });
         };
 
+        // [APP] No app Android não existe "aba do ProfSis" (chrome.tabs é stub) e a sessão direta de
+        // Firebase não é confiável ("Sem sessão salva"). Como a WebView do ProfSis ESTÁ logada e grava
+        // normalmente, roteamos a escrita para ela via storage nativo compartilhado (correio de
+        // requisição/resposta que content_profsis.js processa). Fallback: Firestore direto.
+        if (chrome.runtime.isProfSisNativeApp) {
+            const reqId = 'req_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+            chrome.storage.local.set({ sisprof_req_update_students: { id: reqId, payload: request.payload, ts: Date.now() } }, () => {
+                const inicio = Date.now();
+                const poll = () => {
+                    chrome.storage.local.get(['sisprof_res_update_students'], (r) => {
+                        const res = r && r.sisprof_res_update_students;
+                        if (res && res.id === reqId) {
+                            chrome.storage.local.remove(['sisprof_res_update_students', 'sisprof_req_update_students'], () => {});
+                            if (res.success) sendResponse({ success: true, direct: false, resultado: res.resultado });
+                            else sendResponse({ success: false, error: res.error || 'ProfSis não processou a atualização.' });
+                            return;
+                        }
+                        if (Date.now() - inicio > 15000) {
+                            console.warn('[Background] WebView do ProfSis não respondeu a tempo - tentando Firestore direto.');
+                            viaFirestoreDireto();
+                            return;
+                        }
+                        setTimeout(poll, 600);
+                    });
+                };
+                setTimeout(poll, 600);
+            });
+            return true;
+        }
+
         // [PRIORIDADE] Se houver uma aba do ProfSis aberta e logada, usa ela: a sessão da aba é
         // sempre a conta que está realmente logada agora. O token cacheado da extensão (usado no
         // caminho "direto no Firestore") já causou escritas na conta errada quando ficou
