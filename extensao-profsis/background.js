@@ -706,6 +706,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
     
+    // ---- Forçar atualização da extensão agora (botão "Atualizar Robô"), sem esperar o ciclo do
+    // Chrome. Consulta a update_url (CRX3 self-hosted) e, se houver versão nova, recarrega a extensão.
+    // No app este ramo não é usado (o botão chama a ponte nativa); o chrome-shim ainda stuba a API.
+    if (request.action === "FORCE_UPDATE_CHECK") {
+        try {
+            chrome.runtime.requestUpdateCheck((status) => {
+                if (status === 'update_available') {
+                    sendResponse({ status: status });
+                    chrome.runtime.reload();
+                } else {
+                    sendResponse({ status: status || 'no_update' });
+                }
+            });
+        } catch (e) {
+            sendResponse({ status: 'error', error: String(e && e.message || e) });
+        }
+        return true;
+    }
+
     // ---- LOGOUT ----
     if (request.action === "PROFSIS_LOGOUT") {
         chrome.storage.local.remove(['profsis_user', 'profsis_logged_in', 'profsis_app_data', 'profsis_login_time', 'profsis_data_time', 'profsis_firebase_session', 'profsis_id_token_cache'], () => {

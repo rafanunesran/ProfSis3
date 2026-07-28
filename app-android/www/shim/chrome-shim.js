@@ -141,6 +141,13 @@
     return { version: window.__PROFSIS_APP_VERSION__ || "0.0.0" };
   };
 
+  // No app não existe update self-hosted de extensão (o robô se atualiza via ProfSisNativeUpdate,
+  // que baixa o bundle do Pages). Stub pra qualquer chamada não quebrar - o botão "Atualizar Robô"
+  // usa a ponte nativa quando ela existe.
+  chrome.runtime.requestUpdateCheck = function (callback) {
+    if (typeof callback === "function") callback("no_update");
+  };
+
   // ---------------------------------------------------------------------
   // chrome.tabs / chrome.windows / chrome.scripting
   //

@@ -618,6 +618,7 @@ function injetarMenu() {
         '<button id="sisprof-btn-extrair" style="width:100%; background:#38a169; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px; display:none;">📥 Extrair Alunos (Atualizar Banco)</button>' +
         '<button id="sisprof-btn-extrair-material" style="width:100%; background:#805ad5; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px; display:none;">📥 Extrair Material Digital (Atualizar Catálogo)</button>' +
         '<hr style="border:0; border-top:1px solid #e2e8f0; margin:10px 0;">' +
+        '<button id="sisprof-btn-atualizar" style="width:100%; background:#dd6b20; color:white; border:none; padding:8px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; margin-bottom:8px;">🔄 Atualizar Robô</button>' +
         '<button id="sisprof-btn-logout" style="width:100%; background:#718096; color:white; border:none; padding:6px; border-radius:4px; cursor:pointer; font-size:11px;">🚪 Desconectar</button></div>';
     document.body.appendChild(div);
 
@@ -654,6 +655,27 @@ function injetarMenu() {
     };
     document.getElementById('sisprof-btn-extrair').onclick = iniciarExtrairAlunos;
     document.getElementById('sisprof-btn-extrair-material').onclick = iniciarExtrairMaterialDigital;
+    // Atualiza o robô na hora, sem esperar o ciclo lento do Chrome (extensão) nem a próxima abertura
+    // (app). No app usa a ponte nativa (baixa o bundle novo do Pages e recarrega); na extensão força a
+    // checagem de update self-hosted.
+    document.getElementById('sisprof-btn-atualizar').onclick = function() {
+        const btn = this; const txt = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Atualizando...';
+        if (window.ProfSisNativeUpdate && typeof window.ProfSisNativeUpdate.atualizarRobo === 'function') {
+            // App: baixa o bundle novo e recarrega as WebViews (aplica na hora). O reload troca a página,
+            // então nem precisa restaurar o botão.
+            try { window.ProfSisNativeUpdate.atualizarRobo(); }
+            catch (e) { btn.disabled = false; btn.textContent = txt; alert('Não foi possível atualizar agora. Tente reabrir o app.'); }
+        } else {
+            // Extensão Chrome: força a checagem de update agora (bypassa o ciclo de ~horas).
+            chrome.runtime.sendMessage({ action: 'FORCE_UPDATE_CHECK' }, function(r) {
+                btn.disabled = false; btn.textContent = txt;
+                const st = r && r.status;
+                alert(st === 'update_available' ? 'Atualização encontrada! A extensão vai recarregar.'
+                    : st === 'no_update' ? 'O robô já está na versão mais recente.'
+                    : 'Verificação enviada. Se houver atualização, o Chrome aplica em instantes.');
+            });
+        }
+    };
     let observerDebounce = null, observerBusy = false;
     const observer = new MutationObserver(() => {
         if (observerBusy) return;
