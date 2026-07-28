@@ -116,6 +116,9 @@ class MainActivity : AppCompatActivity() {
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
         webView.addJavascriptInterface(ProfSisStorageBridge(this), "ProfSisNativeStorage")
+        // Ponte do botão "Atualizar Robô" (baixa o bundle novo e recarrega) - nas duas WebViews, pra
+        // funcionar tanto do painel da SED quanto de qualquer tela.
+        webView.addJavascriptInterface(ProfSisNativeUpdate(), "ProfSisNativeUpdate")
         if (tab == Tab.SED) {
             webView.addJavascriptInterface(
                 // So mexe na selecao da barra inferior - o listener dela e' quem troca a
@@ -279,7 +282,18 @@ class MainActivity : AppCompatActivity() {
      * cache). Falha em silêncio (offline / rede da escola) - o app segue com a versão que já tem.
      */
     private fun baixarBundlesEmBackground() {
+        baixarBundles(null)
+    }
+
+    /**
+     * Baixa os bundles do robô do Pages para filesDir (thread de fundo, escrita atômica) e, ao
+     * terminar, chama onConcluido na própria thread de fundo. onConcluido recebe quantos bundles
+     * foram efetivamente atualizados. Usado tanto pelo update em background (onCreate) quanto pelo
+     * botão "Atualizar Robô" (ProfSisNativeUpdate), que recarrega as WebViews ao concluir.
+     */
+    private fun baixarBundles(onConcluido: ((Int) -> Unit)?) {
         bundleExecutor.execute {
+            var atualizados = 0
             for (fileName in listOf("sed-bundle.js", "profsis-bundle.js")) {
                 try {
                     val conn = (java.net.URL(BUNDLE_BASE_URL + fileName).openConnection() as java.net.HttpURLConnection).apply {
@@ -298,6 +312,7 @@ class MainActivity : AppCompatActivity() {
                                 val tmp = File(filesDir, "$fileName.tmp")
                                 tmp.writeText(text, Charsets.UTF_8)
                                 tmp.renameTo(File(filesDir, fileName))
+                                atualizados++
                             }
                         }
                     } finally {
@@ -305,6 +320,25 @@ class MainActivity : AppCompatActivity() {
                     }
                 } catch (e: Exception) {
                     android.util.Log.w("MainActivity", "Falha ao baixar bundle $fileName: ${e.message}")
+                }
+            }
+            onConcluido?.invoke(atualizados)
+        }
+    }
+
+    /**
+     * Ponte JS -> nativo para o botão "Atualizar Robô" do painel: baixa o bundle mais novo do Pages e
+     * recarrega as duas WebViews, aplicando a atualização NA HORA (o reload dispara onPageFinished ->
+     * injectBundle, que passa a ler o bundle novo de filesDir). Sem isso, a atualização só valeria na
+     * próxima abertura do app.
+     */
+    inner class ProfSisNativeUpdate {
+        @android.webkit.JavascriptInterface
+        fun atualizarRobo() {
+            baixarBundles {
+                runOnUiThread {
+                    if (::sedWebView.isInitialized) sedWebView.reload()
+                    if (::profsisWebView.isInitialized) profsisWebView.reload()
                 }
             }
         }
