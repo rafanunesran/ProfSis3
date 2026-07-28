@@ -890,7 +890,11 @@ function preencherChamadaNaTela(btn, opts) {
                         return;
                     }
                     const payload = obterPayloadDaData(currentSelectedDate);
-                    if (payload) executarPreenchimentoChamada(payload, opts);
+                    // Espera a lista de alunos (SPA Blazor) parar de crescer antes de marcar/extrair.
+                    // No robô automático a tela acabou de navegar e os cards ainda estão renderizando -
+                    // sem esperar, a marcação de falta e a extração silenciosa pegavam a tela parcial/vazia
+                    // (funcionava no manual só porque a lista já estava carregada). Mesmo helper do "Extrair Alunos".
+                    if (payload) aguardarCardsEstaveis(() => executarPreenchimentoChamada(payload, opts));
                     else reportarResultado(opts, false, 'Sem dados de chamada para esta data.');
                     if (btn) { btn.textContent = oldText; btn.disabled = false; }
                 });
