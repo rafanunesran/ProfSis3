@@ -5580,6 +5580,7 @@ function renderTutoria() {
                 <button class="btn btn-secondary" onclick="imprimirListaTutorados()">🖨️ Lista por Turma</button>
                 <button class="btn btn-secondary" onclick="imprimirAgendamentosTutorados()">🖨️ Cartões Agendamento</button>
                 <button class="btn btn-success" onclick="showModal('modalNovoEncontro')">Registrar Encontro</button>
+                <button class="btn btn-warning" onclick="abrirModalTutoriaColetiva()">👥 Tutoria Coletiva</button>
                 <button class="btn btn-info" onclick="abrirModalFichaRapida()">📝 Ficha de Tutoria</button>
             </div>
         `;
@@ -5790,7 +5791,9 @@ function removerEncontro(id) {
     
     data.encontros = (data.encontros || []).filter(e => e.id != id);
     persistirDados();
-    
+    // Remove também do histórico compartilhado da escola (espelho para os demais tutores).
+    removerEncontroHistoricoCompartilhado(id).catch(e => console.warn('Erro ao remover do histórico compartilhado:', e));
+
     // Se estiver na ficha do aluno, atualiza a lista
     const currentFichaId = document.getElementById('tutoradoFichaNome').dataset.tutoradoId;
     if (currentFichaId) abrirFichaTutorado(currentFichaId);
@@ -6033,6 +6036,9 @@ function abrirFichaTutorado(id) {
                 historicoDiv.previousElementSibling.style.display = 'none';
             }
         }
+        // Limpa o histórico de tutores anteriores (só faz sentido na visão de Tutoria)
+        const histAnteriorDiv = document.getElementById('tutoradoFichaHistoricoAnterior');
+        if (histAnteriorDiv) histAnteriorDiv.innerHTML = '';
 
         // Injeta container AEE (Campos de Diagnóstico e Relatório)
         let aeeContainer = document.getElementById('aeeEstudanteContainer');
@@ -6233,7 +6239,7 @@ function abrirFichaTutorado(id) {
             ? encontros.map(e => `
                 <div class="card" style="padding:15px; margin-bottom:10px; background:#f7fafc; border:1px solid #e2e8f0; position:relative;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
-                        <div style="font-weight:bold; color:#2d3748;">📅 ${formatDate(e.data)} - ${e.tema}</div>
+                        <div style="font-weight:bold; color:#2d3748;">📅 ${formatDate(e.data)} - ${e.tema}${e.coletiva ? ' <span style="background:#ebf8ff; color:#2b6cb0; font-size:10px; padding:1px 6px; border-radius:4px; font-weight:bold;">COLETIVA</span>' : ''}</div>
                         <div class="no-print">
                             <button class="btn btn-xs btn-secondary" onclick="editarEncontro(${e.id})" style="padding:2px 6px; font-size:10px;">✏️</button>
                             <button class="btn btn-xs btn-danger" onclick="removerEncontro(${e.id})" style="padding:2px 6px; font-size:10px;">🗑️</button>
@@ -6242,6 +6248,12 @@ function abrirFichaTutorado(id) {
                     <p style="margin:0; font-size:13px; color:#4a5568; white-space:pre-wrap;">${e.resumo}</p>
                 </div>`).join('')
             : '<p class="empty-state">Nenhum encontro registrado.</p>';
+
+        // Espelha os encontros deste tutorado no histórico compartilhado (inclui registros antigos) e,
+        // em seguida, carrega os registros feitos por tutores anteriores deste mesmo estudante.
+        backfillHistoricoTutorado(t)
+            .catch(err => console.warn('Erro no backfill do histórico:', err))
+            .finally(() => carregarHistoricoTutoresAnteriores(t).catch(err => console.warn('Erro ao carregar histórico anterior:', err)));
     }
 
     showScreen('tutoradoDetalhe');
@@ -6329,6 +6341,135 @@ async function sincronizarTutoradoComPainelAeeCompartilhado(tutorado) {
         await saveData('app_data', aeeKey, aeeData);
     } catch (e) {
         console.warn('Erro ao sincronizar tutorado com o Painel AEE compartilhado:', e);
+    }
+}
+
+// --- HISTÓRICO DE TUTORIA COMPARTILHADO (viaja com o estudante entre tutores) ---
+// Cada registro de encontro de um tutorado vinculado a um estudante da escola (id_estudante_origem)
+// é espelhado num documento compartilhado da escola (app_data_school_<schoolId>_tutoria). Assim, ao
+// trocar de tutor, o novo professor vê os registros feitos pelos tutores anteriores para conhecer o
+// estudante. O documento pessoal do professor (app_data_<uid>) continua sendo a fonte editável dos
+// seus próprios encontros; o compartilhado é só um espelho de leitura para os demais tutores.
+function getAutorUidAtual() {
+    return currentUser ? String(currentUser.uid || currentUser.id || '') : '';
+}
+
+async function sincronizarEncontroHistoricoCompartilhado(encontro, tutorado) {
+    if (!encontro || !tutorado || !tutorado.id_estudante_origem) return;
+    if (!currentUser || !currentUser.schoolId) return;
+    try {
+        const key = `app_data_school_${currentUser.schoolId}_tutoria`;
+        const shared = await getData('app_data', key) || {};
+        if (!Array.isArray(shared.historico)) shared.historico = [];
+        const autorUid = getAutorUidAtual();
+
+        let entry = shared.historico.find(h => h.encontroId == encontro.id && String(h.autorUid) === autorUid);
+        if (!entry) {
+            entry = { encontroId: encontro.id, autorUid };
+            shared.historico.push(entry);
+        }
+        entry.id_estudante_origem = tutorado.id_estudante_origem;
+        entry.data = encontro.data;
+        entry.tema = encontro.tema;
+        entry.resumo = encontro.resumo;
+        entry.coletiva = !!encontro.coletiva;
+        entry.autorNome = currentUser.nome || 'Professor';
+        entry.atualizadoEm = getTodayString();
+
+        await saveData('app_data', key, shared);
+    } catch (e) {
+        console.warn('Erro ao sincronizar histórico de tutoria compartilhado:', e);
+    }
+}
+
+async function removerEncontroHistoricoCompartilhado(encontroId) {
+    if (!currentUser || !currentUser.schoolId) return;
+    try {
+        const key = `app_data_school_${currentUser.schoolId}_tutoria`;
+        const shared = await getData('app_data', key);
+        if (!shared || !Array.isArray(shared.historico)) return;
+        const autorUid = getAutorUidAtual();
+        const antes = shared.historico.length;
+        shared.historico = shared.historico.filter(h => !(h.encontroId == encontroId && String(h.autorUid) === autorUid));
+        if (shared.historico.length !== antes) await saveData('app_data', key, shared);
+    } catch (e) {
+        console.warn('Erro ao remover registro do histórico de tutoria compartilhado:', e);
+    }
+}
+
+// Preenche, na ficha do tutorado, os registros feitos por OUTROS tutores deste mesmo estudante
+// (somente leitura). Os encontros do próprio professor já aparecem, editáveis, em tutoradoFichaHistorico.
+async function carregarHistoricoTutoresAnteriores(tutorado) {
+    const container = document.getElementById('tutoradoFichaHistoricoAnterior');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!tutorado || !tutorado.id_estudante_origem || !currentUser || !currentUser.schoolId) return;
+
+    let historico = [];
+    try {
+        const key = `app_data_school_${currentUser.schoolId}_tutoria`;
+        const shared = await getData('app_data', key);
+        const autorUid = getAutorUidAtual();
+        historico = ((shared && shared.historico) || [])
+            .filter(h => h.id_estudante_origem == tutorado.id_estudante_origem && String(h.autorUid) !== autorUid)
+            .sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+    } catch (e) {
+        console.warn('Erro ao carregar histórico de tutores anteriores:', e);
+        return;
+    }
+
+    if (historico.length === 0) return;
+
+    container.innerHTML = `
+        <h3 style="margin-top:25px; border-top:1px solid #e2e8f0; padding-top:15px;">📚 Histórico de Tutores Anteriores</h3>
+        <p style="font-size:12px; color:#718096; margin-top:0;">Registros feitos por outros tutores deste estudante (somente leitura).</p>
+        ${historico.map(h => `
+            <div class="card" style="padding:15px; margin-bottom:10px; background:#fffaf0; border:1px solid #feebc8;">
+                <div style="font-weight:bold; color:#2d3748; margin-bottom:6px;">📅 ${formatDate(h.data)} - ${h.tema || ''}${h.coletiva ? ' <span style="background:#ebf8ff; color:#2b6cb0; font-size:10px; padding:1px 6px; border-radius:4px; font-weight:bold;">COLETIVA</span>' : ''}</div>
+                <p style="margin:0 0 8px 0; font-size:13px; color:#4a5568; white-space:pre-wrap;">${h.resumo || ''}</p>
+                <div style="font-size:11px; color:#a0aec0;">Tutor(a): ${h.autorNome || 'Não informado'}</div>
+            </div>
+        `).join('')}
+    `;
+}
+
+// Espelha, de uma vez, os encontros que o professor atual já tem deste tutorado no histórico
+// compartilhado - garante que registros antigos (feitos antes deste recurso) também fiquem
+// disponíveis para o próximo tutor. Faz no máximo uma escrita e só se algo mudou.
+async function backfillHistoricoTutorado(tutorado) {
+    if (!tutorado || !tutorado.id_estudante_origem || !currentUser || !currentUser.schoolId) return;
+    const encontros = (data.encontros || []).filter(e => e.tutoradoId == tutorado.id);
+    if (encontros.length === 0) return;
+    try {
+        const key = `app_data_school_${currentUser.schoolId}_tutoria`;
+        const shared = await getData('app_data', key) || {};
+        if (!Array.isArray(shared.historico)) shared.historico = [];
+        const autorUid = getAutorUidAtual();
+        let mudou = false;
+
+        encontros.forEach(enc => {
+            let entry = shared.historico.find(h => h.encontroId == enc.id && String(h.autorUid) === autorUid);
+            if (!entry) {
+                entry = { encontroId: enc.id, autorUid };
+                shared.historico.push(entry);
+                mudou = true;
+            }
+            if (entry.id_estudante_origem != tutorado.id_estudante_origem || entry.data != enc.data
+                || entry.tema != enc.tema || entry.resumo != enc.resumo || !!entry.coletiva != !!enc.coletiva) {
+                entry.id_estudante_origem = tutorado.id_estudante_origem;
+                entry.data = enc.data;
+                entry.tema = enc.tema;
+                entry.resumo = enc.resumo;
+                entry.coletiva = !!enc.coletiva;
+                entry.autorNome = currentUser.nome || 'Professor';
+                entry.atualizadoEm = getTodayString();
+                mudou = true;
+            }
+        });
+
+        if (mudou) await saveData('app_data', key, shared);
+    } catch (e) {
+        console.warn('Erro no backfill do histórico de tutoria:', e);
     }
 }
 
@@ -6950,22 +7091,33 @@ async function salvarEncontro(e) {
 
     if (!data.encontros) data.encontros = [];
 
+    let encontroSalvo = null;
     if (id) {
         const idx = data.encontros.findIndex(x => x.id == id);
         if (idx !== -1) {
             data.encontros[idx] = { ...data.encontros[idx], tutoradoId, data: dataEncontro, tema, resumo };
+            encontroSalvo = data.encontros[idx];
         }
     } else {
-        data.encontros.push({
+        encontroSalvo = {
             id: Date.now(),
             tutoradoId: tutoradoId,
             data: dataEncontro,
             tema: tema,
             resumo: resumo
-        });
+        };
+        data.encontros.push(encontroSalvo);
     }
-    
+
     await persistirDados();
+
+    // Espelha o registro no histórico compartilhado da escola, para que viaje com o estudante
+    // quando ele trocar de tutor (o próximo professor verá este registro na ficha do tutorado).
+    if (encontroSalvo) {
+        const tut = (data.tutorados || []).find(t => t.id == encontroSalvo.tutoradoId);
+        if (tut) await sincronizarEncontroHistoricoCompartilhado(encontroSalvo, tut);
+    }
+
     alert('Encontro salvo com sucesso!');
     closeModal('modalNovoEncontro');
     
@@ -6976,6 +7128,70 @@ async function salvarEncontro(e) {
     // Atualiza a ficha se estiver aberta
     const currentFichaId = document.getElementById('tutoradoFichaNome').dataset.tutoradoId;
     if (currentFichaId) abrirFichaTutorado(currentFichaId);
+}
+
+// --- TUTORIA COLETIVA ---
+// Registra um mesmo encontro (data/tema/resumo) para TODOS os tutorados ativos de uma vez, já que é
+// um encontro em grupo. Cada tutorado recebe seu próprio registro (marcado como coletiva) e todos são
+// espelhados no histórico compartilhado, para viajarem com o estudante ao trocar de tutor.
+function tutoradosAtivos() {
+    return (data.tutorados || []).filter(t => {
+        if (!t.id_estudante_origem) return true;
+        const est = (data.estudantes || []).find(x => x.id == t.id_estudante_origem);
+        return !est || !est.status || est.status === 'Ativo';
+    });
+}
+
+function abrirModalTutoriaColetiva() {
+    const ativos = tutoradosAtivos();
+    if (ativos.length === 0) return alert('Você não possui tutorados cadastrados.');
+
+    document.getElementById('coletivaData').value = getTodayString();
+    document.getElementById('coletivaTema').value = '';
+    document.getElementById('coletivaResumo').value = '';
+
+    const info = document.getElementById('coletivaInfoQtd');
+    if (info) info.textContent = `Será criado um registro para os seus ${ativos.length} tutorado(s) ativos.`;
+
+    showModal('modalTutoriaColetiva');
+}
+
+async function salvarTutoriaColetiva(e) {
+    e.preventDefault();
+    const dataEnc = document.getElementById('coletivaData').value;
+    const tema = document.getElementById('coletivaTema').value;
+    const resumo = document.getElementById('coletivaResumo').value;
+
+    const ativos = tutoradosAtivos();
+    if (ativos.length === 0) return alert('Você não possui tutorados ativos.');
+
+    if (!confirm(`Isso vai registrar este encontro coletivo para ${ativos.length} tutorado(s). Continuar?`)) return;
+
+    if (!data.encontros) data.encontros = [];
+    const criados = [];
+    ativos.forEach((t, i) => {
+        const encontro = {
+            id: Date.now() + i,
+            tutoradoId: t.id,
+            data: dataEnc,
+            tema: tema,
+            resumo: resumo,
+            coletiva: true
+        };
+        data.encontros.push(encontro);
+        criados.push({ encontro, tutorado: t });
+    });
+
+    await persistirDados();
+
+    // Espelha cada registro no histórico compartilhado da escola.
+    for (const { encontro, tutorado } of criados) {
+        await sincronizarEncontroHistoricoCompartilhado(encontro, tutorado);
+    }
+
+    closeModal('modalTutoriaColetiva');
+    alert(`Encontro coletivo registrado para ${ativos.length} tutorado(s)!`);
+    renderTutoria();
 }
 
 function registrarEncontroAtalho(tutoradoId) {
