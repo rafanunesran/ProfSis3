@@ -2047,6 +2047,23 @@ window.addEventListener('SisProf_Update_Students', async (event) => {
     }
 });
 
+// Marcador de "acompanhamento" (aula lançada) sincronizado entre dispositivos: o robô manda a marca do
+// checkbox da lista "Aulas do Dia" e aqui gravamos no documento do professor (data.lancamentosConcluidos),
+// que sincroniza. Assim marcar no celular aparece no computador, e ao puxar outra data dá pra ver o que
+// já foi lançado. key = "<data>_turma_<id>". Fire-and-forget (é só um checkbox, consistência eventual).
+window.addEventListener('SisProf_Set_Lancamento', async (event) => {
+    try {
+        const { key, value } = event.detail || {};
+        if (!key) return;
+        if (!data.lancamentosConcluidos) data.lancamentosConcluidos = {};
+        if (value) data.lancamentosConcluidos[key] = true;
+        else delete data.lancamentosConcluidos[key];
+        await persistirDados();
+    } catch (e) {
+        console.warn('[SisProf] Falha ao salvar lançamento concluído:', e);
+    }
+});
+
 // Recebe o catálogo de "Material Digital" (cards de aula do currículo) extraído pela extensão da
 // tela "Registro de Aulas Detalhes" da SED. Mesmo padrão de SisProf_Update_Students.
 window.addEventListener('SisProf_Update_MaterialDigital', async (event) => {

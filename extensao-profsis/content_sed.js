@@ -774,7 +774,10 @@ function renderizarListaTurmasDoDia() {
     container.innerHTML = '';
     turmas.forEach(turma => {
         const markKey = currentSelectedDate + '_turma_' + turma.id;
-        const isDone = extDoneMarks[markKey] || false;
+        // Marca sincronizada (data.lancamentosConcluidos, via profsisAppData - aparece em qualquer
+        // dispositivo) OU a marca local (feedback imediato/offline).
+        const lancSync = (profsisAppData && profsisAppData.lancamentosConcluidos) || {};
+        const isDone = lancSync[markKey] || extDoneMarks[markKey] || false;
         const div = document.createElement('div');
         div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0f0f0; padding:6px 8px; gap:6px;';
         div.innerHTML =
@@ -786,6 +789,10 @@ function renderizarListaTurmasDoDia() {
             const key = this.getAttribute('data-key');
             extDoneMarks[key] = this.checked;
             chrome.runtime.sendMessage({ action: 'SAVE_MARKS', marks: extDoneMarks });
+            // Sincroniza a marca entre dispositivos (grava em data.lancamentosConcluidos via ProfSis).
+            chrome.runtime.sendMessage({ action: 'SET_LANCAMENTO', key: key, value: this.checked });
+            // Reflete na cópia local em memória pra re-render imediato ficar consistente.
+            if (profsisAppData) { profsisAppData.lancamentosConcluidos = profsisAppData.lancamentosConcluidos || {}; if (this.checked) profsisAppData.lancamentosConcluidos[key] = true; else delete profsisAppData.lancamentosConcluidos[key]; }
         });
         div.querySelector('.sisprof-turma-auto-btn').addEventListener('click', function() {
             if (isDone && !confirm('Esta aula já está marcada como concluída. Refazer o preenchimento automático (Chamada + Registro)?')) return;
@@ -1528,6 +1535,9 @@ function marcarWorkflowConcluido(wf, callback) {
     wf.log.push({ etapa: 'concluido', ok: true, ts: wf.ultimaAtualizacaoEm });
     extDoneMarks[wf.markKey] = true;
     chrome.runtime.sendMessage({ action: 'SAVE_MARKS', marks: extDoneMarks });
+    // Sincroniza a marca "lançado" entre dispositivos (o robô automático também conta como conferido).
+    chrome.runtime.sendMessage({ action: 'SET_LANCAMENTO', key: wf.markKey, value: true });
+    if (profsisAppData) { profsisAppData.lancamentosConcluidos = profsisAppData.lancamentosConcluidos || {}; profsisAppData.lancamentosConcluidos[wf.markKey] = true; }
     chrome.storage.local.set({ rpa_auto_workflow: wf }, () => {
         atualizarPainelStatusWorkflow(wf);
         renderizarListaTurmasDoDia();

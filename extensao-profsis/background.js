@@ -929,6 +929,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         });
         return true;
     }
+    // Sincroniza a marca de "lançado" (checkbox de acompanhamento) para o documento do professor, via o
+    // contexto do ProfSis - assim aparece em qualquer dispositivo. Fire-and-forget (é só um booleano).
+    else if (request.action === "SET_LANCAMENTO") {
+        const key = request.key, value = !!request.value;
+        // App: deixa o pedido no storage compartilhado; o content_profsis (WebView do ProfSis) aplica.
+        if (chrome.runtime.isProfSisNativeApp) {
+            chrome.storage.local.set({ sisprof_req_lancamento: { key: key, value: value, ts: Date.now() } }, () => {
+                if (sendResponse) sendResponse({ synced: true });
+            });
+            return true;
+        }
+        // Extensão: se houver aba do ProfSis aberta, manda pra ela aplicar (usa a sessão viva do site).
+        chrome.tabs.query({}, (tabs) => {
+            const profsisTab = tabs.find(t => isProfSisUrl(t.url));
+            if (profsisTab) {
+                chrome.tabs.sendMessage(profsisTab.id, { action: 'PROFSIS_SET_LANCAMENTO', key: key, value: value }, () => { void chrome.runtime.lastError; });
+                if (sendResponse) sendResponse({ synced: true });
+            } else {
+                // Sem contexto do ProfSis: a marca local (SAVE_MARKS) já ficou salva; só não sincroniza agora.
+                if (sendResponse) sendResponse({ synced: false });
+            }
+        });
+        return true;
+    }
     else if (request.action === "SAVE_STUDENTS") {
         chrome.storage.local.set({ rpa_imported_students: request.payload }, () => {
             if (sendResponse) sendResponse({ success: true });

@@ -137,21 +137,37 @@ function processarUpdateStudentsViaApp(payload, cb) {
     }, 15000);
 }
 
+// Aplica a marca de "lançado" (checkbox de acompanhamento) no app.js (mesma página) -> grava em
+// data.lancamentosConcluidos, que sincroniza entre dispositivos. Fire-and-forget.
+function processarSetLancamento(key, value) {
+    if (!key) return;
+    window.dispatchEvent(new CustomEvent('SisProf_Set_Lancamento', { detail: { key: key, value: value } }));
+}
+
 // [APP] Correio de escrita no banco entre as duas WebViews. No app não há "aba do ProfSis", então o
 // background (na WebView da SED) deixa a requisição no storage nativo compartilhado e nós (WebView do
 // ProfSis, que está logada) processamos via app.js e devolvemos o resultado. Só roda no app.
 if (chrome.runtime && chrome.runtime.isProfSisNativeApp) {
     let ultimoReqProcessado = null;
+    let ultimoLancamentoTs = null;
     setInterval(() => {
-        chrome.storage.local.get(['sisprof_req_update_students'], (r) => {
+        chrome.storage.local.get(['sisprof_req_update_students', 'sisprof_req_lancamento'], (r) => {
+            // Atualização de alunos (com resposta de volta).
             const req = r && r.sisprof_req_update_students;
-            if (!req || !req.id || req.id === ultimoReqProcessado) return;
-            if (!verificarLoginProfSis()) return; // só processa com o ProfSis logado nesta WebView
-            ultimoReqProcessado = req.id;
-            console.log('[ProfSis Ext] 📥 (app) processando atualização de alunos:', req.payload && req.payload.turmaSED);
-            processarUpdateStudentsViaApp(req.payload, (res) => {
-                chrome.storage.local.set({ sisprof_res_update_students: { id: req.id, success: !!(res && res.success), resultado: res && res.resultado, error: res && res.error } });
-            });
+            if (req && req.id && req.id !== ultimoReqProcessado && verificarLoginProfSis()) {
+                ultimoReqProcessado = req.id;
+                console.log('[ProfSis Ext] 📥 (app) processando atualização de alunos:', req.payload && req.payload.turmaSED);
+                processarUpdateStudentsViaApp(req.payload, (res) => {
+                    chrome.storage.local.set({ sisprof_res_update_students: { id: req.id, success: !!(res && res.success), resultado: res && res.resultado, error: res && res.error } });
+                });
+            }
+            // Marca de "lançado" (fire-and-forget, sem resposta).
+            const lanc = r && r.sisprof_req_lancamento;
+            if (lanc && lanc.ts && lanc.ts !== ultimoLancamentoTs && verificarLoginProfSis()) {
+                ultimoLancamentoTs = lanc.ts;
+                processarSetLancamento(lanc.key, lanc.value);
+                chrome.storage.local.remove(['sisprof_req_lancamento']);
+            }
         });
     }, 1200);
 }
@@ -239,6 +255,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.log("[ProfSis Ext] 📥 Atualizar alunos no banco (via aba):", request.payload.turmaSED, "-", (request.payload.alunos || []).length, "alunos");
         processarUpdateStudentsViaApp(request.payload, sendResponse);
         return true; // resposta assíncrona
+    }
+    // ---- Marca de "lançado" (checkbox de acompanhamento) sincronizada, via aba (extensão) ----
+    if (request.action === "PROFSIS_SET_LANCAMENTO") {
+        processarSetLancamento(request.key, request.value);
+        sendResponse({ ok: true });
+        return; // síncrono (fire-and-forget)
     }
     // ---- Atualizar catálogo de Material Digital direto no banco (fallback, quando a extensão não tem sessão Firebase salva) ----
     if (request.action === "PROFSIS_UPDATE_MATERIAL_DIGITAL") {
