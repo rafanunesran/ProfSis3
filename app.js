@@ -5524,6 +5524,16 @@ function renderTutoria() {
             // mesma análise por IA da ficha individual (ia_estagiario.js: analisarAnexoPaeeWord), mas
             // já sabendo o estudante pela própria linha, sem precisar abrir a ficha pra achá-lo.
             htmlTutoradosList += porTurma[turma].map(t => {
+                // Marcador de quantidade de registros de tutoria (data.encontros) - só na visão do
+                // professor (não AEE/Projeto), à frente do nome, para ver quem está com defasagem.
+                // Cores: 0 = vermelho, 1-2 = laranja, 3+ = verde (limiares ajustáveis).
+                const ehProfessor = currentViewMode !== 'aee' && currentViewMode !== 'projeto';
+                const numRegistros = (data.encontros || []).filter(e => e.tutoradoId == t.id).length;
+                const corReg = numRegistros === 0 ? '#c53030' : (numRegistros <= 2 ? '#dd6b20' : '#2f855a');
+                const bgReg = numRegistros === 0 ? '#fed7d7' : (numRegistros <= 2 ? '#feebc8' : '#c6f6d5');
+                const regBadge = ehProfessor
+                    ? `<span title="${numRegistros} registro(s) de tutoria" style="display:inline-block; min-width:22px; text-align:center; background:${bgReg}; color:${corReg}; font-size:11px; font-weight:bold; padding:1px 6px; border-radius:10px; margin-right:6px;">${numRegistros}</span>`
+                    : '';
                 const anexoPaeeQuickHtml = currentViewMode === 'aee' ? `
                     <span style="margin-left:8px; white-space:nowrap;">
                         ${t.anexoPaee ? '<span title="Anexo III - PAEE já enviado" style="color:#2f855a; font-size:12px;">✅</span>' : ''}
@@ -5534,7 +5544,7 @@ function renderTutoria() {
                 ` : '';
                 return `
                     <tr>
-                        <td>${getFaltaBadgeHtml(t.id_estudante_origem, todayStr)}${getAeePrefix(t)}<a href="#" onclick="abrirFichaTutorado(${t.id})">${t.nome_estudante}</a>${anexoPaeeQuickHtml}</td>
+                        <td>${getFaltaBadgeHtml(t.id_estudante_origem, todayStr)}${regBadge}${getAeePrefix(t)}<a href="#" onclick="abrirFichaTutorado(${t.id})">${t.nome_estudante}</a>${anexoPaeeQuickHtml}</td>
                     </tr>
                 `;
             }).join('');
