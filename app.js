@@ -5510,18 +5510,42 @@ async function renderRelatorioMensalParticipacao() {
 // --- TUTORIA ---
 let agendaLimit = 50; // Controle de paginação da agenda (Aumentado para mostrar mais dias)
 
+// Normaliza nome para casar tutorado x estudante (sobrevive a remanejamento, que troca o id).
+function normNomeTut(s) { return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase().replace(/\s+/g, ' '); }
+
+// Estudante ATIVO correspondente ao tutorado: por id_estudante_origem (se ainda ativo) ou, como o
+// remanejamento cria um id novo e marca o antigo como inativo, por NOME em qualquer turma. Retorna
+// o estudante ativo ou null.
+function estudanteAtivoDoTutorado(t) {
+    const ests = data.estudantes || [];
+    let est = ests.find(e => e.id == t.id_estudante_origem);
+    if (est && (!est.status || est.status === 'Ativo')) return est;
+    const nome = normNomeTut(t.nome_estudante);
+    return ests.find(e => (!e.status || e.status === 'Ativo') && normNomeTut(e.nome_completo) === nome) || null;
+}
+
+// Tutorados válidos para exibir/agendar/imprimir: só os com estudante ATIVO (por id ou nome) e
+// deduplicados por nome (mantendo o vinculado ao estudante ativo atual - remanejamento gerava duplicata).
+function getTutoradosValidos() {
+    const porNome = new Map();
+    (data.tutorados || []).forEach(t => {
+        const est = t.id_estudante_origem ? estudanteAtivoDoTutorado(t) : true; // sem origem: não dá pra verificar, mantém
+        if (!est) return; // estudante inativo/transferido -> fora
+        const chave = normNomeTut(t.nome_estudante);
+        const jaTem = porNome.get(chave);
+        // Prefere o tutorado cujo id_estudante_origem bate com o estudante ativo (turma atual).
+        if (!jaTem || (est && typeof est === 'object' && t.id_estudante_origem == est.id)) porNome.set(chave, t);
+    });
+    return Array.from(porNome.values());
+}
+
 function renderTutoria() {
     const screen = document.getElementById('tutoria');
     const title = screen ? screen.querySelector('h2') : null;
     const leftPanel = document.getElementById('listaTutorados');
     const rightPanel = document.getElementById('listaEncontros');
-    // Só estudantes ativos: oculta tutorados cujo estudante de origem foi transferido/arquivado
-    // (status ≠ 'Ativo'). Mantém os sem origem/estudante não encontrado (não dá pra verificar).
-    const tutorados = (data.tutorados || []).filter(t => {
-        if (!t.id_estudante_origem) return true;
-        const est = (data.estudantes || []).find(e => e.id == t.id_estudante_origem);
-        return !est || !est.status || est.status === 'Ativo';
-    });
+    // Só tutorados válidos: estudante ativo (por id ou nome, sobrevivendo ao remanejamento) e sem duplicatas.
+    const tutorados = getTutoradosValidos();
 
     // Parte comum: listar estudantes/tutorados/alunos
     const porTurma = {};
@@ -5829,13 +5853,15 @@ function removerEncontro(id) {
 async function agendarTodosTutorados(listaOrdenada = null) {
     if (!listaOrdenada) {
         if (!confirm('Deseja refazer completamente a agenda usando a ordem alfabética padrão?')) return;
-        listaOrdenada = [...(data.tutorados || [])].sort((a, b) => a.nome_estudante.localeCompare(b.nome_estudante));
+        listaOrdenada = getTutoradosValidos().sort((a, b) => a.nome_estudante.localeCompare(b.nome_estudante));
     } else {
          if (!confirm('ATENÇÃO: O sistema irá APAGAR e REFAZER completamente a agenda de tutorias futuras para todos os tutorados baseando-se na ordem selecionada.\n\nDeseja continuar?')) return;
     }
 
-    const tutorados = listaOrdenada;
-    if (tutorados.length === 0) return alert('Você não possui tutorados cadastrados.');
+    // Só agenda tutorados válidos (ativos, sem duplicata de remanejamento), mesmo quando vem uma lista ordenada.
+    const validosIds = new Set(getTutoradosValidos().map(t => t.id));
+    const tutorados = listaOrdenada.filter(t => validosIds.has(t.id));
+    if (tutorados.length === 0) return alert('Você não possui tutorados ativos cadastrados.');
 
     // 1. Definir Fim do Semestre (USANDO UTC para robustez)
     const hoje = new Date();
@@ -5988,13 +6014,20 @@ function salvarTutorado(e) {
     if (!estudanteId) return alert('Selecione um estudante.');
     
     if (!data.tutorados) data.tutorados = [];
-    
-    // Evitar duplicidade
-    if (data.tutorados.find(t => t.id_estudante_origem == estudanteId)) {
-        let msg = 'Este estudante já é seu tutorado.';
-        if (currentViewMode === 'aee') msg = 'Este estudante já está na sua lista de AEE.';
-        if (currentViewMode === 'projeto') msg = 'Este estudante já está na sua lista de Projeto.';
-        return alert(msg);
+
+    // Evitar duplicidade casando por id OU por nome (remanejamento troca o id: o tutorado pode existir
+    // apontando pro id antigo). Se já existir, RE-VINCULA ao estudante ativo selecionado (cura o vínculo
+    // quebrado e faz o tutorado voltar a aparecer) em vez de só alertar.
+    const nomeNorm = normNomeTut(estudanteNome);
+    const existente = data.tutorados.find(t => t.id_estudante_origem == estudanteId || normNomeTut(t.nome_estudante) === nomeNorm);
+    if (existente) {
+        existente.id_estudante_origem = estudanteId;
+        existente.turma = turmaNome;
+        existente.nome_estudante = estudanteNome;
+        persistirDados();
+        closeModal('modalNovoTutorado');
+        renderTutoria();
+        return alert('Este estudante já é seu tutorado — o vínculo foi atualizado para a turma atual.');
     }
 
     const novoTutorado = {
@@ -6646,7 +6679,7 @@ function desvincularTutorado(id) {
 }
 
 function imprimirListaTutorados() {
-    const tutorados = data.tutorados || [];
+    const tutorados = getTutoradosValidos(); // só ativos, sem duplicata de remanejamento
     if (tutorados.length === 0) return alert('Nenhum tutorado para imprimir.');
 
     // Agrupar por turma
@@ -6706,10 +6739,12 @@ function imprimirListaTutorados() {
 }
 
 function imprimirAgendamentosTutorados() {
-    const agendamentos = (data.agendamentos || []).filter(a => a.tutoradoId);
-    const tutorados = data.tutorados || [];
-    
-    if (agendamentos.length === 0) return alert('Nenhum agendamento com tutorado vinculado para imprimir.');
+    const tutorados = getTutoradosValidos(); // só ativos, sem duplicata
+    const idsValidos = new Set(tutorados.map(t => t.id));
+    // Só cartões de tutorados válidos (ignora agendamentos presos a tutorado inativo/duplicado).
+    const agendamentos = (data.agendamentos || []).filter(a => a.tutoradoId && idsValidos.has(a.tutoradoId));
+
+    if (agendamentos.length === 0) return alert('Nenhum agendamento com tutorado ativo vinculado para imprimir.');
 
     // Agrupar por aluno
     const porAluno = {};

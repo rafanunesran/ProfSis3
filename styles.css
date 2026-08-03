@@ -464,3 +464,12 @@ label {
     padding: 2px 8px;
     font-size: 11px;
 }
+
+/* Impressão: as notas oficiais (Mapão/Avaliações) na ficha de tutoria são só para o professor
+   acompanhar na tela - não devem sair na impressão. Também respeita a classe .no-print genérica. */
+@media print {
+    #notasOficiaisTutoriaCard,
+    .no-print {
+        display: none !important;
+    }
+}
