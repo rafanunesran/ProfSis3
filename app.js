@@ -5524,17 +5524,30 @@ function estudanteAtivoDoTutorado(t) {
     return ests.find(e => (!e.status || e.status === 'Ativo') && normNomeTut(e.nome_completo) === nome) || null;
 }
 
-// Tutorados válidos para exibir/agendar/imprimir: só os com estudante ATIVO (por id ou nome) e
-// deduplicados por nome (mantendo o vinculado ao estudante ativo atual - remanejamento gerava duplicata).
+// Tutorados válidos para exibir/agendar/imprimir. IMPORTANTE: um tutor atende alunos de turmas que ele
+// NÃO leciona - esses alunos não estão na data.estudantes dele. Por isso só descartamos um tutorado
+// quando o aluno é ENCONTRADO na base do professor E está comprovadamente inativo (sem um ativo de mesmo
+// nome). Quando não dá pra verificar (aluno de outra turma), MANTÉM (comportamento anterior à regressão).
+// Deduplica por nome, preferindo o comprovadamente ativo (remanejamento gerava duplicata).
 function getTutoradosValidos() {
+    const ests = data.estudantes || [];
+    // true = comprovadamente ativo | false = encontrado e inativo (sem ativo por nome) | null = não verificável
+    const statusTut = (t) => {
+        if (!t.id_estudante_origem) return null;
+        const porId = ests.find(e => e.id == t.id_estudante_origem);
+        if (!porId) return null; // aluno não está na base do professor -> não verifica (mantém)
+        if (!porId.status || porId.status === 'Ativo') return true;
+        const nome = normNomeTut(t.nome_estudante); // remanejado: pode existir ativo com id novo
+        return ests.some(e => (!e.status || e.status === 'Ativo') && normNomeTut(e.nome_completo) === nome);
+    };
     const porNome = new Map();
     (data.tutorados || []).forEach(t => {
-        const est = t.id_estudante_origem ? estudanteAtivoDoTutorado(t) : true; // sem origem: não dá pra verificar, mantém
-        if (!est) return; // estudante inativo/transferido -> fora
+        const st = statusTut(t);
+        if (st === false) return; // só descarta o comprovadamente inativo
         const chave = normNomeTut(t.nome_estudante);
         const jaTem = porNome.get(chave);
-        // Prefere o tutorado cujo id_estudante_origem bate com o estudante ativo (turma atual).
-        if (!jaTem || (est && typeof est === 'object' && t.id_estudante_origem == est.id)) porNome.set(chave, t);
+        if (!jaTem) { porNome.set(chave, t); return; }
+        if (st === true && statusTut(jaTem) !== true) porNome.set(chave, t); // dedup: prefere o ativo
     });
     return Array.from(porNome.values());
 }
