@@ -5493,24 +5493,76 @@ async function renderRelatorioMensalParticipacao() {
 // --- TUTORIA ---
 let agendaLimit = 50; // Controle de paginação da agenda (Aumentado para mostrar mais dias)
 
+// Normaliza o nome do estudante para casá-lo entre registros/turmas. O remanejamento cria um NOVO
+// registro de estudante (novo id, status Ativo) e marca o antigo como 'Remanejado', então o id não é
+// estável - o nome é o identificador que sobrevive à troca de turma. Mesma normalização usada na
+// importação/extração de alunos.
+function normalizarNomeTutoria(nome) {
+    return (nome || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
+// Resolve o registro de estudante ATUAL de um tutorado. Casa primeiro pelo id_estudante_origem; se
+// esse vínculo estiver inativo (ou não existir), procura pelo NOME um registro Ativo em qualquer turma
+// (o mesmo aluno remanejado para a turma nova). Assim o tutorado "segue" o estudante.
+function resolverEstudanteAtualDoTutorado(t) {
+    const estudantes = data.estudantes || [];
+    const porId = t.id_estudante_origem ? estudantes.find(e => e.id == t.id_estudante_origem) : null;
+    if (porId && (!porId.status || porId.status === 'Ativo')) return porId;
+
+    const alvoNome = normalizarNomeTutoria(t.nome_estudante);
+    if (alvoNome) {
+        const ativoPorNome = estudantes.find(e =>
+            (!e.status || e.status === 'Ativo') && normalizarNomeTutoria(e.nome_completo) === alvoNome);
+        if (ativoPorNome) return ativoPorNome;
+    }
+    return porId || null;
+}
+
+// Nome da turma ATUAL do tutorado (resolvido pelo registro ativo). Cai para o snapshot salvo em
+// t.turma quando não dá pra resolver (ex.: professor não sincronizou a turma nova do aluno).
+function turmaAtualDoTutorado(t) {
+    const est = resolverEstudanteAtualDoTutorado(t);
+    if (est && est.id_turma != null) {
+        const turma = (data.turmas || []).find(tt => tt.id == est.id_turma);
+        if (turma && turma.nome) return turma.nome;
+    }
+    return t.turma;
+}
+
+// Um tutorado deve continuar visível enquanto o estudante estiver na escola. Só oculta quem realmente
+// saiu (Transferido/Baixa/NCOM) e não tem nenhum registro Ativo com o mesmo nome. Remanejados (mudaram
+// de turma, mas continuam na escola) permanecem visíveis - senão seus registros "somem" da tutoria.
+function tutoradoDeveAparecer(t) {
+    if (!t.id_estudante_origem) return true;
+    const estId = (data.estudantes || []).find(e => e.id == t.id_estudante_origem);
+    if (!estId) return true; // não dá pra verificar -> mantém (comportamento original)
+    if (!estId.status || estId.status === 'Ativo') return true;
+    if (estId.status === 'Remanejado') return true; // continua na escola, em outra turma
+
+    // Vínculo por id inativo por outro motivo: mantém se existir registro Ativo com o mesmo nome.
+    const alvoNome = normalizarNomeTutoria(t.nome_estudante);
+    if (!alvoNome) return false;
+    return (data.estudantes || []).some(e =>
+        (!e.status || e.status === 'Ativo') && normalizarNomeTutoria(e.nome_completo) === alvoNome);
+}
+
 function renderTutoria() {
     const screen = document.getElementById('tutoria');
     const title = screen ? screen.querySelector('h2') : null;
     const leftPanel = document.getElementById('listaTutorados');
     const rightPanel = document.getElementById('listaEncontros');
-    // Só estudantes ativos: oculta tutorados cujo estudante de origem foi transferido/arquivado
-    // (status ≠ 'Ativo'). Mantém os sem origem/estudante não encontrado (não dá pra verificar).
-    const tutorados = (data.tutorados || []).filter(t => {
-        if (!t.id_estudante_origem) return true;
-        const est = (data.estudantes || []).find(e => e.id == t.id_estudante_origem);
-        return !est || !est.status || est.status === 'Ativo';
-    });
+    // Oculta apenas tutorados de estudantes que saíram da escola (Transferido/arquivado). Remanejados
+    // ou com registro Ativo em turma nova continuam aparecendo (senão seus registros somem da tutoria).
+    const tutorados = (data.tutorados || []).filter(tutoradoDeveAparecer);
 
-    // Parte comum: listar estudantes/tutorados/alunos
+    // Parte comum: listar estudantes/tutorados/alunos. Agrupa pela turma ATUAL (resolvida do registro
+    // ativo do estudante), não pelo snapshot salvo em t.turma - assim remanejados não ficam na turma
+    // antiga.
     const porTurma = {};
     tutorados.forEach(t => {
-        if (!porTurma[t.turma]) porTurma[t.turma] = [];
-        porTurma[t.turma].push(t);
+        const turmaKey = turmaAtualDoTutorado(t) || 'Sem turma';
+        if (!porTurma[turmaKey]) porTurma[turmaKey] = [];
+        porTurma[turmaKey].push(t);
     });
     const turmasOrdenadas = Object.keys(porTurma).sort();
     let htmlTutoradosList = '';
@@ -6355,7 +6407,8 @@ function getAutorUidAtual() {
 }
 
 async function sincronizarEncontroHistoricoCompartilhado(encontro, tutorado) {
-    if (!encontro || !tutorado || !tutorado.id_estudante_origem) return;
+    // Precisa de ao menos um identificador do estudante (id de origem OU nome) para casar o histórico.
+    if (!encontro || !tutorado || (!tutorado.id_estudante_origem && !tutorado.nome_estudante)) return;
     if (!currentUser || !currentUser.schoolId) return;
     try {
         const key = `app_data_school_${currentUser.schoolId}_tutoria`;
@@ -6369,6 +6422,9 @@ async function sincronizarEncontroHistoricoCompartilhado(encontro, tutorado) {
             shared.historico.push(entry);
         }
         entry.id_estudante_origem = tutorado.id_estudante_origem;
+        // Guarda também o nome normalizado: o id_estudante_origem muda no remanejamento, mas o nome é
+        // estável, então o próximo tutor (com um novo id) ainda encontra o histórico pelo nome.
+        entry.nomeEstudante = normalizarNomeTutoria(tutorado.nome_estudante);
         entry.data = encontro.data;
         entry.tema = encontro.tema;
         entry.resumo = encontro.resumo;
@@ -6403,15 +6459,20 @@ async function carregarHistoricoTutoresAnteriores(tutorado) {
     const container = document.getElementById('tutoradoFichaHistoricoAnterior');
     if (!container) return;
     container.innerHTML = '';
-    if (!tutorado || !tutorado.id_estudante_origem || !currentUser || !currentUser.schoolId) return;
+    if (!tutorado || (!tutorado.id_estudante_origem && !tutorado.nome_estudante) || !currentUser || !currentUser.schoolId) return;
 
     let historico = [];
     try {
         const key = `app_data_school_${currentUser.schoolId}_tutoria`;
         const shared = await getData('app_data', key);
         const autorUid = getAutorUidAtual();
+        const alvoNome = normalizarNomeTutoria(tutorado.nome_estudante);
+        // Casa por id_estudante_origem OU por nome normalizado (o id muda no remanejamento; o nome não).
         historico = ((shared && shared.historico) || [])
-            .filter(h => h.id_estudante_origem == tutorado.id_estudante_origem && String(h.autorUid) !== autorUid)
+            .filter(h => String(h.autorUid) !== autorUid && (
+                (tutorado.id_estudante_origem && h.id_estudante_origem == tutorado.id_estudante_origem) ||
+                (alvoNome && h.nomeEstudante && h.nomeEstudante === alvoNome)
+            ))
             .sort((a, b) => (b.data || '').localeCompare(a.data || ''));
     } catch (e) {
         console.warn('Erro ao carregar histórico de tutores anteriores:', e);
@@ -6437,7 +6498,7 @@ async function carregarHistoricoTutoresAnteriores(tutorado) {
 // compartilhado - garante que registros antigos (feitos antes deste recurso) também fiquem
 // disponíveis para o próximo tutor. Faz no máximo uma escrita e só se algo mudou.
 async function backfillHistoricoTutorado(tutorado) {
-    if (!tutorado || !tutorado.id_estudante_origem || !currentUser || !currentUser.schoolId) return;
+    if (!tutorado || (!tutorado.id_estudante_origem && !tutorado.nome_estudante) || !currentUser || !currentUser.schoolId) return;
     const encontros = (data.encontros || []).filter(e => e.tutoradoId == tutorado.id);
     if (encontros.length === 0) return;
     try {
@@ -6445,6 +6506,7 @@ async function backfillHistoricoTutorado(tutorado) {
         const shared = await getData('app_data', key) || {};
         if (!Array.isArray(shared.historico)) shared.historico = [];
         const autorUid = getAutorUidAtual();
+        const nomeEstudante = normalizarNomeTutoria(tutorado.nome_estudante);
         let mudou = false;
 
         encontros.forEach(enc => {
@@ -6454,9 +6516,11 @@ async function backfillHistoricoTutorado(tutorado) {
                 shared.historico.push(entry);
                 mudou = true;
             }
-            if (entry.id_estudante_origem != tutorado.id_estudante_origem || entry.data != enc.data
-                || entry.tema != enc.tema || entry.resumo != enc.resumo || !!entry.coletiva != !!enc.coletiva) {
+            if (entry.id_estudante_origem != tutorado.id_estudante_origem || entry.nomeEstudante != nomeEstudante
+                || entry.data != enc.data || entry.tema != enc.tema || entry.resumo != enc.resumo
+                || !!entry.coletiva != !!enc.coletiva) {
                 entry.id_estudante_origem = tutorado.id_estudante_origem;
+                entry.nomeEstudante = nomeEstudante;
                 entry.data = enc.data;
                 entry.tema = enc.tema;
                 entry.resumo = enc.resumo;
@@ -6619,14 +6683,16 @@ function desvincularTutorado(id) {
 }
 
 function imprimirListaTutorados() {
-    const tutorados = data.tutorados || [];
+    // Mesma regra da tela: ignora quem saiu da escola e agrupa pela turma atual (resolvida).
+    const tutorados = (data.tutorados || []).filter(tutoradoDeveAparecer);
     if (tutorados.length === 0) return alert('Nenhum tutorado para imprimir.');
 
-    // Agrupar por turma
+    // Agrupar por turma atual (não pelo snapshot salvo em t.turma)
     const porTurma = {};
     tutorados.forEach(t => {
-        if (!porTurma[t.turma]) porTurma[t.turma] = [];
-        porTurma[t.turma].push(t);
+        const turmaKey = turmaAtualDoTutorado(t) || 'Sem turma';
+        if (!porTurma[turmaKey]) porTurma[turmaKey] = [];
+        porTurma[turmaKey].push(t);
     });
 
     const turmasOrdenadas = Object.keys(porTurma).sort();
