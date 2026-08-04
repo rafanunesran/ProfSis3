@@ -3044,7 +3044,7 @@ async function renderChamada() {
     const isGestor = currentViewMode === 'gestor';
 
     // Verifica status da chamada (baseado se há faltas registradas para esta turma nesta data)
-    const faltasRegistradas = (data.presencas || []).filter(p => p.data == dataSelecionada && estudantes.some(e => e.id == p.id_estudante));
+    const faltasRegistradas = (data.presencas || []).filter(p => p.data == dataSelecionada && p.status === 'falta' && estudantes.some(e => e.id == p.id_estudante));
     const statusTexto = faltasRegistradas.length > 0 ? 'Registrada (Faltas)' : 'Pendente / Todos Presentes';
     const statusCor = faltasRegistradas.length > 0 ? '#2f855a' : '#d69e2e'; // Verde escuro vs Laranja escuro
     const statusBg = faltasRegistradas.length > 0 ? '#f0fff4' : '#fffaf0';
@@ -3191,24 +3191,43 @@ async function salvarChamadaManual() {
     const registroAulaConteudo = document.getElementById('chamadaRegistroAula').value;
     
     if (!data.presencas) data.presencas = [];
-    
+
     const mapSync = {}; // Mapa para sincronização na nuvem { id: isAbsent }
+
+    // Faltosos vigentes (gestão): um faltoso PRESENTE precisa gravar um registro 'presente' explícito,
+    // senão o robô (que marca falta por padrão para quem não tem registro) volta a marcá-lo ausente.
+    const norm = (s) => s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
+    const faltososVigentes = (data.registrosAdministrativos || []).filter(r => r.tipo === 'Faltoso' && !r.arquivado);
+    const ehFaltosoVigente = (estId) => faltososVigentes.some(r => {
+        if (String(r.estudanteId) === String(estId)) return true;
+        if (!r.nomeEstudante) return false;
+        const est = (data.estudantes || []).find(e => e.id == estId);
+        return est && norm(est.nome_completo) === norm(r.nomeEstudante);
+    });
 
     checks.forEach(chk => {
         const estId = parseInt(chk.getAttribute('data-id'));
         const presente = chk.checked;
-        
+
         mapSync[estId] = !presente; // Se não presente, é falta (true)
 
         // Remove anterior se houver
         data.presencas = data.presencas.filter(p => !(p.id_estudante == estId && p.data == dataChamada));
-        
+
         if (!presente) { // Salva apenas faltas para economizar espaço ou conforme lógica
             data.presencas.push({
                 id: Date.now() + Math.random(),
                 id_estudante: estId,
                 data: dataChamada,
                 status: 'falta'
+            });
+        } else if (ehFaltosoVigente(estId)) {
+            // Presente E faltoso: grava 'presente' explícito para o robô não re-marcar falta.
+            data.presencas.push({
+                id: Date.now() + Math.random(),
+                id_estudante: estId,
+                data: dataChamada,
+                status: 'presente'
             });
         }
     });
