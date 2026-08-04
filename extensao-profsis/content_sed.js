@@ -971,8 +971,10 @@ function executarPreenchimentoChamada(payload, opts) {
     // turmas e não os desta tela), olhamos CADA card da tela da SED e verificamos direto nos dados
     // do ProfSis se aquele aluno é faltoso da gestão e não tem presença registrada no dia. Fontes:
     //  - registrosAdministrativos (tipo Faltoso) -> quem é faltoso (por nome ou id do estudante);
-    //  - presencas -> se há registro de falta/ausência no dia;
-    //  - payload.faltas -> sinal adicional (lista já calculada), por união.
+    //  - presencas -> se há registro de falta/ausência no dia.
+    // Obs.: NÃO usamos payload.faltas para classificar quem é faltoso - aquele payload pode ser um
+    // snapshot antigo (extPushedHistory) e continuar listando alunos já desclassificados. A
+    // classificação vem SEMPRE de registrosAdministrativos vivo (faltososReg).
     {
         const estudantesRobo = (profsisAppData.estudantes || []);
         const presencasRobo = (profsisAppData.presencas || []);
@@ -980,9 +982,6 @@ function executarPreenchimentoChamada(payload, opts) {
         const faltososReg = (profsisAppData.registrosAdministrativos || [])
             .filter(r => r.tipo === 'Faltoso' && !r.arquivado)
             .map(r => ({ estudanteId: r.estudanteId, nomeSet: r.nomeEstudante ? new Set(tokensNome(r.nomeEstudante)) : null }));
-        const faltasSetsA = (payload.faltas || [])
-            .map(a => new Set(tokensNome(a.nome)))
-            .filter(s => s.size > 0);
 
         const cards = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
         let comNome = 0, comCheckbox = 0, estCasou = 0, casadosNaTela = 0;
@@ -1002,12 +1001,12 @@ function executarPreenchimentoChamada(payload, opts) {
             const est = estTok.find(x => nomesCasamPorToken(x.set, cardSet));
             if (est) estCasou++;
 
-            // Este card é um faltoso da gestão? (por nome do registro OU pelo id do estudante casado
-            // OU presente na lista pré-calculada payload.faltas).
+            // Este card é um faltoso da gestão AGORA? (por nome do registro OU pelo id do estudante
+            // casado). Só registrosAdministrativos vivo - quem foi desclassificado não entra.
             const ehFaltoso = faltososReg.some(rf =>
                     (rf.nomeSet && nomesCasamPorToken(rf.nomeSet, cardSet)) ||
                     (est && String(rf.estudanteId) === String(est.id))
-                ) || faltasSetsA.some(fs => nomesCasamPorToken(fs, cardSet));
+                );
 
             let levouFalta = false;
             if (ehFaltoso) {
