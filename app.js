@@ -3204,6 +3204,10 @@ async function salvarChamadaManual() {
         const est = (data.estudantes || []).find(e => e.id == estId);
         return est && norm(est.nome_completo) === norm(r.nomeEstudante);
     });
+    // Baixa frequência (<50% no ano) também leva falta automática no robô, então um presente precisa
+    // gravar 'presente' explícito - mesma razão do faltoso vigente.
+    const baixaFreqIds = new Set((data.baixaFrequencia || []).map(b => String(b.id)));
+    const deveGravarPresente = (estId) => ehFaltosoVigente(estId) || baixaFreqIds.has(String(estId));
 
     checks.forEach(chk => {
         const estId = parseInt(chk.getAttribute('data-id'));
@@ -3221,8 +3225,9 @@ async function salvarChamadaManual() {
                 data: dataChamada,
                 status: 'falta'
             });
-        } else if (ehFaltosoVigente(estId)) {
-            // Presente E faltoso: grava 'presente' explícito para o robô não re-marcar falta.
+        } else if (deveGravarPresente(estId)) {
+            // Presente E elegível a falta automática (faltoso ou <50%): grava 'presente' explícito
+            // para o robô não re-marcar falta.
             data.presencas.push({
                 id: Date.now() + Math.random(),
                 id_estudante: estId,
@@ -4384,6 +4389,73 @@ function calcularTotalAulasPrevistas(turmaId, inicio, fim) {
         d.setDate(d.getDate() + 1);
     }
     return totalAulas;
+}
+
+// Recalcula quem está com <50% de presença no ANO LETIVO (acumulado até hoje), DESCONTANDO atestados,
+// e grava em data.baixaFrequencia = [{id, nome}]. Esses alunos passam a levar falta automática no robô
+// da Sala do Futuro mesmo SEM estarem classificados como "Faltoso" pela gestão (regra complementar).
+// O robô lê essa lista via profsisAppData (o app persiste 'data' no localStorage que a extensão captura).
+// Piso: só aciona a partir de 10 aulas previstas no período (evita falso-positivo no começo do ano).
+function recalcularBaixaFrequencia() {
+    if (!data) return;
+    const configs = (data.configBimestres || []).filter(c => c && c.inicio && c.fim);
+    if (configs.length === 0) { data.baixaFrequencia = []; return; }
+    const inicioAno = configs.map(c => c.inicio).sort()[0];
+    const hoje = getTodayString();
+    if (hoje < inicioAno) { data.baixaFrequencia = []; return; }
+
+    const estudantes = (data.estudantes || []);
+    const presencas = (data.presencas || []);
+    const registros = (data.registrosAdministrativos || []);
+    const totalAulasPorTurma = {}; // memoiza o walk da grade por turma
+
+    const resultado = [];
+    estudantes.forEach(e => {
+        if (e.status && e.status !== 'Ativo') return; // ignora inativos
+        const turmaId = e.id_turma;
+        if (turmaId == null) return;
+
+        if (totalAulasPorTurma[turmaId] === undefined) {
+            totalAulasPorTurma[turmaId] = calcularTotalAulasPrevistas(turmaId, inicioAno, hoje);
+        }
+        const totalAulas = totalAulasPorTurma[turmaId];
+        if (totalAulas < 10) return; // piso mínimo de aulas previstas
+
+        // Dias (datas) cobertos por atestado do aluno dentro de [inicioAno, hoje] -> desconta as aulas.
+        const atestados = registros.filter(r => r.tipo === 'Atestado' && !r.arquivado && String(r.estudanteId) === String(e.id) && r.data);
+        const datasAtestado = new Set();
+        let aulasAtestado = 0;
+        atestados.forEach(r => {
+            const ini = new Date(r.data + 'T12:00:00');
+            const dias = Math.max(1, parseInt(r.dias) || 1);
+            for (let i = 0; i < dias; i++) {
+                const dCur = new Date(ini);
+                dCur.setDate(dCur.getDate() + i);
+                const ds = dCur.toISOString().split('T')[0];
+                if (ds < inicioAno || ds > hoje) continue;
+                if (datasAtestado.has(ds)) continue;
+                datasAtestado.add(ds);
+                aulasAtestado += getAulasNoDia(turmaId, ds);
+            }
+        });
+
+        // Faltas efetivas (peso por aulas no dia), excluindo dias justificados por atestado.
+        let faltasEfetivas = 0;
+        presencas.forEach(p => {
+            if (String(p.id_estudante) !== String(e.id)) return;
+            if (p.status !== 'falta') return;
+            if (p.data < inicioAno || p.data > hoje) return;
+            if (datasAtestado.has(p.data)) return; // justificada
+            faltasEfetivas += getAulasNoDia(turmaId, p.data);
+        });
+
+        const base = totalAulas - aulasAtestado;
+        if (base <= 0) return;
+        const presenca = (base - faltasEfetivas) / base;
+        if (presenca < 0.5) resultado.push({ id: e.id, nome: e.nome_completo });
+    });
+
+    data.baixaFrequencia = resultado;
 }
 
 // [NOVO] Helper para verificar peso da falta (1 para simples, 2 para dobradinha)
@@ -9021,6 +9093,12 @@ async function persistirDados() {
         return;
     }
     if (!currentUser) return;
+
+    // Atualiza a lista de baixa frequência (<50% de presença no ano, descontando atestados) antes de
+    // persistir, para o robô da Sala do Futuro receber sempre o estado atual via profsisAppData.
+    if (currentViewMode !== 'gestor') {
+        try { recalcularBaixaFrequencia(); } catch (e) { console.warn('Erro ao recalcular baixa frequência:', e); }
+    }
 
     // [CORREÇÃO DEFINITIVA] Usa a chave correta baseada no modo (Professor vs Gestor) para evitar sobreescrever dados.
     const key = getStorageKey(currentUser);

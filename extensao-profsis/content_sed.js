@@ -982,6 +982,11 @@ function executarPreenchimentoChamada(payload, opts) {
         const faltososReg = (profsisAppData.registrosAdministrativos || [])
             .filter(r => r.tipo === 'Faltoso' && !r.arquivado)
             .map(r => ({ estudanteId: r.estudanteId, nomeSet: r.nomeEstudante ? new Set(tokensNome(r.nomeEstudante)) : null }));
+        // Complementar: alunos com <50% de presença no ano (descontando atestados), calculado pelo app
+        // e entregue em data.baixaFrequencia. Eles também levam falta automática, mesmo sem serem
+        // classificados como Faltoso pela gestão. Mesma mecânica de casamento por nome/id.
+        const baixaFreqReg = (profsisAppData.baixaFrequencia || [])
+            .map(b => ({ estudanteId: b.id, nomeSet: b.nome ? new Set(tokensNome(b.nome)) : null }));
 
         const cards = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
         let comNome = 0, comCheckbox = 0, estCasou = 0, casadosNaTela = 0;
@@ -1001,16 +1006,16 @@ function executarPreenchimentoChamada(payload, opts) {
             const est = estTok.find(x => nomesCasamPorToken(x.set, cardSet));
             if (est) estCasou++;
 
-            // Este card é um faltoso da gestão AGORA? (por nome do registro OU pelo id do estudante
-            // casado). Só registrosAdministrativos vivo - quem foi desclassificado não entra.
-            const ehFaltoso = faltososReg.some(rf =>
-                    (rf.nomeSet && nomesCasamPorToken(rf.nomeSet, cardSet)) ||
-                    (est && String(rf.estudanteId) === String(est.id))
-                );
+            // Este card é elegível a falta automática AGORA? Faltoso vigente da gestão (por nome ou id)
+            // OU aluno com <50% de presença no ano (baixaFrequencia). Só fontes vivas - desclassificado
+            // não entra.
+            const casaRegistro = (rf) => (rf.nomeSet && nomesCasamPorToken(rf.nomeSet, cardSet)) ||
+                    (est && String(rf.estudanteId) === String(est.id));
+            const elegivelFalta = faltososReg.some(casaRegistro) || baixaFreqReg.some(casaRegistro);
 
             let levouFalta = false;
-            if (ehFaltoso) {
-                // Faltoso leva falta salvo se tiver presença registrada no dia.
+            if (elegivelFalta) {
+                // Elegível leva falta salvo se tiver presença registrada no dia.
                 const idPres = est ? est.id : null;
                 const presDia = idPres != null
                     ? presencasRobo.find(p => p.id_estudante == idPres && p.data === currentSelectedDate)
