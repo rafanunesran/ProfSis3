@@ -1364,7 +1364,7 @@ function editarTurma(id) {
 function enriquecerRegistrosComNome(registros, estudantesGestor) {
     if (!Array.isArray(registros)) return registros;
     return registros.map(r => {
-        if ((r.tipo === 'Faltoso' || r.tipo === 'Atestado') && !r.nomeEstudante) {
+        if ((r.tipo === 'Faltoso' || r.tipo === 'FaltosoAuto' || r.tipo === 'Atestado') && !r.nomeEstudante) {
             const est = (estudantesGestor || []).find(e => e.id == r.estudanteId);
             if (est && est.nome_completo) return { ...r, nomeEstudante: est.nome_completo };
         }
@@ -1372,19 +1372,33 @@ function enriquecerRegistrosComNome(registros, estudantesGestor) {
     });
 }
 
+// "Aluno novo": recém-adicionado que ainda não recebeu nenhuma presença no SisProf. Enquanto pendente,
+// o robô o trata como falta na Sala do Futuro - não pode receber presença sem realmente estar presente.
+// Deixa de ser novo assim que houver QUALQUER registro de presença ('presente') para ele (removido na
+// 1ª presença, ver salvarChamadaManual). O flag est.aluno_novo é semeado pela gestão (aluno recém
+// matriculado) e/ou manualmente pelo professor na lista de chamada (ver toggleAlunoNovo).
+function alunoNovoPendente(est) {
+    if (!est || est.aluno_novo !== true) return false;
+    return !(data.presencas || []).some(p => p.id_estudante == est.id && p.status === 'presente');
+}
+
 // Função auxiliar para montar payload de um dia específico
 function montarPayloadPorData(dataStr) {
     let alunosFaltantesNomes = [];
 
-    // SÓ o aluno "Faltoso" (classificado pela gestão em registrosAdministrativos) leva falta na Sala
-    // do Futuro - nunca um aluno comum. Regra por faltoso ativo (arquivados são ignorados):
-    // - Sem registro de chamada no ProfSis pra ele naquele dia -> considera FALTA (padrão do faltoso);
+    // Levam falta na Sala do Futuro (nunca um aluno comum):
+    //  1) Faltoso da gestão (tipo 'Faltoso' - marcação manual, sistema mantido intacto);
+    //  2) Faltoso automático (tipo 'FaltosoAuto' - presença descontando atestados < 50%, calculado e
+    //     sincronizado pela gestão mesmo sem classificação manual);
+    //  3) Aluno novo pendente (ainda sem 1ª presença registrada).
+    // Regra comum (arquivados são ignorados):
+    // - Sem registro de chamada no ProfSis pra ele naquele dia -> considera FALTA (padrão);
     // - Com chamada e marcado falta -> FALTA;
     // - Com chamada e presente -> não marca.
     // (Mesma lógica da extensão em content_sed.js:montarPayloadPorData, mantida em sincronia.)
     const presencas = data.presencas || [];
     const norm = (s) => s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
-    const faltososGestao = (data.registrosAdministrativos || []).filter(r => r.tipo === 'Faltoso' && !r.arquivado);
+    const faltososGestao = (data.registrosAdministrativos || []).filter(r => (r.tipo === 'Faltoso' || r.tipo === 'FaltosoAuto') && !r.arquivado);
     faltososGestao.forEach(reg => {
         // Casa por id e, como fallback, por nome (id pode divergir se a lista veio da extensão).
         let est = (data.estudantes || []).find(e => e.id == reg.estudanteId);
@@ -1400,6 +1414,17 @@ function montarPayloadPorData(dataStr) {
         const presencaDoDia = presencas.find(p => p.id_estudante == est.id && p.data === dataStr);
         if (!presencaDoDia || presencaDoDia.status === 'falta') {
             alunosFaltantesNomes.push({ nome: est.nome_completo, id_turma: est.id_turma });
+        }
+    });
+
+    // Alunos novos pendentes: mesma regra de falta-por-padrão até a 1ª presença.
+    (data.estudantes || []).forEach(est => {
+        if (est.status && est.status !== 'Ativo') return;
+        if (!alunoNovoPendente(est)) return;
+        const presencaDoDia = presencas.find(p => p.id_estudante == est.id && p.data === dataStr);
+        if (!presencaDoDia || presencaDoDia.status === 'falta') {
+            const jaListado = alunosFaltantesNomes.some(a => norm(a.nome) === norm(est.nome_completo) && a.id_turma === est.id_turma);
+            if (!jaListado) alunosFaltantesNomes.push({ nome: est.nome_completo, id_turma: est.id_turma });
         }
     });
 
@@ -1810,7 +1835,10 @@ function processarImportacaoSED() {
     if (!data.estudantes) data.estudantes = [];
     
     const estudantesTurma = data.estudantes.filter(e => e.id_turma == turmaId);
-    
+    // Só marca "aluno novo" quando a turma já tinha alunos (ingresso no meio do ano). Numa turma
+    // ainda vazia (primeira extração) ninguém vira "novo".
+    const turmaJaPovoada = estudantesTurma.some(e => !e.status || e.status === 'Ativo');
+
     if (!confirm(`Atenção: Serão verificados ${alunosExtraidos.length} estudantes nesta turma.\n\nAlunos da turma que NÃO estiverem na lista da SED serão marcados como 'Transferido' para preservar o histórico e não atrapalhar sua chamada.\n\nDeseja continuar?`)) return;
     
     let adicionados = 0;
@@ -1845,7 +1873,8 @@ function processarImportacaoSED() {
                 id: Date.now() + Math.floor(Math.random() * 10000),
                 id_turma: Number(turmaId),
                 nome_completo: aExtraido.nome,
-                status: 'Ativo'
+                status: 'Ativo',
+                aluno_novo: turmaJaPovoada
             });
             adicionados++;
         }
@@ -2506,6 +2535,13 @@ async function abrirTurma(id) {
             
             // 2. Remove os alunos antigos dessa turma na base local do professor
             if (!data.estudantes) data.estudantes = [];
+            // Antes de reconstruir a turma, guarda a decisão local de "aluno novo" (o professor pode ter
+            // graduado o aluno na 1ª presença ou marcado manualmente) para não perdê-la no ressincronismo.
+            const anterioresDaTurma = data.estudantes.filter(e => e.id_turma == turmaAtual);
+            const novoLocalPorId = {};
+            anterioresDaTurma.forEach(e => { novoLocalPorId[e.id] = (e.aluno_novo === true); });
+            const idsAnteriores = new Set(anterioresDaTurma.map(e => e.id));
+            const turmaJaPovoadaLocal = anterioresDaTurma.some(e => !e.status || e.status === 'Ativo');
             data.estudantes = data.estudantes.filter(e => e.id_turma != turmaAtual);
 
             // 3. Adiciona os alunos atualizados (mantendo o ID original do aluno para preservar notas/presença)
@@ -2520,6 +2556,14 @@ async function abrirTurma(id) {
 
                 // Clona o aluno e ajusta o id_turma para o ID da turma do professor
                 const alunoLocal = { ...alunoMaster, id_turma: turmaAtual };
+                // "Aluno novo": prioriza o estado local (o professor já pode ter dado a 1ª presença ou
+                // marcado/desmarcado manualmente); senão herda da gestão; um ingresso vindo da gestão
+                // para uma turma já povoada localmente entra como novo.
+                if (idsAnteriores.has(alunoMaster.id)) {
+                    alunoLocal.aluno_novo = novoLocalPorId[alunoMaster.id];
+                } else {
+                    alunoLocal.aluno_novo = (alunoMaster.aluno_novo === true) || turmaJaPovoadaLocal;
+                }
                 if (infoAee) {
                     alunoLocal.is_aee_mapped = true;
                     alunoLocal.aee_diagnostico = infoAee.aee_diagnostico || alunoLocal.aee_diagnostico;
@@ -2885,12 +2929,30 @@ function salvarEstudante(e) {
         id: Date.now(),
         id_turma: turmaAtual,
         nome_completo: nome,
-        status: status
+        status: status,
+        aluno_novo: true // Adição avulsa = aluno novo: só recebe presença após a 1ª chamada presente.
     });
     persistirDados();
     closeModal('modalNovoEstudante');
     renderEstudantes();
     e.target.reset();
+}
+
+// Marca/desmarca manualmente o estudante como "aluno novo". Quando marcado, ele não recebe presença
+// por padrão (o robô o trata como falta na Sala do Futuro) até a 1ª chamada em que for dado presente.
+async function toggleAlunoNovo(id) {
+    const est = (data.estudantes || []).find(e => e.id == id);
+    if (!est) return;
+    if (alunoNovoPendente(est)) {
+        est.aluno_novo = false;
+    } else {
+        est.aluno_novo = true;
+        // Zera qualquer 'presente' anterior para que ele volte a ser tratado como novo/pendente.
+        data.presencas = (data.presencas || []).filter(p => !(p.id_estudante == id && p.status === 'presente'));
+    }
+    await persistirDados();
+    if (typeof window.enviarDadosParaExtensao === 'function') window.enviarDadosParaExtensao(true);
+    renderChamada();
 }
 
 function removerEstudante(id) {
@@ -3083,6 +3145,8 @@ async function renderChamada() {
                     regsAluno.forEach(r => {
                         if (r.tipo === 'Faltoso') {
                             badges += `<span style="background:#fed7d7; color:#c53030; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold;">Faltoso</span>`;
+                        } else if (r.tipo === 'FaltosoAuto') {
+                            badges += `<span style="background:#feebc8; color:#9c4221; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #fbd38d;" title="Presença descontando atestados < 50% — leva falta na Sala do Futuro">Faltoso auto</span>`;
                         } else if (r.tipo === 'Observacao') {
                             badges += `<span style="background:#fffaf0; color:#d69e2e; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #fbd38d;" title="${r.descricao || ''}">Obs</span>`;
                         } else if (r.tipo === 'Atestado') {
@@ -3130,9 +3194,20 @@ async function renderChamada() {
                     const suggestAbsent = countShared >= 2;
                     const sharedBadge = countShared > 0 ? `<span style="font-size:10px; color:${suggestAbsent ? '#e53e3e' : '#d69e2e'}; margin-left:5px; font-weight:bold;" title="Faltas registradas por outros professores hoje">⚠️ ${countShared} falta(s) hoje</span>` : '';
 
+                    // [ALUNO NOVO] Marcador para recém-matriculado que ainda não recebeu presença: não
+                    // pode ser dado como presente por padrão (checkbox desmarcado) e o robô o trata como
+                    // falta na Sala do Futuro até a 1ª presença. Botão permite marcar/desmarcar manualmente.
+                    const ehAlunoNovoPendente = alunoNovoPendente(e);
+                    const alunoNovoBadge = ehAlunoNovoPendente
+                        ? `<span style="background:#c6f6d5; color:#22543d; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #9ae6b4;" title="Aluno novo: só recebe presença após a 1ª chamada presente">🆕 Aluno novo</span>`
+                        : '';
+                    const alunoNovoBtn = ehAlunoNovoPendente
+                        ? `<button type="button" class="btn btn-sm btn-secondary" style="margin-left:6px; padding:1px 6px; font-size:10px;" title="Remover marcador de aluno novo" onclick="toggleAlunoNovo(${e.id})">tirar</button>`
+                        : `<button type="button" class="btn btn-sm btn-secondary" style="margin-left:6px; padding:1px 6px; font-size:10px; opacity:0.6;" title="Marcar como aluno novo (só recebe presença após a 1ª chamada presente)" onclick="toggleAlunoNovo(${e.id})">🆕</button>`;
+
                     // [CORREÇÃO] Verifica se já existe falta registrada para este dia para manter o estado visual correto
                     const faltaNoDia = (data.presencas || []).some(p => p.id_estudante == e.id && p.data == dataSelecionada && p.status == 'falta');
-                    const isChecked = !faltaNoDia && !badges.includes('Atestado') && !suggestAbsent;
+                    const isChecked = !faltaNoDia && !badges.includes('Atestado') && !suggestAbsent && !ehAlunoNovoPendente;
 
                     return `
                     <tr>
@@ -3141,6 +3216,8 @@ async function renderChamada() {
                             ${badges}
                             ${badgeBimestre}
                             ${sharedBadge}
+                            ${alunoNovoBadge}
+                            ${alunoNovoBtn}
                         </td>
                         <td><input type="checkbox" class="presenca-check" data-id="${e.id}" ${isChecked ? 'checked' : ''}></td>
                     </tr>
@@ -3194,10 +3271,11 @@ async function salvarChamadaManual() {
 
     const mapSync = {}; // Mapa para sincronização na nuvem { id: isAbsent }
 
-    // Faltosos vigentes (gestão): um faltoso PRESENTE precisa gravar um registro 'presente' explícito,
-    // senão o robô (que marca falta por padrão para quem não tem registro) volta a marcá-lo ausente.
+    // Quem "leva falta por padrão" na Sala do Futuro (faltoso manual, faltoso automático <50% ou aluno
+    // novo pendente) e está PRESENTE precisa gravar um registro 'presente' explícito, senão o robô (que
+    // marca falta por padrão para quem não tem registro) volta a marcá-lo ausente.
     const norm = (s) => s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
-    const faltososVigentes = (data.registrosAdministrativos || []).filter(r => r.tipo === 'Faltoso' && !r.arquivado);
+    const faltososVigentes = (data.registrosAdministrativos || []).filter(r => (r.tipo === 'Faltoso' || r.tipo === 'FaltosoAuto') && !r.arquivado);
     const ehFaltosoVigente = (estId) => faltososVigentes.some(r => {
         if (String(r.estudanteId) === String(estId)) return true;
         if (!r.nomeEstudante) return false;
@@ -3208,6 +3286,8 @@ async function salvarChamadaManual() {
     checks.forEach(chk => {
         const estId = parseInt(chk.getAttribute('data-id'));
         const presente = chk.checked;
+        const estObj = (data.estudantes || []).find(e => e.id == estId);
+        const eraAlunoNovo = alunoNovoPendente(estObj);
 
         mapSync[estId] = !presente; // Se não presente, é falta (true)
 
@@ -3221,14 +3301,17 @@ async function salvarChamadaManual() {
                 data: dataChamada,
                 status: 'falta'
             });
-        } else if (ehFaltosoVigente(estId)) {
-            // Presente E faltoso: grava 'presente' explícito para o robô não re-marcar falta.
+        } else if (ehFaltosoVigente(estId) || eraAlunoNovo) {
+            // Presente E (faltoso/faltoso auto/aluno novo): grava 'presente' explícito para o robô não
+            // re-marcar falta. Para o aluno novo, esse 1º 'presente' o "gradua" (deixa de ser novo).
             data.presencas.push({
                 id: Date.now() + Math.random(),
                 id_estudante: estId,
                 data: dataChamada,
                 status: 'presente'
             });
+            // Aluno novo recebeu a 1ª presença no SisProf: remove o marcador (some da lista).
+            if (eraAlunoNovo && estObj) estObj.aluno_novo = false;
         }
     });
     
@@ -4663,6 +4746,9 @@ function renderTrabalhos() {
                         const registrosGeral = data.registrosAdministrativos || [];
                         const isFaltoso = registrosGeral.some(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Faltoso' && !r.arquivado);
                         const tagFaltoso = isFaltoso ? `<span style="background:#fed7d7; color:#c53030; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #feb2b2;" title="Aluno com alerta de Faltoso na Gestão">Faltoso</span>` : '';
+                        const isFaltosoAuto = registrosGeral.some(r => String(r.estudanteId) === String(e.id) && r.tipo === 'FaltosoAuto' && !r.arquivado);
+                        const tagFaltosoAuto = (isFaltosoAuto && !isFaltoso) ? `<span style="background:#feebc8; color:#9c4221; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #fbd38d;" title="Presença descontando atestados abaixo de 50% - leva falta na Sala do Futuro">Faltoso auto</span>` : '';
+                        const tagAlunoNovo = alunoNovoPendente(e) ? `<span style="background:#c6f6d5; color:#22543d; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #9ae6b4;" title="Aluno novo: só recebe presença após a 1ª chamada presente">🆕 Novo</span>` : '';
 
                         // [CORREÇÃO] Lógica robusta para exibir atestados e faltas no bimestre atual
                         const configAtualBimestre = data.configBimestres.find(c => c.bim === currentBimestreTrabalhos);
@@ -4758,7 +4844,7 @@ function renderTrabalhos() {
 
                         return `
                             <tr onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='transparent'">
-                            <td style="position:sticky; left:0; background:inherit; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cbd5e0; z-index: 5;">${getFaltaBadgeHtml(e.id, todayStr)}${getAeePrefix(e)}${e.nome_completo} ${tagFaltoso}</td>
+                            <td style="position:sticky; left:0; background:inherit; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cbd5e0; z-index: 5;">${getFaltaBadgeHtml(e.id, todayStr)}${getAeePrefix(e)}${e.nome_completo} ${tagFaltoso}${tagFaltosoAuto}${tagAlunoNovo}</td>
                                 ${gradeCells}                                
                                 <td id="media-est-current-${e.id}" style="text-align:center; font-weight:bold; color: ${corMedia}; background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; right: 80px; z-index: 5; border-left: 2px solid #cbd5e0;">
                                     ${media}
@@ -7146,6 +7232,9 @@ function importarEstudantes(e) {
         if (!data.estudantes) data.estudantes = [];
         let nextId = data.estudantes.length > 0 ? Math.max(...data.estudantes.map(e => e.id)) + 1 : 1;
         let count = 0;
+        // Só marca "aluno novo" se a turma já tinha alunos (adição no meio do ano). Na carga inicial
+        // da turma (vazia) ninguém é marcado como novo.
+        const turmaJaPovoada = data.estudantes.some(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
 
         for (let i = headerIndex + 1; i < lines.length; i++) {
             const line = lines[i].trim();
@@ -7161,7 +7250,7 @@ function importarEstudantes(e) {
             
             // Verifica se tem nome e se já não existe na turma
             if (nome && !data.estudantes.find(e => e.id_turma == turmaAtual && e.nome_completo === nome)) {
-                data.estudantes.push({ id: nextId++, id_turma: turmaAtual, nome_completo: nome, status: status });
+                data.estudantes.push({ id: nextId++, id_turma: turmaAtual, nome_completo: nome, status: status, aluno_novo: turmaJaPovoada });
                 count++;
             }
         }

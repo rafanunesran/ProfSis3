@@ -255,6 +255,15 @@ function normalizeNomeFaltoso(s) {
     return s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
 }
 
+// "Aluno novo": recém-matriculado que ainda não recebeu nenhuma presença no SisProf. Enquanto pendente,
+// o robô o trata como falta na Sala do Futuro (não pode receber presença sem estar presente). Deixa de
+// ser novo assim que houver QUALQUER registro de presença ('presente'). Espelha app.js:alunoNovoPendente.
+function alunoNovoPendenteSED(est) {
+    if (!est || est.aluno_novo !== true) return false;
+    const presencas = (profsisAppData && profsisAppData.presencas) || [];
+    return !presencas.some(p => p.id_estudante == est.id && p.status === 'presente');
+}
+
 // ===== Casamento de nome ProfSis x card da SED (reescrito) =====
 // Não dá pra depender do formato: a SED pode mostrar o nome em ordem diferente, com RA/número junto,
 // rótulos, etc. Então quebramos o nome em TOKENS significativos (sem acento, sem número/pontuação, sem
@@ -287,10 +296,10 @@ function montarPayloadPorData(dataStr) {
     const registrosAula = (profsisAppData.registrosAula || []);
     const registrosAdmin = (profsisAppData.registrosAdministrativos || []);
     
-    // FALTOSOS: apenas alunos classificados como "Faltoso" pela gestão
-    // A classificação vem de registrosAdministrativos onde tipo === 'Faltoso'
+    // Levam falta na Sala do Futuro: Faltoso da gestão (tipo 'Faltoso', marcação manual) e Faltoso
+    // automático (tipo 'FaltosoAuto' - presença descontando atestados < 50%, calculado pela gestão).
     // (registros arquivados pela gestão são ignorados - não devem mais marcar falta)
-    const faltososGestao = registrosAdmin.filter(r => r.tipo === 'Faltoso' && !r.arquivado);
+    const faltososGestao = registrosAdmin.filter(r => (r.tipo === 'Faltoso' || r.tipo === 'FaltosoAuto') && !r.arquivado);
     let alunosFaltantesNomes = [];
 
     faltososGestao.forEach(reg => {
@@ -322,7 +331,18 @@ function montarPayloadPorData(dataStr) {
             alunosFaltantesNomes.push({ nome: est.nome_completo, id_turma: est.id_turma, id_estudante: est.id });
         }
     });
-    
+
+    // Alunos novos pendentes: mesma regra de falta-por-padrão até a 1ª presença registrada.
+    estudantes.forEach(est => {
+        if (est.status && est.status !== 'Ativo') return;
+        if (!alunoNovoPendenteSED(est)) return;
+        const presencaDoDia = presencas.find(p => p.id_estudante == est.id && p.data === dataStr);
+        if (!presencaDoDia || presencaDoDia.status === 'falta') {
+            const jaListado = alunosFaltantesNomes.some(a => a.id_estudante === est.id);
+            if (!jaListado) alunosFaltantesNomes.push({ nome: est.nome_completo, id_turma: est.id_turma, id_estudante: est.id });
+        }
+    });
+
     const registrosNoDia = registrosAula.filter(r => r.data === dataStr);
     const turmasProfsis = profsisAppData.turmas || [];
 
@@ -980,7 +1000,7 @@ function executarPreenchimentoChamada(payload, opts) {
         const presencasRobo = (profsisAppData.presencas || []);
         const estTok = estudantesRobo.map(e => ({ id: e.id, set: new Set(tokensNome(e.nome_completo)) }));
         const faltososReg = (profsisAppData.registrosAdministrativos || [])
-            .filter(r => r.tipo === 'Faltoso' && !r.arquivado)
+            .filter(r => (r.tipo === 'Faltoso' || r.tipo === 'FaltosoAuto') && !r.arquivado)
             .map(r => ({ estudanteId: r.estudanteId, nomeSet: r.nomeEstudante ? new Set(tokensNome(r.nomeEstudante)) : null }));
 
         const cards = document.querySelectorAll('.card_aluno1, .card_aluno, .grid-listagem > div[class*="card_aluno"]');
@@ -1008,9 +1028,13 @@ function executarPreenchimentoChamada(payload, opts) {
                     (est && String(rf.estudanteId) === String(est.id))
                 );
 
+            // Aluno novo pendente (ainda sem 1ª presença): também leva falta por padrão.
+            const estFull = est ? estudantesRobo.find(e => e.id == est.id) : null;
+            const ehAlunoNovo = alunoNovoPendenteSED(estFull);
+
             let levouFalta = false;
-            if (ehFaltoso) {
-                // Faltoso leva falta salvo se tiver presença registrada no dia.
+            if (ehFaltoso || ehAlunoNovo) {
+                // Leva falta salvo se tiver presença registrada no dia.
                 const idPres = est ? est.id : null;
                 const presDia = idPres != null
                     ? presencasRobo.find(p => p.id_estudante == idPres && p.data === currentSelectedDate)
