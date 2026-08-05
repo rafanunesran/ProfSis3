@@ -420,6 +420,9 @@ async function renderAbaAlertasBuscaAtiva(forceRefresh = false) {
                 daysByTurma
             };
 
+            // Recalcula e sincroniza os "faltosos automáticos" (< 50% de presença descontando atestados).
+            reconciliarFaltososAutomaticos();
+
         } catch (e) {
             console.error("Erro ao agregar dados:", e);
             resultadoDiv.innerHTML = `<p class="empty-state" style="color:red;">Erro ao processar dados: ${e.message}</p>`;
@@ -428,6 +431,90 @@ async function renderAbaAlertasBuscaAtiva(forceRefresh = false) {
     }
 
     processarAlertasBuscaAtiva();
+}
+
+// Percentual de presença (descontando atestados) abaixo do qual o aluno passa a levar falta na Sala do
+// Futuro automaticamente, mesmo sem ser classificado "Faltoso" manualmente pela gestão.
+const LIMITE_FALTOSO_AUTO = 50;
+
+// Calcula, para o ANO LETIVO inteiro, a presença descontando atestados de cada aluno ativo e mantém em
+// data.registrosAdministrativos entradas do tipo 'FaltosoAuto' para quem está < 50%. Esses registros
+// fluem para o professor/robô pelo mesmo canal dos registros da gestão (sem mexer no sistema de Faltoso
+// manual, que continua com tipo 'Faltoso'). Quem volta a >= 50% (ou vira Faltoso manual) tem o registro
+// automático removido. Só persiste se houver mudança.
+function reconciliarFaltososAutomaticos() {
+    if (!cacheBuscaAtiva) return;
+    const { allStudents, daysByTurma } = cacheBuscaAtiva;
+    const currentYear = new Date().getFullYear();
+
+    if (!data.registrosAdministrativos) data.registrosAdministrativos = [];
+    const allAtestados = data.registrosAdministrativos.filter(r => r.tipo === 'Atestado');
+    const allFaltososManuais = data.registrosAdministrativos.filter(r => r.tipo === 'Faltoso' && !r.arquivado);
+
+    const hasAtestadoOnDate = (studentId, dateStr) => {
+        const studentAtestados = allAtestados.filter(r => r.estudanteId == studentId);
+        const checkDate = new Date(dateStr + 'T12:00:00');
+        for (const ates of studentAtestados) {
+            const parts = ates.data.split('-');
+            const inicio = new Date(parts[0], parts[1]-1, parts[2]);
+            const fim = new Date(inicio);
+            fim.setDate(fim.getDate() + (parseInt(ates.dias) || 1) - 1);
+            if (checkDate >= inicio && checkDate <= fim) return true;
+        }
+        return false;
+    };
+    const wasAbsent = (studentId, dateStr) => {
+        const dayData = cacheBuscaAtiva.attendanceData[dateStr];
+        if (!dayData || !dayData[studentId]) return false;
+        return dayData[studentId].length >= 1;
+    };
+
+    const idsDeveSerAuto = new Set();
+
+    for (const student of allStudents) {
+        if (student.status !== 'Ativo') continue;
+        // Não duplica: se já é Faltoso manual, o sistema manual cuida dele.
+        if (allFaltososManuais.some(r => r.estudanteId == student.id)) continue;
+
+        const studentDates = Array.from(daysByTurma[student.id_turma] || [])
+            .filter(d => d.startsWith(String(currentYear)));
+        if (studentDates.length === 0) continue;
+
+        const absencesWithoutAtestado = studentDates.filter(dateStr => wasAbsent(student.id, dateStr) && !hasAtestadoOnDate(student.id, dateStr)).length;
+        const adjustedPresencePercentage = ((studentDates.length - absencesWithoutAtestado) / studentDates.length) * 100;
+
+        if (adjustedPresencePercentage < LIMITE_FALTOSO_AUTO) idsDeveSerAuto.add(String(student.id));
+    }
+
+    let mudou = false;
+    // Remove automáticos que não se aplicam mais (>= 50%, virou faltoso manual, ou aluno inativo).
+    const antes = data.registrosAdministrativos.length;
+    data.registrosAdministrativos = data.registrosAdministrativos.filter(r => {
+        if (r.tipo !== 'FaltosoAuto') return true;
+        return idsDeveSerAuto.has(String(r.estudanteId));
+    });
+    if (data.registrosAdministrativos.length !== antes) mudou = true;
+
+    // Cria os que faltam.
+    idsDeveSerAuto.forEach(id => {
+        const jaExiste = data.registrosAdministrativos.some(r => r.tipo === 'FaltosoAuto' && String(r.estudanteId) === id);
+        if (jaExiste) return;
+        const student = allStudents.find(s => String(s.id) === id);
+        if (!student) return;
+        data.registrosAdministrativos.push({
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            turmaId: parseInt(student.id_turma),
+            estudanteId: parseInt(student.id),
+            nomeEstudante: student.nome_completo,
+            tipo: 'FaltosoAuto',
+            data: getTodayString(),
+            dias: 0,
+            descricao: 'Automático: presença descontando atestados < ' + LIMITE_FALTOSO_AUTO + '%'
+        });
+        mudou = true;
+    });
+
+    if (mudou) persistirDados();
 }
 
 function processarAlertasBuscaAtiva() {
@@ -601,7 +688,10 @@ function processarAlertasBuscaAtiva() {
                 <ul style="margin:0; padding-left:10px; font-size:13px; list-style-type:none;">`;
             byTurma[turmaName].forEach(item => {
                 const faltosoBadge = item.isFaltoso ? `<span style="background:#fed7d7; color:#c53030; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold;">🚨 Faltoso</span>` : `<button class="btn btn-danger" style="margin-left:8px; padding:2px 8px; font-size:10px; border-radius:4px;" onclick="marcarComoFaltosoBuscaAtiva(${item.student.id}, ${item.student.id_turma})">+ Marcar Faltoso</button>`;
-                
+                // Marcador automático (< 50% descontando atestados): já leva falta na Sala do Futuro sem ação da gestão.
+                const ehFaltosoAuto = (data.registrosAdministrativos || []).some(r => r.tipo === 'FaltosoAuto' && String(r.estudanteId) === String(item.student.id));
+                const faltosoAutoBadge = (ehFaltosoAuto && !item.isFaltoso) ? `<span style="background:#feebc8; color:#9c4221; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #fbd38d;" title="Automático: presença descontando atestados < ${LIMITE_FALTOSO_AUTO}% — já leva falta na Sala do Futuro">🤖 Faltoso auto</span>` : '';
+
                 const detailHtml = item.detail ? `<span style="color:#4a5568;">${item.detail}</span> | ` : '';
                 const atestadoHtml = item.atestadosInfo ? `<div style="color:#d69e2e; font-size:12px; margin-top:2px;">${item.atestadosInfo}</div>` : '';
 
@@ -611,6 +701,7 @@ function processarAlertasBuscaAtiva() {
                         ${detailHtml}
                         <strong style="color:#2c5282;">${item.percInfo}</strong>
                         ${faltosoBadge}
+                        ${faltosoAutoBadge}
                     </div>
                     ${atestadoHtml}
                 </li>`;
@@ -728,9 +819,11 @@ function renderAbaRegistrosAdministrativos() {
             }
         } else if (r.tipo === 'Faltoso') {
             cor = '#ef4444';
+        } else if (r.tipo === 'FaltosoAuto') {
+            cor = '#dd6b20';
         }
 
-        return { ...r, estudanteNome: estudante.nome_completo, turmaNome: turma.nome, status, cor };
+        return { ...r, estudanteNome: estudante.nome_completo, turmaNome: turma.nome, tipoLabel: (r.tipo === 'FaltosoAuto' ? 'Faltoso (auto <50%)' : r.tipo), status, cor };
     }).filter(item => item !== null);
 
     // 2. Agrupar por Turma
@@ -767,7 +860,7 @@ function renderAbaRegistrosAdministrativos() {
                             <tbody>
                                 ${grupos[turmaNome].map(r => `
                                     <tr>
-                                        <td style="color: ${r.cor}; font-weight: bold;">${r.tipo}</td>
+                                        <td style="color: ${r.cor}; font-weight: bold;">${r.tipoLabel || r.tipo}</td>
                                         <td>${getAeePrefix((data.estudantes || []).find(e => e.id == r.estudanteId))}${r.estudanteNome}</td>
                                         <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
                                         <td>
@@ -1974,6 +2067,10 @@ async function processarImportacaoMassa() {
 
         if (idxNome === -1) continue; // Arquivo inválido
 
+        // Só marca "aluno novo" quando a turma já tinha alunos (ingresso no meio do ano). Numa turma
+        // ainda vazia (carga inicial) ninguém entra como novo.
+        const turmaJaPovoada = data.estudantes.some(e => e.id_turma == item.turmaId && (!e.status || e.status === 'Ativo'));
+
         // Processa linhas
         for (const line of lines) {
             const parts = line.split(';');
@@ -2003,7 +2100,8 @@ async function processarImportacaoMassa() {
                     id: Date.now() + Math.floor(Math.random() * 1000), // ID único inteiro
                     id_turma: item.turmaId,
                     nome_completo: nome, // Salva como veio, mas a busca é case insensitive
-                    status: status
+                    status: status,
+                    aluno_novo: turmaJaPovoada // Ingresso no meio do ano: só recebe presença ao estar presente.
                 });
                 novos++;
             }
