@@ -5967,13 +5967,34 @@ async function agendarTodosTutorados(listaOrdenada = null) {
     const tutorados = listaOrdenada.filter(t => validosIds.has(t.id));
     if (tutorados.length === 0) return alert('Você não possui tutorados ativos cadastrados.');
 
-    // 1. Definir Fim do Semestre (USANDO UTC para robustez)
+    // 1. Carregar calendário escolar (bimestres, exceções e feriados) definido pela gestão.
+    let excecoesGrade = [], configBimestres = [], feriadosEscolares = [], escolaUF = '', escolaCidade = '';
+    if (currentUser && currentUser.schoolId) {
+        const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+        const gestorData = await getData('app_data', key);
+        if (gestorData) {
+            excecoesGrade = gestorData.gradeHorariaExcecoes || [];
+            configBimestres = gestorData.configBimestres || [];
+            feriadosEscolares = gestorData.feriadosEscolares || [];
+            escolaUF = gestorData.escolaUF || '';
+            escolaCidade = gestorData.escolaCidade || '';
+        }
+    }
+
+    // Contexto de dia letivo: usado para pular feriados/férias/recesso ao gerar a agenda.
+    const calCtx = (typeof CalendarioEscolar !== 'undefined')
+        ? CalendarioEscolar.montarContextoCalendario({ configBimestres, feriadosEscolares, gradeHorariaExcecoes: excecoesGrade, uf: escolaUF, cidade: escolaCidade })
+        : null;
+
+    // Definir Fim do ano letivo (usa o fim do último bimestre; se não houver, cai no fim de semestre padrão).
     const hoje = new Date();
     const ano = hoje.getFullYear();
     const mes = hoje.getMonth(); // 0-11
     let dataFim;
-
-    if (mes < 6) { // 1º Semestre (até 30 de Junho)
+    const fimLetivo = calCtx && typeof CalendarioEscolar !== 'undefined' ? CalendarioEscolar.fimDoAnoLetivo(calCtx) : null;
+    if (fimLetivo) {
+        dataFim = new Date(fimLetivo + 'T23:59:59Z');
+    } else if (mes < 6) { // 1º Semestre (até 30 de Junho)
         dataFim = new Date(Date.UTC(ano, 5, 30, 23, 59, 59));
     } else { // 2º Semestre (até 20 de Dezembro)
         dataFim = new Date(Date.UTC(ano, 11, 20, 23, 59, 59));
@@ -5983,13 +6004,6 @@ async function agendarTodosTutorados(listaOrdenada = null) {
     const gradeEscola = await getGradeEscola();
     const meusHorarios = data.horariosAulas || [];
 
-    let excecoesGrade = [];
-    if (currentUser && currentUser.schoolId) {
-        const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
-        const gestorData = await getData('app_data', key);
-        if (gestorData) excecoesGrade = gestorData.gradeHorariaExcecoes || [];
-    }
-    
     const blocosTutoriaNormais = gradeEscola.filter(g => 
         (g.tipo === 'tutoria') ||
         ((!g.tipo || g.tipo === '') && meusHorarios.some(a => a.id_bloco == g.id && a.tipo === 'tutoria'))
@@ -6007,8 +6021,15 @@ async function agendarTodosTutorados(listaOrdenada = null) {
     while (cursor <= dataFim) {
         const dataStr = cursor.toISOString().split('T')[0];
         const diaSemana = cursor.getUTCDay(); // 0=Dom, 1=Seg...
+
+        // Pula feriados, férias e recessos (fora dos bimestres cadastrados pela gestão).
+        if (calCtx && !CalendarioEscolar.estaEmPeriodoLetivo(dataStr, calCtx)) {
+            cursor.setUTCDate(cursor.getUTCDate() + 1);
+            continue;
+        }
+
         const excecaoDoDia = excecoesGrade.find(e => e.data === dataStr);
-        
+
         let blocosDeTutoriaParaHoje = [];
 
         if (excecaoDoDia) {
@@ -7128,6 +7149,8 @@ function removerAgendamento(id) {
 // --- AGENDA ---
 async function renderAgenda() {
     await renderGradeHorariaProfessor();
+    // Card de integração com o Google Agenda + tentativa de sincronização silenciosa ao abrir.
+    if (typeof gcalAoAbrirAgenda === 'function') gcalAoAbrirAgenda();
 }
 
 
@@ -9112,6 +9135,11 @@ async function persistirDados() {
             if (currentViewMode === 'gestor' && typeof atualizarLinkCompartilhamentoGestor === 'function') {
                 // Faz o update de forma silenciosa e sem aguardar (para não lentificar a UI)
                 atualizarLinkCompartilhamentoGestor().catch(err => console.warn('Erro ao atualizar visão compartilhada:', err));
+            }
+
+            // [NOVO] Espelha as mudanças do professor no Google Agenda (se conectado). Debounced.
+            if (currentViewMode !== 'gestor' && typeof gcalOnDataChanged === 'function') {
+                gcalOnDataChanged();
             }
         } catch (e) {
             console.warn(`Erro ao sincronizar dados com Firebase no modo ${currentViewMode}:`, e);

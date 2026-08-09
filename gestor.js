@@ -94,11 +94,15 @@ function renderRegistrosGestor() {
                         onclick="currentRegistrosTab='busca_ativa'; renderRegistrosGestor()">
                     🚨 Alertas Busca Ativa
                 </button>
-                <button class="btn ${currentRegistrosTab === 'bimestres' ? 'btn-primary' : 'btn-secondary'}" 
+                <button class="btn ${currentRegistrosTab === 'bimestres' ? 'btn-primary' : 'btn-secondary'}"
                         onclick="currentRegistrosTab='bimestres'; renderRegistrosGestor()">
                     📅 Config. Bimestres
                 </button>
-                <button class="btn ${currentRegistrosTab === 'limpeza' ? 'btn-primary' : 'btn-secondary'}" 
+                <button class="btn ${currentRegistrosTab === 'feriados' ? 'btn-primary' : 'btn-secondary'}"
+                        onclick="currentRegistrosTab='feriados'; renderRegistrosGestor()">
+                    🎉 Feriados e Recessos
+                </button>
+                <button class="btn ${currentRegistrosTab === 'limpeza' ? 'btn-primary' : 'btn-secondary'}"
                         onclick="currentRegistrosTab='limpeza'; renderRegistrosGestor()">
                     🧹 Limpeza de Duplicados
                 </button>
@@ -118,6 +122,8 @@ function renderRegistrosGestor() {
         renderAbaAlertasBuscaAtiva();
     } else if (currentRegistrosTab === 'bimestres') {
         renderAbaConfigBimestres();
+    } else if (currentRegistrosTab === 'feriados') {
+        renderAbaFeriados();
     } else if (currentRegistrosTab === 'arquivados') {
         renderAbaRegistrosArquivados();
     } else if (currentRegistrosTab === 'limpeza') {
@@ -309,6 +315,97 @@ function salvarConfigBimestres(e) {
 
     persistirDados();
     alert('Calendário atualizado! Os professores já podem visualizar as métricas baseadas nestas datas.');
+    renderRegistrosGestor();
+}
+
+// --- Feriados e Recessos (usado para NÃO marcar compromissos no Google Agenda dos professores) ---
+function renderAbaFeriados() {
+    const feriados = (data.feriadosEscolares || []).slice().sort((a, b) => (a.data || '').localeCompare(b.data || ''));
+    const cidade = data.escolaCidade || '';
+    const uf = data.escolaUF || '';
+
+    const linhas = feriados.map((f, i) => linhaFeriadoHTML(f.data, f.nome, i)).join('');
+
+    const html = `
+        <div>
+            <h2>🎉 Feriados, Recessos e Férias</h2>
+            <p style="color:#666; font-size:14px; margin-bottom:16px;">
+                Estas datas são respeitadas na sincronização com o Google Agenda dos professores: nenhum compromisso é
+                marcado em feriados, recessos ou férias. As datas fora dos bimestres já contam automaticamente como férias/recesso.
+                Os <strong>feriados nacionais</strong> são calculados automaticamente — cadastre aqui apenas os
+                <strong>municipais/estaduais e recessos locais</strong>.
+            </p>
+
+            <div class="card" style="background:#f8fafc; border:1px solid #e2e8f0; padding:15px; margin-bottom:16px;">
+                <h4 style="margin-top:0; color:#2c5282;">Localização da escola (para feriados regionais)</h4>
+                <div style="display:flex; gap:15px; flex-wrap:wrap;">
+                    <label style="flex:2; min-width:180px;"><span style="font-size:12px; font-weight:bold;">Cidade:</span><br>
+                        <input type="text" id="feriadoCidade" value="${cidade}" placeholder="Ex.: Osasco" style="width:100%; padding:6px;"></label>
+                    <label style="flex:1; min-width:80px;"><span style="font-size:12px; font-weight:bold;">UF:</span><br>
+                        <input type="text" id="feriadoUF" value="${uf}" maxlength="2" placeholder="SP" style="width:100%; padding:6px; text-transform:uppercase;"></label>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+                <button class="btn btn-secondary btn-sm" onclick="adicionarLinhaFeriado()">+ Adicionar data</button>
+                <button class="btn btn-secondary btn-sm" onclick="sugerirFeriadosNacionais()">✨ Sugerir feriados nacionais do ano</button>
+            </div>
+
+            <div id="listaFeriados">
+                ${linhas || '<p style="color:#999; font-size:13px;">Nenhum feriado/recesso cadastrado ainda.</p>'}
+            </div>
+
+            <button type="button" class="btn btn-primary" style="margin-top:20px; width:100%; padding:12px;" onclick="salvarFeriados()">💾 Salvar Feriados e Recessos</button>
+        </div>
+    `;
+    document.getElementById('registrosGestorContent').innerHTML = html;
+}
+
+function linhaFeriadoHTML(dataVal, nomeVal, idx) {
+    return `
+        <div class="feriado-linha" style="display:flex; gap:10px; align-items:center; margin-bottom:8px;">
+            <input type="date" class="feriado-data" value="${dataVal || ''}" style="padding:6px;">
+            <input type="text" class="feriado-nome" value="${(nomeVal || '').replace(/"/g, '&quot;')}" placeholder="Nome (ex.: Aniversário da cidade / Recesso)" style="flex:1; padding:6px;">
+            <button type="button" class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">✕</button>
+        </div>`;
+}
+
+function adicionarLinhaFeriado() {
+    const lista = document.getElementById('listaFeriados');
+    // Se estava com a mensagem de vazio, limpa antes.
+    if (lista.querySelector('p')) lista.innerHTML = '';
+    lista.insertAdjacentHTML('beforeend', linhaFeriadoHTML('', '', Date.now()));
+}
+
+function sugerirFeriadosNacionais() {
+    if (typeof CalendarioEscolar === 'undefined') return alert('Módulo de calendário não carregado.');
+    const ano = new Date().getFullYear();
+    const nacionais = CalendarioEscolar.feriadosNacionais(ano);
+    const lista = document.getElementById('listaFeriados');
+    const existentes = new Set(Array.from(lista.querySelectorAll('.feriado-data')).map(el => el.value));
+    if (lista.querySelector('p')) lista.innerHTML = '';
+    Object.keys(nacionais).sort().forEach(dataStr => {
+        if (existentes.has(dataStr)) return;
+        lista.insertAdjacentHTML('beforeend', linhaFeriadoHTML(dataStr, nacionais[dataStr], Date.now()));
+    });
+    alert('Feriados nacionais do ano ' + ano + ' adicionados à lista. Revise e clique em Salvar.');
+}
+
+function salvarFeriados() {
+    const linhas = document.querySelectorAll('#listaFeriados .feriado-linha');
+    const feriados = [];
+    linhas.forEach(l => {
+        const dataVal = l.querySelector('.feriado-data').value;
+        const nomeVal = l.querySelector('.feriado-nome').value.trim();
+        if (dataVal) feriados.push({ data: dataVal, nome: nomeVal || 'Feriado/Recesso' });
+    });
+
+    data.feriadosEscolares = feriados;
+    data.escolaCidade = (document.getElementById('feriadoCidade').value || '').trim();
+    data.escolaUF = (document.getElementById('feriadoUF').value || '').trim().toUpperCase();
+
+    persistirDados();
+    alert('Feriados e recessos salvos! A agenda dos professores será atualizada na próxima sincronização.');
     renderRegistrosGestor();
 }
 
