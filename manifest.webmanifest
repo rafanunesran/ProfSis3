@@ -1,0 +1,26 @@
+{
+  "name": "SisProf — Sistema Escolar",
+  "short_name": "SisProf",
+  "description": "Gestão de turmas, tutorias e agenda escolar com sincronização para o Google Agenda.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#2c5282",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "resources/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "resources/app-icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
