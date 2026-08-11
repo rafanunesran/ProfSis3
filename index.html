@@ -5,7 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SisProf</title>
     <link rel="stylesheet" href="styles.css?v=3.12">
+    <!-- PWA / iOS (iPhone e iPad) -->
+    <link rel="manifest" href="manifest.webmanifest?v=1">
+    <meta name="theme-color" content="#2c5282">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="SisProf">
+    <link rel="apple-touch-icon" href="resources/app-icon.svg">
     <script src="shared.js?v=3.11"></script>
+    <!-- Google Identity Services (OAuth para o Google Agenda) -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
@@ -20,6 +30,9 @@
     <script src="app.js?v=3.43" defer></script>
     <script src="ia_estagiario.js?v=3.36" defer></script>
     <script src="biblioteca.js?v=1.2" defer></script>
+    <!-- Calendário escolar + sincronização com o Google Agenda -->
+    <script src="feriados.js?v=1.0" defer></script>
+    <script src="google-calendar.js?v=1.1" defer></script>
 </head>
 <body>
     <!-- TELA DE LOGIN/CADASTRO -->
@@ -115,6 +128,7 @@
                         <h2 style="margin: 0;">📅 Grade de Horários</h2>
                     </div>
 
+                    <div id="gcalCard"></div>
                     <div id="containerGradeHoraria"></div>
                 </div>
             </div>
@@ -348,5 +362,14 @@
             <button class="btn btn-secondary" style="width: 100%; margin-top: 20px;" onclick="closeModal('modalPerfilUsuario')">Fechar</button>
         </div>
     </div>
+
+    <!-- Service Worker (habilita instalação como app no iPhone/iPad e Android) -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js?v=1').catch(err => console.warn('SW não registrado:', err));
+            });
+        }
+    </script>
 </body>
 </html>
