@@ -20,7 +20,7 @@
     // API habilitada e as origens autorizadas cadastradas (URL do site + http://localhost:8080).
     // O Client ID é público (pode ficar no código). Se ficar em branco, o app pede ao professor
     // para colar o ID na primeira conexão e guarda em localStorage.
-    const GOOGLE_OAUTH_CLIENT_ID_PADRAO = ''; // <-- PREENCHER com o Client ID (…apps.googleusercontent.com)
+    const GOOGLE_OAUTH_CLIENT_ID_PADRAO = '411519047707-gmomve1rn249lt0743qrbp10j0b14qcu.apps.googleusercontent.com';
 
     const SCOPES = 'https://www.googleapis.com/auth/calendar';
     const CAL_SUMMARY = 'SisProf — Agenda Escolar';
