@@ -40,6 +40,10 @@
 
     const BYDAY = { 1: 'MO', 2: 'TU', 3: 'WE', 4: 'TH', 5: 'FR' };
 
+    // Tutorias são individuais (mostram o nome do tutorado, que muda a cada semana no rodízio),
+    // então são sincronizadas só numa janela rolante à frente — mantém poucos eventos e sem rate limit.
+    const HORIZON_TUTORIA_DIAS = 21;
+
     // =========================================================================
     // ESTADO EM MEMÓRIA (o token nunca é persistido)
     // =========================================================================
@@ -205,6 +209,8 @@
             const turma = (turmas || []).find(t => t.id == aula.id_turma);
             return { incluir: true, titulo: '📚 Aula' + (turma ? ' — ' + turma.nome : '') };
         }
+        // Tutoria NÃO entra como série recorrente: é gerada individualmente (com nome do aluno) abaixo.
+        if (tipo === 'tutoria') return { incluir: false };
         if (MAP_FIXO[tipo]) return { incluir: true, titulo: MAP_FIXO[tipo] };
         return { incluir: false }; // bloco livre / não atribuído
     }
@@ -222,6 +228,11 @@
     }
     function exdateLocal(dateStr, hhmm) {
         return dateStr.replace(/-/g, '') + 'T' + hhmm.replace(':', '') + '00';
+    }
+    function addDias(dateStr, n) {
+        const d = new Date(dateStr + 'T12:00:00Z');
+        d.setUTCDate(d.getUTCDate() + n);
+        return d.toISOString().split('T')[0];
     }
     function hashStr(s) {
         let h = 0;
@@ -295,6 +306,25 @@
             });
         });
 
+        // 3) Tutorias individuais (com nome do aluno) na janela rolante [hoje, hoje+HORIZON].
+        const agendamentos = (data && data.agendamentos) || [];
+        const tutorados = (data && data.tutorados) || [];
+        const limiteTutoria = addDias(hoje, HORIZON_TUTORIA_DIAS);
+        agendamentos.forEach(a => {
+            if (!a.tutoradoId || !a.data || !a.inicio || !a.fim) return;
+            if (a.data < hoje || a.data > limiteTutoria || a.data > fim) return;
+            if (!CE.estaEmPeriodoLetivo(a.data, ctx)) return;
+            const t = tutorados.find(x => x.id == a.tutoradoId);
+            const nome = t ? (t.nome_estudante || t.nome_completo || 'Tutorado') : 'Tutorado';
+            const titulo = '🎓 Tutoria — ' + nome;
+            const hash = hashStr([titulo, a.data, a.inicio, a.fim].join('|'));
+            itens.push({
+                key: 'tutoria-' + a.id,
+                hash,
+                avulso: { titulo, date: a.data, inicio: a.inicio, fim: a.fim }
+            });
+        });
+
         return itens;
     }
 
@@ -341,7 +371,10 @@
             const resp = await apiFetch('/calendars/' + encodeURIComponent(calendarId) + '/events?' + params.toString());
             (resp.items || []).forEach(ev => {
                 const priv = (ev.extendedProperties && ev.extendedProperties.private) || {};
-                if (priv.sisprofKey) existentes.set(priv.sisprofKey, { id: ev.id, hash: priv.sisprofHash });
+                if (!priv.sisprofKey) return;
+                const start = ((ev.start && (ev.start.dateTime || ev.start.date)) || '').slice(0, 10);
+                const isSeries = !!(ev.recurrence && ev.recurrence.length);
+                existentes.set(priv.sisprofKey, { id: ev.id, hash: priv.sisprofHash, start, isSeries });
             });
             pageToken = resp.nextPageToken;
         } while (pageToken);
@@ -384,8 +417,14 @@
                 if (!atual) criar.push(it);
                 else if (atual.hash !== it.hash) atualizar.push({ it, id: atual.id });
             });
+            const hojeStr = getTodayString();
             const apagar = [];
-            existentes.forEach((v, key) => { if (!vistos.has(key)) apagar.push(v.id); });
+            existentes.forEach((v, key) => {
+                if (vistos.has(key)) return;
+                // Só mexe nos pendentes: nunca apaga evento avulso já no passado (preserva histórico).
+                if (!v.isSeries && v.start && v.start < hojeStr) return;
+                apagar.push(v.id);
+            });
 
             const total = criar.length + atualizar.length + apagar.length;
             let feitos = 0;
