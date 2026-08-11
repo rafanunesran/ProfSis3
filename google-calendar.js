@@ -1,14 +1,14 @@
 // google-calendar.js — Integração com o Google Agenda (client-side, sem servidor).
 //
 // Fluxo: o professor conecta a conta Google (OAuth via Google Identity Services), o sistema cria
-// um calendário dedicado "SisProf — Agenda Escolar" e mantém nele os blocos fixos (almoço, café,
-// reunião, etc.), as aulas mapeadas e os atendimentos de tutoria — sempre dentro dos bimestres e
-// pulando feriados/férias/recesso (via CalendarioEscolar, em feriados.js).
+// um calendário dedicado "SisProf — Agenda Escolar" e mantém nele os blocos da grade (aulas,
+// almoço, café, reunião, tutoria, etc.) como EVENTOS RECORRENTES semanais — um por bloco, com o
+// período indo até o fim do ano letivo e com EXDATE (exceções) para feriados, férias e recessos.
 //
-// Sincronização é reconciliação idempotente: cada evento carrega uma chave estável em
-// extendedProperties.private (sisprofKey) e um hash de conteúdo (sisprofHash). A cada sync o
-// sistema calcula o conjunto desejado e cria o que falta, atualiza o que mudou e apaga o obsoleto.
-// É isso que faz uma alteração na grade/tutoria refletir no Google Agenda.
+// Modelo recorrente (em vez de 1 evento por dia): reduz de ~900 eventos para ~30, evita o limite
+// de taxa da API e faz uma edição na grade mexer em UMA série. A reconciliação é idempotente: cada
+// série carrega uma chave estável (sisprofKey) e um hash de conteúdo (sisprofHash); a cada sync o
+// sistema cria as séries que faltam, atualiza as que mudaram e apaga as obsoletas.
 
 (function (global) {
     'use strict';
@@ -26,6 +26,7 @@
     const CAL_SUMMARY = 'SisProf — Agenda Escolar';
     const TIMEZONE = 'America/Sao_Paulo';
     const API = 'https://www.googleapis.com/calendar/v3';
+    const DESC = 'Criado automaticamente pelo SisProf. Não edite manualmente — será sobrescrito na próxima sincronização.';
 
     const MAP_FIXO = {
         almoco: '🍽️ Almoço',
@@ -33,8 +34,11 @@
         atpca: '📝 ATPCA',
         apcg: '📋 APCG',
         reuniao: '🤝 Reunião',
-        estudo: '📖 Estudo'
+        estudo: '📖 Estudo',
+        tutoria: '🎓 Tutoria'
     };
+
+    const BYDAY = { 1: 'MO', 2: 'TU', 3: 'WE', 4: 'TH', 5: 'FR' };
 
     // =========================================================================
     // ESTADO EM MEMÓRIA (o token nunca é persistido)
@@ -44,6 +48,8 @@
     let tokenExpiry = 0;
     let sincronizando = false;
     let debounceTimer = null;
+
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
     function getClientId() {
         return GOOGLE_OAUTH_CLIENT_ID_PADRAO || localStorage.getItem('gcal_client_id') || '';
@@ -92,30 +98,42 @@
         });
     }
 
-    async function apiFetch(path, opts) {
+    async function apiFetchOnce(path, opts) {
         opts = opts || {};
         const token = await pedirToken(false).catch(() => accessToken);
         if (!token) throw new Error('Sem autorização do Google.');
-        const resp = await fetch(API + path, {
+        const doFetch = (tk) => fetch(API + path, {
             method: opts.method || 'GET',
-            headers: {
-                'Authorization': 'Bearer ' + token,
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Authorization': 'Bearer ' + tk, 'Content-Type': 'application/json' },
             body: opts.body ? JSON.stringify(opts.body) : undefined
         });
+        let resp = await doFetch(token);
         if (resp.status === 401) {
-            // Token expirou no meio do caminho — força novo e repete uma vez.
             accessToken = null;
             const t2 = await pedirToken(false);
-            const r2 = await fetch(API + path, {
-                method: opts.method || 'GET',
-                headers: { 'Authorization': 'Bearer ' + t2, 'Content-Type': 'application/json' },
-                body: opts.body ? JSON.stringify(opts.body) : undefined
-            });
-            return finalizarResposta(r2);
+            resp = await doFetch(t2);
         }
         return finalizarResposta(resp);
+    }
+
+    // Wrapper com retry + backoff exponencial para o limite de taxa do Google (403/429).
+    async function apiFetch(path, opts) {
+        let ultimoErro;
+        for (let tentativa = 0; tentativa < 6; tentativa++) {
+            try {
+                return await apiFetchOnce(path, opts);
+            } catch (e) {
+                ultimoErro = e;
+                const msg = (e && e.message) || '';
+                const ehLimite = /rate limit|ratelimitexceeded|userratelimitexceeded|quota|\b429\b|backenderror/i.test(msg);
+                if (ehLimite && tentativa < 5) {
+                    await sleep(1000 * Math.pow(2, tentativa) + Math.floor(Math.random() * 400));
+                    continue;
+                }
+                throw e;
+            }
+        }
+        throw ultimoErro;
     }
 
     async function finalizarResposta(resp) {
@@ -124,7 +142,9 @@
         const json = txt ? JSON.parse(txt) : null;
         if (!resp.ok) {
             const msg = json && json.error ? (json.error.message || JSON.stringify(json.error)) : ('HTTP ' + resp.status);
-            throw new Error(msg);
+            const err = new Error(msg);
+            err.status = resp.status;
+            throw err;
         }
         return json;
     }
@@ -135,7 +155,6 @@
     async function garantirCalendario() {
         const gc = data.googleCalendar;
         if (gc && gc.calendarId) {
-            // Confirma que ainda existe.
             try {
                 await apiFetch('/calendars/' + encodeURIComponent(gc.calendarId));
                 return gc.calendarId;
@@ -143,20 +162,14 @@
                 // Foi apagado no Google — recria abaixo.
             }
         }
-        // Procura por um calendário já criado antes.
         const lista = await apiFetch('/users/me/calendarList?maxResults=250');
         const existente = (lista.items || []).find(c => c.summary === CAL_SUMMARY);
-        let calendarId;
-        if (existente) {
-            calendarId = existente.id;
-        } else {
-            const criado = await apiFetch('/calendars', {
-                method: 'POST',
-                body: { summary: CAL_SUMMARY, timeZone: TIMEZONE, description: 'Grade, blocos fixos e tutorias sincronizados pelo SisProf.' }
-            });
-            calendarId = criado.id;
-        }
-        return calendarId;
+        if (existente) return existente.id;
+        const criado = await apiFetch('/calendars', {
+            method: 'POST',
+            body: { summary: CAL_SUMMARY, timeZone: TIMEZONE, description: 'Grade, blocos fixos e tutorias sincronizados pelo SisProf.' }
+        });
+        return criado.id;
     }
 
     // =========================================================================
@@ -168,7 +181,7 @@
 
         if (user && user.schoolId) {
             const key = 'app_data_school_' + user.schoolId + '_gestor';
-            const gestorData = await global.getData('app_data', key);
+            const gestorData = await getData('app_data', key);
             if (gestorData) {
                 gradeEscola = gestorData.gradeHoraria || [];
                 excecoes = gestorData.gradeHorariaExcecoes || [];
@@ -179,11 +192,11 @@
             }
         }
 
-        const ctx = global.CalendarioEscolar.montarContextoCalendario({
+        const ctx = CalendarioEscolar.montarContextoCalendario({
             configBimestres, feriadosEscolares, gradeHorariaExcecoes: excecoes, uf, cidade
         });
 
-        return { ctx, gradeEscola, excecoes };
+        return { ctx, gradeEscola, excecoes, configBimestres };
     }
 
     function classificarBloco(bloco, aula, turmas) {
@@ -192,80 +205,120 @@
             const turma = (turmas || []).find(t => t.id == aula.id_turma);
             return { incluir: true, titulo: '📚 Aula' + (turma ? ' — ' + turma.nome : '') };
         }
-        if (tipo === 'tutoria') return { incluir: false }; // coberto pelos agendamentos
         if (MAP_FIXO[tipo]) return { incluir: true, titulo: MAP_FIXO[tipo] };
         return { incluir: false }; // bloco livre / não atribuído
     }
 
-    // Constrói a lista de eventos desejados no horizonte (hoje → fim do ano letivo).
-    function construirEventosDesejados(ctxWrap) {
-        const { ctx, gradeEscola, excecoes } = ctxWrap;
-        const CE = global.CalendarioEscolar;
-        const hoje = global.getTodayString();
-        const fim = CE.fimDoAnoLetivo(ctx);
-        const eventos = [];
-        if (!fim || fim < hoje) return eventos;
-
-        const horariosAulas = (data && data.horariosAulas) || [];
-        const turmas = (data && data.turmas) || [];
-        const agendamentos = (data && data.agendamentos) || [];
-        const tutorados = (data && data.tutorados) || [];
-
-        // Blocos fixos + aulas, dia a dia.
-        let cursor = new Date(hoje + 'T12:00:00Z');
-        const dataFim = new Date(fim + 'T12:00:00Z');
-        while (cursor <= dataFim) {
-            const dataStr = cursor.toISOString().split('T')[0];
-            if (CE.estaEmPeriodoLetivo(dataStr, ctx)) {
-                const dia = cursor.getUTCDay(); // 0=Dom … 6=Sáb
-                const exc = excecoes.find(e => e.data === dataStr);
-                const blocos = exc ? (exc.blocos || []) : gradeEscola.filter(g => g.diaSemana == dia);
-                blocos.forEach(bloco => {
-                    if (!bloco.inicio || !bloco.fim) return;
-                    const aula = horariosAulas.find(a => a.id_bloco == bloco.id);
-                    const info = classificarBloco(bloco, aula, turmas);
-                    if (info.incluir) {
-                        eventos.push({
-                            key: 'fixo-' + bloco.id + '-' + dataStr,
-                            date: dataStr, inicio: bloco.inicio, fim: bloco.fim, titulo: info.titulo
-                        });
-                    }
-                });
-            }
-            cursor.setUTCDate(cursor.getUTCDate() + 1);
-        }
-
-        // Tutorias (agendamentos com tutorado atribuído).
-        agendamentos.forEach(a => {
-            if (!a.tutoradoId || !a.data || a.data < hoje || a.data > fim) return;
-            if (!CE.estaEmPeriodoLetivo(a.data, ctx)) return;
-            const t = tutorados.find(x => x.id == a.tutoradoId);
-            const nome = t ? (t.nome_estudante || t.nome_completo || 'Tutorado') : 'Tutorado';
-            eventos.push({
-                key: 'tutoria-' + a.id,
-                date: a.data, inicio: a.inicio, fim: a.fim, titulo: '🎓 Tutoria — ' + nome
-            });
-        });
-
-        return eventos;
+    // --- Helpers de data para recorrência ---
+    function primeiraOcorrencia(fromDateStr, diaSemana) {
+        const d = new Date(fromDateStr + 'T12:00:00Z');
+        while (d.getUTCDay() !== diaSemana) d.setUTCDate(d.getUTCDate() + 1);
+        return d.toISOString().split('T')[0];
     }
-
-    function hashEvento(e) {
-        const s = e.titulo + '|' + e.date + '|' + e.inicio + '|' + e.fim;
+    function untilUTC(untilDateStr) {
+        // Fim do dia (SP) convertido para UTC no formato básico exigido pelo RRULE.
+        const iso = new Date(untilDateStr + 'T23:59:59-03:00').toISOString();
+        return iso.replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+    }
+    function exdateLocal(dateStr, hhmm) {
+        return dateStr.replace(/-/g, '') + 'T' + hhmm.replace(':', '') + '00';
+    }
+    function hashStr(s) {
         let h = 0;
         for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; }
         return String(h);
     }
 
-    function paraRecursoGoogle(e, userId) {
-        return {
-            summary: e.titulo,
-            description: 'Criado automaticamente pelo SisProf. Não edite manualmente — será sobrescrito na próxima sincronização.',
-            start: { dateTime: e.date + 'T' + e.inicio + ':00', timeZone: TIMEZONE },
-            end: { dateTime: e.date + 'T' + e.fim + ':00', timeZone: TIMEZONE },
-            extendedProperties: {
-                private: { sisprofOwner: String(userId), sisprofKey: e.key, sisprofHash: hashEvento(e) }
+    // Constrói as SÉRIES recorrentes desejadas + eventos avulsos (dias atípicos com grade especial).
+    function construirDesejados(ctxWrap) {
+        const { ctx, gradeEscola, excecoes } = ctxWrap;
+        const CE = CalendarioEscolar;
+        const hoje = getTodayString();
+        const fim = CE.fimDoAnoLetivo(ctx);
+        const itens = [];
+        if (!fim || fim < hoje) return itens;
+
+        const bims = ctx.configBimestres || [];
+        const inicioAno = bims.reduce((min, b) => (b.inicio < min ? b.inicio : min), bims[0].inicio);
+        const rangeStart = hoje > inicioAno ? hoje : inicioAno;
+
+        const horariosAulas = (data && data.horariosAulas) || [];
+        const turmas = (data && data.turmas) || [];
+
+        // 1) Uma série recorrente por bloco da grade semanal (dias 1..5).
+        gradeEscola.forEach(bloco => {
+            const dia = parseInt(bloco.diaSemana, 10);
+            if (!(dia >= 1 && dia <= 5) || !bloco.inicio || !bloco.fim) return;
+            const aula = horariosAulas.find(a => a.id_bloco == bloco.id);
+            const info = classificarBloco(bloco, aula, turmas);
+            if (!info.incluir) return;
+
+            const dtstart = primeiraOcorrencia(rangeStart, dia);
+            if (dtstart > fim) return;
+
+            // EXDATE: ocorrências semanais que caem em não-letivo OU em dia com grade especial.
+            const exdates = [];
+            let c = new Date(dtstart + 'T12:00:00Z');
+            const end = new Date(fim + 'T12:00:00Z');
+            while (c <= end) {
+                const ds = c.toISOString().split('T')[0];
+                const exc = excecoes.find(e => e.data === ds);
+                const especial = exc && exc.blocos && exc.blocos.length > 0;
+                if (!CE.estaEmPeriodoLetivo(ds, ctx) || especial) exdates.push(ds);
+                c.setUTCDate(c.getUTCDate() + 7);
             }
+
+            const hash = hashStr([info.titulo, bloco.inicio, bloco.fim, BYDAY[dia], fim, exdates.join(',')].join('|'));
+            itens.push({
+                key: 'serie-' + bloco.id,
+                hash,
+                serie: { titulo: info.titulo, inicio: bloco.inicio, fim: bloco.fim, byday: BYDAY[dia], dtstart, until: fim, exdates }
+            });
+        });
+
+        // 2) Eventos avulsos para dias atípicos com grade especial (substituem a série naquele dia).
+        excecoes.forEach(exc => {
+            if (!exc.blocos || exc.blocos.length === 0) return;
+            if (exc.data < hoje || exc.data > fim) return;
+            if (!CE.estaEmPeriodoLetivo(exc.data, ctx)) return;
+            exc.blocos.forEach((b, idx) => {
+                if (!b.inicio || !b.fim) return;
+                const aula = horariosAulas.find(a => a.id_bloco == b.id);
+                const info = classificarBloco(b, aula, turmas);
+                if (!info.incluir) return;
+                const hash = hashStr([info.titulo, exc.data, b.inicio, b.fim].join('|'));
+                itens.push({
+                    key: 'exc-' + exc.data + '-' + idx,
+                    hash,
+                    avulso: { titulo: info.titulo, date: exc.data, inicio: b.inicio, fim: b.fim }
+                });
+            });
+        });
+
+        return itens;
+    }
+
+    function recursoGoogle(item, userId) {
+        const ext = { private: { sisprofOwner: String(userId), sisprofKey: item.key, sisprofHash: item.hash } };
+        if (item.serie) {
+            const s = item.serie;
+            const recurrence = ['RRULE:FREQ=WEEKLY;BYDAY=' + s.byday + ';UNTIL=' + untilUTC(s.until)];
+            if (s.exdates.length) {
+                recurrence.push('EXDATE;TZID=' + TIMEZONE + ':' + s.exdates.map(d => exdateLocal(d, s.inicio)).join(','));
+            }
+            return {
+                summary: s.titulo, description: DESC,
+                start: { dateTime: s.dtstart + 'T' + s.inicio + ':00', timeZone: TIMEZONE },
+                end: { dateTime: s.dtstart + 'T' + s.fim + ':00', timeZone: TIMEZONE },
+                recurrence, extendedProperties: ext
+            };
+        }
+        const a = item.avulso;
+        return {
+            summary: a.titulo, description: DESC,
+            start: { dateTime: a.date + 'T' + a.inicio + ':00', timeZone: TIMEZONE },
+            end: { dateTime: a.date + 'T' + a.fim + ':00', timeZone: TIMEZONE },
+            extendedProperties: ext
         };
     }
 
@@ -273,17 +326,16 @@
     // RECONCILIAÇÃO
     // =========================================================================
     async function listarEventosSisprof(calendarId, userId) {
-        const hoje = global.getTodayString();
-        const timeMin = new Date(hoje + 'T00:00:00-03:00').toISOString();
+        // singleEvents=false: pega as SÉRIES (não expande em instâncias). Sem timeMin para achar
+        // também séries cujo início já ficou no passado.
         const existentes = new Map(); // sisprofKey -> { id, hash }
         let pageToken = null;
         do {
             const params = new URLSearchParams({
                 privateExtendedProperty: 'sisprofOwner=' + String(userId),
                 maxResults: '2500',
-                singleEvents: 'true',
-                showDeleted: 'false',
-                timeMin: timeMin
+                singleEvents: 'false',
+                showDeleted: 'false'
             });
             if (pageToken) params.set('pageToken', pageToken);
             const resp = await apiFetch('/calendars/' + encodeURIComponent(calendarId) + '/events?' + params.toString());
@@ -296,26 +348,19 @@
         return existentes;
     }
 
-    // Executa promessas com paralelismo limitado (evita estourar cota do Google).
+    // Executa em lotes pequenos com pausa entre lotes (evita estourar o limite de taxa).
     async function emLote(itens, tamanho, fn, onProgress) {
-        let feitos = 0;
         for (let i = 0; i < itens.length; i += tamanho) {
             const fatia = itens.slice(i, i + tamanho);
-            await Promise.all(fatia.map(async it => {
-                await fn(it);
-                feitos++;
-                if (onProgress) onProgress(feitos, itens.length);
-            }));
+            await Promise.all(fatia.map(async it => { await fn(it); if (onProgress) onProgress(); }));
+            if (i + tamanho < itens.length) await sleep(300);
         }
     }
 
     async function sincronizar(interativo) {
         if (sincronizando) return;
         if (!ehModoProfessor()) return;
-        if (!getClientId()) {
-            if (interativo) return conectar();
-            return;
-        }
+        if (!getClientId()) { if (interativo) return conectar(); return; }
         sincronizando = true;
         atualizarStatus('⏳ Sincronizando com o Google Agenda…');
         try {
@@ -323,52 +368,37 @@
             const userId = currentUser.uid || currentUser.id;
             const calendarId = await garantirCalendario();
 
-            // Persiste o vínculo do calendário se mudou.
             if (!data.googleCalendar || data.googleCalendar.calendarId !== calendarId) {
                 data.googleCalendar = Object.assign({}, data.googleCalendar, { calendarId });
                 await salvarSilencioso();
             }
 
             const ctxWrap = await carregarContexto();
-            const desejados = construirEventosDesejados(ctxWrap);
+            const desejados = construirDesejados(ctxWrap);
             const existentes = await listarEventosSisprof(calendarId, userId);
 
-            const paraCriar = [];
-            const paraAtualizar = [];
-            const vistos = new Set();
-
-            desejados.forEach(e => {
-                vistos.add(e.key);
-                const atual = existentes.get(e.key);
-                const hash = hashEvento(e);
-                if (!atual) paraCriar.push(e);
-                else if (atual.hash !== hash) paraAtualizar.push({ e, id: atual.id });
+            const criar = [], atualizar = [], vistos = new Set();
+            desejados.forEach(it => {
+                vistos.add(it.key);
+                const atual = existentes.get(it.key);
+                if (!atual) criar.push(it);
+                else if (atual.hash !== it.hash) atualizar.push({ it, id: atual.id });
             });
+            const apagar = [];
+            existentes.forEach((v, key) => { if (!vistos.has(key)) apagar.push(v.id); });
 
-            const paraApagar = [];
-            existentes.forEach((v, key) => { if (!vistos.has(key)) paraApagar.push(v.id); });
-
-            let total = paraCriar.length + paraAtualizar.length + paraApagar.length;
+            const total = criar.length + atualizar.length + apagar.length;
             let feitos = 0;
             const prog = () => { feitos++; atualizarStatus(`⏳ Sincronizando… ${feitos}/${total}`); };
 
-            await emLote(paraCriar, 6, async e => {
-                await apiFetch('/calendars/' + encodeURIComponent(calendarId) + '/events', { method: 'POST', body: paraRecursoGoogle(e, userId) });
-            }, prog);
+            const base = '/calendars/' + encodeURIComponent(calendarId) + '/events';
+            await emLote(criar, 3, it => apiFetch(base, { method: 'POST', body: recursoGoogle(it, userId) }), prog);
+            await emLote(atualizar, 3, ({ it, id }) => apiFetch(base + '/' + id, { method: 'PUT', body: recursoGoogle(it, userId) }), prog);
+            await emLote(apagar, 3, id => apiFetch(base + '/' + id, { method: 'DELETE' }), prog);
 
-            await emLote(paraAtualizar, 6, async ({ e, id }) => {
-                await apiFetch('/calendars/' + encodeURIComponent(calendarId) + '/events/' + id, { method: 'PUT', body: paraRecursoGoogle(e, userId) });
-            }, prog);
-
-            await emLote(paraApagar, 6, async id => {
-                await apiFetch('/calendars/' + encodeURIComponent(calendarId) + '/events/' + id, { method: 'DELETE' });
-            }, prog);
-
-            data.googleCalendar.connectedEmail = data.googleCalendar.connectedEmail || '';
             data.googleCalendar.lastSyncAt = new Date().toISOString();
             await salvarSilencioso();
-
-            atualizarStatus(`✅ Sincronizado: ${paraCriar.length} criados, ${paraAtualizar.length} atualizados, ${paraApagar.length} removidos.`);
+            atualizarStatus(`✅ Sincronizado: ${criar.length} criados, ${atualizar.length} atualizados, ${apagar.length} removidos.`);
         } catch (err) {
             console.error('[GCal] Erro na sincronização:', err);
             atualizarStatus('❌ Erro: ' + err.message);
@@ -380,13 +410,13 @@
     }
 
     async function salvarSilencioso() {
-        if (typeof global.persistirDados === 'function') {
-            try { await global.persistirDados(); } catch (e) { console.warn('[GCal] persistir falhou:', e); }
+        if (typeof persistirDados === 'function') {
+            try { await persistirDados(); } catch (e) { console.warn('[GCal] persistir falhou:', e); }
         }
     }
 
     // =========================================================================
-    // CONECTAR / DESCONECTAR
+    // CONECTAR / DESCONECTAR / RECRIAR
     // =========================================================================
     async function conectar() {
         if (!getClientId()) {
@@ -413,14 +443,12 @@
                 const calendarId = data.googleCalendar.calendarId;
                 const existentes = await listarEventosSisprof(calendarId, userId);
                 const ids = Array.from(existentes.values()).map(v => v.id);
-                await emLote(ids, 6, async id => {
-                    await apiFetch('/calendars/' + encodeURIComponent(calendarId) + '/events/' + id, { method: 'DELETE' });
-                });
+                const base = '/calendars/' + encodeURIComponent(calendarId) + '/events';
+                await emLote(ids, 3, id => apiFetch(base + '/' + id, { method: 'DELETE' }));
             }
         } catch (e) {
             console.warn('[GCal] erro ao remover eventos:', e);
         }
-        // Revoga o token e limpa o vínculo.
         if (accessToken && typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
             try { google.accounts.oauth2.revoke(accessToken, () => {}); } catch (e) {}
         }
@@ -428,6 +456,25 @@
         delete data.googleCalendar;
         await salvarSilencioso();
         renderCard();
+    }
+
+    // Apaga o calendário dedicado inteiro (1 chamada) e recria do zero — útil para limpar eventos
+    // antigos/duplicados sem precisar apagar centenas um a um.
+    async function recriarCalendario() {
+        if (!confirm('Isso vai APAGAR o calendário "SisProf — Agenda Escolar" atual (removendo de uma vez todos os eventos que o app criou) e recriar do zero com eventos recorrentes.\n\nSeus outros calendários não são afetados. Continuar?')) return;
+        try {
+            await pedirToken(true);
+            if (data.googleCalendar && data.googleCalendar.calendarId) {
+                atualizarStatus('⏳ Apagando calendário antigo…');
+                try { await apiFetch('/calendars/' + encodeURIComponent(data.googleCalendar.calendarId), { method: 'DELETE' }); }
+                catch (e) { console.warn('[GCal] falha ao apagar calendário:', e); }
+            }
+            delete data.googleCalendar;
+            await salvarSilencioso();
+            await sincronizar(true);
+        } catch (e) {
+            alert('Falha ao recriar o calendário: ' + e.message);
+        }
     }
 
     // =========================================================================
@@ -454,13 +501,14 @@
                         <h3 style="margin:0; color:#2c5282;">📆 Google Agenda</h3>
                         <p style="margin:4px 0 0; font-size:13px; color:#718096;">
                             ${conectado
-                                ? 'Conectado. Sua grade, blocos fixos e tutorias são espelhados no Google Agenda.'
+                                ? 'Conectado. Sua grade é espelhada como eventos semanais recorrentes, pulando feriados e férias.'
                                 : 'Conecte sua conta Google para espelhar automaticamente sua agenda escolar.'}
                         </p>
                     </div>
                     <div style="display:flex; gap:8px; flex-wrap:wrap;">
                         ${conectado
                             ? `<button class="btn btn-primary btn-sm" onclick="gcalSync(true)">🔄 Sincronizar agora</button>
+                               <button class="btn btn-secondary btn-sm" onclick="gcalRecriar()">🧹 Recriar do zero</button>
                                <button class="btn btn-secondary btn-sm" onclick="gcalAjudaIOS()">📱 iPhone/iPad</button>
                                <button class="btn btn-danger btn-sm" onclick="gcalDesconectar()">Desconectar</button>`
                             : `<button class="btn btn-success btn-sm" onclick="gcalConectar()">🔗 Conectar Google Agenda</button>
@@ -485,16 +533,11 @@
     // =========================================================================
     // GATILHOS
     // =========================================================================
-    // Chamado ao abrir a tela Agenda: renderiza o card e tenta sincronizar em silêncio.
     function aoAbrirAgenda() {
         renderCard();
-        if (gcalConectado() && getClientId()) {
-            // Tentativa silenciosa; se precisar de consentimento, o usuário usa o botão.
-            sincronizar(false);
-        }
+        if (gcalConectado() && getClientId()) sincronizar(false);
     }
 
-    // Chamado por persistirDados() quando os dados do professor mudam (debounced).
     function aoMudarDados() {
         if (!ehModoProfessor() || !gcalConectado() || !getClientId()) return;
         clearTimeout(debounceTimer);
@@ -506,6 +549,7 @@
     // =========================================================================
     global.gcalConectar = conectar;
     global.gcalDesconectar = desconectar;
+    global.gcalRecriar = recriarCalendario;
     global.gcalSync = sincronizar;
     global.gcalAjudaIOS = ajudaIOS;
     global.gcalRenderCard = renderCard;
