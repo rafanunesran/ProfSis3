@@ -50,11 +50,11 @@
     }
 
     function gcalConectado() {
-        return !!(global.data && global.data.googleCalendar && global.data.googleCalendar.calendarId);
+        return !!(data && data.googleCalendar && data.googleCalendar.calendarId);
     }
 
     function ehModoProfessor() {
-        return typeof global.currentViewMode === 'undefined' || global.currentViewMode !== 'gestor';
+        return typeof currentViewMode === 'undefined' || currentViewMode !== 'gestor';
     }
 
     // =========================================================================
@@ -133,7 +133,7 @@
     // CALENDÁRIO DEDICADO
     // =========================================================================
     async function garantirCalendario() {
-        const gc = global.data.googleCalendar;
+        const gc = data.googleCalendar;
         if (gc && gc.calendarId) {
             // Confirma que ainda existe.
             try {
@@ -163,7 +163,7 @@
     // CONTEXTO (dados de gestor + professor)
     // =========================================================================
     async function carregarContexto() {
-        const user = global.currentUser;
+        const user = currentUser;
         let gradeEscola = [], excecoes = [], configBimestres = [], feriadosEscolares = [], uf = '', cidade = '';
 
         if (user && user.schoolId) {
@@ -206,10 +206,10 @@
         const eventos = [];
         if (!fim || fim < hoje) return eventos;
 
-        const horariosAulas = (global.data && global.data.horariosAulas) || [];
-        const turmas = (global.data && global.data.turmas) || [];
-        const agendamentos = (global.data && global.data.agendamentos) || [];
-        const tutorados = (global.data && global.data.tutorados) || [];
+        const horariosAulas = (data && data.horariosAulas) || [];
+        const turmas = (data && data.turmas) || [];
+        const agendamentos = (data && data.agendamentos) || [];
+        const tutorados = (data && data.tutorados) || [];
 
         // Blocos fixos + aulas, dia a dia.
         let cursor = new Date(hoje + 'T12:00:00Z');
@@ -320,12 +320,12 @@
         atualizarStatus('⏳ Sincronizando com o Google Agenda…');
         try {
             await pedirToken(!!interativo);
-            const userId = global.currentUser.uid || global.currentUser.id;
+            const userId = currentUser.uid || currentUser.id;
             const calendarId = await garantirCalendario();
 
             // Persiste o vínculo do calendário se mudou.
-            if (!global.data.googleCalendar || global.data.googleCalendar.calendarId !== calendarId) {
-                global.data.googleCalendar = Object.assign({}, global.data.googleCalendar, { calendarId });
+            if (!data.googleCalendar || data.googleCalendar.calendarId !== calendarId) {
+                data.googleCalendar = Object.assign({}, data.googleCalendar, { calendarId });
                 await salvarSilencioso();
             }
 
@@ -364,8 +364,8 @@
                 await apiFetch('/calendars/' + encodeURIComponent(calendarId) + '/events/' + id, { method: 'DELETE' });
             }, prog);
 
-            global.data.googleCalendar.connectedEmail = global.data.googleCalendar.connectedEmail || '';
-            global.data.googleCalendar.lastSyncAt = new Date().toISOString();
+            data.googleCalendar.connectedEmail = data.googleCalendar.connectedEmail || '';
+            data.googleCalendar.lastSyncAt = new Date().toISOString();
             await salvarSilencioso();
 
             atualizarStatus(`✅ Sincronizado: ${paraCriar.length} criados, ${paraAtualizar.length} atualizados, ${paraApagar.length} removidos.`);
@@ -397,7 +397,7 @@
         }
         try {
             await pedirToken(true);
-            if (!global.data.googleCalendar) global.data.googleCalendar = {};
+            if (!data.googleCalendar) data.googleCalendar = {};
             await sincronizar(true);
         } catch (e) {
             alert('Falha ao conectar ao Google: ' + e.message);
@@ -409,8 +409,8 @@
         try {
             if (apagar && gcalConectado()) {
                 atualizarStatus('⏳ Removendo eventos…');
-                const userId = global.currentUser.uid || global.currentUser.id;
-                const calendarId = global.data.googleCalendar.calendarId;
+                const userId = currentUser.uid || currentUser.id;
+                const calendarId = data.googleCalendar.calendarId;
                 const existentes = await listarEventosSisprof(calendarId, userId);
                 const ids = Array.from(existentes.values()).map(v => v.id);
                 await emLote(ids, 6, async id => {
@@ -425,7 +425,7 @@
             try { google.accounts.oauth2.revoke(accessToken, () => {}); } catch (e) {}
         }
         accessToken = null; tokenExpiry = 0;
-        delete global.data.googleCalendar;
+        delete data.googleCalendar;
         await salvarSilencioso();
         renderCard();
     }
@@ -444,7 +444,7 @@
         if (!ehModoProfessor()) { alvo.innerHTML = ''; return; }
 
         const conectado = gcalConectado();
-        const gc = (global.data && global.data.googleCalendar) || {};
+        const gc = (data && data.googleCalendar) || {};
         const ultima = gc.lastSyncAt ? new Date(gc.lastSyncAt).toLocaleString('pt-BR') : '—';
 
         alvo.innerHTML = `
