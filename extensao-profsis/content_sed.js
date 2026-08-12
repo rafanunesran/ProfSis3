@@ -1,4 +1,14 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
+// v3.4.8 - Robô "Auto" não marcava os faltosos (o botão manual marcava): o robô navega por
+// location.href (reload completo) e considerava a tela pronta assim que os cards apareciam, mas
+// profsisAppData (fonte viva dos faltosos - registrosAdministrativos/estudantes/presencas/
+// baixaFrequencia) carrega de forma assíncrona e ainda estava vazio na hora do preenchimento. Agora
+// a condição de "tela pronta" do workflow (aguardarTelaDetalheEExecutar) também exige
+// dadosProfsisProntos(), então o robô só preenche quando os faltosos já estão disponíveis - igual ao
+// botão, que só existe depois de injetarMenu()/dados carregados. Também na Chamada, os delays fixos
+// (setTimeout 1000/2500ms) antes de selecionar o "Horário de Aula" viraram esperas por condição
+// (aguardarCondicao pelo botão "Pesquisar" e pelo widget .multi-select-button/cards), corrigindo a
+// seleção de aula que às vezes rodava antes do widget renderizar e era pulada calada.
 // v3.2.1 - Na tela de Registro, quando a turma não tem dobradinha (sem abas em #tabsNavegacao), o
 // "Horário de Aula" também é o widget multi-select (.multi-select-container) - mesmo usado na
 // Chamada -, não um campo já visível como se assumia. selecionarHorarioAulaChamada virou
@@ -220,6 +230,18 @@ function carregarDadosProfSis() {
             if (!chrome.runtime.lastError && data && data.rpa_data_history) extPushedHistory = data.rpa_data_history;
         });
     }, 4000);
+}
+
+// Diz se os dados do ProfSis (profsisAppData) já terminaram de carregar. O carregamento é assíncrono
+// (ver carregarDadosProfSis) e, num reload completo de documento - como os que o robô provoca ao
+// navegar por location.href -, o content script sobe de novo e profsisAppData começa vazio. A
+// marcação de faltosos (executarPreenchimentoChamada) classifica os faltosos a partir DESTE objeto
+// vivo (registrosAdministrativos/estudantes/presencas/baixaFrequencia); se ele ainda estiver vazio
+// na hora do preenchimento automático, nenhum faltoso é marcado. Mesma convenção do check em
+// carregarDadosProfSis (Object.keys > 0). O botão manual nunca cai nessa corrida porque só existe
+// depois de injetarMenu(), que roda quando os dados já chegaram.
+function dadosProfsisProntos() {
+    return !!(profsisAppData && Object.keys(profsisAppData).length > 0);
 }
 
 // Payload usado para marcar/exibir uma data: prefere as FALTAS empurradas pelo app.js (dados frescos,
@@ -884,29 +906,52 @@ function preencherChamadaNaTela(btn, opts) {
             reportarResultado(opts, false, 'Não consegui selecionar o dia ' + formatarDataBR(currentSelectedDate) + ' no calendário da SED. A SED só libera lançamento dentro de um prazo (ex.: "5 dias corridos") - se o prazo desse mês já venceu, não é possível lançar essa data.');
             return;
         }
-        setTimeout(() => {
-            const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
-            let btnBuscar = null;
-            buttons.forEach(b => { const t = (b.innerText || b.value || '').toLowerCase(); if (t.includes('pesquisar') || t.includes('buscar') || t.includes('listar')) btnBuscar = b; });
-            if (btnBuscar) btnBuscar.click();
-            setTimeout(() => {
-                selecionarHorarioAulaMultiSelect((selecionouHorario) => {
-                    if (!selecionouHorario) {
+        // Em vez de um delay fixo (1s), espera o botão "Pesquisar/Buscar/Listar" aparecer de fato antes
+        // de clicar - o delay fixo às vezes clicava antes do botão existir (Blazor lento) ou não clicava,
+        // deixando a lista de alunos sem carregar.
+        const acharBtnBuscar = () => {
+            let achado = null;
+            document.querySelectorAll('button, input[type="button"], input[type="submit"]').forEach(b => {
+                const t = (b.innerText || b.value || '').toLowerCase();
+                if (t.includes('pesquisar') || t.includes('buscar') || t.includes('listar')) achado = b;
+            });
+            return achado;
+        };
+        aguardarCondicao(acharBtnBuscar, (btnBuscar) => {
+            btnBuscar.click();
+            // Depois de "Pesquisar", espera o widget "Horário de Aula" (.multi-select-button) - ou, se a
+            // tela não tiver widget de horário, os cards de aluno - antes de tentar selecionar. Com o delay
+            // fixo (2,5s), em render lento a seleção rodava antes do widget existir; aí
+            // selecionarHorarioAulaMultiSelect recebia botao=null e PULAVA a seleção calada (callback(true)),
+            // e o "Horário de Aula" às vezes não era preenchido.
+            aguardarCondicao(
+                () => document.querySelector('.multi-select-button') || document.querySelector('.card_aluno, .card_aluno1'),
+                () => {
+                    selecionarHorarioAulaMultiSelect((selecionouHorario) => {
+                        if (!selecionouHorario) {
+                            if (btn) { btn.textContent = oldText; btn.disabled = false; }
+                            reportarResultado(opts, false, 'Não consegui selecionar o "Horário de Aula" na tela de Chamada - o campo continuou em "Selecione ...". Tente novamente ou selecione o horário manualmente antes de preencher.');
+                            return;
+                        }
+                        const payload = obterPayloadDaData(currentSelectedDate);
+                        // Espera a lista de alunos (SPA Blazor) parar de crescer antes de marcar/extrair.
+                        // No robô automático a tela acabou de navegar e os cards ainda estão renderizando -
+                        // sem esperar, a marcação de falta e a extração silenciosa pegavam a tela parcial/vazia
+                        // (funcionava no manual só porque a lista já estava carregada). Mesmo helper do "Extrair Alunos".
+                        if (payload) aguardarCardsEstaveis(() => executarPreenchimentoChamada(payload, opts));
+                        else reportarResultado(opts, false, 'Sem dados de chamada para esta data.');
                         if (btn) { btn.textContent = oldText; btn.disabled = false; }
-                        reportarResultado(opts, false, 'Não consegui selecionar o "Horário de Aula" na tela de Chamada - o campo continuou em "Selecione ...". Tente novamente ou selecione o horário manualmente antes de preencher.');
-                        return;
-                    }
-                    const payload = obterPayloadDaData(currentSelectedDate);
-                    // Espera a lista de alunos (SPA Blazor) parar de crescer antes de marcar/extrair.
-                    // No robô automático a tela acabou de navegar e os cards ainda estão renderizando -
-                    // sem esperar, a marcação de falta e a extração silenciosa pegavam a tela parcial/vazia
-                    // (funcionava no manual só porque a lista já estava carregada). Mesmo helper do "Extrair Alunos".
-                    if (payload) aguardarCardsEstaveis(() => executarPreenchimentoChamada(payload, opts));
-                    else reportarResultado(opts, false, 'Sem dados de chamada para esta data.');
+                    });
+                },
+                () => {
                     if (btn) { btn.textContent = oldText; btn.disabled = false; }
-                });
-            }, 2500);
-        }, 1000);
+                    reportarResultado(opts, false, 'A tela de Chamada abriu mas não terminou de carregar (Horário de Aula / lista de alunos) a tempo. Tente novamente.');
+                }
+            );
+        }, () => {
+            if (btn) { btn.textContent = oldText; btn.disabled = false; }
+            reportarResultado(opts, false, 'Não encontrei o botão "Pesquisar/Buscar" na tela de Chamada para carregar os alunos. Tente novamente.');
+        });
     });
 }
 
@@ -1569,7 +1614,12 @@ function aguardarClicarItemLista(wf, tipoLista, callback) {
 // Espera a tela de detalhe (preenchimento) carregar e então dispara o preenchimento silencioso
 // (modoAutomatico), avançando para a próxima etapa só quando o preenchimento reporta sucesso real.
 function aguardarTelaDetalheEExecutar(wf, tipoLista, callback) {
+    // Só considera pronto quando a tela renderou E os dados do ProfSis já carregaram (dadosProfsisProntos):
+    // sem esse segundo requisito o robô preenchia com profsisAppData ainda vazio depois do reload e não
+    // marcava nenhum faltoso (o botão manual não sofria disso - ver dadosProfsisProntos). Assim o robô
+    // aciona o preenchimento igual ao botão: só quando os faltosos já estão disponíveis.
     const condicaoPronta = () => {
+        if (!dadosProfsisProntos()) return false;
         if (tipoLista === 'chamada') return detectarTipoTelaSED() === 'chamada' && document.querySelector('.card_aluno, .card_aluno1');
         return detectarTipoTelaSED() === 'registro' && (document.querySelector('textarea[name="o.Descricao"]') || document.querySelector('#tabsNavegacao'));
     };
@@ -1594,7 +1644,17 @@ function aguardarTelaDetalheEExecutar(wf, tipoLista, callback) {
             if (tipoLista === 'chamada') preencherChamadaNaTela(null, { modoAutomatico: true, aoConcluir: aoConcluir });
             else preencherRegistroNaTela(null, { modoAutomatico: true, aoConcluir: aoConcluir });
         },
-        () => { abortarWorkflow(wf, 'A tela de ' + tipoLista + ' não carregou a tempo.', callback); }
+        () => {
+            // Timeout: a tela pode ter renderizado mas os dados do ProfSis podem não ter sincronizado
+            // a tempo (dadosProfsisProntos continuou falso) - orienta o professor nesse caso.
+            const motivo = dadosProfsisProntos()
+                ? ('A tela de ' + tipoLista + ' não carregou a tempo.')
+                : ('A tela de ' + tipoLista + ' carregou, mas os dados do ProfSis não sincronizaram a tempo - confirme que o ProfSis está aberto e logado e tente novamente.');
+            abortarWorkflow(wf, motivo, callback);
+        },
+        // Orçamento maior que o padrão (~13s vs ~10s): além de renderizar a tela, o robô agora espera
+        // profsisAppData carregar (assíncrono, pode levar ~3s+ após o reload - ver carregarDadosProfSis).
+        600, 22
     );
 }
 
