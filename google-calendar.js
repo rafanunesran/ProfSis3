@@ -569,7 +569,7 @@
                         <h3 style="margin:0; color:#2c5282;">📆 Google Agenda</h3>
                         <p style="margin:4px 0 0; font-size:13px; color:#718096;">
                             ${conectado
-                                ? 'Conectado. Sua grade é espelhada como eventos semanais recorrentes, pulando feriados e férias.'
+                                ? 'Conectado. Ao abrir o app, clique em "Sincronizar agora" uma vez; depois disso as edições na agenda/tutorias são enviadas automaticamente.'
                                 : 'Conecte sua conta Google para espelhar automaticamente sua agenda escolar.'}
                         </p>
                     </div>
@@ -601,13 +601,18 @@
     // =========================================================================
     // GATILHOS
     // =========================================================================
+    // Ao abrir a Agenda: apenas mostra o card. NÃO sincroniza sozinho (isso abria a tela de login
+    // do Google a cada abertura). A sincronização acontece ao editar (abaixo) ou no botão manual.
     function aoAbrirAgenda() {
         renderCard();
-        if (gcalConectado() && getClientId()) sincronizar(false);
     }
 
+    // Ao editar a agenda/tutorias: sincroniza automaticamente, porém SÓ se já houver um token válido
+    // nesta sessão (obtido ao conectar ou clicar em "Sincronizar agora"). Sem token, não faz nada —
+    // assim nunca abre a tela de login do Google por conta própria.
     function aoMudarDados() {
         if (!ehModoProfessor() || !gcalConectado() || !getClientId()) return;
+        if (!accessToken || Date.now() >= tokenExpiry - 60000) return;
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => sincronizar(false), 4000);
     }
