@@ -160,17 +160,36 @@
     // =========================================================================
     async function garantirCalendario() {
         const gc = data.googleCalendar;
+        let escolhido = null;
+
+        // 1) Se já temos um calendarId salvo e ele ainda existe, é o preferido (GET é autoritativo,
+        //    evita duplicar por atraso do calendarList logo após a criação).
         if (gc && gc.calendarId) {
             try {
                 await apiFetch('/calendars/' + encodeURIComponent(gc.calendarId));
-                return gc.calendarId;
-            } catch (e) {
-                // Foi apagado no Google — recria abaixo.
+                escolhido = gc.calendarId;
+            } catch (e) { /* sumiu no Google */ }
+        }
+
+        // 2) Lista todos os calendários com o nosso nome e REMOVE duplicados (mantém só um).
+        let candidatos = [];
+        try {
+            const lista = await apiFetch('/users/me/calendarList?maxResults=250');
+            candidatos = (lista.items || []).filter(c => c.summary === CAL_SUMMARY);
+        } catch (e) { console.warn('[GCal] falha ao listar calendários:', e); }
+
+        if (!escolhido && candidatos.length) escolhido = candidatos[0].id;
+
+        for (const c of candidatos) {
+            if (c.id !== escolhido) {
+                try { await apiFetch('/calendars/' + encodeURIComponent(c.id), { method: 'DELETE' }); }
+                catch (e) { console.warn('[GCal] falha ao apagar calendário duplicado:', e); }
             }
         }
-        const lista = await apiFetch('/users/me/calendarList?maxResults=250');
-        const existente = (lista.items || []).find(c => c.summary === CAL_SUMMARY);
-        if (existente) return existente.id;
+
+        if (escolhido) return escolhido;
+
+        // 3) Nenhum existe: cria um.
         const criado = await apiFetch('/calendars', {
             method: 'POST',
             body: { summary: CAL_SUMMARY, timeZone: TIMEZONE, description: 'Grade, blocos fixos e tutorias sincronizados pelo SisProf.' }
@@ -381,14 +400,16 @@
     // =========================================================================
     // RECONCILIAÇÃO
     // =========================================================================
-    async function listarEventosSisprof(calendarId, userId) {
-        // singleEvents=false: pega as SÉRIES (não expande em instâncias). Sem timeMin para achar
-        // também séries cujo início já ficou no passado.
-        const existentes = new Map(); // sisprofKey -> { id, hash }
+    async function listarEventosSisprof(calendarId) {
+        // Como o calendário é DEDICADO ao SisProf, listamos TODOS os eventos dele (sem filtrar por
+        // dono — o id do usuário podia variar entre sessões e gerar duplicados). Casamos pela
+        // sisprofKey. singleEvents=false pega as séries (não expande em instâncias); sem timeMin
+        // para achar também séries cujo início já ficou no passado.
+        const existentes = new Map();   // sisprofKey -> { id, hash, start, isSeries }
+        const duplicados = [];          // ids de eventos com sisprofKey repetida (a limpar)
         let pageToken = null;
         do {
             const params = new URLSearchParams({
-                privateExtendedProperty: 'sisprofOwner=' + String(userId),
                 maxResults: '2500',
                 singleEvents: 'false',
                 showDeleted: 'false'
@@ -397,14 +418,18 @@
             const resp = await apiFetch('/calendars/' + encodeURIComponent(calendarId) + '/events?' + params.toString());
             (resp.items || []).forEach(ev => {
                 const priv = (ev.extendedProperties && ev.extendedProperties.private) || {};
-                if (!priv.sisprofKey) return;
+                if (!priv.sisprofKey) return; // evento manual do usuário — não mexemos
                 const start = ((ev.start && (ev.start.dateTime || ev.start.date)) || '').slice(0, 10);
                 const isSeries = !!(ev.recurrence && ev.recurrence.length);
-                existentes.set(priv.sisprofKey, { id: ev.id, hash: priv.sisprofHash, start, isSeries });
+                if (existentes.has(priv.sisprofKey)) {
+                    duplicados.push(ev.id); // já há um com essa chave → este é duplicado, será apagado
+                } else {
+                    existentes.set(priv.sisprofKey, { id: ev.id, hash: priv.sisprofHash, start, isSeries });
+                }
             });
             pageToken = resp.nextPageToken;
         } while (pageToken);
-        return existentes;
+        return { existentes, duplicados };
     }
 
     // Executa em lotes pequenos com pausa entre lotes (evita estourar o limite de taxa).
@@ -434,7 +459,7 @@
 
             const ctxWrap = await carregarContexto();
             const desejados = construirDesejados(ctxWrap);
-            const existentes = await listarEventosSisprof(calendarId, userId);
+            const { existentes, duplicados } = await listarEventosSisprof(calendarId);
 
             const criar = [], atualizar = [], vistos = new Set();
             desejados.forEach(it => {
@@ -444,7 +469,7 @@
                 else if (atual.hash !== it.hash) atualizar.push({ it, id: atual.id });
             });
             const hojeStr = getTodayString();
-            const apagar = [];
+            const apagar = duplicados.slice(); // eventos duplicados (mesma chave) são sempre removidos
             existentes.forEach((v, key) => {
                 if (vistos.has(key)) return;
                 // Resíduo do modelo antigo (1 evento por dia, chave "fixo-<bloco>-<data>"): remove sempre,
@@ -507,10 +532,9 @@
         try {
             if (apagar && gcalConectado()) {
                 atualizarStatus('⏳ Removendo eventos…');
-                const userId = currentUser.uid || currentUser.id;
                 const calendarId = data.googleCalendar.calendarId;
-                const existentes = await listarEventosSisprof(calendarId, userId);
-                const ids = Array.from(existentes.values()).map(v => v.id);
+                const { existentes, duplicados } = await listarEventosSisprof(calendarId);
+                const ids = Array.from(existentes.values()).map(v => v.id).concat(duplicados);
                 const base = '/calendars/' + encodeURIComponent(calendarId) + '/events';
                 await emLote(ids, 3, id => apiFetch(base + '/' + id, { method: 'DELETE' }));
             }
