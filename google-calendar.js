@@ -183,7 +183,7 @@
     // =========================================================================
     async function carregarContexto() {
         const user = currentUser;
-        let gradeEscola = [], excecoes = [], configBimestres = [], feriadosEscolares = [], uf = '', cidade = '';
+        let gradeEscola = [], excecoes = [], configBimestres = [], feriadosEscolares = [], uf = '', cidade = '', tiposFixos = [];
 
         if (user && user.schoolId) {
             const key = 'app_data_school_' + user.schoolId + '_gestor';
@@ -195,6 +195,7 @@
                 feriadosEscolares = gestorData.feriadosEscolares || [];
                 uf = gestorData.escolaUF || '';
                 cidade = gestorData.escolaCidade || '';
+                tiposFixos = gestorData.tiposHorarioFixo || [];
             }
         }
 
@@ -202,11 +203,22 @@
             configBimestres, feriadosEscolares, gradeHorariaExcecoes: excecoes, uf, cidade
         });
 
-        return { ctx, gradeEscola, excecoes, configBimestres };
+        return { ctx, gradeEscola, excecoes, configBimestres, tiposFixos };
     }
 
-    function classificarBloco(bloco, aula, turmas) {
+    // Remove emojis/símbolos pictográficos de um título (na agenda queremos texto puro).
+    function limparTitulo(s) {
+        try {
+            return (s || '').replace(/[\p{Extended_Pictographic}️‍]/gu, '').replace(/\s+/g, ' ').trim();
+        } catch (e) {
+            // Navegadores sem suporte a \p{...}: fallback simples por faixas comuns de emoji.
+            return (s || '').replace(/[←-⯿☀-➿]/g, '').replace(/\s+/g, ' ').trim();
+        }
+    }
+
+    function classificarBloco(bloco, aula, turmas, tiposFixos) {
         const tipo = (aula && aula.tipo) || bloco.tipo || '';
+        if (!tipo) return { incluir: false };
         if (tipo === 'aula' && aula && aula.id_turma) {
             const turma = (turmas || []).find(t => t.id == aula.id_turma);
             // Resumo por turma/série + disciplina, ex.: "9B Arte".
@@ -223,6 +235,9 @@
             return { incluir: true, titulo: texto };
         }
         if (MAP_FIXO[tipo]) return { incluir: true, titulo: MAP_FIXO[tipo] };
+        // Tipo fixo CUSTOMIZADO pelo gestor (ex.: "Pedagogia da Presença") — usa o nome cadastrado.
+        const custom = (tiposFixos || []).find(t => t.id === tipo);
+        if (custom) return { incluir: true, titulo: limparTitulo(custom.nome) || 'Atividade' };
         return { incluir: false }; // bloco livre / não atribuído
     }
 
@@ -253,7 +268,7 @@
 
     // Constrói as SÉRIES recorrentes desejadas + eventos avulsos (dias atípicos com grade especial).
     function construirDesejados(ctxWrap) {
-        const { ctx, gradeEscola, excecoes } = ctxWrap;
+        const { ctx, gradeEscola, excecoes, tiposFixos } = ctxWrap;
         const CE = CalendarioEscolar;
         const hoje = getTodayString();
         const fim = CE.fimDoAnoLetivo(ctx);
@@ -272,7 +287,7 @@
             const dia = parseInt(bloco.diaSemana, 10);
             if (!(dia >= 1 && dia <= 5) || !bloco.inicio || !bloco.fim) return;
             const aula = horariosAulas.find(a => a.id_bloco == bloco.id);
-            const info = classificarBloco(bloco, aula, turmas);
+            const info = classificarBloco(bloco, aula, turmas, tiposFixos);
             if (!info.incluir) return;
 
             const dtstart = primeiraOcorrencia(rangeStart, dia);
@@ -306,7 +321,7 @@
             exc.blocos.forEach((b, idx) => {
                 if (!b.inicio || !b.fim) return;
                 const aula = horariosAulas.find(a => a.id_bloco == b.id);
-                const info = classificarBloco(b, aula, turmas);
+                const info = classificarBloco(b, aula, turmas, tiposFixos);
                 if (!info.incluir) return;
                 const hash = hashStr([info.titulo, exc.data, b.inicio, b.fim].join('|'));
                 itens.push({
