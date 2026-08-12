@@ -35,7 +35,9 @@
         atpca: 'ATPCA',
         apcg: 'APCG',
         reuniao: 'Reunião',
-        estudo: 'Estudo'
+        estudo: 'Estudo',
+        ped_presenc: 'Pedagogia da Presença',
+        eletiva: 'Eletiva'
     };
 
     const BYDAY = { 1: 'MO', 2: 'TU', 3: 'WE', 4: 'TH', 5: 'FR' };
