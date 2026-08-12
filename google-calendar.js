@@ -430,8 +430,11 @@
             const apagar = [];
             existentes.forEach((v, key) => {
                 if (vistos.has(key)) return;
-                // Só mexe nos pendentes: nunca apaga evento avulso já no passado (preserva histórico).
-                if (!v.isSeries && v.start && v.start < hojeStr) return;
+                // Resíduo do modelo antigo (1 evento por dia, chave "fixo-<bloco>-<data>"): remove sempre,
+                // inclusive no passado, para limpar automaticamente quem migrou da versão anterior.
+                const ehLegado = key.indexOf('fixo-') === 0;
+                // Fora isso, só mexe nos pendentes: nunca apaga evento avulso já no passado (preserva histórico).
+                if (!ehLegado && !v.isSeries && v.start && v.start < hojeStr) return;
                 apagar.push(v.id);
             });
 
