@@ -8562,6 +8562,8 @@ async function renderRegistrosProfessor() {
     let lista = registros.map(r => {
         if (r.arquivado) return null; // Arquivados pela gestão não aparecem aqui (só no Arquivo Histórico do gestor)
         const est = estudantes.find(e => e.id == r.estudanteId) || { nome_completo: 'Desconhecido' };
+        // Aluno transferido/remanejado (saiu ou mudou de turma) não aparece mais nos registros vigentes
+        if (est.status && est.status !== 'Ativo') return null;
         const turma = turmas.find(t => t.id == r.turmaId) || { nome: '?' };
 
         let cor = '#22c55e'; // Verde (Observação/Outros)
