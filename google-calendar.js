@@ -215,6 +215,11 @@
         }
         // Tutoria NÃO entra como série recorrente: é gerada individualmente (com nome do aluno) abaixo.
         if (tipo === 'tutoria') return { incluir: false };
+        // Estudo: usa exatamente o texto digitado pelo professor (aula.tema).
+        if (tipo === 'estudo') {
+            const texto = (aula && aula.tema && aula.tema.trim()) ? aula.tema.trim() : 'Estudo';
+            return { incluir: true, titulo: texto };
+        }
         if (MAP_FIXO[tipo]) return { incluir: true, titulo: MAP_FIXO[tipo] };
         return { incluir: false }; // bloco livre / não atribuído
     }
@@ -320,7 +325,7 @@
             if (!CE.estaEmPeriodoLetivo(a.data, ctx)) return;
             const t = tutorados.find(x => x.id == a.tutoradoId);
             const nome = t ? (t.nome_estudante || t.nome_completo || 'Tutorado') : 'Tutorado';
-            const titulo = 'Tur - ' + nome;
+            const titulo = 'Tut - ' + nome;
             const hash = hashStr([titulo, a.data, a.inicio, a.fim].join('|'));
             itens.push({
                 key: 'tutoria-' + a.id,
