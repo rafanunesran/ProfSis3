@@ -28,14 +28,14 @@
     const API = 'https://www.googleapis.com/calendar/v3';
     const DESC = 'Criado automaticamente pelo SisProf. Não edite manualmente — será sobrescrito na próxima sincronização.';
 
+    // Títulos dos blocos fixos — texto puro, sem emojis.
     const MAP_FIXO = {
-        almoco: '🍽️ Almoço',
-        cafe: '☕ Café',
-        atpca: '📝 ATPCA',
-        apcg: '📋 APCG',
-        reuniao: '🤝 Reunião',
-        estudo: '📖 Estudo',
-        tutoria: '🎓 Tutoria'
+        almoco: 'Almoço',
+        cafe: 'Café',
+        atpca: 'ATPCA',
+        apcg: 'APCG',
+        reuniao: 'Reunião',
+        estudo: 'Estudo'
     };
 
     const BYDAY = { 1: 'MO', 2: 'TU', 3: 'WE', 4: 'TH', 5: 'FR' };
@@ -207,7 +207,11 @@
         const tipo = (aula && aula.tipo) || bloco.tipo || '';
         if (tipo === 'aula' && aula && aula.id_turma) {
             const turma = (turmas || []).find(t => t.id == aula.id_turma);
-            return { incluir: true, titulo: '📚 Aula' + (turma ? ' — ' + turma.nome : '') };
+            // Resumo por turma/série + disciplina, ex.: "9B Arte".
+            const titulo = turma
+                ? (turma.nome + (turma.disciplina ? ' ' + turma.disciplina : '')).trim()
+                : 'Aula';
+            return { incluir: true, titulo };
         }
         // Tutoria NÃO entra como série recorrente: é gerada individualmente (com nome do aluno) abaixo.
         if (tipo === 'tutoria') return { incluir: false };
@@ -316,7 +320,7 @@
             if (!CE.estaEmPeriodoLetivo(a.data, ctx)) return;
             const t = tutorados.find(x => x.id == a.tutoradoId);
             const nome = t ? (t.nome_estudante || t.nome_completo || 'Tutorado') : 'Tutorado';
-            const titulo = '🎓 Tutoria — ' + nome;
+            const titulo = 'Tur - ' + nome;
             const hash = hashStr([titulo, a.data, a.inicio, a.fim].join('|'));
             itens.push({
                 key: 'tutoria-' + a.id,
