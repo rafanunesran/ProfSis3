@@ -605,9 +605,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "CHECK_PROFSIS_LOGIN") {
         console.log("[Background] Verificando login do ProfSis...");
         
-        // Primeiro verifica no storage se já temos dados
+        // Primeiro verifica no storage se já temos dados. Com request.forceRefresh, PULA esse cache e
+        // vai direto reler a aba do ProfSis: profsis_app_data pode estar velho (só é regravado enquanto
+        // uma aba do ProfSis está aberta - ver content_profsis.js/verificarLoginProfSis), e servir esse
+        // snapshot antigo fazia o robô da SED marcar zero faltas (registrosAdministrativos/
+        // baixaFrequencia desatualizados) enquanto turmas/grade pareciam corretos.
         chrome.storage.local.get(['profsis_logged_in', 'profsis_user', 'profsis_app_data'], (result) => {
-            if (result.profsis_logged_in && result.profsis_user) {
+            if (result.profsis_logged_in && result.profsis_user && !request.forceRefresh) {
                 console.log("[Background] Login encontrado no storage:", result.profsis_user.nome || result.profsis_user.email);
                 sendResponse({
                     loggedIn: true,
