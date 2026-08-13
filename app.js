@@ -9178,8 +9178,9 @@ async function restaurarBackupLocalParaNuvem() {
 // --- SISTEMA DE BACKUP NA NUVEM (DIÁRIO - HISTÓRICO DE 15 DIAS) ---
 
 // Quantidade de dias de histórico mantidos. Guardamos 1 backup por dia,
-// então isto equivale a uma janela de recuperação de 15 dias corridos.
-const BACKUP_MAX_DIAS = 15;
+// então isto equivale a uma janela de recuperação de 20 dias corridos.
+// O Super Admin também usa este valor para varrer os slots de cada usuário.
+const BACKUP_MAX_DIAS = 20;
 
 // Data local no formato AAAA-MM-DD. Usada para garantir 1 backup por dia
 // (usa o fuso do professor, não UTC, para o "dia" bater com o calendário dele).
