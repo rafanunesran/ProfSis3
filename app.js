@@ -39,10 +39,12 @@ async function iniciarApp() {
         // Isso impede que o sistema salve dados vazios na nuvem se houver erro de conexão na abertura.
         window.dadosCarregados = true;
 
-        // [AUTO-BACKUP] Verifica e cria backup diário se necessário
+        // [AUTO-BACKUP] Cria no máximo 1 backup por dia; mantém histórico dos últimos 15 dias
         verificarBackupAutomatico();
 
-        // [NOVO] Configura verificação recorrente a cada 2 horas enquanto o sistema estiver aberto
+        // Reverifica a cada 2 horas enquanto o sistema estiver aberto. Se já houver
+        // backup do dia, a verificação apenas ignora; se o app cruzar a meia-noite ou
+        // for reaberto, garante que o backup do novo dia seja criado.
         if (!window.intervaloBackupAuto) {
             window.intervaloBackupAuto = setInterval(verificarBackupAutomatico, 2 * 60 * 60 * 1000);
         }
@@ -3691,8 +3693,8 @@ async function abrirPainelRecuperacaoAvancada() {
             }
         } catch(e) {}
         
-        // 2. Varredura de Força Bruta nos 5 slots (ignora o índice)
-        for (let i = 1; i <= 5; i++) {
+        // 2. Varredura de Força Bruta em todos os slots (ignora o índice)
+        for (let i = 1; i <= BACKUP_MAX_DIAS; i++) {
             try {
                 const bKey = `backup_${id}_slot_${i}`;
                 const bData = await getData('app_data', bKey);
@@ -9173,35 +9175,40 @@ async function restaurarBackupLocalParaNuvem() {
     }
 }
 
-// --- SISTEMA DE BACKUP NA NUVEM (ROTATIVO - 5 SLOTS) ---
+// --- SISTEMA DE BACKUP NA NUVEM (DIÁRIO - HISTÓRICO DE 15 DIAS) ---
+
+// Quantidade de dias de histórico mantidos. Guardamos 1 backup por dia,
+// então isto equivale a uma janela de recuperação de 15 dias corridos.
+const BACKUP_MAX_DIAS = 15;
+
+// Data local no formato AAAA-MM-DD. Usada para garantir 1 backup por dia
+// (usa o fuso do professor, não UTC, para o "dia" bater com o calendário dele).
+function dataLocalISO(ts) {
+    const d = ts ? new Date(ts) : new Date();
+    const off = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - off).toISOString().slice(0, 10);
+}
 
 async function verificarBackupAutomatico() {
     if (!currentUser) return;
     const userId = currentUser.uid || currentUser.id;
     if (!userId) return;
-    
+
     try {
         const indexKey = `backup_index_${userId}`;
         let indexData = await getData('app_data', indexKey);
-        
+
         if (!indexData) indexData = { slots: [], nextSlot: 1 };
-        
+
         const backups = indexData.slots || [];
 
-        // Caso seja o primeiro backup da conta ou o intervalo de 2h tenha passado
-        if (backups.length === 0) {
-            console.log('Iniciando backup de segurança inicial...');
-            await criarBackupNuvem(true);
-            return;
-        }
+        // Backup DIÁRIO: se já existe um backup do dia de hoje, não faz outro.
+        // Assim os 15 slots guardam 15 dias distintos (e não várias cópias do mesmo dia).
+        const hoje = dataLocalISO();
+        const jaTemBackupHoje = backups.some(b => (b.dateStr || dataLocalISO(b.timestamp)) === hoje);
 
-        // Pega o timestamp do último backup realizado (em qualquer slot)
-        const ultimoTs = Math.max(...backups.map(b => b.timestamp));
-        const agora = Date.now();
-        const duasHorasEmMs = 2 * 60 * 60 * 1000;
-
-        if (agora - ultimoTs >= duasHorasEmMs) {
-            console.log('Intervalo de 2h atingido. Executando backup automático silencioso...');
+        if (!jaTemBackupHoje) {
+            console.log('Criando backup diário automático de segurança...');
             await criarBackupNuvem(true);
         }
     } catch (e) {
@@ -9210,40 +9217,57 @@ async function verificarBackupAutomatico() {
 }
 
 async function criarBackupNuvem(silent = false) {
-    if (!silent && !confirm('Criar um novo backup na nuvem? Se houver 5 backups, o mais antigo será substituído.')) return;
-    
+    if (!silent && !confirm(`Criar um novo backup na nuvem?\n\nO sistema guarda 1 backup por dia dos últimos ${BACKUP_MAX_DIAS} dias. O backup mais antigo é substituído automaticamente.`)) return;
+
     try {
         const userId = currentUser.uid || currentUser.id;
         const indexKey = `backup_index_${userId}`;
         let indexData = await getData('app_data', indexKey);
-        
+
         if (!indexData) indexData = { slots: [], nextSlot: 1 };
-        
-        // Define qual slot usar (1 a 5)
-        let slotId = indexData.nextSlot;
-        if (slotId > 5) slotId = 1;
+        if (!Array.isArray(indexData.slots)) indexData.slots = [];
+
+        const hoje = dataLocalISO();
+
+        // Escolhe o slot (1 a BACKUP_MAX_DIAS) obedecendo à regra de 1 por dia:
+        let slotId;
+        const slotDeHoje = indexData.slots.find(s => (s.dateStr || dataLocalISO(s.timestamp)) === hoje);
+        if (slotDeHoje) {
+            // Já há um backup de hoje: atualiza o mesmo slot (não consome um novo dia).
+            slotId = slotDeHoje.id;
+        } else {
+            // Preenche primeiro os slots livres; ao encher os 15, substitui o dia mais antigo.
+            const usados = new Set(indexData.slots.map(s => s.id));
+            slotId = null;
+            for (let i = 1; i <= BACKUP_MAX_DIAS; i++) {
+                if (!usados.has(i)) { slotId = i; break; }
+            }
+            if (slotId === null) {
+                const maisAntigo = [...indexData.slots].sort((a, b) => a.timestamp - b.timestamp)[0];
+                slotId = maisAntigo.id;
+            }
+        }
 
         // Salva os dados no slot
         const backupKey = `backup_${userId}_slot_${slotId}`;
         await saveData('app_data', backupKey, data);
 
-        // Atualiza o índice
-        // Remove entrada antiga desse slot se houver
+        // Atualiza o índice (remove entrada antiga desse slot, se houver)
         indexData.slots = indexData.slots.filter(s => s.id !== slotId);
-        
-        const label = silent ? 'Backup Automático' : `Backup Manual (${data.turmas ? data.turmas.length : 0} turmas)`;
-        indexData.slots.push({ id: slotId, timestamp: Date.now(), label: label });
-        
-        // Prepara próximo slot
+
+        const label = silent ? 'Backup Diário Automático' : `Backup Manual (${data.turmas ? data.turmas.length : 0} turmas)`;
+        indexData.slots.push({ id: slotId, timestamp: Date.now(), dateStr: hoje, label: label });
+
+        // Mantido por retrocompatibilidade com índices antigos
         indexData.nextSlot = slotId + 1;
 
         await saveData('app_data', indexKey, indexData);
-        
+
         if (!silent) {
             alert('Backup criado com sucesso!');
             listarBackupsNuvem();
         } else {
-            console.log('Backup automático realizado.');
+            console.log('Backup diário automático realizado.');
         }
 
     } catch (e) {
@@ -9288,7 +9312,7 @@ function exibirModalBackups(slots, userId) {
                         <h2>📋 Histórico de Backups na Nuvem</h2>
                         <button class="close-btn" onclick="this.closest('.modal').remove()">×</button>
                     </div>
-                    <p style="font-size:13px; color:#666; margin-bottom:15px;">Estes são os últimos 5 estados salvos da sua conta. Escolha um para restaurar.</p>
+                    <p style="font-size:13px; color:#666; margin-bottom:15px;">Estes são os backups diários da sua conta (até ${BACKUP_MAX_DIAS} dias). Escolha um para restaurar.</p>
                     <div style="display:flex; flex-direction:column; gap:10px;">
                         ${backups.map(b => `
                             <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
