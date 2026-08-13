@@ -1,4 +1,21 @@
 // CONTENT SCRIPT - Sala do Futuro SED (Blazor)
+// v3.4.9 - Faltosos e baixa frequência não eram marcados porque profsisAppData estava VELHO (não
+// vazio): registrosAdministrativos/baixaFrequencia só entram no localStorage do professor quando o
+// app.js sincroniza no painel inicial, o espelho em chrome.storage só é regravado enquanto uma aba
+// do ProfSis está aberta, e CHECK_PROFSIS_LOGIN servia esse cache sem nunca reler. Como o card
+// "Aulas do Dia" se monta com outras chaves (turmas/grade), tudo parecia certo enquanto zero faltas
+// eram marcadas. Agora atualizarDadosProfSis() relê os dados direto da aba do ProfSis
+// (CHECK_PROFSIS_LOGIN com forceRefresh) ANTES de preencher, na Chamada e no Registro; a Chamada
+// aborta com mensagem acionável se não conseguir atualizar, e nunca mais salva "todos presentes"
+// quando as fontes de faltoso chegam vazias. dadosProfsisProntos passou a exigir as chaves que a
+// marcação usa (estudantes + registrosAdministrativos/baixaFrequencia), não só "alguma chave".
+// No Registro, o resultado de selecionarHorarioAulaMultiSelect deixou de ser ignorado - antes uma
+// falha na seleção do "Horário de Aula" seguia adiante e era reportada como "não encontrei o campo
+// de texto". Logs de diagnóstico: contagem das fontes de falta e horário-alvo x opções da tela.
+// v3.4.8 - Na Chamada, os delays fixos (setTimeout 1000/2500ms) antes de selecionar o "Horário de
+// Aula" viraram esperas por condição (aguardarCondicao pelo botão "Pesquisar" e pelo widget
+// .multi-select-button/cards), corrigindo a seleção de aula que às vezes rodava antes do widget
+// renderizar e era pulada calada (selecionarHorarioAulaMultiSelect recebia botao=null).
 // v3.2.1 - Na tela de Registro, quando a turma não tem dobradinha (sem abas em #tabsNavegacao), o
 // "Horário de Aula" também é o widget multi-select (.multi-select-container) - mesmo usado na
 // Chamada -, não um campo já visível como se assumia. selecionarHorarioAulaChamada virou
@@ -222,6 +239,48 @@ function carregarDadosProfSis() {
     }, 4000);
 }
 
+// Diz se os dados do ProfSis necessários para MARCAR FALTA já estão disponíveis. Não basta
+// "profsisAppData tem alguma chave": o card "Aulas do Dia" se monta só com turmas/schoolGrade/
+// horariosAulas e aparece normal, enquanto a marcação (executarPreenchimentoChamada) depende de
+// OUTRAS chaves - estudantes + registrosAdministrativos/baixaFrequencia. Era exatamente esse o
+// sintoma relatado: card certo na tela e nenhuma falta marcada. Por isso exigimos aqui as chaves da
+// marcação, e não Object.keys > 0.
+function dadosProfsisProntos() {
+    if (!profsisAppData) return false;
+    const temEstudantes = Array.isArray(profsisAppData.estudantes) && profsisAppData.estudantes.length > 0;
+    const temFontesFalta = Array.isArray(profsisAppData.registrosAdministrativos) || Array.isArray(profsisAppData.baixaFrequencia);
+    return temEstudantes && temFontesFalta;
+}
+
+// Relê os dados do ProfSis direto da aba do ProfSis (forceRefresh), em vez de aceitar o snapshot
+// guardado em chrome.storage. Necessário porque profsis_app_data só é regravado enquanto uma aba do
+// ProfSis está aberta (content_profsis.js roda a cada 10s) e o CHECK_PROFSIS_LOGIN normal serve esse
+// cache: um faltoso classificado pela gestão DEPOIS do último snapshot nunca chegava ao robô, que
+// então marcava zero faltas e ainda reportava sucesso. Chama callback(ok) - em caso de falha (ex.:
+// nenhuma aba do ProfSis aberta) mantém os dados que já tínhamos e devolve false, para o chamador
+// decidir avisar em vez de preencher com dado velho.
+function atualizarDadosProfSis(callback) {
+    callback = callback || function () {};
+    let respondido = false;
+    const responder = (ok) => { if (!respondido) { respondido = true; callback(ok); } };
+    // Trava de segurança: se o background não responder (service worker dormindo/erro), não trava o
+    // preenchimento para sempre.
+    setTimeout(() => responder(dadosProfsisProntos()), 8000);
+    try {
+        chrome.runtime.sendMessage({ action: 'CHECK_PROFSIS_LOGIN', forceRefresh: true }, (response) => {
+            if (chrome.runtime.lastError || !response || !response.loggedIn || !response.appData) {
+                responder(false);
+                return;
+            }
+            profsisAppData = response.appData;
+            montarHistoricoLocal();
+            responder(dadosProfsisProntos());
+        });
+    } catch (e) {
+        responder(false);
+    }
+}
+
 // Payload usado para marcar/exibir uma data: prefere as FALTAS empurradas pelo app.js (dados frescos,
 // sempre com os faltosos da gestão) e mantém o resto (registros/fechamento) do cálculo local.
 function obterPayloadDaData(dataStr) {
@@ -425,10 +484,22 @@ function selecionarHorarioAulaMultiSelect(callback) {
     const idTurma = encontrarIdTurmaDaTelaAtual();
     const blocos = idTurma ? montarBlocosDaTurmaNoDia(idTurma, currentSelectedDate) : [];
     const botao = document.querySelector('.multi-select-button');
-    if (!idTurma || blocos.length === 0 || !botao) { callback(true); return; }
+    if (!idTurma || blocos.length === 0 || !botao) {
+        // Pulo intencional (tela sem widget de horário, turma fora da grade, etc.) - mas logamos o
+        // motivo: "blocos:0" com grade vazia costuma indicar profsisAppData desatualizado.
+        console.log('[SisProf] Horário de Aula não selecionado (seguindo sem mexer) - idTurma:' + idTurma +
+            ' blocos:' + blocos.length + ' widget:' + !!botao + ' grade:' + ((profsisAppData.schoolGrade || []).length));
+        callback(true);
+        return;
+    }
 
     const valoresAlvo = blocos.map(b => normalizarHorarioAula((b.inicio || '') + ' às ' + (b.fim || '')));
     const botaoMostraAlvo = () => valoresAlvo.some(v => normalizarHorarioAula(botao.textContent).includes(v));
+    // Log de diagnóstico: sem isso, uma falha aqui só dizia "continuou em Selecione ..." sem mostrar
+    // QUAL horário a extensão procurava nem o que a SED oferecia (a causa costuma ser grade
+    // desatualizada no ProfSis, que faz o alvo não casar com nenhuma opção do widget).
+    console.log('[SisProf] Horário de Aula - alvo:', valoresAlvo, '| opções na tela:',
+        Array.from(document.querySelectorAll('.multi-select-menuitem input[type="checkbox"]')).map(c => c.value));
 
     // Já estava selecionado (ex.: robô rodando de novo numa aula já marcada) - não mexe em nada.
     if (botaoMostraAlvo()) { callback(true); return; }
@@ -878,35 +949,74 @@ function preencherChamadaNaTela(btn, opts) {
     opts = opts || {};
     const oldText = btn ? btn.textContent : null;
     if (btn) { btn.textContent = '⏳ Preenchendo...'; btn.disabled = true; }
+    // Relê os dados do ProfSis ANTES de qualquer coisa: quem é faltoso vem de profsisAppData, que
+    // pode ser um snapshot velho (ver atualizarDadosProfSis). Sem isso o robô marcava zero faltas e
+    // ainda salvava a chamada como se estivesse tudo certo. Se não der pra atualizar, aborta com uma
+    // mensagem acionável em vez de preencher com dado desatualizado.
+    atualizarDadosProfSis((dadosOk) => {
+        if (!dadosOk) {
+            if (btn) { btn.textContent = oldText; btn.disabled = false; }
+            reportarResultado(opts, false, 'Não consegui ler os dados atualizados do ProfSis (faltosos e baixa frequência), então parei antes de marcar a chamada errada.\n\nDeixe o ProfSis aberto e logado em OUTRA ABA do mesmo Chrome, abra o painel inicial dele uma vez e tente de novo.');
+            return;
+        }
+        preencherChamadaComDadosAtualizados(btn, opts, oldText);
+    });
+}
+
+// Corpo do preenchimento da Chamada, já com profsisAppData atualizado (ver preencherChamadaNaTela).
+function preencherChamadaComDadosAtualizados(btn, opts, oldText) {
     selecionarDataSED(currentSelectedDate, (selecionou) => {
         if (!selecionou) {
             if (btn) { btn.textContent = oldText; btn.disabled = false; }
             reportarResultado(opts, false, 'Não consegui selecionar o dia ' + formatarDataBR(currentSelectedDate) + ' no calendário da SED. A SED só libera lançamento dentro de um prazo (ex.: "5 dias corridos") - se o prazo desse mês já venceu, não é possível lançar essa data.');
             return;
         }
-        setTimeout(() => {
-            const buttons = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
-            let btnBuscar = null;
-            buttons.forEach(b => { const t = (b.innerText || b.value || '').toLowerCase(); if (t.includes('pesquisar') || t.includes('buscar') || t.includes('listar')) btnBuscar = b; });
-            if (btnBuscar) btnBuscar.click();
-            setTimeout(() => {
-                selecionarHorarioAulaMultiSelect((selecionouHorario) => {
-                    if (!selecionouHorario) {
+        // Em vez de um delay fixo (1s), espera o botão "Pesquisar/Buscar/Listar" aparecer de fato antes
+        // de clicar - o delay fixo às vezes clicava antes do botão existir (Blazor lento) ou não clicava,
+        // deixando a lista de alunos sem carregar.
+        const acharBtnBuscar = () => {
+            let achado = null;
+            document.querySelectorAll('button, input[type="button"], input[type="submit"]').forEach(b => {
+                const t = (b.innerText || b.value || '').toLowerCase();
+                if (t.includes('pesquisar') || t.includes('buscar') || t.includes('listar')) achado = b;
+            });
+            return achado;
+        };
+        aguardarCondicao(acharBtnBuscar, (btnBuscar) => {
+            btnBuscar.click();
+            // Depois de "Pesquisar", espera o widget "Horário de Aula" (.multi-select-button) - ou, se a
+            // tela não tiver widget de horário, os cards de aluno - antes de tentar selecionar. Com o delay
+            // fixo (2,5s), em render lento a seleção rodava antes do widget existir; aí
+            // selecionarHorarioAulaMultiSelect recebia botao=null e PULAVA a seleção calada (callback(true)),
+            // e o "Horário de Aula" às vezes não era preenchido.
+            aguardarCondicao(
+                () => document.querySelector('.multi-select-button') || document.querySelector('.card_aluno, .card_aluno1'),
+                () => {
+                    selecionarHorarioAulaMultiSelect((selecionouHorario) => {
+                        if (!selecionouHorario) {
+                            if (btn) { btn.textContent = oldText; btn.disabled = false; }
+                            reportarResultado(opts, false, 'Não consegui selecionar o "Horário de Aula" na tela de Chamada - o campo continuou em "Selecione ...". Tente novamente ou selecione o horário manualmente antes de preencher.');
+                            return;
+                        }
+                        const payload = obterPayloadDaData(currentSelectedDate);
+                        // Espera a lista de alunos (SPA Blazor) parar de crescer antes de marcar/extrair.
+                        // No robô automático a tela acabou de navegar e os cards ainda estão renderizando -
+                        // sem esperar, a marcação de falta e a extração silenciosa pegavam a tela parcial/vazia
+                        // (funcionava no manual só porque a lista já estava carregada). Mesmo helper do "Extrair Alunos".
+                        if (payload) aguardarCardsEstaveis(() => executarPreenchimentoChamada(payload, opts));
+                        else reportarResultado(opts, false, 'Sem dados de chamada para esta data.');
                         if (btn) { btn.textContent = oldText; btn.disabled = false; }
-                        reportarResultado(opts, false, 'Não consegui selecionar o "Horário de Aula" na tela de Chamada - o campo continuou em "Selecione ...". Tente novamente ou selecione o horário manualmente antes de preencher.');
-                        return;
-                    }
-                    const payload = obterPayloadDaData(currentSelectedDate);
-                    // Espera a lista de alunos (SPA Blazor) parar de crescer antes de marcar/extrair.
-                    // No robô automático a tela acabou de navegar e os cards ainda estão renderizando -
-                    // sem esperar, a marcação de falta e a extração silenciosa pegavam a tela parcial/vazia
-                    // (funcionava no manual só porque a lista já estava carregada). Mesmo helper do "Extrair Alunos".
-                    if (payload) aguardarCardsEstaveis(() => executarPreenchimentoChamada(payload, opts));
-                    else reportarResultado(opts, false, 'Sem dados de chamada para esta data.');
+                    });
+                },
+                () => {
                     if (btn) { btn.textContent = oldText; btn.disabled = false; }
-                });
-            }, 2500);
-        }, 1000);
+                    reportarResultado(opts, false, 'A tela de Chamada abriu mas não terminou de carregar (Horário de Aula / lista de alunos) a tempo. Tente novamente.');
+                }
+            );
+        }, () => {
+            if (btn) { btn.textContent = oldText; btn.disabled = false; }
+            reportarResultado(opts, false, 'Não encontrei o botão "Pesquisar/Buscar" na tela de Chamada para carregar os alunos. Tente novamente.');
+        });
     });
 }
 
@@ -917,6 +1027,15 @@ function preencherRegistroNaTela(btn, opts) {
     opts = opts || {};
     const oldText = btn ? btn.textContent : null;
     if (btn) { btn.textContent = '⏳ Preenchendo...'; btn.disabled = true; }
+    // Também atualiza os dados aqui: o "Horário de Aula" desta tela é escolhido a partir da grade
+    // (schoolGrade/horariosAulas/schoolExceptions) do profsisAppData - grade velha faz o horário-alvo
+    // não casar com nenhuma opção do widget e a seleção falhar. Diferente da Chamada, aqui NÃO
+    // abortamos se o refresh falhar: o Registro não marca faltas, então seguimos com o que temos.
+    atualizarDadosProfSis(() => preencherRegistroComDadosAtualizados(btn, opts, oldText));
+}
+
+// Corpo do preenchimento do Registro, após tentar atualizar profsisAppData (ver preencherRegistroNaTela).
+function preencherRegistroComDadosAtualizados(btn, opts, oldText) {
     selecionarDataSED(currentSelectedDate, (selecionou) => {
         if (!selecionou) {
             if (btn) { btn.textContent = oldText; btn.disabled = false; }
@@ -965,6 +1084,9 @@ function executarPreenchimentoChamada(payload, opts) {
     extrairAlunosSilencioso();
     const normalize = s => s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
     let interagidos = 0;
+    // Sinaliza que a tela tinha alunos mas NENHUMA fonte de faltoso chegou do ProfSis - nesse caso não
+    // dá pra tratar "0 faltas" como resultado legítimo (ver checagem depois do laço).
+    let semFontesDeFalta = false;
 
     // ===== MARCAÇÃO DE FALTAS (card-first) =====
     // Em vez de depender de uma lista pré-montada de faltas (que pode conter faltosos de OUTRAS
@@ -1026,8 +1148,17 @@ function executarPreenchimentoChamada(payload, opts) {
             const deveEstarPresente = !levouFalta;
             if (checkbox.checked !== deveEstarPresente) { checkbox.click(); interagidos++; }
         });
-        // Log discreto só no console (para depuração), sem nada visível ao usuário.
-        console.log('[SisProf] Faltas: ' + casadosNaTela + ' marcada(s) de ' + comCheckbox + ' alunos na tela (estCasou:' + estCasou + ').');
+        // Log discreto só no console (para depuração), sem nada visível ao usuário. Inclui as
+        // contagens das FONTES (faltosos da gestão, baixa frequência, estudantes) - sem elas era
+        // impossível distinguir "ninguém devia faltar hoje" de "os dados do ProfSis não chegaram".
+        console.log('[SisProf] Faltas: ' + casadosNaTela + ' marcada(s) de ' + comCheckbox + ' alunos na tela (estCasou:' + estCasou + ')' +
+            ' | fontes -> faltosos:' + faltososReg.length + ' baixaFreq:' + baixaFreqReg.length + ' estudantes:' + estudantesRobo.length + '.');
+        // Só é "dado faltando" quando as CHAVES não vieram no profsisAppData. Uma turma em que
+        // ninguém é faltoso nem tem baixa frequência devolve as listas presentes e VAZIAS - isso é
+        // resultado legítimo e deve seguir normalmente (marcar todos presentes está certo aí).
+        const chavesAusentes = !Array.isArray(profsisAppData.registrosAdministrativos)
+            && !Array.isArray(profsisAppData.baixaFrequencia);
+        semFontesDeFalta = comCheckbox > 0 && chavesAusentes;
     }
 
     // Fechamento bimestre se aplicável (tela própria, identificada pelo próprio seletor abaixo)
@@ -1075,6 +1206,13 @@ function executarPreenchimentoChamada(payload, opts) {
             confirmarModalSalvarFrequencia(opts);
         }, 500);
     };
+    // A tela tinha alunos mas nenhuma fonte de faltoso chegou do ProfSis: isso NÃO é "ninguém faltou
+    // hoje", é dado faltando. Antes seguia e salvava a chamada com 0 ausências como se estivesse
+    // tudo certo - o sintoma relatado pelo professor. Para em vez de gravar frequência errada.
+    if (semFontesDeFalta) {
+        reportarResultado(opts, false, 'Parei antes de salvar: a lista de faltosos e de baixa frequência do ProfSis chegou vazia, então marcar "todos presentes" seria errado.\n\nAbra o ProfSis (logado) em outra aba do mesmo Chrome, entre no painel inicial dele uma vez para sincronizar os dados da gestão e rode de novo.');
+        return;
+    }
     // v3.0.1: em modo automático finaliza mesmo sem faltas - a SED exige confirmar a frequência
     // mesmo com 0 ausências (o modal de confirmação mostra "Ausências: 0" normalmente), e o
     // workflow automático precisa desse Salvar para poder seguir para o Registro. No botão manual
@@ -1235,7 +1373,14 @@ function executarPreenchimentoRegistroDepoisDeExtrair(payload, opts, dadosMateri
             // ele primeiro (não mexe se já estiver certo) e só então espera (aguardarCondicao, em vez
             // de checar uma vez só) o campo de texto aparecer - ele pode não existir ainda mesmo com
             // o widget certo, a tela leva um instante pra renderizar.
-            selecionarHorarioAulaMultiSelect(() => {
+            // Respeita o RESULTADO da seleção: antes o callback ignorava o parâmetro e seguia mesmo
+            // quando o horário não tinha sido selecionado - aí a SED não mostrava o campo de texto e o
+            // erro reportado era "Não encontrei o campo de texto do registro", culpando a coisa errada.
+            selecionarHorarioAulaMultiSelect((selecionouHorario) => {
+                if (!selecionouHorario) {
+                    reportarResultado(opts, false, 'Não consegui selecionar o "Horário de Aula" na tela de Registro - o campo continuou em "Selecione ...". Selecione o horário manualmente e clique em "Preencher Registro" de novo.');
+                    return;
+                }
                 aguardarCondicao(
                     () => document.querySelectorAll('textarea[name="o.Descricao"]').length > 0,
                     () => {
@@ -1569,6 +1714,9 @@ function aguardarClicarItemLista(wf, tipoLista, callback) {
 // Espera a tela de detalhe (preenchimento) carregar e então dispara o preenchimento silencioso
 // (modoAutomatico), avançando para a próxima etapa só quando o preenchimento reporta sucesso real.
 function aguardarTelaDetalheEExecutar(wf, tipoLista, callback) {
+    // Espera só a TELA - quem garante os dados do ProfSis é atualizarDadosProfSis, chamado dentro de
+    // preencherChamadaNaTela/preencherRegistroNaTela (nos dois casos, robô e botão). Exigir os dados
+    // aqui travaria o robô justamente antes do passo que os atualiza.
     const condicaoPronta = () => {
         if (tipoLista === 'chamada') return detectarTipoTelaSED() === 'chamada' && document.querySelector('.card_aluno, .card_aluno1');
         return detectarTipoTelaSED() === 'registro' && (document.querySelector('textarea[name="o.Descricao"]') || document.querySelector('#tabsNavegacao'));
@@ -1594,7 +1742,12 @@ function aguardarTelaDetalheEExecutar(wf, tipoLista, callback) {
             if (tipoLista === 'chamada') preencherChamadaNaTela(null, { modoAutomatico: true, aoConcluir: aoConcluir });
             else preencherRegistroNaTela(null, { modoAutomatico: true, aoConcluir: aoConcluir });
         },
-        () => { abortarWorkflow(wf, 'A tela de ' + tipoLista + ' não carregou a tempo.', callback); }
+        () => {
+            abortarWorkflow(wf, 'A tela de ' + tipoLista + ' não carregou a tempo.', callback);
+        },
+        // Orçamento um pouco maior que o padrão (~13s vs ~10s): depois de um reload completo a SED
+        // (Blazor) pode demorar para montar os cards/abas da tela de detalhe.
+        600, 22
     );
 }
 
