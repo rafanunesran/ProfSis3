@@ -280,6 +280,7 @@ async function renderListaUsuariosAdmin() {
                         <td><span class="badge ${roleInfo.class}">${roleInfo.label}</span></td>
                         <td>
                             <button class="btn btn-warning btn-sm" onclick="resetarSenhaAuth('${u.email}')" title="Enviar email de redefinição">📧 Senha</button>
+                            <button class="btn btn-success btn-sm" onclick="abrirBackupsUsuarioAdmin('${u.id}')" title="Ver e restaurar backups deste usuário">🛟 Backups</button>
                             <button class="btn btn-secondary btn-sm" onclick="editarUsuarioAdmin('${u.id}')" title="Alterar Perfil/Nome">✏️ Perfil</button>
                             <button class="btn ${ehContribuinte ? 'btn-success' : 'btn-secondary'} btn-sm" onclick="alternarContribuinteAdmin('${u.id}')" title="${ehContribuinte ? 'Remover marca de contribuinte' : 'Marcar como contribuinte'}">${ehContribuinte ? '💛 Contribuinte' : '💛 Marcar'}</button>
                             <button class="btn btn-danger btn-sm" onclick="excluirUsuarioAdmin(${u.id})">🗑️</button>
@@ -1499,5 +1500,165 @@ async function removerDocumentoBaseCurricular(manifestDocId) {
     } catch (e) {
         console.error(e);
         mostrarMensagemBaseCurricular('Erro ao remover: ' + e.message, 'erro');
+    }
+}
+
+// --- RECUPERAÇÃO DE BACKUPS DE USUÁRIOS (SUPER ADMIN) ---
+// Permite ao Super Admin ver e restaurar os backups diários de qualquer usuário
+// (até 20 dias de histórico). Útil quando um professor perde os dados e não consegue
+// recuperar sozinho pelo painel dele.
+
+// Quantos slots varrer por usuário (backup diário -> ~20 dias). Definido localmente
+// para o admin não depender de app.js ter carregado (BACKUP_MAX_DIAS).
+const BACKUP_SLOTS_ADMIN = 20;
+
+// Reproduz a lógica de getStorageKey (shared.js) para um usuário-alvo, sem depender
+// da variável global currentViewMode (que no painel admin não reflete o perfil do
+// usuário que estamos recuperando).
+function chaveDadosUsuarioAlvo(user) {
+    if (!user) return null;
+    const role = user.role;
+    if (role === 'gestor') return 'app_data_school_' + (user.schoolId || 'default') + '_gestor';
+    if (role === 'aee' || role === 'projeto') return `app_data_school_${user.schoolId || 'default'}_${role}`;
+    if (user.uid) return 'app_data_' + user.uid;
+    return 'app_data_' + user.id;
+}
+
+// IDs onde os backups do usuário podem ter sido indexados (uid atual e id numérico antigo).
+function idsBackupUsuario(user) {
+    const ids = [];
+    if (user.uid) ids.push(user.uid);
+    if (user.id && user.id !== user.uid) ids.push(user.id);
+    return ids;
+}
+
+// Varre índice + força-bruta nos slots de cada ID candidato e devolve a lista de backups
+// encontrados (com contagens e os dados completos), ordenada do mais recente para o mais antigo.
+async function coletarBackupsUsuario(user) {
+    const encontrados = [];
+    const vistos = new Set();
+
+    for (const id of idsBackupUsuario(user)) {
+        let indexSlots = [];
+        try {
+            const index = await getData('app_data', `backup_index_${id}`);
+            if (index && Array.isArray(index.slots)) indexSlots = index.slots;
+        } catch (e) {}
+
+        for (let i = 1; i <= BACKUP_SLOTS_ADMIN; i++) {
+            const chaveUnica = `${id}_${i}`;
+            if (vistos.has(chaveUnica)) continue;
+            try {
+                const bData = await getData('app_data', `backup_${id}_slot_${i}`);
+                if (!bData) continue;
+                const meta = indexSlots.find(s => s.id === i) || {};
+                const ts = meta.timestamp || null;
+                encontrados.push({
+                    id: i,
+                    ownerId: id,
+                    timestamp: ts,
+                    dataLabel: ts ? new Date(ts).toLocaleString('pt-BR') : (meta.dateStr || 'Data desconhecida'),
+                    label: meta.label || 'Backup',
+                    countTurmas: (bData.turmas || []).length,
+                    countEstudantes: (bData.estudantes || []).length,
+                    countNotas: (bData.notas || []).length,
+                    data: bData
+                });
+                vistos.add(chaveUnica);
+            } catch (e) {}
+        }
+    }
+
+    encontrados.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    return encontrados;
+}
+
+async function abrirBackupsUsuarioAdmin(userId) {
+    const dataUsers = await getData('system', 'users_list');
+    const users = (dataUsers && dataUsers.list) ? dataUsers.list : [];
+    const user = users.find(u => String(u.id) === String(userId));
+    if (!user) return alert('Usuário não encontrado.');
+
+    let modal = document.getElementById('modalBackupsUsuarioAdmin');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modalBackupsUsuarioAdmin';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:720px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:12px;">
+                <h2 style="margin:0;">🛟 Backups de ${user.nome || user.email}</h2>
+                <button class="btn btn-sm btn-danger" style="padding:2px 8px;" onclick="closeModal('modalBackupsUsuarioAdmin')">×</button>
+            </div>
+            <p style="font-size:13px; color:#666; margin-bottom:12px;">Histórico diário (até ${BACKUP_SLOTS_ADMIN} dias). <strong>Baixe</strong> o arquivo para guardar/enviar ao professor, ou <strong>restaure</strong> direto na conta dele.</p>
+            <div id="statusBackupsUsuarioAdmin" style="padding:12px; text-align:center; background:#f7fafc; border-radius:8px; margin-bottom:12px;">🔎 Procurando backups...</div>
+            <div id="listaBackupsUsuarioAdmin" style="display:flex; flex-direction:column; gap:10px; max-height:340px; overflow-y:auto;"></div>
+        </div>
+    `;
+    showModal('modalBackupsUsuarioAdmin');
+
+    window._backupUsuarioAlvo = user;
+
+    const encontrados = await coletarBackupsUsuario(user);
+    window._backupsUsuarioEncontrados = encontrados;
+
+    const statusEl = document.getElementById('statusBackupsUsuarioAdmin');
+    const listaEl = document.getElementById('listaBackupsUsuarioAdmin');
+    if (!statusEl || !listaEl) return; // modal fechado durante a busca
+
+    if (encontrados.length === 0) {
+        statusEl.innerHTML = '<span style="color:#e53e3e; font-weight:bold;">❌ Nenhum backup encontrado para este usuário.</span>';
+        return;
+    }
+
+    statusEl.innerHTML = `<span style="color:#276749; font-weight:bold;">✅ ${encontrados.length} backup(s) encontrado(s).</span>`;
+    listaEl.innerHTML = encontrados.map((b, i) => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
+            <div>
+                <div style="font-weight:bold; color:#2d3748;">${b.dataLabel}</div>
+                <div style="font-size:12px; color:#718096;">${b.label} — ${b.countTurmas} turmas, ${b.countEstudantes} alunos, ${b.countNotas} notas</div>
+                <div style="font-size:10px; color:#a0aec0;">Slot ${b.id} · ID ${b.ownerId}</div>
+            </div>
+            <div style="display:flex; gap:5px; flex-shrink:0;">
+                <button class="btn btn-sm btn-info" onclick="baixarBackupUsuarioAdmin(${i})">⬇️ Baixar</button>
+                <button class="btn btn-sm btn-warning" onclick="restaurarBackupUsuarioAdmin(${i})">♻️ Restaurar</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function baixarBackupUsuarioAdmin(idx) {
+    const b = (window._backupsUsuarioEncontrados || [])[idx];
+    const user = window._backupUsuarioAlvo;
+    if (!b || !user) return;
+    const base = (user.nome || user.email || 'usuario').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const sufixo = b.timestamp ? new Date(b.timestamp).toISOString().slice(0, 10) : ('slot' + b.id);
+    const nomeArq = `backup_${base}_${sufixo}.json`;
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(b.data));
+    const a = document.createElement('a');
+    a.setAttribute('href', dataStr);
+    a.setAttribute('download', nomeArq);
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+}
+
+async function restaurarBackupUsuarioAdmin(idx) {
+    const b = (window._backupsUsuarioEncontrados || [])[idx];
+    const user = window._backupUsuarioAlvo;
+    if (!b || !user) return;
+
+    const destino = chaveDadosUsuarioAlvo(user);
+    if (!destino) return alert('Não foi possível determinar a conta de destino deste usuário.');
+
+    if (!confirm(`ATENÇÃO: isso vai SUBSTITUIR os dados atuais de ${user.nome || user.email} pelos dados do backup de ${b.dataLabel}.\n\nConteúdo do backup: ${b.countTurmas} turmas, ${b.countEstudantes} alunos, ${b.countNotas} notas.\n\nDica: baixe antes um backup do estado atual, por segurança.\n\nDeseja continuar?`)) return;
+
+    try {
+        await saveData('app_data', destino, b.data);
+        alert(`✅ Backup de ${b.dataLabel} restaurado na conta de ${user.nome || user.email}.\n\nPeça para o(a) professor(a) recarregar o sistema (ou sair e entrar novamente) para ver os dados restaurados.`);
+    } catch (e) {
+        alert('Erro ao restaurar: ' + e.message);
     }
 }
