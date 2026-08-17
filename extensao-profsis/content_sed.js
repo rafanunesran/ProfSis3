@@ -433,7 +433,7 @@ function injetarMenu() {
         '<div style="display:flex; gap:5px;"><input type="date" id="sisprof-data-input" style="flex:1; padding:6px; border:1px solid #cbd5e0; border-radius:4px; font-size:12px;"><button id="sisprof-btn-hoje" style="background:#38a169; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">Hoje</button></div></div>' +
         '<div id="sisprof-status" style="background:#f7fafc; padding:10px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:10px; font-size:11px; color:#718096;">Verificando...</div>' +
         '<div style="border:1px solid #e2e8f0; border-radius:8px; margin-bottom:10px; overflow:hidden;">' +
-            '<div style="background:#f7fafc; padding:6px 8px; font-size:11px; font-weight:bold; color:#4a5568; border-bottom:1px solid #e2e8f0;">📚 Aulas do Dia <span style="font-weight:normal; color:#a0aec0;">— clique numa turma para ver os faltosos</span></div>' +
+            '<div style="background:#f7fafc; padding:6px 8px; font-size:11px; font-weight:bold; color:#4a5568; border-bottom:1px solid #e2e8f0;">📚 Aulas do Dia <span style="font-weight:normal; color:#a0aec0;">— clique numa turma. ' + pontoDestaque('faltoso') + ' faltoso · ' + pontoDestaque('amarelado') + ' freq. &lt; 50%</span></div>' +
             '<div id="sisprof-lista-turmas"></div>' +
         '</div>' +
         '<div id="sisprof-detalhe" style="display:none; background:#fffaf0; border:1px solid #feebc8; border-radius:8px; padding:10px; margin-bottom:10px;"></div>' +
@@ -521,17 +521,82 @@ function atualizarInterfacePorData() {
         renderizarListaTurmasDoDia();
         return;
     }
-    const numFaltas = (payload.faltas && payload.faltas.length) ? payload.faltas.length : 0;
+    // Totais dos alunos em alerta somando as turmas do dia (classificação da gestão + freq. < 50%).
+    let totFalt = 0, totAmar = 0;
+    montarTurmasDoDia(currentSelectedDate).forEach(t => {
+        const d = alunosDestacadosDaTurma(t.id);
+        totFalt += d.filter(x => x.tipo === 'faltoso').length;
+        totAmar += d.filter(x => x.tipo === 'amarelado').length;
+    });
     const temRegistro = (payload.registros && payload.registros.length > 0 && payload.registros[0].conteudo) ? 'Sim' : 'Não';
-    statusEl.innerHTML = '<strong>📅 ' + formatarDataBR(currentSelectedDate) + '</strong><br>🔴 Faltosos (Gestão): <strong>' + numFaltas + '</strong><br>📝 Registro salvo: <strong>' + temRegistro + '</strong>';
+    statusEl.innerHTML = '<strong>📅 ' + formatarDataBR(currentSelectedDate) + '</strong>' +
+        '<br>' + pontoDestaque('faltoso') + ' Faltosos (Gestão): <strong>' + totFalt + '</strong>' +
+        '<br>' + pontoDestaque('amarelado') + ' Frequência anual &lt; 50%: <strong>' + totAmar + '</strong>' +
+        '<br>📝 Registro salvo: <strong>' + temRegistro + '</strong>';
     renderizarListaTurmasDoDia();
 }
 
-// Faltosos (só leitura) de uma turma na data selecionada.
-function faltososDaTurma(idTurma) {
-    const payload = obterPayloadDaData(currentSelectedDate);
-    const faltas = (payload && payload.faltas) || [];
-    return faltas.filter(f => String(f.id_turma) === String(idTurma));
+// Turma (objeto) a partir do id.
+function turmaPorId(idTurma) {
+    return (profsisAppData.turmas || []).find(t => String(t.id) === String(idTurma)) || null;
+}
+
+// Alunos em alerta de uma turma, na classificação da GESTÃO (independente da presença do dia -
+// esta é uma lista de consulta, não decide falta). Cada item é { nome, tipo }:
+//  - tipo 'faltoso'   -> classificado como "Faltoso" pela gestão (registrosAdministrativos);
+//  - tipo 'amarelado' -> presença anual < 50% no ano (data.baixaFrequencia), quando NÃO é faltoso.
+// Faltoso tem prioridade sobre amarelado (o aluno aparece uma vez só, no tipo mais grave).
+function alunosDestacadosDaTurma(idTurma) {
+    const estudantes = profsisAppData.estudantes || [];
+    const registrosAdmin = profsisAppData.registrosAdministrativos || [];
+    const baixaFreq = profsisAppData.baixaFrequencia || [];
+
+    // Faltosos classificados pela gestão (arquivados são ignorados). Nada de filtro por presença do
+    // dia: mostra exatamente quem a gestão marcou como Faltoso.
+    const faltososReg = registrosAdmin.filter(r => r.tipo === 'Faltoso' && !r.arquivado);
+    const baixaFreqIds = new Set(baixaFreq.map(b => String(b.id)));
+    const baixaFreqNomes = new Set(baixaFreq.map(b => normalizeNomeFaltoso(b.nome)));
+
+    const casaFaltoso = (est) => faltososReg.some(reg =>
+        String(reg.estudanteId) === String(est.id) ||
+        (reg.nomeEstudante && normalizeNomeFaltoso(reg.nomeEstudante) === normalizeNomeFaltoso(est.nome_completo)));
+
+    const resultado = [];
+    const nomesJaIncluidos = new Set();
+
+    // 1) Alunos ATIVOS da turma na base local do professor.
+    estudantes.forEach(est => {
+        if (String(est.id_turma) !== String(idTurma)) return;
+        if (est.status && est.status !== 'Ativo') return;
+        const nomeNorm = normalizeNomeFaltoso(est.nome_completo);
+        if (casaFaltoso(est)) {
+            resultado.push({ nome: est.nome_completo, tipo: 'faltoso' });
+            nomesJaIncluidos.add(nomeNorm);
+        } else if (baixaFreqIds.has(String(est.id)) || baixaFreqNomes.has(nomeNorm)) {
+            resultado.push({ nome: est.nome_completo, tipo: 'amarelado' });
+            nomesJaIncluidos.add(nomeNorm);
+        }
+    });
+
+    // 2) Faltosos que a gestão lançou mas que NÃO estão na base local do professor (aluno não
+    //    importado). Atribui à turma pelo turmaId do registro - mesmo critério do robô antigo -
+    //    pra não sumir com um faltoso classificado pela gestão.
+    faltososReg.forEach(reg => {
+        if (!reg.nomeEstudante) return;
+        const nomeNorm = normalizeNomeFaltoso(reg.nomeEstudante);
+        if (nomesJaIncluidos.has(nomeNorm)) return;
+        const existeLocal = estudantes.some(e => normalizeNomeFaltoso(e.nome_completo) === nomeNorm || String(e.id) === String(reg.estudanteId));
+        if (existeLocal) return;
+        if (reg.turmaId != null && String(reg.turmaId) === String(idTurma)) {
+            resultado.push({ nome: reg.nomeEstudante, tipo: 'faltoso' });
+            nomesJaIncluidos.add(nomeNorm);
+        }
+    });
+
+    // Faltosos (vermelho) primeiro, depois amarelados; alfabético dentro de cada grupo.
+    const peso = { faltoso: 0, amarelado: 1 };
+    resultado.sort((a, b) => (peso[a.tipo] - peso[b.tipo]) || a.nome.localeCompare(b.nome, 'pt-BR'));
+    return resultado;
 }
 
 // Aulas que o professor tem no dia selecionado. Cada turma é clicável (mostra os faltosos) e tem um
@@ -549,17 +614,19 @@ function renderizarListaTurmasDoDia() {
         const markKey = currentSelectedDate + '_turma_' + turma.id;
         const lancSync = (profsisAppData && profsisAppData.lancamentosConcluidos) || {};
         const isDone = lancSync[markKey] || extDoneMarks[markKey] || false;
-        const numFaltosos = faltososDaTurma(turma.id).length;
+        const destacados = alunosDestacadosDaTurma(turma.id);
+        const nFalt = destacados.filter(d => d.tipo === 'faltoso').length;
+        const nAmar = destacados.filter(d => d.tipo === 'amarelado').length;
         const div = document.createElement('div');
         div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0f0f0; padding:6px 8px; gap:6px;';
         div.innerHTML =
-            '<span class="sisprof-turma-ver" title="Ver estudantes faltosos desta turma" style="flex:1; cursor:pointer; font-size:12px; color:#2d3748; font-weight:600;">👁️ ' + escapeHtml(turma.nome + ' ' + turma.disciplina) + '</span>' +
-            '<span class="sisprof-turma-badge" title="Faltosos classificados pela gestão" style="flex-shrink:0; cursor:pointer; font-size:10px; background:' + (numFaltosos ? '#fff5f5' : '#f7fafc') + '; color:' + (numFaltosos ? '#c53030' : '#a0aec0') + '; border:1px solid ' + (numFaltosos ? '#feb2b2' : '#e2e8f0') + '; border-radius:10px; padding:2px 7px;">🔴 ' + numFaltosos + '</span>' +
+            '<span class="sisprof-turma-ver" title="Ver faltosos e alunos com frequência baixa desta turma" style="flex:1; cursor:pointer; font-size:12px; color:#2d3748; font-weight:600;">👁️ ' + escapeHtml(turma.nome + ' ' + turma.disciplina) + '</span>' +
+            '<span class="sisprof-turma-badge" title="🔴 Faltosos (gestão) · 🟡 frequência anual < 50%" style="flex-shrink:0; cursor:pointer; font-size:10px; color:#4a5568; background:#f7fafc; border:1px solid #e2e8f0; border-radius:10px; padding:2px 8px; white-space:nowrap;">' + pontoDestaque('faltoso') + ' ' + nFalt + ' &nbsp; ' + pontoDestaque('amarelado') + ' ' + nAmar + '</span>' +
             '<input type="checkbox" class="sisprof-turma-done-chk" title="Marcar como lançada (controle pessoal - não mexe na SED)" data-key="' + markKey + '" ' + (isDone ? 'checked' : '') + '>';
         container.appendChild(div);
-        const verFaltosos = function() { renderPainelFaltosos(turma.nome + ' ' + turma.disciplina, faltososDaTurma(turma.id)); };
-        div.querySelector('.sisprof-turma-ver').addEventListener('click', verFaltosos);
-        div.querySelector('.sisprof-turma-badge').addEventListener('click', verFaltosos);
+        const verDestacados = function() { renderPainelDestacados(turma.nome + ' ' + turma.disciplina, alunosDestacadosDaTurma(turma.id)); };
+        div.querySelector('.sisprof-turma-ver').addEventListener('click', verDestacados);
+        div.querySelector('.sisprof-turma-badge').addEventListener('click', verDestacados);
         div.querySelector('.sisprof-turma-done-chk').addEventListener('change', function() {
             const key = this.getAttribute('data-key');
             extDoneMarks[key] = this.checked;
@@ -573,26 +640,38 @@ function renderizarListaTurmasDoDia() {
     if (last) last.style.borderBottom = 'none';
 }
 
-// ==================== PAINEL DE FALTOSOS (somente leitura) ====================
+// ==================== PAINEL DE ALUNOS EM ALERTA (somente leitura) ====================
 
 function ocultarDetalheFaltosos() {
     const painel = document.getElementById('sisprof-detalhe');
     if (painel) { painel.style.display = 'none'; painel.innerHTML = ''; }
 }
 
-function renderPainelFaltosos(titulo, faltosos) {
+// Bolinha colorida do marcador: vermelha para faltoso, amarela para frequência baixa (<50%).
+function pontoDestaque(tipo) {
+    const cor = tipo === 'amarelado' ? '#f6c343' : '#e53e3e';
+    return '<span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:' + cor + '; vertical-align:middle;"></span>';
+}
+
+function renderPainelDestacados(titulo, alunos) {
     const painel = document.getElementById('sisprof-detalhe');
     if (!painel) return;
     let html = '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">' +
-        '<span style="font-weight:bold; font-size:12px; color:#2d3748;">🔴 Faltosos — ' + escapeHtml(titulo) + '</span>' +
+        '<span style="font-weight:bold; font-size:12px; color:#2d3748;">Alunos em alerta — ' + escapeHtml(titulo) + '</span>' +
         '<span id="sisprof-detalhe-fechar" title="Fechar" style="cursor:pointer; color:#a0aec0; font-size:14px;">✖</span></div>';
-    if (!faltosos || faltosos.length === 0) {
-        html += '<div style="font-size:12px; color:#718096;">Nenhum estudante classificado como faltoso para esta turma em ' + formatarDataBR(currentSelectedDate) + '.</div>';
+    if (!alunos || alunos.length === 0) {
+        html += '<div style="font-size:12px; color:#718096;">Nenhum aluno faltoso ou com frequência anual abaixo de 50% nesta turma.</div>';
     } else {
-        html += '<ol style="margin:0; padding-left:22px; font-size:12px; color:#2d3748;">' +
-            faltosos.map(f => '<li style="margin-bottom:3px;">' + escapeHtml(f.nome) + '</li>').join('') +
-            '</ol>' +
-            '<div style="font-size:11px; color:#a0aec0; margin-top:8px;">' + faltosos.length + ' estudante(s) faltoso(s) • lista somente para consulta</div>';
+        const nFalt = alunos.filter(a => a.tipo === 'faltoso').length;
+        const nAmar = alunos.filter(a => a.tipo === 'amarelado').length;
+        html += '<ul style="margin:0; padding-left:2px; list-style:none; font-size:12px; color:#2d3748;">' +
+            alunos.map(a => '<li style="margin-bottom:4px; display:flex; align-items:center; gap:8px;">' + pontoDestaque(a.tipo) + '<span>' + escapeHtml(a.nome) + '</span></li>').join('') +
+            '</ul>' +
+            '<div style="font-size:11px; color:#a0aec0; margin-top:8px; border-top:1px solid #feebc8; padding-top:6px;">' +
+                pontoDestaque('faltoso') + ' Faltoso (gestão): <strong>' + nFalt + '</strong> &nbsp;·&nbsp; ' +
+                pontoDestaque('amarelado') + ' Frequência anual &lt; 50%: <strong>' + nAmar + '</strong>' +
+                '<br>lista somente para consulta' +
+            '</div>';
     }
     painel.style.display = 'block';
     painel.innerHTML = html;
@@ -637,13 +716,13 @@ function atualizarPaineisSED() {
         }
     }
 
-    // Na tela de Chamada, mostra automaticamente os faltosos da turma aberta na SED (só leitura).
+    // Na tela de Chamada, mostra automaticamente os alunos em alerta da turma aberta na SED (só leitura).
     if (tipo === 'chamada') {
         const idTurma = encontrarIdTurmaDaTelaAtual();
         if (idTurma) {
-            const turma = (profsisAppData.turmas || []).find(t => String(t.id) === String(idTurma));
+            const turma = turmaPorId(idTurma);
             const titulo = turma ? (turma.nome + ' ' + (turma.disciplina || '')) : ('Turma ' + idTurma);
-            renderPainelFaltosos(titulo, faltososDaTurma(idTurma));
+            renderPainelDestacados(titulo, alunosDestacadosDaTurma(idTurma));
         }
     }
 }
