@@ -3714,7 +3714,7 @@ async function renderEscolaGestor() {
 
         <div class="card" style="margin:20px 0;">
             <h2>👥 Professores da Escola</h2>
-            <p style="color:#666; font-size:14px; margin-bottom:15px;">Altere o perfil ou ative/inative o acesso de edição. Professores inativos continuam acessando o sistema em modo somente leitura.</p>
+            <p style="color:#666; font-size:14px; margin-bottom:15px;">Libere o acesso de perfis novos, altere o perfil ou ative/inative o acesso de edição. Perfis novos só acessam os dados da escola após a sua liberação. Professores inativos continuam acessando o sistema em modo somente leitura.</p>
             <div id="listaProfessoresGestor"></div>
         </div>`;
 
@@ -3747,6 +3747,15 @@ async function salvarConfigEscolaGestor(e) {
     renderEscolaGestor();
 }
 
+function formatarDataPtBr(iso) {
+    if (!iso) return '';
+    try {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch (e) { return ''; }
+}
+
 async function renderListaProfessoresGestor() {
     const container = document.getElementById('listaProfessoresGestor');
     if (!container) return;
@@ -3760,7 +3769,44 @@ async function renderListaProfessoresGestor() {
         return;
     }
 
-    container.innerHTML = `
+    // Perfis novos aguardando liberação (approved === false). Ficam em destaque no topo.
+    const pendentes = professores.filter(u => u.approved === false);
+    const liberados = professores.filter(u => u.approved !== false);
+
+    // --- SEÇÃO: AGUARDANDO LIBERAÇÃO ---
+    let htmlPendentes = '';
+    if (pendentes.length > 0) {
+        htmlPendentes = `
+            <div style="border:1px solid #f6c177; background:#fffaf0; border-radius:10px; padding:14px 16px; margin-bottom:18px;">
+                <h3 style="color:#b7791f; margin:0 0 4px;">🔔 Novos perfis aguardando sua liberação (${pendentes.length})</h3>
+                <p style="color:#8a6d3b; font-size:13px; margin:0 0 12px;">Estes cadastros ainda <strong>não têm acesso aos dados da escola</strong>. Confirme quem faz parte da sua equipe para liberar o uso das ferramentas.</p>
+                <table>
+                    <thead>
+                        <tr><th>Nome</th><th>E-mail</th><th>Solicitado em</th><th>Ações</th></tr>
+                    </thead>
+                    <tbody>
+                        ${pendentes.map(u => {
+                            const recusado = u.rejected === true;
+                            return `
+                            <tr>
+                                <td>${u.nome || '(sem nome)'}</td>
+                                <td style="font-size:12px; color:#666;">${u.email || '—'}</td>
+                                <td style="font-size:12px; color:#666;">${formatarDataPtBr(u.pendingSince) || '—'}${recusado ? ' <span class="badge badge-danger">Recusado</span>' : ''}</td>
+                                <td>
+                                    <button class="btn btn-success btn-sm" onclick="aprovarProfessorGestor('${u.id}')" title="Liberar acesso">✅ Liberar acesso</button>
+                                    ${recusado ? '' : `<button class="btn btn-danger btn-sm" onclick="recusarProfessorGestor('${u.id}')" title="Recusar acesso">✋ Recusar</button>`}
+                                </td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>`;
+    }
+
+    // --- SEÇÃO: PERFIS LIBERADOS ---
+    const htmlLiberados = liberados.length === 0
+        ? '<p class="empty-state">Nenhum perfil liberado ainda.</p>'
+        : `
         <table>
             <thead>
                 <tr>
@@ -3771,7 +3817,7 @@ async function renderListaProfessoresGestor() {
                 </tr>
             </thead>
             <tbody>
-                ${professores.map(u => {
+                ${liberados.map(u => {
                     const roleInfo = ROLE_MAP_GESTOR[u.role] || ROLE_MAP_GESTOR['professor'];
                     const ativo = (u.active !== false); // undefined = ativo
                     const isSelf = (currentUser && (String(u.id) === String(currentUser.id) || (u.email && currentUser.email && u.email.toLowerCase() === currentUser.email.toLowerCase())));
@@ -3796,6 +3842,56 @@ async function renderListaProfessoresGestor() {
                 }).join('')}
             </tbody>
         </table>`;
+
+    container.innerHTML = htmlPendentes + htmlLiberados;
+}
+
+// [SEGURANÇA] Libera o acesso de um perfil novo. Só depois disto o usuário passa a
+// carregar os dados da escola e usar as ferramentas (ver gate em iniciarApp/app.js).
+async function aprovarProfessorGestor(id) {
+    const data = await getData('system', 'users_list');
+    const users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
+    const user = users.find(u => String(u.id) === String(id));
+    if (!user) return;
+
+    // Guarda: só perfis da própria escola, nunca super_admin.
+    if (user.schoolId != currentUser.schoolId || user.role === 'super_admin') {
+        alert('Você só pode liberar perfis da sua própria escola.');
+        return;
+    }
+
+    if (!confirm(`Liberar o acesso de "${user.nome || user.email || 'este perfil'}"?\n\nEle poderá acessar os dados e as ferramentas da escola.`)) return;
+
+    user.approved = true;
+    user.rejected = false;
+    user.active = true; // garante acesso de edição ao liberar
+    user.approvedAt = new Date().toISOString();
+    user.approvedBy = currentUser.nome || currentUser.email || 'gestor';
+    await saveData('system', 'users_list', { list: users });
+    renderListaProfessoresGestor();
+}
+
+// [SEGURANÇA] Recusa a liberação de um perfil novo. Ele continua sem acesso aos dados
+// da escola (permanece na tela de "acesso não liberado"). Pode ser liberado depois.
+async function recusarProfessorGestor(id) {
+    const data = await getData('system', 'users_list');
+    const users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
+    const user = users.find(u => String(u.id) === String(id));
+    if (!user) return;
+
+    if (user.schoolId != currentUser.schoolId || user.role === 'super_admin') {
+        alert('Você só pode recusar perfis da sua própria escola.');
+        return;
+    }
+
+    if (!confirm(`Recusar o acesso de "${user.nome || user.email || 'este perfil'}"?\n\nO perfil continuará sem acesso aos dados da escola. Você poderá liberá-lo depois, se quiser.`)) return;
+
+    user.approved = false;
+    user.rejected = true;
+    user.rejectedAt = new Date().toISOString();
+    user.rejectedBy = currentUser.nome || currentUser.email || 'gestor';
+    await saveData('system', 'users_list', { list: users });
+    renderListaProfessoresGestor();
 }
 
 function garantirModalPerfilProfessorGestor() {
