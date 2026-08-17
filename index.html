@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SisProf</title>
-    <link rel="stylesheet" href="styles.css?v=3.12">
+    <link rel="stylesheet" href="styles.css?v=3.13">
     <!-- PWA / iOS (iPhone e iPad) -->
     <link rel="manifest" href="manifest.webmanifest?v=1">
     <meta name="theme-color" content="#2c5282">
@@ -24,10 +24,10 @@
     <!-- Leitura de .docx no navegador (Anexo III-PAEE importado de Word) -->
     <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
     <!-- App Scripts -->
-    <script src="core.js?v=3.15" defer></script>
+    <script src="core.js?v=3.16" defer></script>
     <script src="admin.js?v=3.22" defer></script>
     <script src="gestor.js?v=3.21" defer></script>
-    <script src="app.js?v=3.43" defer></script>
+    <script src="app.js?v=3.44" defer></script>
     <script src="ia_estagiario.js?v=3.36" defer></script>
     <script src="biblioteca.js?v=1.2" defer></script>
     <!-- Calendário escolar + sincronização com o Google Agenda -->
@@ -360,6 +360,28 @@
                 <button class="btn btn-danger" onclick="removerBackgroundPersonalizado()">🗑️ Remover</button>
             </div>
             <button class="btn btn-secondary" style="width: 100%; margin-top: 20px;" onclick="closeModal('modalPerfilUsuario')">Fechar</button>
+        </div>
+    </div>
+
+    <!-- POPUP ÚNICO: Aceite dos Termos de Uso (usuários já cadastrados) -->
+    <div id="modalAceiteTermos" class="aceite-overlay" style="display:none;">
+        <div class="aceite-box">
+            <h2>📄 Termos de Uso — Aceite necessário</h2>
+            <p class="aceite-intro">Atualizamos os <strong>Termos de Uso</strong> do SisProf. Para continuar utilizando a plataforma, é necessário ler e concordar com os termos abaixo.</p>
+            <ul class="aceite-pontos">
+                <li>Os dados são de <strong>caráter auxiliar e não oficiais</strong> — não refletem a realidade sistêmica; os registros oficiais devem ser lançados no sistema oficial da rede.</li>
+                <li>As informações são <strong>confidenciais</strong> e <strong>não podem ser usadas de forma pública</strong>.</li>
+                <li>A <strong>escola</strong> e os <strong>desenvolvedores não se responsabilizam</strong> pelo uso da plataforma nem pelos dados publicados.</li>
+            </ul>
+            <a href="termos.html" target="_blank" class="aceite-link">📖 Ler os Termos de Uso na íntegra ↗</a>
+            <label class="aceite-check">
+                <input type="checkbox" id="checkAceiteTermos" onchange="toggleBtnAceiteTermos()">
+                <span>Li e concordo com os Termos de Uso.</span>
+            </label>
+            <div class="aceite-botoes">
+                <button type="button" class="btn btn-danger" onclick="recusarTermos()">Não concordo</button>
+                <button type="button" class="btn btn-success" id="btnConfirmarTermos" onclick="confirmarAceiteTermos()" disabled>Concordar e continuar</button>
+            </div>
         </div>
     </div>
 
