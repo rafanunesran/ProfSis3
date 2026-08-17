@@ -25,6 +25,10 @@ async function iniciarApp() {
         } catch (e) { console.warn('Erro ao sincronizar perfil:', e); }
     }
 
+    // [TERMOS] Popup único de aceite para usuários já cadastrados; sem concordância,
+    // o acesso é encerrado (ver core.js).
+    if (typeof verificarAceiteTermos === 'function') verificarAceiteTermos();
+
     // Define o modo inicial se ainda não estiver definido
     const savedMode = sessionStorage.getItem('app_view_mode');
     if (savedMode) {

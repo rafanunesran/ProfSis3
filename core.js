@@ -459,6 +459,70 @@ async function fazerCadastro(e) {
     renderLogin();
 }
 
+// --- ACEITE ÚNICO DOS TERMOS DE USO (usuários já cadastrados) ---
+// Usuários criados antes destes Termos não têm o campo `aceitouTermos`. Ao entrarem,
+// exibimos um popup único exigindo a concordância; sem aceite, o acesso é encerrado.
+function precisaAceitarTermos(user) {
+    if (!user) return false;
+    if (user.role === 'super_admin') return false; // Admin não passa por este fluxo
+    return !user.aceitouTermos;
+}
+
+function verificarAceiteTermos() {
+    if (!precisaAceitarTermos(currentUser)) return;
+    const modal = document.getElementById('modalAceiteTermos');
+    if (!modal) return;
+    const check = document.getElementById('checkAceiteTermos');
+    const btn = document.getElementById('btnConfirmarTermos');
+    if (check) check.checked = false;
+    if (btn) btn.disabled = true;
+    modal.style.display = 'flex';
+}
+
+function toggleBtnAceiteTermos() {
+    const check = document.getElementById('checkAceiteTermos');
+    const btn = document.getElementById('btnConfirmarTermos');
+    if (btn) btn.disabled = !(check && check.checked);
+}
+
+async function confirmarAceiteTermos() {
+    const check = document.getElementById('checkAceiteTermos');
+    if (!check || !check.checked) {
+        alert('É necessário marcar a caixa de concordância para continuar.');
+        return;
+    }
+    const agora = new Date().toISOString();
+    // Persiste o aceite no perfil do usuário no banco (deixa rastro do consentimento)
+    try {
+        if (currentUser && currentUser.email) {
+            const usersData = await getData('system', 'users_list');
+            const users = (usersData && usersData.list && Array.isArray(usersData.list)) ? usersData.list : [];
+            const alvo = currentUser.email.trim().toLowerCase();
+            const idx = users.findIndex(u => (u.email || '').trim().toLowerCase() === alvo);
+            if (idx !== -1) {
+                users[idx].aceitouTermos = true;
+                users[idx].dataAceiteTermos = agora;
+                await saveData('system', 'users_list', { list: users });
+            }
+        }
+    } catch (e) {
+        console.warn('Não foi possível registrar o aceite dos termos no banco:', e);
+    }
+    // Atualiza a sessão local para o popup não reaparecer
+    currentUser.aceitouTermos = true;
+    currentUser.dataAceiteTermos = agora;
+    localStorage.setItem('app_current_user', JSON.stringify(currentUser));
+    const modal = document.getElementById('modalAceiteTermos');
+    if (modal) modal.style.display = 'none';
+}
+
+function recusarTermos() {
+    alert('Para utilizar o SisProf é necessário concordar com os Termos de Uso.\nO acesso será encerrado.');
+    const modal = document.getElementById('modalAceiteTermos');
+    if (modal) modal.style.display = 'none';
+    if (typeof logout === 'function') logout();
+}
+
 // Renderização de Telas de Auth
 function renderLogin() {
     const container = document.getElementById('authContainer');
