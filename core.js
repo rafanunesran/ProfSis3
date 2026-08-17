@@ -411,6 +411,12 @@ async function fazerCadastro(e) {
     const senha = document.getElementById('cadSenha').value;
     const escolaId = document.getElementById('cadEscola').value;
 
+    const aceiteTermos = document.getElementById('cadAceiteTermos');
+    if (aceiteTermos && !aceiteTermos.checked) {
+        alert('Para criar a conta, é necessário ler e aceitar os Termos de Uso.');
+        return;
+    }
+
     let userAuth = null;
     // [NOVO] Cadastro direto no Firebase Auth
     if (USE_FIREBASE && typeof firebase !== 'undefined') {
@@ -437,7 +443,9 @@ async function fazerCadastro(e) {
         email,
         senha,
         schoolId: escolaId,
-        role: 'professor' // Default
+        role: 'professor', // Default
+        aceitouTermos: true,
+        dataAceiteTermos: new Date().toISOString()
     };
 
     users.push(newUser);
@@ -483,6 +491,9 @@ function renderLogin() {
                 <span class="auth-link" onclick="solicitarResetSenha()">Esqueceu a senha?</span>
                 <span class="auth-link" onclick="renderCadastro()">Não tem conta? Cadastre-se</span>
             </div>
+            <div style="text-align:center; margin-top:12px;">
+                <a href="termos.html" target="_blank" class="auth-link" style="font-size:12px;">📄 Termos de Uso</a>
+            </div>
         </div>
     `;
 }
@@ -513,6 +524,10 @@ async function renderCadastro() {
                         <input type="password" id="cadSenha" required>
                         <button type="button" class="toggle-password" onclick="toggleSenha('cadSenha', this)">👁️</button>
                     </div>
+                </label>
+                <label style="display:flex; align-items:flex-start; gap:8px; font-size:12px; color:#4a5568; margin-top:6px; font-weight:normal;">
+                    <input type="checkbox" id="cadAceiteTermos" style="margin-top:2px; width:auto;">
+                    <span>Li e concordo com os <a href="termos.html" target="_blank" class="auth-link" style="font-size:12px;">Termos de Uso</a>. Estou ciente de que os dados são de caráter auxiliar, não oficiais, não podem ser usados de forma pública, e que a escola e os desenvolvedores não se responsabilizam pelo uso da plataforma nem pelos dados publicados.</span>
                 </label>
                 <button type="submit" class="btn btn-success">Criar Conta</button>
             </form>
