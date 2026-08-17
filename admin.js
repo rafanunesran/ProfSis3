@@ -374,9 +374,13 @@ async function salvarUsuarioAdmin(e) {
             u.nome = nome;
             u.email = email;
             // Se estiver editando, não mexe na senha (segurança do Auth)
-            if (senha && !USE_FIREBASE) u.senha = senha; 
+            if (senha && !USE_FIREBASE) u.senha = senha;
             u.role = role;
             if (!u.schoolId && escolaAtualAdmin) u.schoolId = escolaAtualAdmin;
+            // [SEGURANÇA] O admin é a autoridade máxima: ao editar/estabelecer um usuário,
+            // considera-se o acesso liberado (evita travar gestores no gate de aprovação).
+            u.approved = true;
+            u.rejected = false;
         }
     } else {
         if (users.find(u => u.email === email)) {

@@ -440,23 +440,38 @@ async function fazerCadastro(e) {
 
     const newUser = {
         id: userAuth ? userAuth.uid : Date.now(),
+        nome,
         email,
         senha,
         schoolId: escolaId,
         role: 'professor', // Default
+        // [SEGURANÇA] Perfil novo NÃO tem acesso imediato aos dados da escola.
+        // Fica pendente até a gestão da escola confirmar (libera as ferramentas).
+        approved: false,
+        pendingSince: new Date().toISOString(),
         aceitouTermos: true,
         dataAceiteTermos: new Date().toISOString()
     };
 
     users.push(newUser);
     await saveData('system', 'users_list', { list: users });
-    
-    alert('Cadastro realizado! Faça login.');
+
+    alert('Cadastro realizado!\n\nPor segurança, seu acesso aos dados da escola precisa ser liberado pela gestão. Assim que o gestor confirmar seu perfil, você poderá usar o sistema normalmente.\n\nFaça login para acompanhar o status.');
     // Desloga o usuário recém-criado para forçar o fluxo de login padrão
     if (userAuth) {
         await firebase.auth().signOut();
     }
     renderLogin();
+}
+
+// --- LIBERAÇÃO DE ACESSO PELO GESTOR (perfis novos) ---
+// Perfil novo (approved === false) fica bloqueado até a gestão da escola confirmar.
+// Usuários antigos (sem o campo `approved`) são tratados como já liberados para não
+// travar quem já usava o sistema. O super_admin nunca é bloqueado.
+function usuarioAguardandoAprovacao(user) {
+    if (!user) return false;
+    if (user.role === 'super_admin') return false;
+    return user.approved === false;
 }
 
 // --- ACEITE ÚNICO DOS TERMOS DE USO (usuários já cadastrados) ---
