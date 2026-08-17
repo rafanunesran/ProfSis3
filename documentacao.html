@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentação — SisProf</title>
+    <link rel="stylesheet" href="styles.css?v=3.13">
+    <link rel="manifest" href="manifest.webmanifest?v=1">
+    <meta name="theme-color" content="#2c5282">
+    <link rel="apple-touch-icon" href="resources/app-icon.svg">
+    <style>
+        body { background: #f5f7fa; }
+        .doc-wrapper { max-width: 900px; margin: 0 auto; padding: 24px 16px 60px; }
+        .doc-header {
+            background: #2c5282; color: #fff; padding: 26px 28px;
+            border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.12); margin-bottom: 22px;
+        }
+        .doc-header h1 { font-size: 24px; margin-bottom: 6px; }
+        .doc-header p { opacity: 0.9; font-size: 14px; }
+        .doc-nav {
+            background: #fff; border-radius: 10px; padding: 16px 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 22px;
+        }
+        .doc-nav strong { display: block; color: #2c5282; font-size: 13px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .5px; }
+        .doc-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+        .doc-nav a { color: #2b6cb0; text-decoration: none; font-size: 14px; }
+        .doc-nav a:hover { text-decoration: underline; }
+        .doc-card {
+            background: #fff; border-radius: 10px; padding: 26px 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06); line-height: 1.65; color: #2d3748; margin-bottom: 22px;
+        }
+        .doc-card h2 {
+            font-size: 19px; color: #2c5282; margin: 0 0 12px;
+            padding-bottom: 8px; border-bottom: 2px solid #e2e8f0;
+        }
+        .doc-card h3 { font-size: 15px; color: #2c5282; margin: 20px 0 8px; }
+        .doc-card p { margin-bottom: 12px; }
+        .doc-card ul { margin: 0 0 14px 22px; }
+        .doc-card li { margin-bottom: 7px; }
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 6px; }
+        .feature { background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; }
+        .feature h4 { color: #2d3748; font-size: 14px; margin-bottom: 6px; }
+        .feature p { font-size: 13px; color: #4a5568; margin: 0; }
+        .destaque {
+            background: #fffaf0; border-left: 4px solid #dd6b20; padding: 14px 18px;
+            border-radius: 6px; margin: 18px 0;
+        }
+        .destaque strong { color: #c05621; }
+        .voltar-bar { margin-bottom: 18px; }
+        .btn-voltar {
+            display: inline-block; text-decoration: none; background: #4a5568; color: #fff;
+            padding: 10px 18px; border-radius: 6px; font-size: 14px; font-weight: 500;
+        }
+        .doc-footer { text-align: center; color: #718096; font-size: 13px; margin-top: 8px; }
+        .doc-termo-h { font-size: 16px; color: #2c5282; margin: 24px 0 8px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0; }
+    </style>
+</head>
+<body>
+    <div class="doc-wrapper">
+        <div class="voltar-bar">
+            <a class="btn-voltar" href="index.html">← Voltar ao SisProf</a>
+        </div>
+
+        <div class="doc-header">
+            <h1>📚 Documentação do SisProf</h1>
+            <p>Guia de uso da plataforma e Termos de Uso completos</p>
+        </div>
+
+        <div class="doc-nav">
+            <strong>Nesta página</strong>
+            <ul>
+                <li><a href="#sobre">Sobre o SisProf</a></li>
+                <li><a href="#funcionalidades">Funcionalidades</a></li>
+                <li><a href="#assistente">Assistente (SED)</a></li>
+                <li><a href="#dados">Natureza dos dados</a></li>
+                <li><a href="#termos">Termos de Uso completos</a></li>
+            </ul>
+        </div>
+
+        <!-- SOBRE -->
+        <div class="doc-card" id="sobre">
+            <h2>Sobre o SisProf</h2>
+            <p>O <strong>SisProf</strong> é uma ferramenta de <strong>apoio à gestão pedagógica</strong>
+            voltada a professores, tutores e gestores. Funciona como aplicativo web instalável (PWA)
+            no computador, no iPhone/iPad e no Android, e ajuda a organizar a rotina docente em um só lugar.</p>
+            <p>Seu uso é <strong>complementar</strong> ao dos sistemas oficiais da rede de ensino:
+            o SisProf serve para o profissional se organizar, mas <strong>não substitui</strong> os
+            sistemas oficiais, onde os registros com valor oficial devem ser lançados.</p>
+        </div>
+
+        <!-- FUNCIONALIDADES -->
+        <div class="doc-card" id="funcionalidades">
+            <h2>Principais funcionalidades</h2>
+            <div class="feature-grid">
+                <div class="feature"><h4>📋 Turmas e estudantes</h4><p>Cadastro de turmas, importação de alunos por CSV e eletivas com agrupamento de alunos de outras turmas.</p></div>
+                <div class="feature"><h4>✅ Frequência</h4><p>Registro auxiliar de chamada, controle de atrasos, faltas e compensações.</p></div>
+                <div class="feature"><h4>🎓 Tutoria</h4><p>Acompanhamento de tutorados, registro de encontros individuais e coletivos e agendamento automático.</p></div>
+                <div class="feature"><h4>📝 Notas e trabalhos</h4><p>Lançamento de trabalhos com pesos e acompanhamento do desempenho por estudante.</p></div>
+                <div class="feature"><h4>⚠️ Ocorrências</h4><p>Registro de ocorrências e devolutivas com encaminhamentos.</p></div>
+                <div class="feature"><h4>📅 Agenda</h4><p>Grade de horários, eventos, reuniões e sincronização com o Google Agenda.</p></div>
+                <div class="feature"><h4>☁️ Backup na nuvem</h4><p>Backup automático diário com histórico dos últimos 15 dias.</p></div>
+                <div class="feature"><h4>🎨 Perfil e temas</h4><p>Personalização de tema e plano de fundo do sistema.</p></div>
+            </div>
+        </div>
+
+        <!-- ASSISTENTE -->
+        <div class="doc-card" id="assistente">
+            <h2>🧑‍🏫 Assistente Sala do Futuro (SED)</h2>
+            <p>O Assistente é uma <strong>extensão do Chrome</strong> (com versão em app Android) que
+            auxilia a <strong>consultar</strong>, na Sala do Futuro (SED), os estudantes faltosos de
+            cada turma e o conteúdo do registro salvo no SisProf, para copiar e colar.</p>
+            <div class="destaque">
+                <p><strong>Somente leitura.</strong> O Assistente <strong>não preenche nem salva nada
+                automaticamente</strong> nos sistemas oficiais. Ele apenas facilita a consulta; o
+                lançamento oficial continua sendo responsabilidade do profissional, no sistema oficial.</p>
+            </div>
+            <p>A instalação da extensão e do app é feita pelo botão <strong>👤 Meu Perfil</strong>,
+            na seção "Assistente Sala do Futuro (SED)".</p>
+        </div>
+
+        <!-- NATUREZA DOS DADOS -->
+        <div class="doc-card" id="dados">
+            <h2>Natureza dos dados</h2>
+            <div class="destaque">
+                <p><strong>⚠️ Os dados do SisProf não são oficiais.</strong> Têm caráter auxiliar e de
+                organização do trabalho docente, <strong>não refletem necessariamente a realidade
+                sistêmica</strong> da escola e podem conter divergências. Toda informação com valor
+                oficial (frequência, notas, ocorrências, transferências etc.) <strong>deve ser lançada
+                e mantida no sistema oficial da rede de ensino</strong>. Em caso de divergência,
+                prevalece sempre o dado do sistema oficial.</p>
+            </div>
+            <p>As informações acessadas são <strong>confidenciais</strong> e <strong>não podem ser
+            usadas de forma pública</strong>. A escola e os desenvolvedores <strong>não se
+            responsabilizam</strong> pelo uso da plataforma nem pelos dados nela publicados. Os detalhes
+            estão nos Termos de Uso, a seguir.</p>
+        </div>
+
+        <!-- TERMOS COMPLETOS -->
+        <div class="doc-card" id="termos">
+            <h2>Termos de Uso — completos</h2>
+            <p><strong>Última atualização:</strong> 17 de agosto de 2026</p>
+
+            <p>Ao criar uma conta, acessar ou utilizar a Plataforma, o Usuário declara que leu,
+            compreendeu e concorda integralmente com estes Termos de Uso. Caso não concorde com qualquer
+            condição aqui prevista, não utilize a Plataforma.</p>
+
+            <div class="destaque">
+                <p><strong>AVISO IMPORTANTE — NATUREZA DOS DADOS.</strong> Os dados inseridos,
+                armazenados ou exibidos no SisProf têm caráter <strong>auxiliar, pessoal e de
+                organização do trabalho docente</strong>. <strong>Não devem ser considerados dados
+                oficiais</strong>, não refletem necessariamente a realidade sistêmica da escola e podem
+                conter divergências, atrasos ou erros de preenchimento. Toda informação com valor
+                oficial <strong>deve obrigatoriamente ser lançada e mantida no sistema oficial da rede
+                de ensino</strong>. O SisProf é uma ferramenta de apoio e <strong>não substitui</strong>
+                os sistemas oficiais.</p>
+            </div>
+
+            <h3 class="doc-termo-h">1. Objeto e finalidade</h3>
+            <p>O SisProf é uma ferramenta de apoio destinada a auxiliar professores, tutores e gestores
+            na organização de rotinas pedagógicas, tais como controle de turmas, registro auxiliar de
+            frequência, anotações de tutoria, acompanhamento de atividades, agenda e demais
+            funcionalidades de produtividade. Seu uso é exclusivamente complementar ao dos sistemas
+            oficiais adotados pela instituição de ensino e pela rede à qual ela pertence.</p>
+
+            <h3 class="doc-termo-h">2. Cadastro e conta de acesso</h3>
+            <ul>
+                <li>O acesso é restrito a profissionais autorizados vinculados à escola.</li>
+                <li>O Usuário é responsável pela veracidade das informações de cadastro e pela guarda de
+                suas credenciais (login e senha), que são pessoais e intransferíveis.</li>
+                <li>O Usuário é responsável por todas as atividades realizadas com sua conta e deve
+                comunicar imediatamente qualquer uso não autorizado.</li>
+            </ul>
+
+            <h3 class="doc-termo-h">3. Natureza não oficial dos dados</h3>
+            <ul>
+                <li>As informações registradas na Plataforma são de caráter provisório e auxiliar,
+                <strong>não possuindo validade oficial</strong>.</li>
+                <li>Os dados <strong>não refletem, necessariamente, a realidade sistêmica</strong> da
+                escola, da secretaria ou da rede de ensino.</li>
+                <li>Os registros oficiais devem, obrigatoriamente, ser lançados nos sistemas oficiais
+                competentes. Em caso de divergência, <strong>prevalece sempre o dado do sistema
+                oficial</strong>.</li>
+                <li>O Usuário reconhece que decisões acadêmicas, administrativas ou legais não devem se
+                basear exclusivamente nas informações da Plataforma.</li>
+            </ul>
+
+            <h3 class="doc-termo-h">4. Confidencialidade e uso não público das informações</h3>
+            <ul>
+                <li>As informações acessadas por meio da Plataforma — especialmente dados de estudantes
+                — são <strong>confidenciais</strong> e destinam-se apenas ao uso interno e pedagógico do
+                profissional autorizado.</li>
+                <li>É <strong>expressamente proibido</strong> divulgar, publicar, compartilhar, exibir
+                publicamente ou repassar a terceiros não autorizados quaisquer dados obtidos na
+                Plataforma, por qualquer meio (impresso, digital, redes sociais, aplicativos de mensagem,
+                etc.).</li>
+                <li>O Usuário compromete-se a utilizar os dados de forma restrita, ética e em
+                conformidade com a legislação aplicável, respondendo pessoalmente pelo uso indevido.</li>
+            </ul>
+
+            <h3 class="doc-termo-h">5. Proteção de dados pessoais (LGPD)</h3>
+            <ul>
+                <li>O tratamento de dados pessoais na Plataforma observa a Lei nº 13.709/2018 (Lei Geral
+                de Proteção de Dados Pessoais — LGPD).</li>
+                <li>Os dados pessoais eventualmente inseridos devem se limitar ao estritamente necessário
+                à finalidade pedagógica, sendo vedado o uso para fins diversos.</li>
+                <li>O Usuário, ao inserir dados de terceiros (por exemplo, estudantes), declara possuir
+                base legal e autorização para tanto, assumindo responsabilidade pelo conteúdo lançado.</li>
+                <li>O Usuário deve adotar medidas razoáveis de segurança e sigilo no acesso e manuseio
+                das informações.</li>
+            </ul>
+
+            <h3 class="doc-termo-h">6. Responsabilidades do Usuário</h3>
+            <ul>
+                <li>Utilizar a Plataforma de boa-fé e em conformidade com estes Termos, com as normas
+                internas da escola e com a legislação vigente.</li>
+                <li>Manter em sigilo as informações acessadas e não dar a elas caráter público.</li>
+                <li>Garantir que os dados com valor oficial sejam devidamente registrados nos sistemas
+                oficiais.</li>
+                <li>Responder, de forma pessoal e exclusiva, por eventuais danos decorrentes do uso
+                indevido, negligente ou em desacordo com estes Termos.</li>
+            </ul>
+
+            <h3 class="doc-termo-h">7. Isenção de responsabilidade da escola</h3>
+            <p>A escola, sua direção e sua equipe <strong>não se responsabilizam</strong> pelo uso da
+            Plataforma, tampouco pelo conteúdo, exatidão, atualização ou eventual perda dos dados nela
+            inseridos. A adoção do SisProf, quando existente, dá-se como ferramenta de apoio de uso
+            opcional e sob responsabilidade do próprio profissional que a utiliza.</p>
+
+            <h3 class="doc-termo-h">8. Isenção de responsabilidade dos desenvolvedores</h3>
+            <p>Os desenvolvedores da Plataforma <strong>não se responsabilizam</strong> pelos dados
+            publicados, inseridos ou tratados pelos Usuários, nem pelo uso que deles for feito. A
+            Plataforma é fornecida <strong>"no estado em que se encontra"</strong> ("as is"), sem
+            garantias de qualquer natureza, expressas ou implícitas, incluindo, sem limitação, garantias
+            de disponibilidade ininterrupta, ausência de erros, adequação a uma finalidade específica ou
+            integridade dos dados. Na máxima extensão permitida pela lei, os desenvolvedores não
+            respondem por danos diretos, indiretos, incidentais ou consequentes decorrentes do uso ou da
+            impossibilidade de uso da Plataforma.</p>
+
+            <h3 class="doc-termo-h">9. Disponibilidade, backups e perda de dados</h3>
+            <ul>
+                <li>A Plataforma pode ficar temporariamente indisponível para manutenção, atualizações
+                ou por fatores técnicos alheios ao controle dos desenvolvedores.</li>
+                <li>Não há garantia de conservação permanente dos dados. Recomenda-se ao Usuário manter
+                cópias próprias e, sobretudo, os registros oficiais nos sistemas oficiais.</li>
+            </ul>
+
+            <h3 class="doc-termo-h">10. Propriedade intelectual</h3>
+            <p>O software, sua interface, marca, código e demais elementos são de titularidade de seus
+            desenvolvedores. É vedada a reprodução, distribuição ou modificação sem autorização,
+            ressalvado o direito de uso concedido ao Usuário para as finalidades aqui previstas.</p>
+
+            <h3 class="doc-termo-h">11. Alterações dos Termos</h3>
+            <p>Estes Termos podem ser atualizados a qualquer momento, sendo a versão vigente a publicada
+            nesta página. O uso continuado da Plataforma após alterações implica concordância com os
+            Termos revisados.</p>
+
+            <h3 class="doc-termo-h">12. Encerramento de acesso</h3>
+            <p>O acesso do Usuário pode ser suspenso ou encerrado em caso de descumprimento destes
+            Termos, sem prejuízo das responsabilidades já assumidas.</p>
+
+            <h3 class="doc-termo-h">13. Foro e legislação aplicável</h3>
+            <p>Estes Termos são regidos pela legislação brasileira. Fica eleito o foro da comarca de
+            domicílio do Usuário para dirimir eventuais controvérsias, com renúncia a qualquer outro, por
+            mais privilegiado que seja.</p>
+
+            <div class="destaque">
+                <p>Ao prosseguir com o cadastro ou o uso do SisProf, o Usuário <strong>declara ciência e
+                concordância</strong> com todos os termos acima, em especial quanto ao <strong>caráter
+                não oficial dos dados</strong>, à <strong>vedação de uso público das informações</strong>
+                e às <strong>isenções de responsabilidade da escola e dos desenvolvedores</strong>.</p>
+            </div>
+
+            <div class="voltar-bar" style="margin-top: 22px; margin-bottom: 0;">
+                <a class="btn-voltar" href="index.html">← Voltar ao SisProf</a>
+            </div>
+        </div>
+
+        <div class="doc-footer">
+            SisProf — Ferramenta de apoio pedagógico. Este documento não constitui aconselhamento jurídico.
+        </div>
+    </div>
+</body>
+</html>
