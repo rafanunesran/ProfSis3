@@ -443,13 +443,13 @@ async function abrirModalPerfil() {
     // extensão não está instalada nesta aba, ou é uma versão antiga que ainda não expõe a versão.
     const versaoRoboInstalada = document.documentElement.getAttribute('data-profsis-ext-versao');
     const linhaVersaoRobo = versaoRoboInstalada
-        ? `<div style="font-size:11px; color:#276749; background:#f0fff4; border:1px solid #c6f6d5; border-radius:4px; padding:5px 8px; margin-bottom:8px;">🤖 Robô instalado: <strong>v${versaoRoboInstalada}</strong></div>`
-        : `<div style="font-size:11px; color:#975a16; background:#fffaf0; border:1px solid #feebc8; border-radius:4px; padding:5px 8px; margin-bottom:8px;">🤖 Extensão não detectada nesta aba. Se você já instalou, atualize a extensão em <code>chrome://extensions</code> e recarregue esta página.</div>`;
+        ? `<div style="font-size:11px; color:#276749; background:#f0fff4; border:1px solid #c6f6d5; border-radius:4px; padding:5px 8px; margin-bottom:8px;">🧑‍🏫 Assistente instalado: <strong>v${versaoRoboInstalada}</strong></div>`
+        : `<div style="font-size:11px; color:#975a16; background:#fffaf0; border:1px solid #feebc8; border-radius:4px; padding:5px 8px; margin-bottom:8px;">🧑‍🏫 Assistente não detectado nesta aba. Se você já instalou, atualize a extensão em <code>chrome://extensions</code> e recarregue esta página.</div>`;
 
     integrationArea.innerHTML = `
         <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cbd5e0;">
-            <h4 style="color:#2c5282; margin-bottom:5px; font-size:14px;">🤖 Integração Sala do Futuro (SED)</h4>
-            <p style="font-size:11px; color:#718096; margin-bottom:10px;">Use a extensão do Chrome para enviar suas chamadas e registros automaticamente para a SED.</p>
+            <h4 style="color:#2c5282; margin-bottom:5px; font-size:14px;">🧑‍🏫 Assistente Sala do Futuro (SED)</h4>
+            <p style="font-size:11px; color:#718096; margin-bottom:10px;">Use a extensão do Chrome para consultar, na SED, os estudantes faltosos de cada turma e o conteúdo do registro salvo no ProfSis (para copiar e colar). Somente leitura — não preenche nem salva nada automaticamente.</p>
 
             <div style="background:#edf2f7; padding:10px; border-radius:6px; border:1px solid #cbd5e0; margin-top:10px;">
                 <strong style="font-size:12px; color:#2d3748; display:block; margin-bottom:5px;">💻 Extensão do Chrome (Computador)</strong>
@@ -1500,7 +1500,7 @@ window.enviarDadosParaExtensao = async function(silencioso = false, diasParaEnvi
     setTimeout(() => {
         window.removeEventListener('message', listener);
         if (!extRespondeu) {
-            alert('A caixa verde não apareceu? Parece que a extensão não está conectada a esta página.\n\nCertifique-se de:\n1. Ter ativado o "Modo do Desenvolvedor" na tela de extensões.\n2. Ter instalado/atualizado a extensão com os arquivos corretos.\n3. Ter apertado F5 (Recarregar) nesta página do SisProf.\n\nSe mesmo assim não for, você ainda pode usar o botão "Usar Robô Favorito" ao lado!');
+            alert('A caixa verde não apareceu? Parece que a extensão não está conectada a esta página.\n\nCertifique-se de:\n1. Ter ativado o "Modo do Desenvolvedor" na tela de extensões.\n2. Ter instalado/atualizado a extensão com os arquivos corretos.\n3. Ter apertado F5 (Recarregar) nesta página do SisProf.\n\nSe mesmo assim não for, você ainda pode usar o botão "Usar Assistente Favorito" ao lado!');
         } else {
             alert('✅ ' + enviados + ' dia(s) enviado(s) para a extensão com sucesso!');
         }
@@ -1661,7 +1661,7 @@ window.baixarArquivosExtensao = async function() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    alert('Arquivo baixado: SisProf-Extensao.zip\\n\\nCOMO INSTALAR:\\n1. Extraia o .zip em uma pasta (ex: "Robo SisProf").\\n2. Abra chrome://extensions/ (ou Gerenciar Extensões) no Chrome.\\n3. Ative o "Modo do desenvolvedor" no canto superior direito.\\n4. Clique no botão "Carregar sem compactação" (canto superior esquerdo).\\n5. Selecione a pasta extraída.\\n\\n⚠️ IMPORTANTE: Após instalar, RECARREGUE (F5) esta página do SisProf para que a extensão passe a funcionar nela!');
+    alert('Arquivo baixado: SisProf-Extensao.zip\\n\\nCOMO INSTALAR:\\n1. Extraia o .zip em uma pasta (ex: "Assistente SisProf").\\n2. Abra chrome://extensions/ (ou Gerenciar Extensões) no Chrome.\\n3. Ative o "Modo do desenvolvedor" no canto superior direito.\\n4. Clique no botão "Carregar sem compactação" (canto superior esquerdo).\\n5. Selecione a pasta extraída.\\n\\n⚠️ IMPORTANTE: Após instalar, RECARREGUE (F5) esta página do SisProf para que a extensão passe a funcionar nela!');
 };
 
 // Baixa o instalador (.bat único, autocontido) que configura o Chrome para instalar a
