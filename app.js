@@ -452,6 +452,11 @@ async function abrirModalPerfil() {
 
     integrationArea.innerHTML = `
         <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cbd5e0;">
+            <h4 style="color:#2c5282; margin-bottom:5px; font-size:14px;">📚 Documentação e Termos de Uso</h4>
+            <p style="font-size:11px; color:#718096; margin-bottom:10px;">Guia de uso da plataforma e os Termos de Uso completos.</p>
+            <a href="documentacao.html" target="_blank" class="btn btn-sm btn-secondary" style="width:100%; display:block; text-align:center; text-decoration:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📖 Abrir Documentação</a>
+        </div>
+        <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cbd5e0;">
             <h4 style="color:#2c5282; margin-bottom:5px; font-size:14px;">🧑‍🏫 Assistente Sala do Futuro (SED)</h4>
             <p style="font-size:11px; color:#718096; margin-bottom:10px;">Use a extensão do Chrome para consultar, na SED, os estudantes faltosos de cada turma e o conteúdo do registro salvo no ProfSis (para copiar e colar). Somente leitura — não preenche nem salva nada automaticamente.</p>
 
