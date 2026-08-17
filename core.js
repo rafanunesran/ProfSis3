@@ -411,6 +411,12 @@ async function fazerCadastro(e) {
     const senha = document.getElementById('cadSenha').value;
     const escolaId = document.getElementById('cadEscola').value;
 
+    const aceiteTermos = document.getElementById('cadAceiteTermos');
+    if (aceiteTermos && !aceiteTermos.checked) {
+        alert('Para criar a conta, é necessário ler e aceitar os Termos de Uso.');
+        return;
+    }
+
     let userAuth = null;
     // [NOVO] Cadastro direto no Firebase Auth
     if (USE_FIREBASE && typeof firebase !== 'undefined') {
@@ -437,7 +443,9 @@ async function fazerCadastro(e) {
         email,
         senha,
         schoolId: escolaId,
-        role: 'professor' // Default
+        role: 'professor', // Default
+        aceitouTermos: true,
+        dataAceiteTermos: new Date().toISOString()
     };
 
     users.push(newUser);
@@ -449,6 +457,70 @@ async function fazerCadastro(e) {
         await firebase.auth().signOut();
     }
     renderLogin();
+}
+
+// --- ACEITE ÚNICO DOS TERMOS DE USO (usuários já cadastrados) ---
+// Usuários criados antes destes Termos não têm o campo `aceitouTermos`. Ao entrarem,
+// exibimos um popup único exigindo a concordância; sem aceite, o acesso é encerrado.
+function precisaAceitarTermos(user) {
+    if (!user) return false;
+    if (user.role === 'super_admin') return false; // Admin não passa por este fluxo
+    return !user.aceitouTermos;
+}
+
+function verificarAceiteTermos() {
+    if (!precisaAceitarTermos(currentUser)) return;
+    const modal = document.getElementById('modalAceiteTermos');
+    if (!modal) return;
+    const check = document.getElementById('checkAceiteTermos');
+    const btn = document.getElementById('btnConfirmarTermos');
+    if (check) check.checked = false;
+    if (btn) btn.disabled = true;
+    modal.style.display = 'flex';
+}
+
+function toggleBtnAceiteTermos() {
+    const check = document.getElementById('checkAceiteTermos');
+    const btn = document.getElementById('btnConfirmarTermos');
+    if (btn) btn.disabled = !(check && check.checked);
+}
+
+async function confirmarAceiteTermos() {
+    const check = document.getElementById('checkAceiteTermos');
+    if (!check || !check.checked) {
+        alert('É necessário marcar a caixa de concordância para continuar.');
+        return;
+    }
+    const agora = new Date().toISOString();
+    // Persiste o aceite no perfil do usuário no banco (deixa rastro do consentimento)
+    try {
+        if (currentUser && currentUser.email) {
+            const usersData = await getData('system', 'users_list');
+            const users = (usersData && usersData.list && Array.isArray(usersData.list)) ? usersData.list : [];
+            const alvo = currentUser.email.trim().toLowerCase();
+            const idx = users.findIndex(u => (u.email || '').trim().toLowerCase() === alvo);
+            if (idx !== -1) {
+                users[idx].aceitouTermos = true;
+                users[idx].dataAceiteTermos = agora;
+                await saveData('system', 'users_list', { list: users });
+            }
+        }
+    } catch (e) {
+        console.warn('Não foi possível registrar o aceite dos termos no banco:', e);
+    }
+    // Atualiza a sessão local para o popup não reaparecer
+    currentUser.aceitouTermos = true;
+    currentUser.dataAceiteTermos = agora;
+    localStorage.setItem('app_current_user', JSON.stringify(currentUser));
+    const modal = document.getElementById('modalAceiteTermos');
+    if (modal) modal.style.display = 'none';
+}
+
+function recusarTermos() {
+    alert('Para utilizar o SisProf é necessário concordar com os Termos de Uso.\nO acesso será encerrado.');
+    const modal = document.getElementById('modalAceiteTermos');
+    if (modal) modal.style.display = 'none';
+    if (typeof logout === 'function') logout();
 }
 
 // Renderização de Telas de Auth
@@ -483,6 +555,9 @@ function renderLogin() {
                 <span class="auth-link" onclick="solicitarResetSenha()">Esqueceu a senha?</span>
                 <span class="auth-link" onclick="renderCadastro()">Não tem conta? Cadastre-se</span>
             </div>
+            <div style="text-align:center; margin-top:12px;">
+                <a href="termos.html" target="_blank" class="auth-link" style="font-size:12px;">📄 Termos de Uso</a>
+            </div>
         </div>
     `;
 }
@@ -513,6 +588,10 @@ async function renderCadastro() {
                         <input type="password" id="cadSenha" required>
                         <button type="button" class="toggle-password" onclick="toggleSenha('cadSenha', this)">👁️</button>
                     </div>
+                </label>
+                <label style="display:flex; align-items:flex-start; gap:8px; font-size:12px; color:#4a5568; margin-top:6px; font-weight:normal;">
+                    <input type="checkbox" id="cadAceiteTermos" style="margin-top:2px; width:auto;">
+                    <span>Li e concordo com os <a href="termos.html" target="_blank" class="auth-link" style="font-size:12px;">Termos de Uso</a>. Estou ciente de que os dados são de caráter auxiliar, não oficiais, não podem ser usados de forma pública, e que a escola e os desenvolvedores não se responsabilizam pelo uso da plataforma nem pelos dados publicados.</span>
                 </label>
                 <button type="submit" class="btn btn-success">Criar Conta</button>
             </form>
