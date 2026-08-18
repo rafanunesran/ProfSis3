@@ -3869,7 +3869,7 @@ async function aprovarProfessorGestor(id) {
     user.approvedBy = currentUser.nome || currentUser.email || 'gestor';
     await saveData('system', 'users_list', { list: users });
     // [SEGURANÇA] Libera também no banco (Regras do Firestore) — access/{uid}.approved = true.
-    await gravarAcessoUsuario(user.id, {
+    await gravarAcessoUsuario(user.uid || user.id, {
         approved: true,
         role: user.role || 'professor',
         schoolId: user.schoolId,
@@ -3901,7 +3901,7 @@ async function recusarProfessorGestor(id) {
     user.rejectedBy = currentUser.nome || currentUser.email || 'gestor';
     await saveData('system', 'users_list', { list: users });
     // [SEGURANÇA] Mantém bloqueado no banco (Regras do Firestore) — access/{uid}.approved = false.
-    await gravarAcessoUsuario(user.id, {
+    await gravarAcessoUsuario(user.uid || user.id, {
         approved: false,
         role: user.role || 'professor',
         schoolId: user.schoolId,
@@ -3979,7 +3979,7 @@ async function salvarPerfilProfessorGestor(e) {
     await saveData('system', 'users_list', { list: users });
     // [SEGURANÇA] Reflete o novo perfil no documento de acesso (mantém liberado). Só perfis
     // já liberados chegam aqui (o botão de editar perfil não aparece para pendentes).
-    await gravarAcessoUsuario(user.id, {
+    await gravarAcessoUsuario(user.uid || user.id, {
         approved: true,
         role: role,
         schoolId: user.schoolId,

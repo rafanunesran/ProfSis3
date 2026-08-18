@@ -402,7 +402,7 @@ async function salvarUsuarioAdmin(e) {
     if (id) {
         const u = users.find(x => x.id == id);
         if (u) {
-            await gravarAcessoUsuario(u.id, {
+            await gravarAcessoUsuario(u.uid || u.id, {
                 approved: true,
                 role: u.role || 'professor',
                 schoolId: u.schoolId,
