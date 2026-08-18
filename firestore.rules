@@ -3,128 +3,136 @@ rules_version = '2';
 // ============================================================================
 //  REGRAS DE SEGURANÇA DO FIRESTORE — SisProf / ProfSis3
 // ----------------------------------------------------------------------------
-//  Como usar:
+//  COMO USAR
 //    1. Console do Firebase > Firestore Database > aba "Regras".
-//    2. Apague o conteúdo atual e cole TODO este arquivo.
-//    3. Clique em "Publicar".
-//    4. Entre uma vez como Admin (rafael@adm / senha) para que o app crie a
-//       sessão do super_admin no Firebase Auth (necessária para as regras).
+//    2. Apague tudo, cole este arquivo inteiro e clique em "Publicar".
 //
-//  O QUE ESTAS REGRAS GARANTEM
-//    - Banco fechado por padrão (deny by default).
-//    - Tudo exige login (Firebase Auth), exceto o mínimo necessário para as
-//      telas públicas (lista de escolas no Cadastro e relatórios de link
-//      compartilhado).
-//    - Perfil NOVO só acessa os dados da escola depois que o gestor liberar:
-//      o controle fica no documento access/{uid} (approved true/false).
-//    - Ninguém consegue LIBERAR o próprio acesso (anti-elevação): o dono do
-//      access/{uid} nunca altera o próprio "approved"; só outro usuário (o
-//      gestor, pela tela de controle) ou o super_admin pode liberar.
-//    - Usuários antigos (sem access/{uid}) continuam funcionando (compat.),
-//      para não travar quem já usava o sistema.
+//  PRINCÍPIO DE OURO DESTAS REGRAS: NUNCA TRANCAR QUEM JÁ USA O SISTEMA.
+//    Quem não tem documento em `access/{uid}` (todos os usuários antigos) é
+//    tratado como JÁ LIBERADO. Só quem tem o documento com approved == false
+//    (ou seja, cadastros novos, criados pelo próprio app) fica bloqueado.
+//    Consequência: é impossível estas regras trancarem um professor antigo.
 //
-//  MODELO DE CONFIANÇA (app 100% no cliente)
-//    A raiz de confiança é o super_admin, reconhecido pelo e-mail verificado do
-//    token do Firebase Auth. Ele autentica no Auth ao entrar (ver core.js) e tem
-//    poderes totais no banco. Gestores e professores autenticam por e-mail/senha.
+//  QUEM PODE LIBERAR UM PERFIL NOVO
+//    - o super_admin (identificado pelo e-mail do token), ou
+//    - um usuário cujo access/{uid} diga approved == true E role == 'gestor', ou
+//    - um usuário antigo (sem documento de acesso) — equipe já existente.
+//    Um cadastro NOVO sempre tem documento com approved:false e role:'professor',
+//    portanto NÃO consegue liberar ninguém, nem a si mesmo. Além disso, ninguém
+//    altera o próprio documento de acesso (anti-elevação explícita).
 // ============================================================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ---------------------------- Funções ------------------------------------
+    // ----------------------------- Funções ----------------------------------
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // Super admin: e-mail verificado do token. Mantenha igual ao ADMIN_EMAIL do core.js.
+    // Super admin: e-mail do token do Firebase Auth.
+    // Precisa ser IGUAL ao ADMIN_EMAIL definido no core.js.
+    // Para adicionar outro administrador, inclua o e-mail nesta lista.
     function isSuperAdmin() {
-      return isSignedIn() && request.auth.token.email == 'rafael@adm.com';
+      return isSignedIn() && request.auth.token.email in [
+        'rafael@adm.com'
+      ];
     }
 
-    function myAccessRef() {
+    function accessPath() {
       return /databases/$(database)/documents/access/$(request.auth.uid);
     }
-    function myAccessExists() {
-      return isSignedIn() && exists(myAccessRef());
+
+    // Usuário ANTIGO: não possui documento de acesso. Tratado como liberado.
+    function semDocAcesso() {
+      return isSignedIn() && !exists(accessPath());
     }
 
-    // Liberado para acessar os dados da escola:
-    //   - super_admin, OU
-    //   - usuário antigo sem documento access/{uid} (compatibilidade), OU
-    //   - documento access/{uid} com approved == true.
-    function isApprovedForData() {
-      return isSignedIn() && (
-        isSuperAdmin()
-        || !myAccessExists()
-        || get(myAccessRef()).data.approved == true
-      );
+    function meuAcesso() {
+      return get(accessPath()).data;
     }
 
-    // ---------------------- access/{uid}: liberação --------------------------
-    // Documento por usuário que controla a liberação. Regras:
-    //   - Ler: o próprio dono, o gestor ou o super_admin.
-    //   - Criar: o próprio dono SOMENTE como pendente (approved == false),
-    //            outro usuário logado (o gestor, via tela), ou o super_admin.
-    //   - Atualizar/Apagar: super_admin ou QUALQUER outro usuário logado que
-    //            NÃO seja o próprio dono. Isso impede a auto-liberação: o dono
-    //            nunca muda o próprio "approved". A tela de controle só expõe a
-    //            ação de liberar/recusar para o gestor.
+    // Pode usar os dados da escola?
+    // super_admin  OU  usuário antigo (sem doc)  OU  doc com approved == true.
+    // O operador || tem curto-circuito: get() só roda se o doc existir.
+    function liberado() {
+      return isSuperAdmin()
+             || semDocAcesso()
+             || (isSignedIn() && meuAcesso().approved == true);
+    }
+
+    // Pode LIBERAR/RECUSAR o acesso de outra pessoa?
+    // super_admin, gestor já liberado, ou usuário antigo (equipe existente).
+    // Um cadastro novo (approved:false) nunca satisfaz nenhuma das condições.
+    function podeAprovar() {
+      return isSuperAdmin()
+             || semDocAcesso()
+             || (isSignedIn() && meuAcesso().approved == true && meuAcesso().role == 'gestor');
+    }
+
+    // ------------------- access/{uid}: controle de liberação -----------------
     match /access/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
-      allow create: if isSuperAdmin()
-                    || (request.auth.uid == uid && request.resource.data.approved == false)
-                    || (isSignedIn() && request.auth.uid != uid);
+      // Lê o próprio status; gestor/admin leem para administrar.
+      allow read: if isSignedIn() && (request.auth.uid == uid || podeAprovar());
+
+      // O próprio usuário só cria o SEU documento como PENDENTE (nunca liberado).
+      // Gestor/admin podem criar o documento de outra pessoa.
+      allow create: if (request.auth.uid == uid
+                        && request.resource.data.approved == false
+                        && request.resource.data.role == 'professor')
+                    || (podeAprovar() && request.auth.uid != uid)
+                    || isSuperAdmin();
+
+      // ANTI-ELEVAÇÃO: ninguém altera o próprio documento de acesso.
       allow update, delete: if isSuperAdmin()
-                    || (isSignedIn() && request.auth.uid != uid);
+                            || (podeAprovar() && request.auth.uid != uid);
     }
 
-    // --------------------------- system/* ------------------------------------
-    // schools_list: leitura pública (a tela de Cadastro monta o seletor de
-    // escola antes do login). Escrita exige login (admin/gestor autenticados).
+    // ------------------------------ system/* ---------------------------------
+    // schools_list: leitura PÚBLICA — a tela de Cadastro monta o seletor de
+    // escola antes do login. (As regras se somam: este allow vale mesmo com a
+    // regra genérica de system/ abaixo.)
     match /system/schools_list {
       allow read: if true;
       allow write: if isSignedIn();
     }
-    // users_list, backups e demais docs de sistema: apenas usuários logados.
-    // (O cadastro grava aqui logo após criar a conta no Auth; login/onAuth leem
-    //  para localizar o perfil.)
+
+    // users_list e demais documentos de sistema: exigem login.
+    // NÃO exigem `liberado()` de propósito: o app precisa ler o perfil no
+    // login para descobrir se a pessoa está liberada. Bloquear aqui criaria
+    // um impasse (não conseguiria nem saber que está pendente).
     match /system/{docId} {
       allow read, write: if isSignedIn();
     }
 
-    // ------------------- shared_views: link compartilhado --------------------
-    // Relatório de link público (?share=ID) é aberto por visitantes anônimos e
-    // é auto-contido (não lê outras coleções). Leitura pública; escrita só por
-    // quem já está liberado (o gestor gera o link).
+    // ------------------ shared_views: relatório por link ---------------------
+    // O link público (?share=ID) é aberto por visitantes sem login.
     match /shared_views/{docId} {
       allow read: if true;
-      allow write: if isApprovedForData();
+      allow write: if liberado();
     }
 
-    // ------------------- Dados da escola e ferramentas -----------------------
-    // Exigem perfil liberado (approved) — é aqui que o reforço de segurança
-    // trava os perfis novos até a confirmação do gestor.
+    // ----------------- Dados da escola: exigem perfil liberado ---------------
     match /app_data/{docId} {
-      allow read, write: if isApprovedForData();
+      allow read, write: if liberado();
     }
     match /shared_attendance/{docId} {
-      allow read, write: if isApprovedForData();
+      allow read, write: if liberado();
     }
     match /shared_material_digital/{docId} {
-      allow read, write: if isApprovedForData();
+      allow read, write: if liberado();
     }
     match /materiais_apoio/{docId} {
-      allow read, write: if isApprovedForData();
+      allow read, write: if liberado();
     }
     match /curriculo_chunks_embeddings/{docId} {
-      allow read, write: if isApprovedForData();
+      allow read, write: if liberado();
     }
     match /curriculo_escopo_sequencia/{docId} {
-      allow read, write: if isApprovedForData();
+      allow read, write: if liberado();
     }
     match /curriculo_ingest_manifest/{docId} {
-      allow read, write: if isApprovedForData();
+      allow read, write: if liberado();
     }
 
     // --------------------- Padrão: nega o resto ------------------------------

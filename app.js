@@ -46,10 +46,13 @@ async function iniciarApp() {
     }
 
     // Carregar dados
-    carregarDadosUsuario().then(async () => {
+    carregarDadosUsuario().then(async (carregouOk) => {
         // [SEGURANÇA] Confirma que os dados foram baixados com sucesso.
         // Isso impede que o sistema salve dados vazios na nuvem se houver erro de conexão na abertura.
-        window.dadosCarregados = true;
+        // carregarDadosUsuario() devolve false quando a LEITURA FALHOU (permissão/rede):
+        // nesse caso o salvamento fica bloqueado para não sobrescrever a nuvem com vazio.
+        window.dadosCarregados = (carregouOk !== false);
+        if (carregouOk === false) mostrarBannerLeituraFalhou();
 
         // [AUTO-BACKUP] Cria no máximo 1 backup por dia; mantém histórico dos últimos 15 dias
         verificarBackupAutomatico();
@@ -830,6 +833,18 @@ function atualizarBannerContaInativa() {
         banner.innerHTML = '⚠️ Sua conta está inativada — modo somente leitura. Você pode visualizar, mas não salvar alterações. Fale com a gestão da sua escola.';
         document.body.insertBefore(banner, document.body.firstChild);
     }
+}
+
+// [PROTEÇÃO CONTRA PERDA DE DADOS] Tarja vermelha fixa quando o app NÃO conseguiu ler os
+// dados da nuvem. Nesse estado o salvamento está bloqueado de propósito: o que aparece na
+// tela pode ser uma cópia local (ou vazio), e gravar por cima apagaria a nuvem.
+function mostrarBannerLeituraFalhou() {
+    if (document.getElementById('bannerLeituraFalhou')) return;
+    const banner = document.createElement('div');
+    banner.id = 'bannerLeituraFalhou';
+    banner.style.cssText = 'position:sticky; top:0; z-index:10001; background:#9b2c2c; color:#fff; padding:10px 16px; text-align:center; font-weight:bold; font-size:14px; box-shadow:0 2px 6px rgba(0,0,0,0.25);';
+    banner.innerHTML = '🛑 Não foi possível carregar seus dados da nuvem. <strong>O salvamento está bloqueado</strong> para proteger seus dados — nada será apagado. Recarregue a página; se continuar, avise a gestão/suporte.';
+    document.body.insertBefore(banner, document.body.firstChild);
 }
 
 // [SEGURANÇA] Tela de bloqueio para perfil novo aguardando liberação da gestão.

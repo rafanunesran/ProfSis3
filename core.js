@@ -77,8 +77,17 @@ async function getData(collectionName, docId) {
             const doc = await db.collection(collectionName).doc(String(docId)).get();
             return doc.exists ? doc.data() : null;
         } catch (error) {
-            console.error("Erro ao buscar no Firebase:", error);
-            alert("Erro de conexão ao buscar dados. Verifique sua internet.");
+            // [PROTEÇÃO CONTRA PERDA DE DADOS] Uma leitura que FALHA não é a mesma coisa
+            // que "não existem dados". Antes, os dois casos retornavam null e o app
+            // carregava vazio — e o salvamento seguinte sobrescrevia a nuvem com vazio.
+            // Marcamos a falha para que carregarDadosUsuario() bloqueie o salvamento.
+            window.falhaLeituraFirestore = true;
+            console.error(`Erro ao buscar ${collectionName}/${docId}:`, error && error.code, error);
+            if (error && error.code === 'permission-denied') {
+                console.warn('[SisProf] Leitura negada pelas Regras do Firestore (não é falta de internet).');
+            } else {
+                alert("Erro de conexão ao buscar dados. Verifique sua internet.");
+            }
             return null;
         }
     } else {
@@ -216,7 +225,28 @@ function repassarSessaoFirebaseParaExtensao(user) {
 }
 
 // Inicialização
-document.addEventListener('DOMContentLoaded', () => {
+// [CORREÇÃO CRÍTICA] Espera o Firebase Auth restaurar a sessão salva.
+// Sem isso, o app lia o Firestore antes de existir token e as Regras negavam a leitura
+// ("permission-denied"), que a interface mostrava como "Erro de conexão".
+// onAuthStateChanged dispara uma primeira vez assim que o SDK decide o estado (com
+// usuário ou null). O timeout evita travar a abertura caso o SDK não responda.
+function aguardarAuthPronto(timeoutMs) {
+    return new Promise((resolve) => {
+        if (!USE_FIREBASE || typeof firebase === 'undefined' || !firebase.auth) return resolve();
+        let resolvido = false;
+        const done = () => { if (!resolvido) { resolvido = true; resolve(); } };
+        try {
+            const unsub = firebase.auth().onAuthStateChanged(() => { if (unsub) unsub(); done(); });
+        } catch (e) {
+            console.warn('[SisProf] Falha ao aguardar o Auth:', e);
+            return done();
+        }
+        setTimeout(done, timeoutMs || 8000);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await aguardarAuthPronto();
     init();
 
     // [NOVO] Monitorar estado do login do Firebase (Mantém a sessão ativa)
@@ -312,7 +342,15 @@ async function fazerLogin(e) {
                     }
                 }
                 const fbUser = firebase.auth().currentUser;
-                if (fbUser) adminUser.uid = fbUser.uid;
+                if (fbUser) {
+                    adminUser.uid = fbUser.uid;
+                } else {
+                    // Sem sessão no Auth as Regras do Firestore NÃO reconhecem o super_admin.
+                    // Avisamos de forma explícita em vez de deixar o painel falhar em silêncio.
+                    alert('⚠️ Atenção: não foi possível autenticar o admin no Firebase Auth.\n\n' +
+                          'O painel abre, mas as Regras do Firestore não vão reconhecer você como super admin.\n\n' +
+                          'Verifique no Console do Firebase > Authentication se existe a conta ' + ADMIN_EMAIL + '.');
+                }
             }
             localStorage.setItem('app_current_user', JSON.stringify(adminUser));
             currentUser = adminUser;
@@ -336,6 +374,15 @@ async function fazerLogin(e) {
                 if (user) {
                     // Sincroniza o email do Auth no perfil para buscas futuras
                     user.email = email;
+                    // [IMPORTANTE] Grava o uid do Firebase Auth no perfil. Usuários antigos têm
+                    // `id` numérico (Date.now()), diferente do uid — sem isto o gestor liberaria
+                    // o acesso no documento errado (access/{id} em vez de access/{uid}).
+                    const authUid = firebase.auth().currentUser && firebase.auth().currentUser.uid;
+                    if (authUid && user.uid !== authUid) {
+                        user.uid = authUid;
+                        try { await saveData('system', 'users_list', { list: users }); }
+                        catch (e) { console.warn('Não foi possível gravar o uid no perfil:', e); }
+                    }
                     localStorage.setItem('app_current_user', JSON.stringify(user));
                     currentUser = user;
                     if (typeof iniciarApp === 'function') iniciarApp();
@@ -683,20 +730,40 @@ function toggleSenha(id, btn) {
 }
 
 // Carregamento de Dados
+// Retorna true se os dados foram carregados com segurança; false se a leitura falhou
+// (permissão negada / rede). Quem chama usa isso para LIBERAR ou BLOQUEAR o salvamento:
+// salvar depois de uma leitura falha apagaria os dados do professor na nuvem.
 async function carregarDadosUsuario() {
-    if (!currentUser) return;
+    if (!currentUser) return false;
     const key = typeof getStorageKey === 'function' ? getStorageKey(currentUser) : 'app_data_' + currentUser.id;
-    
+
+    window.falhaLeituraFirestore = false;
+
     // CORREÇÃO: Usar getData para buscar do Firebase quando online, ou LocalStorage quando offline
     const savedData = await getData('app_data', key);
-    
+
     const initial = typeof getInitialData === 'function' ? getInitialData() : {};
-    
+
+    if (window.falhaLeituraFirestore) {
+        // [PROTEÇÃO] A leitura falhou. NÃO assumir "conta vazia". Mostra a última cópia
+        // local (se houver) apenas para visualização e devolve false para travar a escrita.
+        let recuperado = null;
+        try {
+            const localJson = localStorage.getItem(key);
+            if (localJson) recuperado = JSON.parse(localJson);
+        } catch (e) { console.warn('Cópia local ilegível:', e); }
+
+        data = recuperado ? { ...initial, ...recuperado } : initial;
+        console.warn('[SisProf] Dados NÃO carregados da nuvem. Salvamento bloqueado para proteger seus dados.');
+        return false;
+    }
+
     if (savedData) {
         data = { ...initial, ...savedData };
     } else {
         data = initial;
     }
+    return true;
 }
 
 // [NOVO] Função de Migração (Pode ser chamada pelo console ou botão de Admin)
