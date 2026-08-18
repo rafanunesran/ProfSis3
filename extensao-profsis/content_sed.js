@@ -43,7 +43,7 @@ function mostrarTelaStatus() {
 
     const div = document.createElement('div');
     div.id = 'sisprof-status-box';
-    div.style.cssText = 'position:fixed; top:20px; right:20px; width:340px; background:white; border:3px solid #3182ce; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5);';
+    div.style.cssText = 'position:fixed; top:12px; right:12px; width:min(340px, calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:88vh; max-height:88dvh; overflow-y:auto; box-sizing:border-box; background:white; border:3px solid #3182ce; border-radius:10px; z-index:2147483000; padding:18px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5);';
     div.innerHTML =
         '<div style="background:#3182ce; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; text-align:center;">' +
             '🧑‍🏫 Assistente SisProf <span style="font-size:10px; opacity:0.7;">v' + chrome.runtime.getManifest().version + '</span>' +
@@ -146,13 +146,58 @@ function carregarDadosProfSis() {
         }
         injetarMenu();
     });
-    // Mantém os payloads empurrados pelo app.js sempre frescos (o app pode empurrar depois que a
-    // tela da SED já abriu). Barato: só lê o storage e atualiza uma variável.
+    // Mantém os dados sempre frescos enquanto a tela da SED está aberta: além das faltas empurradas
+    // pelo app.js (rpa_data_history), renova o profsisAppData inteiro (estudantes, faltosos da gestão,
+    // baixa frequência) - sem isso, a lista de alunos em alerta mostrava um retrato do momento em que a
+    // página abriu, ficando desatualizada quando a gestão/ProfSis mudava os dados depois.
     setInterval(() => {
         chrome.runtime.sendMessage({ action: 'GET_DATA' }, (data) => {
-            if (!chrome.runtime.lastError && data && data.rpa_data_history) extPushedHistory = data.rpa_data_history;
+            if (!chrome.runtime.lastError && data && data.rpa_data_history) {
+                extPushedHistory = data.rpa_data_history;
+            }
         });
+        atualizarDadosProfsisFresco();
     }, 4000);
+}
+
+// Guarda uma "assinatura" dos dados que a lista de alunos em alerta usa, pra só re-renderizar quando
+// algo relevante mudar (evita piscar a tela a cada 4s à toa).
+let ultimaAssinaturaDados = "";
+function assinaturaDados(d) {
+    if (!d) return "";
+    try {
+        return JSON.stringify([
+            (d.estudantes || []).map(e => [e.id, e.id_turma, e.status]),
+            (d.registrosAdministrativos || []).filter(r => r && r.tipo === 'Faltoso' && !r.arquivado).map(r => [r.estudanteId, r.nomeEstudante, r.turmaId]),
+            (d.baixaFrequencia || []).map(b => [b.id, b.nome]),
+            (d.turmas || []).map(t => [t.id, t.nome, t.disciplina]),
+            d.lancamentosConcluidos || {}
+        ]);
+    } catch (e) { return String((d.estudantes || []).length) + '/' + String((d.registrosAdministrativos || []).length); }
+}
+
+// Puxa a versão MAIS RECENTE dos dados do ProfSis e, se algo mudou, atualiza profsisAppData e
+// re-renderiza. Também cutuca o ProfSis (REQUEST_PROFSIS_DATA) pra ele reenviar dados frescos ao
+// storage quando houver uma aba/WebView do ProfSis aberta.
+function atualizarDadosProfsisFresco() {
+    chrome.runtime.sendMessage({ action: 'REQUEST_PROFSIS_DATA' }, () => { void chrome.runtime.lastError; });
+    chrome.runtime.sendMessage({ action: 'CHECK_PROFSIS_LOGIN' }, (resp) => {
+        if (chrome.runtime.lastError) return;
+        if (!resp || !resp.loggedIn || !resp.appData) return;
+        const sig = assinaturaDados(resp.appData);
+        if (sig === ultimaAssinaturaDados) return; // nada mudou
+        ultimaAssinaturaDados = sig;
+        profsisAppData = resp.appData;
+        montarHistoricoLocal();
+        atualizarInterfacePorData();
+        atualizarPaineisSED();
+        // Se um painel de alunos em alerta estiver aberto (clique manual numa turma), re-renderiza
+        // com os dados novos. O caso da tela de Chamada já é coberto por atualizarPaineisSED acima.
+        if (detalheTurmaId != null && detectarTipoTelaSED() !== 'chamada') {
+            const turma = turmaPorId(detalheTurmaId);
+            renderPainelDestacados(detalheTurmaId, turma ? (turma.nome + ' ' + (turma.disciplina || '')) : detalheTurmaTitulo);
+        }
+    });
 }
 
 // Payload usado para exibir uma data: prefere as FALTAS empurradas pelo app.js (dados frescos,
@@ -407,8 +452,22 @@ function encontrarIdTurmaDaTelaAtual() {
 // Estado "minimizado" persistido (localStorage do domínio da SED), pra sobreviver às reinjeções do
 // menu quando a página da Sala do Futuro atualiza/renavega.
 const SISPROF_MENU_MIN_KEY = 'sisprof_menu_minimizado';
+// Tela pequena (app no celular / janela estreita): o painel a 350px cobriria quase tudo, então o
+// tratamento é diferente (começa minimizado por padrão, ver sisprofMenuEstaMinimizado).
+function telaPequena() {
+    const w = window.innerWidth || document.documentElement.clientWidth || 0;
+    return w > 0 && w <= 600;
+}
 function sisprofMenuEstaMinimizado() {
-    try { return localStorage.getItem(SISPROF_MENU_MIN_KEY) === '1'; } catch (e) { return false; }
+    try {
+        const v = localStorage.getItem(SISPROF_MENU_MIN_KEY);
+        if (v === '1') return true;
+        if (v === '0') return false;
+        // Sem preferência salva ainda: em telas pequenas começa minimizado (bolinha), pra não cobrir a
+        // tela inteira da SED; no desktop começa aberto, como antes. Assim que o professor abrir ou
+        // minimizar manualmente, a escolha vira preferência salva ('0'/'1') e passa a ser respeitada.
+        return telaPequena();
+    } catch (e) { return false; }
 }
 function aplicarEstadoMenuMinimizado(minimizado) {
     const painel = document.getElementById('sisprof-menu-flutuante');
@@ -423,7 +482,7 @@ function injetarMenu() {
     if (!document.body) { setTimeout(injetarMenu, 500); return; }
     var div = document.createElement('div');
     div.id = 'sisprof-menu-flutuante';
-    div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;';
+    div.style.cssText = 'position:fixed; top:12px; right:12px; width:min(350px, calc(100vw - 24px)); max-width:calc(100vw - 24px); box-sizing:border-box; background:white; border:3px solid #38a169; border-radius:10px; z-index:2147483000; padding:18px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:88vh; max-height:88dvh; overflow-y:auto;';
     div.innerHTML = '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
             '<span>🧑‍🏫 Assistente SisProf <span style="font-size:10px; opacity:0.7;">v' + chrome.runtime.getManifest().version + '</span></span>' +
         '<div style="display:flex; gap:8px; align-items:center;"><span id="sisprof-user-name" style="font-size:11px; opacity:0.9; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
@@ -433,7 +492,7 @@ function injetarMenu() {
         '<div style="display:flex; gap:5px;"><input type="date" id="sisprof-data-input" style="flex:1; padding:6px; border:1px solid #cbd5e0; border-radius:4px; font-size:12px;"><button id="sisprof-btn-hoje" style="background:#38a169; color:white; border:none; padding:6px 10px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:bold;">Hoje</button></div></div>' +
         '<div id="sisprof-status" style="background:#f7fafc; padding:10px; border-radius:8px; border:1px solid #e2e8f0; margin-bottom:10px; font-size:11px; color:#718096;">Verificando...</div>' +
         '<div style="border:1px solid #e2e8f0; border-radius:8px; margin-bottom:10px; overflow:hidden;">' +
-            '<div style="background:#f7fafc; padding:6px 8px; font-size:11px; font-weight:bold; color:#4a5568; border-bottom:1px solid #e2e8f0;">📚 Aulas do Dia <span style="font-weight:normal; color:#a0aec0;">— clique numa turma para ver os faltosos</span></div>' +
+            '<div style="background:#f7fafc; padding:6px 8px; font-size:11px; font-weight:bold; color:#4a5568; border-bottom:1px solid #e2e8f0;">📚 Aulas do Dia <span style="font-weight:normal; color:#a0aec0;">— clique numa turma. ' + pontoDestaque('faltoso') + ' faltoso · ' + pontoDestaque('amarelado') + ' freq. &lt; 50%</span></div>' +
             '<div id="sisprof-lista-turmas"></div>' +
         '</div>' +
         '<div id="sisprof-detalhe" style="display:none; background:#fffaf0; border:1px solid #feebc8; border-radius:8px; padding:10px; margin-bottom:10px;"></div>' +
@@ -521,17 +580,82 @@ function atualizarInterfacePorData() {
         renderizarListaTurmasDoDia();
         return;
     }
-    const numFaltas = (payload.faltas && payload.faltas.length) ? payload.faltas.length : 0;
+    // Totais dos alunos em alerta somando as turmas do dia (classificação da gestão + freq. < 50%).
+    let totFalt = 0, totAmar = 0;
+    montarTurmasDoDia(currentSelectedDate).forEach(t => {
+        const d = alunosDestacadosDaTurma(t.id);
+        totFalt += d.filter(x => x.tipo === 'faltoso').length;
+        totAmar += d.filter(x => x.tipo === 'amarelado').length;
+    });
     const temRegistro = (payload.registros && payload.registros.length > 0 && payload.registros[0].conteudo) ? 'Sim' : 'Não';
-    statusEl.innerHTML = '<strong>📅 ' + formatarDataBR(currentSelectedDate) + '</strong><br>🔴 Faltosos (Gestão): <strong>' + numFaltas + '</strong><br>📝 Registro salvo: <strong>' + temRegistro + '</strong>';
+    statusEl.innerHTML = '<strong>📅 ' + formatarDataBR(currentSelectedDate) + '</strong>' +
+        '<br>' + pontoDestaque('faltoso') + ' Faltosos (Gestão): <strong>' + totFalt + '</strong>' +
+        '<br>' + pontoDestaque('amarelado') + ' Frequência anual &lt; 50%: <strong>' + totAmar + '</strong>' +
+        '<br>📝 Registro salvo: <strong>' + temRegistro + '</strong>';
     renderizarListaTurmasDoDia();
 }
 
-// Faltosos (só leitura) de uma turma na data selecionada.
-function faltososDaTurma(idTurma) {
-    const payload = obterPayloadDaData(currentSelectedDate);
-    const faltas = (payload && payload.faltas) || [];
-    return faltas.filter(f => String(f.id_turma) === String(idTurma));
+// Turma (objeto) a partir do id.
+function turmaPorId(idTurma) {
+    return (profsisAppData.turmas || []).find(t => String(t.id) === String(idTurma)) || null;
+}
+
+// Alunos em alerta de uma turma, na classificação da GESTÃO (independente da presença do dia -
+// esta é uma lista de consulta, não decide falta). Cada item é { nome, tipo }:
+//  - tipo 'faltoso'   -> classificado como "Faltoso" pela gestão (registrosAdministrativos);
+//  - tipo 'amarelado' -> presença anual < 50% no ano (data.baixaFrequencia), quando NÃO é faltoso.
+// Faltoso tem prioridade sobre amarelado (o aluno aparece uma vez só, no tipo mais grave).
+function alunosDestacadosDaTurma(idTurma) {
+    const estudantes = profsisAppData.estudantes || [];
+    const registrosAdmin = profsisAppData.registrosAdministrativos || [];
+    const baixaFreq = profsisAppData.baixaFrequencia || [];
+
+    // Faltosos classificados pela gestão (arquivados são ignorados). Nada de filtro por presença do
+    // dia: mostra exatamente quem a gestão marcou como Faltoso.
+    const faltososReg = registrosAdmin.filter(r => r.tipo === 'Faltoso' && !r.arquivado);
+    const baixaFreqIds = new Set(baixaFreq.map(b => String(b.id)));
+    const baixaFreqNomes = new Set(baixaFreq.map(b => normalizeNomeFaltoso(b.nome)));
+
+    const casaFaltoso = (est) => faltososReg.some(reg =>
+        String(reg.estudanteId) === String(est.id) ||
+        (reg.nomeEstudante && normalizeNomeFaltoso(reg.nomeEstudante) === normalizeNomeFaltoso(est.nome_completo)));
+
+    const resultado = [];
+    const nomesJaIncluidos = new Set();
+
+    // 1) Alunos ATIVOS da turma na base local do professor.
+    estudantes.forEach(est => {
+        if (String(est.id_turma) !== String(idTurma)) return;
+        if (est.status && est.status !== 'Ativo') return;
+        const nomeNorm = normalizeNomeFaltoso(est.nome_completo);
+        if (casaFaltoso(est)) {
+            resultado.push({ nome: est.nome_completo, tipo: 'faltoso' });
+            nomesJaIncluidos.add(nomeNorm);
+        } else if (baixaFreqIds.has(String(est.id)) || baixaFreqNomes.has(nomeNorm)) {
+            resultado.push({ nome: est.nome_completo, tipo: 'amarelado' });
+            nomesJaIncluidos.add(nomeNorm);
+        }
+    });
+
+    // 2) Faltosos que a gestão lançou mas que NÃO estão na base local do professor (aluno não
+    //    importado). Atribui à turma pelo turmaId do registro - mesmo critério do robô antigo -
+    //    pra não sumir com um faltoso classificado pela gestão.
+    faltososReg.forEach(reg => {
+        if (!reg.nomeEstudante) return;
+        const nomeNorm = normalizeNomeFaltoso(reg.nomeEstudante);
+        if (nomesJaIncluidos.has(nomeNorm)) return;
+        const existeLocal = estudantes.some(e => normalizeNomeFaltoso(e.nome_completo) === nomeNorm || String(e.id) === String(reg.estudanteId));
+        if (existeLocal) return;
+        if (reg.turmaId != null && String(reg.turmaId) === String(idTurma)) {
+            resultado.push({ nome: reg.nomeEstudante, tipo: 'faltoso' });
+            nomesJaIncluidos.add(nomeNorm);
+        }
+    });
+
+    // Faltosos (vermelho) primeiro, depois amarelados; alfabético dentro de cada grupo.
+    const peso = { faltoso: 0, amarelado: 1 };
+    resultado.sort((a, b) => (peso[a.tipo] - peso[b.tipo]) || a.nome.localeCompare(b.nome, 'pt-BR'));
+    return resultado;
 }
 
 // Aulas que o professor tem no dia selecionado. Cada turma é clicável (mostra os faltosos) e tem um
@@ -549,17 +673,19 @@ function renderizarListaTurmasDoDia() {
         const markKey = currentSelectedDate + '_turma_' + turma.id;
         const lancSync = (profsisAppData && profsisAppData.lancamentosConcluidos) || {};
         const isDone = lancSync[markKey] || extDoneMarks[markKey] || false;
-        const numFaltosos = faltososDaTurma(turma.id).length;
+        const destacados = alunosDestacadosDaTurma(turma.id);
+        const nFalt = destacados.filter(d => d.tipo === 'faltoso').length;
+        const nAmar = destacados.filter(d => d.tipo === 'amarelado').length;
         const div = document.createElement('div');
         div.style.cssText = 'display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #f0f0f0; padding:6px 8px; gap:6px;';
         div.innerHTML =
-            '<span class="sisprof-turma-ver" title="Ver estudantes faltosos desta turma" style="flex:1; cursor:pointer; font-size:12px; color:#2d3748; font-weight:600;">👁️ ' + escapeHtml(turma.nome + ' ' + turma.disciplina) + '</span>' +
-            '<span class="sisprof-turma-badge" title="Faltosos classificados pela gestão" style="flex-shrink:0; cursor:pointer; font-size:10px; background:' + (numFaltosos ? '#fff5f5' : '#f7fafc') + '; color:' + (numFaltosos ? '#c53030' : '#a0aec0') + '; border:1px solid ' + (numFaltosos ? '#feb2b2' : '#e2e8f0') + '; border-radius:10px; padding:2px 7px;">🔴 ' + numFaltosos + '</span>' +
+            '<span class="sisprof-turma-ver" title="Ver faltosos e alunos com frequência baixa desta turma" style="flex:1; cursor:pointer; font-size:12px; color:#2d3748; font-weight:600;">👁️ ' + escapeHtml(turma.nome + ' ' + turma.disciplina) + '</span>' +
+            '<span class="sisprof-turma-badge" title="🔴 Faltosos (gestão) · 🟡 frequência anual < 50%" style="flex-shrink:0; cursor:pointer; font-size:10px; color:#4a5568; background:#f7fafc; border:1px solid #e2e8f0; border-radius:10px; padding:2px 8px; white-space:nowrap;">' + pontoDestaque('faltoso') + ' ' + nFalt + ' &nbsp; ' + pontoDestaque('amarelado') + ' ' + nAmar + '</span>' +
             '<input type="checkbox" class="sisprof-turma-done-chk" title="Marcar como lançada (controle pessoal - não mexe na SED)" data-key="' + markKey + '" ' + (isDone ? 'checked' : '') + '>';
         container.appendChild(div);
-        const verFaltosos = function() { renderPainelFaltosos(turma.nome + ' ' + turma.disciplina, faltososDaTurma(turma.id)); };
-        div.querySelector('.sisprof-turma-ver').addEventListener('click', verFaltosos);
-        div.querySelector('.sisprof-turma-badge').addEventListener('click', verFaltosos);
+        const verDestacados = function() { renderPainelDestacados(turma.id, turma.nome + ' ' + turma.disciplina); };
+        div.querySelector('.sisprof-turma-ver').addEventListener('click', verDestacados);
+        div.querySelector('.sisprof-turma-badge').addEventListener('click', verDestacados);
         div.querySelector('.sisprof-turma-done-chk').addEventListener('change', function() {
             const key = this.getAttribute('data-key');
             extDoneMarks[key] = this.checked;
@@ -573,26 +699,46 @@ function renderizarListaTurmasDoDia() {
     if (last) last.style.borderBottom = 'none';
 }
 
-// ==================== PAINEL DE FALTOSOS (somente leitura) ====================
+// ==================== PAINEL DE ALUNOS EM ALERTA (somente leitura) ====================
+
+// Turma atualmente exibida no painel de detalhe (pra re-renderizar com dados frescos no refresh).
+let detalheTurmaId = null, detalheTurmaTitulo = "";
 
 function ocultarDetalheFaltosos() {
+    detalheTurmaId = null; detalheTurmaTitulo = "";
     const painel = document.getElementById('sisprof-detalhe');
     if (painel) { painel.style.display = 'none'; painel.innerHTML = ''; }
 }
 
-function renderPainelFaltosos(titulo, faltosos) {
+// Bolinha colorida do marcador: vermelha para faltoso, amarela para frequência baixa (<50%).
+function pontoDestaque(tipo) {
+    const cor = tipo === 'amarelado' ? '#f6c343' : '#e53e3e';
+    return '<span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:' + cor + '; vertical-align:middle;"></span>';
+}
+
+// Renderiza o painel de alunos em alerta de uma turma. Recalcula a lista SEMPRE a partir do
+// profsisAppData atual (nunca de uma cópia congelada), pra refletir o dado mais recente.
+function renderPainelDestacados(idTurma, titulo) {
     const painel = document.getElementById('sisprof-detalhe');
     if (!painel) return;
+    detalheTurmaId = idTurma; detalheTurmaTitulo = titulo;
+    const alunos = alunosDestacadosDaTurma(idTurma);
     let html = '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">' +
-        '<span style="font-weight:bold; font-size:12px; color:#2d3748;">🔴 Faltosos — ' + escapeHtml(titulo) + '</span>' +
+        '<span style="font-weight:bold; font-size:12px; color:#2d3748;">Alunos em alerta — ' + escapeHtml(titulo) + '</span>' +
         '<span id="sisprof-detalhe-fechar" title="Fechar" style="cursor:pointer; color:#a0aec0; font-size:14px;">✖</span></div>';
-    if (!faltosos || faltosos.length === 0) {
-        html += '<div style="font-size:12px; color:#718096;">Nenhum estudante classificado como faltoso para esta turma em ' + formatarDataBR(currentSelectedDate) + '.</div>';
+    if (!alunos || alunos.length === 0) {
+        html += '<div style="font-size:12px; color:#718096;">Nenhum aluno faltoso ou com frequência anual abaixo de 50% nesta turma.</div>';
     } else {
-        html += '<ol style="margin:0; padding-left:22px; font-size:12px; color:#2d3748;">' +
-            faltosos.map(f => '<li style="margin-bottom:3px;">' + escapeHtml(f.nome) + '</li>').join('') +
-            '</ol>' +
-            '<div style="font-size:11px; color:#a0aec0; margin-top:8px;">' + faltosos.length + ' estudante(s) faltoso(s) • lista somente para consulta</div>';
+        const nFalt = alunos.filter(a => a.tipo === 'faltoso').length;
+        const nAmar = alunos.filter(a => a.tipo === 'amarelado').length;
+        html += '<ul style="margin:0; padding-left:2px; list-style:none; font-size:12px; color:#2d3748;">' +
+            alunos.map(a => '<li style="margin-bottom:4px; display:flex; align-items:center; gap:8px;">' + pontoDestaque(a.tipo) + '<span>' + escapeHtml(a.nome) + '</span></li>').join('') +
+            '</ul>' +
+            '<div style="font-size:11px; color:#a0aec0; margin-top:8px; border-top:1px solid #feebc8; padding-top:6px;">' +
+                pontoDestaque('faltoso') + ' Faltoso (gestão): <strong>' + nFalt + '</strong> &nbsp;·&nbsp; ' +
+                pontoDestaque('amarelado') + ' Frequência anual &lt; 50%: <strong>' + nAmar + '</strong>' +
+                '<br>lista somente para consulta' +
+            '</div>';
     }
     painel.style.display = 'block';
     painel.innerHTML = html;
@@ -637,13 +783,13 @@ function atualizarPaineisSED() {
         }
     }
 
-    // Na tela de Chamada, mostra automaticamente os faltosos da turma aberta na SED (só leitura).
+    // Na tela de Chamada, mostra automaticamente os alunos em alerta da turma aberta na SED (só leitura).
     if (tipo === 'chamada') {
         const idTurma = encontrarIdTurmaDaTelaAtual();
         if (idTurma) {
-            const turma = (profsisAppData.turmas || []).find(t => String(t.id) === String(idTurma));
+            const turma = turmaPorId(idTurma);
             const titulo = turma ? (turma.nome + ' ' + (turma.disciplina || '')) : ('Turma ' + idTurma);
-            renderPainelFaltosos(titulo, faltososDaTurma(idTurma));
+            renderPainelDestacados(idTurma, titulo);
         }
     }
 }
