@@ -374,9 +374,13 @@ async function salvarUsuarioAdmin(e) {
             u.nome = nome;
             u.email = email;
             // Se estiver editando, não mexe na senha (segurança do Auth)
-            if (senha && !USE_FIREBASE) u.senha = senha; 
+            if (senha && !USE_FIREBASE) u.senha = senha;
             u.role = role;
             if (!u.schoolId && escolaAtualAdmin) u.schoolId = escolaAtualAdmin;
+            // [SEGURANÇA] O admin é a autoridade máxima: ao editar/estabelecer um usuário,
+            // considera-se o acesso liberado (evita travar gestores no gate de aprovação).
+            u.approved = true;
+            u.rejected = false;
         }
     } else {
         if (users.find(u => u.email === email)) {
@@ -392,6 +396,20 @@ async function salvarUsuarioAdmin(e) {
     }
 
     await saveData('system', 'users_list', { list: users });
+    // [SEGURANÇA] O admin é autoridade máxima: reflete a liberação no documento de acesso
+    // (access/{uid}) usado pelas Regras do Firestore. Vale para usuários criados após a
+    // adoção do Firebase Auth, cujo id coincide com o uid.
+    if (id) {
+        const u = users.find(x => x.id == id);
+        if (u) {
+            await gravarAcessoUsuario(u.id, {
+                approved: true,
+                role: u.role || 'professor',
+                schoolId: u.schoolId,
+                email: u.email || ''
+            });
+        }
+    }
     closeModal('modalAdminUsuario');
     renderListaUsuariosAdmin();
 }
