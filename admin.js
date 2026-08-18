@@ -396,6 +396,20 @@ async function salvarUsuarioAdmin(e) {
     }
 
     await saveData('system', 'users_list', { list: users });
+    // [SEGURANÇA] O admin é autoridade máxima: reflete a liberação no documento de acesso
+    // (access/{uid}) usado pelas Regras do Firestore. Vale para usuários criados após a
+    // adoção do Firebase Auth, cujo id coincide com o uid.
+    if (id) {
+        const u = users.find(x => x.id == id);
+        if (u) {
+            await gravarAcessoUsuario(u.id, {
+                approved: true,
+                role: u.role || 'professor',
+                schoolId: u.schoolId,
+                email: u.email || ''
+            });
+        }
+    }
     closeModal('modalAdminUsuario');
     renderListaUsuariosAdmin();
 }
