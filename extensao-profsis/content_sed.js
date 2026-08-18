@@ -146,13 +146,58 @@ function carregarDadosProfSis() {
         }
         injetarMenu();
     });
-    // Mantém os payloads empurrados pelo app.js sempre frescos (o app pode empurrar depois que a
-    // tela da SED já abriu). Barato: só lê o storage e atualiza uma variável.
+    // Mantém os dados sempre frescos enquanto a tela da SED está aberta: além das faltas empurradas
+    // pelo app.js (rpa_data_history), renova o profsisAppData inteiro (estudantes, faltosos da gestão,
+    // baixa frequência) - sem isso, a lista de alunos em alerta mostrava um retrato do momento em que a
+    // página abriu, ficando desatualizada quando a gestão/ProfSis mudava os dados depois.
     setInterval(() => {
         chrome.runtime.sendMessage({ action: 'GET_DATA' }, (data) => {
-            if (!chrome.runtime.lastError && data && data.rpa_data_history) extPushedHistory = data.rpa_data_history;
+            if (!chrome.runtime.lastError && data && data.rpa_data_history) {
+                extPushedHistory = data.rpa_data_history;
+            }
         });
+        atualizarDadosProfsisFresco();
     }, 4000);
+}
+
+// Guarda uma "assinatura" dos dados que a lista de alunos em alerta usa, pra só re-renderizar quando
+// algo relevante mudar (evita piscar a tela a cada 4s à toa).
+let ultimaAssinaturaDados = "";
+function assinaturaDados(d) {
+    if (!d) return "";
+    try {
+        return JSON.stringify([
+            (d.estudantes || []).map(e => [e.id, e.id_turma, e.status]),
+            (d.registrosAdministrativos || []).filter(r => r && r.tipo === 'Faltoso' && !r.arquivado).map(r => [r.estudanteId, r.nomeEstudante, r.turmaId]),
+            (d.baixaFrequencia || []).map(b => [b.id, b.nome]),
+            (d.turmas || []).map(t => [t.id, t.nome, t.disciplina]),
+            d.lancamentosConcluidos || {}
+        ]);
+    } catch (e) { return String((d.estudantes || []).length) + '/' + String((d.registrosAdministrativos || []).length); }
+}
+
+// Puxa a versão MAIS RECENTE dos dados do ProfSis e, se algo mudou, atualiza profsisAppData e
+// re-renderiza. Também cutuca o ProfSis (REQUEST_PROFSIS_DATA) pra ele reenviar dados frescos ao
+// storage quando houver uma aba/WebView do ProfSis aberta.
+function atualizarDadosProfsisFresco() {
+    chrome.runtime.sendMessage({ action: 'REQUEST_PROFSIS_DATA' }, () => { void chrome.runtime.lastError; });
+    chrome.runtime.sendMessage({ action: 'CHECK_PROFSIS_LOGIN' }, (resp) => {
+        if (chrome.runtime.lastError) return;
+        if (!resp || !resp.loggedIn || !resp.appData) return;
+        const sig = assinaturaDados(resp.appData);
+        if (sig === ultimaAssinaturaDados) return; // nada mudou
+        ultimaAssinaturaDados = sig;
+        profsisAppData = resp.appData;
+        montarHistoricoLocal();
+        atualizarInterfacePorData();
+        atualizarPaineisSED();
+        // Se um painel de alunos em alerta estiver aberto (clique manual numa turma), re-renderiza
+        // com os dados novos. O caso da tela de Chamada já é coberto por atualizarPaineisSED acima.
+        if (detalheTurmaId != null && detectarTipoTelaSED() !== 'chamada') {
+            const turma = turmaPorId(detalheTurmaId);
+            renderPainelDestacados(detalheTurmaId, turma ? (turma.nome + ' ' + (turma.disciplina || '')) : detalheTurmaTitulo);
+        }
+    });
 }
 
 // Payload usado para exibir uma data: prefere as FALTAS empurradas pelo app.js (dados frescos,
@@ -624,7 +669,7 @@ function renderizarListaTurmasDoDia() {
             '<span class="sisprof-turma-badge" title="🔴 Faltosos (gestão) · 🟡 frequência anual < 50%" style="flex-shrink:0; cursor:pointer; font-size:10px; color:#4a5568; background:#f7fafc; border:1px solid #e2e8f0; border-radius:10px; padding:2px 8px; white-space:nowrap;">' + pontoDestaque('faltoso') + ' ' + nFalt + ' &nbsp; ' + pontoDestaque('amarelado') + ' ' + nAmar + '</span>' +
             '<input type="checkbox" class="sisprof-turma-done-chk" title="Marcar como lançada (controle pessoal - não mexe na SED)" data-key="' + markKey + '" ' + (isDone ? 'checked' : '') + '>';
         container.appendChild(div);
-        const verDestacados = function() { renderPainelDestacados(turma.nome + ' ' + turma.disciplina, alunosDestacadosDaTurma(turma.id)); };
+        const verDestacados = function() { renderPainelDestacados(turma.id, turma.nome + ' ' + turma.disciplina); };
         div.querySelector('.sisprof-turma-ver').addEventListener('click', verDestacados);
         div.querySelector('.sisprof-turma-badge').addEventListener('click', verDestacados);
         div.querySelector('.sisprof-turma-done-chk').addEventListener('change', function() {
@@ -642,7 +687,11 @@ function renderizarListaTurmasDoDia() {
 
 // ==================== PAINEL DE ALUNOS EM ALERTA (somente leitura) ====================
 
+// Turma atualmente exibida no painel de detalhe (pra re-renderizar com dados frescos no refresh).
+let detalheTurmaId = null, detalheTurmaTitulo = "";
+
 function ocultarDetalheFaltosos() {
+    detalheTurmaId = null; detalheTurmaTitulo = "";
     const painel = document.getElementById('sisprof-detalhe');
     if (painel) { painel.style.display = 'none'; painel.innerHTML = ''; }
 }
@@ -653,9 +702,13 @@ function pontoDestaque(tipo) {
     return '<span style="display:inline-block; width:9px; height:9px; border-radius:50%; background:' + cor + '; vertical-align:middle;"></span>';
 }
 
-function renderPainelDestacados(titulo, alunos) {
+// Renderiza o painel de alunos em alerta de uma turma. Recalcula a lista SEMPRE a partir do
+// profsisAppData atual (nunca de uma cópia congelada), pra refletir o dado mais recente.
+function renderPainelDestacados(idTurma, titulo) {
     const painel = document.getElementById('sisprof-detalhe');
     if (!painel) return;
+    detalheTurmaId = idTurma; detalheTurmaTitulo = titulo;
+    const alunos = alunosDestacadosDaTurma(idTurma);
     let html = '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">' +
         '<span style="font-weight:bold; font-size:12px; color:#2d3748;">Alunos em alerta — ' + escapeHtml(titulo) + '</span>' +
         '<span id="sisprof-detalhe-fechar" title="Fechar" style="cursor:pointer; color:#a0aec0; font-size:14px;">✖</span></div>';
@@ -722,7 +775,7 @@ function atualizarPaineisSED() {
         if (idTurma) {
             const turma = turmaPorId(idTurma);
             const titulo = turma ? (turma.nome + ' ' + (turma.disciplina || '')) : ('Turma ' + idTurma);
-            renderPainelDestacados(titulo, alunosDestacadosDaTurma(idTurma));
+            renderPainelDestacados(idTurma, titulo);
         }
     }
 }
