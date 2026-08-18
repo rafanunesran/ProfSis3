@@ -9333,6 +9333,15 @@ async function verificarBackupAutomatico() {
 }
 
 async function criarBackupNuvem(silent = false) {
+    // [PROTEÇÃO CONTRA BACKUP VAZIO] Se os dados não foram carregados da nuvem (leitura
+    // negada/erro), o que está em memória pode estar vazio. Fazer backup nesse estado
+    // grava um backup VAZIO e ainda consome um slot bom do histórico de 15 dias.
+    if (!window.dadosCarregados) {
+        console.warn('Backup cancelado: dados não carregados da nuvem (evita gravar backup vazio).');
+        if (!silent) alert('Backup cancelado: seus dados não foram carregados da nuvem.\n\nRecarregue a página e tente de novo — isso protege seu histórico de backups.');
+        return;
+    }
+
     if (!silent && !confirm(`Criar um novo backup na nuvem?\n\nO sistema guarda 1 backup por dia dos últimos ${BACKUP_MAX_DIAS} dias. O backup mais antigo é substituído automaticamente.`)) return;
 
     try {
