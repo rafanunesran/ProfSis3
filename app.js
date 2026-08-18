@@ -25,6 +25,14 @@ async function iniciarApp() {
         } catch (e) { console.warn('Erro ao sincronizar perfil:', e); }
     }
 
+    // [SEGURANÇA] Liberação pela gestão. Perfil novo não acessa os dados da escola nem
+    // as ferramentas até o gestor confirmar. Fazemos o gate ANTES de carregar qualquer
+    // dado da escola (carregarDadosUsuario) para que nada seja baixado/exibido.
+    if (typeof usuarioAguardandoAprovacao === 'function' && usuarioAguardandoAprovacao(currentUser)) {
+        renderTelaAguardandoAprovacao();
+        return;
+    }
+
     // [TERMOS] Popup único de aceite para usuários já cadastrados; sem concordância,
     // o acesso é encerrado (ver core.js).
     if (typeof verificarAceiteTermos === 'function') verificarAceiteTermos();
@@ -822,6 +830,89 @@ function atualizarBannerContaInativa() {
         banner.innerHTML = '⚠️ Sua conta está inativada — modo somente leitura. Você pode visualizar, mas não salvar alterações. Fale com a gestão da sua escola.';
         document.body.insertBefore(banner, document.body.firstChild);
     }
+}
+
+// [SEGURANÇA] Tela de bloqueio para perfil novo aguardando liberação da gestão.
+// Substitui completamente a interface do app: nenhum dado da escola é carregado e
+// nenhuma ferramenta fica acessível enquanto o gestor não confirmar o acesso.
+async function renderTelaAguardandoAprovacao() {
+    // Esconde os demais containers para não deixar nenhuma ferramenta visível.
+    ['authContainer', 'appContainer', 'adminContainer'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+
+    const rejeitado = currentUser && currentUser.rejected === true;
+
+    // Descobre o nome da escola só para orientar o usuário (não carrega dados da escola).
+    let nomeEscola = '';
+    try {
+        if (currentUser && currentUser.schoolId) {
+            const sData = await getData('system', 'schools_list');
+            const schools = (sData && sData.list) ? sData.list : [];
+            const escola = schools.find(s => s.id == currentUser.schoolId);
+            if (escola) nomeEscola = escola.nome || escola.nomeCompleto || '';
+        }
+    } catch (e) { /* silencioso */ }
+
+    let tela = document.getElementById('pendingApprovalScreen');
+    if (!tela) {
+        tela = document.createElement('div');
+        tela.id = 'pendingApprovalScreen';
+        tela.style.cssText = 'position:fixed; inset:0; z-index:10000; background:#f4f6fb; display:flex; align-items:center; justify-content:center; padding:20px; overflow:auto;';
+        document.body.appendChild(tela);
+    }
+    tela.style.display = 'flex';
+
+    const icone = rejeitado ? '⛔' : '⏳';
+    const titulo = rejeitado ? 'Acesso não liberado' : 'Aguardando liberação da gestão';
+    const cor = rejeitado ? '#c53030' : '#2b6cb0';
+    const mensagem = rejeitado
+        ? 'A gestão da sua escola não liberou o acesso deste perfil. Se você acredita que isso é um engano, procure o gestor(a) da escola para regularizar sua situação.'
+        : 'Por segurança, perfis novos não acessam os dados da escola imediatamente. Seu cadastro foi recebido e está aguardando a confirmação do gestor(a) da escola. Assim que o acesso for liberado, todas as ferramentas ficarão disponíveis para você.';
+
+    tela.innerHTML = `
+        <div style="max-width:460px; width:100%; background:#fff; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,0.12); padding:32px; text-align:center;">
+            <div style="font-size:56px; line-height:1; margin-bottom:8px;">${icone}</div>
+            <h2 style="color:${cor}; margin:0 0 6px;">${titulo}</h2>
+            ${nomeEscola ? `<p style="color:#4a5568; font-weight:600; margin:0 0 14px;">🏫 ${nomeEscola}</p>` : ''}
+            <p style="color:#4a5568; font-size:15px; line-height:1.5; margin:0 0 22px;">${mensagem}</p>
+            <p style="color:#718096; font-size:13px; margin:0 0 22px;">Olá, <strong>${(currentUser && currentUser.nome) || (currentUser && currentUser.email) || 'professor(a)'}</strong>. ${rejeitado ? '' : 'Você será liberado(a) automaticamente após a confirmação.'}</p>
+            <button class="btn btn-primary" style="width:100%; margin-bottom:10px;" onclick="verificarLiberacaoAcesso()">🔄 Já fui liberado? Verificar novamente</button>
+            <button class="btn btn-secondary" style="width:100%;" onclick="logout()">Sair</button>
+        </div>`;
+}
+
+// Rebusca o perfil no banco e, se a gestão já liberou, entra normalmente no sistema.
+async function verificarLiberacaoAcesso() {
+    try {
+        if (currentUser && currentUser.email) {
+            const usersData = await getData('system', 'users_list');
+            const users = (usersData && usersData.list) ? usersData.list : [];
+            const fresh = users.find(u => (u.email || '').trim().toLowerCase() === currentUser.email.trim().toLowerCase());
+            if (fresh) {
+                const currentId = currentUser.id;
+                const currentUid = currentUser.uid;
+                currentUser = { ...fresh, id: currentId };
+                if (currentUid) currentUser.uid = currentUid;
+                localStorage.setItem('app_current_user', JSON.stringify(currentUser));
+            }
+        }
+    } catch (e) { console.warn('Erro ao verificar liberação de acesso:', e); }
+
+    if (usuarioAguardandoAprovacao(currentUser)) {
+        alert(currentUser && currentUser.rejected
+            ? 'Seu acesso ainda não foi liberado. Procure a gestão da sua escola.'
+            : 'Seu acesso ainda não foi liberado pela gestão. Tente novamente mais tarde.');
+        // Atualiza a tela (caso tenha passado de pendente para recusado, ou vice-versa).
+        renderTelaAguardandoAprovacao();
+        return;
+    }
+
+    // Liberado! Remove a tela de bloqueio e entra no app.
+    const tela = document.getElementById('pendingApprovalScreen');
+    if (tela) tela.remove();
+    iniciarApp();
 }
 
 // Tarja amarela persuasiva de apoio — só para quem AINDA não contribui (some para contribuintes e
