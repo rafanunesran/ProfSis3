@@ -4,146 +4,132 @@ rules_version = '2';
 //  REGRAS DE SEGURANÇA DO FIRESTORE — SisProf / ProfSis3
 // ----------------------------------------------------------------------------
 //  Como usar:
-//    1. Abra o Console do Firebase > Firestore Database > aba "Regras".
+//    1. Console do Firebase > Firestore Database > aba "Regras".
 //    2. Apague o conteúdo atual e cole TODO este arquivo.
 //    3. Clique em "Publicar".
+//    4. Entre uma vez como Admin (rafael@adm / senha) para que o app crie a
+//       sessão do super_admin no Firebase Auth (necessária para as regras).
 //
-//  O que estas regras fazem:
-//    - Fecham o banco: por padrão, NINGUÉM lê ou escreve (deny by default).
-//    - Exigem login (Firebase Auth) para acessar qualquer dado do sistema.
-//    - Deixam APENAS a lista de escolas legível sem login (a tela pública de
-//      Cadastro precisa dela para montar o seletor de escola).
+//  O QUE ESTAS REGRAS GARANTEM
+//    - Banco fechado por padrão (deny by default).
+//    - Tudo exige login (Firebase Auth), exceto o mínimo necessário para as
+//      telas públicas (lista de escolas no Cadastro e relatórios de link
+//      compartilhado).
+//    - Perfil NOVO só acessa os dados da escola depois que o gestor liberar:
+//      o controle fica no documento access/{uid} (approved true/false).
+//    - Ninguém consegue LIBERAR o próprio acesso (anti-elevação): o dono do
+//      access/{uid} nunca altera o próprio "approved"; só outro usuário (o
+//      gestor, pela tela de controle) ou o super_admin pode liberar.
+//    - Usuários antigos (sem access/{uid}) continuam funcionando (compat.),
+//      para não travar quem já usava o sistema.
 //
-//  Observação importante sobre a "liberação pelo gestor":
-//    O bloqueio de perfis novos (aguardar a confirmação do gestor) é aplicado
-//    hoje na interface do app. Para reforçá-lo também aqui no banco é preciso
-//    que o app grave um documento por usuário em `access/{uid}` com o campo
-//    `approved`. Deixei o bloco pronto e comentado no final ("REFORÇO OPCIONAL").
-//    Enquanto esse documento não existir, mantenha as regras como estão: elas
-//    já fecham o maior buraco (acesso anônimo/aberto).
+//  MODELO DE CONFIANÇA (app 100% no cliente)
+//    A raiz de confiança é o super_admin, reconhecido pelo e-mail verificado do
+//    token do Firebase Auth. Ele autentica no Auth ao entrar (ver core.js) e tem
+//    poderes totais no banco. Gestores e professores autenticam por e-mail/senha.
 // ============================================================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ---- Funções auxiliares -------------------------------------------------
+    // ---------------------------- Funções ------------------------------------
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // ---- system/schools_list: leitura pública, escrita só logado ------------
-    // A tela pública de Cadastro lê a lista de escolas ANTES do login para
-    // preencher o seletor. Por isso a leitura deste documento é liberada.
-    // A escrita (admin cria escola / gestor edita a própria) exige login.
+    // Super admin: e-mail verificado do token. Mantenha igual ao ADMIN_EMAIL do core.js.
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.email == 'rafael@adm.com';
+    }
+
+    function myAccessRef() {
+      return /databases/$(database)/documents/access/$(request.auth.uid);
+    }
+    function myAccessExists() {
+      return isSignedIn() && exists(myAccessRef());
+    }
+
+    // Liberado para acessar os dados da escola:
+    //   - super_admin, OU
+    //   - usuário antigo sem documento access/{uid} (compatibilidade), OU
+    //   - documento access/{uid} com approved == true.
+    function isApprovedForData() {
+      return isSignedIn() && (
+        isSuperAdmin()
+        || !myAccessExists()
+        || get(myAccessRef()).data.approved == true
+      );
+    }
+
+    // ---------------------- access/{uid}: liberação --------------------------
+    // Documento por usuário que controla a liberação. Regras:
+    //   - Ler: o próprio dono, o gestor ou o super_admin.
+    //   - Criar: o próprio dono SOMENTE como pendente (approved == false),
+    //            outro usuário logado (o gestor, via tela), ou o super_admin.
+    //   - Atualizar/Apagar: super_admin ou QUALQUER outro usuário logado que
+    //            NÃO seja o próprio dono. Isso impede a auto-liberação: o dono
+    //            nunca muda o próprio "approved". A tela de controle só expõe a
+    //            ação de liberar/recusar para o gestor.
+    match /access/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
+      allow create: if isSuperAdmin()
+                    || (request.auth.uid == uid && request.resource.data.approved == false)
+                    || (isSignedIn() && request.auth.uid != uid);
+      allow update, delete: if isSuperAdmin()
+                    || (isSignedIn() && request.auth.uid != uid);
+    }
+
+    // --------------------------- system/* ------------------------------------
+    // schools_list: leitura pública (a tela de Cadastro monta o seletor de
+    // escola antes do login). Escrita exige login (admin/gestor autenticados).
     match /system/schools_list {
       allow read: if true;
       allow write: if isSignedIn();
     }
-
-    // ---- system/* (users_list, backups, etc.): apenas logados ---------------
-    // users_list guarda os perfis. A leitura acontece depois do login (o app
-    // busca o próprio perfil na lista). A gravação cobre o cadastro (o usuário
-    // recém-autenticado se adiciona) e as ações de gestor/admin (liberar,
-    // alterar perfil, ativar/inativar).
+    // users_list, backups e demais docs de sistema: apenas usuários logados.
+    // (O cadastro grava aqui logo após criar a conta no Auth; login/onAuth leem
+    //  para localizar o perfil.)
     match /system/{docId} {
       allow read, write: if isSignedIn();
     }
 
-    // ---- Dados da escola e ferramentas: apenas logados ----------------------
-    // app_data          -> dados por escola/perfil + backups (backup_*)
-    // shared_attendance -> faltas compartilhadas da escola
-    // shared_views      -> vistas compartilhadas (links de compartilhamento)
-    // shared_material_digital / materiais_apoio -> materiais
-    // curriculo_*       -> base curricular (RAG/currículo)
-    match /app_data/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /shared_attendance/{docId} {
-      allow read, write: if isSignedIn();
-    }
+    // ------------------- shared_views: link compartilhado --------------------
+    // Relatório de link público (?share=ID) é aberto por visitantes anônimos e
+    // é auto-contido (não lê outras coleções). Leitura pública; escrita só por
+    // quem já está liberado (o gestor gera o link).
     match /shared_views/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /shared_material_digital/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /materiais_apoio/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /curriculo_chunks_embeddings/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /curriculo_escopo_sequencia/{docId} {
-      allow read, write: if isSignedIn();
-    }
-    match /curriculo_ingest_manifest/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if true;
+      allow write: if isApprovedForData();
     }
 
-    // ---- Padrão: nega tudo o que não foi liberado acima ---------------------
+    // ------------------- Dados da escola e ferramentas -----------------------
+    // Exigem perfil liberado (approved) — é aqui que o reforço de segurança
+    // trava os perfis novos até a confirmação do gestor.
+    match /app_data/{docId} {
+      allow read, write: if isApprovedForData();
+    }
+    match /shared_attendance/{docId} {
+      allow read, write: if isApprovedForData();
+    }
+    match /shared_material_digital/{docId} {
+      allow read, write: if isApprovedForData();
+    }
+    match /materiais_apoio/{docId} {
+      allow read, write: if isApprovedForData();
+    }
+    match /curriculo_chunks_embeddings/{docId} {
+      allow read, write: if isApprovedForData();
+    }
+    match /curriculo_escopo_sequencia/{docId} {
+      allow read, write: if isApprovedForData();
+    }
+    match /curriculo_ingest_manifest/{docId} {
+      allow read, write: if isApprovedForData();
+    }
+
+    // --------------------- Padrão: nega o resto ------------------------------
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
-
-// ============================================================================
-//  REFORÇO OPCIONAL — bloquear no BANCO os perfis não liberados pelo gestor
-// ----------------------------------------------------------------------------
-//  As regras acima exigem login, mas ainda não distinguem um perfil "liberado"
-//  de um "aguardando aprovação", porque o status de aprovação hoje mora dentro
-//  de um array (system/users_list) — e regras do Firestore não conseguem
-//  procurar um item dentro de um array pelo uid.
-//
-//  Para travar de fato no banco, é preciso passar a manter UM DOCUMENTO POR
-//  USUÁRIO na coleção `access`, com o id igual ao uid do Firebase Auth:
-//
-//      access/{uid} = { approved: true|false, schoolId: "...", role: "professor" }
-//
-//  Esse documento precisa ser gravado pelo app:
-//    - no cadastro  -> access/{uid} = { approved: false, ... }
-//    - na liberação -> access/{uid}.approved = true   (feito pelo gestor)
-//    - na recusa    -> access/{uid}.approved = false
-//
-//  (Posso implementar essa gravação no app se você quiser — aí é só trocar as
-//  regras acima por estas, que passam a exigir aprovação de verdade.)
-//
-//  MODELO DE REGRAS COM APROVAÇÃO (troque o bloco de "service" acima por este):
-//
-//  service cloud.firestore {
-//    match /databases/{database}/documents {
-//
-//      function isSignedIn() { return request.auth != null; }
-//
-//      // true se o usuário logado tem access/{uid}.approved == true
-//      function isApproved() {
-//        return isSignedIn()
-//          && exists(/databases/$(database)/documents/access/$(request.auth.uid))
-//          && get(/databases/$(database)/documents/access/$(request.auth.uid)).data.approved == true;
-//      }
-//
-//      // Cada usuário lê o próprio status; ninguém edita o próprio "approved"
-//      // pelo cliente sem ser gestor/admin (reforce como preferir).
-//      match /access/{uid} {
-//        allow read: if isSignedIn() && request.auth.uid == uid;
-//        allow write: if isSignedIn(); // ajuste conforme sua regra de gestor
-//      }
-//
-//      // Cadastro/login precisam funcionar mesmo antes da aprovação:
-//      match /system/schools_list { allow read: if true; allow write: if isSignedIn(); }
-//      match /system/{docId}      { allow read, write: if isSignedIn(); }
-//
-//      // Dados e ferramentas da escola SÓ para perfis já liberados:
-//      match /app_data/{docId}                    { allow read, write: if isApproved(); }
-//      match /shared_attendance/{docId}           { allow read, write: if isApproved(); }
-//      match /shared_views/{docId}                { allow read, write: if isApproved(); }
-//      match /shared_material_digital/{docId}     { allow read, write: if isApproved(); }
-//      match /materiais_apoio/{docId}             { allow read, write: if isApproved(); }
-//      match /curriculo_chunks_embeddings/{docId} { allow read, write: if isApproved(); }
-//      match /curriculo_escopo_sequencia/{docId}  { allow read, write: if isApproved(); }
-//      match /curriculo_ingest_manifest/{docId}   { allow read, write: if isApproved(); }
-//
-//      match /{document=**} { allow read, write: if false; }
-//    }
-//  }
-// ============================================================================

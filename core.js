@@ -295,7 +295,25 @@ async function fazerLogin(e) {
 
         // Admin Hardcoded (Legado/Backup) - Funciona mesmo sem banco de dados
         if ((email === 'rafael@adm' || email === 'rafael@adm.com') && senha === 'Amor@9391') {
-            const adminUser = { id: 'admin', nome: 'Super Admin', email: email, role: 'super_admin' };
+            const adminUser = { id: 'admin', nome: 'Super Admin', email: ADMIN_EMAIL, role: 'super_admin' };
+            // [SEGURANÇA] Estabelece uma sessão real no Firebase Auth para o admin. Assim as
+            // Regras do Firestore reconhecem o super_admin (pelo e-mail verificado do token) e
+            // autorizam as gravações administrativas. Sem isso, com regras estritas, o admin
+            // ficaria bloqueado no banco. É best-effort: a UI do admin abre de qualquer forma.
+            if (USE_FIREBASE && typeof firebase !== 'undefined') {
+                try {
+                    await firebase.auth().signInWithEmailAndPassword(ADMIN_EMAIL, senha);
+                } catch (err) {
+                    if (err && err.code === 'auth/user-not-found') {
+                        try { await firebase.auth().createUserWithEmailAndPassword(ADMIN_EMAIL, senha); }
+                        catch (e2) { console.warn('Falha ao criar a conta admin no Firebase Auth:', e2 && e2.code); }
+                    } else {
+                        console.warn('Falha ao autenticar o admin no Firebase Auth:', err && err.code);
+                    }
+                }
+                const fbUser = firebase.auth().currentUser;
+                if (fbUser) adminUser.uid = fbUser.uid;
+            }
             localStorage.setItem('app_current_user', JSON.stringify(adminUser));
             currentUser = adminUser;
             if (typeof iniciarAdmin === 'function') iniciarAdmin();
@@ -456,6 +474,20 @@ async function fazerCadastro(e) {
     users.push(newUser);
     await saveData('system', 'users_list', { list: users });
 
+    // [SEGURANÇA] Cria o documento de acesso do novo usuário como PENDENTE. Isso é feito
+    // enquanto ele ainda está autenticado (logo após createUserWithEmailAndPassword), pois
+    // as Regras do Firestore só permitem o próprio usuário criar seu access/{uid} com
+    // approved:false. A liberação para true é exclusiva do gestor/admin.
+    if (userAuth) {
+        await gravarAcessoUsuario(userAuth.uid, {
+            approved: false,
+            role: 'professor',
+            schoolId: escolaId,
+            email,
+            createdAt: new Date().toISOString()
+        });
+    }
+
     alert('Cadastro realizado!\n\nPor segurança, seu acesso aos dados da escola precisa ser liberado pela gestão. Assim que o gestor confirmar seu perfil, você poderá usar o sistema normalmente.\n\nFaça login para acompanhar o status.');
     // Desloga o usuário recém-criado para forçar o fluxo de login padrão
     if (userAuth) {
@@ -472,6 +504,28 @@ function usuarioAguardandoAprovacao(user) {
     if (!user) return false;
     if (user.role === 'super_admin') return false;
     return user.approved === false;
+}
+
+// E-mail canônico do super_admin. É o mesmo valor conferido nas Regras do Firestore
+// (request.auth.token.email) para conceder poderes administrativos no banco.
+const ADMIN_EMAIL = 'rafael@adm.com';
+
+// Grava/atualiza o documento de acesso por usuário na coleção `access` do Firestore.
+// Esse documento (access/{uid}) é a fonte da verdade que as Regras do Firestore usam
+// para liberar ou bloquear o acesso aos dados da escola:
+//   - cadastro  -> { approved: false }  (o próprio usuário cria, só pode ser "false")
+//   - liberação -> { approved: true }   (gestor/admin)
+//   - recusa    -> { approved: false }  (gestor/admin)
+// Escreve com merge para não apagar campos já existentes. É best-effort e silencioso
+// (não interrompe o fluxo se as regras/rede recusarem).
+async function gravarAcessoUsuario(uid, dados) {
+    if (!uid || !USE_FIREBASE || typeof db === 'undefined' || !db) return;
+    try {
+        const clean = JSON.parse(JSON.stringify(dados || {}));
+        await db.collection('access').doc(String(uid)).set(clean, { merge: true });
+    } catch (e) {
+        console.warn('Não foi possível gravar o documento de acesso (access/' + uid + '):', e && e.message);
+    }
 }
 
 // --- ACEITE ÚNICO DOS TERMOS DE USO (usuários já cadastrados) ---

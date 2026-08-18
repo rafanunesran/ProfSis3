@@ -3868,6 +3868,15 @@ async function aprovarProfessorGestor(id) {
     user.approvedAt = new Date().toISOString();
     user.approvedBy = currentUser.nome || currentUser.email || 'gestor';
     await saveData('system', 'users_list', { list: users });
+    // [SEGURANÇA] Libera também no banco (Regras do Firestore) — access/{uid}.approved = true.
+    await gravarAcessoUsuario(user.id, {
+        approved: true,
+        role: user.role || 'professor',
+        schoolId: user.schoolId,
+        email: user.email || '',
+        approvedAt: user.approvedAt,
+        approvedBy: user.approvedBy
+    });
     renderListaProfessoresGestor();
 }
 
@@ -3891,6 +3900,15 @@ async function recusarProfessorGestor(id) {
     user.rejectedAt = new Date().toISOString();
     user.rejectedBy = currentUser.nome || currentUser.email || 'gestor';
     await saveData('system', 'users_list', { list: users });
+    // [SEGURANÇA] Mantém bloqueado no banco (Regras do Firestore) — access/{uid}.approved = false.
+    await gravarAcessoUsuario(user.id, {
+        approved: false,
+        role: user.role || 'professor',
+        schoolId: user.schoolId,
+        email: user.email || '',
+        rejectedAt: user.rejectedAt,
+        rejectedBy: user.rejectedBy
+    });
     renderListaProfessoresGestor();
 }
 
@@ -3959,6 +3977,14 @@ async function salvarPerfilProfessorGestor(e) {
 
     user.role = role;
     await saveData('system', 'users_list', { list: users });
+    // [SEGURANÇA] Reflete o novo perfil no documento de acesso (mantém liberado). Só perfis
+    // já liberados chegam aqui (o botão de editar perfil não aparece para pendentes).
+    await gravarAcessoUsuario(user.id, {
+        approved: true,
+        role: role,
+        schoolId: user.schoolId,
+        email: user.email || ''
+    });
     closeModal('modalPerfilProfessorGestor');
     renderListaProfessoresGestor();
 }
