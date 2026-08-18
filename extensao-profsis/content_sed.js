@@ -43,7 +43,7 @@ function mostrarTelaStatus() {
 
     const div = document.createElement('div');
     div.id = 'sisprof-status-box';
-    div.style.cssText = 'position:fixed; top:20px; right:20px; width:340px; background:white; border:3px solid #3182ce; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5);';
+    div.style.cssText = 'position:fixed; top:12px; right:12px; width:min(340px, calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:88vh; max-height:88dvh; overflow-y:auto; box-sizing:border-box; background:white; border:3px solid #3182ce; border-radius:10px; z-index:2147483000; padding:18px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5);';
     div.innerHTML =
         '<div style="background:#3182ce; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; text-align:center;">' +
             '🧑‍🏫 Assistente SisProf <span style="font-size:10px; opacity:0.7;">v' + chrome.runtime.getManifest().version + '</span>' +
@@ -452,8 +452,22 @@ function encontrarIdTurmaDaTelaAtual() {
 // Estado "minimizado" persistido (localStorage do domínio da SED), pra sobreviver às reinjeções do
 // menu quando a página da Sala do Futuro atualiza/renavega.
 const SISPROF_MENU_MIN_KEY = 'sisprof_menu_minimizado';
+// Tela pequena (app no celular / janela estreita): o painel a 350px cobriria quase tudo, então o
+// tratamento é diferente (começa minimizado por padrão, ver sisprofMenuEstaMinimizado).
+function telaPequena() {
+    const w = window.innerWidth || document.documentElement.clientWidth || 0;
+    return w > 0 && w <= 600;
+}
 function sisprofMenuEstaMinimizado() {
-    try { return localStorage.getItem(SISPROF_MENU_MIN_KEY) === '1'; } catch (e) { return false; }
+    try {
+        const v = localStorage.getItem(SISPROF_MENU_MIN_KEY);
+        if (v === '1') return true;
+        if (v === '0') return false;
+        // Sem preferência salva ainda: em telas pequenas começa minimizado (bolinha), pra não cobrir a
+        // tela inteira da SED; no desktop começa aberto, como antes. Assim que o professor abrir ou
+        // minimizar manualmente, a escolha vira preferência salva ('0'/'1') e passa a ser respeitada.
+        return telaPequena();
+    } catch (e) { return false; }
 }
 function aplicarEstadoMenuMinimizado(minimizado) {
     const painel = document.getElementById('sisprof-menu-flutuante');
@@ -468,7 +482,7 @@ function injetarMenu() {
     if (!document.body) { setTimeout(injetarMenu, 500); return; }
     var div = document.createElement('div');
     div.id = 'sisprof-menu-flutuante';
-    div.style.cssText = 'position:fixed; top:20px; right:20px; width:350px; background:white; border:3px solid #38a169; border-radius:10px; z-index:999999; padding:20px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:90vh; overflow-y:auto;';
+    div.style.cssText = 'position:fixed; top:12px; right:12px; width:min(350px, calc(100vw - 24px)); max-width:calc(100vw - 24px); box-sizing:border-box; background:white; border:3px solid #38a169; border-radius:10px; z-index:2147483000; padding:18px; font-family:Arial; box-shadow:0 5px 20px rgba(0,0,0,0.5); max-height:88vh; max-height:88dvh; overflow-y:auto;';
     div.innerHTML = '<div style="background:#38a169; color:white; margin:-20px -20px 15px -20px; padding:12px 20px; border-radius:8px 8px 0 0; font-weight:bold; display:flex; justify-content:space-between; align-items:center;">' +
             '<span>🧑‍🏫 Assistente SisProf <span style="font-size:10px; opacity:0.7;">v' + chrome.runtime.getManifest().version + '</span></span>' +
         '<div style="display:flex; gap:8px; align-items:center;"><span id="sisprof-user-name" style="font-size:11px; opacity:0.9; max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>' +
