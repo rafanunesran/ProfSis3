@@ -1542,6 +1542,244 @@ Retorne APENAS um objeto JSON válido (sem marcações markdown e escape correta
     }
 }
 
+// ===================================================================================================
+// REVISÃO EM FORMATO DE DOCUMENTO (prévia editável)
+// ===================================================================================================
+// A tela de revisão do Estagiário mostra o PRÓPRIO documento que vai ser impresso - o mesmo template
+// de Docs/ usado na exportação - com os campos rascunhados pela IA editáveis no lugar em que aparecem
+// no papel, em vez de uma pilha de textareas soltas fora de contexto. O professor vê o documento
+// completo (cabeçalho da escola, tabelas, campos fixos) e só precisa de um botão: Imprimir.
+
+const escapeHtmlEstagiario = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const escapeAttrEstagiario = (s) => escapeHtmlEstagiario(s).replace(/"/g, '&quot;');
+const textoParaHtmlEstagiario = (s) => escapeHtmlEstagiario(s).replace(/\n/g, '<br>');
+const marcaEstagiario = (v) => v ? 'X' : '';
+
+// Campos que a IA rascunha no Plano de Aula - mesma estrutura de ANEXO_PAEE_CAMPOS_IA/ANEXO_PEI_CAMPOS_IA
+// (key = chave no objeto `dados`, token = marcador {{TOKEN}} do template, label = rótulo do campo).
+const PLANO_AULA_CAMPOS_IA = [
+    { key: 'aprendizagem_essencial', token: 'APRENDIZAGEM_ESSENCIAL', label: 'Aprendizagem essencial' },
+    { key: 'conteudos', token: 'CONTEUDOS', label: 'Conteúdos' },
+    { key: 'habilidades', token: 'HABILIDADES', label: 'Habilidades' },
+    { key: 'objetivos', token: 'OBJETIVOS', label: 'Objetivos' },
+    { key: 'desenvolvimento', token: 'DESENVOLVIMENTO', label: 'Desenvolvimento' },
+    { key: 'materiais', token: 'MATERIAIS', label: 'Materiais' },
+    { key: 'avaliacao', token: 'AVALIACAO', label: 'Avaliação' }
+];
+
+// Largura útil (px) de cada modelo, usada pelo zoom "ajustar à largura" da prévia: A4 retrato para os
+// Anexos (o próprio HTML do Word já traz a largura da página) e A4 paisagem para o Plano de Aula.
+const LARGURA_PAGINA_RETRATO_ESTAGIARIO = 800;
+const LARGURA_PAGINA_PAISAGEM_ESTAGIARIO = 1040;
+
+// Substitui um campo da IA no template: na exportação sai como texto puro; na prévia sai dentro de um
+// bloco editável (contenteditable), pra o professor ajustar o texto direto no documento.
+function valorCampoDocumentoEstagiario(campo, valor, editavel) {
+    const html = textoParaHtmlEstagiario(valor);
+    if (!editavel) return html;
+    return `<span class="campo-editavel-estagiario" contenteditable="true" data-campo="${escapeAttrEstagiario(campo.key)}" data-placeholder="${escapeAttrEstagiario(campo.label)}">${html}</span>`;
+}
+
+// Injeta no documento já preenchido o CSS que destaca os campos editáveis e o script que ajusta o
+// zoom à largura disponível (o documento é desenhado pra folha A4, o modal é menor que isso).
+function montarHtmlPreviaEstagiario(htmlDocumento, opcoes) {
+    const o = opcoes || {};
+    const largura = o.largura || LARGURA_PAGINA_RETRATO_ESTAGIARIO;
+
+    // Nenhum modelo de Docs/ chama window.print sozinho hoje, mas se algum passar a chamar, a prévia
+    // não pode abrir a impressão ao carregar - daí a neutralização defensiva.
+    const htmlSemAutoPrint = String(htmlDocumento).replace(/window\.print\s*\(/g, 'void(');
+
+    const estilo = `
+<style id="estagiarioPreviaCss">
+    html { background: #edf2f7; }
+    body { background: #fff; ${o.forcarLargura ? `width: ${largura}px;` : ''} margin-left: auto; margin-right: auto; }
+    .campo-editavel-estagiario {
+        display: block;
+        min-height: 1.4em;
+        padding: 2px 4px;
+        border-radius: 3px;
+        background: #f0f7ff;
+        box-shadow: inset 0 0 0 1px #bcd8f5;
+        word-break: break-word;
+    }
+    .campo-editavel-estagiario:hover { background: #e6f2ff; box-shadow: inset 0 0 0 1px #7fb2e5; }
+    .campo-editavel-estagiario:focus { outline: none; background: #fffdf0; box-shadow: inset 0 0 0 2px #d69e2e; }
+    .campo-editavel-estagiario:empty::before { content: attr(data-placeholder); color: #a0aec0; font-style: italic; }
+</style>`;
+
+    // O documento é desenhado pra folha A4; o script encolhe a página até caber na largura disponível
+    // (zoom) e ajusta a altura do próprio <iframe> ao tamanho do documento, até o teto da tela - assim
+    // a prévia não fica nem com barra de rolagem desnecessária nem com um vazio embaixo. Em telas
+    // pequenas o documento inteiro fica miúdo demais pra digitar, por isso o modal também oferece os
+    // botões de zoom, que chamam window.zoomPreviaEstagiario aqui de dentro.
+    const script = `
+<script id="estagiarioPreviaAjuste">
+(function() {
+    var LARGURA = ${largura};
+    var TETO_TELA = ${o.fatorAlturaMaxima || 0.62};
+    var ALTURA_MINIMA = 200;
+    var escalaManual = null; // null = ajustar automaticamente à largura
+
+    function escalaAutomatica() {
+        var disponivel = document.documentElement.clientWidth || LARGURA;
+        return Math.max(Math.min(1, disponivel / LARGURA), 0.35);
+    }
+
+    function ajustar() {
+        var escala = escalaManual || escalaAutomatica();
+        document.body.style.zoom = String(escala);
+
+        var moldura = window.frameElement;
+        if (!moldura) return;
+        var teto = Math.round((window.parent.innerHeight || 800) * TETO_TELA);
+        // getBoundingClientRect já devolve a altura com o zoom aplicado.
+        var necessaria = Math.ceil(document.body.getBoundingClientRect().height) + 8;
+        moldura.style.height = Math.max(Math.min(necessaria, teto), ALTURA_MINIMA) + 'px';
+    }
+
+    // 'ajustar' volta pro automático (documento inteiro na largura); um número multiplica o zoom atual.
+    window.zoomPreviaEstagiario = function(comando) {
+        if (comando === 'ajustar') {
+            escalaManual = null;
+        } else {
+            var atual = escalaManual || escalaAutomatica();
+            escalaManual = Math.min(Math.max(atual * comando, 0.35), 2.5);
+        }
+        ajustar();
+    };
+
+    window.addEventListener('resize', ajustar);
+    // As logos da escola só entram na conta da altura depois de carregarem.
+    window.addEventListener('load', ajustar);
+    // Enquanto o professor digita, o documento cresce/encolhe junto.
+    document.addEventListener('input', ajustar);
+    ajustar();
+})();
+<\/script>`;
+
+    return htmlSemAutoPrint + estilo + script;
+}
+
+// Escreve o documento dentro do <iframe> da prévia. Usa document.write (e não srcdoc) pra o iframe
+// continuar sendo mesma origem em qualquer contexto - é de lá que os campos editados são lidos de
+// volta na hora de imprimir (lerCamposEditadosPreviaEstagiario).
+function renderizarPreviaDocumentoEstagiario(idIframe, htmlDocumento, opcoes) {
+    const iframe = document.getElementById(idIframe);
+    if (!iframe) return;
+    const doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
+    if (!doc) return;
+    doc.open();
+    doc.write(montarHtmlPreviaEstagiario(htmlDocumento, opcoes));
+    doc.close();
+}
+
+// Mensagem de erro dentro da própria área da prévia (ex: modelo não encontrado / falha de rede),
+// pra o professor não ficar olhando um quadro em branco sem explicação.
+function mostrarErroPreviaEstagiario(idIframe, mensagem) {
+    const iframe = document.getElementById(idIframe);
+    if (!iframe) return;
+    const doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
+    if (!doc) return;
+    doc.open();
+    doc.write(`<body style="font-family:Arial, sans-serif; padding:20px; color:#742a2a; background:#fff5f5;">
+        <p style="margin:0 0 8px;"><strong>Não foi possível montar a prévia do documento.</strong></p>
+        <p style="margin:0; font-size:13px;">${escapeHtmlEstagiario(mensagem)}</p>
+    </body>`);
+    doc.close();
+}
+
+// Texto editado pelo professor dentro da prévia: innerText já entrega as quebras de linha do jeito
+// que ele vê na tela (converte <br>/<div> em \n).
+function normalizarTextoEditavelEstagiario(el) {
+    const txt = (typeof el.innerText === 'string' ? el.innerText : el.textContent) || '';
+    return txt.replace(/\u00a0/g, ' ').replace(/\r\n/g, '\n').trim();
+}
+
+// Lê de volta os campos que o professor editou direto no documento. Se a prévia não tiver carregado
+// (modelo indisponível, iframe ainda montando), mantém o texto rascunhado pela IA em vez de imprimir
+// o documento com os campos vazios.
+function lerCamposEditadosPreviaEstagiario(idIframe, campos, dadosOriginais) {
+    const iframe = document.getElementById(idIframe);
+    const doc = iframe ? (iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document)) : null;
+    const resultado = {};
+    campos.forEach(c => {
+        const el = doc ? doc.querySelector(`[data-campo="${c.key}"]`) : null;
+        resultado[c.key] = el ? normalizarTextoEditavelEstagiario(el) : ((dadosOriginais && dadosOriginais[c.key]) || '');
+    });
+    return resultado;
+}
+
+// Cabeçalho institucional dos documentos (região/escola/logos/contatos) - os três modelos usam os
+// mesmos marcadores, então a busca das configurações fica num lugar só.
+async function carregarConfigsDocumentoEstagiario() {
+    let configSistema = {};
+    let configEscola = {};
+    try {
+        configSistema = await getData('system', 'config_sistema') || {};
+        if (currentUser && currentUser.schoolId) {
+            const sData = await getData('system', 'schools_list');
+            const schools = (sData && sData.list) ? sData.list : [];
+            configEscola = schools.find(s => s.id == currentUser.schoolId) || {};
+        }
+    } catch (e) { console.warn("Erro ao buscar configs da escola", e); }
+
+    const fallbackLogo = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+    return {
+        regiao: configSistema.regiao || 'REGIÃO NÃO CONFIGURADA',
+        logoEstado: configSistema.logoEstado || fallbackLogo,
+        nomeCompletoEscola: configEscola.nomeCompleto || configEscola.nome || 'ESCOLA NÃO CONFIGURADA',
+        logoEscola: configEscola.logoEscola || fallbackLogo,
+        emailEscola: configEscola.email || '',
+        enderecoEscola: configEscola.endereco || '',
+        telefoneEscola: configEscola.telefone || ''
+    };
+}
+
+// Abre a janela de impressão com o documento já preenchido (mesmo esquema usado por todos os modelos).
+function imprimirDocumentoEstagiario(htmlFinal) {
+    let html = htmlFinal;
+    if (!html.includes('window.print')) {
+        html += '<script>window.onload = function() { setTimeout(function(){ window.print(); }, 500); }<\/script>';
+    }
+    const win = window.open('', '', 'width=900,height=800');
+    if (!win) throw new Error('O navegador bloqueou a abertura da janela (Pop-up). Permita pop-ups no seu navegador para gerar o documento.');
+    win.document.write(html);
+    win.document.close();
+}
+
+// Ids dos <iframe> de prévia - cada modal de revisão tem o seu, e é de lá que o texto revisado é lido
+// de volta na hora de imprimir.
+const ID_PREVIA_PLANO_AULA_ESTAGIARIO = 'previaPlanoAulaEstagiario';
+const ID_PREVIA_ANEXO_PAEE_ESTAGIARIO = 'previaAnexoPaeeEstagiario';
+const ID_PREVIA_ANEXO_IV_ESTAGIARIO = 'previaAnexoIVEstagiario';
+
+// Aciona o zoom da prévia (botões do modal) - a lógica em si mora dentro do iframe, junto do
+// documento (ver montarHtmlPreviaEstagiario).
+function zoomPreviaDocumentoEstagiario(idIframe, comando) {
+    const iframe = document.getElementById(idIframe);
+    const win = iframe && iframe.contentWindow;
+    if (win && typeof win.zoomPreviaEstagiario === 'function') win.zoomPreviaEstagiario(comando);
+}
+
+// Bloco da prévia (barra de zoom + moldura + iframe) usado pelos três modais de revisão. A altura
+// definida aqui é só a inicial: quem manda nela é o script de ajuste da prévia
+// (montarHtmlPreviaEstagiario), que encolhe o iframe até o tamanho do documento.
+function blocoPreviaDocumentoEstagiario(idIframe) {
+    return `
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap;">
+            <span style="font-size:12px; color:#718096;">✏️ Clique nos campos destacados em azul (os rascunhados pela IA) e edite o texto direto no documento.</span>
+            <span style="display:flex; gap:4px;">
+                <button type="button" class="btn btn-sm btn-secondary" style="padding:2px 10px;" title="Diminuir" onclick="zoomPreviaDocumentoEstagiario('${idIframe}', 0.8)">−</button>
+                <button type="button" class="btn btn-sm btn-secondary" style="padding:2px 10px;" title="Ajustar à largura" onclick="zoomPreviaDocumentoEstagiario('${idIframe}', 'ajustar')">⤢</button>
+                <button type="button" class="btn btn-sm btn-secondary" style="padding:2px 10px;" title="Aumentar" onclick="zoomPreviaDocumentoEstagiario('${idIframe}', 1.25)">+</button>
+            </span>
+        </div>
+        <div style="border:1px solid #cbd5e0; border-radius:6px; overflow:hidden; background:#edf2f7;">
+            <iframe id="${idIframe}" title="Prévia do documento" style="display:block; width:100%; height:62vh; border:0; background:#fff;"></iframe>
+        </div>`;
+}
+
 function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasStr, duracaoAulas, bimestreAtual, dados, semanaInicioISO, semanaFimISO, cardsMaterialDigitalDisponiveis, resumoFundamentacao) {
     if (!document.getElementById('modalRevisaoDocumento')) {
         const div = document.createElement('div');
@@ -1565,89 +1803,67 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
     // Guarda a saída ORIGINAL da IA para comparar com a versão editada na exportação (aprendizado).
     modal.dataset.dadosOriginais = JSON.stringify(dados || {});
 
-    let formHtml = '';
-    if (tipo === 'plano_aula') {
-        formHtml = `
-            <div style="max-height: 50vh; overflow-y: auto; padding-right: 10px;">
-                <div style="margin-bottom: 15px;">
-                    <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Aprendizagem Essencial (AE):</label>
-                    <textarea id="revDocAE" rows="2" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados.aprendizagem_essencial || ''}</textarea>
-                </div>
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom: 15px;">
-                    <div>
-                        <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Conteúdos:</label>
-                        <textarea id="revDocConteudos" rows="3" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados.conteudos || ''}</textarea>
-                    </div>
-                    <div>
-                        <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Habilidades:</label>
-                        <textarea id="revDocHabilidades" rows="3" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados.habilidades || ''}</textarea>
-                    </div>
-                </div>
-                <div style="margin-bottom: 15px;">
-                    <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Objetivos da Aula:</label>
-                    <textarea id="revDocObjetivos" rows="2" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados.objetivos || ''}</textarea>
-                </div>
-                <div style="margin-bottom: 15px;">
-                    <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Desenvolvimento / Metodologia:</label>
-                    <textarea id="revDocDesenvolvimento" rows="5" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados.desenvolvimento || ''}</textarea>
-                </div>
-                <div style="margin-bottom: 15px;">
-                    <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Materiais e Recursos:</label>
-                    <textarea id="revDocMateriais" rows="2" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados.materiais || ''}</textarea>
-                </div>
-            </div>
-            <div style="margin-bottom: 15px;">
-                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Avaliação:</label>
-                <textarea id="revDocAvaliacao" rows="3" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados.avaliacao || ''}</textarea>
-            </div>
-        `;
-    }
-
     // Seletor de "qual aula do Material Digital foi dada" - reaproveita o catálogo compartilhado da
     // escola pra essa disciplina+série (já resolvido em gerarDocumentoIA, antes de chamar esta função).
     // Fica de fora do PDF por exigência do usuário - só é lido em exportarDocumentoFinal() pra anexar
-    // aos rascunhos de registrosAula (automações).
-    const cardsMaterialDigitalHtml = renderizarSeletorCardsMaterialDigitalDeLista(cardsMaterialDigitalDisponiveis || [], [], 'revDocCardsMaterialDigital')
-        || '<p style="font-size:11px; color:#a0aec0; margin-top:10px;">📚 Nenhuma aula do Material Digital extraída ainda para esta disciplina/série. Na Sala do Futuro, use o robô (📥 Extrair Material Digital) na tela de Registro de Aulas.</p>';
+    // aos rascunhos de registrosAula (automações). Como não faz parte do documento, vem recolhido
+    // embaixo da prévia pra não competir com ela.
+    const seletorCards = renderizarSeletorCardsMaterialDigitalDeLista(cardsMaterialDigitalDisponiveis || [], [], 'revDocCardsMaterialDigital');
+    const cardsMaterialDigitalHtml = seletorCards
+        ? `<details style="margin-top:12px; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px;">
+               <summary style="cursor:pointer; font-size:13px; color:#2d3748; font-weight:bold;">📚 Aula do Material Digital dada (não entra no documento)</summary>
+               ${seletorCards}
+           </details>`
+        : '<p style="font-size:11px; color:#a0aec0; margin:10px 0 0;">📚 Nenhuma aula do Material Digital extraída ainda para esta disciplina/série. Na Sala do Futuro, use o robô (📥 Extrair Material Digital) na tela de Registro de Aulas.</p>';
 
     // Aviso de fundamentação na base curricular oficial (planilha/PDFs) - ver montarContextoCurriculoOficial.
     const fundamentacaoHtml = resumoFundamentacao && resumoFundamentacao.grounded
-        ? `<div style="background:#f0fff4; border:1px solid #9ae6b4; color:#276749; padding:8px 12px; border-radius:6px; margin-bottom:15px; font-size:13px;">✅ Fundamentado no Currículo Paulista${resumoFundamentacao.fonte ? ` (${resumoFundamentacao.fonte})` : ''}${resumoFundamentacao.qtdTrechosTier2 ? ` + ${resumoFundamentacao.qtdTrechosTier2} trecho(s) de material oficial` : ''}.</div>`
-        : `<div style="background:#fffaf0; border:1px solid #fbd38d; color:#975a16; padding:8px 12px; border-radius:6px; margin-bottom:15px; font-size:13px;">⚠️ Gerado sem fundamentação na base curricular oficial — revise os códigos de habilidade com atenção.</div>`;
+        ? `<div style="background:#f0fff4; border:1px solid #9ae6b4; color:#276749; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✅ Fundamentado no Currículo Paulista${resumoFundamentacao.fonte ? ` (${resumoFundamentacao.fonte})` : ''}${resumoFundamentacao.qtdTrechosTier2 ? ` + ${resumoFundamentacao.qtdTrechosTier2} trecho(s) de material oficial` : ''}.</div>`
+        : `<div style="background:#fffaf0; border:1px solid #fbd38d; color:#975a16; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">⚠️ Gerado sem fundamentação na base curricular oficial — revise os códigos de habilidade com atenção.</div>`;
 
-    document.getElementById('modalRevisaoDocumento').innerHTML = `
-        <div class="modal-content" style="max-width: 700px;">
-            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
-                <h2 style="margin: 0;">📝 Revisar e Editar Documento</h2>
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 1150px; width: 96%; padding: 20px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:12px;">
+                <h2 style="margin: 0;">📄 Plano de Aula — revisar e imprimir</h2>
                 <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalRevisaoDocumento')">×</button>
             </div>
-            <div style="background:#ebf8ff; border:1px solid #bee3f8; padding:12px; border-radius:6px; margin-bottom:20px; font-size:14px;">
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:5px;">
-                    <div><strong style="color:#2b6cb0;">Professor:</strong> <span>${currentUser.nome}</span></div>
-                    <div><strong style="color:#2b6cb0;">Disciplina:</strong> <span>${disciplina}</span></div>
-                    <div><strong style="color:#2b6cb0;">Turmas:</strong> <span style="font-size:12px;">${turmasStr}</span></div>
-                    <div><strong style="color:#2b6cb0;">Duração Prevista:</strong> <span>${duracaoAulas}</span></div>
-                </div>
-                <div style="border-top:1px dashed #bee3f8; margin-top:5px; padding-top:5px;">
-                    <strong style="color:#2b6cb0;">Semana:</strong> <span>${semana}</span> | <strong style="color:#2b6cb0;">Tema:</strong> <span>${tema}</span> | <strong style="color:#2b6cb0;">Bimestre:</strong> <span>${bimestreAtual}</span>
-                </div>
-            </div>
-            <p style="font-size:13px; color:#666; margin-bottom:15px;">Abaixo está a estrutura pré-gerada. Fique à vontade para ajustar o texto antes de exportar o arquivo final.</p>
             ${fundamentacaoHtml}
-            ${formHtml}
+            ${blocoPreviaDocumentoEstagiario(ID_PREVIA_PLANO_AULA_ESTAGIARIO)}
             ${cardsMaterialDigitalHtml}
-            <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
+            <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
                 <button class="btn btn-secondary" onclick="closeModal('modalRevisaoDocumento'); showModal('modalGerarDocumentoIA')">← Voltar</button>
-                <button class="btn btn-success" onclick="exportarDocumentoFinal('${tipo}')" id="btnExportarDoc">💾 Gerar PDF Final</button>
+                <button class="btn btn-success" onclick="exportarDocumentoFinal('${tipo}')" id="btnExportarDoc">🖨️ Imprimir</button>
             </div>
         </div>
     `;
     showModal('modalRevisaoDocumento');
+
+    // A prévia é montada depois de o modal estar na tela (precisa buscar o modelo em Docs/ e as
+    // configurações da escola) - por isso não bloqueia a abertura do modal.
+    montarHtmlPlanoAula({
+        tipo: tipo,
+        professor: currentUser.nome,
+        disciplina: disciplina,
+        serie: serie,
+        turmasStr: turmasStr,
+        semana: semana,
+        tema: tema,
+        duracaoAulas: duracaoAulas,
+        bimestre: bimestreAtual,
+        semanaInicio: semanaInicioISO || '',
+        semanaFim: semanaFimISO || '',
+        dados: dados || {}
+    }, { editavel: true })
+        .then(html => renderizarPreviaDocumentoEstagiario(ID_PREVIA_PLANO_AULA_ESTAGIARIO, html, { largura: LARGURA_PAGINA_PAISAGEM_ESTAGIARIO, forcarLargura: true }))
+        .catch(e => {
+            console.error(e);
+            mostrarErroPreviaEstagiario(ID_PREVIA_PLANO_AULA_ESTAGIARIO, e.message);
+        });
 }
 
-// Tela de revisão do Anexo III - PAEE: mostra um resumo dos dados básicos/checkboxes preenchidos no
-// formulário (não editáveis aqui - volte pro formulário pra corrigi-los) e uma textarea editável por
-// campo descritivo rascunhado pela IA. Segue o mesmo padrão de abrirModalRevisaoDocumento.
+// Tela de revisão do Anexo III - PAEE: mostra o próprio Anexo III já preenchido (dados básicos e
+// checkboxes do formulário + texto rascunhado pela IA), com os campos da IA editáveis dentro do
+// documento. Pra corrigir os dados básicos/checkboxes, volte ao formulário.
 function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId, pularImpressao) {
     if (!document.getElementById('modalRevisaoAnexoPaee')) {
         const div = document.createElement('div');
@@ -1662,56 +1878,37 @@ function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId, pularImpressao
     // Quando vem da análise de um Word já pronto (analisarAnexoPaeeWord), só salva no perfil do
     // estudante - não faz sentido reimprimir um documento que o professor já tem em mãos.
     modal.dataset.pularImpressao = pularImpressao ? '1' : '';
+    // Rascunho original da IA - usado como reserva se a prévia não puder ser lida na hora de salvar.
+    modal.dataset.dadosOriginais = JSON.stringify(dados || {});
 
-    const elegibilidadeLabels = ANEXO_PAEE_ELEGIBILIDADE.filter(o => dadosBasicos.elegibilidade.includes(o.token)).map(o => o.label);
-    const apoiosLabels = ANEXO_PAEE_APOIOS.filter(o => dadosBasicos.apoios.includes(o.token)).map(o => o.label);
-    const sexoLabel = dadosBasicos.sexo === 'F' ? 'Feminino' : (dadosBasicos.sexo === 'M' ? 'Masculino' : 'Não informado');
-
-    const camposHtml = ANEXO_PAEE_CAMPOS_IA.map(c => `
-        <div style="margin-bottom: 15px;">
-            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">${c.label}:</label>
-            <textarea id="revAnexo_${c.key}" rows="3" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados[c.key] || ''}</textarea>
-        </div>
-    `).join('');
-
-    document.getElementById('modalRevisaoAnexoPaee').innerHTML = `
-        <div class="modal-content" style="max-width: 700px;">
-            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
-                <h2 style="margin: 0;">📝 Revisar Anexo III - PAEE</h2>
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 1000px; width: 96%; padding: 20px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:12px;">
+                <h2 style="margin: 0;">📄 Anexo III - PAEE — revisar e ${pularImpressao ? 'salvar' : 'imprimir'}</h2>
                 <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalRevisaoAnexoPaee')">×</button>
             </div>
-            <div style="background:#ebf8ff; border:1px solid #bee3f8; padding:12px; border-radius:6px; margin-bottom:20px; font-size:14px;">
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:5px;">
-                    <div><strong style="color:#2b6cb0;">Estudante:</strong> <span>${dadosBasicos.nomeEstudante}</span></div>
-                    <div><strong style="color:#2b6cb0;">Nascimento:</strong> <span>${dadosBasicos.dataNascimento || 'Não informado'}</span></div>
-                    <div><strong style="color:#2b6cb0;">Escolaridade:</strong> <span>${dadosBasicos.escolaridade || 'Não informado'}</span></div>
-                    <div><strong style="color:#2b6cb0;">Turno:</strong> <span>${dadosBasicos.turno || 'Não informado'}</span></div>
-                    <div><strong style="color:#2b6cb0;">Sexo:</strong> <span>${sexoLabel}</span></div>
-                    <div><strong style="color:#2b6cb0;">Nível de Apoio:</strong> <span>${dadosBasicos.nivelApoio ? 'Nível ' + dadosBasicos.nivelApoio : 'Não informado'}</span></div>
-                </div>
-                <div style="border-top:1px dashed #bee3f8; margin-top:5px; padding-top:5px; font-size:13px;">
-                    <strong style="color:#2b6cb0;">Elegibilidade:</strong> <span>${elegibilidadeLabels.join(', ') || 'Não informado'}</span><br>
-                    <strong style="color:#2b6cb0;">Apoios/Recursos/Serviços:</strong> <span>${apoiosLabels.join(', ') || 'Nenhum'}</span>
-                </div>
-            </div>
-            <p style="font-size:13px; color:#666; margin-bottom:15px;">${pularImpressao
-                ? 'Dados extraídos do Word enviado. Revise e ajuste abaixo antes de salvar no perfil do estudante.'
-                : 'Os dados básicos acima vêm do formulário anterior (volte pra corrigi-los). Revise e ajuste abaixo o texto rascunhado pela IA antes de exportar o documento final.'}</p>
-            <div style="max-height: 50vh; overflow-y: auto; padding-right: 10px;">
-                ${camposHtml}
-            </div>
-            <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
+            <p style="font-size:13px; color:#666; margin:0 0 12px;">${pularImpressao
+                ? 'Dados extraídos do Word enviado, montados no modelo oficial. Revise o texto antes de salvar no perfil do estudante.'
+                : 'Documento montado com os dados do formulário anterior (volte pra corrigi-los) e o texto rascunhado pela IA.'}</p>
+            ${blocoPreviaDocumentoEstagiario(ID_PREVIA_ANEXO_PAEE_ESTAGIARIO)}
+            <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
                 <button class="btn btn-secondary" onclick="${pularImpressao ? "closeModal('modalRevisaoAnexoPaee')" : "closeModal('modalRevisaoAnexoPaee'); showModal('modalGerarDocumentoIA')"}">${pularImpressao ? 'Cancelar' : '← Voltar'}</button>
-                <button class="btn btn-success" onclick="exportarAnexoPaeeFinal()" id="btnExportarAnexoPaee">${pularImpressao ? '💾 Salvar no Perfil do Estudante' : '💾 Gerar Documento Final'}</button>
+                <button class="btn btn-success" onclick="exportarAnexoPaeeFinal()" id="btnExportarAnexoPaee">${pularImpressao ? '💾 Salvar no Perfil do Estudante' : '🖨️ Imprimir'}</button>
             </div>
         </div>
     `;
     showModal('modalRevisaoAnexoPaee');
+
+    montarHtmlAnexoPaee(dadosBasicos, dados, { editavel: true })
+        .then(html => renderizarPreviaDocumentoEstagiario(ID_PREVIA_ANEXO_PAEE_ESTAGIARIO, html, { largura: LARGURA_PAGINA_RETRATO_ESTAGIARIO }))
+        .catch(e => {
+            console.error(e);
+            mostrarErroPreviaEstagiario(ID_PREVIA_ANEXO_PAEE_ESTAGIARIO, e.message);
+        });
 }
 
-// Tela de revisão do Anexo IV - PEI: mesmo padrão de abrirModalRevisaoAnexoPaee - resumo dos dados
-// básicos do formulário (não editáveis aqui - volte pro formulário pra corrigi-los) e uma textarea
-// editável por campo descritivo rascunhado pela IA.
+// Tela de revisão do Anexo IV - PEI: mesmo padrão do Anexo III - o documento já montado, com os
+// campos rascunhados pela IA editáveis dentro dele.
 function abrirModalRevisaoAnexoIV(dadosBasicos, dados, alunoId) {
     if (!document.getElementById('modalRevisaoAnexoIV')) {
         const div = document.createElement('div');
@@ -1723,120 +1920,89 @@ function abrirModalRevisaoAnexoIV(dadosBasicos, dados, alunoId) {
     const modal = document.getElementById('modalRevisaoAnexoIV');
     modal.dataset.basicos = JSON.stringify(dadosBasicos);
     modal.dataset.alunoId = alunoId;
-
-    const camposHtml = ANEXO_PEI_CAMPOS_IA.map(c => `
-        <div style="margin-bottom: 15px;">
-            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">${c.label}:</label>
-            <textarea id="revAnexoIV_${c.key}" rows="3" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; line-height:1.4;">${dados[c.key] || ''}</textarea>
-        </div>
-    `).join('');
+    modal.dataset.dadosOriginais = JSON.stringify(dados || {});
 
     const fichaAeeAvisoHtml = dadosBasicos.fichaAeeVazia
-        ? `<div style="background:#fffaf0; border:1px solid #fbd38d; color:#975a16; padding:8px 12px; border-radius:6px; margin-bottom:15px; font-size:13px;">⚠️ Este estudante ainda não tem o Anexo III - PAEE preenchido/gerado - as adaptações abaixo foram geradas de forma geral. Gere o Anexo III - PAEE do aluno pra rascunhos mais precisos da próxima vez.</div>`
-        : `<div style="background:#f0fff4; border:1px solid #9ae6b4; color:#276749; padding:8px 12px; border-radius:6px; margin-bottom:15px; font-size:13px;">✅ As adaptações abaixo consideraram o Anexo III - PAEE já preenchido do estudante.</div>`;
+        ? `<div style="background:#fffaf0; border:1px solid #fbd38d; color:#975a16; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">⚠️ Este estudante ainda não tem o Anexo III - PAEE preenchido/gerado - as adaptações abaixo foram geradas de forma geral. Gere o Anexo III - PAEE do aluno pra rascunhos mais precisos da próxima vez.</div>`
+        : `<div style="background:#f0fff4; border:1px solid #9ae6b4; color:#276749; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✅ As adaptações abaixo consideraram o Anexo III - PAEE já preenchido do estudante.</div>`;
 
-    document.getElementById('modalRevisaoAnexoIV').innerHTML = `
-        <div class="modal-content" style="max-width: 700px;">
-            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
-                <h2 style="margin: 0;">📝 Revisar Anexo IV - PEI</h2>
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 1000px; width: 96%; padding: 20px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:12px;">
+                <h2 style="margin: 0;">📄 Anexo IV - PEI — revisar e imprimir</h2>
                 <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalRevisaoAnexoIV')">×</button>
             </div>
-            <div style="background:#ebf8ff; border:1px solid #bee3f8; padding:12px; border-radius:6px; margin-bottom:20px; font-size:14px;">
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-                    <div><strong style="color:#2b6cb0;">Estudante:</strong> <span>${dadosBasicos.nomeEstudante}</span></div>
-                    <div><strong style="color:#2b6cb0;">Componente Curricular:</strong> <span>${dadosBasicos.disciplina}</span></div>
-                    <div><strong style="color:#2b6cb0;">Professor Regente:</strong> <span>${dadosBasicos.professorRegente}</span></div>
-                    <div><strong style="color:#2b6cb0;">Professor Especializado:</strong> <span>${dadosBasicos.nomeProfAee}</span></div>
-                    <div><strong style="color:#2b6cb0;">Bimestre:</strong> <span>${dadosBasicos.bimestre}º Bimestre</span></div>
-                </div>
-            </div>
-            <p style="font-size:13px; color:#666; margin-bottom:15px;">Os dados básicos acima vêm do formulário anterior (volte pra corrigi-los). Revise e ajuste abaixo o texto rascunhado pela IA antes de exportar o documento final.</p>
             ${fichaAeeAvisoHtml}
-            <div style="max-height: 50vh; overflow-y: auto; padding-right: 10px;">
-                ${camposHtml}
-            </div>
-            <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
+            ${blocoPreviaDocumentoEstagiario(ID_PREVIA_ANEXO_IV_ESTAGIARIO)}
+            <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
                 <button class="btn btn-secondary" onclick="closeModal('modalRevisaoAnexoIV'); showModal('modalGerarDocumentoIA')">← Voltar</button>
-                <button class="btn btn-success" onclick="exportarAnexoIVFinal()" id="btnExportarAnexoIV">💾 Gerar Documento Final</button>
+                <button class="btn btn-success" onclick="exportarAnexoIVFinal()" id="btnExportarAnexoIV">🖨️ Imprimir</button>
             </div>
         </div>
     `;
     showModal('modalRevisaoAnexoIV');
+
+    montarHtmlAnexoIV(dadosBasicos, dados, { editavel: true })
+        .then(html => renderizarPreviaDocumentoEstagiario(ID_PREVIA_ANEXO_IV_ESTAGIARIO, html, { largura: LARGURA_PAGINA_RETRATO_ESTAGIARIO }))
+        .catch(e => {
+            console.error(e);
+            mostrarErroPreviaEstagiario(ID_PREVIA_ANEXO_IV_ESTAGIARIO, e.message);
+        });
 }
 
 // Preenche o modelo Docs/anexoIIIPAEE2026TEA.docx.html com os dados informados (substitui os
-// marcadores {{TOKEN}} - texto, checkboxes marcados como "X" e logos) e abre a janela de impressão -
+// marcadores {{TOKEN}} - texto, checkboxes marcados como "X" e logos) e devolve o HTML do documento -
 // mesmo esquema de {{REGIAO}}/{{ESCOLA}}/{{LOGO_ESTADO}}/{{LOGO_ESCOLA}} já usado nos outros modelos.
-// Função pura (não lê nada do DOM) - usada tanto pela exportação normal do wizard quanto pela
-// reimpressão de um Anexo III-PAEE já salvo no perfil do estudante (app.js: abrirFichaAeeReadOnly).
-async function montarEImprimirAnexoPaee(dadosBasicos, dados) {
+// Função pura (não lê nada do DOM): com { editavel: true } os campos rascunhados pela IA saem dentro
+// de blocos editáveis, que é como a tela de revisão mostra o documento antes de imprimir.
+async function montarHtmlAnexoPaee(dadosBasicos, dados, opcoes) {
+    const editavel = !!(opcoes && opcoes.editavel);
+
     const response = await fetch('Docs/anexoIIIPAEE2026TEA.docx.html');
     if (!response.ok) throw new Error('HTTP ' + response.status);
     const templateHtml = await response.text();
 
-    let configSistema = {};
-    let configEscola = {};
-    try {
-        configSistema = await getData('system', 'config_sistema') || {};
-        if (currentUser && currentUser.schoolId) {
-            const sData = await getData('system', 'schools_list');
-            const schools = (sData && sData.list) ? sData.list : [];
-            configEscola = schools.find(s => s.id == currentUser.schoolId) || {};
-        }
-    } catch(e) { console.warn("Erro ao buscar configs da escola", e); }
-
-    const fallbackLogo = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
-    const regiao = configSistema.regiao || 'REGIÃO NÃO CONFIGURADA';
-    const logoEstado = configSistema.logoEstado || fallbackLogo;
-    const nomeCompletoEscola = configEscola.nomeCompleto || configEscola.nome || 'ESCOLA NÃO CONFIGURADA';
-    const logoEscola = configEscola.logoEscola || fallbackLogo;
-    const emailEscola = configEscola.email || '';
-    const enderecoEscola = configEscola.endereco || '';
-    const telefoneEscola = configEscola.telefone || '';
-
-    const escapeHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const paraTexto = (s) => escapeHtml(s).replace(/\n/g, '<br>');
-    const marca = (v) => v ? 'X' : '';
+    const cfg = await carregarConfigsDocumentoEstagiario();
 
     let htmlFinal = templateHtml
-        .replace(/{{REGIAO}}/g, escapeHtml(regiao))
-        .replace(/{{ESCOLA}}/g, escapeHtml(nomeCompletoEscola))
-        .replace(/{{LOGO_ESTADO}}/g, logoEstado)
-        .replace(/{{LOGO_ESCOLA}}/g, logoEscola)
-        .replace(/{{EMAIL_ESCOLA}}/g, escapeHtml(emailEscola))
-        .replace(/{{ENDERECO_ESCOLA}}/g, escapeHtml(enderecoEscola))
-        .replace(/{{TELEFONE_ESCOLA}}/g, escapeHtml(telefoneEscola))
-        .replace(/{{NOME_ESTUDANTE}}/g, escapeHtml(dadosBasicos.nomeEstudante))
-        .replace(/{{DATA_NASCIMENTO}}/g, escapeHtml(dadosBasicos.dataNascimento))
-        .replace(/{{ESCOLARIDADE}}/g, escapeHtml(dadosBasicos.escolaridade))
-        .replace(/{{TURNO}}/g, escapeHtml(dadosBasicos.turno))
-        .replace(/{{CHECK_SEXO_F}}/g, marca(dadosBasicos.sexo === 'F'))
-        .replace(/{{CHECK_SEXO_M}}/g, marca(dadosBasicos.sexo === 'M'))
-        .replace(/{{CHECK_NIVEL_1}}/g, marca(dadosBasicos.nivelApoio === '1'))
-        .replace(/{{CHECK_NIVEL_2}}/g, marca(dadosBasicos.nivelApoio === '2'))
-        .replace(/{{CHECK_NIVEL_3}}/g, marca(dadosBasicos.nivelApoio === '3'));
+        .replace(/{{REGIAO}}/g, escapeHtmlEstagiario(cfg.regiao))
+        .replace(/{{ESCOLA}}/g, escapeHtmlEstagiario(cfg.nomeCompletoEscola))
+        .replace(/{{LOGO_ESTADO}}/g, () => cfg.logoEstado)
+        .replace(/{{LOGO_ESCOLA}}/g, () => cfg.logoEscola)
+        .replace(/{{EMAIL_ESCOLA}}/g, escapeHtmlEstagiario(cfg.emailEscola))
+        .replace(/{{ENDERECO_ESCOLA}}/g, escapeHtmlEstagiario(cfg.enderecoEscola))
+        .replace(/{{TELEFONE_ESCOLA}}/g, escapeHtmlEstagiario(cfg.telefoneEscola))
+        .replace(/{{NOME_ESTUDANTE}}/g, escapeHtmlEstagiario(dadosBasicos.nomeEstudante))
+        .replace(/{{DATA_NASCIMENTO}}/g, escapeHtmlEstagiario(dadosBasicos.dataNascimento))
+        .replace(/{{ESCOLARIDADE}}/g, escapeHtmlEstagiario(dadosBasicos.escolaridade))
+        .replace(/{{TURNO}}/g, escapeHtmlEstagiario(dadosBasicos.turno))
+        .replace(/{{CHECK_SEXO_F}}/g, marcaEstagiario(dadosBasicos.sexo === 'F'))
+        .replace(/{{CHECK_SEXO_M}}/g, marcaEstagiario(dadosBasicos.sexo === 'M'))
+        .replace(/{{CHECK_NIVEL_1}}/g, marcaEstagiario(dadosBasicos.nivelApoio === '1'))
+        .replace(/{{CHECK_NIVEL_2}}/g, marcaEstagiario(dadosBasicos.nivelApoio === '2'))
+        .replace(/{{CHECK_NIVEL_3}}/g, marcaEstagiario(dadosBasicos.nivelApoio === '3'));
 
     ANEXO_PAEE_ELEGIBILIDADE.forEach(o => {
-        htmlFinal = htmlFinal.replace(new RegExp(`{{${o.token}}}`, 'g'), marca((dadosBasicos.elegibilidade || []).includes(o.token)));
+        htmlFinal = htmlFinal.replace(new RegExp(`{{${o.token}}}`, 'g'), marcaEstagiario((dadosBasicos.elegibilidade || []).includes(o.token)));
     });
     ANEXO_PAEE_APOIOS.forEach(o => {
-        htmlFinal = htmlFinal.replace(new RegExp(`{{${o.token}}}`, 'g'), marca((dadosBasicos.apoios || []).includes(o.token)));
+        htmlFinal = htmlFinal.replace(new RegExp(`{{${o.token}}}`, 'g'), marcaEstagiario((dadosBasicos.apoios || []).includes(o.token)));
     });
     ANEXO_PAEE_CAMPOS_IA.forEach(c => {
-        htmlFinal = htmlFinal.replace(new RegExp(`{{${c.token}}}`, 'g'), paraTexto(dados[c.key]));
+        // Substituição por função: o texto da IA pode conter $& / $1, que numa string de substituição
+        // seriam interpretados como referências do regex.
+        const valor = valorCampoDocumentoEstagiario(c, dados[c.key], editavel);
+        htmlFinal = htmlFinal.replace(new RegExp(`{{${c.token}}}`, 'g'), () => valor);
     });
 
     // Nome sugerido do PDF: AnexoIII_<Estudante>_<Professor>
-    htmlFinal = definirTituloPdfEstagiario(htmlFinal, `AnexoIII_${sanitizarNomeArquivoEstagiario(dadosBasicos.nomeEstudante)}_${sanitizarNomeArquivoEstagiario(dadosBasicos.professor || dadosBasicos.nomeProfAee || currentUser.nome)}`);
+    return definirTituloPdfEstagiario(htmlFinal, `AnexoIII_${sanitizarNomeArquivoEstagiario(dadosBasicos.nomeEstudante)}_${sanitizarNomeArquivoEstagiario(dadosBasicos.professor || dadosBasicos.nomeProfAee || currentUser.nome)}`);
+}
 
-    if (!htmlFinal.includes('window.print')) {
-        htmlFinal += '<script>window.onload = function() { setTimeout(function(){ window.print(); }, 500); }</script>';
-    }
-
-    const win = window.open('', '', 'width=900,height=800');
-    if (!win) throw new Error('O navegador bloqueou a abertura da janela (Pop-up). Permita pop-ups no seu navegador para gerar o documento.');
-    win.document.write(htmlFinal);
-    win.document.close();
+// Monta e imprime o Anexo III - PAEE. Usada tanto pela exportação normal do wizard quanto pela
+// reimpressão de um Anexo III-PAEE já salvo no perfil do estudante (app.js: abrirFichaAeeReadOnly).
+async function montarEImprimirAnexoPaee(dadosBasicos, dados) {
+    imprimirDocumentoEstagiario(await montarHtmlAnexoPaee(dadosBasicos, dados));
 }
 
 // Grava o Anexo III-PAEE (dadosBasicos + dados) direto no documento AEE da escola (chave
@@ -1880,11 +2046,8 @@ async function exportarAnexoPaeeFinal() {
 
     const dadosBasicos = JSON.parse(modal.dataset.basicos);
     const alunoId = modal.dataset.alunoId;
-    const dados = {};
-    ANEXO_PAEE_CAMPOS_IA.forEach(c => {
-        const el = document.getElementById('revAnexo_' + c.key);
-        dados[c.key] = el ? el.value : '';
-    });
+    // Texto revisado direto no documento (prévia editável) - ver lerCamposEditadosPreviaEstagiario.
+    const dados = lerCamposEditadosPreviaEstagiario(ID_PREVIA_ANEXO_PAEE_ESTAGIARIO, ANEXO_PAEE_CAMPOS_IA, JSON.parse(modal.dataset.dadosOriginais || '{}'));
 
     try {
         if (!pularImpressao) {
@@ -1916,71 +2079,49 @@ async function exportarAnexoPaeeFinal() {
 }
 
 // Preenche o modelo Docs/AnexoIV.docx.html com os dados informados (substitui os marcadores {{TOKEN}}
-// - texto, checkboxes de bimestre marcados como "X" e logos) e abre a janela de impressão - mesmo
-// esquema de {{REGIAO}}/{{ESCOLA}}/{{LOGO_ESTADO}}/{{LOGO_ESCOLA}} já usado nos outros modelos. Função
-// pura (não lê nada do DOM) - usada tanto pela exportação normal do wizard quanto por uma futura
-// reimpressão de um Anexo IV já salvo no perfil do estudante (app.js: abrirFichaAeeReadOnly).
-async function montarEImprimirAnexoIV(dadosBasicos, dados) {
+// - texto, checkboxes de bimestre marcados como "X" e logos) e devolve o HTML do documento - mesmo
+// esquema de {{REGIAO}}/{{ESCOLA}}/{{LOGO_ESTADO}}/{{LOGO_ESCOLA}} já usado nos outros modelos.
+// Função pura (não lê nada do DOM): com { editavel: true } os campos rascunhados pela IA saem dentro
+// de blocos editáveis, que é como a tela de revisão mostra o documento antes de imprimir.
+async function montarHtmlAnexoIV(dadosBasicos, dados, opcoes) {
+    const editavel = !!(opcoes && opcoes.editavel);
+
     const response = await fetch('Docs/AnexoIV.docx.html');
     if (!response.ok) throw new Error('HTTP ' + response.status);
     const templateHtml = await response.text();
 
-    let configSistema = {};
-    let configEscola = {};
-    try {
-        configSistema = await getData('system', 'config_sistema') || {};
-        if (currentUser && currentUser.schoolId) {
-            const sData = await getData('system', 'schools_list');
-            const schools = (sData && sData.list) ? sData.list : [];
-            configEscola = schools.find(s => s.id == currentUser.schoolId) || {};
-        }
-    } catch(e) { console.warn("Erro ao buscar configs da escola", e); }
-
-    const fallbackLogo = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
-    const regiao = configSistema.regiao || 'REGIÃO NÃO CONFIGURADA';
-    const logoEstado = configSistema.logoEstado || fallbackLogo;
-    const nomeCompletoEscola = configEscola.nomeCompleto || configEscola.nome || 'ESCOLA NÃO CONFIGURADA';
-    const logoEscola = configEscola.logoEscola || fallbackLogo;
-    const emailEscola = configEscola.email || '';
-    const enderecoEscola = configEscola.endereco || '';
-    const telefoneEscola = configEscola.telefone || '';
-
-    const escapeHtml = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const paraTexto = (s) => escapeHtml(s).replace(/\n/g, '<br>');
-    const marca = (v) => v ? 'X' : '';
+    const cfg = await carregarConfigsDocumentoEstagiario();
 
     let htmlFinal = templateHtml
-        .replace(/{{REGIAO}}/g, escapeHtml(regiao))
-        .replace(/{{ESCOLA}}/g, escapeHtml(nomeCompletoEscola))
-        .replace(/{{LOGO_ESTADO}}/g, logoEstado)
-        .replace(/{{LOGO_ESCOLA}}/g, logoEscola)
-        .replace(/{{EMAIL_ESCOLA}}/g, escapeHtml(emailEscola))
-        .replace(/{{ENDERECO_ESCOLA}}/g, escapeHtml(enderecoEscola))
-        .replace(/{{TELEFONE_ESCOLA}}/g, escapeHtml(telefoneEscola))
-        .replace(/{{NOME_ESTUDANTE}}/g, escapeHtml(dadosBasicos.nomeEstudante))
-        .replace(/{{PROFESSOR}}/g, escapeHtml(dadosBasicos.professorRegente))
-        .replace(/{{PROF_AEE}}/g, escapeHtml(dadosBasicos.nomeProfAee))
-        .replace(/{{DISCIPLINA}}/g, escapeHtml(dadosBasicos.disciplina))
-        .replace(/{{CHECK_BIM_1}}/g, marca(String(dadosBasicos.bimestre) === '1'))
-        .replace(/{{CHECK_BIM_2}}/g, marca(String(dadosBasicos.bimestre) === '2'))
-        .replace(/{{CHECK_BIM_3}}/g, marca(String(dadosBasicos.bimestre) === '3'))
-        .replace(/{{CHECK_BIM_4}}/g, marca(String(dadosBasicos.bimestre) === '4'));
+        .replace(/{{REGIAO}}/g, escapeHtmlEstagiario(cfg.regiao))
+        .replace(/{{ESCOLA}}/g, escapeHtmlEstagiario(cfg.nomeCompletoEscola))
+        .replace(/{{LOGO_ESTADO}}/g, () => cfg.logoEstado)
+        .replace(/{{LOGO_ESCOLA}}/g, () => cfg.logoEscola)
+        .replace(/{{EMAIL_ESCOLA}}/g, escapeHtmlEstagiario(cfg.emailEscola))
+        .replace(/{{ENDERECO_ESCOLA}}/g, escapeHtmlEstagiario(cfg.enderecoEscola))
+        .replace(/{{TELEFONE_ESCOLA}}/g, escapeHtmlEstagiario(cfg.telefoneEscola))
+        .replace(/{{NOME_ESTUDANTE}}/g, escapeHtmlEstagiario(dadosBasicos.nomeEstudante))
+        .replace(/{{PROFESSOR}}/g, escapeHtmlEstagiario(dadosBasicos.professorRegente))
+        .replace(/{{PROF_AEE}}/g, escapeHtmlEstagiario(dadosBasicos.nomeProfAee))
+        .replace(/{{DISCIPLINA}}/g, escapeHtmlEstagiario(dadosBasicos.disciplina))
+        .replace(/{{CHECK_BIM_1}}/g, marcaEstagiario(String(dadosBasicos.bimestre) === '1'))
+        .replace(/{{CHECK_BIM_2}}/g, marcaEstagiario(String(dadosBasicos.bimestre) === '2'))
+        .replace(/{{CHECK_BIM_3}}/g, marcaEstagiario(String(dadosBasicos.bimestre) === '3'))
+        .replace(/{{CHECK_BIM_4}}/g, marcaEstagiario(String(dadosBasicos.bimestre) === '4'));
 
     ANEXO_PEI_CAMPOS_IA.forEach(c => {
-        htmlFinal = htmlFinal.replace(new RegExp(`{{${c.token}}}`, 'g'), paraTexto(dados[c.key]));
+        const valor = valorCampoDocumentoEstagiario(c, dados[c.key], editavel);
+        htmlFinal = htmlFinal.replace(new RegExp(`{{${c.token}}}`, 'g'), () => valor);
     });
 
     // Nome sugerido do PDF: AnexoIV_<Estudante>_<Disciplina>_<Professor>
-    htmlFinal = definirTituloPdfEstagiario(htmlFinal, `AnexoIV_${sanitizarNomeArquivoEstagiario(dadosBasicos.nomeEstudante)}_${sanitizarNomeArquivoEstagiario(dadosBasicos.disciplina)}_${sanitizarNomeArquivoEstagiario(dadosBasicos.professorRegente)}`);
+    return definirTituloPdfEstagiario(htmlFinal, `AnexoIV_${sanitizarNomeArquivoEstagiario(dadosBasicos.nomeEstudante)}_${sanitizarNomeArquivoEstagiario(dadosBasicos.disciplina)}_${sanitizarNomeArquivoEstagiario(dadosBasicos.professorRegente)}`);
+}
 
-    if (!htmlFinal.includes('window.print')) {
-        htmlFinal += '<script>window.onload = function() { setTimeout(function(){ window.print(); }, 500); }</script>';
-    }
-
-    const win = window.open('', '', 'width=900,height=800');
-    if (!win) throw new Error('O navegador bloqueou a abertura da janela (Pop-up). Permita pop-ups no seu navegador para gerar o documento.');
-    win.document.write(htmlFinal);
-    win.document.close();
+// Monta e imprime o Anexo IV - PEI. Usada tanto pela exportação normal do wizard quanto pela
+// reimpressão de um Anexo IV já salvo no perfil do estudante (app.js: reimprimirAnexoIVSalvo).
+async function montarEImprimirAnexoIV(dadosBasicos, dados) {
+    imprimirDocumentoEstagiario(await montarHtmlAnexoIV(dadosBasicos, dados));
 }
 
 // Grava o Anexo IV-PEI direto no documento AEE da escola (chave app_data_school_<id>_aee), na lista
@@ -2053,11 +2194,8 @@ async function exportarAnexoIVFinal() {
     const modal = document.getElementById('modalRevisaoAnexoIV');
     const dadosBasicos = JSON.parse(modal.dataset.basicos);
     const alunoId = modal.dataset.alunoId;
-    const dados = {};
-    ANEXO_PEI_CAMPOS_IA.forEach(c => {
-        const el = document.getElementById('revAnexoIV_' + c.key);
-        dados[c.key] = el ? el.value : '';
-    });
+    // Texto revisado direto no documento (prévia editável) - ver lerCamposEditadosPreviaEstagiario.
+    const dados = lerCamposEditadosPreviaEstagiario(ID_PREVIA_ANEXO_IV_ESTAGIARIO, ANEXO_PEI_CAMPOS_IA, JSON.parse(modal.dataset.dadosOriginais || '{}'));
 
     try {
         await montarEImprimirAnexoIV(dadosBasicos, dados);
@@ -2178,44 +2316,9 @@ ${apoiosOpcoes}`;
     }
 }
 
-async function exportarDocumentoFinal(tipo) {
-
-    const btn = document.getElementById('btnExportarDoc');
-    const originalText = btn.textContent;
-    btn.textContent = 'Gerando Documento... ⏳';
-    btn.disabled = true;
-
-    const modal = document.getElementById('modalRevisaoDocumento');
-    const payload = {
-        tipo: modal.dataset.tipo,
-        professor: currentUser.nome,
-        disciplina: modal.dataset.disciplina,
-        serie: modal.dataset.serie,
-        turmasStr: modal.dataset.turmasStr,
-        semana: modal.dataset.semana,
-        tema: modal.dataset.tema,
-        duracaoAulas: modal.dataset.duracaoAulas,
-        bimestre: modal.dataset.bimestre,
-        dados: {
-            aprendizagem_essencial: document.getElementById('revDocAE') ? document.getElementById('revDocAE').value : '',
-            conteudos: document.getElementById('revDocConteudos') ? document.getElementById('revDocConteudos').value : '',
-            habilidades: document.getElementById('revDocHabilidades') ? document.getElementById('revDocHabilidades').value : '',
-            objetivos: document.getElementById('revDocObjetivos') ? document.getElementById('revDocObjetivos').value : '',
-            desenvolvimento: document.getElementById('revDocDesenvolvimento') ? document.getElementById('revDocDesenvolvimento').value : '',
-            materiais: document.getElementById('revDocMateriais') ? document.getElementById('revDocMateriais').value : '',
-            avaliacao: document.getElementById('revDocAvaliacao') ? document.getElementById('revDocAvaliacao').value : ''
-        }
-    };
-
-    try {
-        let templateHtml = '';
-        try {
-            const response = await fetch('Docs/Base_Plano_Aula.html');
-            if (!response.ok) throw new Error('HTTP ' + response.status);
-            templateHtml = await response.text();
-        } catch (fetchErr) {
-            console.warn("Template local não carregado (CORS/file://). Usando template embutido.", fetchErr);
-            templateHtml = `<!DOCTYPE html>
+// Modelo de reserva do Plano de Aula: usado quando Docs/Base_Plano_Aula.html não pode ser carregado
+// (CORS/file://). É o mesmo layout do arquivo, embutido aqui só pra a geração não ficar impossível.
+const TEMPLATE_PLANO_AULA_EMBUTIDO = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
@@ -2290,76 +2393,88 @@ async function exportarDocumentoFinal(tipo) {
 </div>
 </body>
 </html>`;
-        }
 
-        // Busca configurações globais e da escola
-        let configSistema = {};
-        let configEscola = {};
-        try {
-            configSistema = await getData('system', 'config_sistema') || {};
-            if (currentUser && currentUser.schoolId) {
-                const sData = await getData('system', 'schools_list');
-                const schools = (sData && sData.list) ? sData.list : [];
-                configEscola = schools.find(s => s.id == currentUser.schoolId) || {};
-            }
-        } catch(e) { console.warn("Erro ao buscar configs da escola", e); }
+// Preenche o modelo Docs/Base_Plano_Aula.html com os dados do plano e devolve o HTML do documento.
+// Função pura (não lê nada do DOM): com { editavel: true } os campos rascunhados pela IA saem dentro
+// de blocos editáveis, que é como a tela de revisão mostra o documento antes de imprimir.
+async function montarHtmlPlanoAula(payload, opcoes) {
+    const editavel = !!(opcoes && opcoes.editavel);
 
-        const fallbackLogo = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
-        const regiao = configSistema.regiao || 'REGIÃO NÃO CONFIGURADA';
-        const logoEstado = configSistema.logoEstado || fallbackLogo;
-        const nomeCompletoEscola = configEscola.nomeCompleto || configEscola.nome || 'ESCOLA NÃO CONFIGURADA';
-        const logoEscola = configEscola.logoEscola || fallbackLogo;
-        const emailEscola = configEscola.email || '';
-        const enderecoEscola = configEscola.endereco || '';
-        const telefoneEscola = configEscola.telefone || '';
-        const tipoDoc = payload.tipo === 'plano_aula' ? 'PLANO DE AULA' : payload.tipo.toUpperCase().replace('_', ' ');
+    let templateHtml = '';
+    try {
+        const response = await fetch('Docs/Base_Plano_Aula.html');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        templateHtml = await response.text();
+    } catch (fetchErr) {
+        console.warn("Template local não carregado (CORS/file://). Usando template embutido.", fetchErr);
+        templateHtml = TEMPLATE_PLANO_AULA_EMBUTIDO;
+    }
 
-        // Substitui todos os marcadores (placeholders) pelos dados reais globalmente (/g)
-        let htmlFinal = templateHtml
-            .replace(/{{REGIÃO}}/g, regiao)
-            .replace(/{{NOME COMPLETO DA ESCOLA}}/g, nomeCompletoEscola)
-            .replace(/{{TIPO DE DOC}}/g, tipoDoc)
-            .replace(/{{LOGO_ESTADO}}/g, logoEstado)
-            .replace(/{{LOGO_ESCOLA}}/g, logoEscola)
-            .replace(/{{EMAIL_ESCOLA}}/g, emailEscola)
-            .replace(/{{ENDERECO_ESCOLA}}/g, enderecoEscola)
-            .replace(/{{TELEFONE_ESCOLA}}/g, telefoneEscola)
-            .replace(/{{PROFESSOR}}/g, payload.professor || '')
-            .replace(/{{DISCIPLINA}}/g, payload.disciplina || '')
-            .replace(/{{SERIE}}/g, payload.serie || '')
-            .replace(/{{TURMAS}}/g, payload.turmasStr || '')
-            .replace(/{{TEMA}}/g, payload.tema || '')
-            .replace(/{{SEMANA}}/g, payload.semana || '')
-            .replace(/{{DURACAO}}/g, payload.duracaoAulas || '')
-            .replace(/{{BIMESTRE}}/g, payload.bimestre || '')
-            .replace(/{{APRENDIZAGEM_ESSENCIAL}}/g, payload.dados.aprendizagem_essencial || '')
-            .replace(/{{OBJETIVOS}}/g, payload.dados.objetivos || '')
-            .replace(/{{CONTEUDOS}}/g, payload.dados.conteudos || '')
-            .replace(/{{HABILIDADES}}/g, payload.dados.habilidades || '')
-            .replace(/{{DESENVOLVIMENTO}}/g, payload.dados.desenvolvimento || '')
-            .replace(/{{MATERIAIS}}/g, payload.dados.materiais || '')
-            .replace(/{{AVALIACAO}}/g, payload.dados.avaliacao || '');
+    const cfg = await carregarConfigsDocumentoEstagiario();
+    const tipoDoc = payload.tipo === 'plano_aula' ? 'PLANO DE AULA' : String(payload.tipo || '').toUpperCase().replace('_', ' ');
 
-        // Injeta o script de auto-imprimir se ele não existir no seu arquivo base
-        if (!htmlFinal.includes('window.print')) {
-            htmlFinal += '<script>window.onload = function() { setTimeout(function(){ window.print(); }, 500); }</script>';
-        }
+    // Substitui todos os marcadores (placeholders) pelos dados reais globalmente (/g)
+    let htmlFinal = templateHtml
+        .replace(/{{REGIÃO}}/g, escapeHtmlEstagiario(cfg.regiao))
+        .replace(/{{NOME COMPLETO DA ESCOLA}}/g, escapeHtmlEstagiario(cfg.nomeCompletoEscola))
+        .replace(/{{TIPO DE DOC}}/g, escapeHtmlEstagiario(tipoDoc))
+        .replace(/{{LOGO_ESTADO}}/g, () => cfg.logoEstado)
+        .replace(/{{LOGO_ESCOLA}}/g, () => cfg.logoEscola)
+        .replace(/{{EMAIL_ESCOLA}}/g, escapeHtmlEstagiario(cfg.emailEscola))
+        .replace(/{{ENDERECO_ESCOLA}}/g, escapeHtmlEstagiario(cfg.enderecoEscola))
+        .replace(/{{TELEFONE_ESCOLA}}/g, escapeHtmlEstagiario(cfg.telefoneEscola))
+        .replace(/{{PROFESSOR}}/g, escapeHtmlEstagiario(payload.professor))
+        .replace(/{{DISCIPLINA}}/g, escapeHtmlEstagiario(payload.disciplina))
+        .replace(/{{SERIE}}/g, escapeHtmlEstagiario(payload.serie))
+        .replace(/{{TURMAS}}/g, escapeHtmlEstagiario(payload.turmasStr))
+        .replace(/{{TEMA}}/g, escapeHtmlEstagiario(payload.tema))
+        .replace(/{{SEMANA}}/g, escapeHtmlEstagiario(payload.semana))
+        .replace(/{{DURACAO}}/g, escapeHtmlEstagiario(payload.duracaoAulas))
+        .replace(/{{BIMESTRE}}/g, escapeHtmlEstagiario(payload.bimestre));
 
-        // Nome sugerido do PDF: PA_<Disc(3 letras)>_<Série>_<Professor>_<Semana ddAddmmaa>
-        htmlFinal = definirTituloPdfEstagiario(htmlFinal, `PA_${abreviarDisciplinaEstagiario(payload.disciplina)}_${numeroSerieEstagiario(payload.serie)}_${sanitizarNomeArquivoEstagiario(payload.professor)}_${dataSemanaArquivoEstagiario(modal.dataset.semanaInicio, modal.dataset.semanaFim)}`);
+    PLANO_AULA_CAMPOS_IA.forEach(c => {
+        const valor = valorCampoDocumentoEstagiario(c, (payload.dados || {})[c.key], editavel);
+        htmlFinal = htmlFinal.replace(new RegExp(`{{${c.token}}}`, 'g'), () => valor);
+    });
 
-        const win = window.open('', '', 'width=900,height=800');
-        if (!win) {
-            throw new Error('O navegador bloqueou a abertura da janela (Pop-up). Permita pop-ups no seu navegador para gerar o documento.');
-        }
-        win.document.write(htmlFinal);
-        win.document.close();
+    // Nome sugerido do PDF: PA_<Disc(3 letras)>_<Série>_<Professor>_<Semana ddAddmmaa>
+    return definirTituloPdfEstagiario(htmlFinal, `PA_${abreviarDisciplinaEstagiario(payload.disciplina)}_${numeroSerieEstagiario(payload.serie)}_${sanitizarNomeArquivoEstagiario(payload.professor)}_${dataSemanaArquivoEstagiario(payload.semanaInicio, payload.semanaFim)}`);
+}
+
+// Imprime o Plano de Aula com o texto exatamente como ficou na prévia editável e dispara os efeitos
+// colaterais de sempre: aprendizado das preferências do professor e rascunhos de registro de aula.
+async function exportarDocumentoFinal(tipo) {
+
+    const btn = document.getElementById('btnExportarDoc');
+    const originalText = btn.textContent;
+    btn.textContent = 'Gerando Documento... ⏳';
+    btn.disabled = true;
+
+    const modal = document.getElementById('modalRevisaoDocumento');
+    const dadosOriginais = JSON.parse(modal.dataset.dadosOriginais || '{}');
+    const payload = {
+        tipo: modal.dataset.tipo,
+        professor: currentUser.nome,
+        disciplina: modal.dataset.disciplina,
+        serie: modal.dataset.serie,
+        turmasStr: modal.dataset.turmasStr,
+        semana: modal.dataset.semana,
+        tema: modal.dataset.tema,
+        duracaoAulas: modal.dataset.duracaoAulas,
+        bimestre: modal.dataset.bimestre,
+        semanaInicio: modal.dataset.semanaInicio,
+        semanaFim: modal.dataset.semanaFim,
+        // Texto revisado direto no documento (prévia editável) - ver lerCamposEditadosPreviaEstagiario.
+        dados: lerCamposEditadosPreviaEstagiario(ID_PREVIA_PLANO_AULA_ESTAGIARIO, PLANO_AULA_CAMPOS_IA, dadosOriginais)
+    };
+
+    try {
+        imprimirDocumentoEstagiario(await montarHtmlPlanoAula(payload));
 
         // [APRENDIZADO] Compara a saída original da IA com a versão editada e atualiza (em silêncio,
         // sem bloquear a impressão) as preferências aprendidas. Só para Plano de Aula.
         if (payload.tipo === 'plano_aula') {
             try {
-                const dadosOriginais = JSON.parse(modal.dataset.dadosOriginais || '{}');
                 aprenderPreferenciasEstagiario(dadosOriginais, payload.dados); // fire-and-forget (sem await)
             } catch (e) { console.warn('[Estagiário] Não foi possível iniciar o aprendizado:', e); }
         }
