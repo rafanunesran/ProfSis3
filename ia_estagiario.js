@@ -617,6 +617,11 @@ async function abrirModalGerarDocumentoIA() {
                         <p style="font-size:11px; color:#718096; margin-bottom:5px;">Descreva em poucas linhas a atividade/conteúdo planejado. A IA usa isso pra rascunhar os campos do PEI abaixo. Você revisa e edita tudo antes de gerar o documento final.</p>
                         <textarea id="anexoIVDescricao" rows="4" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; font-size:12px; line-height:1.4;"></textarea>
                     </div>
+                    <div id="anexoIVRefBox" style="display:none; margin-bottom:15px; background:#ebf8ff; border:1px solid #90cdf4; border-radius:6px; padding:10px;">
+                        <p id="anexoIVRefTexto" style="margin:0 0 8px 0; font-size:12px; color:#2c5282;"></p>
+                        <button type="button" class="btn btn-sm btn-info" id="btnCriarComRefAnexoIV" onclick="gerarAnexoIVEstagiario(true)" style="font-weight:bold;">📎 Criar com Ref</button>
+                        <span style="font-size:11px; color:#718096; margin-left:8px;">gera usando a mesma ação e estrutura do Anexo IV já existente</span>
+                    </div>
                 </div>
 
                 <div style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
@@ -690,8 +695,39 @@ async function abrirModalGerarDocumentoIA() {
     });
     document.querySelectorAll('input[name="anexoIVBimestre"]').forEach(el => { el.checked = el.value === bimestreAtualNum; });
 
+    // "Criar com Ref" (Anexo IV): reavalia a existência de uma base sempre que muda estudante,
+    // disciplina ou bimestre. onchange (idempotente) porque o modal é reconstruído a cada abertura.
+    ['anexoIVAluno', 'anexoIVDisciplina'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.onchange = atualizarBotaoCriarComRefAnexoIV;
+    });
+    document.querySelectorAll('input[name="anexoIVBimestre"]').forEach(el => { el.onchange = atualizarBotaoCriarComRefAnexoIV; });
+    atualizarBotaoCriarComRefAnexoIV();
+
     toggleTipoDocumentoIA();
     showModal('modalGerarDocumentoIA');
+}
+
+// Mostra/esconde o botão "Criar com Ref" do Anexo IV: só aparece quando já existe um Anexo IV de OUTRO
+// estudante da MESMA série e disciplina (a mesma base que gerarAnexoIVEstagiario(true) usaria).
+function atualizarBotaoCriarComRefAnexoIV() {
+    const box = document.getElementById('anexoIVRefBox');
+    if (!box) return;
+    const selAluno = document.getElementById('anexoIVAluno');
+    const alunoId = selAluno ? selAluno.value : '';
+    const disciplina = (document.getElementById('anexoIVDisciplina') || {}).value || '';
+    const bimEl = document.querySelector('input[name="anexoIVBimestre"]:checked');
+    const bimestre = bimEl ? bimEl.value : '';
+    if (!alunoId || !disciplina) { box.style.display = 'none'; return; }
+    const tutorado = (ultimaListaTutoradosAeeParaAnexoIV || []).find(t => t.id == alunoId);
+    const serie = (tutorado && (tutorado.serie || tutorado.turma)) || '';
+    const base = encontrarAnexoIVBaseParaReuso(alunoId, serie, disciplina, bimestre);
+    if (!base) { box.style.display = 'none'; return; }
+    const txt = document.getElementById('anexoIVRefTexto');
+    if (txt) txt.innerHTML = '📎 Já existe um Anexo IV - PEI de <strong>' + escapeHtmlEstagiario(disciplina) + '</strong> para esta série'
+        + (base.mesmoBimestre ? '' : ' (' + escapeHtmlEstagiario(String(base.bimestreBase)) + 'º bim.)')
+        + '. Crie este mantendo a mesma ação e estrutura, adaptando só o que o laudo deste estudante exigir.';
+    box.style.display = 'block';
 }
 
 // Alterna os campos do modal do Estagiário conforme o Tipo de Documento escolhido: Plano de Aula usa
@@ -1528,7 +1564,9 @@ function encontrarAnexoIVBaseParaReuso(excluirAlunoId, serieRef, disciplina, bim
     };
 }
 
-async function gerarAnexoIVEstagiario() {
+// usarRef=true (botão "Criar com Ref"): reaproveita um Anexo IV já existente da mesma série/disciplina
+// como base (mesma ação e estrutura, foco no DUA). false (botão "Gerar Estrutura"): cria do zero.
+async function gerarAnexoIVEstagiario(usarRef = false) {
     const selAluno = document.getElementById('anexoIVAluno');
     const alunoId = selAluno ? selAluno.value : '';
     if (!alunoId) return alert('Selecione o estudante.');
@@ -1596,9 +1634,10 @@ async function gerarAnexoIVEstagiario() {
         const serieAluno = (tutoradoSelecionado && (tutoradoSelecionado.serie || tutoradoSelecionado.turma)) || '';
         const contextoOficial = await montarContextoCurriculoOficial(disciplina, serieAluno, descricaoAtividade);
 
-        // Reaproveitamento: se outro estudante da mesma série/disciplina já tem Anexo IV, usa como base
-        // pra manter a mesma didática (foco no DUA) e só mudar o que o laudo deste estudante exigir.
-        const baseReuso = encontrarAnexoIVBaseParaReuso(alunoId, serieAluno, disciplina, bimestreNum);
+        // Reaproveitamento: só quando o professor pediu "Criar com Ref". Aí, se outro estudante da mesma
+        // série/disciplina já tem Anexo IV, usa como base pra manter a mesma didática (foco no DUA) e só
+        // mudar o que o laudo deste estudante exigir.
+        const baseReuso = usarRef ? encontrarAnexoIVBaseParaReuso(alunoId, serieAluno, disciplina, bimestreNum) : null;
         const blocoBaseDUA = baseReuso
             ? `\nJÁ EXISTE um Anexo IV - PEI elaborado para OUTRO estudante da MESMA série e disciplina${baseReuso.mesmoBimestre ? '' : ` (${baseReuso.bimestreBase}º bimestre)`}. Use-o como BASE e MANTENHA a mesma linha didática e metodológica, com foco no Desenho Universal para a Aprendizagem (DUA): reaproveite as MESMAS estratégias, intervenções e instrumentos sempre que forem compatíveis com o laudo/Anexo III do estudante atual. Só ALTERE um ponto quando o perfil/laudo do estudante ATUAL for incompatível com a estratégia da base - nesse caso adapte o mínimo necessário e mantenha o resto igual. Não reescreva do zero o que já serve. Mantenha o mesmo nível de detalhe e a citação dos códigos de habilidade.\n\nAnexo IV - PEI de base (campos a reaproveitar):\n"""${baseReuso.camposBase}"""${baseReuso.anexoPaeeTexto ? `\n\nAnexo III (laudo/PAEE) do estudante de base - use APENAS para julgar se as estratégias da base são compatíveis com o estudante atual, NÃO copie dados pessoais dele:\n"""${baseReuso.anexoPaeeTexto}"""` : ''}`
             : `\nElabore as estratégias, intervenções e instrumentos com foco no Desenho Universal para a Aprendizagem (DUA), priorizando recursos e abordagens que possam beneficiar vários estudantes, não apenas um.`;
