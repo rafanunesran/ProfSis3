@@ -712,12 +712,35 @@ async function abrirModalGerarDocumentoIA() {
 
 // Mostra/esconde o botão "Criar com Ref" do Anexo IV: só aparece quando já existe um Anexo IV de OUTRO
 // estudante da MESMA série e disciplina (a mesma base que gerarAnexoIVEstagiario(true) usaria).
+// Remarca as opções do seletor de aluno do Anexo IV com um ✅ para quem já tem um Anexo IV do bimestre
+// selecionado (e, quando a disciplina já está escolhida, do bimestre + disciplina). Preserva a seleção.
+function marcarOpcoesAlunoAnexoIV(disciplina, bimestre) {
+    const sel = document.getElementById('anexoIVAluno');
+    if (!sel) return;
+    const lista = ultimaListaTutoradosAeeParaAnexoIV || [];
+    if (lista.length === 0) return; // mantém o estado atual (ex.: aviso de "nenhum aluno...")
+    const normDisc = (s) => (s == null ? '' : s).toString().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const temAnexo = (t) => Array.isArray(t.anexosIV) && t.anexosIV.some(a => a && a.dadosBasicos
+        && String(a.dadosBasicos.bimestre) === String(bimestre)
+        && (!disciplina || normDisc(a.dadosBasicos.disciplina) === normDisc(disciplina)));
+    const selecionado = sel.value;
+    let html = '<option value="">Selecione...</option>';
+    lista.forEach(t => {
+        const marca = (bimestre && temAnexo(t)) ? '✅ ' : '';
+        html += '<option value="' + escapeAttrEstagiario(String(t.id)) + '">' + marca + escapeHtmlEstagiario(t.nome_estudante || '') + '</option>';
+    });
+    sel.innerHTML = html;
+    sel.value = selecionado; // preserva a seleção do professor
+}
+
 function atualizarBotaoCriarComRefAnexoIV() {
     const selAluno = document.getElementById('anexoIVAluno');
     const alunoId = selAluno ? selAluno.value : '';
     const disciplina = (document.getElementById('anexoIVDisciplina') || {}).value || '';
     const bimEl = document.querySelector('input[name="anexoIVBimestre"]:checked');
     const bimestre = bimEl ? bimEl.value : '';
+    // Marca ✅ nas opções do seletor conforme disciplina/bimestre atuais (preserva a seleção).
+    marcarOpcoesAlunoAnexoIV(disciplina, bimestre);
     const tutorado = (ultimaListaTutoradosAeeParaAnexoIV || []).find(t => t.id == alunoId);
     const serie = (tutorado && (tutorado.serie || tutorado.turma)) || '';
     const normDisc = (s) => (s == null ? '' : s).toString().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
