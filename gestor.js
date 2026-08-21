@@ -1960,28 +1960,270 @@ function removerBlocoHorario(id) {
 }
 
 // --- IMPORTAÇÃO EM MASSA (ESTUDANTES) ---
+//
+// Entrada: os arquivos que a SED exporta ("Alunos.csv", "Alunos.htm", ou um .xlsx montado à mão).
+// Todos saem com o MESMO nome genérico, então a turma não pode vir do nome do arquivo (era o que a
+// versão anterior fazia) - e também não está DENTRO do arquivo: o export só imprime o filtro
+// "Ano Letivo", sem turma, série ou disciplina em lugar nenhum.
+//
+// Por isso a turma é identificada pela própria lista de alunos: 50 nomes coincidindo com os de uma
+// turma cadastrada é uma impressão digital tão decisiva quanto uma matrícula. O RA seria a chave
+// ideal, mas não pode ser armazenado (restrição legal das plataformas do estado), então só as
+// colunas "Nome do Aluno" e "Situação do Aluno" são lidas - RA, Dig. RA, data de nascimento e os
+// dois e-mails institucionais são descartados na leitura e nunca chegam ao Firestore.
+//
+// Roda só no modo gestor, onde `data` JÁ É o documento da escola (getStorageKey, shared.js:81):
+// `persistirDados()` grava no lugar certo e `turma.id` já é o masterId que os professores enxergam.
+
+// Sobreposição mínima de nomes pra casar a turma sozinho, e folga mínima sobre a 2ª colocada. Na
+// prática a turma certa dá 90-100% e as outras dão perto de zero; os limiares só existem pra que
+// turma nova (sem ninguém cadastrado) e empate caiam no dropdown em vez de chutar.
+const IMPORT_MASSA_LIMIAR_CASAMENTO = 0.5;
+const IMPORT_MASSA_FOLGA_2O_LUGAR = 0.15;
+
+// "Situação do Aluno" como a SED escreve -> status do ProfSis (enum de index.html:246).
+const IMPORT_MASSA_STATUS_SED = {
+    'ativo': 'Ativo',
+    'transferido': 'Transferido',
+    'remanejamento': 'Remanejado',
+    'remanejado': 'Remanejado',
+    'baixa-transferencia': 'Baixa-Transferencia',
+    'ncom': 'NCOM'
+};
+
+function normalizarNomeImportMassa(nome) {
+    return String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase().replace(/\s+/g, ' ');
+}
+
+function normalizarCabecalhoImportMassa(texto) {
+    return String(texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+// Lê o arquivo como texto. O CSV da SED vem em UTF-8 com BOM; exports antigos às vezes vêm em
+// latin-1, e aí o replacement char denuncia a decodificação errada (antes disso os acentos entravam
+// corrompidos em silêncio).
+async function lerTextoArquivoImportMassa(file) {
+    const buffer = await file.arrayBuffer();
+    let texto = new TextDecoder('utf-8').decode(buffer);
+    if (texto.indexOf("\uFFFD") !== -1) {
+        try { texto = new TextDecoder('windows-1252').decode(buffer); } catch (e) { /* mantém o utf-8 */ }
+    }
+    if (texto.charCodeAt(0) === 0xFEFF) texto = texto.slice(1);
+    return texto;
+}
+
+// Devolve uma matriz de células (linhas x colunas) - o mesmo formato que
+// XLSX.utils.sheet_to_json(..., {header:1}) produz, pra que os três formatos sigam daqui pra frente
+// exatamente o mesmo caminho.
+async function lerMatrizArquivoImportMassa(file) {
+    const nome = (file.name || '').toLowerCase();
+
+    if (nome.endsWith('.xlsx') || nome.endsWith('.xls')) {
+        await carregarBibliotecaBaseCurricular('xlsx');
+        const workbook = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
+        const aba = workbook.Sheets[workbook.SheetNames[0]];
+        return XLSX.utils.sheet_to_json(aba, { header: 1, raw: false, blankrows: false });
+    }
+
+    const texto = await lerTextoArquivoImportMassa(file);
+
+    if (nome.endsWith('.htm') || nome.endsWith('.html')) {
+        // Export "Publicar como Página da Web" do Excel: uma <table> limpa. Ler pelo DOM elimina de
+        // uma vez delimitador, aspas e encoding (o charset vem declarado no próprio HTML).
+        const doc = new DOMParser().parseFromString(texto, 'text/html');
+        return Array.from(doc.querySelectorAll('table tr'))
+            .map(tr => Array.from(tr.querySelectorAll('td, th')).map(c => c.textContent.trim()));
+    }
+
+    return texto.split(/\r?\n/).map(linha => linha.split(';').map(c => c.trim()));
+}
+
+// Acha a linha de cabeçalho e as duas únicas colunas que interessam. Comparação normalizada: a
+// versão anterior fazia includes('nome do aluno') em texto cru e quebrava com qualquer variação de
+// caixa ou acento.
+function detectarColunasImportMassa(linhas) {
+    const limite = Math.min(linhas.length, 15);
+    for (let i = 0; i < limite; i++) {
+        const cols = (linhas[i] || []).map(normalizarCabecalhoImportMassa);
+        const idxNome = cols.findIndex(c => c === 'nome do aluno' || c === 'aluno' || c === 'nome' || c === 'nome completo');
+        if (idxNome === -1) continue;
+        const idxSituacao = cols.findIndex(c => c.indexOf('situacao') !== -1 || c.indexOf('status') !== -1);
+        return { linhaHeader: i, idxNome, idxSituacao };
+    }
+    return null;
+}
+
+// Só nome e situação saem daqui. Duplicata dentro do mesmo arquivo é ignorada (fica a 1ª ocorrência).
+function extrairAlunosImportMassa(linhas, colunas) {
+    const alunos = [];
+    const vistos = new Set();
+
+    for (let i = colunas.linhaHeader + 1; i < linhas.length; i++) {
+        const linha = linhas[i] || [];
+        const nome = String(linha[colunas.idxNome] || '').trim();
+        if (!nome) continue;
+
+        const chave = normalizarNomeImportMassa(nome);
+        if (!chave || vistos.has(chave)) continue;
+        vistos.add(chave);
+
+        const situacaoBruta = colunas.idxSituacao !== -1 ? String(linha[colunas.idxSituacao] || '').trim() : '';
+        const chaveStatus = normalizarCabecalhoImportMassa(situacaoBruta);
+        const conhecido = !situacaoBruta || Object.prototype.hasOwnProperty.call(IMPORT_MASSA_STATUS_SED, chaveStatus);
+
+        alunos.push({
+            nome: nome,
+            chave: chave,
+            status: IMPORT_MASSA_STATUS_SED[chaveStatus] || 'Ativo',
+            situacaoBruta: situacaoBruta,
+            statusReconhecido: conhecido
+        });
+    }
+    return alunos;
+}
+
+// Agrupa as turmas cadastradas por turma FÍSICA: a mesma turma aparece uma vez por disciplina e
+// todas compartilham o roster, então contam como um alvo só. Mesmo agrupamento que
+// encontrarAlvoTurmaExtensao usa em app.js:2284.
+function agruparTurmasFisicasImportMassa() {
+    const grupos = new Map();
+
+    (data.turmas || []).forEach(t => {
+        const chave = String(t.masterId || t.id);
+        if (!grupos.has(chave)) {
+            grupos.set(chave, { chave: chave, turmaId: t.id, ids: [], rotulos: [] });
+        }
+        const grupo = grupos.get(chave);
+        grupo.ids.push(t.id);
+        grupo.rotulos.push(t.nome + (t.disciplina ? ' - ' + t.disciplina : ''));
+    });
+
+    const lista = Array.from(grupos.values());
+    lista.forEach(grupo => {
+        grupo.rotulo = grupo.rotulos[0] + (grupo.rotulos.length > 1 ? ' (+' + (grupo.rotulos.length - 1) + ')' : '');
+        grupo.rosterAtivos = new Set();
+        grupo.rosterTodos = new Set();
+        (data.estudantes || []).forEach(e => {
+            if (grupo.ids.some(id => id == e.id_turma)) {
+                const chave = normalizarNomeImportMassa(e.nome_completo);
+                if (!chave) return;
+                grupo.rosterTodos.add(chave);
+                if (!e.status || e.status === 'Ativo') grupo.rosterAtivos.add(chave);
+            }
+        });
+    });
+    return lista;
+}
+
+// Pontua o arquivo contra cada turma física. Compara com o roster INTEIRO (não só os ativos): quem
+// saiu continua listado no arquivo da SED, e ignorá-los baixaria a nota da turma certa.
+function casarTurmaImportMassa(alunos, grupos) {
+    const chavesArquivo = new Set(alunos.map(a => a.chave));
+
+    const placar = grupos.map(grupo => {
+        let comuns = 0;
+        chavesArquivo.forEach(c => { if (grupo.rosterTodos.has(c)) comuns++; });
+        const base = Math.min(chavesArquivo.size, grupo.rosterTodos.size);
+        return { grupo: grupo, comuns: comuns, score: base ? comuns / base : 0 };
+    }).sort((a, b) => b.score - a.score);
+
+    const melhor = placar[0];
+    if (!melhor || melhor.score < IMPORT_MASSA_LIMIAR_CASAMENTO) {
+        return { grupo: null, score: melhor ? melhor.score : 0, motivo: 'sem_correspondencia' };
+    }
+
+    const segundo = placar[1];
+    if (segundo && (melhor.score - segundo.score) < IMPORT_MASSA_FOLGA_2O_LUGAR) {
+        return { grupo: null, score: melhor.score, motivo: 'ambiguo', rival: segundo.grupo.rotulo };
+    }
+
+    return { grupo: melhor.grupo, score: melhor.score };
+}
+
+// Aplica um arquivo já casado com uma turma. Recebe o array `estudantes` por parâmetro pra poder
+// rodar sobre uma CÓPIA na prévia e sobre o array real na confirmação - assim o que a tela mostra é
+// literalmente o que vai ser gravado.
+//
+// Não dá pra reusar aplicarAtualizacaoAlunosExtensao (app.js:2309): ela força 'Ativo' em todo mundo
+// que aparece na lista (app.js:2327), o que reativaria justamente os Transferido/Remanejamento que o
+// arquivo diz que saíram. E ela não pode ser alterada - é espelhada em
+// extensao-profsis/background.js:231 e serve a extensão.
+function aplicarArquivoImportMassa(estudantes, turmaId, alunos, novoId) {
+    const criados = [];
+    const alterados = [];
+    const sumiram = [];
+
+    const chavesArquivo = new Set(alunos.map(a => a.chave));
+    const daTurma = estudantes.filter(e => e.id_turma == turmaId);
+    const porChave = new Map();
+    daTurma.forEach(e => {
+        const chave = normalizarNomeImportMassa(e.nome_completo);
+        if (!porChave.has(chave)) porChave.set(chave, e);
+    });
+
+    alunos.forEach(aluno => {
+        const existente = porChave.get(aluno.chave);
+        if (!existente) {
+            estudantes.push({ id: novoId(), id_turma: turmaId, nome_completo: aluno.nome, status: aluno.status });
+            criados.push({ nome: aluno.nome, status: aluno.status });
+        } else if ((existente.status || 'Ativo') !== aluno.status) {
+            alterados.push({ nome: existente.nome_completo, de: existente.status || 'Ativo', para: aluno.status, chave: aluno.chave });
+            existente.status = aluno.status;
+        }
+    });
+
+    // Ativo na turma que não veio no arquivo. Deve ser raro agora (o export lista quem saiu também),
+    // então é mais provável ser lista truncada: mesma trava de app.js:2317 - se o arquivo tem menos
+    // da metade dos ativos, não desativa ninguém, pra não esvaziar a turma por engano.
+    const ativos = daTurma.filter(e => !e.status || e.status === 'Ativo');
+    if (alunos.length * 2 >= ativos.length) {
+        ativos.forEach(e => {
+            const chave = normalizarNomeImportMassa(e.nome_completo);
+            if (!chavesArquivo.has(chave)) {
+                e.status = 'Transferido';
+                sumiram.push({ nome: e.nome_completo, chave: chave });
+            }
+        });
+    }
+
+    return { criados, alterados, sumiram };
+}
+
+// Gerador de id que não repete dentro do lote (Date.now() + random, como no resto do app, colide
+// quando se cria dezenas de alunos no mesmo milissegundo).
+function criarGeradorIdImportMassa(estudantes) {
+    let maior = Date.now();
+    estudantes.forEach(e => { const n = Number(e.id); if (n > maior) maior = n; });
+    return () => ++maior;
+}
+
+let importMassaItens = [];
+let importMassaGrupos = [];
 
 function abrirModalImportacaoMassa() {
-    // Cria o modal dinamicamente se não existir
     if (!document.getElementById('modalImportacaoMassa')) {
         const div = document.createElement('div');
         div.id = 'modalImportacaoMassa';
         div.className = 'modal';
         div.innerHTML = `
-            <div class="modal-content" style="max-width: 600px;">
-                <h3>📂 Importação em Massa de Estudantes</h3>
-                <p style="font-size:13px; color:#666;">Selecione os arquivos CSV de cada turma. O sistema tentará identificar a turma pelo nome do arquivo.</p>
-                
-                <div style="margin: 20px 0; padding: 15px; background: #f7fafc; border: 2px dashed #cbd5e0; text-align: center;">
-                    <input type="file" id="filesMassa" multiple accept=".csv" onchange="analisarArquivosMassa()">
-                    <p style="margin-top:10px; font-size:12px;">Formatos: .csv (separado por ponto e vírgula)</p>
+            <div class="modal-content" style="max-width: 780px; max-height: 88vh; overflow-y: auto;">
+                <div class="modal-header">
+                    <h2>📂 Atualização de Estudantes em Massa</h2>
+                    <button class="close-btn" onclick="closeModal('modalImportacaoMassa')">×</button>
+                </div>
+                <p style="font-size:13px; color:#4a5568; margin-top:0;">
+                    Selecione os arquivos exportados da SED. O nome do arquivo não importa: a turma é
+                    reconhecida pela própria lista de alunos.
+                </p>
+
+                <div style="margin: 16px 0; padding: 15px; background: #f7fafc; border: 2px dashed #cbd5e0; border-radius: 8px; text-align: center;">
+                    <input type="file" id="filesMassa" multiple accept=".csv,.htm,.html,.xlsx,.xls" onchange="analisarArquivosMassa()">
+                    <p style="margin:10px 0 0; font-size:12px; color:#718096;">Formatos aceitos: .csv, .htm e .xlsx</p>
                 </div>
 
-                <div id="previewMassa" style="max-height: 200px; overflow-y: auto; margin-bottom: 20px; border: 1px solid #e2e8f0; display:none;">
-                    <!-- Lista de arquivos e turmas detectadas -->
-                </div>
+                <div id="previewMassa" style="margin-bottom: 16px; display:none;"></div>
 
-                <div style="display:flex; justify-content: flex-end; gap: 10px;">
+                <div style="display:flex; justify-content: flex-end; gap: 10px; border-top:1px solid #e2e8f0; padding-top:15px;">
                     <button class="btn btn-secondary" onclick="closeModal('modalImportacaoMassa')">Cancelar</button>
                     <button class="btn btn-success" id="btnConfirmarMassa" onclick="processarImportacaoMassa()" disabled>Confirmar e Atualizar</button>
                 </div>
@@ -1989,134 +2231,272 @@ function abrirModalImportacaoMassa() {
         `;
         document.body.appendChild(div);
     }
-    
+
+    importMassaItens = [];
+    importMassaGrupos = [];
     document.getElementById('filesMassa').value = '';
     document.getElementById('previewMassa').style.display = 'none';
+    document.getElementById('previewMassa').innerHTML = '';
     document.getElementById('btnConfirmarMassa').disabled = true;
     showModal('modalImportacaoMassa');
 }
 
-let mapaArquivosTurmas = []; // Armazena { file, turmaId }
-
-function analisarArquivosMassa() {
+async function analisarArquivosMassa() {
     const files = document.getElementById('filesMassa').files;
     const preview = document.getElementById('previewMassa');
-    const btn = document.getElementById('btnConfirmarMassa');
-    const turmas = data.turmas || [];
+    if (!files || files.length === 0) return;
 
-    if (files.length === 0) return;
+    preview.style.display = 'block';
+    preview.innerHTML = '<p style="font-size:13px; color:#4a5568;">🔄 Lendo arquivos e procurando as turmas...</p>';
+    document.getElementById('btnConfirmarMassa').disabled = true;
 
-    mapaArquivosTurmas = [];
-    let html = '<table style="width:100%; font-size:12px;"><thead><tr><th>Arquivo</th><th>Turma Detectada</th></tr></thead><tbody>';
+    importMassaGrupos = agruparTurmasFisicasImportMassa();
+    importMassaItens = [];
 
-    // Função auxiliar para normalizar strings para comparação (remove acentos, espaços, lowercase)
-    const normalize = (str) => str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+    for (const file of Array.from(files)) {
+        const item = { nomeArquivo: file.name, alunos: [], grupoChave: '', score: 0, erro: null, aviso: null };
+        try {
+            const linhas = await lerMatrizArquivoImportMassa(file);
+            const colunas = detectarColunasImportMassa(linhas);
+            if (!colunas) throw new Error('Não achei a coluna "Nome do Aluno" neste arquivo.');
 
-    Array.from(files).forEach(file => {
-        const nomeArquivo = normalize(file.name.replace('.csv', ''));
-        
-        // Tenta encontrar a turma que mais se parece com o nome do arquivo
-        // Ex: Arquivo "6A.csv" deve bater com Turma "6º Ano A" ou "6A"
-        const turmaMatch = turmas.find(t => {
-            const nomeTurma = normalize(t.nome);
-            return nomeTurma.includes(nomeArquivo) || nomeArquivo.includes(nomeTurma);
-        });
+            item.alunos = extrairAlunosImportMassa(linhas, colunas);
+            if (item.alunos.length === 0) throw new Error('O arquivo tem o cabeçalho, mas nenhuma linha de aluno.');
 
-        if (turmaMatch) {
-            mapaArquivosTurmas.push({ file, turmaId: turmaMatch.id });
-            html += `<tr><td>${file.name}</td><td style="color:green;">✅ ${turmaMatch.nome}</td></tr>`;
-        } else {
-            mapaArquivosTurmas.push({ file, turmaId: null });
-            html += `<tr><td>${file.name}</td><td style="color:red;">❌ Não identificada</td></tr>`;
+            if (colunas.idxSituacao === -1) {
+                item.aviso = 'Sem coluna "Situação do Aluno" — todos entram como Ativo.';
+            } else {
+                const desconhecidos = [...new Set(item.alunos.filter(a => !a.statusReconhecido).map(a => a.situacaoBruta))];
+                if (desconhecidos.length) item.aviso = 'Situação não reconhecida (entra como Ativo): ' + desconhecidos.join(', ');
+            }
+
+            const casamento = casarTurmaImportMassa(item.alunos, importMassaGrupos);
+            item.score = casamento.score;
+            item.grupoChave = casamento.grupo ? casamento.grupo.chave : '';
+            item.motivo = casamento.motivo;
+            item.rival = casamento.rival;
+        } catch (e) {
+            item.erro = e.message;
         }
+        importMassaItens.push(item);
+    }
+
+    renderPreviaImportMassa();
+}
+
+function alterarTurmaImportMassa(indice, valor) {
+    if (!importMassaItens[indice]) return;
+    importMassaItens[indice].grupoChave = valor;
+    importMassaItens[indice].motivo = valor ? 'manual' : 'sem_correspondencia';
+    renderPreviaImportMassa();
+}
+
+// Roda a aplicação real sobre uma cópia dos estudantes, na ordem em que os arquivos serão
+// processados, e guarda a prévia de cada item. Como é a mesma função da confirmação, o que a tela
+// mostra não pode divergir do que será gravado (e efeitos entre arquivos aparecem na prévia).
+function recalcularPreviasImportMassa() {
+    const copia = JSON.parse(JSON.stringify(data.estudantes || []));
+    const novoId = criarGeradorIdImportMassa(copia);
+
+    importMassaItens.forEach(item => {
+        item.previa = null;
+        if (item.erro || !item.grupoChave) return;
+        const grupo = importMassaGrupos.find(g => g.chave === item.grupoChave);
+        if (!grupo) return;
+        item.previa = aplicarArquivoImportMassa(copia, grupo.turmaId, item.alunos, novoId);
+    });
+}
+
+function renderPreviaImportMassa() {
+    recalcularPreviasImportMassa();
+
+    const preview = document.getElementById('previewMassa');
+    const usados = new Map();
+    importMassaItens.forEach(item => {
+        if (!item.grupoChave) return;
+        usados.set(item.grupoChave, (usados.get(item.grupoChave) || 0) + 1);
     });
 
-    html += '</tbody></table>';
-    preview.innerHTML = html;
+    const linhas = importMassaItens.map((item, indice) => {
+        const opcoes = ['<option value="">— escolher turma —</option>'].concat(
+            importMassaGrupos.map(g => `<option value="${g.chave}" ${g.chave === item.grupoChave ? 'selected' : ''}>${g.rotulo}</option>`)
+        ).join('');
+
+        if (item.erro) {
+            return `
+                <tr style="background:#fff5f5;">
+                    <td style="padding:8px; border:1px solid #e2e8f0;">${item.nomeArquivo}</td>
+                    <td style="padding:8px; border:1px solid #e2e8f0;" colspan="3">
+                        <span style="color:#c53030;">❌ ${item.erro}</span>
+                    </td>
+                </tr>`;
+        }
+
+        let selo;
+        if (item.motivo === 'manual') {
+            selo = '<span style="color:#2b6cb0; font-size:11px;">escolhida por você</span>';
+        } else if (item.grupoChave) {
+            selo = `<span style="color:#276749; font-size:11px;">✅ ${Math.round(item.score * 100)}% dos nomes batem</span>`;
+        } else if (item.motivo === 'ambiguo') {
+            selo = `<span style="color:#b7791f; font-size:11px;">⚠️ empate com "${item.rival}" — escolha</span>`;
+        } else {
+            selo = '<span style="color:#c53030; font-size:11px;">turma não reconhecida — escolha</span>';
+        }
+
+        const duplicada = item.grupoChave && usados.get(item.grupoChave) > 1
+            ? '<div style="color:#c53030; font-size:11px;">⚠️ outro arquivo aponta pra esta mesma turma</div>' : '';
+
+        const p = item.previa;
+        const resumo = p
+            ? `<span style="color:#276749;">+${p.criados.length} novos</span> · ` +
+              `<span style="color:#b7791f;">${p.alterados.length} mudam de status</span> · ` +
+              `<span style="color:#c53030;">${p.sumiram.length} sumiram da lista</span>`
+            : '<span style="color:#a0aec0;">—</span>';
+
+        return `
+            <tr>
+                <td style="padding:8px; border:1px solid #e2e8f0; font-size:12px;">
+                    ${item.nomeArquivo}
+                    ${item.aviso ? `<div style="color:#b7791f; font-size:11px;">⚠️ ${item.aviso}</div>` : ''}
+                </td>
+                <td style="padding:8px; border:1px solid #e2e8f0;">
+                    <select style="width:100%; padding:5px; font-size:12px;" onchange="alterarTurmaImportMassa(${indice}, this.value)">${opcoes}</select>
+                    ${selo}
+                    ${duplicada}
+                </td>
+                <td style="padding:8px; border:1px solid #e2e8f0; text-align:center; font-size:12px;">${item.alunos.length}</td>
+                <td style="padding:8px; border:1px solid #e2e8f0; font-size:11px;">${resumo}</td>
+            </tr>`;
+    }).join('');
+
+    preview.innerHTML = `
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+            <thead>
+                <tr style="background:#edf2f7;">
+                    <th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">Arquivo</th>
+                    <th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">Turma</th>
+                    <th style="padding:8px; border:1px solid #e2e8f0;">Alunos</th>
+                    <th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">O que vai mudar</th>
+                </tr>
+            </thead>
+            <tbody>${linhas}</tbody>
+        </table>
+    `;
     preview.style.display = 'block';
-    
-    // Habilita botão se pelo menos uma turma foi identificada
-    btn.disabled = mapaArquivosTurmas.every(m => m.turmaId === null);
+
+    document.getElementById('btnConfirmarMassa').disabled = !importMassaItens.some(i => !i.erro && i.grupoChave);
+}
+
+// Cruza quem saiu de uma turma com quem entrou em outra DENTRO DO MESMO LOTE, pra o relatório poder
+// dizer pra onde a pessoa foi em vez de só "saiu".
+function rastrearDestinosImportMassa() {
+    const destinos = new Map();
+    importMassaItens.forEach(item => {
+        if (item.erro || !item.grupoChave) return;
+        const grupo = importMassaGrupos.find(g => g.chave === item.grupoChave);
+        if (!grupo) return;
+        item.alunos.forEach(a => {
+            if (a.status === 'Ativo') destinos.set(a.chave, grupo.rotulo);
+        });
+    });
+    return destinos;
 }
 
 async function processarImportacaoMassa() {
-    if (!confirm('Isso atualizará a lista de estudantes. Alunos existentes em outras turmas serão movidos (remanejados) para as novas turmas detectadas. Continuar?')) return;
+    const aplicaveis = importMassaItens.filter(i => !i.erro && i.grupoChave);
+    if (aplicaveis.length === 0) return alert('Nenhum arquivo pronto para importar.');
 
-    let processados = 0;
-    let novos = 0;
-    let remanejados = 0;
+    const totalSaidas = aplicaveis.reduce((soma, i) => soma + (i.previa ? i.previa.alterados.filter(a => a.para !== 'Ativo').length + i.previa.sumiram.length : 0), 0);
+    if (!confirm(`Atualizar ${aplicaveis.length} turma(s)?\n\n${totalSaidas} aluno(s) deixarão de estar ativos.`)) return;
 
     if (!data.estudantes) data.estudantes = [];
+    const novoId = criarGeradorIdImportMassa(data.estudantes);
+    const destinos = rastrearDestinosImportMassa();
+    const relatorio = [];
 
-    for (const item of mapaArquivosTurmas) {
-        if (!item.turmaId) continue; // Pula arquivos sem turma
+    aplicaveis.forEach(item => {
+        const grupo = importMassaGrupos.find(g => g.chave === item.grupoChave);
+        if (!grupo) return;
+        const resultado = aplicarArquivoImportMassa(data.estudantes, grupo.turmaId, item.alunos, novoId);
+        relatorio.push({ turma: grupo.rotulo, arquivo: item.nomeArquivo, resultado: resultado });
+    });
 
-        const text = await item.file.text(); // Leitura assíncrona do arquivo
-        const lines = text.split('\n');
-        
-        // Detecta colunas
-        let idxNome = -1;
-        let idxStatus = -1;
-        
-        // Procura cabeçalho nas primeiras 10 linhas
-        for (let i = 0; i < Math.min(lines.length, 10); i++) {
-            const cols = lines[i].split(';').map(c => c.trim().toLowerCase()); // CSV padrão excel/pt-br usa ;
-            if (cols.includes('nome do aluno')) {
-                idxNome = cols.indexOf('nome do aluno');
-                // Tenta achar status ou situação
-                idxStatus = cols.findIndex(c => c.includes('situação') || c.includes('situacao') || c.includes('status'));
-                break;
-            }
-        }
+    await persistirDados();
+    mostrarRelatorioImportMassa(relatorio, destinos);
 
-        if (idxNome === -1) continue; // Arquivo inválido
-
-        // Processa linhas
-        for (const line of lines) {
-            const parts = line.split(';');
-            if (parts.length <= idxNome) continue;
-
-            const nome = parts[idxNome].trim().toUpperCase(); // Normaliza nome para Upper
-            if (!nome || nome.includes('NOME DO ALUNO')) continue; // Pula cabeçalho ou vazio
-
-            const status = (idxStatus !== -1 && parts.length > idxStatus) ? parts[idxStatus].trim() : 'Ativo';
-
-            // LÓGICA DE UPSERT / REMANEJAMENTO
-            const estudanteExistente = data.estudantes.find(e => e.nome_completo.trim().toUpperCase() === nome);
-
-            if (estudanteExistente) {
-                // Evita duplicidade/atualização se não houve mudança
-                if (estudanteExistente.id_turma == item.turmaId && estudanteExistente.status === status) {
-                    continue;
-                }
-
-                // Se já existe, atualiza a turma (Remanejamento) e status
-                if (estudanteExistente.id_turma != item.turmaId) remanejados++;
-                estudanteExistente.id_turma = item.turmaId;
-                estudanteExistente.status = status;
-            } else {
-                // Novo estudante
-                data.estudantes.push({
-                    id: Date.now() + Math.floor(Math.random() * 1000), // ID único inteiro
-                    id_turma: item.turmaId,
-                    nome_completo: nome, // Salva como veio, mas a busca é case insensitive
-                    status: status
-                });
-                novos++;
-            }
-            processados++;
-        }
-    }
-
-    persistirDados();
-    closeModal('modalImportacaoMassa');
-    alert(`Processamento Concluído!\n\nProcessados: ${processados}\nNovos Alunos: ${novos}\nRemanejados: ${remanejados}`);
-    
-    // Atualiza a tela se estiver em Turmas
-    if (document.getElementById('turmas').classList.contains('active')) {
+    if (typeof renderTurmas === 'function' && document.getElementById('turmas') && document.getElementById('turmas').classList.contains('active')) {
         renderTurmas();
     }
 }
+
+// Relatório no lugar do alert() que existia: as saídas são a parte destrutiva, então saem nominais.
+function mostrarRelatorioImportMassa(relatorio, destinos) {
+    const totais = relatorio.reduce((acc, r) => {
+        acc.criados += r.resultado.criados.length;
+        acc.alterados += r.resultado.alterados.length;
+        acc.sumiram += r.resultado.sumiram.length;
+        return acc;
+    }, { criados: 0, alterados: 0, sumiram: 0 });
+
+    const paraOnde = (chave) => {
+        const destino = destinos.get(chave);
+        return destino ? ` → <strong>${destino}</strong>` : '';
+    };
+
+    const blocos = relatorio.map(r => {
+        const saidas = r.resultado.alterados.filter(a => a.para !== 'Ativo');
+        const voltas = r.resultado.alterados.filter(a => a.para === 'Ativo');
+        const linha = (texto) => `<li style="margin-bottom:2px;">${texto}</li>`;
+
+        const partes = [];
+        if (r.resultado.criados.length) {
+            partes.push(`<div style="color:#276749; margin-top:6px;">✔️ ${r.resultado.criados.length} novo(s)</div>
+                <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#4a5568;">
+                    ${r.resultado.criados.map(c => linha(`${c.nome}${c.status !== 'Ativo' ? ` <em>(${c.status})</em>` : ''}`)).join('')}
+                </ul>`);
+        }
+        if (voltas.length) {
+            partes.push(`<div style="color:#2b6cb0; margin-top:6px;">🔄 ${voltas.length} reativado(s)</div>
+                <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#4a5568;">
+                    ${voltas.map(a => linha(`${a.nome} <em>(${a.de} → Ativo)</em>`)).join('')}
+                </ul>`);
+        }
+        if (saidas.length) {
+            partes.push(`<div style="color:#c53030; margin-top:6px;">➡️ ${saidas.length} saíram desta turma</div>
+                <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#4a5568;">
+                    ${saidas.map(a => linha(`${a.nome} <em>(${a.para})</em>${paraOnde(a.chave)}`)).join('')}
+                </ul>`);
+        }
+        if (r.resultado.sumiram.length) {
+            partes.push(`<div style="color:#c53030; margin-top:6px;">❌ ${r.resultado.sumiram.length} sumiram da lista (marcados Transferido)</div>
+                <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#4a5568;">
+                    ${r.resultado.sumiram.map(s => linha(`${s.nome}${paraOnde(s.chave)}`)).join('')}
+                </ul>`);
+        }
+        if (partes.length === 0) partes.push('<div style="color:#718096; margin-top:6px; font-size:12px;">Nada mudou.</div>');
+
+        return `<div style="border:1px solid #e2e8f0; border-radius:6px; padding:10px; margin-bottom:10px;">
+            <strong style="color:#2c5282;">${r.turma}</strong>
+            <span style="font-size:11px; color:#a0aec0;"> — ${r.arquivo}</span>
+            ${partes.join('')}
+        </div>`;
+    }).join('');
+
+    const preview = document.getElementById('previewMassa');
+    preview.innerHTML = `
+        <div style="padding:10px; background:#f0fff4; border:1px solid #c6f6d5; border-radius:6px; margin-bottom:12px;">
+            <strong style="color:#276749;">Importação concluída</strong>
+            <div style="font-size:12px; color:#2f855a; margin-top:4px;">
+                ${relatorio.length} turma(s) · +${totais.criados} novos · ${totais.alterados} mudaram de status · ${totais.sumiram} sumiram da lista
+            </div>
+        </div>
+        ${blocos}
+    `;
+    document.getElementById('btnConfirmarMassa').disabled = true;
+    document.getElementById('filesMassa').value = '';
+    importMassaItens = [];
+}
+
 
 // --- TUTORIAS (GESTOR) ---
 
