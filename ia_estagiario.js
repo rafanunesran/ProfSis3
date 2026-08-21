@@ -420,7 +420,14 @@ async function abrirModalGerarDocumentoIA() {
                 }
             }
 
-            alunosPeiOptionsHtml += tutoradosEscola.map(t => `<option value="${t.id}">${t.nome_estudante}</option>`).join('');
+            // Só estudantes que já têm o Anexo III - PAEE postado pelo professor AEE (t.anexoPaee,
+            // gravado por salvarAnexoPaeeSchoolWide). Nem todo aluno do Painel AEE precisa de um Anexo
+            // IV - PEI: ele só faz sentido quando existe o Anexo III correspondente lançado pelo AEE.
+            tutoradosEscola = tutoradosEscola.filter(t => t && t.anexoPaee);
+
+            alunosPeiOptionsHtml += tutoradosEscola.length
+                ? tutoradosEscola.map(t => `<option value="${t.id}">${t.nome_estudante}</option>`).join('')
+                : '<option value="" disabled>Nenhum aluno das suas turmas tem Anexo III - PAEE postado</option>';
             ultimaListaTutoradosAeeParaAnexoIV = tutoradosEscola;
         } catch (e) { console.warn('Erro ao buscar estudantes do Painel AEE:', e); }
 
@@ -1054,10 +1061,14 @@ async function chamarIAEstruturada(promptText, btn) {
     let respostaTexto = '';
 
     let tentativas = 3; // Tenta até 3 vezes
-    const modelosFallback = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+    // Modelos do Gemini em ordem de preferência (core.js: listarModelosGemini) - configuráveis pelo
+    // Super Admin. `modeloForcado` recebe o substituto que a própria API indicar quando um modelo é
+    // aposentado, pra tentativa seguinte não insistir num modelo que não existe mais.
+    const modelosFallback = listarModelosGemini(configData);
+    let modeloForcado = '';
 
     for (let i = 0; i < tentativas && !success; i++) {
-        const modeloAtual = modelosFallback[i % modelosFallback.length];
+        const modeloAtual = modeloForcado || modelosFallback[i % modelosFallback.length];
 
         for (const currentKey of apiKeys) {
             try {
@@ -1218,6 +1229,16 @@ async function chamarIAEstruturada(promptText, btn) {
                     lastError = err.message;
                 }
                 console.warn(`⚠️ Falha na API (Tentativa ${i+1}):`, lastError);
+
+                // Modelo aposentado pelo Google: a mensagem de erro traz o substituto. Adota o novo
+                // modelo e passa pra próxima tentativa - insistir com as outras chaves no mesmo
+                // modelo daria exatamente o mesmo erro.
+                const substituto = modeloGeminiSubstituto(lastError);
+                if (substituto && substituto !== modeloAtual) {
+                    console.warn(`ℹ️ Modelo ${modeloAtual} foi aposentado - tentando ${substituto}. Peça ao Administrador para atualizar o modelo no painel Super Admin.`);
+                    modeloForcado = substituto;
+                    break; // sai do loop de chaves
+                }
             }
         }
         if (!success && i < tentativas - 1) {

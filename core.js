@@ -206,6 +206,32 @@ async function sincronizarFaltasCompartilhadas(dataStr, mapEstadoFaltas) {
 
 // --- FIM CONFIGURAÇÃO ---
 
+// --- MODELOS DA IA (Google Gemini) ---
+// O Google aposenta modelos de tempos em tempos - o gemini-2.0-flash saiu do ar em 01/06/2026 - e a
+// partir daí a API responde "models/<velho> is no longer available. Please update your code to use
+// models/<novo>", o que chegava no professor como "A Inteligência Artificial falhou ou rejeitou o
+// pedido". Pra isso não voltar a acontecer:
+//   1. a lista de modelos fica num lugar só (usada pelo Estagiário IA e pela extração de notas);
+//   2. o Administrador pode trocar de modelo sem mexer no código, pelo painel Super Admin
+//      (config_ia.geminiModel - um nome, ou vários separados por vírgula, em ordem de preferência);
+//   3. quando a API avisa que o modelo foi aposentado, a própria mensagem diz qual usar no lugar, e a
+//      tentativa seguinte já sai com o modelo novo (ver modeloGeminiSubstituto).
+const MODELOS_GEMINI_PADRAO = ['gemini-3.6-flash', 'gemini-2.5-flash'];
+
+function listarModelosGemini(configIA) {
+    const personalizados = String((configIA && configIA.geminiModel) || '')
+        .split(',').map(m => m.trim()).filter(m => m);
+    return personalizados.length ? personalizados : MODELOS_GEMINI_PADRAO.slice();
+}
+
+// Extrai o modelo sugerido pela própria API na mensagem de modelo aposentado/inexistente
+// ("... is no longer available. Please update your code to use models/gemini-3.6-flash").
+// Devolve null quando o erro é de outro tipo (cota, chave inválida, rede...).
+function modeloGeminiSubstituto(mensagemErro) {
+    const m = /use\s+models\/([A-Za-z0-9._-]+)/i.exec(String(mensagemErro || ''));
+    return m ? m[1] : null;
+}
+
 // Repassa a sessão do Firebase Auth (refresh token) para a extensão SisProf, se instalada.
 // Permite que a extensão leia/escreva no Firestore direto (ex: extrair alunos da SED), sem depender desta aba aberta.
 function repassarSessaoFirebaseParaExtensao(user) {
