@@ -585,6 +585,7 @@ async function abrirModalGerarDocumentoIA() {
                         <select id="anexoIVAluno" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
                             ${alunosPeiOptionsHtml}
                         </select>
+                        <div id="anexoIVSerieInfo" style="display:none; font-size:12px; color:#4a5568; margin-top:6px;"></div>
                     </div>
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom: 15px;">
                         <div>
@@ -622,6 +623,7 @@ async function abrirModalGerarDocumentoIA() {
                         <button type="button" class="btn btn-sm btn-info" id="btnCriarComRefAnexoIV" onclick="gerarAnexoIVEstagiario(true)" style="font-weight:bold;">📎 Criar com Ref</button>
                         <span style="font-size:11px; color:#718096; margin-left:8px;">gera usando a mesma ação e estrutura do Anexo IV já existente</span>
                     </div>
+                    <div id="anexoIVStatusPronto" style="display:none; margin-bottom:5px; font-size:12px;"></div>
                 </div>
 
                 <div style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
@@ -711,23 +713,48 @@ async function abrirModalGerarDocumentoIA() {
 // Mostra/esconde o botão "Criar com Ref" do Anexo IV: só aparece quando já existe um Anexo IV de OUTRO
 // estudante da MESMA série e disciplina (a mesma base que gerarAnexoIVEstagiario(true) usaria).
 function atualizarBotaoCriarComRefAnexoIV() {
-    const box = document.getElementById('anexoIVRefBox');
-    if (!box) return;
     const selAluno = document.getElementById('anexoIVAluno');
     const alunoId = selAluno ? selAluno.value : '';
     const disciplina = (document.getElementById('anexoIVDisciplina') || {}).value || '';
     const bimEl = document.querySelector('input[name="anexoIVBimestre"]:checked');
     const bimestre = bimEl ? bimEl.value : '';
-    if (!alunoId || !disciplina) { box.style.display = 'none'; return; }
     const tutorado = (ultimaListaTutoradosAeeParaAnexoIV || []).find(t => t.id == alunoId);
     const serie = (tutorado && (tutorado.serie || tutorado.turma)) || '';
-    const base = encontrarAnexoIVBaseParaReuso(alunoId, serie, disciplina, bimestre);
-    if (!base) { box.style.display = 'none'; return; }
-    const txt = document.getElementById('anexoIVRefTexto');
-    if (txt) txt.innerHTML = '📎 Já existe um Anexo IV - PEI de <strong>' + escapeHtmlEstagiario(disciplina) + '</strong> para esta série'
-        + (base.mesmoBimestre ? '' : ' (' + escapeHtmlEstagiario(String(base.bimestreBase)) + 'º bim.)')
-        + '. Crie este mantendo a mesma ação e estrutura, adaptando só o que o laudo deste estudante exigir.';
-    box.style.display = 'block';
+    const normDisc = (s) => (s == null ? '' : s).toString().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+    // Série do estudante selecionado, logo abaixo do nome.
+    const serieInfo = document.getElementById('anexoIVSerieInfo');
+    if (serieInfo) {
+        if (alunoId && serie) {
+            serieInfo.innerHTML = '🎓 Série/Turma: <strong>' + escapeHtmlEstagiario(serie) + '</strong>';
+            serieInfo.style.display = 'block';
+        } else { serieInfo.style.display = 'none'; serieInfo.innerHTML = ''; }
+    }
+
+    // "Já está pronto": este estudante já tem um Anexo IV desta disciplina + bimestre.
+    const prontoInfo = document.getElementById('anexoIVStatusPronto');
+    if (prontoInfo) {
+        const jaTem = (tutorado && Array.isArray(tutorado.anexosIV))
+            ? tutorado.anexosIV.find(a => a && a.dadosBasicos && normDisc(a.dadosBasicos.disciplina) === normDisc(disciplina) && String(a.dadosBasicos.bimestre) === String(bimestre))
+            : null;
+        if (alunoId && disciplina && bimestre && jaTem) {
+            prontoInfo.innerHTML = '<span style="background:#f0fff4; border:1px solid #c6f6d5; color:#276749; border-radius:6px; padding:6px 10px; display:inline-block;">✅ Este estudante já tem um Anexo IV - PEI de <strong>' + escapeHtmlEstagiario(disciplina) + '</strong> do <strong>' + escapeHtmlEstagiario(String(bimestre)) + 'º bimestre</strong> pronto. Gerar de novo vai substituir o existente.</span>';
+            prontoInfo.style.display = 'block';
+        } else { prontoInfo.style.display = 'none'; prontoInfo.innerHTML = ''; }
+    }
+
+    // Botão "Criar com Ref": base de OUTRO estudante da mesma série/disciplina.
+    const box = document.getElementById('anexoIVRefBox');
+    if (box) {
+        const base = (alunoId && disciplina) ? encontrarAnexoIVBaseParaReuso(alunoId, serie, disciplina, bimestre) : null;
+        if (base) {
+            const txt = document.getElementById('anexoIVRefTexto');
+            if (txt) txt.innerHTML = '📎 Já existe um Anexo IV - PEI de <strong>' + escapeHtmlEstagiario(disciplina) + '</strong> para esta série'
+                + (base.mesmoBimestre ? '' : ' (' + escapeHtmlEstagiario(String(base.bimestreBase)) + 'º bim.)')
+                + '. Crie este mantendo a mesma ação e estrutura, adaptando só o que o laudo deste estudante exigir.';
+            box.style.display = 'block';
+        } else { box.style.display = 'none'; }
+    }
 }
 
 // Alterna os campos do modal do Estagiário conforme o Tipo de Documento escolhido: Plano de Aula usa
