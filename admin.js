@@ -854,6 +854,15 @@ async function renderChavesIAScreen() {
             </div>
 
             <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e2e8f0;">
+                <h3 style="margin:0 0 6px; font-size:15px;">✨ Modelo do Gemini (opcional)</h3>
+                <p style="font-size:12px; color:#666; margin-bottom:8px;">O Google aposenta modelos de tempos em tempos — quando isso acontece, o professor vê "A Inteligência Artificial falhou ou rejeitou o pedido" com a mensagem <em>"is no longer available"</em>. Basta colar aqui o modelo indicado na mensagem. Deixe em branco para usar o padrão do sistema (<code>${MODELOS_GEMINI_PADRAO.join(', ')}</code>). Pode informar mais de um separado por vírgula, em ordem de preferência.</p>
+                <div style="display:flex; gap:10px; align-items:flex-end;">
+                    <input type="text" id="geminiModelInput" value="${(configIA.geminiModel || '').replace(/"/g, '&quot;')}" placeholder="ex: gemini-3.6-flash, gemini-2.5-flash" style="flex:1; min-width:220px; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                    <button class="btn btn-primary" onclick="salvarModeloGemini()">💾 Salvar modelo</button>
+                </div>
+            </div>
+
+            <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e2e8f0;">
                 <h3 style="margin:0 0 6px; font-size:15px;">🔀 Modelo do OpenRouter (opcional)</h3>
                 <p style="font-size:12px; color:#666; margin-bottom:8px;">Só se você usa uma chave OpenRouter (<code>sk-or-…</code>). Deixe em branco para o modelo grátis padrão. Ex.: <code>meta-llama/llama-3.3-70b-instruct:free</code> ou <code>deepseek/deepseek-chat-v3-0324:free</code>.</p>
                 <div style="display:flex; gap:10px; align-items:flex-end;">
@@ -863,6 +872,15 @@ async function renderChavesIAScreen() {
             </div>
         </div>
     `;
+}
+
+// Modelo do Gemini usado pelo Estagiário IA e pela extração de notas. Vazio = padrão do sistema
+// (core.js: MODELOS_GEMINI_PADRAO / listarModelosGemini).
+async function salvarModeloGemini() {
+    const configData = await getData('system', 'config_ia') || {};
+    configData.geminiModel = document.getElementById('geminiModelInput').value.trim();
+    await saveData('system', 'config_ia', configData);
+    alert(configData.geminiModel ? 'Modelo do Gemini salvo!' : `Modelo do Gemini limpo — usando o padrão (${MODELOS_GEMINI_PADRAO.join(', ')}).`);
 }
 
 async function salvarModeloOpenRouter() {
