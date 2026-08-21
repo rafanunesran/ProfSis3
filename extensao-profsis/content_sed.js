@@ -171,6 +171,9 @@ function assinaturaDados(d) {
             (d.registrosAdministrativos || []).filter(r => r && r.tipo === 'Faltoso' && !r.arquivado).map(r => [r.estudanteId, r.nomeEstudante, r.turmaId]),
             (d.baixaFrequencia || []).map(b => [b.id, b.nome]),
             (d.turmas || []).map(t => [t.id, t.nome, t.disciplina]),
+            // Só as presenças da data selecionada (leve): muda quando o professor marca presente/falta
+            // no dia, o que precisa refletir na lista de alerta (presente sai da lista).
+            (d.presencas || []).filter(p => p && p.data === currentSelectedDate).map(p => [p.id_estudante, p.status]),
             d.lancamentosConcluidos || {}
         ]);
     } catch (e) { return String((d.estudantes || []).length) + '/' + String((d.registrosAdministrativos || []).length); }
@@ -600,21 +603,30 @@ function turmaPorId(idTurma) {
     return (profsisAppData.turmas || []).find(t => String(t.id) === String(idTurma)) || null;
 }
 
-// Alunos em alerta de uma turma, na classificação da GESTÃO (independente da presença do dia -
-// esta é uma lista de consulta, não decide falta). Cada item é { nome, tipo }:
+// Alunos em alerta de uma turma, na classificação da GESTÃO. Cada item é { nome, tipo }:
 //  - tipo 'faltoso'   -> classificado como "Faltoso" pela gestão (registrosAdministrativos);
 //  - tipo 'amarelado' -> presença anual < 50% no ano (data.baixaFrequencia), quando NÃO é faltoso.
 // Faltoso tem prioridade sobre amarelado (o aluno aparece uma vez só, no tipo mais grave).
+// Filtro do dia: quem já tem PRESENÇA registrada (status 'presente') no ProfSis na data selecionada
+// NÃO entra na lista - o professor já confirmou que o aluno veio naquele dia. Quem tem falta
+// registrada, ou nenhum registro ainda, continua aparecendo.
 function alunosDestacadosDaTurma(idTurma) {
     const estudantes = profsisAppData.estudantes || [];
     const registrosAdmin = profsisAppData.registrosAdministrativos || [];
     const baixaFreq = profsisAppData.baixaFrequencia || [];
+    const presencas = profsisAppData.presencas || [];
 
-    // Faltosos classificados pela gestão (arquivados são ignorados). Nada de filtro por presença do
-    // dia: mostra exatamente quem a gestão marcou como Faltoso.
+    // Faltosos classificados pela gestão (arquivados são ignorados).
     const faltososReg = registrosAdmin.filter(r => r.tipo === 'Faltoso' && !r.arquivado);
     const baixaFreqIds = new Set(baixaFreq.map(b => String(b.id)));
     const baixaFreqNomes = new Set(baixaFreq.map(b => normalizeNomeFaltoso(b.nome)));
+
+    // Alunos com presença registrada (presente) na data selecionada -> saem da lista do dia.
+    const presentesNoDia = new Set(
+        presencas
+            .filter(p => p && p.data === currentSelectedDate && p.status === 'presente')
+            .map(p => String(p.id_estudante))
+    );
 
     const casaFaltoso = (est) => faltososReg.some(reg =>
         String(reg.estudanteId) === String(est.id) ||
@@ -627,6 +639,7 @@ function alunosDestacadosDaTurma(idTurma) {
     estudantes.forEach(est => {
         if (String(est.id_turma) !== String(idTurma)) return;
         if (est.status && est.status !== 'Ativo') return;
+        if (presentesNoDia.has(String(est.id))) return; // presença registrada hoje -> fora da lista
         const nomeNorm = normalizeNomeFaltoso(est.nome_completo);
         if (casaFaltoso(est)) {
             resultado.push({ nome: est.nome_completo, tipo: 'faltoso' });
@@ -642,6 +655,7 @@ function alunosDestacadosDaTurma(idTurma) {
     //    pra não sumir com um faltoso classificado pela gestão.
     faltososReg.forEach(reg => {
         if (!reg.nomeEstudante) return;
+        if (reg.estudanteId != null && presentesNoDia.has(String(reg.estudanteId))) return; // presente hoje
         const nomeNorm = normalizeNomeFaltoso(reg.nomeEstudante);
         if (nomesJaIncluidos.has(nomeNorm)) return;
         const existeLocal = estudantes.some(e => normalizeNomeFaltoso(e.nome_completo) === nomeNorm || String(e.id) === String(reg.estudanteId));
