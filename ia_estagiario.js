@@ -1469,6 +1469,65 @@ Retorne APENAS um objeto JSON válido (sem marcações markdown e escape correta
 // Professor Regente leciona pra ele, Professor Especializado escolhido e a breve descrição da
 // atividade), pede pra IA rascunhar os 3 campos descritivos do PEI e abre a tela de revisão - mesmo
 // fluxo do Anexo III - PAEE (formulário -> IA -> revisão -> exportar).
+// Procura um Anexo IV - PEI JÁ criado para OUTRO estudante da MESMA série e disciplina, pra
+// reaproveitar a metodologia (didática comum, foco no DUA) em vez de o professor redigir do zero pra
+// cada aluno. Busca na lista do Painel AEE já carregada (ultimaListaTutoradosAeeParaAnexoIV, que traz
+// t.anexosIV do documento AEE da escola). Prefere o mesmo bimestre e o mais recente. Retorna um
+// objeto { nome, camposBase, anexoPaeeTexto, mesmoBimestre, bimestreBase } ou null se não houver base.
+function encontrarAnexoIVBaseParaReuso(excluirAlunoId, serieRef, disciplina, bimestre) {
+    const normDisc = (s) => (s == null ? '' : s).toString().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const codSerie = (v) => (typeof extrairCodigoSerieTurmaExtensao === 'function')
+        ? extrairCodigoSerieTurmaExtensao(((v || '') + '').split('-')[0]) : null;
+    const codRef = codSerie(serieRef);
+    const alvoDisc = normDisc(disciplina);
+
+    const candidatos = [];
+    (ultimaListaTutoradosAeeParaAnexoIV || []).forEach(t => {
+        if (!t || String(t.id) === String(excluirAlunoId)) return;
+        if (!Array.isArray(t.anexosIV) || t.anexosIV.length === 0) return;
+        // Mesma série (por código série+letra, ex.: "6E"), quando dá pra determinar dos dois lados.
+        if (codRef) {
+            const codT = codSerie(t.serie || t.turma);
+            if (codT && codT !== codRef) return;
+        }
+        t.anexosIV.forEach(a => {
+            if (!a || !a.dadosBasicos || !a.dados) return;
+            if (normDisc(a.dadosBasicos.disciplina) !== alvoDisc) return;
+            candidatos.push({
+                tutorado: t,
+                anexo: a,
+                mesmoBimestre: String(a.dadosBasicos.bimestre) === String(bimestre) ? 1 : 0,
+                atualizadoEm: a.atualizadoEm || ''
+            });
+        });
+    });
+    if (candidatos.length === 0) return null;
+
+    // Prefere o do mesmo bimestre; depois o mais recente.
+    candidatos.sort((x, y) => (y.mesmoBimestre - x.mesmoBimestre) || String(y.atualizadoEm).localeCompare(String(x.atualizadoEm)));
+    const escolhido = candidatos[0];
+
+    const camposBase = ANEXO_PEI_CAMPOS_IA
+        .filter(c => (escolhido.anexo.dados[c.key] || '').toString().trim())
+        .map(c => `${c.label}:\n${escolhido.anexo.dados[c.key].toString().trim()}`)
+        .join('\n\n');
+
+    // Laudo/Anexo III do estudante de base, só pra IA julgar se a estratégia foi muito específica de um
+    // perfil diferente (compatibilidade) - não pra copiar dados pessoais dele.
+    const paeeBase = escolhido.tutorado.anexoPaee;
+    const anexoPaeeTexto = (paeeBase && paeeBase.dados)
+        ? ANEXO_PAEE_CAMPOS_IA.filter(c => (paeeBase.dados[c.key] || '').trim()).map(c => `${c.label}: ${paeeBase.dados[c.key].trim()}`).join('\n')
+        : '';
+
+    return {
+        nome: escolhido.tutorado.nome_estudante || 'outro estudante',
+        camposBase,
+        anexoPaeeTexto,
+        mesmoBimestre: !!escolhido.mesmoBimestre,
+        bimestreBase: escolhido.anexo.dadosBasicos.bimestre
+    };
+}
+
 async function gerarAnexoIVEstagiario() {
     const selAluno = document.getElementById('anexoIVAluno');
     const alunoId = selAluno ? selAluno.value : '';
@@ -1537,11 +1596,19 @@ async function gerarAnexoIVEstagiario() {
         const serieAluno = (tutoradoSelecionado && (tutoradoSelecionado.serie || tutoradoSelecionado.turma)) || '';
         const contextoOficial = await montarContextoCurriculoOficial(disciplina, serieAluno, descricaoAtividade);
 
+        // Reaproveitamento: se outro estudante da mesma série/disciplina já tem Anexo IV, usa como base
+        // pra manter a mesma didática (foco no DUA) e só mudar o que o laudo deste estudante exigir.
+        const baseReuso = encontrarAnexoIVBaseParaReuso(alunoId, serieAluno, disciplina, bimestreNum);
+        const blocoBaseDUA = baseReuso
+            ? `\nJÁ EXISTE um Anexo IV - PEI elaborado para OUTRO estudante da MESMA série e disciplina${baseReuso.mesmoBimestre ? '' : ` (${baseReuso.bimestreBase}º bimestre)`}. Use-o como BASE e MANTENHA a mesma linha didática e metodológica, com foco no Desenho Universal para a Aprendizagem (DUA): reaproveite as MESMAS estratégias, intervenções e instrumentos sempre que forem compatíveis com o laudo/Anexo III do estudante atual. Só ALTERE um ponto quando o perfil/laudo do estudante ATUAL for incompatível com a estratégia da base - nesse caso adapte o mínimo necessário e mantenha o resto igual. Não reescreva do zero o que já serve. Mantenha o mesmo nível de detalhe e a citação dos códigos de habilidade.\n\nAnexo IV - PEI de base (campos a reaproveitar):\n"""${baseReuso.camposBase}"""${baseReuso.anexoPaeeTexto ? `\n\nAnexo III (laudo/PAEE) do estudante de base - use APENAS para julgar se as estratégias da base são compatíveis com o estudante atual, NÃO copie dados pessoais dele:\n"""${baseReuso.anexoPaeeTexto}"""` : ''}`
+            : `\nElabore as estratégias, intervenções e instrumentos com foco no Desenho Universal para a Aprendizagem (DUA), priorizando recursos e abordagens que possam beneficiar vários estudantes, não apenas um.`;
+
         let promptText = `Você é um professor de ${disciplina} do Estado de São Paulo, redigindo o Anexo IV - Plano Educacional Individualizado (PEI) de um estudante atendido pelo AEE (Atendimento Educacional Especializado).
 Estudante: ${nomeEstudante}. Componente Curricular: ${disciplina}. Bimestre: ${bimestreAtual}.
 Breve descrição da atividade/conteúdo planejado pelo professor:
 """${descricaoAtividade || 'Nenhuma descrição informada - use cautela e sugira conteúdos e estratégias gerais e acessíveis, deixando claro que o professor precisa detalhar melhor a atividade.'}"""
 ${fichaAeeBloco}
+${blocoBaseDUA}
 
 Com base nesses dados, redija os campos abaixo do Anexo IV - PEI, em português, de forma técnica, objetiva e alinhada às diretrizes da Educação Especial da SEDUC-SP, adaptando conteúdos e estratégias às necessidades de acessibilidade do estudante. Não invente diagnósticos ou informações que não constam acima.
 No campo de conteúdos e habilidades do currículo, cite sempre o(s) código(s) oficial(is) de habilidade do Currículo Paulista específicos da disciplina de ${disciplina} (ex: EF69AR11 pra Arte, EF67MA... pra Matemática etc.), seguido(s) da descrição da habilidade - nunca deixe esse campo sem pelo menos um código.
