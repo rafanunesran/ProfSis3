@@ -420,7 +420,14 @@ async function abrirModalGerarDocumentoIA() {
                 }
             }
 
-            alunosPeiOptionsHtml += tutoradosEscola.map(t => `<option value="${t.id}">${t.nome_estudante}</option>`).join('');
+            // Só estudantes que já têm o Anexo III - PAEE postado pelo professor AEE (t.anexoPaee,
+            // gravado por salvarAnexoPaeeSchoolWide). Nem todo aluno do Painel AEE precisa de um Anexo
+            // IV - PEI: ele só faz sentido quando existe o Anexo III correspondente lançado pelo AEE.
+            tutoradosEscola = tutoradosEscola.filter(t => t && t.anexoPaee);
+
+            alunosPeiOptionsHtml += tutoradosEscola.length
+                ? tutoradosEscola.map(t => `<option value="${t.id}">${t.nome_estudante}</option>`).join('')
+                : '<option value="" disabled>Nenhum aluno das suas turmas tem Anexo III - PAEE postado</option>';
             ultimaListaTutoradosAeeParaAnexoIV = tutoradosEscola;
         } catch (e) { console.warn('Erro ao buscar estudantes do Painel AEE:', e); }
 
