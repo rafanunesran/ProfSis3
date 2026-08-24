@@ -40,7 +40,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Sync extension sources + build bundles + cap sync
+      - name: Capacitor sync
         # npx cap sync android regenera android/capacitor-cordova-android-plugins/ (gitignored -
         # nao vai pro repo, e' sempre regenerado pelo Capacitor CLI) e copia www/ + config para o
         # projeto Android. Sem isso, o gradle falha ao nao achar cordova.variables.gradle.
@@ -84,15 +84,15 @@ jobs:
       - name: Preparar APK(s) para distribuição (nomes estáveis, independente do output padrão do Gradle)
         run: |
           mkdir -p dist
-          cp android/app/build/outputs/apk/debug/app-debug.apk dist/profsis3-sed-debug.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk dist/profsis3-debug.apk
           if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
-            cp android/app/build/outputs/apk/release/app-release.apk dist/profsis3-sed-release.apk
+            cp android/app/build/outputs/apk/release/app-release.apk dist/profsis3-release.apk
           fi
 
       - name: Upload APK(s) como artifact
         uses: actions/upload-artifact@v4
         with:
-          name: profsis3-sed-apk
+          name: profsis3-apk
           path: app-android/dist/*.apk
           if-no-files-found: warn
 

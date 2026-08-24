@@ -1,11 +1,5 @@
 node_modules/
 
-# Gerados por scripts/sync-extension-sources.mjs e scripts/build-bundles.mjs a partir
-# de ../extensao-profsis/ - nunca editados a mao, regenerados a cada build (ver
-# package.json:prebuild, rodado automaticamente pelo CI antes do gradle build).
-/vendor/
-/android/app/src/main/assets/bundles/
-
 # APK final, gerado e copiado aqui pelo CI (.github/workflows/deploy.yml) a cada deploy,
 # para ser servido pelo GitHub Pages junto com o resto do site.
 /dist/

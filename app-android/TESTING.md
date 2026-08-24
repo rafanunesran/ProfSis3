@@ -1,94 +1,36 @@
-# Checklist de verificação manual — ProfSis3 SED (Android)
+# Checklist de verificação manual — ProfSis3 (Android)
 
-Não há harness de testes automatizados neste projeto (nem no repo original da extensão).
-Verificação é manual, num dispositivo/emulador real, após instalar o APK gerado (debug
-via CI, ou `./gradlew assembleDebug` localmente com Android Studio/JDK instalados).
+Não há harness de testes automatizados neste projeto. A verificação é manual, num
+dispositivo/emulador real, após instalar o APK gerado (debug via CI, ou
+`./gradlew assembleDebug` localmente com Android Studio/JDK instalados).
 
-## Antes de instalar
-
-- [ ] Rodar `npm run prebuild` (ou deixar o CI rodar) para garantir que `vendor/*.js` e
-      os bundles em `android/app/src/main/assets/bundles/` estão atualizados com a
-      versão mais recente de `extensao-profsis/`.
-- [x] Navegação é livre (sem whitelist de domínios) desde que o login gov.br mostrou
-      dificuldade passando por domínios não previstos (ex: verificação/MFA). O app não
-      bloqueia mais nenhum domínio — ver `webview/BundleInjectingWebViewClient.kt`.
+O app é uma WebView única do próprio ProfSis. Ele **não** acessa, injeta script nem
+interage de qualquer forma com sistemas da SEDUC (Sala do Futuro / Secretaria Escolar
+Digital) — ver `CONFORMIDADE-SEDUC.md` na raiz do repositório.
 
 ## Fluxo principal
 
-1. **Instalação limpa** → abrir o app → SED carrega direto na WebView (sem passar por
-   nenhuma tela intermediária) → login gov.br completa normalmente (navegação livre,
-   sem bloqueio de domínio) → o painel flutuante do `content_sed.js` aparece com a
-   versão correta (`chrome.runtime.getManifest().version`).
+1. **Instalação limpa** → abrir o app → o ProfSis carrega direto na WebView → login
+   completa normalmente.
 2. **Persistência de sessão**: matar o app completamente (remover dos recentes) e
-   reabrir → sessão do SED/gov.br continua logada (valida `CookieManager`/`flush()`
-   em `MainActivity.onPause`).
-3. **Login inicial do ProfSis + sincronismo de aulas/registros**: tocar na aba
-   "ProfSis" da barra inferior (ou deixar o botão "Abrir ProfSis" do painel do SED
-   trocar de aba sozinho) → fazer login → **voltar pra aba "Sala do Futuro"
-   imediatamente, sem esperar** → aguardar uns 15s com o app em primeiro plano (a
-   WebView do ProfSis continua rodando escondida, com `visibility=GONE`, não é
-   destruída) → conferir (via `adb shell run-as com.profsis3.sed cat
-   /data/data/com.profsis3.sed/shared_prefs/profsis_storage.xml` ou `chrome://inspect`)
-   que `profsis_logged_in`/`profsis_user`/`profsis_app_data` foram gravados — isso
-   valida que o poll de 10s do `content_profsis.js` (que só roda enquanto a WebView
-   está viva, mesmo escondida) teve tempo de disparar. Recarregar o painel do SED →
-   "aulas do dia" devem aparecer. Se não aparecerem mesmo depois de esperar, testar
-   de novo com uma conta de **professor** (não gestor) — o usuário observou que o
-   teste inicial foi feito com uma conta de gestor, e nesse caso o ProfSis deveria
-   puxar os dados de professor associados a essa conta; se isso não acontecer, o
-   problema está do lado do ProfSis (`core.js`), fora do escopo deste app.
-4. **Extração de alunos** (teste mais crítico): numa turma real, usar "Extrair Alunos"
-   → confirmar que os dados aparecem no Firestore do projeto ProfSis (banco real) via
-   o caminho `atualizarAlunosDiretoFirebase` — isso valida a premissa central do
-   projeto: com `chrome.tabs.query` sempre retornando `[]`, o background.js precisa
-   cair automaticamente no fallback de escrita direta via REST, sem qualquer edição
-   de código.
-5. **Robustez do fluxo "Auto"**: iniciar o preenchimento automático de Chamada/Registro,
-   matar o app no meio do processo, reabrir → conferir que o painel não duplica
-   listeners/intervals (guard `window.__sisprofSedInjected` no bundle) e que o estado
-   do fluxo (`rpa_auto_workflow`, armazenado via `chrome.storage.local`) sobrevive à
-   reabertura.
-6. **Barra inferior**: trocar entre "Sala do Futuro" e "ProfSis" várias vezes →
-   confirmar que nenhuma das duas WebViews recarrega do zero (sessão/scroll
-   preservados) e que o botão "voltar" do Android navega no histórico da aba atual,
-   volta pra aba do SED se estiver na do ProfSis sem mais histórico, e só fecha o
-   app se estiver na aba do SED sem mais histórico.
-7. **Atualização automática**: publicar uma nova versão (novo `versionCode` gerado
-   pelo CI) → abrir o app numa instalação com versão antiga → confirmar que aparece
-   o diálogo "Nova versão disponível" → tocar "Atualizar" → confirmar Toast de
-   download → ao concluir, confirmar que o instalador do Android abre sozinho e
-   consegue instalar de fato (o download agora é feito por conta própria e a Uri de
-   instalação vem do nosso `FileProvider`, não mais do `DownloadManager` do sistema -
-   ver `UpdateChecker.kt`).
-8. **App fechando sozinho ao logar/usar o ProfSis (causa real encontrada via
-   `CrashLogger`)**: era um `StackOverflowError` por recursão infinita entre
-   `switchWebViewVisibility`/o listener do `BottomNavigationView` — setar
-   `bottomNav.selectedItemId` de dentro do próprio listener disparava o listener de
-   novo (o valor interno só é atualizado depois do listener rodar, então a checagem
-   "já está selecionado" não evitava o loop). Corrigido separando as duas
-   responsabilidades: o listener do `bottomNav` só troca a visibilidade das
-   WebViews (`switchWebViewVisibility`), e só código externo (botão "Abrir ProfSis",
-   botão "voltar") escreve em `bottomNav.selectedItemId`. Testar: logar no ProfSis,
-   usar a "engrenagem", trocar de aba repetidamente, usar o botão "voltar" nas duas
-   abas — nada disso deve fechar o app agora.
+   reabrir → continua logado (valida `CookieManager`/`flush()` em
+   `MainActivity.onPause`).
+3. **Uso normal**: percorrer perfil, turmas, agenda, chamada, registros e relatórios —
+   tudo deve funcionar como no navegador.
+4. **Pull-to-refresh**: com a página no topo, puxar para baixo → recarrega e o spinner
+   some quando a página termina (`onPageFinished` → `stopRefresh`).
+5. **Botão voltar**: navega no histórico da WebView; no início do histórico, fecha o app.
+6. **Links externos** (`tel:`, `mailto:`, `intent://`): abrem no app externo, ou são
+   ignorados silenciosamente se não houver app instalado — nunca derrubam o app
+   (`ProfSisWebViewClient.shouldOverrideUrlLoading`).
+7. **Atualização**: com um `version.json` publicado anunciando um `versionCode` maior
+   que o instalado, abrir o app → diálogo "Nova versão disponível" → o download e o
+   instalador do sistema abrem normalmente (`UpdateChecker`).
+8. **Crash do renderizador**: sob pressão de memória, a WebView é recriada em vez de o
+   app fechar (`onRenderProcessGone` → `recreateWebView`).
 
-   (`setSupportMultipleWindows`/`onCreateWindow` para `window.open()` também tinham
-   sido removidos numa tentativa anterior de corrigir isso - ainda estão desativados;
-   o preview de relatório/PDF via `window.open()` continua não funcionando até ser
-   reimplementado com cuidado, já que a causa real era outra.)
+## Observação sobre o applicationId
 
-   Se o app fechar sozinho de novo por qualquer motivo: reabrir o app - aparece
-   automaticamente um diálogo "O app fechou da última vez" com o stack trace real e
-   um botão "Copiar" (`CrashLogger`) - só não captura crash nativo do motor do
-   WebView (Chromium), aí só um `adb logcat` real resolve.
-
-## Coisas para observar (podem indicar regressão)
-
-- Qualquer chamada JS que lance `TypeError: chrome.X is not a function` no
-  `console.log` do WebView (visível via `chrome://inspect` conectando o dispositivo)
-  indica uma API do shim (`www/shim/chrome-shim.js`) não coberta — checar contra o
-  código real de `vendor/background.js`/`vendor/content_sed.js`/`vendor/content_profsis.js`.
-- SPA do SED pode não redisparar `onPageFinished` em navegação interna de rota — se o
-  painel sumir depois de navegar dentro do próprio SED, pode ser necessário revisar o
-  gatilho de reinjeção do bundle (hoje só o listener `onPageFinished` em
-  `BundleInjectingWebViewClient`).
+O pacote continua `com.profsis3.sed` (herdado da versão anterior). Renomeá-lo impediria
+que as instalações existentes atualizassem por cima, então o nome foi mantido apesar de
+o app não ter mais relação com a SED.

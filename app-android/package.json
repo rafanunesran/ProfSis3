@@ -2,12 +2,9 @@
   "name": "profsis3-sed-app",
   "version": "0.1.0",
   "private": true,
-  "description": "App Android (kiosk) que reproduz a extensao ProfSis3 dentro do portal Sala do Futuro (SED), usando Capacitor apenas como framework de build/plugins.",
+  "description": "App Android que abre o proprio ProfSis numa WebView. Nao acessa nem interage com sistemas da SEDUC.",
   "scripts": {
-    "sync-sources": "node scripts/sync-extension-sources.mjs",
-    "build-bundles": "node scripts/build-bundles.mjs",
-    "prebuild": "npm run sync-sources && npm run build-bundles",
-    "cap:sync": "npm run prebuild && npx cap sync android"
+    "cap:sync": "npx cap sync android"
   },
   "dependencies": {
     "@capacitor/android": "^7.0.0",

@@ -29,7 +29,7 @@ import kotlin.concurrent.thread
 object UpdateChecker {
 
     private const val VERSION_URL = "https://rafanunesran.github.io/ProfSis3/app-android/dist/version.json"
-    private const val APK_FILE_NAME = "profsis3-sed-update.apk"
+    private const val APK_FILE_NAME = "profsis3-update.apk"
 
     fun checkForUpdate(activity: Activity) {
         thread {
