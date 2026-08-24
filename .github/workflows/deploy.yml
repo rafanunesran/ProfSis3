@@ -35,37 +35,6 @@ jobs:
         with:
           node-version: 22
 
-      - name: Build & sign extension (CRX3 + update.xml)
-        env:
-          EXT_SIGNING_KEY_B64: ${{ secrets.EXTENSION_SIGNING_KEY_B64 }}
-        run: |
-          if [ -z "$EXT_SIGNING_KEY_B64" ]; then
-            echo "EXTENSION_SIGNING_KEY_B64 secret não configurado - pulando build da extensão."
-            exit 0
-          fi
-          mkdir -p extensao-profsis/dist
-          echo "$EXT_SIGNING_KEY_B64" | base64 -d > "$RUNNER_TEMP/key.pem"
-          npx --yes crx3 extensao-profsis \
-            --key "$RUNNER_TEMP/key.pem" \
-            --crx extensao-profsis/dist/profsis3-extension.crx \
-            --xml extensao-profsis/dist/update.xml \
-            --crxURL "https://rafanunesran.github.io/ProfSis3/extensao-profsis/dist/profsis3-extension.crx"
-          rm -f "$RUNNER_TEMP/key.pem"
-
-      - name: Build single-file installer (.bat)
-        shell: pwsh
-        run: |
-          $ps1Path = "extensao-profsis/installer/instalar_profsis3.ps1"
-          $scriptText = Get-Content $ps1Path -Raw
-          $bytes = [System.Text.Encoding]::Unicode.GetBytes($scriptText)
-          $encoded = [Convert]::ToBase64String($bytes)
-          New-Item -ItemType Directory -Force -Path extensao-profsis/dist | Out-Null
-          # A chave HKCU\Software\Policies so aceita escrita de processos elevados (Administradores) no
-          # Windows moderno, mesmo em contas sem dominio/gestao central - por isso o .bat se auto-eleva
-          # via UAC (net session falha se nao estiver elevado) antes de rodar o instalador de verdade.
-          $batContent = "@echo off`r`nnet session >nul 2>&1`r`nif %errorLevel% neq 0 (`r`n    echo Solicitando permissao de administrador...`r`n    powershell -Command `"Start-Process -FilePath '%~f0' -Verb RunAs`"`r`n    exit /b`r`n)`r`nchcp 65001 >nul`r`ntitle Instalador ProfSis3`r`npowershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded`r`npause`r`n"
-          Set-Content -Path extensao-profsis/dist/instalar_profsis3.bat -Value $batContent -NoNewline -Encoding ascii
-
       - name: Setup JDK (para o app Android)
         uses: actions/setup-java@v4
         with:
