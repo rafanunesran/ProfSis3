@@ -2742,7 +2742,6 @@ async function exportarDocumentoFinal(tipo) {
 
             if (algumCriado) {
                 persistirDados();
-                if (typeof window.enviarDadosParaExtensao === 'function') window.enviarDadosParaExtensao(true);
             }
         } catch(er) { console.warn("Erro ao auto-salvar registro", er); }
 
