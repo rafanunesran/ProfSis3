@@ -79,20 +79,43 @@ jobs:
             printf '{"versionCode": %s, "versionName": "%s", "apkUrl": "https://rafanunesran.github.io/ProfSis3/app-android/dist/profsis3-debug.apk"}\n' \
               "$NATIVE_VERSION_CODE" "$NATIVE_VERSION_NAME" > dist/version.json
           ) || echo "Build do APK Android falhou - publicando o site sem atualizar o APK desta vez."
-          # node_modules/ e as pastas de build do Gradle não devem ir pro Pages (path: '.' abaixo
-          # sobe o repo inteiro) - limpa sempre, mesmo se o build acima falhou.
+          # node_modules/ e as pastas de build do Gradle nao sao publicadas (o passo "Montar _site"
+          # copia uma lista explicita), mas limpar aqui evita carregar lixo entre os passos.
           rm -rf app-android/node_modules \
                  app-android/android/.gradle \
                  app-android/android/build \
                  app-android/android/app/build \
                  app-android/android/capacitor-cordova-android-plugins
 
+      # O Pages publica apenas o que for copiado para _site. A lista e' EXPLICITA de proposito:
+      # subir o repositorio inteiro (path: '.') ja publicou, no passado, coisas que nunca deveriam
+      # estar no ar (codigo de robo/RPA sobre os sistemas da SEDUC, dump de tela da Sala do Futuro,
+      # planilhas internas). Ao adicionar um arquivo novo ao site, inclua-o aqui.
+      - name: Montar _site (somente os arquivos do site)
+        run: |
+          set -e
+          rm -rf _site
+          mkdir -p _site
+          cp .nojekyll _site/
+          cp index.html Agenda.html documentacao.html termos.html _site/
+          cp ref_agenda.html ref_auth.html ref_dashboard.html ref_turmas.html _site/
+          cp app.js admin.js core.js gestor.js biblioteca.js ia_estagiario.js _site/
+          cp shared.js feriados.js google-calendar.js sw.js _site/
+          cp styles.css manifest.webmanifest _site/
+          cp -r resources Docs _site/
+          if [ -d app-android/dist ]; then
+            mkdir -p _site/app-android
+            cp -r app-android/dist _site/app-android/dist
+          fi
+          echo "Conteudo publicado:"
+          find _site -maxdepth 2 -type f | sort
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'
+          path: '_site'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
