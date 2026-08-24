@@ -445,21 +445,13 @@ async function abrirModalPerfil() {
         </div>
     `;
 
-    // [NOVO] Integração RPA Sala do Futuro
+    // Documentação e Termos de Uso
     let integrationArea = document.getElementById('secaoIntegracaoPerfil');
     if (!integrationArea) {
         integrationArea = document.createElement('div');
         integrationArea.id = 'secaoIntegracaoPerfil';
         containerTemas.parentNode.appendChild(integrationArea);
     }
-    
-    // Versão da extensão instalada, exposta pelo content_profsis.js num data-attribute do <html>
-    // (o professor confere aqui se a extensão dele já se atualizou). Se não houver o atributo, ou a
-    // extensão não está instalada nesta aba, ou é uma versão antiga que ainda não expõe a versão.
-    const versaoRoboInstalada = document.documentElement.getAttribute('data-profsis-ext-versao');
-    const linhaVersaoRobo = versaoRoboInstalada
-        ? `<div style="font-size:11px; color:#276749; background:#f0fff4; border:1px solid #c6f6d5; border-radius:4px; padding:5px 8px; margin-bottom:8px;">🧑‍🏫 Assistente instalado: <strong>v${versaoRoboInstalada}</strong></div>`
-        : `<div style="font-size:11px; color:#975a16; background:#fffaf0; border:1px solid #feebc8; border-radius:4px; padding:5px 8px; margin-bottom:8px;">🧑‍🏫 Assistente não detectado nesta aba. Se você já instalou, atualize a extensão em <code>chrome://extensions</code> e recarregue esta página.</div>`;
 
     integrationArea.innerHTML = `
         <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cbd5e0;">
@@ -468,22 +460,13 @@ async function abrirModalPerfil() {
             <a href="documentacao.html" target="_blank" class="btn btn-sm btn-secondary" style="width:100%; display:block; text-align:center; text-decoration:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📖 Abrir Documentação</a>
         </div>
         <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cbd5e0;">
-            <h4 style="color:#2c5282; margin-bottom:5px; font-size:14px;">🧑‍🏫 Assistente Sala do Futuro (SED)</h4>
-            <p style="font-size:11px; color:#718096; margin-bottom:10px;">Use a extensão do Chrome para consultar, na SED, os estudantes faltosos de cada turma e o conteúdo do registro salvo no ProfSis (para copiar e colar). Somente leitura — não preenche nem salva nada automaticamente.</p>
-
-            <div style="background:#edf2f7; padding:10px; border-radius:6px; border:1px solid #cbd5e0; margin-top:10px;">
-                <strong style="font-size:12px; color:#2d3748; display:block; margin-bottom:5px;">💻 Extensão do Chrome (Computador)</strong>
-                ${linhaVersaoRobo}
-                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Instala a extensão e configura o Chrome para ela se atualizar sozinha daqui pra frente (nunca mais precisa baixar de novo).</p>
-                <button class="btn btn-sm btn-info" onclick="baixarInstaladorExtensaoDesktop()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">⬇️ Instalar no Chrome (Computador)</button>
-                <p style="font-size:10px; color:#a0aec0; margin-top:6px; margin-bottom:0;"><a href="#" onclick="baixarArquivosExtensao(); return false;" style="color:#a0aec0;">Modo avançado: baixar só os arquivos (Carregar sem compactação)</a></p>
-            </div>
-
-            <div style="background:#edf2f7; padding:10px; border-radius:6px; border:1px solid #cbd5e0; margin-top:10px;">
-                <strong style="font-size:12px; color:#2d3748; display:block; margin-bottom:5px;">📱 App Android (APK)</strong>
-                <p style="font-size:11px; color:#4a5568; margin-bottom:8px;">Instala o app do ProfSis3 no celular, restrito à Sala do Futuro e ao login gov.br.</p>
-                <button class="btn btn-sm btn-info" onclick="baixarApkAndroid()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">⬇️ Baixar APK</button>
-            </div>
+            <h4 style="color:#2c5282; margin-bottom:5px; font-size:14px;">📱 App Android (APK)</h4>
+            <p style="font-size:11px; color:#718096; margin-bottom:10px;">Instala o ProfSis3 no celular. É o mesmo ProfSis do navegador, em formato de aplicativo.</p>
+            <button class="btn btn-sm btn-info" onclick="baixarApkAndroid()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">⬇️ Baixar APK</button>
+        </div>
+        <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cbd5e0;">
+            <h4 style="color:#2c5282; margin-bottom:5px; font-size:14px;">🔒 Sistemas da SEDUC</h4>
+            <p style="font-size:11px; color:#718096; margin-bottom:0;">O ProfSis3 não possui extensão, integração ou automação com a Secretaria Escolar Digital / Sala do Futuro. O lançamento nos sistemas da SEDUC é sempre feito manualmente pelo profissional, no ambiente oficial da Secretaria.</p>
         </div>
     `;
 
@@ -1169,14 +1152,14 @@ async function renderDashboard() {
             // Só persiste se algo realmente mudou desde o último save - evita gravação redundante
             // a cada render do dashboard. Sem isso, schoolGrade/schoolExceptions ficavam só em
             // memória até uma ação não relacionada disparar persistirDados(); um professor que
-            // logasse e fosse direto testar a extensão (sem fazer mais nada no ProfSis) podia
-            // pegar grade/horário vazios ou desatualizados no localStorage lido pela extensão.
+            // logasse e fosse direto para outra tela (sem fazer mais nada no ProfSis) podia
+            // pegar grade/horário vazios ou desatualizados no localStorage.
             const gradeMudou = JSON.stringify(data.schoolGrade || []) !== JSON.stringify(gradeEscola)
                 || JSON.stringify(data.schoolExceptions || []) !== JSON.stringify(excecoesGrade);
             // Também persistir quando a gestão muda os faltosos/atestados (registrosAdministrativos)
             // ou os avisos. Sem isso, um novo faltoso classificado pela gestão ficava só em memória
             // (o persistirDados abaixo só rodava se a grade mudasse) e nunca chegava ao localStorage
-            // que o robô da Sala do Futuro lê -> faltoso não era marcado.
+            // que as telas de chamada leem -> faltoso não era destacado.
             const registrosGestorEnriquecidos = enriquecerRegistrosComNome(gestorData.registrosAdministrativos, gestorData.estudantes);
             const registrosMudou = !!registrosGestorEnriquecidos
                 && JSON.stringify(data.registrosAdministrativos || []) !== JSON.stringify(registrosGestorEnriquecidos);
@@ -1188,10 +1171,6 @@ async function renderDashboard() {
             if (registrosGestorEnriquecidos) data.registrosAdministrativos = registrosGestorEnriquecidos;
             if (gradeMudou || registrosMudou || avisosMudou) persistirDados();
         }
-        // Empurra o payload de hoje para o robô com os dados frescos em memória (já com os faltosos
-        // da gestão recém-sincronizados). O robô usa essas faltas para marcar na SED - mais confiável
-        // do que ele recalcular relendo o localStorage (que pode estar sem os registrosAdministrativos).
-        if (typeof window.enviarDadosParaExtensao === 'function') window.enviarDadosParaExtensao(true);
     } else { gradeEscola = await getGradeEscola(); }
     
     const diaSemanaHoje = new Date().getDay(); // 0=Dom, 1=Seg...
@@ -1378,7 +1357,7 @@ function renderTurmas() {
                 </div>
             </div>
             <div style="font-size:12px; color:#718096;">${t.turno}</div>
-            <div style="font-size:10px; color:#a0aec0; margin-top:4px;" title="Use para conferir onde a extensão gravou os alunos">ID: ${t.id}${t.masterId ? ' | Turma da gestão (masterId): ' + t.masterId : ''}</div>
+            <div style="font-size:10px; color:#a0aec0; margin-top:4px;" title="Identificador interno da turma">ID: ${t.id}${t.masterId ? ' | Turma da gestão (masterId): ' + t.masterId : ''}</div>
         </div>
     `).join('');
     
@@ -1475,9 +1454,9 @@ function editarTurma(id) {
 }
 
 // Grava o nome do aluno em cada registro administrativo (Faltoso/Atestado) ao sincronizar os dados
-// da gestão para o professor. Assim o robô da Sala do Futuro consegue casar o faltoso por NOME
+// da gestão para o professor. Assim as telas do professor conseguem casar o faltoso por NOME
 // quando o id do aluno na lista do professor não bate com o id usado no registro da gestão (o
-// casamento só por id falhava, por ex., quando a lista foi extraída/reimportada pela extensão).
+// casamento só por id falhava, por ex., quando a lista de alunos foi reimportada).
 function enriquecerRegistrosComNome(registros, estudantesGestor) {
     if (!Array.isArray(registros)) return registros;
     return registros.map(r => {
@@ -1489,749 +1468,28 @@ function enriquecerRegistrosComNome(registros, estudantesGestor) {
     });
 }
 
-// Função auxiliar para montar payload de um dia específico
-function montarPayloadPorData(dataStr) {
-    let alunosFaltantesNomes = [];
-
-    // SÓ o aluno "Faltoso" (classificado pela gestão em registrosAdministrativos) leva falta na Sala
-    // do Futuro - nunca um aluno comum. Regra por faltoso ativo (arquivados são ignorados):
-    // - Sem registro de chamada no ProfSis pra ele naquele dia -> considera FALTA (padrão do faltoso);
-    // - Com chamada e marcado falta -> FALTA;
-    // - Com chamada e presente -> não marca.
-    // (Mesma lógica da extensão em content_sed.js:montarPayloadPorData, mantida em sincronia.)
-    const presencas = data.presencas || [];
-    const norm = (s) => s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
-    const faltososGestao = (data.registrosAdministrativos || []).filter(r => r.tipo === 'Faltoso' && !r.arquivado);
-    faltososGestao.forEach(reg => {
-        // Casa por id e, como fallback, por nome (id pode divergir se a lista veio da extensão).
-        let est = (data.estudantes || []).find(e => e.id == reg.estudanteId);
-        if (!est && reg.nomeEstudante) {
-            const alvo = norm(reg.nomeEstudante);
-            est = (data.estudantes || []).find(e => norm(e.nome_completo) === alvo);
-        }
-        if (!est) {
-            if (reg.nomeEstudante) alunosFaltantesNomes.push({ nome: reg.nomeEstudante, id_turma: reg.turmaId || null });
-            return;
-        }
-        if (est.status && est.status !== 'Ativo') return;
-        const presencaDoDia = presencas.find(p => p.id_estudante == est.id && p.data === dataStr);
-        if (!presencaDoDia || presencaDoDia.status === 'falta') {
-            alunosFaltantesNomes.push({ nome: est.nome_completo, id_turma: est.id_turma });
-        }
-    });
-
-    const registrosNoDia = (data.registrosAula || []).filter(r => r.data === dataStr);
-    
-    // Monta lista de turmas/disciplinas do professor neste dia
-    const turmasDoDia = [];
-    const gradeEscola = data.schoolGrade || data.gradeHoraria || [];
-    const excecoesGrade = data.schoolExceptions || data.gradeHorariaExcecoes || [];
-    const minhasAulas = data.horariosAulas || [];
-    const turmas = data.turmas || [];
-    
-    const d = new Date(dataStr + 'T12:00:00');
-    const diaSemana = d.getDay();
-    
-    const excecao = excecoesGrade.find(e => e.data === dataStr);
-    const blocosHoje = excecao ? (excecao.blocos || []) : gradeEscola.filter(g => g.diaSemana == diaSemana);
-    
-    blocosHoje.forEach(bloco => {
-        const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
-        if (aula && aula.tipo === 'aula' && aula.id_turma) {
-            const turma = turmas.find(t => t.id == aula.id_turma);
-            if (turma) {
-                turmasDoDia.push({
-                    id: turma.id,
-                    nome: turma.nome,
-                    disciplina: turma.disciplina || '',
-                    horario: bloco.inicio + ' - ' + bloco.fim,
-                    label: bloco.label || ''
-                });
-            }
-        }
-    });
-    
-    return {
-        data: dataStr,
-        faltas: alunosFaltantesNomes,
-        registros: registrosNoDia.map(r => ({ conteudo: r.conteudo })),
-        fechamento: [], // Fechamento é sempre do bimestre atual, não por dia
-        turmas: turmasDoDia // Turmas/disciplinas do professor neste dia
-    };
-}
-
-// Envia dados de múltiplos dias para a extensão
-window.enviarDadosParaExtensao = async function(silencioso = false, diasParaEnviar = null) {
-    if (!currentUser) {
-        if (!silencioso) alert('Usuário não identificado.');
-        return;
-    }
-    
-    const todayStr = getTodayString();
-    
-    // Se silencioso (auto-save), envia apenas o dia de hoje
-    if (silencioso) {
-        const payload = montarPayloadPorData(todayStr);
-        window.postMessage({ type: 'EXT_SEND_PAYLOAD', payload: payload }, '*');
-        return;
-    }
-    
-    // Se não especificou dias, pergunta quantos dias enviar
-    if (diasParaEnviar === null) {
-        diasParaEnviar = prompt('Quantos dias corridos (incluindo hoje) deseja enviar para a extensão?', '5');
-        if (!diasParaEnviar) return;
-        diasParaEnviar = parseInt(diasParaEnviar);
-        if (isNaN(diasParaEnviar) || diasParaEnviar < 1) {
-            alert('Número inválido.');
-            return;
-        }
-    }
-    
-    // Gera payloads para os últimos N dias
-    const payloads = [];
-    for (let i = 0; i < diasParaEnviar; i++) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        const dataStr = d.toISOString().split('T')[0];
-        const payload = montarPayloadPorData(dataStr);
-        payloads.push(payload);
-    }
-    
-    // Envia cada payload individualmente para a extensão
-    let extRespondeu = false;
-    const listener = (e) => {
-        if (e.data && e.data.type === 'EXT_ACK') extRespondeu = true;
-    };
-    window.addEventListener('message', listener);
-    
-    let enviados = 0;
-    for (const payload of payloads) {
-        window.postMessage({ type: 'EXT_SEND_PAYLOAD', payload: payload }, '*');
-        enviados++;
-        // Pequeno delay entre envios para não sobrecarregar
-        await new Promise(r => setTimeout(r, 200));
-    }
-    
-    setTimeout(() => {
-        window.removeEventListener('message', listener);
-        if (!extRespondeu) {
-            alert('A caixa verde não apareceu? Parece que a extensão não está conectada a esta página.\n\nCertifique-se de:\n1. Ter ativado o "Modo do Desenvolvedor" na tela de extensões.\n2. Ter instalado/atualizado a extensão com os arquivos corretos.\n3. Ter apertado F5 (Recarregar) nesta página do SisProf.\n\nSe mesmo assim não for, você ainda pode usar o botão "Usar Assistente Favorito" ao lado!');
-        } else {
-            alert('✅ ' + enviados + ' dia(s) enviado(s) para a extensão com sucesso!');
-        }
-    }, 1500);
-};
-
-window.saveRpaDataFromExtension = async function(payload) {
-    if (!currentUser) throw new Error('Usuário não identificado.');
-    const profId = currentUser.uid || currentUser.id;
-    const importKey = 'rpa_import_' + profId;
-    
-    if (typeof saveData === 'function') {
-        await saveData('app_data', importKey, payload);
-        console.log('Dados da extensão salvos na nuvem via content script.');
-    } else {
-        localStorage.setItem(importKey, JSON.stringify(payload));
-    }
-};
-
-// CRC-32 (usado pelo cabeçalho de cada arquivo dentro do .zip)
-function crc32ParaZip(bytes) {
-    if (!window.__zipCrcTable) {
-        const table = [];
-        for (let n = 0; n < 256; n++) {
-            let c = n;
-            for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-            table[n] = c >>> 0;
-        }
-        window.__zipCrcTable = table;
-    }
-    const table = window.__zipCrcTable;
-    let crc = 0xFFFFFFFF;
-    for (let i = 0; i < bytes.length; i++) crc = table[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
-    return (crc ^ 0xFFFFFFFF) >>> 0;
-}
-
-// Monta um .zip válido (método "store", sem compressão) em JS puro, sem depender de biblioteca
-// externa - suficiente para empacotar os poucos arquivos-texto da extensão.
-function criarZipSimples(arquivos) {
-    const encoder = new TextEncoder();
-    const partesLocais = [];
-    const partesCentrais = [];
-    let offset = 0;
-
-    arquivos.forEach(arq => {
-        const nomeBytes = encoder.encode(arq.name);
-        const dadosBytes = encoder.encode(arq.content);
-        const crc = crc32ParaZip(dadosBytes);
-        const tamanho = dadosBytes.length;
-
-        const header = new DataView(new ArrayBuffer(30));
-        header.setUint32(0, 0x04034b50, true);
-        header.setUint16(4, 20, true);
-        header.setUint16(6, 0, true);
-        header.setUint16(8, 0, true);
-        header.setUint16(10, 0, true);
-        header.setUint16(12, 0x21, true); // data DOS fixa (irrelevante para instalar a extensão)
-        header.setUint32(14, crc, true);
-        header.setUint32(18, tamanho, true);
-        header.setUint32(22, tamanho, true);
-        header.setUint16(26, nomeBytes.length, true);
-        header.setUint16(28, 0, true);
-        partesLocais.push(new Uint8Array(header.buffer), nomeBytes, dadosBytes);
-
-        const central = new DataView(new ArrayBuffer(46));
-        central.setUint32(0, 0x02014b50, true);
-        central.setUint16(4, 20, true);
-        central.setUint16(6, 20, true);
-        central.setUint16(8, 0, true);
-        central.setUint16(10, 0, true);
-        central.setUint16(12, 0, true);
-        central.setUint16(14, 0x21, true);
-        central.setUint32(16, crc, true);
-        central.setUint32(20, tamanho, true);
-        central.setUint32(24, tamanho, true);
-        central.setUint16(28, nomeBytes.length, true);
-        central.setUint16(30, 0, true);
-        central.setUint16(32, 0, true);
-        central.setUint16(34, 0, true);
-        central.setUint16(36, 0, true);
-        central.setUint32(38, 0, true);
-        central.setUint32(42, offset, true);
-        partesCentrais.push(new Uint8Array(central.buffer), nomeBytes);
-
-        offset += 30 + nomeBytes.length + tamanho;
-    });
-
-    const inicioCentral = offset;
-    const tamanhoCentral = partesCentrais.reduce((soma, p) => soma + p.length, 0);
-
-    const fim = new DataView(new ArrayBuffer(22));
-    fim.setUint32(0, 0x06054b50, true);
-    fim.setUint16(4, 0, true);
-    fim.setUint16(6, 0, true);
-    fim.setUint16(8, arquivos.length, true);
-    fim.setUint16(10, arquivos.length, true);
-    fim.setUint32(12, tamanhoCentral, true);
-    fim.setUint32(16, inicioCentral, true);
-    fim.setUint16(20, 0, true);
-
-    return new Blob([...partesLocais, ...partesCentrais, new Uint8Array(fim.buffer)], { type: 'application/zip' });
-}
-
-window.baixarArquivosExtensao = async function() {
-    const urlApp = window.location.href.split('?')[0].split('#')[0];
-    const baseUrl = urlApp.substring(0, urlApp.lastIndexOf('/') + 1);
-
-    if (!confirm('Isso vai baixar um arquivo .zip com os arquivos atualizados da extensão (manifest.json, background.js, content_profsis.js e content_sed.js).\\n\\nDeseja prosseguir?')) return;
-
-    // Busca os arquivos atualizados do servidor
-    const filesToFetch = ['manifest.json', 'background.js', 'content_profsis.js', 'content_sed.js'];
-    const files = [];
-
-    // Cache-busting: sem isso o navegador pode servir uma cópia antiga desses arquivos do cache
-    // (já aconteceu de o .zip baixado vir com uma versão anterior da extensão mesmo com o servidor
-    // já atualizado) - o parâmetro força uma busca nova no servidor a cada download.
-    const semCache = '?nocache=' + Date.now();
-
-    for (const fileName of filesToFetch) {
-        try {
-            const response = await fetch(baseUrl + 'extensao-profsis/' + fileName + semCache, { cache: 'no-store' });
-            if (response.ok) {
-                const content = await response.text();
-                files.push({ name: fileName, content: content });
-            } else {
-                throw new Error('Falha ao buscar ' + fileName);
-            }
-        } catch (e) {
-            console.warn('Erro ao buscar arquivo do servidor:', e);
-            // Fallback: tenta buscar da raiz
-            try {
-                const response = await fetch(baseUrl + fileName + semCache, { cache: 'no-store' });
-                if (response.ok) {
-                    const content = await response.text();
-                    files.push({ name: fileName, content: content });
-                } else {
-                    throw new Error('Falha no fallback para ' + fileName);
-                }
-            } catch (e2) {
-                alert('Erro ao baixar ' + fileName + '. Verifique se os arquivos da extensão estão no servidor.');
-                return;
-            }
-        }
-    }
-
-    if (files.length !== filesToFetch.length) {
-        alert('Erro: Nem todos os arquivos foram encontrados.');
-        return;
-    }
-
-    const zipBlob = criarZipSimples(files);
-    const url = URL.createObjectURL(zipBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'SisProf-Extensao.zip';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    alert('Arquivo baixado: SisProf-Extensao.zip\\n\\nCOMO INSTALAR:\\n1. Extraia o .zip em uma pasta (ex: "Assistente SisProf").\\n2. Abra chrome://extensions/ (ou Gerenciar Extensões) no Chrome.\\n3. Ative o "Modo do desenvolvedor" no canto superior direito.\\n4. Clique no botão "Carregar sem compactação" (canto superior esquerdo).\\n5. Selecione a pasta extraída.\\n\\n⚠️ IMPORTANTE: Após instalar, RECARREGUE (F5) esta página do SisProf para que a extensão passe a funcionar nela!');
-};
-
-// Baixa o instalador (.bat único, autocontido) que configura o Chrome para instalar a
-// extensão sozinho e mantê-la atualizada automaticamente daqui pra frente (sem Chrome
-// Web Store). Não precisa descompactar nada - é um único arquivo pronto pra clicar.
-window.baixarInstaladorExtensaoDesktop = async function() {
-    const urlApp = window.location.href.split('?')[0].split('#')[0];
-    const baseUrl = urlApp.substring(0, urlApp.lastIndexOf('/') + 1);
-    const batUrl = baseUrl + 'extensao-profsis/dist/instalar_profsis3.bat?nocache=' + Date.now();
-
-    if (!confirm('Isso vai baixar um instalador (.bat) que configura o Chrome para instalar a extensão do ProfSis3 e mantê-la atualizada sozinha, sem precisar baixar de novo no futuro.\\n\\nDeseja prosseguir?')) return;
-
-    const a = document.createElement('a');
-    a.href = batUrl;
-    a.download = 'instalar_profsis3.bat';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-
-    alert('Baixando instalar_profsis3.bat\\n\\nCOMO INSTALAR:\\n1. Dê dois cliques no arquivo baixado (não precisa descompactar nada).\\n2. Se o Windows avisar "Editor desconhecido", clique em "Mais informações" e depois "Executar assim mesmo".\\n3. O Windows vai pedir permissão de administrador (tela azul/cinza) - clique em "Sim". Isso é necessário para configurar o Chrome corretamente.\\n4. Siga as instruções na tela (em português) e feche/reabra o Chrome quando pedido.\\n\\n✅ A partir daí a extensão se atualiza sozinha - você não vai precisar baixar nada de novo.\\n\\n⚠️ Se você já tinha instalado a extensão manualmente antes, remova a versão antiga em chrome://extensions para evitar conflito.\\n\\n💡 Se o computador não permitir dar permissão de administrador (ex: conta de escola), use o link "Modo avançado" abaixo do botão.');
-};
-
-// Baixa o APK do app Android do ProfSis3 (WebView restrita à Sala do Futuro + login gov.br,
-// ver app-android/), servido do MESMO domínio do site (GitHub Pages, gerado a cada deploy
-// por .github/workflows/deploy.yml). Importante: NÃO usar o link direto do GitHub Releases
-// aqui - é cross-origin (github.com) e alguns navegadores mobile mais simples (ex: Lemur
-// Browser) travam no meio do download por causa da cadeia de redirecionamento assinada.
+// Baixa o APK do app Android do ProfSis3 (WebView do próprio ProfSis, sem qualquer acesso a
+// sistemas da SEDUC - ver app-android/), servido do MESMO domínio do site (GitHub Pages,
+// gerado a cada deploy por .github/workflows/deploy.yml). Importante: NÃO usar o link direto
+// do GitHub Releases aqui - é cross-origin (github.com) e alguns navegadores mobile mais
+// simples (ex: Lemur Browser) travam no meio do download por causa da cadeia de
+// redirecionamento assinada.
 window.baixarApkAndroid = function() {
     const urlApp = window.location.href.split('?')[0].split('#')[0];
     const baseUrl = urlApp.substring(0, urlApp.lastIndexOf('/') + 1);
-    const apkUrl = baseUrl + 'app-android/dist/profsis3-sed-debug.apk?nocache=' + Date.now();
+    const apkUrl = baseUrl + 'app-android/dist/profsis3-debug.apk?nocache=' + Date.now();
 
     if (!confirm('Isso vai baixar o APK do app ProfSis3 para Android (fora da Play Store).\\n\\nDeseja prosseguir?')) return;
 
     const a = document.createElement('a');
     a.href = apkUrl;
-    a.download = 'profsis3-sed.apk';
+    a.download = 'profsis3.apk';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
 
-    alert('Baixando profsis3-sed.apk\\n\\nCOMO INSTALAR:\\n1. Abra o arquivo baixado (pode precisar permitir "instalar apps de fontes desconhecidas" na primeira vez).\\n2. Conclua a instalação normalmente.\\n3. Abra o app "ProfSis3 SED" - ele já entra direto na Sala do Futuro.\\n\\nDica: de vez em quando baixe de novo para pegar uma versão mais recente (o APK ainda não se atualiza sozinho).');
+    alert('Baixando profsis3.apk\\n\\nCOMO INSTALAR:\\n1. Abra o arquivo baixado (pode precisar permitir "instalar apps de fontes desconhecidas" na primeira vez).\\n2. Conclua a instalação normalmente.\\n3. Abra o app "ProfSis3" - ele abre direto no ProfSis.\\n\\nDica: de vez em quando baixe de novo para pegar uma versão mais recente (o APK ainda não se atualiza sozinho).');
 };
-
-async function sincronizarAlunosNuvem() {
-    if (!currentUser) return alert('Usuário não identificado.');
-    const profId = currentUser.uid || currentUser.id;
-    const importKey = 'rpa_import_' + profId;
-
-    try {
-        let payload = null;
-        if (typeof db !== 'undefined' && db) {
-            const doc = await db.collection('app_data').doc(importKey).get();
-            if (doc.exists) payload = doc.data();
-        } else {
-            const local = localStorage.getItem(importKey);
-            if (local) payload = JSON.parse(local);
-        }
-
-        if (!payload || (!payload.alunos && !payload.turmas)) {
-            return alert('Nenhuma lista de alunos pendente na nuvem.\\n\\nUse o Robô na Secretaria Digital (SED) e escolha a opção "Extrair Alunos" primeiro.');
-        }
-
-        if (payload.type === 'SISPROF_IMPORT_ALUNOS_MULTI') {
-            abrirModalImportacaoMultiSED(payload);
-        } else {
-            abrirModalImportarAlunosSED(payload);
-        }
-    } catch(e) {
-        console.error(e);
-        alert('Erro ao buscar dados na nuvem.');
-    }
-}
-
-function abrirModalImportarAlunosSED(payloadAuto = null) {
-    closeModal('modalPerfilUsuario');
-    
-    if (!document.getElementById('modalImportarAlunosSED')) {
-        const div = document.createElement('div');
-        div.id = 'modalImportarAlunosSED';
-        div.className = 'modal';
-        div.innerHTML = `
-            <div class="modal-content" style="max-width: 500px;">
-                <div class="modal-header">
-                    <h2>🔄 Atualizar Turma via SED</h2>
-                    <button class="close-btn" onclick="closeModal('modalImportarAlunosSED')">×</button>
-                </div>
-                <p style="font-size:13px; color:#666;">Verifique os dados extraídos pelo robô e selecione a turma para atualizar:</p>
-                <textarea id="textoImportacaoSED" rows="4" style="width:100%; padding:10px; border:1px solid #cbd5e0; border-radius:4px; margin-bottom:15px; font-family:monospace; font-size:12px;" placeholder='Cole (Ctrl+V) aqui ou aguarde o preenchimento automático...'></textarea>
-                
-                <label style="font-weight:bold; display:block; margin-bottom:5px;">Selecione a Turma a ser atualizada:</label>
-                <select id="selTurmaImportacaoSED" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; margin-bottom:20px;">
-                </select>
-                
-                <div style="display:flex; justify-content:flex-end; gap:10px;">
-                    <button class="btn btn-secondary" onclick="closeModal('modalImportarAlunosSED')">Cancelar</button>
-                    <button class="btn btn-primary" onclick="processarImportacaoSED()">Atualizar Turma</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(div);
-    }
-    
-    const select = document.getElementById('selTurmaImportacaoSED');
-    const turmas = data.turmas || [];
-    select.innerHTML = '<option value="">Selecione a turma...</option>' + 
-        turmas.map(t => `<option value="${t.id}">${t.nome} ${t.disciplina ? '- ' + t.disciplina : ''}</option>`).join('');
-        
-    const textarea = document.getElementById('textoImportacaoSED');
-    if (payloadAuto && payloadAuto.alunos) {
-        textarea.value = JSON.stringify(payloadAuto);
-        if (payloadAuto.turmaSED && payloadAuto.turmaSED !== "Desconhecida") {
-            const match = turmas.find(t => {
-                const norm1 = t.nome.toLowerCase().replace(/[^a-z0-9]/g, '');
-                const norm2 = payloadAuto.turmaSED.toLowerCase().replace(/[^a-z0-9]/g, '');
-                return norm1.includes(norm2) || norm2.includes(norm1);
-            });
-            if (match) select.value = match.id;
-        }
-    } else {
-        textarea.value = '';
-    }
-    
-    showModal('modalImportarAlunosSED');
-}
-
-function processarImportacaoSED() {
-    const jsonStr = document.getElementById('textoImportacaoSED').value.trim();
-    const turmaId = document.getElementById('selTurmaImportacaoSED').value;
-    
-    if (!jsonStr) return alert('Cole o texto copiado pelo Robô.');
-    if (!turmaId) return alert('Selecione uma turma para atualizar.');
-    
-    let payload;
-    try {
-        payload = JSON.parse(jsonStr);
-    } catch(e) {
-        return alert('Código inválido. Colete os dados novamente pelo Robô.');
-    }
-    
-    if (payload.type !== 'SISPROF_IMPORT_ALUNOS' || !Array.isArray(payload.alunos)) {
-        return alert('Formato de dados não reconhecido ou corrompido.');
-    }
-    
-    const alunosExtraidos = payload.alunos;
-    if (alunosExtraidos.length === 0) return alert('A lista de alunos está vazia.');
-    
-    if (!data.estudantes) data.estudantes = [];
-    
-    const estudantesTurma = data.estudantes.filter(e => e.id_turma == turmaId);
-    
-    if (!confirm(`Atenção: Serão verificados ${alunosExtraidos.length} estudantes nesta turma.\n\nAlunos da turma que NÃO estiverem na lista da SED serão marcados como 'Transferido' para preservar o histórico e não atrapalhar sua chamada.\n\nDeseja continuar?`)) return;
-    
-    let adicionados = 0;
-    let reativados = 0;
-    let transferidos = 0;
-    
-    const normalizeName = (name) => {
-        return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase().replace(/\s+/g, ' ');
-    };
-    
-    const nomesExtraidosSet = new Set(alunosExtraidos.map(a => normalizeName(a.nome)));
-    
-    estudantesTurma.forEach(e => {
-        const nomeUpper = normalizeName(e.nome_completo);
-        if (!nomesExtraidosSet.has(nomeUpper) && e.status === 'Ativo') {
-            e.status = 'Transferido';
-            transferidos++;
-        }
-    });
-    
-    alunosExtraidos.forEach(aExtraido => {
-        const nomeUpper = normalizeName(aExtraido.nome);
-        const existente = estudantesTurma.find(e => normalizeName(e.nome_completo) === nomeUpper);
-        
-        if (existente) {
-            if (existente.status !== 'Ativo') {
-                existente.status = 'Ativo';
-                reativados++;
-            }
-        } else {
-            data.estudantes.push({
-                id: Date.now() + Math.floor(Math.random() * 10000),
-                id_turma: Number(turmaId),
-                nome_completo: aExtraido.nome,
-                status: 'Ativo'
-            });
-            adicionados++;
-        }
-    });
-    
-    persistirDados();
-    alert(`Turma atualizada com sucesso!\n\n✔️ Novos alunos: ${adicionados}\n🔄 Alunos reativados: ${reativados}\n❌ Alunos transferidos (saíram): ${transferidos}`);
-    closeModal('modalImportarAlunosSED');
-    
-    if (typeof turmaAtual !== 'undefined' && turmaAtual == turmaId) {
-        showTurmaTab('estudantes');
-    }
-}
-
-function abrirModalImportacaoMultiSED(payload) {
-    closeModal('modalPerfilUsuario');
-    window.currentMultiPayload = payload;
-    
-    if (!document.getElementById('modalImportarMultiSED')) {
-        const div = document.createElement('div');
-        div.id = 'modalImportarMultiSED';
-        div.className = 'modal';
-        document.body.appendChild(div);
-    }
-    
-    const modal = document.getElementById('modalImportarMultiSED');
-    const turmasLocais = data.turmas || [];
-    
-    const normalizeTurma = (t) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "").replace(/\s+/g, '');
-    
-    let htmlList = '';
-    let matchCount = 0;
-
-    payload.turmas.forEach((turmaExtraida) => {
-        const sedNorm = normalizeTurma(turmaExtraida.turmaSED);
-        
-        const matches = turmasLocais.filter(t => {
-            const tNomeBase = t.nome.split('-')[0]; // Ignora a disciplina que vem depois do traço
-            const tNorm = normalizeTurma(tNomeBase);
-            return sedNorm.includes(tNorm) || tNorm.includes(sedNorm);
-        });
-        
-        if (matches.length > 0) {
-            matchCount++;
-            htmlList += `
-                <div style="margin-bottom: 10px; padding: 10px; border: 1px solid #c6f6d5; background: #f0fff4; border-radius: 4px;">
-                    <strong style="color: #276749;">SED: ${turmaExtraida.turmaSED}</strong> (${turmaExtraida.alunos.length} alunos)<br>
-                    <span style="font-size:12px; color: #2f855a;">↳ Atualizará: ${matches.map(m => m.nome + (m.disciplina ? ' - '+m.disciplina : '')).join(', ')}</span>
-                </div>
-            `;
-        } else {
-            htmlList += `
-                <div style="margin-bottom: 10px; padding: 10px; border: 1px solid #fed7d7; background: #fff5f5; border-radius: 4px;">
-                    <strong style="color: #c53030;">SED: ${turmaExtraida.turmaSED}</strong> (${turmaExtraida.alunos.length} alunos)<br>
-                    <span style="font-size:12px; color: #e53e3e;">↳ Nenhuma turma correspondente no SisProf (Ignorada).</span>
-                </div>
-            `;
-        }
-    });
-
-    modal.innerHTML = `
-        <div class="modal-content" style="max-width: 600px; max-height: 80vh; overflow-y: auto;">
-            <div class="modal-header">
-                <h2>📥 Sincronização Inteligente (Várias Turmas)</h2>
-                <button class="close-btn" onclick="closeModal('modalImportarMultiSED')">×</button>
-            </div>
-            <p style="font-size:13px; color:#4a5568; margin-bottom:15px;">
-                O robô extraiu <strong>${payload.turmas.length}</strong> turmas. 
-                O SisProf identificou <strong>${matchCount}</strong> correspondências locais (ignorando as disciplinas).
-            </p>
-            <div style="margin-bottom: 20px;">
-                ${htmlList}
-            </div>
-            <div style="display:flex; justify-content:flex-end; gap:10px; border-top:1px solid #e2e8f0; padding-top:15px;">
-                <button class="btn btn-secondary" onclick="closeModal('modalImportarMultiSED')">Cancelar</button>
-                <button class="btn btn-primary" onclick="processarImportacaoMultiSED()" ${matchCount === 0 ? 'disabled' : ''}>
-                    ✅ Sincronizar Turmas Correspondentes
-                </button>
-            </div>
-        </div>
-    `;
-    
-    showModal('modalImportarMultiSED');
-}
-
-function processarImportacaoMultiSED() {
-    const payload = window.currentMultiPayload;
-    if (!payload || !payload.turmas) return alert('Dados perdidos. Tente novamente.');
-    if (!confirm('Esta ação verificará e atualizará todas as turmas exibidas como correspondentes.\\nAlunos não listados na SED serão marcados como "Transferido".\\n\\nDeseja prosseguir?')) return;
-
-    const turmasLocais = data.turmas || [];
-    const normalizeTurma = (t) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "").replace(/\s+/g, '');
-    const normalizeName = (name) => name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase().replace(/\s+/g, ' ');
-
-    let totalAdicionados = 0;
-    let totalReativados = 0;
-    let totalTransferidos = 0;
-    let turmasAtualizadas = 0;
-
-    if (!data.estudantes) data.estudantes = [];
-
-    payload.turmas.forEach(turmaExtraida => {
-        const sedNorm = normalizeTurma(turmaExtraida.turmaSED);
-        const matches = turmasLocais.filter(t => {
-            const tNomeBase = t.nome.split('-')[0];
-            const tNorm = normalizeTurma(tNomeBase);
-            return sedNorm.includes(tNorm) || tNorm.includes(sedNorm);
-        });
-
-        if (matches.length > 0) {
-            turmasAtualizadas++;
-            const alunosExtraidos = turmaExtraida.alunos;
-            const nomesExtraidosSet = new Set(alunosExtraidos.map(a => normalizeName(a.nome)));
-
-            matches.forEach(tLocal => {
-                const estudantesTurma = data.estudantes.filter(e => e.id_turma == tLocal.id);
-                
-                estudantesTurma.forEach(e => {
-                    const nomeUpper = normalizeName(e.nome_completo);
-                    if (!nomesExtraidosSet.has(nomeUpper) && e.status === 'Ativo') {
-                        e.status = 'Transferido';
-                        totalTransferidos++;
-                    }
-                });
-
-                alunosExtraidos.forEach(aExtraido => {
-                    const nomeUpper = normalizeName(aExtraido.nome);
-                    const existente = estudantesTurma.find(e => normalizeName(e.nome_completo) === nomeUpper);
-                    
-                    if (existente) {
-                        if (existente.status !== 'Ativo') {
-                            existente.status = 'Ativo';
-                            totalReativados++;
-                        }
-                    } else {
-                        data.estudantes.push({
-                            id: Date.now() + Math.floor(Math.random() * 10000),
-                            id_turma: tLocal.id,
-                            nome_completo: aExtraido.nome,
-                            status: 'Ativo'
-                        });
-                        totalAdicionados++;
-                    }
-                });
-            });
-        }
-    });
-
-    persistirDados();
-    alert(`Sincronização Múltipla Concluída!\\n\\nTurmas Atualizadas: ${turmasAtualizadas}\\n✔️ Novos alunos: ${totalAdicionados}\\n🔄 Alunos reativados: ${totalReativados}\\n❌ Alunos transferidos (saíram): ${totalTransferidos}`);
-    closeModal('modalImportarMultiSED');
-
-    if (typeof turmaAtual !== 'undefined' && document.getElementById('turmaDetalhe') && document.getElementById('turmaDetalhe').classList.contains('active')) {
-        showTurmaTab('estudantes');
-    }
-}
-
-// ==================== ATUALIZAÇÃO DIRETA DE ALUNOS VIA EXTENSÃO (SED → Banco) ====================
-// Fallback usado pela extensão quando ela não tem uma sessão do Firebase salva para escrever
-// direto no Firestore: pede para esta aba (se aberta) processar e salvar a atualização.
-window.addEventListener('SisProf_Update_Students', async (event) => {
-    const payload = event.detail;
-    if (!payload || !payload.alunos || !payload.turmaSED) {
-        console.warn('[SisProf] Payload de atualização de alunos inválido:', payload);
-        window.dispatchEvent(new CustomEvent('SisProf_Update_Students_Result', { detail: { success: false, error: 'Payload inválido.' } }));
-        return;
-    }
-
-    console.log('[SisProf] 📥 Atualizando alunos no banco via extensão:', payload.turmaSED, '-', payload.alunos.length, 'alunos');
-
-    try {
-        const resultado = await processarAtualizacaoAlunosExtensao(payload);
-        console.log('[SisProf] ✅ Atualização concluída:', resultado);
-
-        if (!payload.silencioso) {
-            const div = document.createElement('div');
-            div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#38a169; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
-            div.innerHTML = `✅ <strong>Alunos Atualizados!</strong><br><span style="font-size:12px; font-weight:normal;">Turma: ${payload.turmaSED}<br>✔️ Novos: ${resultado.adicionados} | 🔄 Reativados: ${resultado.reativados} | ❌ Transferidos: ${resultado.desativados || 0}</span>`;
-            document.body.appendChild(div);
-            setTimeout(() => div.remove(), 6000);
-        }
-
-        if (typeof turmaAtual !== 'undefined' && document.getElementById('turmaDetalhe') && document.getElementById('turmaDetalhe').classList.contains('active')) {
-            showTurmaTab('estudantes');
-        }
-
-        window.dispatchEvent(new CustomEvent('SisProf_Update_Students_Result', { detail: { success: true, resultado } }));
-    } catch (e) {
-        console.error('[SisProf] ❌ Erro ao atualizar alunos:', e);
-        if (!payload.silencioso) {
-            const div = document.createElement('div');
-            div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#e53e3e; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
-            div.innerHTML = `❌ <strong>Erro ao atualizar alunos:</strong><br><span style="font-size:12px; font-weight:normal;">${e.message}</span>`;
-            document.body.appendChild(div);
-            setTimeout(() => div.remove(), 6000);
-        }
-
-        window.dispatchEvent(new CustomEvent('SisProf_Update_Students_Result', { detail: { success: false, error: e.message } }));
-    }
-});
-
-// Marcador de "acompanhamento" (aula lançada) sincronizado entre dispositivos: o robô manda a marca do
-// checkbox da lista "Aulas do Dia" e aqui gravamos no documento do professor (data.lancamentosConcluidos),
-// que sincroniza. Assim marcar no celular aparece no computador, e ao puxar outra data dá pra ver o que
-// já foi lançado. key = "<data>_turma_<id>". Fire-and-forget (é só um checkbox, consistência eventual).
-window.addEventListener('SisProf_Set_Lancamento', async (event) => {
-    try {
-        const { key, value } = event.detail || {};
-        if (!key) return;
-        if (!data.lancamentosConcluidos) data.lancamentosConcluidos = {};
-        if (value) data.lancamentosConcluidos[key] = true;
-        else delete data.lancamentosConcluidos[key];
-        await persistirDados();
-    } catch (e) {
-        console.warn('[SisProf] Falha ao salvar lançamento concluído:', e);
-    }
-});
-
-// Recebe o catálogo de "Material Digital" (cards de aula do currículo) extraído pela extensão da
-// tela "Registro de Aulas Detalhes" da SED. Mesmo padrão de SisProf_Update_Students.
-window.addEventListener('SisProf_Update_MaterialDigital', async (event) => {
-    const payload = event.detail;
-    if (!payload || !payload.sessoes || !payload.turmaSED || !payload.disciplinaSED) {
-        console.warn('[SisProf] Payload de atualização de Material Digital inválido:', payload);
-        window.dispatchEvent(new CustomEvent('SisProf_Update_MaterialDigital_Result', { detail: { success: false, error: 'Payload inválido.' } }));
-        return;
-    }
-
-    console.log('[SisProf] 📥 Atualizando catálogo de Material Digital via extensão:', payload.disciplinaSED, '-', payload.turmaSED);
-
-    try {
-        const resultado = await processarAtualizacaoMaterialDigitalExtensao(payload);
-        console.log('[SisProf] ✅ Catálogo de Material Digital atualizado:', resultado);
-
-        if (!payload.silencioso) {
-            const div = document.createElement('div');
-            div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#38a169; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
-            div.innerHTML = `✅ <strong>Catálogo de Material Digital atualizado!</strong><br><span style="font-size:12px; font-weight:normal;">Turma: ${payload.turmaSED}<br>📚 ${resultado.totalCards} aula(s) em ${resultado.totalSessoes} sessão(ões)</span>`;
-            document.body.appendChild(div);
-            setTimeout(() => div.remove(), 6000);
-        }
-
-        window.dispatchEvent(new CustomEvent('SisProf_Update_MaterialDigital_Result', { detail: { success: true, resultado } }));
-    } catch (e) {
-        console.error('[SisProf] ❌ Erro ao atualizar catálogo de Material Digital:', e);
-        if (!payload.silencioso) {
-            const div = document.createElement('div');
-            div.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#e53e3e; color:white; padding:15px 25px; border-radius:8px; z-index:999999; font-family:sans-serif; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.2); max-width:350px;';
-            div.innerHTML = `❌ <strong>Erro ao atualizar catálogo:</strong><br><span style="font-size:12px; font-weight:normal;">${e.message}</span>`;
-            document.body.appendChild(div);
-            setTimeout(() => div.remove(), 6000);
-        }
-
-        window.dispatchEvent(new CustomEvent('SisProf_Update_MaterialDigital_Result', { detail: { success: false, error: e.message } }));
-    }
-});
-
-// A extensão escreveu direto no Firestore (via background) - esta aba precisa recarregar seus dados
-// para não ficar mostrando a lista de alunos desatualizada.
-window.addEventListener('SisProf_Refresh_Data', async () => {
-    console.log('[SisProf] 🔄 Recarregando dados após atualização de alunos pela extensão...');
-    if (typeof carregarDadosUsuario === 'function') await carregarDadosUsuario();
-    if (typeof turmaAtual !== 'undefined' && turmaAtual && typeof abrirTurma === 'function') {
-        await abrirTurma(turmaAtual);
-        if (document.getElementById('turmaDetalhe') && document.getElementById('turmaDetalhe').classList.contains('active') && typeof showTurmaTab === 'function') {
-            showTurmaTab('estudantes');
-        }
-    }
-});
 
 // Extrai um código "série+letra" (ex: "8C") do nome da turma, tanto do texto cru da SED
 // ("8º Ano C Integral 9H Anual") quanto do nome local abreviado ("8A", "8C"...).
@@ -2245,151 +1503,7 @@ function extrairCodigoSerieTurmaExtensao(nome) {
     return (m[1] + m[2]).toUpperCase();
 }
 
-// Acha a turma física local (mesma lógica em extensao-profsis/background.js: encontrarAlvoTurma).
-// Prioriza o código série+letra (ex: "8C") e, se não der pra extrair, cai para nome normalizado
-// EXATO e por último substring (mais fraco). Se mais de uma turma FÍSICA ainda corresponder
-// (masterId diferente, ou id diferente sem masterId), falha em vez de aplicar em todas.
-function encontrarAlvoTurmaExtensao(turmasLocais, turmaSED, normalizeTurma) {
-    const sedNorm = normalizeTurma(turmaSED);
-    const sedCodigo = extrairCodigoSerieTurmaExtensao(turmaSED);
-    const comNorm = (turmasLocais || [])
-        .map(t => {
-            const base = (t.nome || '').split('-')[0];
-            return { turma: t, norm: normalizeTurma(base), codigo: extrairCodigoSerieTurmaExtensao(base) };
-        })
-        .filter(x => x.norm);
-
-    let candidatos = [];
-    if (sedCodigo) {
-        candidatos = comNorm.filter(x => x.codigo && x.codigo === sedCodigo);
-    }
-    if (candidatos.length === 0) {
-        candidatos = comNorm.filter(x => x.norm === sedNorm);
-    }
-    if (candidatos.length === 0) {
-        candidatos = comNorm.filter(x => sedNorm.includes(x.norm) || x.norm.includes(sedNorm));
-    }
-    if (candidatos.length === 0) {
-        // Fallback eletiva: uma turma de agrupamento (tipo 'eletiva') não casa por nome/série com a
-        // turma da SED. Se existir EXATAMENTE UMA eletiva, a chamada da SED é importada nela (o
-        // professor escolheu esse comportamento). Com 0 ou 2+ eletivas, mantém o erro de "sem match".
-        const eletivas = (turmasLocais || []).filter(t => t.tipo === 'eletiva');
-        if (eletivas.length === 1) {
-            const turma = eletivas[0];
-            return { masterId: null, turmaId: turma.id, turmaNomeLocal: turma.nome, turmaDisciplinaLocal: turma.disciplina || null, viaEletiva: true };
-        }
-        return { erro: `Nenhuma turma local corresponde a "${turmaSED}". Verifique se a turma está cadastrada no ProfSis.` };
-    }
-
-    const grupos = new Map();
-    candidatos.forEach(({ turma }) => {
-        const key = String(turma.masterId || turma.id);
-        if (!grupos.has(key)) grupos.set(key, turma);
-    });
-
-    if (grupos.size > 1) {
-        const nomes = [...new Set(candidatos.map(c => c.turma.nome))].join(', ');
-        return { erro: `Mais de uma turma local corresponde a "${turmaSED}" (${nomes}). Ajuste os nomes das turmas no ProfSis para que fiquem inequívocos.` };
-    }
-
-    const turma = grupos.values().next().value;
-    return { masterId: turma.masterId || null, turmaId: turma.id, turmaNomeLocal: turma.nome, turmaDisciplinaLocal: turma.disciplina || null };
-}
-
-// Cria/reativa alunos em `estudantes` (array mutado in-place) para a turma `turmaId`.
-// Mesma lógica usada na "Importar CSV" do modo Gestor: a checagem de existência é ESCOPADA à
-// turma alvo (não procura o nome em todas as turmas do sistema) - simples e previsível:
-// - Aluno extraído NÃO existe NESTA turma -> cria, status Ativo.
-// - Aluno extraído já existe NESTA turma e está Ativo -> não faz NADA.
-// - Aluno extraído já existe NESTA turma mas não está Ativo -> só atualiza o status para Ativo.
-// - Aluno ATIVO nesta turma que NÃO veio na extração (saiu) -> Transferido (com guarda de tela parcial).
-// Espelho de background.js:aplicarAtualizacaoAlunos (mantidas em sincronia). Casa por nome escopado à
-// turma alvo; com permitirRemanejamento=true (turma da gestão/masterId), marca como 'Remanejado' o
-// mesmo aluno que estiver Ativo em OUTRA turma física (foi remanejado pra esta).
-function aplicarAtualizacaoAlunosExtensao(estudantes, turmaId, alunosExtraidos, normalizeName, permitirRemanejamento) {
-    let adicionados = 0, reativados = 0, remanejados = 0, desativados = 0;
-    const nomesExtraidos = new Set(alunosExtraidos.map(a => normalizeName(a.nome)));
-
-    // Desativa (Transferido) quem está ATIVO nesta turma e não veio na extração (saiu). Não mexe em
-    // inativos nem nos ativos que continuam. Guarda: extraídos < metade dos ativos = tela parcial ->
-    // não desativa (evita transferir a turma toda por engano). Espelho de background.js.
-    const ativosNaTurma = estudantes.filter(e => e.id_turma == turmaId && (!e.status || e.status === 'Ativo'));
-    if (alunosExtraidos.length * 2 >= ativosNaTurma.length) {
-        ativosNaTurma.forEach(e => {
-            if (!nomesExtraidos.has(normalizeName(e.nome_completo))) { e.status = 'Transferido'; desativados++; }
-        });
-    }
-
-    alunosExtraidos.forEach(aExtraido => {
-        const nomeUpper = normalizeName(aExtraido.nome);
-        const naTurma = estudantes.find(e => e.id_turma == turmaId && normalizeName(e.nome_completo) === nomeUpper);
-        if (naTurma) {
-            if (naTurma.status !== 'Ativo') { naTurma.status = 'Ativo'; reativados++; }
-        } else {
-            estudantes.push({ id: Date.now() + Math.floor(Math.random() * 10000), id_turma: turmaId, nome_completo: aExtraido.nome, status: 'Ativo' });
-            adicionados++;
-        }
-
-        if (permitirRemanejamento) {
-            estudantes.forEach(e => {
-                if (e.id_turma != turmaId && normalizeName(e.nome_completo) === nomeUpper && (!e.status || e.status === 'Ativo')) {
-                    e.status = 'Remanejado';
-                    remanejados++;
-                }
-            });
-        }
-    });
-
-    return { adicionados, reativados, remanejados, desativados, turmasAtualizadas: 1 };
-}
-
-// Processa a atualização de alunos vindos da SED (fallback via aba aberta, quando a extensão não tem
-// sessão do Firebase salva). Turma vinculada à gestão (masterId) grava no documento COMPARTILHADO da
-// escola (não na cópia pessoal do professor, que é resincronizada a partir de lá sempre que a turma é
-// aberta - gravar só na cópia pessoal faria os alunos novos desaparecerem na próxima vez que a turma
-// fosse aberta). Turma própria grava direto em `data` via persistirDados(), como o resto do app.
-async function processarAtualizacaoAlunosExtensao(payload) {
-    if (!currentUser) throw new Error('Usuário não identificado.');
-    if (!data.turmas) data.turmas = [];
-
-    const alunosExtraidos = payload.alunos;
-    const turmaSED = payload.turmaSED;
-
-    const normalizeTurma = (t) => t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "").replace(/\s+/g, '');
-    const normalizeName = (name) => name.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toUpperCase().replace(/\s+/g, ' ');
-
-    const alvo = encontrarAlvoTurmaExtensao(data.turmas, turmaSED, normalizeTurma);
-    if (alvo.erro) throw new Error(alvo.erro);
-
-    const debugInfo = {
-        uid: currentUser.uid || currentUser.id, schoolId: currentUser.schoolId || null, turmaSED,
-        masterId: alvo.masterId || null, turmaId: alvo.turmaId || null,
-        turmaNomeLocal: alvo.turmaNomeLocal || null, turmaDisciplinaLocal: alvo.turmaDisciplinaLocal || null
-    };
-
-    if (alvo.masterId) {
-        if (!currentUser.schoolId) throw new Error('Escola do usuário não identificada (uid ' + debugInfo.uid + '); não é possível compartilhar os alunos.');
-        const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
-        const gestorData = await getData('app_data', key);
-        if (!gestorData) throw new Error('Não foi possível ler os dados da escola (documento ' + key + ').');
-        if (!gestorData.estudantes) gestorData.estudantes = [];
-
-        // Gestão: remanejamento entre turmas físicas da escola habilitado (masterId).
-        const resultado = aplicarAtualizacaoAlunosExtensao(gestorData.estudantes, alvo.masterId, alunosExtraidos, normalizeName, true);
-        await saveData('app_data', key, gestorData);
-        return { ...resultado, debugInfo: { ...debugInfo, gestorDocId: key } };
-    }
-
-    if (!data.estudantes) data.estudantes = [];
-    // Turma própria (sem masterId): sem remanejamento entre turmas do professor.
-    const resultado = aplicarAtualizacaoAlunosExtensao(data.estudantes, alvo.turmaId, alunosExtraidos, normalizeName, false);
-    await persistirDados();
-    return { ...resultado, debugInfo };
-}
-
 // ---- Material Digital: casamento de série (regex) e disciplina (fuzzy) entre turmas/professores ----
-// Duplicado em extensao-profsis/background.js (mesma convenção já usada no projeto pra funções que
-// rodam em contextos de execução isolados, ex: extrairCodigoSerieTurma*).
 
 const ORDINAIS_SERIE_MATERIAL_DIGITAL = {
     'primeiro': '1', 'primeira': '1', 'segundo': '2', 'segunda': '2', 'terceiro': '3', 'terceira': '3',
@@ -2459,88 +1573,6 @@ function disciplinasSaoSemelhantes(a, b) {
     return similaridade >= 0.75;
 }
 
-// Mescla as sessões recém-extraídas da SED com as já salvas no catálogo compartilhado, em vez de
-// substituir o array inteiro: a tela de registro só mostra as abas/cards do dia, então sobrescrever
-// perderia o que já tinha sido capturado em extrações anteriores (e, rodando automaticamente a cada
-// registro, isso aconteceria o tempo todo). Casa sessões por `aba` e cards por título normalizado
-// (reaproveita normalizarTextoComparacaoMaterialDigital) pra nunca duplicar. Card já catalogado:
-// atualiza metadados leves mas preserva o bimestre em que foi capturado pela primeira vez. Card novo:
-// entra marcado com o bimestre atual. Duplicada em background.js (mesma convenção já usada pras
-// outras funções de casamento de Material Digital - contextos isolados).
-function mesclarSessoesMaterialDigital(sessoesExistentes, sessoesNovas, bimestre) {
-    const resultado = (sessoesExistentes || []).map(s => ({ aba: s.aba, cards: (s.cards || []).map(c => Object.assign({}, c)) }));
-
-    (sessoesNovas || []).forEach(sessaoNova => {
-        let sessaoAlvo = resultado.find(s => s.aba === sessaoNova.aba);
-        if (!sessaoAlvo) { sessaoAlvo = { aba: sessaoNova.aba, cards: [] }; resultado.push(sessaoAlvo); }
-
-        (sessaoNova.cards || []).forEach(cardNovo => {
-            const chave = normalizarTextoComparacaoMaterialDigital(cardNovo.titulo);
-            const existente = sessaoAlvo.cards.find(c => normalizarTextoComparacaoMaterialDigital(c.titulo) === chave);
-            if (existente) {
-                existente.horario = cardNovo.horario;
-                existente.codigo = cardNovo.codigo;
-                existente.temTarefa = cardNovo.temTarefa;
-            } else {
-                sessaoAlvo.cards.push(Object.assign({}, cardNovo, { bimestre: bimestre || null }));
-            }
-        });
-    });
-
-    return resultado;
-}
-
-// Grava o catálogo de "Material Digital" (cards de aula do currículo, extraídos da SED) na coleção
-// compartilhada `shared_material_digital`, num cluster por escola+série+disciplina (mesmo padrão de
-// acesso direto ao `db` do SDK compat usado em sincronizarFaltasCompartilhadas). Diferente de alunos, o
-// conteúdo é o mesmo currículo oficial da SEDUC pra qualquer turma da escola com essa disciplina/série -
-// não precisa casar com uma turma local específica (o professor nem precisa ter cadastrado a turma
-// ainda pra extração funcionar).
-async function processarAtualizacaoMaterialDigitalExtensao(payload) {
-    if (typeof db === 'undefined' || !db) throw new Error('Sem conexão com o banco de dados.');
-    if (!currentUser || !currentUser.schoolId) throw new Error('Escola do usuário não identificada.');
-
-    const disciplinaOriginal = payload.disciplinaSED || '';
-    const turmaSED = payload.turmaSED || '';
-    const sessoes = payload.sessoes || [];
-    if (!disciplinaOriginal) throw new Error('Não foi possível identificar a disciplina na tela da SED.');
-
-    const serieChave = extrairSerieChaveMaterialDigital(turmaSED);
-    const schoolId = currentUser.schoolId;
-
-    const candidatos = await db.collection('shared_material_digital')
-        .where('schoolId', '==', schoolId)
-        .where('serieChave', '==', serieChave)
-        .get();
-
-    let docExistente = null;
-    candidatos.forEach(doc => {
-        if (docExistente) return;
-        if (disciplinasSaoSemelhantes(disciplinaOriginal, doc.data().disciplinaOriginal)) docExistente = doc;
-    });
-
-    const dadosCluster = {
-        schoolId: schoolId,
-        serieChave: serieChave,
-        serieOriginal: turmaSED,
-        sessoes: mesclarSessoesMaterialDigital(docExistente ? docExistente.data().sessoes : [], sessoes, payload.bimestre),
-        atualizadoEm: Date.now(),
-        atualizadoPor: (currentUser.nome || currentUser.email || currentUser.id || '')
-    };
-
-    if (docExistente) {
-        await docExistente.ref.update(dadosCluster);
-    } else {
-        dadosCluster.disciplinaOriginal = disciplinaOriginal;
-        await db.collection('shared_material_digital').add(dadosCluster);
-    }
-
-    materialDigitalCacheCompartilhado.clear();
-
-    const totalCards = sessoes.reduce((acc, s) => acc + ((s.cards || []).length), 0);
-    return { disciplina: disciplinaOriginal, serieChave: serieChave, totalSessoes: sessoes.length, totalCards, novoCluster: !docExistente };
-}
-
 function salvarTurma(e) {
     e.preventDefault();
     const id = document.getElementById('turmaId').value;
@@ -2557,7 +1589,7 @@ function salvarTurma(e) {
         nome = document.getElementById('turmaAno').value;
     } else if (ehEletiva) {
         // Eletiva: sem vínculo com a gestão (masterId null). O nome da turma é a própria disciplina
-        // digitada (ex.: Grafite) - é por ele que o robô casa a chamada da SED com esta eletiva.
+        // digitada (ex.: Grafite) - é por ele que a chamada é casada com esta eletiva.
         nome = disciplina;
         masterId = null;
     } else {
@@ -2647,7 +1679,7 @@ async function abrirTurma(id) {
             });
 
             // Sincroniza Registros Administrativos (Atestados/Faltosos) para o Dashboard, gravando o
-            // nome do aluno em cada registro (para o robô casar o faltoso por nome se o id divergir).
+            // nome do aluno em cada registro (para casar o faltoso por nome se o id divergir).
             if (gestorData.registrosAdministrativos) {
                 data.registrosAdministrativos = enriquecerRegistrosComNome(gestorData.registrosAdministrativos, gestorData.estudantes);
             }
@@ -2933,7 +1965,7 @@ async function renderEstudantes() {
         ` : ''}
         ${(ehEletiva && !isGestor) ? `
             <div style="background:#fffff0; border:1px solid #faf089; border-radius:8px; padding:10px; margin-bottom:10px;">
-                <div style="font-size:12px; color:#744210; margin-bottom:8px;">🎯 <strong>Eletiva</strong> — importe alunos de outras turmas ou deixe o robô importá-los pela chamada. O cadastro original não é duplicado.</div>
+                <div style="font-size:12px; color:#744210; margin-bottom:8px;">🎯 <strong>Eletiva</strong> — importe alunos de outras turmas. O cadastro original não é duplicado.</div>
                 <div style="display:flex; gap: 10px; flex-wrap: wrap;">
                     <button class="btn btn-primary btn-sm" onclick="abrirModalImportarDeTurma()">👥 Importar de outra turma</button>
                     <button class="btn btn-secondary btn-sm" onclick="abrirModalNovoEstudante()">+ Adicionar manualmente</button>
@@ -3022,7 +2054,7 @@ function removerEstudante(id) {
 // Uma eletiva (agrupamento) reúne alunos de outras turmas SEM duplicar o cadastro original: cada
 // aluno importado vira um "vínculo" leve na eletiva (id_turma = eletiva) que aponta para o aluno de
 // origem (id_estudante_origem). A deduplicação é por origem OU por nome normalizado, então o mesmo
-// aluno nunca aparece duas vezes na eletiva (nem via importação manual, nem via robô na chamada).
+// aluno nunca aparece duas vezes na eletiva.
 function normNomeImportEletiva(s) {
     return s ? s.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toUpperCase().replace(/\s+/g, ' ') : '';
 }
@@ -3312,7 +2344,8 @@ async function salvarChamadaManual() {
     const mapSync = {}; // Mapa para sincronização na nuvem { id: isAbsent }
 
     // Faltosos vigentes (gestão): um faltoso PRESENTE precisa gravar um registro 'presente' explícito,
-    // senão o robô (que marca falta por padrão para quem não tem registro) volta a marcá-lo ausente.
+    // senão a regra de falta padrão (quem não tem registro no dia conta como ausente) volta a
+    // considerá-lo ausente nos relatórios.
     const norm = (s) => s ? s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase() : "";
     const faltososVigentes = (data.registrosAdministrativos || []).filter(r => r.tipo === 'Faltoso' && !r.arquivado);
     const ehFaltosoVigente = (estId) => faltososVigentes.some(r => {
@@ -3321,8 +2354,8 @@ async function salvarChamadaManual() {
         const est = (data.estudantes || []).find(e => e.id == estId);
         return est && norm(est.nome_completo) === norm(r.nomeEstudante);
     });
-    // Baixa frequência (<50% no ano) também leva falta automática no robô, então um presente precisa
-    // gravar 'presente' explícito - mesma razão do faltoso vigente.
+    // Baixa frequência (<50% no ano) também entra na regra de falta padrão, então um presente
+    // precisa gravar 'presente' explícito - mesma razão do faltoso vigente.
     const baixaFreqIds = new Set((data.baixaFrequencia || []).map(b => String(b.id)));
     const deveGravarPresente = (estId) => ehFaltosoVigente(estId) || baixaFreqIds.has(String(estId));
 
@@ -3344,7 +2377,7 @@ async function salvarChamadaManual() {
             });
         } else if (deveGravarPresente(estId)) {
             // Presente E elegível a falta automática (faltoso ou <50%): grava 'presente' explícito
-            // para o robô não re-marcar falta.
+            // para a regra padrão não contá-lo como ausente.
             data.presencas.push({
                 id: Date.now() + Math.random(),
                 id_estudante: estId,
@@ -3382,7 +2415,6 @@ async function salvarChamadaManual() {
     await sincronizarFaltasCompartilhadas(dataChamada, mapSync);
 
     await persistirDados();
-    if (typeof window.enviarDadosParaExtensao === 'function') window.enviarDadosParaExtensao(true);
     alert('Chamada salva e sincronizada com a gestão!');
     renderChamada(); // Atualiza para refletir contagens
 }
@@ -4234,7 +3266,7 @@ async function obterCardsCatalogoCompartilhado(disciplina, nomeTurmaOuSerie) {
                 .get();
             candidatosData = snap.docs.map(d => d.data());
             // Só cacheia quando ACHOU algo. Um array vazio é "truthy", então cachear [] deixava o
-            // catálogo preso em vazio: se a página foi aberta antes da extração do robô, os cards
+            // catálogo preso em vazio: se a página foi aberta antes do catálogo ser preenchido, os cards
             // extraídos depois nunca apareciam sem recarregar a página. Sem cachear o vazio, a próxima
             // abertura re-consulta o Firestore e já mostra o que foi extraído.
             if (candidatosData.length > 0) materialDigitalCacheCompartilhado.set(chaveCache, candidatosData);
@@ -4277,7 +3309,7 @@ function renderizarSeletorCardsMaterialDigitalDeLista(cards, selecionadosAtuais,
 
     const idsSelecionados = new Set((selecionadosAtuais || []).map(c => c.id));
 
-    // Classifica os cards por BIMESTRE (extraído pelo robô e salvo em cada card). Grupos 1..4 e, ao
+    // Classifica os cards por BIMESTRE (salvo em cada card). Grupos 1..4 e, ao
     // final, "Sem bimestre definido" pros cards ainda sem essa marcação. A mesma função é usada na
     // aba Chamada da turma e na pré-visualização do Plano de Aula (Estagiário), então os dois passam
     // a exibir as aulas agrupadas por bimestre.
@@ -4425,7 +3457,7 @@ async function abrirModalNovoRegistroAula(id = null) {
     const cardsCatalogoRegistro = turmaRegistro ? await obterCardsCatalogoCompartilhado(turmaRegistro.disciplina, turmaRegistro.ano_serie || turmaRegistro.nome) : [];
     document.getElementById('regAulaCardsMaterialDigitalWrap').innerHTML =
         renderizarSeletorCardsMaterialDigitalDeLista(cardsCatalogoRegistro, cardsAtuais, 'regAulaCardsMaterialDigital')
-        || '<p style="font-size:11px; color:#a0aec0; margin-top:10px;">📚 Nenhuma aula do Material Digital extraída ainda para esta disciplina/série. Na Sala do Futuro, use o robô (📥 Extrair Material Digital) ou preencha um registro — a extração acontece sozinha.</p>';
+        || '<p style="font-size:11px; color:#a0aec0; margin-top:10px;">📚 Nenhuma aula do Material Digital cadastrada ainda para esta disciplina/série.</p>';
     showModal('modalNovoRegistroAula');
 }
 
@@ -4509,9 +3541,8 @@ function calcularTotalAulasPrevistas(turmaId, inicio, fim) {
 }
 
 // Recalcula quem está com <50% de presença no ANO LETIVO (acumulado até hoje), DESCONTANDO atestados,
-// e grava em data.baixaFrequencia = [{id, nome}]. Esses alunos passam a levar falta automática no robô
-// da Sala do Futuro mesmo SEM estarem classificados como "Faltoso" pela gestão (regra complementar).
-// O robô lê essa lista via profsisAppData (o app persiste 'data' no localStorage que a extensão captura).
+// e grava em data.baixaFrequencia = [{id, nome}]. Esses alunos entram na regra de falta padrão mesmo
+// SEM estarem classificados como "Faltoso" pela gestão (regra complementar).
 // Piso: só aciona a partir de 10 aulas previstas no período (evita falso-positivo no começo do ano).
 function recalcularBaixaFrequencia() {
     if (!data) return;
@@ -9234,8 +8265,8 @@ async function persistirDados() {
     }
     if (!currentUser) return;
 
-    // Atualiza a lista de baixa frequência (<50% de presença no ano, descontando atestados) antes de
-    // persistir, para o robô da Sala do Futuro receber sempre o estado atual via profsisAppData.
+    // Atualiza a lista de baixa frequência (<50% de presença no ano, descontando atestados) antes
+    // de persistir, para os relatórios refletirem sempre o estado atual.
     if (currentViewMode !== 'gestor') {
         try { recalcularBaixaFrequencia(); } catch (e) { console.warn('Erro ao recalcular baixa frequência:', e); }
     }

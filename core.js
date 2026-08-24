@@ -232,24 +232,6 @@ function modeloGeminiSubstituto(mensagemErro) {
     return m ? m[1] : null;
 }
 
-// Repassa a sessão do Firebase Auth (refresh token) para a extensão SisProf, se instalada.
-// Permite que a extensão leia/escreva no Firestore direto (ex: extrair alunos da SED), sem depender desta aba aberta.
-function repassarSessaoFirebaseParaExtensao(user) {
-    // Sem argumento, usa o usuário logado atual - permite reenviar a sessão periodicamente
-    // (ver setInterval abaixo) mesmo fora do onAuthStateChanged.
-    user = user || (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser);
-    if (!user || !user.refreshToken) return;
-    try {
-        const apiKey = firebase.app().options.apiKey;
-        window.postMessage({
-            type: 'EXT_FIREBASE_SESSION',
-            session: { refreshToken: user.refreshToken, apiKey: apiKey, uid: user.uid, email: user.email }
-        }, '*');
-    } catch (e) {
-        console.warn('[SisProf] Falha ao repassar sessão do Firebase para a extensão:', e);
-    }
-}
-
 // Inicialização
 // [CORREÇÃO CRÍTICA] Espera o Firebase Auth restaurar a sessão salva.
 // Sem isso, o app lia o Firestore antes de existir token e as Regras negavam a leitura
@@ -277,18 +259,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // [NOVO] Monitorar estado do login do Firebase (Mantém a sessão ativa)
     if (USE_FIREBASE && typeof firebase !== 'undefined') {
-        // Reenvia a sessão do Firebase para o robô de forma robusta. Não basta postar só no
-        // onAuthStateChanged: no app Android o content script do ProfSis é injetado no
-        // onPageFinished e pode ainda não estar ouvindo quando o Firebase restaura a sessão -
-        // o postMessage se perderia e a extração acusaria "Sem sessão do Firebase salva". Aqui
-        // reenviamos algumas vezes logo após o load, periodicamente e ao focar a página (o
-        // postMessage é barato e idempotente; content_profsis só regrava a mesma sessão).
-        [1000, 3000, 6000, 12000].forEach(t => setTimeout(() => repassarSessaoFirebaseParaExtensao(), t));
-        setInterval(() => repassarSessaoFirebaseParaExtensao(), 20000);
-        document.addEventListener('visibilitychange', () => { if (!document.hidden) repassarSessaoFirebaseParaExtensao(); });
-
         firebase.auth().onAuthStateChanged(async (user) => {
-            if (user) repassarSessaoFirebaseParaExtensao(user);
             if (user && !currentUser) {
                 // Se o Firebase diz que está logado, mas o app não sabe, recupera os dados
                 const usersData = await getData('system', 'users_list');

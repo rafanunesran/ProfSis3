@@ -1991,7 +1991,7 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
                <summary style="cursor:pointer; font-size:13px; color:#2d3748; font-weight:bold;">📚 Aula do Material Digital dada (não entra no documento)</summary>
                ${seletorCards}
            </details>`
-        : '<p style="font-size:11px; color:#a0aec0; margin:10px 0 0;">📚 Nenhuma aula do Material Digital extraída ainda para esta disciplina/série. Na Sala do Futuro, use o robô (📥 Extrair Material Digital) na tela de Registro de Aulas.</p>';
+        : '<p style="font-size:11px; color:#a0aec0; margin:10px 0 0;">📚 Nenhuma aula do Material Digital cadastrada ainda para esta disciplina/série.</p>';
 
     // Aviso de fundamentação na base curricular oficial (planilha/PDFs) - ver montarContextoCurriculoOficial.
     const fundamentacaoHtml = resumoFundamentacao && resumoFundamentacao.grounded
@@ -2722,7 +2722,7 @@ async function exportarDocumentoFinal(tipo) {
 
             // Lido do seletor de "Material Digital" do modal de revisão - NÃO entra no template/PDF
             // exportado (fica de fora dos placeholders substituídos acima), só é anexado aos rascunhos
-            // de registrosAula abaixo, para as automações (extensão) que preenchem a SED depois.
+            // de registrosAula abaixo.
             const cardsMaterialDigitalSelecionados = lerCardsMaterialDigitalSelecionados('revDocCardsMaterialDigital');
 
             turmasAlvo.forEach(turma => {

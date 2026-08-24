@@ -2083,8 +2083,7 @@ function extrairAlunosImportMassa(linhas, colunas) {
 }
 
 // Agrupa as turmas cadastradas por turma FÍSICA: a mesma turma aparece uma vez por disciplina e
-// todas compartilham o roster, então contam como um alvo só. Mesmo agrupamento que
-// encontrarAlvoTurmaExtensao usa em app.js:2284.
+// todas compartilham o roster, então contam como um alvo só.
 function agruparTurmasFisicasImportMassa() {
     const grupos = new Map();
 
@@ -2144,10 +2143,8 @@ function casarTurmaImportMassa(alunos, grupos) {
 // rodar sobre uma CÓPIA na prévia e sobre o array real na confirmação - assim o que a tela mostra é
 // literalmente o que vai ser gravado.
 //
-// Não dá pra reusar aplicarAtualizacaoAlunosExtensao (app.js:2309): ela força 'Ativo' em todo mundo
-// que aparece na lista (app.js:2327), o que reativaria justamente os Transferido/Remanejamento que o
-// arquivo diz que saíram. E ela não pode ser alterada - é espelhada em
-// extensao-profsis/background.js:231 e serve a extensão.
+// O status vem do próprio arquivo ("Situação do Aluno"): quem o arquivo diz que saiu fica
+// Transferido/Remanejado, em vez de ser reativado como 'Ativo' só por aparecer na lista.
 function aplicarArquivoImportMassa(estudantes, turmaId, alunos, novoId) {
     const criados = [];
     const alterados = [];
