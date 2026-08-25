@@ -57,31 +57,59 @@ baixável.
   (`Docs/`) usam o timbre da Secretaria da Educação, como os formulários oficiais que o
   profissional preenche.
 
-## 4. Pendências que dependem de decisão/ação do responsável
+## 4. Decisões tomadas
 
-Estas não são alterações de código; ficam registradas para acompanhamento.
+Decisões do responsável pelo sistema, registradas em **25 de agosto de 2026**.
 
-1. **Dados já armazenados.** Listas de estudantes e o catálogo de "Material Digital"
-   coletados antes desta adequação continuam no Firestore. Decidir, junto à direção da
-   escola, o que fazer com esse acervo (manter sob a autorização a ser solicitada, ou
-   expurgar).
-2. **Extensão já instalada nos navegadores.** Sem o `update.xml` publicado, as cópias
-   instaladas param de receber atualização, mas não se desinstalam sozinhas. Orientar os
-   usuários a removê-la em `chrome://extensions` (o aviso já consta da documentação).
-3. **Chave de assinatura da extensão.** O secret `EXTENSION_SIGNING_KEY_B64` pode ser
-   apagado nas configurações do repositório.
-4. **Máquinas onde o instalador rodou.** O instalador escrevia política em
-   `HKCU\Software\Policies\Google\Chrome\ExtensionSettings`. Se ele foi executado em
-   equipamento da escola, convém remover essa chave de registro.
-5. **Histórico do Git.** Apagar os arquivos não os remove dos commits antigos. Reescrever
-   o histórico é possível, mas invalida clones existentes — decisão em aberto.
-6. **Solicitação de autorização.** Minuta pronta em
-   `Docs/solicitacao-autorizacao-seduc.md`.
+1. **Dados já armazenados — MANTIDOS.** As listas de estudantes e o catálogo de
+   "Material Digital" coletados antes desta adequação permanecem no Firestore. O acervo se
+   limita a **nome e situação do estudante**: RA, dígito do RA, data de nascimento e
+   e-mails institucionais nunca foram gravados no banco. É exatamente esse ponto que se
+   submete à análise da COEGD (seção 5); caso a Secretaria determine outro tratamento, o
+   acervo será ajustado ou expurgado conforme a orientação recebida.
+2. **Extensão já instalada nos navegadores — CONCLUÍDO.** As cópias instaladas foram
+   removidas. O `update.xml` deixou de ser publicado, então nenhuma cópia remanescente
+   recebe atualização, e a documentação orienta a remoção em `chrome://extensions`.
+3. **Chave de assinatura da extensão — CONCLUÍDO.** O secret `EXTENSION_SIGNING_KEY_B64`
+   foi apagado das configurações do repositório.
+4. **Máquinas onde o instalador rodou — CONCLUÍDO.** A política escrita em
+   `HKCU\Software\Policies\Google\Chrome\ExtensionSettings` foi removida dos
+   equipamentos.
+5. **Histórico do Git — REESCRITO.** O código de robô/RPA foi expurgado de todos os
+   commits do repositório, e não apenas dos arquivos atuais.
 
-## 5. Solicitação de análise técnica
+   *Ressalva registrada de boa-fé:* o repositório é público e possui pull requests
+   mesclados. A reescrita do histórico remove o conteúdo de clones, do `git log` e da
+   navegação normal, mas **não apaga os objetos antigos do servidor do GitHub**: eles
+   permanecem alcançáveis por SHA através das referências `refs/pull/N/head`, que são
+   permanentes e não podem ser removidas pelo proprietário. Para eliminar esses objetos
+   órfãos é necessário solicitar ao suporte do GitHub a coleta de lixo do repositório —
+   **chamado ainda a abrir**. Até lá, um link direto para um commit antigo ainda pode
+   alcançar o código removido.
+
+   - Data de abertura do chamado: _______________
+   - Número do chamado / resposta: _______________
+
+6. **Solicitação de autorização à COEGD/SEDUC — PENDENTE DE ENVIO.** A minuta está pronta
+   em `Docs/solicitacao-autorizacao-seduc.md` e **ainda não foi protocolada**. Ao enviar,
+   anotar aqui:
+
+   - Data do envio: _______________
+   - Canal utilizado: _______________
+   - Protocolo / confirmação de recebimento: _______________
+   - Resposta recebida: _______________
+
+## 5. Solicitação de análise técnica (pendente de envio)
 
 O comunicado determina que necessidade de integração, automação ou desenvolvimento de
 ferramenta que demande acesso aos sistemas ou dados da SEDUC seja encaminhada
-previamente para análise técnica. A minuta em `Docs/solicitacao-autorizacao-seduc.md`
-descreve o sistema, os dados tratados e onde ficam armazenados, para envio à
-COEGD/SEDUC.
+previamente para análise técnica.
+
+Como o sistema **não possui mais nenhuma integração** com os ambientes da Secretaria
+(seções 1 e 2), a solicitação trata do único ponto remanescente: o **armazenamento, em
+ambiente externo, do nome e da situação de estudantes**, obtidos de arquivo que o próprio
+profissional exporta da SED, no ambiente oficial, com suas credenciais.
+
+A minuta em `Docs/solicitacao-autorizacao-seduc.md` descreve o sistema, os dados tratados
+e onde ficam armazenados. **Ela ainda não foi enviada** — ver item 6 da seção 4, onde a
+data e o protocolo devem ser anotados no momento do envio.
