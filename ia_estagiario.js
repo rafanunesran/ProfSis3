@@ -1779,6 +1779,12 @@ const escapeHtmlEstagiario = (s) => String(s == null ? '' : s).replace(/&/g, '&a
 const escapeAttrEstagiario = (s) => escapeHtmlEstagiario(s).replace(/"/g, '&quot;');
 const textoParaHtmlEstagiario = (s) => escapeHtmlEstagiario(s).replace(/\n/g, '<br>');
 const marcaEstagiario = (v) => v ? 'X' : '';
+// Nomes em texto corrido, do jeito que se escreve num documento: "Ana", "Ana e Bruno", "Ana, Bruno e Carla".
+const listarNomesEstagiario = (nomes) => {
+    const lista = (nomes || []).map(n => escapeHtmlEstagiario(n));
+    if (lista.length <= 1) return lista[0] || '';
+    return `${lista.slice(0, -1).join(', ')} e ${lista[lista.length - 1]}`;
+};
 
 // Campos que a IA rascunha no Plano de Aula - mesma estrutura de ANEXO_PAEE_CAMPOS_IA/ANEXO_PEI_CAMPOS_IA
 // (key = chave no objeto `dados`, token = marcador {{TOKEN}} do template, label = rótulo do campo).
@@ -2579,7 +2585,7 @@ const TEMPLATE_PLANO_AULA_EMBUTIDO = `<!DOCTYPE html>
     <div class="subtitle">{{BIMESTRE}}</div>
     <table>
         <tr>
-            <td colspan="4"><b>PROFESSOR:</b> {{PROFESSOR}}{{PROFESSOR_PARCEIRO}}</td>
+            <td colspan="4"><b>{{ROTULO_PROFESSORES}}</b> {{PROFESSOR}}</td>
             <td colspan="3"><b>DISCIPLINA:</b> {{DISCIPLINA}}</td>
         </tr>
         <tr>
@@ -2640,6 +2646,12 @@ async function montarHtmlPlanoAula(payload, opcoes) {
     const cfg = await carregarConfigsDocumentoEstagiario();
     const tipoDoc = payload.tipo === 'plano_aula' ? 'PLANO DE AULA' : String(payload.tipo || '').toUpperCase().replace('_', ' ');
 
+    // Professor + professor(es) parceiro(s) da eletiva, sem repetir nome. O parceiro pode vir com
+    // mais de um nome separado por vírgula (quando a série/disciplina casa com várias eletivas).
+    const nomesProfessores = [...new Set([payload.professor, ...String(payload.professorParceiro || '').split(',')]
+        .map(n => String(n || '').trim())
+        .filter(Boolean))];
+
     // Substitui todos os marcadores (placeholders) pelos dados reais globalmente (/g)
     let htmlFinal = templateHtml
         .replace(/{{REGIÃO}}/g, escapeHtmlEstagiario(cfg.regiao))
@@ -2650,12 +2662,13 @@ async function montarHtmlPlanoAula(payload, opcoes) {
         .replace(/{{EMAIL_ESCOLA}}/g, escapeHtmlEstagiario(cfg.emailEscola))
         .replace(/{{ENDERECO_ESCOLA}}/g, escapeHtmlEstagiario(cfg.enderecoEscola))
         .replace(/{{TELEFONE_ESCOLA}}/g, escapeHtmlEstagiario(cfg.telefoneEscola))
-        .replace(/{{PROFESSOR}}/g, escapeHtmlEstagiario(payload.professor))
-        // Professor parceiro (eletivas): só ocupa espaço no cabeçalho quando a turma tem um.
-        .replace(/{{PROFESSOR_PARCEIRO}}/g, () => {
-            const parceiro = String(payload.professorParceiro || '').trim();
-            return parceiro ? `<br><b>PROFESSOR PARCEIRO:</b> ${escapeHtmlEstagiario(parceiro)}` : '';
-        })
+        // Professor e professor(es) parceiro(s) da eletiva saem juntos num campo só ("PROFESSORES:
+        // Ana e Bruno"); com um nome só o rótulo volta pro singular.
+        .replace(/{{ROTULO_PROFESSORES}}/g, nomesProfessores.length > 1 ? 'PROFESSORES:' : 'PROFESSOR:')
+        .replace(/{{PROFESSOR}}/g, () => listarNomesEstagiario(nomesProfessores))
+        // Modelo antigo que ainda tenha o campo separado do parceiro (cópia em cache): os nomes já
+        // saíram todos em {{PROFESSOR}}, então aqui não sobra nada pra escrever.
+        .replace(/{{PROFESSOR_PARCEIRO}}/g, '')
         .replace(/{{DISCIPLINA}}/g, escapeHtmlEstagiario(payload.disciplina))
         .replace(/{{SERIE}}/g, escapeHtmlEstagiario(payload.serie))
         .replace(/{{TURMAS}}/g, escapeHtmlEstagiario(payload.turmasStr))
