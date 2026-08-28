@@ -1357,6 +1357,7 @@ function renderTurmas() {
                 </div>
             </div>
             <div style="font-size:12px; color:#718096;">${t.turno}</div>
+            ${t.professor_parceiro ? `<div style="font-size:12px; color:#744210;">👥 Professor parceiro: <strong>${t.professor_parceiro}</strong></div>` : ''}
             <div style="font-size:10px; color:#a0aec0; margin-top:4px;" title="Identificador interno da turma">ID: ${t.id}${t.masterId ? ' | Turma da gestão (masterId): ' + t.masterId : ''}</div>
         </div>
     `).join('');
@@ -1375,6 +1376,8 @@ async function abrirModalNovaTurma() {
     document.getElementById('turmaId').value = '';
     document.getElementById('turmaAno').value = '';
     document.getElementById('turmaDisciplina').value = '';
+    const inpParceiroNovo = document.getElementById('turmaProfessorParceiro');
+    if (inpParceiroNovo) inpParceiroNovo.value = '';
     document.getElementById('tituloModalTurma').textContent = 'Nova Turma';
     
     // Eletiva é uma opção só do professor (agrupamento de alunos de outras turmas). Reseta sempre.
@@ -1385,6 +1388,8 @@ async function abrirModalNovaTurma() {
     // Gestor define apenas Ano/Série; Professor define Disciplina
     if (currentViewMode === 'gestor') {
         document.getElementById('divTurmaDisciplina').style.display = 'none';
+        const divParceiroGestor = document.getElementById('divProfessorParceiro');
+        if (divParceiroGestor) divParceiroGestor.style.display = 'none';
         document.getElementById('containerTurmaAnoInput').style.display = 'block';
         document.getElementById('containerTurmaAnoSelect').style.display = 'none';
     } else {
@@ -1423,6 +1428,9 @@ function toggleModoEletiva() {
     if (dica) dica.style.display = ehEletiva ? 'block' : 'none';
     const lbl = document.getElementById('labelTurmaDisciplina');
     if (lbl) lbl.textContent = ehEletiva ? 'Nome da Eletiva / Disciplina (ex.: Grafite, Teatro):' : 'Disciplina:';
+    // Professor parceiro só existe em eletiva (duas pessoas costumam dividir a mesma eletiva).
+    const divParceiro = document.getElementById('divProfessorParceiro');
+    if (divParceiro) divParceiro.style.display = ehEletiva ? 'block' : 'none';
 }
 
 function editarTurma(id) {
@@ -1431,6 +1439,8 @@ function editarTurma(id) {
         document.getElementById('turmaId').value = turma.id;
         document.getElementById('turmaAno').value = turma.ano_serie || turma.nome;
         document.getElementById('turmaDisciplina').value = turma.disciplina;
+        const inpParceiroEdit = document.getElementById('turmaProfessorParceiro');
+        if (inpParceiroEdit) inpParceiroEdit.value = turma.professor_parceiro || '';
         document.getElementById('turmaTurno').value = turma.turno;
         document.getElementById('tituloModalTurma').textContent = 'Editar Turma';
 
@@ -1441,6 +1451,8 @@ function editarTurma(id) {
 
         if (currentViewMode === 'gestor') {
             document.getElementById('divTurmaDisciplina').style.display = 'none';
+            const divParceiroGestor = document.getElementById('divProfessorParceiro');
+            if (divParceiroGestor) divParceiroGestor.style.display = 'none';
             document.getElementById('containerTurmaAnoInput').style.display = 'block';
             document.getElementById('containerTurmaAnoSelect').style.display = 'none';
         } else {
@@ -1584,6 +1596,10 @@ function salvarTurma(e) {
 
     const chkEletiva = document.getElementById('turmaEletiva');
     const ehEletiva = currentViewMode !== 'gestor' && chkEletiva && chkEletiva.checked;
+    // Professor parceiro: só faz sentido na eletiva (quem divide a eletiva com o professor). Sai no
+    // cabeçalho do Plano de Aula junto do nome do professor.
+    const inpParceiro = document.getElementById('turmaProfessorParceiro');
+    const professorParceiro = (ehEletiva && inpParceiro) ? inpParceiro.value.trim() : '';
 
     if (currentViewMode === 'gestor') {
         nome = document.getElementById('turmaAno').value;
@@ -1610,12 +1626,15 @@ function salvarTurma(e) {
             if (masterId) t.masterId = masterId;
             if (ehEletiva) { t.tipo = 'eletiva'; t.masterId = null; }
             else if (t.tipo === 'eletiva' && !ehEletiva) delete t.tipo;
+            if (professorParceiro) t.professor_parceiro = professorParceiro;
+            else delete t.professor_parceiro;
         }
     } else {
         if (!data.turmas) data.turmas = [];
         // masterId serve para vincular a turma do professor à turma original da escola
         const nova = { id: Date.now(), nome, ano_serie: nome, disciplina, turno, masterId: masterId };
         if (ehEletiva) nova.tipo = 'eletiva';
+        if (professorParceiro) nova.professor_parceiro = professorParceiro;
         data.turmas.push(nova);
     }
     persistirDados();
@@ -1635,7 +1654,10 @@ let turmaAtual = null;
 async function abrirTurma(id) {
     turmaAtual = id;
     const turma = data.turmas.find(t => t.id == id);
-    document.getElementById('turmaDetalheTitulo').textContent = turma.disciplina ? `${turma.nome} - ${turma.disciplina}` : turma.nome;
+    const tituloBase = turma.disciplina ? `${turma.nome} - ${turma.disciplina}` : turma.nome;
+    document.getElementById('turmaDetalheTitulo').textContent = turma.professor_parceiro
+        ? `${tituloBase} (👥 ${turma.professor_parceiro})`
+        : tituloBase;
 
     // --- SINCRONIZAÇÃO DE ALUNOS (PROFESSOR) ---
     // Se for professor e a turma tiver um vínculo (masterId), atualiza a lista de alunos

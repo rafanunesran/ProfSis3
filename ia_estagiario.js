@@ -363,6 +363,48 @@ Atualize a lista de preferências DURÁVEIS de estilo/formato deste professor (e
     }
 }
 
+// Turmas do professor que correspondem à série + disciplina escolhidas no formulário do Plano de
+// Aula (mesmo casamento usado em gerarDocumentoIA). Numa eletiva, série e disciplina são o próprio
+// nome da eletiva (ex.: "Grafite"), então ela casa normalmente aqui.
+function turmasDaSerieDisciplinaEstagiario(serie, disciplina) {
+    const serieNome = (nome) => {
+        if (!nome) return '';
+        let n = nome.trim();
+        n = n.replace(/[\s-]+[A-Za-z]$/i, '');
+        n = n.replace(/(\d)[A-Za-z]$/i, '$1');
+        n = n.replace(/([ºª])[A-Za-z]$/i, '$1');
+        return n.trim();
+    };
+    return (data.turmas || []).filter(t => serieNome(t.ano_serie || t.nome) === serie && t.disciplina === disciplina);
+}
+
+// Professor parceiro cadastrado nas eletivas que casaram com a série + disciplina escolhidas.
+function professorParceiroDasTurmasEstagiario(turmas) {
+    return [...new Set((turmas || [])
+        .map(t => (t.professor_parceiro || '').trim())
+        .filter(Boolean))].join(', ');
+}
+
+// Mostra o campo "Professor parceiro" do formulário do Plano de Aula quando a série + disciplina
+// escolhidas são de uma eletiva, já preenchido com o nome cadastrado na turma (o professor ainda
+// pode ajustar o texto só para este plano).
+function atualizarProfessorParceiroPlanoAula() {
+    const campo = document.getElementById('campoProfessorParceiroPlano');
+    const input = document.getElementById('iaDocProfessorParceiro');
+    if (!campo || !input) return;
+
+    const selSerie = document.getElementById('iaDocSerie');
+    const selDisciplina = document.getElementById('iaDocDisciplina');
+    const serie = selSerie ? selSerie.value : '';
+    const disciplina = selDisciplina ? selDisciplina.value : '';
+    if (!serie || !disciplina) { campo.style.display = 'none'; input.value = ''; return; }
+
+    const turmas = turmasDaSerieDisciplinaEstagiario(serie, disciplina);
+    const ehEletiva = turmas.some(t => t.tipo === 'eletiva');
+    campo.style.display = ehEletiva ? 'block' : 'none';
+    input.value = ehEletiva ? professorParceiroDasTurmasEstagiario(turmas) : '';
+}
+
 async function abrirModalGerarDocumentoIA() {
     // Extrai nomes de série de forma inteligente, ignorando formatos colados ou separados (ex: "7º Ano A", "7A", "7ºA" -> "7º Ano", "7", "7º")
     const getSerieNome = (nome) => {
@@ -498,18 +540,24 @@ async function abrirModalGerarDocumentoIA() {
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom: 15px;">
                         <div>
                             <label style="font-weight:bold; display:block; margin-bottom:5px;">Série / Ano:</label>
-                            <select id="iaDocSerie" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <select id="iaDocSerie" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;" onchange="atualizarProfessorParceiroPlanoAula()">
                                 <option value="">Selecione...</option>
                                 ${seriesUnicas.map(s => `<option value="${s}">${s}</option>`).join('')}
                             </select>
                         </div>
                         <div>
                             <label style="font-weight:bold; display:block; margin-bottom:5px;">Disciplina:</label>
-                            <select id="iaDocDisciplina" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <select id="iaDocDisciplina" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;" onchange="atualizarProfessorParceiroPlanoAula()">
                                 <option value="">Selecione...</option>
                                 ${disciplinasUnicas.map(d => `<option value="${d}">${d}</option>`).join('')}
                             </select>
                         </div>
+                    </div>
+
+                    <div id="campoProfessorParceiroPlano" style="display:none; margin-bottom: 15px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">👥 Professor parceiro (eletiva):</label>
+                        <input type="text" id="iaDocProfessorParceiro" placeholder="Nome do professor que divide a eletiva" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                        <p style="font-size:11px; color:#718096; margin:4px 0 0 0;">Vem do cadastro da eletiva (Turmas) e sai no cabeçalho do Plano de Aula. Dá pra ajustar só para este plano.</p>
                     </div>
 
                     <div style="margin-bottom: 15px;">
@@ -707,6 +755,9 @@ async function abrirModalGerarDocumentoIA() {
     atualizarBotaoCriarComRefAnexoIV();
 
     toggleTipoDocumentoIA();
+    // Os selects de série/disciplina voltam pra "Selecione..." a cada abertura - realinha o campo do
+    // professor parceiro com essa seleção (esconde e limpa).
+    atualizarProfessorParceiroPlanoAula();
     showModal('modalGerarDocumentoIA');
 }
 
@@ -1394,17 +1445,14 @@ async function gerarDocumentoIA() {
     btn.disabled = true;
 
     // Extrai turmas e duração
-    const getSerieNome = (nome) => {
-        if (!nome) return '';
-        let n = nome.trim();
-        n = n.replace(/[\s-]+[A-Za-z]$/i, '');
-        n = n.replace(/(\d)[A-Za-z]$/i, '$1');
-        n = n.replace(/([ºª])[A-Za-z]$/i, '$1');
-        return n.trim();
-    };
-
-    const turmasMatch = (data.turmas || []).filter(t => getSerieNome(t.ano_serie || t.nome) === serie && t.disciplina === disciplina);
+    const turmasMatch = turmasDaSerieDisciplinaEstagiario(serie, disciplina);
     const turmasNomesStr = turmasMatch.length > 0 ? turmasMatch.map(t => t.nome).join(', ') : 'Não detectada';
+    // Professor parceiro (eletivas): o que estiver escrito no formulário manda; se o campo não
+    // estiver na tela, cai no nome cadastrado na própria turma.
+    const inputParceiro = document.getElementById('iaDocProfessorParceiro');
+    const professorParceiroStr = inputParceiro
+        ? inputParceiro.value.trim()
+        : professorParceiroDasTurmasEstagiario(turmasMatch);
 
     let duracaoAulas = 0;
     if (turmasMatch.length > 0) {
@@ -1481,7 +1529,7 @@ async function gerarDocumentoIA() {
             fonte: contextoOficial.tier1 ? `${contextoOficial.tier1.fonteArquivo || ''} (aba ${contextoOficial.tier1.fonteAba || ''})` : null,
             qtdTrechosTier2: (contextoOficial.tier2Trechos || []).length
         };
-        abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasNomesStr, duracaoAulasStr, bimestreAtual, dadosEstruturados, semanaInicioISO, semanaFimISO, cardsMaterialDigitalDisponiveis, resumoFundamentacao);
+        abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasNomesStr, duracaoAulasStr, bimestreAtual, dadosEstruturados, semanaInicioISO, semanaFimISO, cardsMaterialDigitalDisponiveis, resumoFundamentacao, professorParceiroStr);
 
     } catch (e) {
         console.error(e);
@@ -1957,7 +2005,7 @@ function blocoPreviaDocumentoEstagiario(idIframe) {
         </div>`;
 }
 
-function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasStr, duracaoAulas, bimestreAtual, dados, semanaInicioISO, semanaFimISO, cardsMaterialDigitalDisponiveis, resumoFundamentacao) {
+function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turmasStr, duracaoAulas, bimestreAtual, dados, semanaInicioISO, semanaFimISO, cardsMaterialDigitalDisponiveis, resumoFundamentacao, professorParceiro) {
     if (!document.getElementById('modalRevisaoDocumento')) {
         const div = document.createElement('div');
         div.id = 'modalRevisaoDocumento';
@@ -1977,6 +2025,7 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
     modal.dataset.bimestre = bimestreAtual;
     modal.dataset.semanaInicio = semanaInicioISO || '';
     modal.dataset.semanaFim = semanaFimISO || '';
+    modal.dataset.professorParceiro = professorParceiro || '';
     // Guarda a saída ORIGINAL da IA para comparar com a versão editada na exportação (aprendizado).
     modal.dataset.dadosOriginais = JSON.stringify(dados || {});
 
@@ -2029,6 +2078,7 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
         bimestre: bimestreAtual,
         semanaInicio: semanaInicioISO || '',
         semanaFim: semanaFimISO || '',
+        professorParceiro: professorParceiro || '',
         dados: dados || {}
     }, { editavel: true })
         .then(html => renderizarPreviaDocumentoEstagiario(ID_PREVIA_PLANO_AULA_ESTAGIARIO, html, { largura: LARGURA_PAGINA_PAISAGEM_ESTAGIARIO, forcarLargura: true }))
@@ -2529,7 +2579,7 @@ const TEMPLATE_PLANO_AULA_EMBUTIDO = `<!DOCTYPE html>
     <div class="subtitle">{{BIMESTRE}}</div>
     <table>
         <tr>
-            <td colspan="4"><b>PROFESSOR:</b> {{PROFESSOR}}</td>
+            <td colspan="4"><b>PROFESSOR:</b> {{PROFESSOR}}{{PROFESSOR_PARCEIRO}}</td>
             <td colspan="3"><b>DISCIPLINA:</b> {{DISCIPLINA}}</td>
         </tr>
         <tr>
@@ -2601,6 +2651,11 @@ async function montarHtmlPlanoAula(payload, opcoes) {
         .replace(/{{ENDERECO_ESCOLA}}/g, escapeHtmlEstagiario(cfg.enderecoEscola))
         .replace(/{{TELEFONE_ESCOLA}}/g, escapeHtmlEstagiario(cfg.telefoneEscola))
         .replace(/{{PROFESSOR}}/g, escapeHtmlEstagiario(payload.professor))
+        // Professor parceiro (eletivas): só ocupa espaço no cabeçalho quando a turma tem um.
+        .replace(/{{PROFESSOR_PARCEIRO}}/g, () => {
+            const parceiro = String(payload.professorParceiro || '').trim();
+            return parceiro ? `<br><b>PROFESSOR PARCEIRO:</b> ${escapeHtmlEstagiario(parceiro)}` : '';
+        })
         .replace(/{{DISCIPLINA}}/g, escapeHtmlEstagiario(payload.disciplina))
         .replace(/{{SERIE}}/g, escapeHtmlEstagiario(payload.serie))
         .replace(/{{TURMAS}}/g, escapeHtmlEstagiario(payload.turmasStr))
@@ -2641,6 +2696,7 @@ async function exportarDocumentoFinal(tipo) {
         bimestre: modal.dataset.bimestre,
         semanaInicio: modal.dataset.semanaInicio,
         semanaFim: modal.dataset.semanaFim,
+        professorParceiro: modal.dataset.professorParceiro || '',
         // Texto revisado direto no documento (prévia editável) - ver lerCamposEditadosPreviaEstagiario.
         dados: lerCamposEditadosPreviaEstagiario(ID_PREVIA_PLANO_AULA_ESTAGIARIO, PLANO_AULA_CAMPOS_IA, dadosOriginais)
     };
