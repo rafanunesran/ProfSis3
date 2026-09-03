@@ -1034,6 +1034,7 @@ async function renderDashboard() {
                             <button class="btn btn-sm btn-info" onclick="baixarBackupCompleto()" style="text-align:left;">⬇️ Baixar Backup Total (JSON)</button>
                             <button class="btn btn-sm btn-secondary" onclick="abrirModalRestaurarBackup()" style="text-align:left;">⬆️ Restaurar de Arquivo</button>
                             <button class="btn btn-sm btn-danger" onclick="restaurarBackupLocalParaNuvem()" style="text-align:left;" title="Recuperar dados do cache do navegador">🆘 Recuperar do Cache</button>
+                            <button class="btn btn-sm btn-secondary" onclick="diagnosticarTamanhoDados()" style="text-align:left;">📊 Ver Espaço Ocupado</button>
                         </div>
                     </div>
                 </div>
@@ -1077,6 +1078,7 @@ async function renderDashboard() {
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
                     <button class="btn btn-sm btn-primary" onclick="criarBackupNuvem()" style="text-align:left;">💾 Salvar na Nuvem Agora</button>
                     <button class="btn btn-sm btn-info" onclick="baixarBackupCompleto()" style="text-align:left;">⬇️ Baixar Backup Total (JSON)</button>
+                <button class="btn btn-sm btn-secondary" onclick="diagnosticarTamanhoDados()" style="text-align:left;">📊 Ver Espaço Ocupado</button>
                 </div>
             </div>
 
@@ -1123,6 +1125,7 @@ async function renderDashboard() {
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
                 <button class="btn btn-sm btn-primary" onclick="criarBackupNuvem()" style="text-align:left;">💾 Sincronizar Nuvem Agora</button>
                 <button class="btn btn-sm btn-info" onclick="baixarBackupCompleto()" style="text-align:left;">⬇️ Baixar Backup Total (JSON)</button>
+                <button class="btn btn-sm btn-secondary" onclick="diagnosticarTamanhoDados()" style="text-align:left;">📊 Ver Espaço Ocupado</button>
             </div>
         </div>
 
@@ -8341,6 +8344,42 @@ async function restaurarBackupLocalParaNuvem() {
     } catch (e) {
         alert('Erro ao ler dados locais: ' + e.message);
     }
+}
+
+// --- DIAGNÓSTICO DE TAMANHO DOS DADOS ---
+// O Firestore recusa documentos acima de 1 MB. O core.js já fraciona
+// automaticamente quando passa disso, mas continuar crescendo sem limite é ruim
+// (fica lento e caro). Esta função mostra ONDE está o volume, para o professor
+// saber o que arquivar — normalmente presenças e compensações de anos anteriores.
+function diagnosticarTamanhoDados() {
+    if (!data) return alert('Dados ainda não carregados.');
+
+    const bytesDe = (valor) => {
+        const json = JSON.stringify(valor === undefined ? null : valor);
+        return (typeof TextEncoder !== 'undefined') ? new TextEncoder().encode(json).length : json.length;
+    };
+
+    const total = bytesDe(data);
+    const linhas = Object.keys(data)
+        .map(chave => ({
+            chave,
+            bytes: bytesDe(data[chave]),
+            itens: Array.isArray(data[chave]) ? data[chave].length : null
+        }))
+        .sort((a, b) => b.bytes - a.bytes)
+        .slice(0, 12)
+        .map(l => `${String(Math.round(l.bytes / 1024)).padStart(6)} KB  ${l.chave}${l.itens !== null ? ` (${l.itens} registros)` : ''}`);
+
+    const aviso = total > 900000
+        ? '\n⚠️ Você passou de 1 MB. O sistema já divide seus dados em partes automaticamente para continuar salvando, mas vale arquivar o que for de anos anteriores.\n'
+        : '';
+
+    alert(
+        '📊 ESPAÇO OCUPADO PELOS SEUS DADOS\n\n' +
+        `Total: ${(total / 1048576).toFixed(2)} MB  (limite de 1,00 MB por documento)\n` +
+        aviso +
+        `\nMaiores volumes:\n${linhas.join('\n')}`
+    );
 }
 
 // --- SISTEMA DE BACKUP NA NUVEM (DIÁRIO - HISTÓRICO DE 15 DIAS) ---

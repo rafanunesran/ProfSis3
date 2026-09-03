@@ -69,13 +69,168 @@ function mostrarIndicadorAmbiente(texto) {
     document.body.appendChild(div);
 }
 
+// ============================================================================
+//  DOCUMENTOS GRANDES: FRACIONAMENTO AUTOMÁTICO (limite de 1 MB do Firestore)
+// ----------------------------------------------------------------------------
+//  O Firestore recusa QUALQUER documento acima de 1.048.576 bytes. Como o app
+//  guarda tudo do professor num único documento (app_data/app_data_<uid>), quem
+//  acumula muitos registros batia nesse teto e o sistema simplesmente parava de
+//  salvar ("its size exceeds the maximum allowed size"). O caso mais comum é o
+//  Trabalho de Compensação, que cria uma linha por aluno faltoso a cada mês.
+//
+//  Solução: quando o JSON passa do limite seguro, o conteúdo é quebrado em
+//  partes (<doc>__parte0, <doc>__parte1, ...) e o documento principal vira um
+//  índice { __fracionado: true, __partes: N }. A leitura remonta tudo sozinha,
+//  então nenhuma outra parte do sistema precisa saber que isso existe.
+// ============================================================================
+
+// Margem de segurança abaixo do teto de 1 MB: sobra espaço para nomes de campos,
+// metadados internos e o caminho do documento, que também contam no limite.
+const FS_LIMITE_SEGURO = 900000;
+// Tamanho de cada parte quando é preciso fracionar.
+const FS_TAMANHO_PARTE = 800000;
+// Trava de sanidade (~8 MB). Acima disso os dados têm algum problema real.
+const FS_MAX_PARTES = 10;
+
+// Quantas partes cada documento tinha na última leitura/gravação desta sessão.
+// Serve só para apagar sobras quando o volume de dados diminui.
+const fsPartesConhecidas = {};
+
+function fsChaveParte(docId, i) {
+    return `${docId}__parte${i}`;
+}
+
+function fsRegistrarPartes(collectionName, docId, n) {
+    fsPartesConhecidas[`${collectionName}/${docId}`] = n;
+}
+
+function fsPartesAnteriores(collectionName, docId) {
+    const n = fsPartesConhecidas[`${collectionName}/${docId}`];
+    return typeof n === 'number' ? n : 0;
+}
+
+// Tamanho da string em BYTES UTF-8 — é assim que o Firestore mede.
+// (acentos ocupam 2 bytes e emojis 4, então contar caracteres subestimaria)
+function tamanhoBytesUTF8(str) {
+    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(str).length;
+    return unescape(encodeURIComponent(str)).length;
+}
+
+// Corta a string em pedaços de no máximo `maxBytes`, sem partir um caractere
+// no meio (nem os pares substitutos usados por emojis).
+function fsFatiarPorBytes(str, maxBytes) {
+    const partes = [];
+    let inicio = 0;
+    let bytes = 0;
+    for (let i = 0; i < str.length; i++) {
+        const code = str.codePointAt(i);
+        const par = code > 0xFFFF;
+        const tam = code < 0x80 ? 1 : (code < 0x800 ? 2 : (par ? 4 : 3));
+        if (bytes + tam > maxBytes && i > inicio) {
+            partes.push(str.slice(inicio, i));
+            inicio = i;
+            bytes = 0;
+        }
+        bytes += tam;
+        if (par) i++; // pula o segundo code unit do par substituto
+    }
+    partes.push(str.slice(inicio));
+    return partes;
+}
+
+// Grava um documento inteiro ou fracionado, conforme o tamanho.
+async function fsGravarDocumento(collectionName, docId, cleanData) {
+    const ref = db.collection(collectionName).doc(String(docId));
+    const json = JSON.stringify(cleanData);
+    const bytes = tamanhoBytesUTF8(json);
+    const antes = fsPartesAnteriores(collectionName, docId);
+
+    if (bytes <= FS_LIMITE_SEGURO) {
+        await ref.set(cleanData);
+        fsRegistrarPartes(collectionName, docId, 0);
+        await fsApagarPartesSobrando(collectionName, docId, 0, antes);
+        return;
+    }
+
+    const partes = fsFatiarPorBytes(json, FS_TAMANHO_PARTE);
+    if (partes.length > FS_MAX_PARTES) {
+        throw new Error(`Volume de dados alto demais (${(bytes / 1048576).toFixed(1)} MB). Baixe um backup completo e procure o suporte antes de continuar.`);
+    }
+
+    // Lote único: ou o índice e todas as partes entram juntos, ou nada muda.
+    // Isso evita deixar o documento apontando para partes que não foram gravadas.
+    const batch = db.batch();
+    partes.forEach((conteudo, i) => {
+        batch.set(db.collection(collectionName).doc(fsChaveParte(docId, i)), {
+            __parteDe: String(docId),
+            __indice: i,
+            __total: partes.length,
+            conteudo: conteudo
+        });
+    });
+    batch.set(ref, {
+        __fracionado: true,
+        __partes: partes.length,
+        __bytes: bytes,
+        __atualizadoEm: new Date().toISOString()
+    });
+    await batch.commit();
+
+    console.log(`[SisProf] Documento grande (${(bytes / 1048576).toFixed(2)} MB) salvo em ${partes.length} partes.`);
+    fsRegistrarPartes(collectionName, docId, partes.length);
+    await fsApagarPartesSobrando(collectionName, docId, partes.length, antes);
+}
+
+// Remove partes que sobraram de uma gravação anterior maior. Best-effort:
+// uma sobra esquecida não atrapalha a leitura (o índice manda), só ocupa espaço.
+async function fsApagarPartesSobrando(collectionName, docId, novoTotal, totalAnterior) {
+    if (!(totalAnterior > novoTotal)) return;
+    try {
+        const batch = db.batch();
+        for (let i = novoTotal; i < totalAnterior; i++) {
+            batch.delete(db.collection(collectionName).doc(fsChaveParte(docId, i)));
+        }
+        await batch.commit();
+    } catch (e) {
+        console.warn('[SisProf] Não foi possível limpar partes antigas:', e);
+    }
+}
+
+// Remonta um documento fracionado. Se qualquer parte faltar, ESTOURA o erro de
+// propósito: quem chama trata como falha de leitura e trava o salvamento, em vez
+// de devolver dados pela metade (o que sobrescreveria a nuvem com dados perdidos).
+async function fsLerDocumentoFracionado(collectionName, docId, indice) {
+    const total = Number(indice.__partes) || 0;
+    if (total < 1) throw new Error('Índice de documento fracionado inválido.');
+
+    const snaps = await Promise.all(
+        Array.from({ length: total }, (_, i) =>
+            db.collection(collectionName).doc(fsChaveParte(docId, i)).get()
+        )
+    );
+
+    let json = '';
+    for (let i = 0; i < total; i++) {
+        if (!snaps[i].exists) throw new Error(`Parte ${i + 1} de ${total} do documento não foi encontrada.`);
+        json += snaps[i].data().conteudo || '';
+    }
+
+    fsRegistrarPartes(collectionName, docId, total);
+    return JSON.parse(json);
+}
+
 // Funções Auxiliares de Dados (Abstração)
 async function getData(collectionName, docId) {
     if (USE_FIREBASE) {
         if (!db) return null; // Se o Firebase deveria estar ativo mas não carregou, retorna null
         try {
             const doc = await db.collection(collectionName).doc(String(docId)).get();
-            return doc.exists ? doc.data() : null;
+            if (!doc.exists) return null;
+            const bruto = doc.data();
+            // Documento grande: o conteúdo real está nas partes (ver fsGravarDocumento).
+            if (bruto && bruto.__fracionado) return await fsLerDocumentoFracionado(collectionName, docId, bruto);
+            fsRegistrarPartes(collectionName, docId, 0);
+            return bruto;
         } catch (error) {
             // [PROTEÇÃO CONTRA PERDA DE DADOS] Uma leitura que FALHA não é a mesma coisa
             // que "não existem dados". Antes, os dois casos retornavam null e o app
@@ -131,7 +286,9 @@ async function saveData(collectionName, docId, dataObj) {
             const cleanData = JSON.parse(JSON.stringify(dataObj));
             
             console.log(`Salvando no Firebase: ${collectionName}/${docId}`);
-            await db.collection(collectionName).doc(String(docId)).set(cleanData);
+            // Documentos acima de ~900 KB são fracionados automaticamente para não
+            // esbarrarem no teto de 1 MB por documento do Firestore.
+            await fsGravarDocumento(collectionName, docId, cleanData);
             
             try {
                 // [SEGURANÇA] Também salva localmente como redundância
@@ -144,7 +301,14 @@ async function saveData(collectionName, docId, dataObj) {
             }
         } catch (error) {
             console.error("Erro ao salvar no Firebase:", error);
-            alert(`Erro ao salvar dados online: ${error.message}\nVerifique se as Regras do Firestore permitem escrita.`);
+            // Mensagem específica quando ainda assim esbarrou no tamanho: aí o problema
+            // não são as Regras, e mandar o professor conferi-las só confunde.
+            const msg = String((error && error.message) || error);
+            if (/exceeds the maximum allowed size|Volume de dados alto demais/i.test(msg)) {
+                alert(`Não foi possível salvar: seus dados passaram do tamanho máximo por documento.\n\n${msg}\n\nUse "Ver Espaço Ocupado" no painel para descobrir o que está pesando e baixe um backup completo por segurança.`);
+            } else {
+                alert(`Erro ao salvar dados online: ${msg}\nVerifique se as Regras do Firestore permitem escrita.`);
+            }
         }
     } else {
         // Comportamento LocalStorage
