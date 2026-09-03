@@ -1295,7 +1295,7 @@ async function compartilharRelatorio() {
         return;
     }
 
-    const confirmacao = confirm('Isso ativará um link permanente de leitura para estes registros. Ele será atualizado automaticamente toda vez que você realizar um lançamento.\n\nDeseja continuar?');
+    const confirmacao = confirm('Isso ativará um link permanente de leitura, aberto a qualquer pessoa que\nreceba o endereço (sem login).\n\nO link mostra APENAS quantitativos por turma e por tipo de registro.\nNome de estudante NÃO é publicado.\n\nEle se atualiza sozinho a cada lançamento seu.\n\nDeseja continuar?');
     if (!confirmacao) return;
 
     const schoolId = (currentUser && currentUser.schoolId) ? String(currentUser.schoolId) : 'default';
@@ -1311,23 +1311,55 @@ async function compartilharRelatorio() {
     }
 }
 
+// [CONFORMIDADE] O link público (?share=) é lido por qualquer visitante, sem login
+// (shared_views tem allow read: if true nas Regras). Até a adequação de setembro/2026 ele
+// publicava a lista de estudantes com nome completo. Agora o documento carrega SOMENTE
+// contagens por turma e por tipo de registro - nenhum nome, nenhum id de estudante.
+// Se precisar acrescentar algo aqui, lembre que tudo neste payload é público na internet.
+function resumirRegistrosAdministrativos(registros, turmas) {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const nomeTurma = {};
+    (turmas || []).forEach(t => { nomeTurma[t.id] = t.nome; });
+
+    const porTurma = {};
+    const totais = {};
+
+    (registros || []).forEach(r => {
+        // Mesma regra de vigência da tela: atestado vencido não entra na contagem.
+        if (r.tipo === 'Atestado' && r.data) {
+            const partes = String(r.data).split('-');
+            const inicio = new Date(partes[0], partes[1] - 1, partes[2]);
+            const fim = new Date(inicio);
+            fim.setDate(fim.getDate() + (parseInt(r.dias) || 1) - 1);
+            if (hoje > fim) return;
+        }
+
+        const turma = nomeTurma[r.turmaId] || 'Sem turma';
+        const tipo = r.tipo || 'Outro';
+        if (!porTurma[turma]) porTurma[turma] = { total: 0, tipos: {} };
+        porTurma[turma].total++;
+        porTurma[turma].tipos[tipo] = (porTurma[turma].tipos[tipo] || 0) + 1;
+        totais[tipo] = (totais[tipo] || 0) + 1;
+    });
+
+    return { porTurma, totais, total: Object.values(totais).reduce((a, b) => a + b, 0) };
+}
+
 async function atualizarLinkCompartilhamentoGestor() {
     // Verifica se está online e se é gestor
     if (typeof db === 'undefined' || !db || !currentUser || !currentUser.schoolId || currentViewMode !== 'gestor') return;
 
     const schoolId = String(currentUser.schoolId);
     const shareId = `live_${schoolId}`;
-    
-    // Prepara dados minificados para o relatório (Snapshot do estado atual)
+
     const payload = {
         criadoEm: new Date().toISOString(),
         escolaId: schoolId,
         isLive: true,
-        dados: {
-            registrosAdministrativos: data.registrosAdministrativos || [],
-            estudantes: (data.estudantes || []).map(e => ({id: e.id, nome_completo: e.nome_completo})),
-            turmas: (data.turmas || []).map(t => ({id: t.id, nome: t.nome}))
-        }
+        versao: 2, // v2 = só números. v1 (com nomes) foi descontinuado.
+        resumo: resumirRegistrosAdministrativos(data.registrosAdministrativos, data.turmas)
     };
 
     await db.collection('shared_views').doc(shareId).set(payload);
@@ -1361,70 +1393,53 @@ async function carregarVistaCompartilhada(shareId) {
 
     const docData = await getData('shared_views', shareId);
     const container = document.querySelector('.report-container');
-    
-    if (docData && docData.dados) {
-        data = docData.dados; // Popula dados globais
-        const registros = data.registrosAdministrativos || [];
-        const today = new Date();
-        today.setHours(0,0,0,0);
 
-        // Processamento dos dados (Filtragem e Agrupamento)
-        let lista = registros.map(r => {
-            const estudante = (data.estudantes || []).find(e => e.id == r.estudanteId) || { nome_completo: 'Desconhecido' };
-            const turma = (data.turmas || []).find(t => t.id == r.turmaId) || { nome: '?' };
-            
-            let cor = '#22c55e'; let bg = '#f0fff4';
-
-            if (r.tipo === 'Atestado') {
-                const parts = r.data.split('-');
-                const dataInicio = new Date(parts[0], parts[1]-1, parts[2]);
-                const dataFim = new Date(dataInicio);
-                dataFim.setDate(dataFim.getDate() + (parseInt(r.dias) || 1) - 1);
-                
-                if (today > dataFim) return null; // Filtra vencidos
-                
-                cor = '#3182ce'; bg = '#ebf8ff';
-            } else if (r.tipo === 'Faltoso') {
-                cor = '#e53e3e'; bg = '#fff5f5';
-            }
-
-            return { ...r, estudanteNome: estudante.nome_completo, turmaNome: turma.nome, cor, bg };
-        }).filter(item => item !== null);
-
-        const grupos = {};
-        lista.forEach(item => {
-            if (!grupos[item.turmaNome]) grupos[item.turmaNome] = [];
-            grupos[item.turmaNome].push(item);
-        });
-        const turmasOrdenadas = Object.keys(grupos).sort();
-
-        // Construção do HTML do Relatório
-        let html = `
-            <h1>Relatório de Registros Administrativos</h1>
-            ${docData.isLive ? '<div style="text-align:center; margin-top:-10px; margin-bottom:10px;"><span class="badge" style="background:#f0fff4; color:#276749; font-size:10px; border:1px solid #c6f6d5;">🔄 ATUALIZAÇÃO EM TEMPO REAL</span></div>' : ''}
-            <div class="meta-info">${docData.isLive ? 'Última atualização' : 'Gerado em'}: ${new Date(docData.criadoEm).toLocaleDateString('pt-BR')} às ${new Date(docData.criadoEm).toLocaleTimeString('pt-BR')}</div>
-        `;
-
-        if (lista.length > 0) {
-            turmasOrdenadas.forEach(turmaNome => {
-                html += `<h3>${turmaNome}</h3><table><thead><tr><th style="width:120px;">Tipo</th><th>Estudante</th><th>Detalhes</th></tr></thead><tbody>`;
-                grupos[turmaNome].forEach(r => {
-                    html += `<tr>
-                        <td><span class="badge" style="color:${r.cor}; background-color:${r.bg};">${r.tipo}</span></td>
-                        <td><strong>${r.estudanteNome}</strong></td>
-                        <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `<span style="color:#718096; font-size:0.9em;">(${r.dias} dias)</span>` : ''}</td>
-                    </tr>`;
-                });
-                html += `</tbody></table>`;
-            });
-        } else {
-            html += '<div class="empty-state">Nenhum registro vigente encontrado.</div>';
-        }
-        html += `<div class="footer">Sistema Escolar - Relatório Compartilhado</div>`;
-        container.innerHTML = html;
-    } else {
+    if (!docData) {
         container.innerHTML = '<div class="empty-state" style="color: #e53e3e;">Link inválido ou expirado.</div>';
+        return;
     }
+
+    // Documento no formato antigo (v1, com nomes de estudante). Não renderizamos mais esse
+    // conteúdo: o gestor precisa reabrir o painel uma vez para o link se regravar como v2.
+    if (!docData.resumo) {
+        container.innerHTML = `
+            <h1>Relatório de Registros Administrativos</h1>
+            <div class="empty-state">Este link está sendo atualizado para o novo formato, que não exibe
+            dados de estudantes. Peça para a gestão abrir o painel uma vez.</div>`;
+        return;
+    }
+
+    const resumo = docData.resumo;
+    const turmasOrdenadas = Object.keys(resumo.porTurma || {}).sort();
+    const quando = new Date(docData.criadoEm);
+
+    let html = `
+        <h1>Relatório de Registros Administrativos</h1>
+        ${docData.isLive ? '<div style="text-align:center; margin-top:-10px; margin-bottom:10px;"><span class="badge" style="background:#f0fff4; color:#276749; font-size:10px; border:1px solid #c6f6d5;">ATUALIZAÇÃO EM TEMPO REAL</span></div>' : ''}
+        <div class="meta-info">${docData.isLive ? 'Última atualização' : 'Gerado em'}: ${quando.toLocaleDateString('pt-BR')} às ${quando.toLocaleTimeString('pt-BR')}</div>
+    `;
+
+    if (turmasOrdenadas.length > 0) {
+        const tipos = Object.keys(resumo.totais || {}).sort();
+        html += `<h3>Registros vigentes por turma</h3>
+            <table><thead><tr><th>Turma</th>${tipos.map(t => `<th style="text-align:center;">${t}</th>`).join('')}<th style="text-align:center;">Total</th></tr></thead><tbody>`;
+        turmasOrdenadas.forEach(turma => {
+            const linha = resumo.porTurma[turma];
+            html += `<tr><td><strong>${turma}</strong></td>
+                ${tipos.map(t => `<td style="text-align:center;">${linha.tipos[t] || 0}</td>`).join('')}
+                <td style="text-align:center;"><strong>${linha.total}</strong></td></tr>`;
+        });
+        html += `<tr style="background:#f8fafc;"><td><strong>Total</strong></td>
+            ${tipos.map(t => `<td style="text-align:center;"><strong>${resumo.totais[t] || 0}</strong></td>`).join('')}
+            <td style="text-align:center;"><strong>${resumo.total || 0}</strong></td></tr>`;
+        html += `</tbody></table>`;
+    } else {
+        html += '<div class="empty-state">Nenhum registro vigente encontrado.</div>';
+    }
+
+    html += `<div class="footer">Este relatório apresenta apenas quantitativos. Dados de estudantes
+        não são publicados neste link.</div>`;
+    container.innerHTML = html;
 }
 
 // --- FERRAMENTA DE LIMPEZA DE DUPLICADOS ---

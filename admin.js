@@ -387,7 +387,7 @@ async function salvarUsuarioAdmin(e) {
             alert('Email já cadastrado!');
             return;
         }
-        users.push({ id: Date.now(), nome, email, senha: senha || '123456', role, schoolId: escolaAtualAdmin, mustChangePassword: true });
+        // [SEGURANÇA] Nunca gravar senha em texto claro aqui - ver comentário em core.js fazerCadastro.
         // A criação de novos usuários deve ser feita pela tela de cadastro pública
         // para que o Firebase Auth possa lidar com a senha de forma segura.
         alert('Função desativada. Use a tela de "Cadastro" pública para criar novos usuários.');

@@ -97,19 +97,48 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
+    // Configurações do sistema: chaves da IA, modelo do Gemini e a DATA DE CORTE
+    // (config_sistema.dataCorte). Só o super admin escreve. Antes, a regra genérica
+    // abaixo deixava QUALQUER usuário logado reescrever estes documentos - inclusive
+    // adiar o corte ou trocar a chave de IA da rede inteira.
+    match /system/config_ia {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+    match /system/config_sistema {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
     // users_list e demais documentos de sistema: exigem login.
     // NÃO exigem `liberado()` de propósito: o app precisa ler o perfil no
     // login para descobrir se a pessoa está liberada. Bloquear aqui criaria
     // um impasse (não conseguiria nem saber que está pendente).
+    //
+    // PENDÊNCIA CONHECIDA: `users_list` é um único documento com a lista inteira de
+    // usuários, e o cadastro, o aceite dos termos e a liberação pelo gestor precisam
+    // gravá-lo. Como as Regras não conseguem validar o conteúdo de um array, não há
+    // como permitir "só a minha entrada". A correção de verdade é quebrar a lista em
+    // documentos por usuário (usuarios/{uid}); enquanto isso não acontece, esta regra
+    // segue aberta para quem está logado. A senha em texto claro, que era o dano real
+    // desta abertura, deixou de ser gravada (ver core.js fazerCadastro).
+    // ATENÇÃO: no Firestore as regras se SOMAM. Por isso esta regra precisa excluir
+    // explicitamente os documentos de configuração acima - sem o `!(docId in [...])`
+    // ela devolveria a permissão de escrita que a regra anterior acabou de tirar.
     match /system/{docId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && !(docId in ['config_ia', 'config_sistema']);
     }
 
     // ------------------ shared_views: relatório por link ---------------------
-    // O link público (?share=ID) é aberto por visitantes sem login.
+    // O link público (?share=ID) é aberto por visitantes SEM LOGIN: tudo que entrar
+    // aqui está publicado na internet. Até setembro/2026 o payload trazia a lista de
+    // estudantes com nome completo (campo `dados`). O formato novo (v2) carrega só
+    // contagens por turma, no campo `resumo`, e a regra recusa o campo antigo.
     match /shared_views/{docId} {
       allow read: if true;
-      allow write: if liberado();
+      allow write: if liberado()
+                   && !request.resource.data.keys().hasAny(['dados', 'estudantes']);
     }
 
     // ----------------- Dados da escola: exigem perfil liberado ---------------

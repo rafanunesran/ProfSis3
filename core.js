@@ -320,35 +320,33 @@ async function fazerLogin(e) {
         const email = document.getElementById('loginEmail').value.trim().toLowerCase();
         const senha = document.getElementById('loginSenha').value;
 
-        // Admin Hardcoded (Legado/Backup) - Funciona mesmo sem banco de dados
-        if ((email === 'rafael@adm' || email === 'rafael@adm.com') && senha === 'Amor@9391') {
-            const adminUser = { id: 'admin', nome: 'Super Admin', email: ADMIN_EMAIL, role: 'super_admin' };
-            // [SEGURANÇA] Estabelece uma sessão real no Firebase Auth para o admin. Assim as
-            // Regras do Firestore reconhecem o super_admin (pelo e-mail verificado do token) e
-            // autorizam as gravações administrativas. Sem isso, com regras estritas, o admin
-            // ficaria bloqueado no banco. É best-effort: a UI do admin abre de qualquer forma.
-            if (USE_FIREBASE && typeof firebase !== 'undefined') {
-                try {
-                    await firebase.auth().signInWithEmailAndPassword(ADMIN_EMAIL, senha);
-                } catch (err) {
-                    if (err && err.code === 'auth/user-not-found') {
-                        try { await firebase.auth().createUserWithEmailAndPassword(ADMIN_EMAIL, senha); }
-                        catch (e2) { console.warn('Falha ao criar a conta admin no Firebase Auth:', e2 && e2.code); }
-                    } else {
-                        console.warn('Falha ao autenticar o admin no Firebase Auth:', err && err.code);
-                    }
-                }
-                const fbUser = firebase.auth().currentUser;
-                if (fbUser) {
-                    adminUser.uid = fbUser.uid;
-                } else {
-                    // Sem sessão no Auth as Regras do Firestore NÃO reconhecem o super_admin.
-                    // Avisamos de forma explícita em vez de deixar o painel falhar em silêncio.
-                    alert('⚠️ Atenção: não foi possível autenticar o admin no Firebase Auth.\n\n' +
-                          'O painel abre, mas as Regras do Firestore não vão reconhecer você como super admin.\n\n' +
-                          'Verifique no Console do Firebase > Authentication se existe a conta ' + ADMIN_EMAIL + '.');
-                }
+        // --- LOGIN DO SUPER ADMIN ---
+        // [SEGURANÇA] Este bloco tinha a senha do administrador escrita no código
+        // ("Admin Hardcoded"). Como core.js é publicado no GitHub Pages, essa senha estava
+        // legível para qualquer pessoa que abrisse o arquivo - e era a MESMA senha da conta
+        // no Firebase Auth. Pior: quando a conta não existia, o código a criava com a senha
+        // que fosse digitada, então um estranho podia se tornar super admin.
+        //
+        // Agora não há credencial no código. O administrador entra pelo Firebase Auth como
+        // qualquer outro usuário; o que concede o papel é o e-mail bater com ADMIN_EMAIL -
+        // exatamente a mesma regra que o firestore.rules confere em isSuperAdmin().
+        if (email === 'rafael@adm' || email === ADMIN_EMAIL) {
+            if (!USE_FIREBASE || typeof firebase === 'undefined') {
+                alert('O acesso de administrador exige conexão com o Firebase.');
+                return;
             }
+            try {
+                await firebase.auth().signInWithEmailAndPassword(ADMIN_EMAIL, senha);
+            } catch (err) {
+                console.warn('Falha ao autenticar o admin:', err && err.code);
+                alert('E-mail ou senha incorretos.');
+                return;
+            }
+            const fbUser = firebase.auth().currentUser;
+            const adminUser = {
+                id: 'admin', nome: 'Super Admin', email: ADMIN_EMAIL,
+                role: 'super_admin', uid: fbUser ? fbUser.uid : undefined
+            };
             localStorage.setItem('app_current_user', JSON.stringify(adminUser));
             currentUser = adminUser;
             if (typeof iniciarAdmin === 'function') iniciarAdmin();
@@ -504,7 +502,12 @@ async function fazerCadastro(e) {
         id: userAuth ? userAuth.uid : Date.now(),
         nome,
         email,
-        senha,
+        // [SEGURANÇA] A senha NÃO é gravada em system/users_list. Ela vive só no Firebase Auth.
+        // Até setembro/2026 este documento guardava a senha em texto claro e as Regras deixavam
+        // qualquer pessoa logada lê-lo, ou seja: qualquer usuário via a senha de todos. O login
+        // usa signInWithEmailAndPassword; o campo `senha` só sobrevive em perfis antigos ainda
+        // não limpos por sincronizarUIDsERemoverSenhas() (admin.js).
+        uid: userAuth ? userAuth.uid : undefined,
         schoolId: escolaId,
         role: 'professor', // Default
         // [SEGURANÇA] Perfil novo NÃO tem acesso imediato aos dados da escola.
@@ -514,6 +517,9 @@ async function fazerCadastro(e) {
         aceitouTermos: true,
         dataAceiteTermos: new Date().toISOString()
     };
+
+    // Sem Firebase Auth (modo local) não há onde guardar a credencial senão aqui.
+    if (!userAuth) newUser.senha = senha;
 
     users.push(newUser);
     await saveData('system', 'users_list', { list: users });
