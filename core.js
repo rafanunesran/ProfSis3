@@ -69,6 +69,167 @@ function mostrarIndicadorAmbiente(texto) {
     document.body.appendChild(div);
 }
 
+// ============================================================================
+//  DATA DE CORTE — 07/09/2026, 7h
+// ----------------------------------------------------------------------------
+//  A versão nova sai antes do corte e NÃO migra ninguém à força: o professor
+//  baixa, é lembrado duas vezes por dia e faz a transição quando quiser. Na data
+//  marcada, o envio de dado pessoal para o Firestore é bloqueado para todos.
+//
+//  QUEM REALMENTE BLOQUEIA SÃO AS REGRAS DO FIRESTORE. O que está aqui é
+//  experiência de uso: mensagem clara, transição suave, nada de erro seco. Quem
+//  abrir o console e chamar saveData() na mão esbarra na regra do servidor.
+// ============================================================================
+
+// 07/09/2026 07:00 em São Paulo (UTC-3) = 10:00 UTC.
+const DATA_CORTE_PADRAO = '2026-09-07T10:00:00Z';
+
+// Adiar ou antecipar o corte: campo `dataCorte` em system/config_sistema (só o super
+// admin escreve, ver firestore.rules). Mudar aqui exigiria publicar o site de novo.
+// ATENÇÃO: a data também está escrita na Regra do Firestore. Adiar de verdade é
+// mexer nos dois lugares — de propósito, para o cliente sozinho não decidir.
+let _dataCorte = new Date(DATA_CORTE_PADRAO);
+let _desvioRelogioMs = 0;
+
+function dataCorte() { return _dataCorte; }
+
+// Hora em que confiamos: a do dispositivo corrigida pelo desvio medido contra o
+// servidor. Sem rede não há como medir — mas sem rede também não há função online
+// para bloquear, então o relógio local basta.
+function agoraConfiavel() {
+    return new Date(Date.now() + _desvioRelogioMs);
+}
+
+// O relógio do aparelho não serve sozinho: bastaria atrasar a data para continuar
+// mandando dado pessoal para a nuvem. Pegamos a hora do cabeçalho `Date` da
+// resposta HTTP (é um cabeçalho liberado para leitura entre origens) e guardamos o
+// desvio. Também gravamos a última hora conhecida: se o relógio "voltar no tempo"
+// depois disso, sabemos que foi mexido e ignoramos.
+async function sincronizarRelogioServidor() {
+    const enderecos = [window.location.href, 'https://firestore.googleapis.com/'];
+    for (const url of enderecos) {
+        try {
+            const resp = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+            const cabecalho = resp.headers.get('date');
+            if (!cabecalho) continue;
+            const t = Date.parse(cabecalho);
+            if (isNaN(t)) continue;
+            _desvioRelogioMs = t - Date.now();
+            try { if (typeof metaSet === 'function') await metaSet('ultimaHoraConhecida', t); } catch (e) {}
+            return true;
+        } catch (e) { /* offline, CORS, proxy — tenta o próximo */ }
+    }
+
+    // Sem rede: usa a última hora que já vimos como piso, para o relógio atrasado
+    // não devolver o modo online a quem já passou do corte.
+    try {
+        if (typeof metaGet === 'function') {
+            const ultima = await metaGet('ultimaHoraConhecida');
+            if (ultima && Date.now() < ultima) _desvioRelogioMs = ultima - Date.now();
+        }
+    } catch (e) {}
+    return false;
+}
+
+// Leitura direta no db, e não por getData(): getData marca falhaLeituraFirestore e
+// mostra alerta de conexão ao usuário, o que não cabe numa configuração best-effort.
+async function carregarConfigCorte() {
+    if (!USE_FIREBASE || typeof db === 'undefined' || !db) return;
+    if (typeof firebase === 'undefined' || !firebase.auth().currentUser) return;
+    try {
+        const doc = await db.collection('system').doc('config_sistema').get();
+        const cfg = doc.exists ? doc.data() : null;
+        if (cfg && cfg.dataCorte) {
+            const d = new Date(cfg.dataCorte);
+            if (!isNaN(d.getTime())) _dataCorte = d;
+        }
+    } catch (e) { console.warn('[SisProf] Não foi possível ler a data de corte:', e); }
+}
+
+// O super admin pode marcar contas específicas para seguirem 100% online (ver
+// firestore.rules: só ele grava este campo). A marca vale para a guarda, para a
+// persistência e para a migração — a conta se comporta como antes da adequação.
+async function carregarIsencaoOnline() {
+    window.usuarioOnlineCompleto = false;
+    if (!USE_FIREBASE || typeof db === 'undefined' || !db) return;
+    const fbUser = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null;
+    if (!fbUser) return;
+    try {
+        const doc = await db.collection('access').doc(fbUser.uid).get();
+        window.usuarioOnlineCompleto = !!(doc.exists && doc.data().modoOnlineCompleto === true);
+        if (window.usuarioOnlineCompleto) console.log('[SisProf] Conta isenta do corte (modo online completo).');
+    } catch (e) { console.warn('[SisProf] Não consegui ler o documento de acesso:', e); }
+}
+
+// Três estados, um lugar só. Consultado pela guarda, pela persistência e pela interface.
+//   'antes'   — ainda dá para usar tudo online; o pop-up lembra do prazo.
+//   'migrado' — este aparelho já fez a transição; dado pessoal fica aqui.
+//   'apos'    — passou da data e a pessoa ainda não migrou; migra na abertura.
+function estadoCorte() {
+    if (window.usuarioOnlineCompleto) return 'migrado_isento';
+    if (window.dadosMigradosLocalmente) return 'migrado';
+    return agoraConfiavel() >= dataCorte() ? 'apos' : 'antes';
+}
+
+// Dado pessoal ainda pode subir para a nuvem?
+function podeEnviarDadoPessoal() {
+    const e = estadoCorte();
+    return e === 'antes' || e === 'migrado_isento';
+}
+
+// ============================================================================
+//  GUARDA DE SAÍDA — nada de pessoal atravessa para o Firestore
+// ----------------------------------------------------------------------------
+//  saveData é o ÚNICO ponto de gravação do sistema inteiro, então esta é a única
+//  porta que precisa de porteiro. A guarda existe para que uma edição futura,
+//  feita sem lembrar desta adequação, falhe alto em vez de vazar em silêncio.
+// ============================================================================
+
+const LIMITE_VARREDURA = 200000; // nós visitados; evita travar a interface em `data` grande
+
+function _varrerChavesPessoais(valor, orcamento) {
+    if (orcamento.n++ > LIMITE_VARREDURA || valor === null || typeof valor !== 'object') return null;
+    if (Array.isArray(valor)) {
+        for (const item of valor) {
+            const achado = _varrerChavesPessoais(item, orcamento);
+            if (achado) return achado;
+        }
+        return null;
+    }
+    for (const chave of Object.keys(valor)) {
+        if (CHAVES_PESSOAIS_PROFUNDAS.indexOf(chave) !== -1) return chave;
+        const achado = _varrerChavesPessoais(valor[chave], orcamento);
+        if (achado) return achado;
+    }
+    return null;
+}
+
+function assertSemDadosPessoais(colecao, docId, obj) {
+    if (podeEnviarDadoPessoal()) return;          // antes do corte, ou usuário isento
+    if (!obj || typeof obj !== 'object') return;
+
+    const id = String(docId || '');
+    // Blocos opacos: o conteúdo já está cifrado, não há o que inspecionar.
+    // O nome `backup_` NÃO basta para isentar — só isenta se vier mesmo cifrado.
+    // Enquanto o backup cifrado não existe (Fase 2), isso mantém o backup diário,
+    // que grava o `data` inteiro em texto claro, fora da nuvem depois do corte.
+    if (id.indexOf('backup_') === 0 && obj.cifrado === true) return;
+    if (colecao === 'compartilhado_cifrado' || colecao === 'chaves_backup') return;
+
+    const topo = Object.keys(obj).filter(k => CAMPOS_PESSOAIS.indexOf(k) !== -1);
+    if (topo.length) {
+        throw new Error('[Conformidade] Bloqueado o envio de dado pessoal para ' +
+            colecao + '/' + id + '. Campos: ' + topo.join(', ') +
+            '. Esses dados ficam no aparelho — ver CAMPOS_PESSOAIS em shared.js.');
+    }
+
+    const profundo = _varrerChavesPessoais(obj, { n: 0 });
+    if (profundo) {
+        throw new Error('[Conformidade] Bloqueado o envio para ' + colecao + '/' + id +
+            ': encontrei o campo "' + profundo + '" aninhado no documento.');
+    }
+}
+
 // Funções Auxiliares de Dados (Abstração)
 async function getData(collectionName, docId) {
     if (USE_FIREBASE) {
@@ -121,6 +282,10 @@ async function saveData(collectionName, docId, dataObj) {
         return;
     }
 
+    // [CONFORMIDADE] Porteiro único: nada de pessoal sai daqui depois do corte.
+    // Deixamos estourar de propósito — falhar alto é melhor que vazar calado.
+    assertSemDadosPessoais(collectionName, docId, dataObj);
+
     if (USE_FIREBASE) {
         if (!db) {
             alert("ERRO CRÍTICO: Banco de dados não conectado. Suas alterações NÃO serão salvas online.\nRecarregue a página.");
@@ -134,13 +299,13 @@ async function saveData(collectionName, docId, dataObj) {
             await db.collection(collectionName).doc(String(docId)).set(cleanData);
             
             try {
-                // [SEGURANÇA] Também salva localmente como redundância
-                // Evita salvar arquivos pesados de backup para não estourar o limite de ~5MB do navegador
-                if (!String(docId).startsWith('backup_')) {
-                    localStorage.setItem(String(docId), JSON.stringify(cleanData));
+                // Espelho local. Era localStorage (teto de ~5 MB, que uma escola grande
+                // estoura); agora vai para o IndexedDB, via localdb.js.
+                if (!String(docId).startsWith('backup_') && typeof localSet === 'function') {
+                    await localSet(String(docId), cleanData);
                 }
             } catch (localError) {
-                console.warn("Aviso: Redundância local falhou (Cota de armazenamento excedida?)", localError);
+                console.warn("Aviso: Espelho local falhou:", localError);
             }
         } catch (error) {
             console.error("Erro ao salvar no Firebase:", error);
@@ -254,7 +419,23 @@ function aguardarAuthPronto(timeoutMs) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // Armazenamento local primeiro: é dele que sai a marca de transição já feita, e é
+    // para ele que o espelho antigo do localStorage é trazido.
+    if (typeof localdbPreparar === 'function') {
+        try { await localdbPreparar(); } catch (e) { console.warn('[SisProf] localdb:', e); }
+    }
+    try {
+        if (typeof metaGet === 'function') window.dadosMigradosLocalmente = !!(await metaGet('migracaoV2'));
+    } catch (e) {}
+
     await aguardarAuthPronto();
+
+    // Hora do servidor e configuração do corte. Ambas best-effort: sem rede o app abre
+    // igual, usando o relógio local (e sem rede não há função online para bloquear).
+    try { await sincronizarRelogioServidor(); } catch (e) {}
+    try { await carregarConfigCorte(); } catch (e) {}
+    try { await carregarIsencaoOnline(); } catch (e) {}
+
     init();
 
     // [NOVO] Monitorar estado do login do Firebase (Mantém a sessão ativa)
@@ -741,32 +922,68 @@ async function carregarDadosUsuario() {
     const key = typeof getStorageKey === 'function' ? getStorageKey(currentUser) : 'app_data_' + currentUser.id;
 
     window.falhaLeituraFirestore = false;
-
-    // CORREÇÃO: Usar getData para buscar do Firebase quando online, ou LocalStorage quando offline
-    const savedData = await getData('app_data', key);
+    window.bloquearEscritaNuvem = false;
 
     const initial = typeof getInitialData === 'function' ? getInitialData() : {};
 
-    if (window.falhaLeituraFirestore) {
-        // [PROTEÇÃO] A leitura falhou. NÃO assumir "conta vazia". Mostra a última cópia
-        // local (se houver) apenas para visualização e devolve false para travar a escrita.
-        let recuperado = null;
-        try {
-            const localJson = localStorage.getItem(key);
-            if (localJson) recuperado = JSON.parse(localJson);
-        } catch (e) { console.warn('Cópia local ilegível:', e); }
+    // 1) Camada LOCAL — dado pessoal do estudante. Não depende de rede e, depois da
+    //    transição, é a fonte da verdade.
+    let local = null;
+    try { if (typeof localGet === 'function') local = await localGet(key); }
+    catch (e) { console.warn('[SisProf] Não consegui ler a cópia local:', e); }
 
-        data = recuperado ? { ...initial, ...recuperado } : initial;
-        console.warn('[SisProf] Dados NÃO carregados da nuvem. Salvamento bloqueado para proteger seus dados.');
-        return false;
+    // 2) Camada NUVEM — turmas, agenda, planos de aula, documentação.
+    const nuvem = await getData('app_data', key);
+
+    if (window.falhaLeituraFirestore) {
+        // [PROTEÇÃO] Leitura falhou. NÃO assumir "conta vazia": salvar depois disso
+        // apagaria os dados do professor na nuvem. Mostramos o que temos no aparelho e
+        // travamos só a escrita na NUVEM — o trabalho local continua podendo ser salvo.
+        window.bloquearEscritaNuvem = true;
+        data = juntarDados(local, null);
+        console.warn('[SisProf] Nuvem não respondeu. Trabalhando com a cópia deste aparelho; envio para a nuvem bloqueado.');
+        return !!local;
     }
 
-    if (savedData) {
-        data = { ...initial, ...savedData };
+    // Antes da transição nada mudou: a nuvem continua sendo a fonte completa, como
+    // sempre foi. Só depois de migrar é que a camada local passa a mandar no pessoal.
+    if (podeEnviarDadoPessoal() && nuvem) {
+        data = Object.assign({}, initial, nuvem);
     } else {
-        data = initial;
+        data = juntarDados(local, nuvem);
     }
     return true;
+}
+
+// Lê um documento do professor juntando as duas camadas. Use sempre que o documento
+// puder conter dado pessoal (o painel AEE da escola, por exemplo): depois do corte a
+// nuvem devolve só a parte não-pessoal, e a parte pessoal está no aparelho.
+async function lerDocUsuario(chave) {
+    let local = null;
+    try { if (typeof localGet === 'function') local = await localGet(chave); }
+    catch (e) { console.warn('[SisProf] Cópia local de ' + chave + ':', e); }
+
+    const nuvem = await getData('app_data', chave);
+
+    if (podeEnviarDadoPessoal()) return nuvem || local || null;
+    if (!local && !nuvem) return null;
+    return juntarDados(local, nuvem);
+}
+
+// Grava o `data` do professor separando as duas camadas. É chamada por
+// persistirDados() (app.js), que é quem sabe a hora certa de salvar.
+async function salvarDadosUsuario(chave, dados) {
+    if (typeof localSet === 'function') await localSet(chave, dados);
+
+    if (window.bloquearEscritaNuvem) return;
+
+    if (podeEnviarDadoPessoal()) {
+        // Antes do corte (ou usuário isento pelo super admin): sobe tudo, como hoje.
+        await saveData('app_data', chave, dados);
+    } else {
+        // Depois da transição: só a camada que não identifica estudante.
+        await saveData('app_data', chave, dividirDados(dados).nuvem);
+    }
 }
 
 // [NOVO] Função de Migração (Pode ser chamada pelo console ou botão de Admin)

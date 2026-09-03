@@ -248,10 +248,63 @@ async function verUsuariosEscola(escolaId) {
     renderListaUsuariosAdmin();
 }
 
+// Lê, para os usuários listados, quem está marcado para seguir 100% online. A marca
+// mora em access/{uid} porque é lá que as Regras do Firestore conseguem consultá-la
+// na hora de decidir se aceitam campo pessoal em app_data.
+async function _lerIsencoesOnline(usuarios) {
+    const mapa = {};
+    if (typeof db === 'undefined' || !db) return mapa;
+    for (const u of usuarios) {
+        if (!u.uid) continue;
+        try {
+            const doc = await db.collection('access').doc(String(u.uid)).get();
+            mapa[u.uid] = !!(doc.exists && doc.data().modoOnlineCompleto === true);
+        } catch (e) { /* sem permissão ou sem rede: fica como não isento */ }
+    }
+    return mapa;
+}
+
+// [EXCLUSIVO DO SUPER ADMIN] Liga/desliga o modo 100% online de uma conta. Com ele
+// ligado, a conta continua guardando dado pessoal no Firestore como antes da
+// adequação: a guarda do saveData e a Regra do Firestore passam a isentá-la.
+// Serve para manter contas de teste/suporte funcionando durante a transição.
+async function alternarModoOnlineCompleto(uid, nome) {
+    if (!uid) return alert('Este usuário ainda não tem UID do Firebase Auth.\n\nRode "Sincronizar UIDs" antes de marcar a isenção.');
+    if (typeof db === 'undefined' || !db) return alert('Sem conexão com o banco.');
+
+    let atual = false;
+    try {
+        const doc = await db.collection('access').doc(String(uid)).get();
+        atual = !!(doc.exists && doc.data().modoOnlineCompleto === true);
+    } catch (e) { return alert('Não consegui ler o acesso deste usuário: ' + e.message); }
+
+    const novo = !atual;
+    const aviso = novo
+        ? 'ATENÇÃO: ' + nome + ' voltará a guardar NOME DE ESTUDANTE, ocorrências, frequência e ' +
+          'tutoria no Firestore, como antes da adequação.\n\nUse isto só para contas de teste ou ' +
+          'suporte, e por tempo limitado.\n\nConfirmar?'
+        : 'Remover a isenção de ' + nome + '?\n\nA partir da próxima abertura, os dados pessoais ' +
+          'dessa conta passam a ficar somente no aparelho dela.';
+    if (!confirm(aviso)) return;
+
+    try {
+        await db.collection('access').doc(String(uid)).set({
+            modoOnlineCompleto: novo,
+            modoOnlineCompletoEm: new Date().toISOString(),
+            modoOnlineCompletoPor: (currentUser && currentUser.email) || 'super_admin'
+        }, { merge: true });
+        alert('Pronto. ' + nome + (novo ? ' está isento do corte.' : ' voltou ao modo local.'));
+        renderListaUsuariosAdmin();
+    } catch (e) {
+        alert('Não consegui gravar: ' + e.message + '\n\nConfira se as Regras do Firestore permitem ao super admin escrever em access/{uid}.');
+    }
+}
+
 async function renderListaUsuariosAdmin() {
     const data = await getData('system', 'users_list');
     const users = (data && data.list && Array.isArray(data.list)) ? data.list : [];
     const usersEscola = users.filter(u => u.schoolId == escolaAtualAdmin);
+    const isencoes = await _lerIsencoesOnline(usersEscola);
     
     const html = usersEscola.length > 0 ? `
         <table>
@@ -273,6 +326,7 @@ async function renderListaUsuariosAdmin() {
                     };
                     const roleInfo = roleMap[u.role] || roleMap['professor'];
                     const ehContribuinte = u.contribuidor === true;
+                    const isento = !!isencoes[u.uid];
                     return `
                     <tr>
                         <td>${ehContribuinte ? '💛 ' : ''}${u.nome}</td>
@@ -283,6 +337,7 @@ async function renderListaUsuariosAdmin() {
                             <button class="btn btn-success btn-sm" onclick="abrirBackupsUsuarioAdmin('${u.id}')" title="Ver e restaurar backups deste usuário">🛟 Backups</button>
                             <button class="btn btn-secondary btn-sm" onclick="editarUsuarioAdmin('${u.id}')" title="Alterar Perfil/Nome">✏️ Perfil</button>
                             <button class="btn ${ehContribuinte ? 'btn-success' : 'btn-secondary'} btn-sm" onclick="alternarContribuinteAdmin('${u.id}')" title="${ehContribuinte ? 'Remover marca de contribuinte' : 'Marcar como contribuinte'}">${ehContribuinte ? '💛 Contribuinte' : '💛 Marcar'}</button>
+                            <button class="btn ${isento ? 'btn-warning' : 'btn-secondary'} btn-sm" onclick="alternarModoOnlineCompleto('${u.uid || ''}', '${(u.nome || '').replace(/'/g, "\\'")}')" title="${isento ? 'Esta conta está isenta do corte: ainda guarda dados de estudante online' : 'Isentar do corte (mantém tudo online)'}">${isento ? '🌐 Online total' : '🌐 Isentar'}</button>
                             <button class="btn btn-danger btn-sm" onclick="excluirUsuarioAdmin(${u.id})">🗑️</button>
                         </td>
                     </tr>
@@ -1692,6 +1747,13 @@ async function restaurarBackupUsuarioAdmin(idx) {
     if (!confirm(`ATENÇÃO: isso vai SUBSTITUIR os dados atuais de ${user.nome || user.email} pelos dados do backup de ${b.dataLabel}.\n\nConteúdo do backup: ${b.countTurmas} turmas, ${b.countEstudantes} alunos, ${b.countNotas} notas.\n\nDica: baixe antes um backup do estado atual, por segurança.\n\nDeseja continuar?`)) return;
 
     try {
+        // [ADEQUAÇÃO SEDUC] Restaurar um backup significa reenviar dado pessoal para a
+        // nuvem. Depois do corte isso não é mais possível: a restauração passa a
+        // entregar um arquivo ao professor, que o importa no aparelho dele (Fase 2).
+        if (typeof podeEnviarDadoPessoal === 'function' && !podeEnviarDadoPessoal()) {
+            return alert('A restauração direta na nuvem não está mais disponível.\n\n' +
+                'Baixe o backup e peça ao professor para importá-lo pelo aparelho dele.');
+        }
         await saveData('app_data', destino, b.data);
         alert(`✅ Backup de ${b.dataLabel} restaurado na conta de ${user.nome || user.email}.\n\nPeça para o(a) professor(a) recarregar o sistema (ou sair e entrar novamente) para ver os dados restaurados.`);
     } catch (e) {

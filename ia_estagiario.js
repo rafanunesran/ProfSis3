@@ -2244,7 +2244,8 @@ async function montarEImprimirAnexoPaee(dadosBasicos, dados) {
 // getData/saveData (core.js) não fazem merge parcial: busca o documento inteiro, altera e regrava.
 async function salvarAnexoPaeeSchoolWide(schoolId, tutoradoId, dadosBasicos, dados) {
     const aeeKey = `app_data_school_${schoolId}_aee`;
-    const aeeData = await getData('app_data', aeeKey);
+    // Duas camadas: os Anexos III/IV ficam no aparelho depois do corte (ver core.js).
+    const aeeData = await lerDocUsuario(aeeKey);
     if (!aeeData || !Array.isArray(aeeData.tutorados)) throw new Error('Não foi possível localizar os dados AEE da escola.');
 
     const t = aeeData.tutorados.find(x => x.id == tutoradoId);
@@ -2252,7 +2253,7 @@ async function salvarAnexoPaeeSchoolWide(schoolId, tutoradoId, dadosBasicos, dad
 
     const anexoPaee = { dadosBasicos, dados, atualizadoEm: getTodayString() };
     t.anexoPaee = anexoPaee;
-    await saveData('app_data', aeeKey, aeeData);
+    await salvarDadosUsuario(aeeKey, aeeData);
 
     // Se quem salvou estiver em Modo AEE, o objeto `data` global em memória usa essa mesma chave -
     // atualiza também pra não ficar desatualizado até o próximo reload.
@@ -2365,7 +2366,8 @@ async function montarEImprimirAnexoIV(dadosBasicos, dados) {
 // inteiro, altera e regrava.
 async function salvarAnexoIVSchoolWide(schoolId, tutoradoId, dadosBasicos, dados) {
     const aeeKey = `app_data_school_${schoolId}_aee`;
-    const aeeData = await getData('app_data', aeeKey);
+    // Duas camadas: os Anexos III/IV ficam no aparelho depois do corte (ver core.js).
+    const aeeData = await lerDocUsuario(aeeKey);
     if (!aeeData || !Array.isArray(aeeData.tutorados)) throw new Error('Não foi possível localizar os dados AEE da escola.');
 
     const t = aeeData.tutorados.find(x => x.id == tutoradoId);
@@ -2380,7 +2382,7 @@ async function salvarAnexoIVSchoolWide(schoolId, tutoradoId, dadosBasicos, dados
     } else {
         t.anexosIV.push(anexoIV);
     }
-    await saveData('app_data', aeeKey, aeeData);
+    await salvarDadosUsuario(aeeKey, aeeData);
 
     // Se quem salvou estiver em Modo AEE, o objeto `data` global em memória usa essa mesma chave -
     // atualiza também pra não ficar desatualizado até o próximo reload.
@@ -2398,14 +2400,15 @@ async function salvarAnexoIVSchoolWide(schoolId, tutoradoId, dadosBasicos, dados
 // salvarAnexoIVSchoolWide: busca o documento inteiro, altera e regrava.
 async function excluirAnexoIVSchoolWide(schoolId, tutoradoId, anexoIVId) {
     const aeeKey = `app_data_school_${schoolId}_aee`;
-    const aeeData = await getData('app_data', aeeKey);
+    // Duas camadas: os Anexos III/IV ficam no aparelho depois do corte (ver core.js).
+    const aeeData = await lerDocUsuario(aeeKey);
     if (!aeeData || !Array.isArray(aeeData.tutorados)) throw new Error('Não foi possível localizar os dados AEE da escola.');
 
     const t = aeeData.tutorados.find(x => x.id == tutoradoId);
     if (!t) throw new Error('Estudante não encontrado nos dados AEE da escola.');
 
     t.anexosIV = (Array.isArray(t.anexosIV) ? t.anexosIV : []).filter(a => a.id != anexoIVId);
-    await saveData('app_data', aeeKey, aeeData);
+    await salvarDadosUsuario(aeeKey, aeeData);
 
     // Se quem excluiu estiver em Modo AEE, o objeto `data` global em memória usa essa mesma chave -
     // atualiza também pra não ficar desatualizado até o próximo reload.

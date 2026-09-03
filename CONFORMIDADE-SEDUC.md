@@ -99,6 +99,93 @@ Decisões do responsável pelo sistema, registradas em **25 de agosto de 2026**.
    - Protocolo / confirmação de recebimento: _______________
    - Resposta recebida: _______________
 
+## 4-A. Adequação de setembro de 2026 — os dados do estudante saem da nuvem
+
+Decisão do responsável, registrada em **3 de setembro de 2026**: em vez de aguardar a
+resposta da COEGD sobre o armazenamento externo de nome e situação do estudante (seção
+5), o sistema deixa de armazenar esse dado em ambiente externo. O ProfSis3 passa a ser
+uma aplicação **local**: o dado pessoal do estudante fica no aparelho do profissional, e
+a nuvem guarda apenas o que não identifica ninguém.
+
+### Data de corte
+
+**07/09/2026, às 7h.** Até lá o sistema funciona como antes e o professor é avisado duas
+vezes por dia, podendo fazer a transição quando quiser. A partir da data, o envio de dado
+pessoal é recusado — pelo aplicativo e, principalmente, pelas Regras do Firestore, que é
+onde a decisão não depende do que roda no navegador do usuário.
+
+### O que fica no aparelho e o que continua na nuvem
+
+| Fica só no aparelho | Continua na nuvem |
+|---|---|
+| Nome e situação do estudante | Turmas e horários de aula |
+| Ocorrências (relato e envolvidos) | Grade horária da escola |
+| Frequência, atrasos, compensações | Agenda de compromissos |
+| Notas e trabalhos | Registros de aula e planos de aula |
+| Tutoria (encontros e agendamentos) | Avisos, bimestres, feriados |
+| Anexos III (PAEE) e IV (PEI) | Biblioteca e currículo |
+| Registros administrativos e busca ativa | Documentação |
+
+A lista está em `shared.js` (`CAMPOS_PESSOAIS` e `CAMPOS_NUVEM`) e é repetida na Regra do
+Firestore. **Campo desconhecido é tratado como pessoal**: um campo criado no futuro não
+sobe por esquecimento — para publicá-lo é preciso escrevê-lo na lista de propósito.
+
+### Fase 0 — correções que foram ao ar antes do corte
+
+1. **Link público de relatório.** `shared_views` tem leitura liberada a qualquer
+   visitante, sem login, e o documento publicava a lista de estudantes com nome completo.
+   Passou a publicar apenas quantitativos por turma e por tipo de registro. A Regra recusa
+   gravação que traga os campos antigos.
+2. **Senha em texto claro.** `system/users_list` guardava a senha de cada usuário em
+   texto claro, num documento legível por qualquer pessoa autenticada. O cadastro deixou
+   de gravá-la; a credencial fica apenas no Firebase Auth.
+3. **Senha do administrador no código.** `core.js` trazia a senha do super admin escrita
+   no arquivo — e `core.js` é publicado no GitHub Pages, portanto a senha estava legível
+   para qualquer pessoa, e era a mesma da conta no Firebase Auth. Havia ainda um caminho
+   que criava a conta administrativa com a senha digitada, permitindo a um terceiro
+   assumir o perfil. O bloco foi removido.
+
+   *Providência necessária:* a senha esteve publicada e permanece no histórico do
+   repositório, que é público. **Trocar a senha da conta no Firebase Auth.**
+   - Data da troca: _______________
+4. **Configurações do sistema.** `system/config_ia` e `system/config_sistema` passaram a
+   ser escrita exclusiva do super admin.
+
+### Fase 1 — a separação das camadas
+
+- Armazenamento local em IndexedDB (`localdb.js`), substituindo o espelho em
+  `localStorage`, cujo teto de ~5 MB já era estourado por escolas grandes.
+- Guarda única na saída (`assertSemDadosPessoais`, em `core.js`): `saveData` é o único
+  ponto de gravação do sistema, e nada de pessoal o atravessa depois do corte.
+- Transição (`migracao.js`): leva o dado pessoal para o aparelho, regrava o documento da
+  nuvem sem os campos pessoais, apaga a chamada compartilhada e os backups diários que
+  estavam em texto claro, e obriga o download de um arquivo `.profsis` de segurança.
+- Isenção controlada: o super admin pode marcar contas específicas para seguirem 100%
+  online (campo `modoOnlineCompleto` em `access/{uid}`, gravável só por ele). Usada para
+  contas de teste e suporte durante a transição.
+
+### Consequências assumidas
+
+- **A cópia de segurança passa a ser responsabilidade compartilhada.** Enquanto o backup
+  cifrado (Fase 2) não existe, o arquivo `.profsis` é a única proteção contra a perda do
+  aparelho. A transição não termina sem gerá-lo.
+- **Recursos que dependiam de juntar dados de estudantes entre colegas param.** A chamada
+  compartilhada entre professores deixa de existir; a visão nominal do gestor e o painel
+  AEE compartilhado da escola voltam depois, cifrados com uma chave que só a escola tem.
+- **Mapa de sala e painel AEE por horário continuam online** porque nunca guardaram nome:
+  registram apenas identificadores, e o nome é resolvido no aparelho.
+
+### Ainda em aberto
+
+- Os prompts do Estagiário IA enviam nome do estudante e o texto do laudo para o Google
+  Gemini / OpenRouter. É dado pessoal saindo do aparelho tanto quanto o Firestore, e será
+  pseudonimizado.
+- O Google Agenda recebe o título dos compromissos; se o título de uma tutoria trouxer o
+  nome do estudante, o nome vai junto.
+- As Regras do Firestore não conferem `schoolId`: um usuário liberado de uma escola
+  alcança o documento de outra se souber o identificador. Deixou de expor estudantes com
+  esta adequação, mas continua a corrigir.
+
 ## 5. Solicitação de análise técnica (pendente de envio)
 
 O comunicado determina que necessidade de integração, automação ou desenvolvimento de

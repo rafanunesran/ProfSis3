@@ -111,3 +111,88 @@ function getInitialData() {
         caderno: []
     };
 }
+// ============================================================================
+//  CLASSIFICAÇÃO DOS DADOS — camada LOCAL x camada NUVEM
+// ----------------------------------------------------------------------------
+//  A Secretaria não permite que dado pessoal de estudante fique em ambiente
+//  externo. Este bloco é a fonte única da verdade sobre o que pode subir para o
+//  Firestore e o que fica no aparelho do profissional.
+//
+//  REGRA DE OURO: campo DESCONHECIDO é tratado como PESSOAL.
+//  Quem criar um campo novo em `data` amanhã não precisa lembrar desta lista —
+//  o campo simplesmente não sobe. Para publicar algo novo na nuvem é preciso
+//  escrevê-lo aqui de propósito, olhando para ele.
+// ============================================================================
+
+// Fica só no aparelho. Nunca sai em texto claro.
+const CAMPOS_PESSOAIS = [
+    'estudantes',              // nome completo, situação
+    'presencas', 'atrasos',    // frequência por estudante
+    'trabalhos', 'notas', 'compensacoes',
+    'tutorados',               // inclui os Anexos III/IV inteiros (t.anexoPaee, t.anexosIV)
+    'encontros', 'agendamentos', // tutoria: relato e agenda por estudante
+    'ocorrencias',             // relato + ids_estudantes
+    'registrosAdministrativos',// atestados, busca ativa
+    'caderno', 'baixaFrequencia',
+    'notasAvaliacoesGestor', 'notasBimestraisOficiais', 'lotesMapaoGestor'
+];
+
+// Não identifica estudante. Continua na nuvem, como sempre esteve.
+const CAMPOS_NUVEM = [
+    'turmas', 'horariosAulas', 'aulas',
+    'gradeHoraria', 'gradeHorariaExcecoes', 'tiposHorarioFixo',
+    'schoolGrade', 'schoolExceptions',
+    'eventos',                 // compromissos gerais (a agenda de tutoria é `agendamentos`)
+    'registrosAula', 'avisosMural',
+    'configBimestres', 'feriadosEscolares', 'opcoesOcorrenciaRapida',
+    'avaliacoesGestor',        // a DEFINIÇÃO da avaliação; as notas são pessoais
+    'mapeamentos',             // só {id_turma, linhas, colunas, assentos:{"3-2": idEstudante}}
+    'googleCalendar', 'escolaUF', 'escolaCidade'
+];
+
+// Chaves que denunciam dado pessoal em QUALQUER profundidade, mesmo dentro de um
+// documento com formato próprio (o histórico de tutoria, o mapa da sala...).
+// Usadas pela varredura de segurança em core.js.
+const CHAVES_PESSOAIS_PROFUNDAS = [
+    'nome_completo', 'nome_estudante', 'nome_estudante_norm', 'estudanteNome',
+    'ids_estudantes', 'estudanteId', 'anexoPaee', 'anexosIV', 'relato'
+];
+
+function campoEhPessoal(chave) {
+    return CAMPOS_NUVEM.indexOf(chave) === -1;
+}
+
+// Separa o `data` do app nas duas camadas. Disjunto por construção: cada chave cai
+// em exatamente um lado, então a ordem de remontagem não importa.
+function dividirDados(dados) {
+    const local = {};
+    const nuvem = {};
+    Object.keys(dados || {}).forEach(chave => {
+        if (campoEhPessoal(chave)) local[chave] = dados[chave];
+        else nuvem[chave] = dados[chave];
+    });
+    return { local: local, nuvem: nuvem };
+}
+
+// Remonta o `data` a partir das duas camadas, com os padrões de getInitialData()
+// preenchendo o que faltar (conta nova, ou aparelho que ainda não tem a parte local).
+//
+// Cada lado contribui SOMENTE com as chaves que lhe pertencem. Isso importa: antes da
+// transição os dois documentos são cópias completas, e deixar o lado local sobrescrever
+// tudo faria o professor que usou outro aparelho ontem ver a turma de anteontem.
+function juntarDados(local, nuvem) {
+    return Object.assign({},
+        getInitialData(),
+        dividirDados(nuvem || {}).nuvem,
+        dividirDados(local || {}).local);
+}
+
+// "João Pedro da Silva Souza" -> "João S." — usado onde o nome precisa aparecer para
+// um colega sem que o nome completo viaje (histórico de tutoria compartilhado).
+function abreviarNome(nomeCompleto) {
+    const partes = String(nomeCompleto || '').trim().split(/\s+/).filter(Boolean);
+    if (partes.length === 0) return '';
+    if (partes.length === 1) return partes[0];
+    const ultimo = partes[partes.length - 1];
+    return partes[0] + ' ' + ultimo.charAt(0).toUpperCase() + '.';
+}

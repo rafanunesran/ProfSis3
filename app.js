@@ -52,7 +52,16 @@ async function iniciarApp() {
         // carregarDadosUsuario() devolve false quando a LEITURA FALHOU (permissão/rede):
         // nesse caso o salvamento fica bloqueado para não sobrescrever a nuvem com vazio.
         window.dadosCarregados = (carregouOk !== false);
-        if (carregouOk === false) mostrarBannerLeituraFalhou();
+        // O aviso vale sempre que a NUVEM não respondeu, mesmo quando a cópia deste
+        // aparelho salvou a abertura: o professor precisa saber que o que ele fizer
+        // agora ainda não subiu.
+        if (carregouOk === false || window.bloquearEscritaNuvem) mostrarBannerLeituraFalhou();
+
+        // [ADEQUAÇÃO SEDUC] Antes do corte, lembra o professor duas vezes por dia.
+        // Depois do corte, leva o dado pessoal para o aparelho antes de qualquer coisa.
+        if (typeof aplicarRegraDoCorte === 'function') {
+            try { await aplicarRegraDoCorte(); } catch (e) { console.warn('[SisProf] Regra do corte:', e); }
+        }
 
         // [AUTO-BACKUP] Cria no máximo 1 backup por dia; mantém histórico dos últimos 15 dias
         verificarBackupAutomatico();
@@ -3026,8 +3035,12 @@ async function registrarOcorrenciaNoBanco({ ids, texto, tipo, idToUpdate = null 
 
     await persistirDados();
     
-    // Sincroniza com a Gestão (se for professor vinculado)
-    if (currentViewMode !== 'gestor' && currentUser.schoolId) {
+    // Sincroniza com a Gestão (se for professor vinculado).
+    // [ADEQUAÇÃO SEDUC] Este espelho leva relato e ids de estudante para um documento
+    // compartilhado da escola. Depois do corte ele para: a visão nominal do gestor
+    // volta pela camada cifrada do espaço, e não em texto claro no Firestore.
+    if (currentViewMode !== 'gestor' && currentUser.schoolId
+        && (typeof podeEnviarDadoPessoal !== 'function' || podeEnviarDadoPessoal())) {
         try {
             const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
             const gestorData = await getData('app_data', key);
@@ -5676,6 +5689,11 @@ async function sincronizarTutoradoComPainelAeeCompartilhado(tutorado) {
     const camposSincronizados = ['nome_estudante', 'turma', 'id_estudante_origem', 'data_nascimento',
         'aee_diagnostico', 'aee_relatorio', 'aee_categoria_diagnostico', 'aee_categoria_projeto'];
 
+    // [ADEQUAÇÃO SEDUC] O painel AEE da escola guarda nome e diagnóstico do estudante
+    // num documento compartilhado. Depois do corte esse espelho para; a ficha continua
+    // completa no aparelho de cada professor especializado.
+    if (typeof podeEnviarDadoPessoal === 'function' && !podeEnviarDadoPessoal()) return;
+
     try {
         const aeeKey = `app_data_school_${currentUser.schoolId}_aee`;
         const aeeData = await getData('app_data', aeeKey) || {};
@@ -8297,9 +8315,11 @@ async function persistirDados() {
     const key = getStorageKey(currentUser);
 
     // A função saveData em core.js já lida com o salvamento no Firebase (se online) ou no LocalStorage (se offline) usando a chave correta.
-    if (typeof saveData === 'function') {
+    if (typeof salvarDadosUsuario === 'function') {
         try {
-            await saveData('app_data', key, data);
+            // Grava a camada pessoal no aparelho e, quando permitido, a camada
+            // que não identifica estudante na nuvem. Ver core.js.
+            await salvarDadosUsuario(key, data);
 
             // [NOVO] Atualização automática do link compartilhado para Gestores
             if (currentViewMode === 'gestor' && typeof atualizarLinkCompartilhamentoGestor === 'function') {
@@ -8320,13 +8340,22 @@ async function persistirDados() {
 // --- FUNÇÃO DE EMERGÊNCIA PARA RECUPERAR DADOS DO LOCALSTORAGE PARA O FIREBASE ---
 async function restaurarBackupLocalParaNuvem() {
     const key = getStorageKey(currentUser);
-    const localJson = localStorage.getItem(key);
-    if (!localJson) {
-        return alert('Não há dados salvos neste navegador (Local Storage) para recuperar.');
+    // A cópia deste aparelho mudou de lugar: era localStorage, agora é IndexedDB
+    // (ver localdb.js). Ainda olhamos o localStorage para quem não abriu o sistema
+    // desde a migração do espelho.
+    let localData = null;
+    try { if (typeof localGet === 'function') localData = await localGet(key); } catch (e) {}
+    if (!localData) {
+        try {
+            const bruto = localStorage.getItem(key);
+            if (bruto) localData = JSON.parse(bruto);
+        } catch (e) {}
+    }
+    if (!localData) {
+        return alert('Não há dados salvos neste aparelho para recuperar.');
     }
 
     try {
-        const localData = JSON.parse(localJson);
         const countTurmas = (localData.turmas || []).length;
         const countEstudantes = (localData.estudantes || []).length;
 
@@ -8362,6 +8391,15 @@ async function verificarBackupAutomatico() {
     if (!currentUser) return;
     const userId = currentUser.uid || currentUser.id;
     if (!userId) return;
+
+    // [ADEQUAÇÃO SEDUC] Este backup grava o `data` INTEIRO, em texto claro, num
+    // documento do Firestore — inclusive estudantes, ocorrências e os Anexos III/IV.
+    // Depois do corte ele não pode mais subir. O substituto é o backup cifrado
+    // (Fase 2); enquanto ele não chega, a cópia de segurança é o arquivo .profsis
+    // que a transição obriga o professor a baixar.
+    if (typeof podeEnviarDadoPessoal === 'function' && !podeEnviarDadoPessoal()) {
+        return;
+    }
 
     try {
         const indexKey = `backup_index_${userId}`;

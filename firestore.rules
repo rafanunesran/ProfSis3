@@ -39,6 +39,14 @@ service cloud.firestore {
       ];
     }
 
+    // A isenção do corte não pode ser criada nem mudada por quem não é super admin.
+    function isencaoInalterada() {
+      return !('modoOnlineCompleto' in request.resource.data)
+             || (resource != null
+                 && 'modoOnlineCompleto' in resource.data
+                 && resource.data.modoOnlineCompleto == request.resource.data.modoOnlineCompleto);
+    }
+
     function accessPath() {
       return /databases/$(database)/documents/access/$(request.auth.uid);
     }
@@ -61,6 +69,38 @@ service cloud.firestore {
              || (isSignedIn() && meuAcesso().approved == true);
     }
 
+    // ---------------------- ADEQUAÇÃO SEDUC (corte) --------------------------
+    // Depois de 07/09/2026 às 07:00 de São Paulo (10:00 UTC), dado pessoal de
+    // estudante não entra mais em app_data. A verificação no cliente (core.js
+    // estadoCorte) é experiência de uso; a decisão de verdade é esta aqui — sem
+    // ela, bastaria abrir o console do navegador para contornar.
+    //
+    // Para ADIAR o corte é preciso mexer em DOIS lugares: aqui e no campo
+    // `dataCorte` de system/config_sistema. É de propósito: o cliente sozinho não
+    // decide se a regra vale.
+    function depoisDoCorte() {
+      return request.time > timestamp.date(2026, 9, 7) + duration.value(10, 'h');
+    }
+
+    // O super admin pode marcar contas específicas para seguirem 100% online.
+    // Só ele escreve este campo (ver match /access/{uid} abaixo).
+    function isentoDoCorte() {
+      return isSignedIn()
+             && exists(accessPath())
+             && meuAcesso().get('modoOnlineCompleto', false) == true;
+    }
+
+    // Espelha CAMPOS_PESSOAIS de shared.js. Ao acrescentar um campo pessoal lá,
+    // acrescente aqui também — senão o servidor aceita o que o cliente recusa.
+    function semCamposPessoais() {
+      return !request.resource.data.keys().hasAny([
+        'estudantes', 'presencas', 'atrasos', 'trabalhos', 'notas', 'compensacoes',
+        'tutorados', 'encontros', 'agendamentos', 'ocorrencias',
+        'registrosAdministrativos', 'caderno', 'baixaFrequencia',
+        'notasAvaliacoesGestor', 'notasBimestraisOficiais', 'lotesMapaoGestor'
+      ]);
+    }
+
     // Pode LIBERAR/RECUSAR o acesso de outra pessoa?
     // super_admin, gestor já liberado, ou usuário antigo (equipe existente).
     // Um cadastro novo (approved:false) nunca satisfaz nenhuma das condições.
@@ -77,15 +117,20 @@ service cloud.firestore {
 
       // O próprio usuário só cria o SEU documento como PENDENTE (nunca liberado).
       // Gestor/admin podem criar o documento de outra pessoa.
-      allow create: if (request.auth.uid == uid
-                        && request.resource.data.approved == false
-                        && request.resource.data.role == 'professor')
-                    || (podeAprovar() && request.auth.uid != uid)
-                    || isSuperAdmin();
+      allow create: if isSuperAdmin()
+                    || (!('modoOnlineCompleto' in request.resource.data)
+                        && ((request.auth.uid == uid
+                             && request.resource.data.approved == false
+                             && request.resource.data.role == 'professor')
+                            || (podeAprovar() && request.auth.uid != uid)));
 
       // ANTI-ELEVAÇÃO: ninguém altera o próprio documento de acesso.
-      allow update, delete: if isSuperAdmin()
-                            || (podeAprovar() && request.auth.uid != uid);
+      // E `modoOnlineCompleto` (isenção do corte) é exclusivo do super admin: um
+      // gestor que grave com merge continua podendo, desde que não MUDE o valor.
+      allow update: if isSuperAdmin()
+                    || (podeAprovar() && request.auth.uid != uid && isencaoInalterada());
+      allow delete: if isSuperAdmin()
+                    || (podeAprovar() && request.auth.uid != uid);
     }
 
     // ------------------------------ system/* ---------------------------------
@@ -143,7 +188,19 @@ service cloud.firestore {
 
     // ----------------- Dados da escola: exigem perfil liberado ---------------
     match /app_data/{docId} {
-      allow read, write: if liberado();
+      allow read: if liberado();
+      allow delete: if liberado();
+
+      // Antes do corte, nada muda. Depois dele, o documento só é aceito se:
+      //   - a conta estiver isenta pelo super admin, ou
+      //   - for um backup REALMENTE cifrado (o nome `backup_` não basta), ou
+      //   - não trouxer nenhum campo pessoal.
+      allow create, update: if liberado() && (
+           !depoisDoCorte()
+        || isentoDoCorte()
+        || (docId.matches('^backup_.*') && request.resource.data.get('cifrado', false) == true)
+        || semCamposPessoais()
+      );
     }
     match /shared_attendance/{docId} {
       allow read, write: if liberado();
