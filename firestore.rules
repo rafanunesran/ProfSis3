@@ -186,6 +186,17 @@ service cloud.firestore {
                    && !request.resource.data.keys().hasAny(['dados', 'estudantes']);
     }
 
+    // ------------------ chaves_backup: o envelope do backup ------------------
+    // Guarda a chave do backup do professor embrulhada de duas formas: uma que a
+    // senha dele abre, outra que a chave privada de suporte abre. Não há dado
+    // pessoal aqui — só material criptográfico, inútil sem uma das duas chaves.
+    // O super admin LÊ (é o que permite socorrer quem perdeu a senha) e não escreve:
+    // a chave é do professor.
+    match /chaves_backup/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
+      allow write: if isSignedIn() && request.auth.uid == uid;
+    }
+
     // ----------------- Dados da escola: exigem perfil liberado ---------------
     match /app_data/{docId} {
       allow read: if liberado();

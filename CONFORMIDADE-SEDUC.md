@@ -164,11 +164,45 @@ sobe por esquecimento — para publicá-lo é preciso escrevê-lo na lista de pr
   online (campo `modoOnlineCompleto` em `access/{uid}`, gravável só por ele). Usada para
   contas de teste e suporte durante a transição.
 
+### Fase 2 — backup cifrado e transição condicional
+
+- **A transição só limpa a nuvem depois de confirmada a cópia local.** A ordem é: grava no
+  aparelho, **relê e confere as contagens**, exige que o professor baixe o arquivo `.profsis`
+  e marque que o guardou, e só então regrava o documento da nuvem sem os campos pessoais.
+  Qualquer passo que falhe deixa a nuvem **intacta** — nunca ficamos com o dado apagado de
+  um lado sem estar seguro do outro.
+- **Backup diário volta a subir, cifrado** (`cripto.js`). Cada backup é cifrado com uma
+  chave aleatória do professor (AES-GCM 256), comprimida antes com gzip e partida em
+  quantos documentos forem necessários — o teto do Firestore é 1 MB por documento. Para o
+  Firebase, para o Google e para quem invadir o banco, o backup é um bloco sem sentido.
+- **A chave do professor é guardada embrulhada de duas formas**: uma que a **senha da conta
+  dele** abre (derivada por PBKDF2-SHA256, 210 mil iterações), e outra que a **chave privada
+  de suporte** abre. O professor nunca inventa nem digita uma "senha de backup": a chave é
+  desembrulhada no login e fica no aparelho.
+- **Chave de suporte.** O par é gerado no navegador do responsável; a pública vai para
+  `system/config_sistema` e a privada é baixada como `.pem` uma única vez, ficando fora do
+  repositório e fora do Firestore. Para socorrer um professor, o responsável importa o
+  `.pem`, o **próprio navegador dele** decifra e baixa um arquivo — o conteúdo em claro
+  nunca volta ao Firestore.
+
+  *Registro honesto:* com essa segunda cópia, o backup é ponta-a-ponta contra o Firebase,
+  contra o Google e contra invasão do banco, mas **não** contra o detentor da chave privada
+  de suporte. É uma escolha deliberada, para que o responsável consiga prestar assistência.
+
+### Sobre o acervo de quem não migrar
+
+**Decisão: nada é apagado por varredura.** Quem nunca abrir a versão nova permanece com os
+dados como estão. Quando abrir, a tela exige a transição para continuar, e a limpeza da
+nuvem só ocorre depois de confirmado que a cópia local chegou. A consequência assumida é
+que contas abandonadas seguem com dado pessoal armazenado — congelado, sem receber nada
+novo, porque a Regra do Firestore recusa qualquer gravação de campo pessoal a partir do
+corte.
+
 ### Consequências assumidas
 
-- **A cópia de segurança passa a ser responsabilidade compartilhada.** Enquanto o backup
-  cifrado (Fase 2) não existe, o arquivo `.profsis` é a única proteção contra a perda do
-  aparelho. A transição não termina sem gerá-lo.
+- **A cópia de segurança passa a ser responsabilidade compartilhada.** O arquivo `.profsis`
+  é a proteção que fica na mão do professor; o backup cifrado na nuvem é a rede que o
+  responsável consegue puxar. A transição não termina sem que o professor gere o arquivo.
 - **Recursos que dependiam de juntar dados de estudantes entre colegas param.** A chamada
   compartilhada entre professores deixa de existir; a visão nominal do gestor e o painel
   AEE compartilhado da escola voltam depois, cifrados com uma chave que só a escola tem.

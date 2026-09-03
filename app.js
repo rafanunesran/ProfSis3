@@ -8392,13 +8392,16 @@ async function verificarBackupAutomatico() {
     const userId = currentUser.uid || currentUser.id;
     if (!userId) return;
 
-    // [ADEQUAÇÃO SEDUC] Este backup grava o `data` INTEIRO, em texto claro, num
-    // documento do Firestore — inclusive estudantes, ocorrências e os Anexos III/IV.
-    // Depois do corte ele não pode mais subir. O substituto é o backup cifrado
-    // (Fase 2); enquanto ele não chega, a cópia de segurança é o arquivo .profsis
-    // que a transição obriga o professor a baixar.
+    // [ADEQUAÇÃO SEDUC] Este backup carrega o `data` INTEIRO — estudantes, ocorrências
+    // e os Anexos III/IV. Depois do corte ele só sobe CIFRADO (ver cripto.js): o
+    // Firestore guarda um bloco ilegível, que a senha do professor ou a chave de
+    // suporte abrem. Sem chave disponível, não sobe nada.
     if (typeof podeEnviarDadoPessoal === 'function' && !podeEnviarDadoPessoal()) {
-        return;
+        const chave = (typeof obterChaveBackup === 'function') ? await obterChaveBackup() : null;
+        if (!chave) {
+            console.warn('Backup na nuvem adiado: a chave de cifra ainda não está neste aparelho (entre com e-mail e senha uma vez).');
+            return;
+        }
     }
 
     try {
@@ -8464,15 +8467,43 @@ async function criarBackupNuvem(silent = false) {
             }
         }
 
-        // Salva os dados no slot
+        // Salva os dados no slot. Depois do corte, cifrado e partido em quantos
+        // documentos forem necessários (o teto do Firestore é 1 MB por documento).
         const backupKey = `backup_${userId}_slot_${slotId}`;
-        await saveData('app_data', backupKey, data);
+        const chave = (typeof obterChaveBackup === 'function') ? await obterChaveBackup() : null;
+
+        if (typeof podeEnviarDadoPessoal === 'function' && !podeEnviarDadoPessoal()) {
+            if (!chave) throw new Error('A chave de cifra do backup não está neste aparelho. Saia e entre de novo com e-mail e senha.');
+            const pacote = await cifrarPacote(data, chave);
+            await saveData('app_data', backupKey, pacote.principal);
+            for (const cont of pacote.continuacoes) {
+                await saveData('app_data', `${backupKey}_p${cont.parte}`, cont);
+            }
+            // Restos de um backup anterior que tinha MAIS partes que este continuariam
+            // no banco e confundiriam a remontagem. O índice guarda quantas partes o
+            // backup anterior tinha, então apagamos só o excesso — e não uma dezena de
+            // exclusões às cegas a cada backup diário.
+            const partesAntes = (indexData.slots.find(sl => sl.id === slotId) || {}).partes || 1;
+            for (let i = pacote.principal.partes + 1; i <= partesAntes; i++) {
+                try { await db.collection('app_data').doc(`${backupKey}_p${i}`).delete(); }
+                catch (e) { console.warn('Sobra de backup não removida:', e); }
+            }
+            window._ultimasPartesBackup = pacote.principal.partes;
+        } else {
+            await saveData('app_data', backupKey, data);
+        }
 
         // Atualiza o índice (remove entrada antiga desse slot, se houver)
         indexData.slots = indexData.slots.filter(s => s.id !== slotId);
 
         const label = silent ? 'Backup Diário Automático' : `Backup Manual (${data.turmas ? data.turmas.length : 0} turmas)`;
-        indexData.slots.push({ id: slotId, timestamp: Date.now(), dateStr: hoje, label: label });
+        indexData.slots.push({
+            id: slotId, timestamp: Date.now(), dateStr: hoje, label: label,
+            // Quantos documentos este backup ocupa. Sem isto não dá para saber quais
+            // sobras apagar no backup seguinte. Não é dado pessoal.
+            partes: window._ultimasPartesBackup || 1
+        });
+        window._ultimasPartesBackup = null;
 
         // Mantido por retrocompatibilidade com índices antigos
         indexData.nextSlot = slotId + 1;
@@ -8553,13 +8584,29 @@ function exibirModalBackups(slots, userId) {
         document.body.insertAdjacentHTML('beforeend', html);
 }
 
+// Lê um slot de backup, decifrando e remontando as partes quando for o caso.
+// Ponto único de leitura: restaurar e mesclar passam os dois por aqui.
+async function lerBackupSlot(uId, slotId) {
+    const backupKey = `backup_${uId}_slot_${slotId}`;
+    const doc = await getData('app_data', backupKey);
+    if (!doc) return null;
+
+    if (!doc.cifrado) return doc;   // backup antigo, anterior à adequação
+
+    const chave = (typeof obterChaveBackup === 'function') ? await obterChaveBackup() : null;
+    if (!chave) {
+        throw new Error('Este backup está cifrado e a chave não está neste aparelho.\n\n' +
+            'Saia e entre de novo com e-mail e senha para liberá-la.');
+    }
+    return decifrarPacote(doc, chave, (n) => getData('app_data', `${backupKey}_p${n}`));
+}
+
 async function restaurarBackupNuvem(slotId, dataBackup, userId) {
     const uId = userId || currentUser.uid || currentUser.id;
     if (!confirm(`ATENÇÃO: Isso substituirá TODOS os dados atuais pelos dados do backup de ${dataBackup}.\n\nDeseja continuar?`)) return;
 
     try {
-        const backupKey = `backup_${uId}_slot_${slotId}`;
-        const backupData = await getData('app_data', backupKey);
+        const backupData = await lerBackupSlot(uId, slotId);
 
         if (backupData) {
             data = backupData;
@@ -8579,8 +8626,7 @@ async function mesclarBackupNuvem(slotId, dataLabel, userId) {
     if (!confirm(`MODO DE RECUPERAÇÃO INTELIGENTE:\n\nO sistema buscará as notas de ${dataLabel} e as adicionará ao trabalho de hoje.\n\nAs chamadas e ações que o professor lançou hoje SERÃO MANTIDAS.\n\nDeseja continuar?`)) return;
 
     try {
-        const backupKey = `backup_${uId}_slot_${slotId}`;
-        const backupData = await getData('app_data', backupKey);
+        const backupData = await lerBackupSlot(uId, slotId);
 
         if (!backupData) return alert('Erro: Backup não encontrado.');
 

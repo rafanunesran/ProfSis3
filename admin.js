@@ -601,6 +601,13 @@ function renderBackupOptions() {
                         <button class="btn btn-info" onclick="migrarDadosAEECompartilhado()">🚀 Migrar Dados AEE/Projeto</button>
                     </div>
 
+                    <div style="flex: 1; background: #fff5f5; padding: 15px; border-radius: 8px; border: 1px solid #feb2b2;">
+                        <h3>🔐 Chave de Suporte</h3>
+                        <p style="font-size: 13px; color: #666;">Permite recuperar o backup de um professor que perdeu o acesso. Gere o par uma vez e <strong>guarde o arquivo .pem</strong>: ele não pode ser gerado de novo.</p>
+                        <div id="statusChaveSuporte" style="font-size:12px; color:#718096; margin-bottom:8px;"></div>
+                        <button class="btn btn-danger" onclick="gerarChaveSuporteAdmin()">🔐 Gerar par de chaves</button>
+                    </div>
+
                     <div style="flex: 1; background: #faf5ff; padding: 15px; border-radius: 8px; border: 1px solid #d6bcfa;">
                         <h3>🔑 Chaves de IA</h3>
                         <p style="font-size: 13px; color: #666;">Gerencie as chaves de API (Gemini/OpenAI/Groq/Nvidia) usadas pelo Estagiário IA e pela extração de notas.</p>
@@ -617,7 +624,11 @@ function renderBackupOptions() {
         `;
         document.querySelector('#adminContainer .container').appendChild(div);
     }
-    
+
+    // Diz se a chave de suporte já está instalada — sem ela os backups sobem sem
+    // rede de socorro, e isso precisa ficar visível, não escondido.
+    if (typeof mostrarStatusChaveSuporte === 'function') mostrarStatusChaveSuporte();
+
     // Adiciona botão no header se não existir
     const header = document.querySelector('#adminContainer header div');
     if (!document.getElementById('btnNavBackup')) {
@@ -1644,16 +1655,22 @@ async function coletarBackupsUsuario(user) {
                 if (!bData) continue;
                 const meta = indexSlots.find(s => s.id === i) || {};
                 const ts = meta.timestamp || null;
+                // Backup cifrado não tem contagem para mostrar: o conteúdo é um bloco
+                // opaco até alguém abri-lo com a senha do professor ou a chave de
+                // suporte. A data e o rótulo vêm do índice, que segue em texto claro.
+                const cifrado = bData.cifrado === true;
                 encontrados.push({
                     id: i,
                     ownerId: id,
                     timestamp: ts,
                     dataLabel: ts ? new Date(ts).toLocaleString('pt-BR') : (meta.dateStr || 'Data desconhecida'),
                     label: meta.label || 'Backup',
-                    countTurmas: (bData.turmas || []).length,
-                    countEstudantes: (bData.estudantes || []).length,
-                    countNotas: (bData.notas || []).length,
-                    data: bData
+                    cifrado: cifrado,
+                    countTurmas: cifrado ? null : (bData.turmas || []).length,
+                    countEstudantes: cifrado ? null : (bData.estudantes || []).length,
+                    countNotas: cifrado ? null : (bData.notas || []).length,
+                    data: cifrado ? null : bData,
+                    dataCifrada: cifrado ? bData : null
                 });
                 vistos.add(chaveUnica);
             } catch (e) {}
@@ -1709,12 +1726,16 @@ async function abrirBackupsUsuarioAdmin(userId) {
         <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
             <div>
                 <div style="font-weight:bold; color:#2d3748;">${b.dataLabel}</div>
-                <div style="font-size:12px; color:#718096;">${b.label} — ${b.countTurmas} turmas, ${b.countEstudantes} alunos, ${b.countNotas} notas</div>
+                <div style="font-size:12px; color:#718096;">${b.label}${b.cifrado
+                    ? ' — <span style="color:#2b6cb0;">cifrado</span>'
+                    : ` — ${b.countTurmas} turmas, ${b.countEstudantes} alunos, ${b.countNotas} notas`}</div>
                 <div style="font-size:10px; color:#a0aec0;">Slot ${b.id} · ID ${b.ownerId}</div>
             </div>
             <div style="display:flex; gap:5px; flex-shrink:0;">
-                <button class="btn btn-sm btn-info" onclick="baixarBackupUsuarioAdmin(${i})">⬇️ Baixar</button>
-                <button class="btn btn-sm btn-warning" onclick="restaurarBackupUsuarioAdmin(${i})">♻️ Restaurar</button>
+                ${b.cifrado
+                    ? `<button class="btn btn-sm btn-danger" onclick="restaurarComChaveSuporte(${i})" title="Decifra aqui no seu navegador com o .pem e baixa o arquivo para entregar ao professor">🔐 Recuperar com a chave</button>`
+                    : `<button class="btn btn-sm btn-info" onclick="baixarBackupUsuarioAdmin(${i})">⬇️ Baixar</button>
+                       <button class="btn btn-sm btn-warning" onclick="restaurarBackupUsuarioAdmin(${i})">♻️ Restaurar</button>`}
             </div>
         </div>
     `).join('');
@@ -1734,6 +1755,122 @@ function baixarBackupUsuarioAdmin(idx) {
     document.body.appendChild(a);
     a.click();
     a.remove();
+}
+
+// ============================================================================
+//  CHAVE DE SUPORTE — a segunda cópia da chave de backup dos professores
+// ----------------------------------------------------------------------------
+//  O backup de cada professor é cifrado com uma chave que só ele abre (pela senha
+//  da conta). Para o responsável conseguir socorrer quem perdeu o acesso, a mesma
+//  chave é guardada embrulhada numa SEGUNDA cópia, que só esta chave privada abre.
+//
+//  A privada é gerada NO NAVEGADOR do responsável e baixada uma única vez. Ela
+//  nunca entra no repositório, nunca entra no Firestore, e não há como reemiti-la:
+//  perdida a privada, os backups já feitos só voltam pela senha do próprio
+//  professor. Só a PÚBLICA vai para system/config_sistema.
+// ============================================================================
+
+async function mostrarStatusChaveSuporte() {
+    const div = document.getElementById('statusChaveSuporte');
+    if (!div || typeof db === 'undefined' || !db) return;
+    try {
+        const doc = await db.collection('system').doc('config_sistema').get();
+        const cfg = doc.exists ? doc.data() : {};
+        if (cfg.chavePublicaSuporte) {
+            const quando = cfg.chavePublicaSuporteEm ? new Date(cfg.chavePublicaSuporteEm).toLocaleDateString('pt-BR') : '';
+            div.innerHTML = '<span style="color:#276749;">Instalada' + (quando ? ' em ' + quando : '') + '.</span>';
+        } else {
+            div.innerHTML = '<span style="color:#c53030;">Nenhuma chave instalada — os backups estão sendo feitos sem rede de socorro.</span>';
+        }
+    } catch (e) { div.textContent = ''; }
+}
+
+async function gerarChaveSuporteAdmin() {
+    if (typeof gerarParDeChavesSuporte !== 'function') return alert('O módulo de criptografia não carregou.');
+    if (typeof db === 'undefined' || !db) return alert('Sem conexão com o banco.');
+
+    try {
+        const doc = await db.collection('system').doc('config_sistema').get();
+        if (doc.exists && doc.data().chavePublicaSuporte) {
+            if (!confirm('JÁ EXISTE uma chave de suporte instalada.\n\n' +
+                'Gerar outra NÃO apaga os backups, mas os que já foram feitos ficarão ' +
+                'recuperáveis apenas pela chave privada ANTIGA — guarde as duas.\n\nContinuar?')) return;
+        }
+    } catch (e) {}
+
+    if (!confirm('O arquivo .pem com a chave privada será baixado AGORA e não pode ser gerado de novo.\n\n' +
+        'Guarde-o fora deste computador (pen drive, cofre de senhas).\n\nPronto para baixar?')) return;
+
+    try {
+        const par = await gerarParDeChavesSuporte();
+        const blob = new Blob([par.pemPrivada], { type: 'application/x-pem-file' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'profsis-chave-suporte-' + new Date().toISOString().slice(0, 10) + '.pem';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+
+        alert('Par gerado.\n\nA chave pública já está no sistema e passa a proteger os próximos ' +
+              'backups.\n\nGUARDE o arquivo .pem que acabou de baixar: sem ele, você não consegue ' +
+              'socorrer um professor que perdeu a senha.');
+        mostrarStatusChaveSuporte();
+    } catch (e) {
+        alert('Não consegui gerar o par: ' + e.message);
+    }
+}
+
+// Restauração forçada: você importa o .pem, o SEU navegador decifra o backup do
+// professor e baixa um arquivo. O conteúdo em claro nunca volta ao Firestore — é o
+// professor quem o importa no aparelho dele, pela tela de restauração.
+async function restaurarComChaveSuporte(idx) {
+    const b = (window._backupsUsuarioEncontrados || [])[idx];
+    const user = window._backupUsuarioAlvo;
+    if (!b || !user) return;
+    if (!user.uid) return alert('Este usuário não tem UID do Firebase Auth, então não tem chave de backup.');
+
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pem,.key,.txt';
+    input.onchange = async () => {
+        const arquivo = input.files && input.files[0];
+        if (!arquivo) return;
+        try {
+            const privada = await importarChavePrivadaSuporte(await arquivo.text());
+            const dek = await abrirChaveComSuporte(user.uid, privada);
+
+            const chaveBase = 'backup_' + b.ownerId + '_slot_' + b.id;
+            const doc = b.dataCifrada || await getData('app_data', chaveBase);
+            const claro = doc && doc.cifrado
+                ? await decifrarPacote(doc, dek, (n) => getData('app_data', chaveBase + '_p' + n))
+                : (b.data || doc);
+
+            if (!claro) return alert('Não encontrei o conteúdo deste backup.');
+
+            // Entrega no mesmo formato que o professor importa no aparelho dele.
+            const pacote = {
+                formato: 'profsis', versao: 1, geradoEm: new Date().toISOString(),
+                usuario: { nome: user.nome, email: user.email }, dados: claro
+            };
+            const nome = (user.nome || user.email || 'professor').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+            const blob = new Blob([JSON.stringify(pacote)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'recuperado-' + nome + '-' + (b.timestamp ? new Date(b.timestamp).toISOString().slice(0,10) : 'slot' + b.id) + '.profsis';
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+
+            alert('Backup recuperado e baixado.\n\nEnvie o arquivo ao professor e peça para ele usar ' +
+                  '"Restaurar arquivo" no aparelho dele.\n\n' +
+                  (claro.estudantes ? claro.estudantes.length + ' estudante(s) no arquivo.' : ''));
+        } catch (e) {
+            alert('Não consegui recuperar: ' + e.message);
+        }
+    };
+    input.click();
 }
 
 async function restaurarBackupUsuarioAdmin(idx) {

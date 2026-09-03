@@ -301,8 +301,18 @@ async function saveData(collectionName, docId, dataObj) {
             try {
                 // Espelho local. Era localStorage (teto de ~5 MB, que uma escola grande
                 // estoura); agora vai para o IndexedDB, via localdb.js.
+                //
+                // MESCLA em vez de substituir, e a razão é séria: depois da transição o
+                // que sobe para a nuvem é só a camada não-pessoal, e um espelho que
+                // substituísse apagaria os estudantes da cópia local — a única que
+                // existe. Preservamos as chaves que o documento local já tem e que a
+                // gravação atual não traz.
                 if (!String(docId).startsWith('backup_') && typeof localSet === 'function') {
-                    await localSet(String(docId), cleanData);
+                    const existente = await localGet(String(docId));
+                    const mesclado = (existente && typeof existente === 'object' && !Array.isArray(existente))
+                        ? Object.assign({}, existente, cleanData)
+                        : cleanData;
+                    await localSet(String(docId), mesclado);
                 }
             } catch (localError) {
                 console.warn("Aviso: Espelho local falhou:", localError);
@@ -524,6 +534,7 @@ async function fazerLogin(e) {
                 return;
             }
             const fbUser = firebase.auth().currentUser;
+            await prepararBackupCifrado(senha);
             const adminUser = {
                 id: 'admin', nome: 'Super Admin', email: ADMIN_EMAIL,
                 role: 'super_admin', uid: fbUser ? fbUser.uid : undefined
@@ -561,6 +572,7 @@ async function fazerLogin(e) {
                     }
                     localStorage.setItem('app_current_user', JSON.stringify(user));
                     currentUser = user;
+                    await prepararBackupCifrado(senha);
                     if (typeof iniciarApp === 'function') iniciarApp();
                     return;
                 }
@@ -619,6 +631,21 @@ async function fazerLogin(e) {
     } catch (err) {
         console.error("Erro fatal no login:", err);
         alert("Ocorreu um erro inesperado. Veja o console.");
+    }
+}
+
+// Prepara a chave do backup cifrado. Chamado nos caminhos de login que têm a senha
+// em mãos — é o que faz o backup cifrado ser invisível para o professor: ele nunca
+// inventa nem digita uma "senha de backup". Best-effort de propósito: falha de rede
+// ou navegador sem WebCrypto não pode impedir ninguém de entrar no sistema.
+async function prepararBackupCifrado(senha) {
+    try {
+        if (typeof desbloquearChaveBackup !== 'function') return;
+        const fbUser = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null;
+        if (!fbUser || !senha) return;
+        await desbloquearChaveBackup(fbUser.uid, senha);
+    } catch (e) {
+        console.warn('[SisProf] Não foi possível preparar a chave de backup:', e);
     }
 }
 
