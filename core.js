@@ -512,31 +512,70 @@ async function fazerLogin(e) {
         const senha = document.getElementById('loginSenha').value;
 
         // --- LOGIN DO SUPER ADMIN ---
-        // [SEGURANÇA] Este bloco tinha a senha do administrador escrita no código
-        // ("Admin Hardcoded"). Como core.js é publicado no GitHub Pages, essa senha estava
-        // legível para qualquer pessoa que abrisse o arquivo - e era a MESMA senha da conta
-        // no Firebase Auth. Pior: quando a conta não existia, o código a criava com a senha
-        // que fosse digitada, então um estranho podia se tornar super admin.
+        // [SEGURANÇA] Este bloco já teve a senha do administrador escrita no código.
+        // Como core.js é publicado no GitHub Pages, ela ficava legível para qualquer
+        // pessoa que abrisse o arquivo — e era a MESMA senha da conta no Firebase Auth.
+        // Pior: quando a conta não existia, o código a criava com a senha que fosse
+        // digitada, então um estranho podia se tornar super admin.
         //
-        // Agora não há credencial no código. O administrador entra pelo Firebase Auth como
-        // qualquer outro usuário; o que concede o papel é o e-mail bater com ADMIN_EMAIL -
-        // exatamente a mesma regra que o firestore.rules confere em isSuperAdmin().
-        if (email === 'rafael@adm' || email === ADMIN_EMAIL) {
+        // Hoje não há credencial no código. O administrador entra pelo Firebase Auth
+        // como qualquer outro usuário; o que concede o papel é o e-mail estar em
+        // ADMIN_EMAILS **e** estar verificado — a mesma regra que o firestore.rules
+        // confere em isSuperAdmin().
+        if (ehEmailAdmin(email)) {
             if (!USE_FIREBASE || typeof firebase === 'undefined') {
                 alert('O acesso de administrador exige conexão com o Firebase.');
                 return;
             }
+
+            const emailAdmin = normalizarEmailAdmin(email);
             try {
-                await firebase.auth().signInWithEmailAndPassword(ADMIN_EMAIL, senha);
+                await firebase.auth().signInWithEmailAndPassword(emailAdmin, senha);
             } catch (err) {
                 console.warn('Falha ao autenticar o admin:', err && err.code);
-                alert('E-mail ou senha incorretos.');
+                if (err && (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential')) {
+                    alert('Não consegui entrar com ' + emailAdmin + '.\n\n' +
+                          'Se esta conta ainda não existe, crie-a pela tela de Cadastro ' +
+                          '(ou pelo Console do Firebase) e verifique o e-mail antes de voltar aqui.');
+                } else {
+                    alert('E-mail ou senha incorretos.');
+                }
                 return;
             }
-            const fbUser = firebase.auth().currentUser;
+
+            let fbUser = firebase.auth().currentUser;
+
+            if (adminExigeVerificacao(emailAdmin)) {
+                // reload() atualiza o cadastro (emailVerified) e getIdToken(true) renova o
+                // TOKEN, que é o que as Regras leem. Sem o segundo, quem acabou de clicar
+                // no link de verificação em outra aba continuaria carregando um token
+                // dizendo email_verified:false e levaria "permissão negada" sem entender.
+                try { await fbUser.reload(); await fbUser.getIdToken(true); } catch (e) {}
+                fbUser = firebase.auth().currentUser;
+
+                if (!fbUser || !fbUser.emailVerified) {
+                    const enviar = confirm('Falta confirmar este e-mail.\n\n' +
+                        'Os poderes de administrador só valem com o e-mail verificado — é o que ' +
+                        'impede outra pessoa de se cadastrar com o seu endereço e assumir o painel.\n\n' +
+                        'Enviar o link de verificação para ' + emailAdmin + ' agora?');
+                    if (enviar) {
+                        try {
+                            await fbUser.sendEmailVerification();
+                            alert('Link enviado. Abra o e-mail, clique no link e entre de novo aqui.');
+                        } catch (e) {
+                            alert('Não consegui enviar o link: ' + e.message);
+                        }
+                    }
+                    // Encerra a sessão: mantê-la aberta sem verificação só produziria
+                    // erros de permissão confusos em cada tela do painel.
+                    await firebase.auth().signOut();
+                    return;
+                }
+            }
+
             await prepararBackupCifrado(senha);
             const adminUser = {
-                id: 'admin', nome: 'Super Admin', email: ADMIN_EMAIL,
+                id: 'admin', nome: 'Super Admin', email: emailAdmin,
                 role: 'super_admin', uid: fbUser ? fbUser.uid : undefined
             };
             localStorage.setItem('app_current_user', JSON.stringify(adminUser));
@@ -623,7 +662,7 @@ async function fazerLogin(e) {
         } else {
             console.log("Emails disponíveis:", users.map(u => u.email));
             if (users.length === 0) {
-                alert(`Erro: Nenhum usuário encontrado no banco de dados (${USE_FIREBASE ? 'Online' : 'Local'}).\n\nDica: Entre como Admin (rafael@adm) para cadastrar usuários.`);
+                alert(`Erro: Nenhum usuário encontrado no banco de dados (${USE_FIREBASE ? 'Online' : 'Local'}).\n\nDica: Entre como Admin (${ADMIN_EMAIL}) para cadastrar usuários.`);
             } else {
                 alert('Email ou senha incorretos.\nVerifique o console (F12) para ver a lista de emails cadastrados.');
             }
@@ -764,9 +803,48 @@ function usuarioAguardandoAprovacao(user) {
     return user.approved === false;
 }
 
-// E-mail canônico do super_admin. É o mesmo valor conferido nas Regras do Firestore
-// (request.auth.token.email) para conceder poderes administrativos no banco.
-const ADMIN_EMAIL = 'rafael@adm.com';
+// ============================================================================
+//  QUEM É SUPER ADMIN
+// ----------------------------------------------------------------------------
+//  Esta lista espelha isSuperAdmin() no firestore.rules. Mudar aqui sem mudar lá
+//  não concede poder nenhum: quem decide é o servidor.
+// ============================================================================
+const ADMIN_EMAILS = [
+    'rafaelnf93@gmail.com',   // conta definitiva — caixa postal real
+    'rafael@adm.com'          // LEGADO — ver abaixo
+];
+
+// O e-mail do administrador só vale VERIFICADO. Sem isso, enquanto a conta não
+// existisse no Firebase Auth, qualquer pessoa que se cadastrasse com esse endereço
+// viraria super admin — o cadastro não confere quem é dono da caixa postal.
+//
+// EXCEÇÃO TEMPORÁRIA: `rafael@adm.com` tem domínio falso, não recebe e-mail e
+// portanto NUNCA poderá ser verificada. Fica isenta só enquanto serve de rede de
+// segurança durante a troca.
+//
+//  >>> REMOVER `rafael@adm.com` DAS DUAS LISTAS (e das Regras do Firestore, e do
+//  >>> Console do Firebase) assim que o acesso por rafaelnf93@gmail.com estiver
+//  >>> confirmado. A senha dessa conta foi publicada no histórico do repositório,
+//  >>> que é público — aposentá-la é a correção, não trocar a senha.
+//  >>> Ver CONFORMIDADE-SEDUC.md, seção 4-A.
+const ADMIN_EMAILS_SEM_VERIFICACAO = ['rafael@adm.com'];
+
+// Apelido do e-mail principal, usado em mensagens e no perfil da sessão.
+const ADMIN_EMAIL = ADMIN_EMAILS[0];
+
+// Aceita o atalho histórico "rafael@adm" (sem .com) que muita gente digitava.
+function normalizarEmailAdmin(email) {
+    const e = String(email || '').trim().toLowerCase();
+    return e === 'rafael@adm' ? 'rafael@adm.com' : e;
+}
+
+function ehEmailAdmin(email) {
+    return ADMIN_EMAILS.indexOf(normalizarEmailAdmin(email)) !== -1;
+}
+
+function adminExigeVerificacao(email) {
+    return ADMIN_EMAILS_SEM_VERIFICACAO.indexOf(normalizarEmailAdmin(email)) === -1;
+}
 
 // Grava/atualiza o documento de acesso por usuário na coleção `access` do Firestore.
 // Esse documento (access/{uid}) é a fonte da verdade que as Regras do Firestore usam

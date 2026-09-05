@@ -30,13 +30,26 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Super admin: e-mail do token do Firebase Auth.
-    // Precisa ser IGUAL ao ADMIN_EMAIL definido no core.js.
-    // Para adicionar outro administrador, inclua o e-mail nesta lista.
+    // Super admin: e-mail do token do Firebase Auth. Espelha ADMIN_EMAILS no core.js.
+    //
+    // O e-mail precisa estar VERIFICADO. Sem essa exigência, enquanto a conta não
+    // existisse no Firebase Auth, qualquer pessoa que se cadastrasse com esse endereço
+    // viraria super admin — o cadastro não confere quem é dono da caixa postal.
+    //
+    // EXCEÇÃO TEMPORÁRIA: rafael@adm.com tem domínio falso, não recebe e-mail e nunca
+    // poderá ser verificada. Segue isenta só enquanto serve de rede de segurança
+    // durante a troca de conta.
+    //
+    //  >>> REMOVER a linha do rafael@adm.com assim que o acesso por
+    //  >>> rafaelnf93@gmail.com estiver confirmado, e apagar a conta no Console do
+    //  >>> Firebase. A senha dela foi publicada no histórico do repositório, que é
+    //  >>> público — aposentá-la é a correção, não trocar a senha.
     function isSuperAdmin() {
-      return isSignedIn() && request.auth.token.email in [
-        'rafael@adm.com'
-      ];
+      return isSignedIn() && (
+        (request.auth.token.email == 'rafaelnf93@gmail.com'
+         && request.auth.token.email_verified == true)
+        || request.auth.token.email == 'rafael@adm.com'
+      );
     }
 
     // A isenção do corte não pode ser criada nem mudada por quem não é super admin.

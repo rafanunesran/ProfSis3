@@ -146,8 +146,16 @@ sobe por esquecimento — para publicá-lo é preciso escrevê-lo na lista de pr
    assumir o perfil. O bloco foi removido.
 
    *Providência necessária:* a senha esteve publicada e permanece no histórico do
-   repositório, que é público. **Trocar a senha da conta no Firebase Auth.**
-   - Data da troca: _______________
+   repositório, que é público. A conta `rafael@adm.com` usa um domínio inexistente, não
+   recebe e-mail e portanto **não pode ter a senha redefinida** pelo fluxo normal — trocar
+   a senha não é uma opção disponível. A correção é **aposentar a conta**, movendo o papel
+   de administrador para um e-mail real, `rafaelnf93@gmail.com`, cujo acesso só vale com o
+   endereço **verificado** (é o que impede um terceiro de se cadastrar com ele e assumir o
+   painel). A conta antiga segue isenta da verificação apenas como rede de segurança
+   durante a troca, e está marcada para remoção no código, nas Regras e no Console.
+
+   - Passo 1 — conta `rafaelnf93@gmail.com` criada e verificada: _______________
+   - Passo 2 — `rafael@adm.com` removida do código, das Regras e do Console: _______________
 4. **Configurações do sistema.** `system/config_ia` e `system/config_sistema` passaram a
    ser escrita exclusiva do super admin.
 
