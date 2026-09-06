@@ -536,6 +536,28 @@ async function entrarNoAuth(email, senha) {
     return { ok: false, erro: ultimoErro };
 }
 
+// Mostra o código do erro junto da mensagem. Sem ele, todo relato de "não consigo
+// entrar" vira adivinhação: o Firebase devolve auth/invalid-credential tanto para
+// senha errada quanto para conta inexistente quando a proteção contra enumeração de
+// e-mails está ligada, e só o código distingue os demais casos (conta desativada,
+// excesso de tentativas). O código não revela nada sensível.
+function mensagemCredencial(codigo) {
+    let texto = 'Não consegui entrar com esses dados.\n\n';
+
+    if (codigo === 'auth/too-many-requests') {
+        texto += 'O Firebase bloqueou temporariamente as tentativas para esta conta. ' +
+                 'Espere alguns minutos antes de tentar de novo.';
+    } else if (codigo === 'auth/user-disabled') {
+        texto += 'Esta conta está desativada. Fale com a gestão.';
+    } else {
+        texto += 'Pode ser a senha, ou o e-mail estar cadastrado de outra forma. ' +
+                 'Se não lembra a senha, use "Esqueceu a senha?" logo abaixo.';
+    }
+
+    if (codigo) texto += '\n\n(código: ' + codigo + ')';
+    return texto;
+}
+
 async function fazerLogin(e) {
     e.preventDefault();
     try {
@@ -716,8 +738,7 @@ async function fazerLogin(e) {
                           'Se estiver certo, peça à gestão para conferir seu acesso — seus dados ' +
                           'estão preservados, é só a entrada que precisa ser acertada.');
                 } else if (erroAuth) {
-                    alert('E-mail ou senha incorretos.\n\n' +
-                          'Se não lembra a senha, use "Esqueceu a senha?" logo abaixo.');
+                    alert(mensagemCredencial(erroAuth));
                 } else {
                     alert('Não consegui verificar seus dados agora.\n\n' +
                           'Confira sua conexão e tente de novo.');
@@ -726,8 +747,7 @@ async function fazerLogin(e) {
                 alert('A lista de usuários está vazia neste banco.\n\n' +
                       'Se o sistema acabou de ser instalado, cadastre o primeiro usuário.');
             } else {
-                alert('E-mail ou senha incorretos.\n\n' +
-                      'Se não lembra a senha, use "Esqueceu a senha?" logo abaixo.');
+                alert(mensagemCredencial(erroAuth));
             }
         }
     } catch (err) {
