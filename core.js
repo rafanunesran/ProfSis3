@@ -505,11 +505,45 @@ function init() {
 }
 
 // Funções de Auth
+// As contas no Firebase Auth foram criadas por migrarUsuariosParaFirebase(), que
+// ACRESCENTA '.com' quando o domínio não tem ponto ('prof@peralta' -> 'prof@peralta.com').
+// O professor continua digitando o endereço curto, que é o que está na users_list.
+// Enquanto o login legado funcionava sem sessão, isso passava batido; com as Regras
+// publicadas exigindo autenticação para ler a lista, esse descompasso passou a trancar
+// a pessoa do lado de fora. Aqui tentamos as duas formas antes de desistir.
+function variacoesDeEmail(email) {
+    const formas = [email];
+    const partes = String(email).split('@');
+    if (partes.length === 2 && !partes[1].includes('.')) formas.push(email + '.com');
+    return formas;
+}
+
+async function entrarNoAuth(email, senha) {
+    let ultimoErro = null;
+    for (const tentativa of variacoesDeEmail(email)) {
+        try {
+            await firebase.auth().signInWithEmailAndPassword(tentativa, senha);
+            if (tentativa !== email) console.log('[Login] Entrou com o e-mail ajustado:', tentativa);
+            return { ok: true, email: tentativa };
+        } catch (err) {
+            ultimoErro = err;
+            const code = err && err.code;
+            // Só vale insistir quando o problema é o endereço não existir. Senha errada
+            // com o endereço certo não melhora tentando outra forma do endereço.
+            if (code !== 'auth/user-not-found' && code !== 'auth/invalid-credential') break;
+        }
+    }
+    return { ok: false, erro: ultimoErro };
+}
+
 async function fazerLogin(e) {
     e.preventDefault();
     try {
         const email = document.getElementById('loginEmail').value.trim().toLowerCase();
         const senha = document.getElementById('loginSenha').value;
+        // Por que o Firebase Auth recusou. Usado lá embaixo para dizer à pessoa o que
+        // realmente aconteceu, em vez de um "usuário não encontrado" que engana.
+        let erroAuth = null;
 
         // --- LOGIN DO SUPER ADMIN ---
         // [SEGURANÇA] Este bloco já teve a senha do administrador escrita no código.
@@ -587,7 +621,8 @@ async function fazerLogin(e) {
         // [NOVO] Tenta login via Firebase Auth primeiro
         if (USE_FIREBASE && typeof firebase !== 'undefined') {
             try {
-                await firebase.auth().signInWithEmailAndPassword(email, senha);
+                const entrada = await entrarNoAuth(email, senha);
+                if (!entrada.ok) throw (entrada.erro || new Error('falha no login'));
                 // O onAuthStateChanged vai lidar com o resto, mas buscamos o perfil aqui para agilizar
                 const usersData = await getData('system', 'users_list');
                 const users = (usersData && usersData.list) ? usersData.list : [];
@@ -618,7 +653,8 @@ async function fazerLogin(e) {
             } catch (e) {
                 // Se falhar (ex: usuário ainda não migrado), continua para o método antigo abaixo
                 // Isso garante que ninguém fica trancado para fora durante a transição
-                console.warn("Login Auth falhou (tentando legado):", e.code);
+                erroAuth = (e && e.code) || 'desconhecido';
+                console.warn("Login Auth falhou (tentando legado):", erroAuth);
             }
         }
 
@@ -639,8 +675,11 @@ async function fazerLogin(e) {
             return;
         }
 
-        // Busca usuários
+        // Busca usuários. Zera a marca antes: precisamos saber se ESTA leitura falhou,
+        // e não se alguma leitura anterior da sessão falhou.
+        window.falhaLeituraFirestore = false;
         const usersData = await getData('system', 'users_list');
+        const leituraNegada = window.falhaLeituraFirestore === true;
         const users = (usersData && usersData.list && Array.isArray(usersData.list)) ? usersData.list : [];
 
         console.log(`[Login] Tentando: ${email} | Modo: ${USE_FIREBASE ? 'Firebase' : 'Local'} | Usuários encontrados: ${users.length}`);
@@ -660,11 +699,35 @@ async function fazerLogin(e) {
             currentUser = user;
             if (typeof iniciarApp === 'function') iniciarApp();
         } else {
-            console.log("Emails disponíveis:", users.map(u => u.email));
-            if (users.length === 0) {
-                alert(`Erro: Nenhum usuário encontrado no banco de dados (${USE_FIREBASE ? 'Online' : 'Local'}).\n\nDica: Entre como Admin (${ADMIN_EMAIL}) para cadastrar usuários.`);
+            // [DIAGNÓSTICO HONESTO] Antes, qualquer falha caía em "Nenhum usuário
+            // encontrado no banco de dados" — mensagem falsa quando a lista existe e
+            // apenas não pôde ser lida, e que mandava o professor para o caminho errado.
+            //
+            // O caminho legado confere a senha guardada em system/users_list, e as Regras
+            // do Firestore só liberam esse documento para quem já está autenticado. Ou
+            // seja: quem não tem conta no Firebase Auth não consegue nem chegar à
+            // verificação. A saída é a conta existir no Auth — não afrouxar a Regra, que
+            // exporia o e-mail de todos os profissionais (e a senha de quem ainda não
+            // foi migrado) para qualquer pessoa na internet.
+            if (leituraNegada) {
+                if (erroAuth === 'auth/user-not-found') {
+                    alert('Não encontrei uma conta de acesso com este e-mail.\n\n' +
+                          'Confira se digitou o endereço exatamente como está cadastrado. ' +
+                          'Se estiver certo, peça à gestão para conferir seu acesso — seus dados ' +
+                          'estão preservados, é só a entrada que precisa ser acertada.');
+                } else if (erroAuth) {
+                    alert('E-mail ou senha incorretos.\n\n' +
+                          'Se não lembra a senha, use "Esqueceu a senha?" logo abaixo.');
+                } else {
+                    alert('Não consegui verificar seus dados agora.\n\n' +
+                          'Confira sua conexão e tente de novo.');
+                }
+            } else if (users.length === 0) {
+                alert('A lista de usuários está vazia neste banco.\n\n' +
+                      'Se o sistema acabou de ser instalado, cadastre o primeiro usuário.');
             } else {
-                alert('Email ou senha incorretos.\nVerifique o console (F12) para ver a lista de emails cadastrados.');
+                alert('E-mail ou senha incorretos.\n\n' +
+                      'Se não lembra a senha, use "Esqueceu a senha?" logo abaixo.');
             }
         }
     } catch (err) {
