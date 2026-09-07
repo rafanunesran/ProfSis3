@@ -566,6 +566,9 @@ async function fazerLogin(e) {
         // Por que o Firebase Auth recusou. Usado lá embaixo para dizer à pessoa o que
         // realmente aconteceu, em vez de um "usuário não encontrado" que engana.
         let erroAuth = null;
+        // O Firebase Auth aceitou e-mail e senha? Se aceitou, qualquer falha DEPOIS
+        // disso não é problema de credencial — e não pode ser relatada como se fosse.
+        let authOk = false;
 
         // --- LOGIN DO SUPER ADMIN ---
         // [SEGURANÇA] Este bloco já teve a senha do administrador escrita no código.
@@ -645,6 +648,7 @@ async function fazerLogin(e) {
             try {
                 const entrada = await entrarNoAuth(email, senha);
                 if (!entrada.ok) throw (entrada.erro || new Error('falha no login'));
+                authOk = true;
                 // O onAuthStateChanged vai lidar com o resto, mas buscamos o perfil aqui para agilizar
                 const usersData = await getData('system', 'users_list');
                 const users = (usersData && usersData.list) ? usersData.list : [];
@@ -731,7 +735,22 @@ async function fazerLogin(e) {
             // verificação. A saída é a conta existir no Auth — não afrouxar a Regra, que
             // exporia o e-mail de todos os profissionais (e a senha de quem ainda não
             // foi migrado) para qualquer pessoa na internet.
-            if (leituraNegada) {
+            // [IMPORTANTE] Se o Auth aceitou a credencial, o problema está em outro
+            // lugar: leitura negada pelas Regras, perfil ausente da lista, ou uma falha
+            // depois do login. Dizer "senha incorreta" aqui manda a pessoa trocar uma
+            // senha que está certa e esconde a causa real — foi exatamente o que
+            // aconteceu ao investigar o bloqueio de 07/09.
+            if (authOk) {
+                console.error('[Login] Auth aceitou a credencial, mas o perfil não pôde ser carregado.',
+                              { leituraNegada: leituraNegada, usuariosLidos: users.length, erroPosLogin: erroAuth });
+                alert('Sua senha está correta e o acesso foi reconhecido, mas não consegui ' +
+                      'carregar o seu perfil.\n\n' +
+                      (leituraNegada
+                        ? 'O banco recusou a leitura da lista de usuários (Regras do Firestore).'
+                        : 'Seu perfil não foi encontrado na lista de usuários da escola.') +
+                      '\n\nAvise a gestão — não adianta trocar a senha.' +
+                      (erroAuth ? '\n\n(código: ' + erroAuth + ')' : ''));
+            } else if (leituraNegada) {
                 if (erroAuth === 'auth/user-not-found') {
                     alert('Não encontrei uma conta de acesso com este e-mail.\n\n' +
                           'Confira se digitou o endereço exatamente como está cadastrado. ' +
