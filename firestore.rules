@@ -8,14 +8,14 @@ rules_version = '2';
 //    2. Apague tudo, cole este arquivo inteiro e clique em "Publicar".
 //
 //  PRINCÍPIO DE OURO DESTAS REGRAS: NUNCA TRANCAR QUEM JÁ USA O SISTEMA.
-//    Quem não tem documento em `access/{uid}` (todos os usuários antigos) é
+//    Quem não tem documento em `access/<uid>` (todos os usuários antigos) é
 //    tratado como JÁ LIBERADO. Só quem tem o documento com approved == false
 //    (ou seja, cadastros novos, criados pelo próprio app) fica bloqueado.
 //    Consequência: é impossível estas regras trancarem um professor antigo.
 //
 //  QUEM PODE LIBERAR UM PERFIL NOVO
 //    - o super_admin (identificado pelo e-mail do token), ou
-//    - um usuário cujo access/{uid} diga approved == true E role == 'gestor', ou
+//    - um usuário cujo access/<uid> diga approved == true E role == 'gestor', ou
 //    - um usuário antigo (sem documento de acesso) — equipe já existente.
 //    Um cadastro NOVO sempre tem documento com approved:false e role:'professor',
 //    portanto NÃO consegue liberar ninguém, nem a si mesmo. Além disso, ninguém
@@ -92,7 +92,7 @@ service cloud.firestore {
              || (isSignedIn() && meuAcesso().approved == true && meuAcesso().role == 'gestor');
     }
 
-    // ------------------- access/{uid}: controle de liberação -----------------
+    // ------------------- access/<uid>: controle de liberação -----------------
     match /access/{uid} {
       // Lê o próprio status; gestor/admin leem para administrar.
       allow read: if isSignedIn() && (request.auth.uid == uid || podeAprovar());
