@@ -585,6 +585,69 @@ async function ofereceRedefinirSenha(email, codigo) {
     }
 }
 
+// Promove um login legado a uma sessão de verdade no Firebase Auth.
+//
+// Por que isto existe: o caminho legado confere a senha guardada em
+// system/users_list e deixa entrar. Só que o Firestore não sabe nada disso — ele
+// só reconhece sessão do Auth. Resultado: a pessoa entra e nada carrega, porque
+// as Regras negam app_data para quem não está autenticado. Deixar app_data aberto
+// sem sessão não é opção: é a lista de estudantes.
+//
+// Não abre brecha: só criamos a conta depois de a senha bater com a que está na
+// users_list, que é a mesma prova que o login legado já aceitava para dar acesso
+// total à interface.
+//
+// Devolve true quando, ao final, existe sessão no Auth.
+async function promoverParaAuth(email, senha) {
+    if (!USE_FIREBASE || typeof firebase === 'undefined') return false;
+    if (firebase.auth().currentUser) return true;
+
+    // Mesma normalização usada quando as contas foram criadas em massa
+    // (migrarUsuariosParaFirebase acrescenta ".com" a domínio sem ponto).
+    const partes = String(email).split('@');
+    const emailAuth = (partes.length === 2 && !partes[1].includes('.')) ? email + '.com' : email;
+
+    try {
+        await firebase.auth().createUserWithEmailAndPassword(emailAuth, senha);
+        console.log('[Login] Acesso criado no Firebase Auth para', emailAuth);
+        return true;
+    } catch (err) {
+        const code = err && err.code;
+
+        if (code === 'auth/email-already-in-use') {
+            // A conta existe, mas com OUTRA senha — é o caso de quem vinha entrando
+            // só pelo caminho legado. Não há como obter sessão sem a senha correta.
+            const enviar = confirm(
+                'Você entrou, mas seus dados ficam guardados numa área protegida que ' +
+                'exige uma senha de acesso atualizada.\n\n' +
+                'A senha que você usa aqui é diferente da que está registrada nessa ' +
+                'área, e por isso o sistema não consegue carregar suas turmas.\n\n' +
+                'Quer receber agora um link para definir a senha de acesso em\n' +
+                emailAuth + ' ?');
+            if (enviar) {
+                try {
+                    await firebase.auth().sendPasswordResetEmail(emailAuth);
+                    alert('Link enviado. Abra o e-mail (confira o spam), defina a senha e ' +
+                          'entre de novo com ela.\n\nSeus dados continuam no lugar.');
+                } catch (e2) {
+                    alert('Não consegui enviar o link: ' + (e2 && e2.message ? e2.message : 'erro') +
+                          '\n\nAvise a gestão do sistema.');
+                }
+            }
+            return false;
+        }
+
+        if (code === 'auth/weak-password') {
+            alert('Você entrou, mas para carregar seus dados o sistema precisa de uma ' +
+                  'senha com pelo menos 6 caracteres.\n\nAvise a gestão para atualizar seu acesso.');
+            return false;
+        }
+
+        console.warn('[Login] Não foi possível criar o acesso no Auth:', code);
+        return false;
+    }
+}
+
 async function fazerLogin(e) {
     e.preventDefault();
     try {
@@ -748,8 +811,19 @@ async function fazerLogin(e) {
         const user = users.find(u => u.email === email && u.senha === senha);
 
         if (user) {
+            // O login legado coloca a pessoa DENTRO da interface, mas não cria sessão
+            // no Firebase Auth — e o Firestore só confia em sessão do Auth. Sem ela,
+            // toda leitura de app_data é negada e o professor vê "não foi possível
+            // carregar seus dados da nuvem" logo depois de entrar.
+            //
+            // Como a senha acabou de ser conferida contra a users_list, temos a mesma
+            // evidência que o caminho legado já aceita para deixar entrar. Usamos ela
+            // para criar a conta no Auth e resolver isso de uma vez, sem pedir nada.
+            await promoverParaAuth(email, senha);
+
             localStorage.setItem('app_current_user', JSON.stringify(user));
             currentUser = user;
+            await prepararBackupCifrado(senha);
             if (typeof iniciarApp === 'function') iniciarApp();
         } else {
             // [DIAGNÓSTICO HONESTO] Antes, qualquer falha caía em "Nenhum usuário
