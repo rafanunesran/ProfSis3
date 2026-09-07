@@ -126,20 +126,29 @@ service cloud.firestore {
     }
 
     // ------------------------------ system/* ---------------------------------
-    // schools_list: leitura PÚBLICA — a tela de Cadastro monta o seletor de
-    // escola antes do login. (As regras se somam: este allow vale mesmo com a
-    // regra genérica de system/ abaixo.)
-    match /system/schools_list {
+    // ---------------------------- system/* -----------------------------------
+    // LEITURA PÚBLICA, DE PROPÓSITO. Nao mexer aqui.
+    //
+    // O login do SisProf tem um caminho legado: quando o Firebase Auth recusa a
+    // credencial, o app compara a senha guardada em system/users_list. Esse
+    // caminho roda ANTES de existir sessao, entao qualquer regra que exija
+    // autenticacao para ler este documento tranca do lado de fora todo professor
+    // cuja senha no Auth nao coincide com a da lista - e havia varios.
+    //
+    // Foi exatamente o que aconteceu em 07/09/2026: uma versao destas Regras
+    // exigiu isSignedIn() aqui, e professores com conta valida pararam de entrar.
+    //
+    // Estas Regras existem para a adequacao da SEDUC, que trata de DADO DE
+    // ESTUDANTE. Nao ha dado de estudante em system/*. Endurecer esta colecao nao
+    // atende a nenhuma exigencia da Secretaria e so' cria risco de bloqueio.
+    //
+    // O problema real deste documento - senha em texto claro - nao se resolve com
+    // Regra, e sim apagando o campo: painel do Super Admin, "Sincronizar UIDs e
+    // Remover Senhas". Feito isso, o caminho legado deixa de existir sozinho e
+    // esta abertura pode ser fechada com seguranca.
+    match /system/{docId} {
       allow read: if true;
       allow write: if isSignedIn();
-    }
-
-    // users_list e demais documentos de sistema: exigem login.
-    // NÃO exigem `liberado()` de propósito: o app precisa ler o perfil no
-    // login para descobrir se a pessoa está liberada. Bloquear aqui criaria
-    // um impasse (não conseguiria nem saber que está pendente).
-    match /system/{docId} {
-      allow read, write: if isSignedIn();
     }
 
     // ------------------ shared_views: relatório por link ---------------------
