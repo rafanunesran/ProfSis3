@@ -77,10 +77,25 @@ service cloud.firestore {
     // Pode usar os dados da escola?
     // super_admin  OU  usuário antigo (sem doc)  OU  doc com approved == true.
     // O operador || tem curto-circuito: get() só roda se o doc existir.
+    // Quem pode usar os dados da escola?
+    //
+    // ATE 07/09/2026 esta funcao exigia access/<uid> com approved == true, e quem
+    // tivesse o documento marcado approved:false ficava bloqueado. O problema: o
+    // cadastro do app cria esse documento com approved:false para TODO mundo, e se
+    // a gestao nunca confirmou o perfil, a pessoa e' trancada no instante em que
+    // estas Regras entram no ar - mesmo usando o sistema ha' meses. Foi o que
+    // aconteceu ao publicar: professores com conta valida pararam de entrar.
+    //
+    // O portao de aprovacao continua existindo, mas onde ele nao tranca ninguem
+    // fora: no aplicativo (renderTelaAguardandoAprovacao, em app.js). Aqui, quem
+    // esta autenticado passa. E' o "PRINCIPIO DE OURO" escrito no topo deste
+    // arquivo, agora valendo de verdade.
+    //
+    // O que estas Regras protegem nao e' quem entra - e' o que sai: dado pessoal
+    // de estudante nao entra em app_data depois do corte, e nome de estudante nao
+    // vai para o link publico. Essa parte segue intacta.
     function liberado() {
-      return isSuperAdmin()
-             || semDocAcesso()
-             || (isSignedIn() && meuAcesso().approved == true);
+      return isSignedIn();
     }
 
     // Pode LIBERAR/RECUSAR o acesso de outra pessoa?
