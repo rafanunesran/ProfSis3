@@ -558,6 +558,33 @@ function mensagemCredencial(codigo) {
     return texto;
 }
 
+// Credencial recusada pelo Firebase Auth. Em vez de mandar a pessoa procurar o
+// link "Esqueceu a senha?" e digitar o e-mail de novo, oferece o envio aqui mesmo,
+// com o endereço que ela acabou de usar.
+//
+// Este caso ficou comum depois que as Regras passaram a exigir sessão para ler
+// system/users_list: antes, o caminho legado conferia a senha guardada na lista e
+// deixava entrar SEM passar pelo Auth, mascarando contas cuja senha no Auth nunca
+// coincidiu. Fechado o atalho, a divergência aparece — e o reparo é redefinir a
+// senha, que preserva o UID e, com ele, o acesso aos dados do professor.
+async function ofereceRedefinirSenha(email, codigo) {
+    const querEnviar = confirm(mensagemCredencial(codigo) +
+        '\n\n---\n\nQuer que eu envie agora um link de redefinição de senha para\n' +
+        email + ' ?');
+    if (!querEnviar) return;
+
+    try {
+        await firebase.auth().sendPasswordResetEmail(email);
+        alert('Se existir uma conta com este e-mail, o link acabou de ser enviado.\n\n' +
+              'Abra a caixa de entrada (confira o spam), defina a senha nova e volte aqui.\n\n' +
+              'Seus dados continuam no lugar — o que muda é só a senha.');
+    } catch (err) {
+        console.warn('[Login] Falha ao enviar redefinição:', err && err.code);
+        alert('Não consegui enviar o link: ' + (err && err.message ? err.message : 'erro desconhecido') +
+              '\n\nFale com a gestão do sistema.');
+    }
+}
+
 async function fazerLogin(e) {
     e.preventDefault();
     try {
@@ -757,7 +784,7 @@ async function fazerLogin(e) {
                           'Se estiver certo, peça à gestão para conferir seu acesso — seus dados ' +
                           'estão preservados, é só a entrada que precisa ser acertada.');
                 } else if (erroAuth) {
-                    alert(mensagemCredencial(erroAuth));
+                    await ofereceRedefinirSenha(email, erroAuth);
                 } else {
                     alert('Não consegui verificar seus dados agora.\n\n' +
                           'Confira sua conexão e tente de novo.');
@@ -766,7 +793,7 @@ async function fazerLogin(e) {
                 alert('A lista de usuários está vazia neste banco.\n\n' +
                       'Se o sistema acabou de ser instalado, cadastre o primeiro usuário.');
             } else {
-                alert(mensagemCredencial(erroAuth));
+                await ofereceRedefinirSenha(email, erroAuth);
             }
         }
     } catch (err) {
