@@ -7,6 +7,12 @@ rules_version = '2';
 //    1. Console do Firebase > Firestore Database > aba "Regras".
 //    2. Apague tudo, cole este arquivo inteiro e clique em "Publicar".
 //
+//  ANTES DE PUBLICAR, RODE A PROVA: `firestore.rules.teste.mjs` executa estas
+//  Regras no emulador do Firestore e confere 23 casos reais - inclusive o que
+//  o login depende (ler system/users_list) e o "princípio de ouro" (professor
+//  antigo, sem documento de acesso, nunca é trancado). Ler o arquivo não basta:
+//  em 07/09/2026 uma publicação sem teste deixou professores sem acesso.
+//
 //  PRINCÍPIO DE OURO DESTAS REGRAS: NUNCA TRANCAR QUEM JÁ USA O SISTEMA.
 //    Quem não tem documento em `access/{uid}` (todos os usuários antigos) é
 //    tratado como JÁ LIBERADO. Só quem tem o documento com approved == false
