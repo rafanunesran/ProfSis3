@@ -7,12 +7,6 @@ rules_version = '2';
 //    1. Console do Firebase > Firestore Database > aba "Regras".
 //    2. Apague tudo, cole este arquivo inteiro e clique em "Publicar".
 //
-//  ANTES DE PUBLICAR, RODE A PROVA: `firestore.rules.teste.mjs` executa estas
-//  Regras no emulador do Firestore e confere 23 casos reais - inclusive o que
-//  o login depende (ler system/users_list) e o "princípio de ouro" (professor
-//  antigo, sem documento de acesso, nunca é trancado). Ler o arquivo não basta:
-//  em 07/09/2026 uma publicação sem teste deixou professores sem acesso.
-//
 //  PRINCÍPIO DE OURO DESTAS REGRAS: NUNCA TRANCAR QUEM JÁ USA O SISTEMA.
 //    Quem não tem documento em `access/{uid}` (todos os usuários antigos) é
 //    tratado como JÁ LIBERADO. Só quem tem o documento com approved == false
@@ -36,34 +30,35 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Super admin: e-mail do token do Firebase Auth. Espelha ADMIN_EMAILS no core.js.
-    //
-    // O e-mail precisa estar VERIFICADO. Sem essa exigência, enquanto a conta não
-    // existisse no Firebase Auth, qualquer pessoa que se cadastrasse com esse endereço
-    // viraria super admin — o cadastro não confere quem é dono da caixa postal.
-    //
-    // EXCEÇÃO TEMPORÁRIA: rafael@adm.com tem domínio falso, não recebe e-mail e nunca
-    // poderá ser verificada. Segue isenta só enquanto serve de rede de segurança
-    // durante a troca de conta.
-    //
-    //  >>> REMOVER a linha do rafael@adm.com assim que o acesso por
-    //  >>> rafaelnf93@gmail.com estiver confirmado, e apagar a conta no Console do
-    //  >>> Firebase. A senha dela foi publicada no histórico do repositório, que é
-    //  >>> público — aposentá-la é a correção, não trocar a senha.
+    // Super admin: e-mail do token do Firebase Auth.
+    // Precisa ser IGUAL ao ADMIN_EMAIL definido no core.js.
+    // Para adicionar outro administrador, inclua o e-mail nesta lista.
     function isSuperAdmin() {
-      return isSignedIn() && (
-        (request.auth.token.email == 'rafaelnf93@gmail.com'
-         && request.auth.token.email_verified == true)
-        || request.auth.token.email == 'rafael@adm.com'
-      );
+      return isSignedIn()
+             && request.auth.token.email in ['rafaelnf93@gmail.com', 'rafael@adm.com']
+             // A conta definitiva só vale com o e-mail verificado. A ordem importa:
+             // para quem não está na lista acima, o curto-circuito impede que esta
+             // linha seja avaliada — nenhum professor comum depende dela.
+             && (request.auth.token.email != 'rafaelnf93@gmail.com'
+                 || request.auth.token.email_verified == true);
     }
 
-    // A isenção do corte não pode ser criada nem mudada por quem não é super admin.
-    function isencaoInalterada() {
-      return !('modoOnlineCompleto' in request.resource.data)
-             || (resource != null
-                 && 'modoOnlineCompleto' in resource.data
-                 && resource.data.modoOnlineCompleto == request.resource.data.modoOnlineCompleto);
+    // Depois de 07/09/2026 às 07:00 de São Paulo (10:00 UTC), dado pessoal de
+    // estudante não entra mais em app_data. É esta regra que faz o corte valer:
+    // a verificação no aplicativo é só experiência de uso.
+    function depoisDoCorte() {
+      return request.time > timestamp.date(2026, 9, 7) + duration.value(10, 'h');
+    }
+
+    // Espelha CAMPOS_PESSOAIS de shared.js. Ao acrescentar um campo pessoal lá,
+    // acrescente aqui também.
+    function semCamposPessoais() {
+      return !request.resource.data.keys().hasAny([
+        'estudantes', 'presencas', 'atrasos', 'trabalhos', 'notas', 'compensacoes',
+        'tutorados', 'encontros', 'agendamentos', 'ocorrencias',
+        'registrosAdministrativos', 'caderno', 'baixaFrequencia',
+        'notasAvaliacoesGestor', 'notasBimestraisOficiais', 'lotesMapaoGestor'
+      ]);
     }
 
     function accessPath() {
@@ -88,38 +83,6 @@ service cloud.firestore {
              || (isSignedIn() && meuAcesso().approved == true);
     }
 
-    // ---------------------- ADEQUAÇÃO SEDUC (corte) --------------------------
-    // Depois de 07/09/2026 às 07:00 de São Paulo (10:00 UTC), dado pessoal de
-    // estudante não entra mais em app_data. A verificação no cliente (core.js
-    // estadoCorte) é experiência de uso; a decisão de verdade é esta aqui — sem
-    // ela, bastaria abrir o console do navegador para contornar.
-    //
-    // Para ADIAR o corte é preciso mexer em DOIS lugares: aqui e no campo
-    // `dataCorte` de system/config_sistema. É de propósito: o cliente sozinho não
-    // decide se a regra vale.
-    function depoisDoCorte() {
-      return request.time > timestamp.date(2026, 9, 7) + duration.value(10, 'h');
-    }
-
-    // O super admin pode marcar contas específicas para seguirem 100% online.
-    // Só ele escreve este campo (ver match /access/{uid} abaixo).
-    function isentoDoCorte() {
-      return isSignedIn()
-             && exists(accessPath())
-             && meuAcesso().get('modoOnlineCompleto', false) == true;
-    }
-
-    // Espelha CAMPOS_PESSOAIS de shared.js. Ao acrescentar um campo pessoal lá,
-    // acrescente aqui também — senão o servidor aceita o que o cliente recusa.
-    function semCamposPessoais() {
-      return !request.resource.data.keys().hasAny([
-        'estudantes', 'presencas', 'atrasos', 'trabalhos', 'notas', 'compensacoes',
-        'tutorados', 'encontros', 'agendamentos', 'ocorrencias',
-        'registrosAdministrativos', 'caderno', 'baixaFrequencia',
-        'notasAvaliacoesGestor', 'notasBimestraisOficiais', 'lotesMapaoGestor'
-      ]);
-    }
-
     // Pode LIBERAR/RECUSAR o acesso de outra pessoa?
     // super_admin, gestor já liberado, ou usuário antigo (equipe existente).
     // Um cadastro novo (approved:false) nunca satisfaz nenhuma das condições.
@@ -136,20 +99,15 @@ service cloud.firestore {
 
       // O próprio usuário só cria o SEU documento como PENDENTE (nunca liberado).
       // Gestor/admin podem criar o documento de outra pessoa.
-      allow create: if isSuperAdmin()
-                    || (!('modoOnlineCompleto' in request.resource.data)
-                        && ((request.auth.uid == uid
-                             && request.resource.data.approved == false
-                             && request.resource.data.role == 'professor')
-                            || (podeAprovar() && request.auth.uid != uid)));
+      allow create: if (request.auth.uid == uid
+                        && request.resource.data.approved == false
+                        && request.resource.data.role == 'professor')
+                    || (podeAprovar() && request.auth.uid != uid)
+                    || isSuperAdmin();
 
       // ANTI-ELEVAÇÃO: ninguém altera o próprio documento de acesso.
-      // E `modoOnlineCompleto` (isenção do corte) é exclusivo do super admin: um
-      // gestor que grave com merge continua podendo, desde que não MUDE o valor.
-      allow update: if isSuperAdmin()
-                    || (podeAprovar() && request.auth.uid != uid && isencaoInalterada());
-      allow delete: if isSuperAdmin()
-                    || (podeAprovar() && request.auth.uid != uid);
+      allow update, delete: if isSuperAdmin()
+                            || (podeAprovar() && request.auth.uid != uid);
     }
 
     // ------------------------------ system/* ---------------------------------
@@ -161,56 +119,26 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
-    // Configurações do sistema: chaves da IA, modelo do Gemini e a DATA DE CORTE
-    // (config_sistema.dataCorte). Só o super admin escreve. Antes, a regra genérica
-    // abaixo deixava QUALQUER usuário logado reescrever estes documentos - inclusive
-    // adiar o corte ou trocar a chave de IA da rede inteira.
-    match /system/config_ia {
-      allow read: if isSignedIn();
-      allow write: if isSuperAdmin();
-    }
-    match /system/config_sistema {
-      allow read: if isSignedIn();
-      allow write: if isSuperAdmin();
-    }
-
     // users_list e demais documentos de sistema: exigem login.
     // NÃO exigem `liberado()` de propósito: o app precisa ler o perfil no
     // login para descobrir se a pessoa está liberada. Bloquear aqui criaria
     // um impasse (não conseguiria nem saber que está pendente).
-    //
-    // PENDÊNCIA CONHECIDA: `users_list` é um único documento com a lista inteira de
-    // usuários, e o cadastro, o aceite dos termos e a liberação pelo gestor precisam
-    // gravá-lo. Como as Regras não conseguem validar o conteúdo de um array, não há
-    // como permitir "só a minha entrada". A correção de verdade é quebrar a lista em
-    // documentos por usuário (usuarios/{uid}); enquanto isso não acontece, esta regra
-    // segue aberta para quem está logado. A senha em texto claro, que era o dano real
-    // desta abertura, deixou de ser gravada (ver core.js fazerCadastro).
-    // ATENÇÃO: no Firestore as regras se SOMAM. Por isso esta regra precisa excluir
-    // explicitamente os documentos de configuração acima - sem o `!(docId in [...])`
-    // ela devolveria a permissão de escrita que a regra anterior acabou de tirar.
     match /system/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && !(docId in ['config_ia', 'config_sistema']);
+      allow read, write: if isSignedIn();
     }
 
     // ------------------ shared_views: relatório por link ---------------------
-    // O link público (?share=ID) é aberto por visitantes SEM LOGIN: tudo que entrar
-    // aqui está publicado na internet. Até setembro/2026 o payload trazia a lista de
-    // estudantes com nome completo (campo `dados`). O formato novo (v2) carrega só
-    // contagens por turma, no campo `resumo`, e a regra recusa o campo antigo.
+    // O link público (?share=ID) é aberto por visitantes sem login.
+    // O link público (?share=ID) é aberto SEM LOGIN: tudo aqui está na internet.
+    // Até setembro/2026 o payload trazia a lista de estudantes com nome completo.
     match /shared_views/{docId} {
       allow read: if true;
       allow write: if liberado()
                    && !request.resource.data.keys().hasAny(['dados', 'estudantes']);
     }
 
-    // ------------------ chaves_backup: o envelope do backup ------------------
-    // Guarda a chave do backup do professor embrulhada de duas formas: uma que a
-    // senha dele abre, outra que a chave privada de suporte abre. Não há dado
-    // pessoal aqui — só material criptográfico, inútil sem uma das duas chaves.
-    // O super admin LÊ (é o que permite socorrer quem perdeu a senha) e não escreve:
-    // a chave é do professor.
+    // Envelope da chave do backup cifrado. Não há dado pessoal aqui — só material
+    // criptográfico, inútil sem a senha do professor ou a chave de suporte.
     match /chaves_backup/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
       allow write: if isSignedIn() && request.auth.uid == uid;
@@ -221,15 +149,13 @@ service cloud.firestore {
       allow read: if liberado();
       allow delete: if liberado();
 
-      // Antes do corte, nada muda. Depois dele, o documento só é aceito se:
-      //   - a conta estiver isenta pelo super admin, ou
-      //   - for um backup REALMENTE cifrado (o nome `backup_` não basta), ou
-      //   - não trouxer nenhum campo pessoal.
+      // Antes do corte, idêntico ao que sempre foi. Depois dele, o documento só
+      // entra se não trouxer campo pessoal, ou for um backup REALMENTE cifrado
+      // (o nome `backup_` sozinho não isenta).
       allow create, update: if liberado() && (
            !depoisDoCorte()
-        || isentoDoCorte()
-        || (docId.matches('^backup_.*') && request.resource.data.get('cifrado', false) == true)
         || semCamposPessoais()
+        || (docId.matches('^backup_.*') && request.resource.data.get('cifrado', false) == true)
       );
     }
     match /shared_attendance/{docId} {
