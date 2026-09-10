@@ -91,11 +91,10 @@ async function iniciarApp() {
         // Atualiza o título com o nome da escola
         let nomeEscola = 'Escola';
         let logoEscola = '';
-        if (currentUser && currentUser.schoolId) {
-            const sData = await getData('system', 'schools_list');
-            const schools = (sData && sData.list) ? sData.list : [];
-            
-            const escola = schools.find(s => s.id == currentUser.schoolId);
+        // [FASE 3] resolverEscolaAtual() prefere o espaco, cai no schools_list de sempre
+        // para quem ainda nao tem espaco, e usa a copia do aparelho quando falta rede.
+        if (currentUser && (currentUser.schoolId || currentUser.espacoId)) {
+            const escola = (typeof resolverEscolaAtual === 'function') ? await resolverEscolaAtual() : null;
             if (escola) {
                 nomeEscola = escola.nome;
                 logoEscola = escola.logoEscola || '';
@@ -895,10 +894,8 @@ async function renderTelaAguardandoAprovacao() {
     // Descobre o nome da escola só para orientar o usuário (não carrega dados da escola).
     let nomeEscola = '';
     try {
-        if (currentUser && currentUser.schoolId) {
-            const sData = await getData('system', 'schools_list');
-            const schools = (sData && sData.list) ? sData.list : [];
-            const escola = schools.find(s => s.id == currentUser.schoolId);
+        if (currentUser && (currentUser.schoolId || currentUser.espacoId)) {
+            const escola = (typeof resolverEscolaAtual === 'function') ? await resolverEscolaAtual() : null;
             if (escola) nomeEscola = escola.nome || escola.nomeCompleto || '';
         }
     } catch (e) { /* silencioso */ }

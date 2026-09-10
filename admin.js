@@ -19,6 +19,82 @@ async function saveEscolasData(escolas) {
     await saveData('system', 'schools_list', { list: escolas });
 }
 
+// [FASE 3] Dá a cada escola da lista antiga um espaço com código de convite.
+//
+// Nada de dado se move: o espaço nasce guardando `legacySchoolId` igual ao id atual,
+// e todas as chaves de documento (app_data_school_<id>_gestor, maps_school_<id>...)
+// continuam nascendo desse mesmo id. É idempotente — escola que já tem espaço é
+// pulada — e termina baixando a lista escola → código, porque o código NÃO fica
+// guardado no servidor e esta é a única chance de anotá-lo.
+async function migrarEscolasParaEspacos() {
+    const escolas = await fetchEscolas();
+    if (!escolas.length) return alert('Não há escolas cadastradas para migrar.');
+
+    const pendentes = escolas.filter(e => !e.espacoId);
+    if (!pendentes.length) return alert('Todas as escolas já têm espaço. Nada a fazer.');
+
+    if (!confirm('Criar espaço e código de convite para ' + pendentes.length + ' escola(s)?\n\n' +
+                 'Nenhum dado sai do lugar. Ao final, um arquivo com os códigos será baixado — ' +
+                 'os códigos não ficam guardados no servidor, então guarde esse arquivo.')) return;
+
+    const linhas = [];
+    let criados = 0, falhas = 0;
+
+    for (const escola of pendentes) {
+        try {
+            const criado = await criarEspaco(Object.assign({}, escola, { legacySchoolId: escola.id }),
+                                             currentUser && currentUser.uid);
+            escola.espacoId = criado.espacoId;
+            linhas.push(escola.nome + '\t' + formatarCodigo(criado.codigo) + '\t' + criado.espacoId);
+            criados++;
+        } catch (e) {
+            console.error('[Espaços] Falhou em ' + escola.nome + ':', e);
+            linhas.push(escola.nome + '\tFALHOU: ' + (e && e.message));
+            falhas++;
+        }
+    }
+
+    await saveEscolasData(escolas);
+    await _vincularUsuariosAosEspacos(escolas);
+
+    const texto = 'Escola\tCódigo de convite\tId do espaço\n' + linhas.join('\n') + '\n';
+    const blob = new Blob([texto], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'codigos-dos-espacos-' + new Date().toISOString().slice(0, 10) + '.txt';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+
+    alert('Espaços criados: ' + criados + (falhas ? ' | falhas: ' + falhas : '') +
+          '\n\nO arquivo com os códigos foi baixado. Guarde-o: o servidor não tem cópia.');
+    renderAdminEscolas();
+}
+
+// Liga os usuários que já existem ao espaço da escola deles, para que entrem sem
+// passar pela fila. Perfis PENDENTES hoje (approved === false) são deixados como
+// estão de propósito: quem a gestão ainda não liberou continua esperando.
+async function _vincularUsuariosAosEspacos(escolas) {
+    const usersData = await getData('system', 'users_list');
+    const users = (usersData && usersData.list && Array.isArray(usersData.list)) ? usersData.list : [];
+    const porEscola = {};
+    escolas.forEach(e => { if (e.espacoId) porEscola[String(e.id)] = e.espacoId; });
+
+    let mexidos = 0;
+    for (const u of users) {
+        if (u.espacoId || u.approved === false) continue;
+        const espacoId = porEscola[String(u.schoolId)];
+        if (!espacoId) continue;
+        u.espacoId = espacoId;
+        u.legacySchoolId = u.schoolId;
+        mexidos++;
+        if (u.uid && typeof gravarAcessoUsuario === 'function') {
+            await gravarAcessoUsuario(u.uid, { espacoId: espacoId, legacySchoolId: u.schoolId });
+        }
+    }
+    if (mexidos) await saveData('system', 'users_list', { list: users });
+    console.log('[Espaços] Usuários vinculados ao espaço da escola: ' + mexidos);
+}
+
 async function renderAdminEscolas() {
     const escolas = await fetchEscolas();
     document.getElementById('adminEscolasScreen').style.display = 'block';
@@ -28,6 +104,7 @@ async function renderAdminEscolas() {
 
     let html = `
         <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom: 15px;">
+            <button class="btn btn-secondary" onclick="migrarEscolasParaEspacos()" title="Cria um espaço com código de convite para cada escola desta lista, sem mover nenhum dado">🔑 Gerar espaços e códigos</button>
             <button class="btn btn-info" onclick="abrirModalConfigGerais()">⚙️ Config. Globais (Estado/Região)</button>
         </div>
     `;

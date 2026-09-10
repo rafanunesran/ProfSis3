@@ -919,12 +919,41 @@ async function fazerCadastro(e) {
     const nome = document.getElementById('cadNome').value;
     const email = document.getElementById('cadEmail').value.trim().toLowerCase();
     const senha = document.getElementById('cadSenha').value;
-    const escolaId = document.getElementById('cadEscola').value;
 
     const aceiteTermos = document.getElementById('cadAceiteTermos');
     if (aceiteTermos && !aceiteTermos.checked) {
         alert('Para criar a conta, é necessário ler e aceitar os Termos de Uso.');
         return;
+    }
+
+    // [FASE 3] O código é conferido ANTES de criar a conta no Auth. Errar o código
+    // não pode deixar uma conta órfã no Firebase Auth para trás.
+    const vaiCriarEspaco = !!window.cadastroCriandoEspaco;
+    const campoCodigo = document.getElementById('cadCodigo');
+    let espacoEncontrado = null;
+
+    if (!vaiCriarEspaco) {
+        const codigoDigitado = campoCodigo ? campoCodigo.value : '';
+        if (!normalizarCodigo(codigoDigitado)) {
+            alert('Digite o código do espaço da sua escola, ou escolha "criar um espaço novo".');
+            return;
+        }
+        try {
+            espacoEncontrado = await buscarEspacoPorCodigo(codigoDigitado);
+        } catch (e) {
+            alert('Não consegui conferir o código agora — parece falta de conexão.\n\nTente de novo quando a internet voltar. Sua conta ainda NÃO foi criada.');
+            return;
+        }
+        if (!espacoEncontrado) {
+            alert('Código não encontrado.\n\nConfira com o colega que passou o código: são 12 letras e números, e os hífens não fazem diferença.');
+            return;
+        }
+    } else {
+        const nomeEscola = document.getElementById('cadEscolaNome');
+        if (!nomeEscola || !nomeEscola.value.trim()) {
+            alert('Informe o nome da escola para criar o espaço.');
+            return;
+        }
     }
 
     let userAuth = null;
@@ -939,6 +968,27 @@ async function fazerCadastro(e) {
             return;
         }
     }
+
+    // O espaço só pode ser criado com sessão aberta — por isso vem depois do Auth.
+    let codigoNovoEspaco = null;
+    if (vaiCriarEspaco) {
+        try {
+            const criado = await criarEspaco(
+                { nome: document.getElementById('cadEscolaNome').value.trim() },
+                userAuth ? userAuth.uid : null);
+            espacoEncontrado = { espacoId: criado.espacoId, espaco: criado.espaco };
+            codigoNovoEspaco = criado.codigo;
+        } catch (e) {
+            alert('A conta foi criada, mas não consegui criar o espaço da escola: ' + e.message +
+                  '\n\nFaça login e tente criar o espaço pelo painel.');
+            return;
+        }
+    }
+
+    const espacoId = espacoEncontrado ? espacoEncontrado.espacoId : null;
+    // A chave dos documentos continua nascendo do id legado: nada se move de lugar.
+    const escolaId = espacoEncontrado ? (espacoEncontrado.espaco.legacySchoolId || espacoId) : null;
+    const papel = vaiCriarEspaco ? 'gestor' : 'professor';
 
     const usersData = await getData('system', 'users_list');
     const users = (usersData && usersData.list && Array.isArray(usersData.list)) ? usersData.list : [];
@@ -959,11 +1009,14 @@ async function fazerCadastro(e) {
         // não limpos por sincronizarUIDsERemoverSenhas() (admin.js).
         uid: userAuth ? userAuth.uid : undefined,
         schoolId: escolaId,
-        role: 'professor', // Default
-        // [SEGURANÇA] Perfil novo NÃO tem acesso imediato aos dados da escola.
-        // Fica pendente até a gestão da escola confirmar (libera as ferramentas).
-        approved: false,
-        pendingSince: new Date().toISOString(),
+        espacoId: espacoId,
+        legacySchoolId: escolaId,
+        role: papel,
+        // [FASE 3] Quem entrou com o código do espaço JÁ está liberado: o código é o
+        // portão. A fila de aprovação some para cadastros novos — ela continua de pé
+        // só para os perfis que já estão pendentes hoje (ver renderTelaAguardandoAprovacao).
+        approved: true,
+        aprovadoPeloCodigo: true,
         aceitouTermos: true,
         dataAceiteTermos: new Date().toISOString()
     };
@@ -980,15 +1033,30 @@ async function fazerCadastro(e) {
     // approved:false. A liberação para true é exclusiva do gestor/admin.
     if (userAuth) {
         await gravarAcessoUsuario(userAuth.uid, {
-            approved: false,
-            role: 'professor',
+            approved: true,
+            role: papel,
             schoolId: escolaId,
+            espacoId: espacoId,
+            legacySchoolId: escolaId,
             email,
             createdAt: new Date().toISOString()
         });
     }
 
-    alert('Cadastro realizado!\n\nPor segurança, seu acesso aos dados da escola precisa ser liberado pela gestão. Assim que o gestor confirmar seu perfil, você poderá usar o sistema normalmente.\n\nFaça login para acompanhar o status.');
+    // Guarda o espaço neste aparelho: é de onde sai o timbre dos documentos sem rede
+    // e, para quem criou, é o ÚNICO lugar onde o código fica — ele não vai para o banco.
+    if (espacoId && typeof lembrarEspaco === 'function') {
+        await lembrarEspaco(espacoId, codigoNovoEspaco, espacoEncontrado.espaco);
+    }
+
+    if (codigoNovoEspaco) {
+        alert('Espaço criado!\n\nO CÓDIGO DA SUA ESCOLA É:\n\n    ' + formatarCodigo(codigoNovoEspaco) + '\n\n' +
+              'Anote agora e passe aos colegas — é com ele que eles entram.\n' +
+              'Este código NÃO fica guardado no servidor: ele fica só neste aparelho, no seu painel de gestor.\n\n' +
+              'Se perder, você poderá gerar um novo pelo painel da escola.');
+    } else {
+        alert('Cadastro realizado!\n\nVocê já está no espaço "' + (espacoEncontrado.espaco.nome || 'da sua escola') + '".\n\nFaça login para começar.');
+    }
     // Desloga o usuário recém-criado para forçar o fluxo de login padrão
     if (userAuth) {
         await firebase.auth().signOut();
@@ -1003,6 +1071,10 @@ async function fazerCadastro(e) {
 function usuarioAguardandoAprovacao(user) {
     if (!user) return false;
     if (user.role === 'super_admin') return false;
+    // [FASE 3] Quem entrou com o código do espaço já passou pelo portão. A fila
+    // continua existindo apenas para os perfis que ficaram pendentes ANTES dela
+    // acabar — esses ainda precisam do gestor, e não podem ser esquecidos aqui.
+    if (user.espacoId) return false;
     return user.approved === false;
 }
 
@@ -1170,14 +1242,23 @@ function renderLogin() {
     `;
 }
 
+// [FASE 3] O cadastro deixa de ser "escolha a escola numa lista e espere alguém
+// liberar". Quem tem o código do espaço entra direto; quem não tem, cria o espaço
+// dele e vira o gestor. O código é o portão — não há mais fila de aprovação.
+function alternarCriacaoEspaco(criar) {
+    const bloco = document.getElementById('blocoCriarEspaco');
+    const campoCodigo = document.getElementById('blocoCodigoEspaco');
+    const codigo = document.getElementById('cadCodigo');
+    const nomeEscola = document.getElementById('cadEscolaNome');
+    if (!bloco || !campoCodigo) return;
+    bloco.style.display = criar ? 'block' : 'none';
+    campoCodigo.style.display = criar ? 'none' : 'block';
+    if (codigo) codigo.required = !criar;
+    if (nomeEscola) nomeEscola.required = !!criar;
+    window.cadastroCriandoEspaco = !!criar;
+}
+
 async function renderCadastro() {
-    const data = await getData('system', 'schools_list');
-    const schools = (data && data.list && Array.isArray(data.list)) ? data.list : [];
-
-    if (schools.length === 0) schools.push({id: 'default', nome: 'Escola Padrão'});
-    
-    const options = schools.map(s => `<option value="${s.id}">${s.nome}</option>`).join('');
-
     const container = document.getElementById('authContainer');
     container.innerHTML = `
         <div class="auth-box">
@@ -1185,12 +1266,24 @@ async function renderCadastro() {
             <form onsubmit="fazerCadastro(event)">
                 <label>Nome: <input type="text" id="cadNome" required></label>
                 <label>Email: <input type="email" id="cadEmail" required></label>
-                <label>Escola: 
-                    <select id="cadEscola" required>
-                        <option value="">Selecione...</option>
-                        ${options}
-                    </select>
-                </label>
+                <div id="blocoCodigoEspaco">
+                    <label>Código do espaço da sua escola:
+                        <input type="text" id="cadCodigo" required placeholder="Ex: ABCD-EFGH-JKMN"
+                               autocapitalize="characters" autocomplete="off"
+                               style="text-transform:uppercase; letter-spacing:1px;">
+                    </label>
+                    <p style="font-size:12px; color:#718096; margin:-4px 0 8px;">
+                        Peça o código a um colega que já usa o sistema na sua escola.
+                    </p>
+                </div>
+                <div id="blocoCriarEspaco" style="display:none; background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px 12px; margin-bottom:8px;">
+                    <label>Nome da escola:
+                        <input type="text" id="cadEscolaNome" placeholder="Ex: E.E. Prof.ª Francisca Peralta">
+                    </label>
+                    <p style="font-size:12px; color:#718096; margin:4px 0 0;">
+                        Você vai receber um código para passar aos colegas — e será o gestor deste espaço.
+                    </p>
+                </div>
                 <label>Senha: 
                     <div class="password-wrapper">
                         <input type="password" id="cadSenha" required>
@@ -1203,11 +1296,14 @@ async function renderCadastro() {
                 </label>
                 <button type="submit" class="btn btn-success">Criar Conta</button>
             </form>
-            <div class="auth-links-container" style="justify-content: center;">
+            <div class="auth-links-container" style="justify-content: center; flex-direction:column; gap:6px;">
+                <span class="auth-link" id="linkCriarEspaco" onclick="alternarCriacaoEspaco(true); this.style.display='none'; document.getElementById('linkTenhoCodigo').style.display='inline';">Não tenho código — criar um espaço novo</span>
+                <span class="auth-link" id="linkTenhoCodigo" style="display:none;" onclick="alternarCriacaoEspaco(false); this.style.display='none'; document.getElementById('linkCriarEspaco').style.display='inline';">Já tenho um código de convite</span>
                 <span class="auth-link" onclick="renderLogin()">Já tem conta? Faça Login</span>
             </div>
         </div>
     `;
+    window.cadastroCriandoEspaco = false;
 }
 
 function toggleSenha(id, btn) {

@@ -591,13 +591,12 @@ async function bibliotecaImprimirMaterial(id) {
     const m = (bibliotecaCacheMateriais || []).find(x => x.id === id);
     if (!m) return;
 
-    // Cabeçalho da escola (mesmo padrão do app.js: system/schools_list por currentUser.schoolId)
+    // Cabeçalho da escola (mesmo padrão do app.js: resolverEscolaAtual, espaço ou legado)
     let nomeEscola = '';
     let logoEscola = '';
     try {
-        if (currentUser && currentUser.schoolId && typeof getData === 'function') {
-            const sData = await getData('system', 'schools_list');
-            const escola = (sData && sData.list) ? sData.list.find(s => s.id == currentUser.schoolId) : null;
+        if (currentUser && typeof resolverEscolaAtual === 'function') {
+            const escola = await resolverEscolaAtual();
             if (escola) { nomeEscola = escola.nomeCompleto || escola.nome || ''; logoEscola = escola.logoEscola || ''; }
         }
     } catch (e) { /* segue sem cabeçalho */ }

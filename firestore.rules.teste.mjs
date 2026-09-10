@@ -18,7 +18,7 @@
 // ============================================================================
 
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, getDocs, collection, updateDoc } from 'firebase/firestore';
 import fs from 'fs';
 
 const cenarios = [
@@ -38,6 +38,17 @@ const cenarios = [
   ['grava chaves_backup propria             ', 'u-antigo', {email:'a@e.com',email_verified:false}, d=>setDoc(doc(d,'chaves_backup/u-antigo'),{salt:'x'})],
   ['shared_views COM estudantes             ', 'u-antigo', {email:'a@e.com',email_verified:false}, d=>setDoc(doc(d,'shared_views/live_77'),{estudantes:[{id:1}]})],
   ['shared_views so contagens               ', 'u-antigo', {email:'a@e.com',email_verified:false}, d=>setDoc(doc(d,'shared_views/live_77'),{resumo:{total:3}})],
+
+  // --- Fase 3: espacos com codigo de convite -------------------------------
+  // O codigo e' conferido na tela de CADASTRO, antes de existir sessao: estes
+  // dois primeiros cenarios sao o caminho de entrada de todo usuario novo.
+  ['SEM SESSAO: le indice do codigo (CADASTRO)', null,     null,                                   d=>getDoc(doc(d,'espacos_indice/hash-do-codigo'))],
+  ['SEM SESSAO: le o espaco pelo id           ', null,     null,                                   d=>getDoc(doc(d,'espacos/esp-1'))],
+  ['LOGADO: VARRE a colecao de espacos        ', 'u-antigo',{email:'a@e.com',email_verified:false}, d=>getDocs(collection(d,'espacos'))],
+  ['LOGADO: entra em espaco que EXISTE        ', 'u-novo',  {email:'n@e.com',email_verified:false}, d=>setDoc(doc(d,'access/u-novo'),{approved:true,role:'professor',espacoId:'esp-1'})],
+  ['LOGADO: entra em espaco INEXISTENTE       ', 'u-novo2', {email:'n2@e.com',email_verified:false},d=>setDoc(doc(d,'access/u-novo2'),{approved:true,role:'professor',espacoId:'esp-nao-existe'})],
+  ['GESTOR do espaco: edita o espaco          ', 'u-gestor',{email:'g@e.com',email_verified:false}, d=>updateDoc(doc(d,'espacos/esp-1'),{nome:'Nome novo'})],
+  ['PROFESSOR: edita o espaco                 ', 'u-aprov', {email:'b@e.com',email_verified:false}, d=>updateDoc(doc(d,'espacos/esp-1'),{nome:'Invadido'})],
 ];
 
 async function rodar(arquivo) {
@@ -51,12 +62,17 @@ async function rodar(arquivo) {
     await setDoc(doc(d,'app_data/app_data_u-antigo'),{turmas:[]});
     await setDoc(doc(d,'app_data/app_data_u-aprov'),{turmas:[]});
     await setDoc(doc(d,'app_data/app_data_u-pend'),{turmas:[]});
+    await setDoc(doc(d,'access/u-gestor'),{approved:true,role:'gestor',espacoId:'esp-1'});
+    await setDoc(doc(d,'espacos/esp-1'),{nome:'Escola Teste',legacySchoolId:'77',salt:'aa'});
+    await setDoc(doc(d,'espacos_indice/hash-do-codigo'),{espacoId:'esp-1'});
   });
   const ctx = {};
   const res = [];
   for (const [nome, uid, claims, op] of cenarios) {
     const k = uid + JSON.stringify(claims);
-    if (!ctx[k]) ctx[k] = env.authenticatedContext(uid, claims).firestore();
+    if (!ctx[k]) ctx[k] = (claims === null)
+        ? env.unauthenticatedContext().firestore()
+        : env.authenticatedContext(uid, claims).firestore();
     try { await op(ctx[k]); res.push('permite'); } catch(e) { res.push('NEGA   '); }
   }
   await env.cleanup();

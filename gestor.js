@@ -4053,7 +4053,7 @@ async function renderEscolaGestor() {
     const tela = document.getElementById('escolaGestor');
     if (!tela) return;
 
-    if (!currentUser || !currentUser.schoolId) {
+    if (!currentUser || (!currentUser.schoolId && !currentUser.espacoId)) {
         tela.innerHTML = `
             <div class="card" style="margin:20px 0;">
                 <h2>🏫 Escola</h2>
@@ -4062,9 +4062,8 @@ async function renderEscolaGestor() {
         return;
     }
 
-    const sData = await getData('system', 'schools_list');
-    const schools = (sData && sData.list && Array.isArray(sData.list)) ? sData.list : [];
-    const escola = schools.find(s => s.id == currentUser.schoolId);
+    // [FASE 3] Espaço quando houver; system/schools_list para quem ainda não tem.
+    const escola = (typeof resolverEscolaAtual === 'function') ? await resolverEscolaAtual() : null;
 
     if (!escola) {
         tela.innerHTML = `
@@ -4084,7 +4083,10 @@ async function renderEscolaGestor() {
         ? `<img id="previewLogoEscolaGestor" src="${escola.logoEscola}" style="max-height:80px; display:block; border-radius:4px; margin-top:8px;">`
         : `<img id="previewLogoEscolaGestor" style="max-height:80px; display:none; border-radius:4px; margin-top:8px;">`;
 
+    const cartaoCodigo = await montarCartaoCodigoEspaco(escola);
+
     tela.innerHTML = `
+        ${cartaoCodigo}
         <div class="card" style="margin:20px 0;">
             <h2>🏫 Configurações da Escola</h2>
             <p style="color:#666; font-size:14px; margin-bottom:15px;">Ajuste os dados da sua escola. Essas informações aparecem no cabeçalho do sistema e em documentos.</p>
@@ -4125,13 +4127,78 @@ async function renderEscolaGestor() {
     renderListaProfessoresGestor();
 }
 
+// [FASE 3] O código de convite do espaço.
+//
+// O código NÃO fica guardado no servidor — é dele que a Fase 4 vai derivar a chave
+// da camada cifrada, e um segredo que o banco conhece não protege nada contra o
+// banco. Consequência assumida: só aparece aqui no aparelho onde o espaço foi
+// criado (ou onde alguém entrou com ele). Sumiu de todos os aparelhos, o caminho é
+// gerar um novo — os colegas que já entraram continuam dentro.
+async function montarCartaoCodigoEspaco(escola) {
+    const ref = (typeof resolverEspaco === 'function') ? resolverEspaco(currentUser) : { espacoId: null };
+    const espacoId = ref.espacoId || (escola && escola.espacoId) || null;
+    if (!espacoId) return '';
+
+    let codigo = null;
+    try { codigo = (typeof codigoEspacoGuardado === 'function') ? await codigoEspacoGuardado() : null; }
+    catch (e) { codigo = null; }
+
+    const miolo = codigo
+        ? `<div style="font-family:monospace; font-size:24px; letter-spacing:2px; color:#22543d; background:#fff;
+                       border:2px dashed #9ae6b4; border-radius:8px; padding:12px; text-align:center; user-select:all;"
+                id="codigoEspacoTexto">${formatarCodigo(codigo)}</div>
+           <p style="font-size:12px; color:#4a5568; margin:8px 0 0;">Passe este código aos colegas da escola:
+              é com ele que eles entram, sem precisar de liberação.</p>`
+        : `<p style="font-size:13px; color:#744210; background:#fffaf0; border:1px solid #fbd38d;
+                     border-radius:8px; padding:10px 12px; margin:0;">
+             O código não está guardado neste aparelho — e o servidor não tem cópia dele, de propósito.
+             Peça a quem criou o espaço, ou gere um código novo abaixo.</p>`;
+
+    return `
+        <div class="card" style="margin:20px 0; border-left:4px solid #38a169;">
+            <h2>🔑 Código de convite do espaço</h2>
+            ${miolo}
+            <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
+                ${codigo ? '<button class="btn btn-sm btn-secondary" onclick="copiarCodigoEspaco()">📋 Copiar</button>' : ''}
+                <button class="btn btn-sm btn-danger" onclick="gerarCodigoEspacoGestor('${espacoId}')">♻️ Gerar novo código</button>
+            </div>
+        </div>`;
+}
+
+function copiarCodigoEspaco() {
+    const el = document.getElementById('codigoEspacoTexto');
+    if (!el) return;
+    navigator.clipboard.writeText(el.textContent.trim())
+        .then(() => alert('Código copiado.'))
+        .catch(() => alert('Não consegui copiar. Selecione o código e copie na mão.'));
+}
+
+async function gerarCodigoEspacoGestor(espacoId) {
+    if (!confirm('Gerar um código novo?\n\nO código atual deixa de funcionar para NOVOS cadastros. ' +
+                 'Quem já entrou continua dentro normalmente.')) return;
+    try {
+        const atual = (typeof codigoEspacoGuardado === 'function') ? await codigoEspacoGuardado() : null;
+        const novo = await gerarNovoCodigoEspaco(espacoId, atual);
+        alert('Código novo do espaço:\n\n    ' + formatarCodigo(novo) + '\n\nAnote e passe aos colegas.');
+        renderEscolaGestor();
+    } catch (e) {
+        alert('Não consegui gerar o código: ' + (e && e.message));
+    }
+}
+
 async function salvarConfigEscolaGestor(e) {
     if (e) e.preventDefault();
-    if (!currentUser || !currentUser.schoolId) return;
+    if (!currentUser || (!currentUser.schoolId && !currentUser.espacoId)) return;
 
+    // [FASE 3] Grava de volta no MESMO lugar de onde veio: no espaço, se houver, senão
+    // na lista antiga. Salvar sempre no schools_list faria a edição sumir da tela de
+    // quem já usa espaço — o cabeçalho lê o espaço.
+    const ref = (typeof resolverEspaco === 'function') ? resolverEspaco(currentUser) : { espacoId: null };
     const sData = await getData('system', 'schools_list');
     const schools = (sData && sData.list && Array.isArray(sData.list)) ? sData.list : [];
-    const escola = schools.find(s => s.id == currentUser.schoolId);
+    const escola = ref.espacoId
+        ? (await getData('espacos', ref.espacoId))
+        : schools.find(s => s.id == currentUser.schoolId);
 
     if (!escola) {
         alert('A escola ainda não foi cadastrada pelo administrador. Não é possível salvar as configurações.');
@@ -4146,7 +4213,12 @@ async function salvarConfigEscolaGestor(e) {
     escola.telefone = document.getElementById('escolaGestorTelefone').value.trim();
     escola.logoEscola = document.getElementById('escolaGestorLogoBase64').value;
 
-    await saveData('system', 'schools_list', { list: schools });
+    if (ref.espacoId) {
+        await saveData('espacos', ref.espacoId, escola);
+        if (typeof lembrarEspaco === 'function') await lembrarEspaco(ref.espacoId, null, escola);
+    } else {
+        await saveData('system', 'schools_list', { list: schools });
+    }
     alert('Configurações da escola salvas com sucesso!');
     renderEscolaGestor();
 }

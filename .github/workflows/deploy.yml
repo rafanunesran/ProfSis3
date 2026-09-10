@@ -101,7 +101,7 @@ jobs:
           cp ref_agenda.html ref_auth.html ref_dashboard.html ref_turmas.html _site/
           cp app.js admin.js core.js gestor.js biblioteca.js ia_estagiario.js _site/
           cp shared.js feriados.js google-calendar.js sw.js _site/
-          cp localdb.js migracao.js cripto.js _site/
+          cp localdb.js migracao.js cripto.js espacos.js _site/
           cp styles.css manifest.webmanifest _site/
           cp -r resources Docs _site/
           if [ -d app-android/dist ]; then

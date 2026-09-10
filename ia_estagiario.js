@@ -979,10 +979,8 @@ async function gerarAgendaMensalEstagiario() {
         let configEscola = {};
         try {
             configSistema = await getData('system', 'config_sistema') || {};
-            if (currentUser && currentUser.schoolId) {
-                const sData = await getData('system', 'schools_list');
-                const schools = (sData && sData.list) ? sData.list : [];
-                configEscola = schools.find(s => s.id == currentUser.schoolId) || {};
+            if (currentUser && typeof resolverEscolaAtual === 'function') {
+                configEscola = (await resolverEscolaAtual()) || {};
             }
         } catch (e) { console.warn('Erro ao buscar configs da escola', e); }
 
@@ -1948,10 +1946,8 @@ async function carregarConfigsDocumentoEstagiario() {
     let configEscola = {};
     try {
         configSistema = await getData('system', 'config_sistema') || {};
-        if (currentUser && currentUser.schoolId) {
-            const sData = await getData('system', 'schools_list');
-            const schools = (sData && sData.list) ? sData.list : [];
-            configEscola = schools.find(s => s.id == currentUser.schoolId) || {};
+        if (currentUser && typeof resolverEscolaAtual === 'function') {
+            configEscola = (await resolverEscolaAtual()) || {};
         }
     } catch (e) { console.warn("Erro ao buscar configs da escola", e); }
 

@@ -112,17 +112,62 @@ service cloud.firestore {
       // Lê o próprio status; gestor/admin leem para administrar.
       allow read: if isSignedIn() && (request.auth.uid == uid || podeAprovar());
 
-      // O próprio usuário só cria o SEU documento como PENDENTE (nunca liberado).
+      // O próprio usuário cria o SEU documento em dois casos:
+      //   1) PENDENTE - o cadastro antigo, que espera o gestor liberar;
+      //   2) LIBERADO - quando declara um espaço que EXISTE (Fase 3). O código de
+      //      convite é o portão, e quem não tem o código não descobre o espacoId:
+      //      ele é um UUID, `list` está negado em /espacos e o índice do código só
+      //      pode ser lido por quem sabe o código para calcular o endereço.
       // Gestor/admin podem criar o documento de outra pessoa.
       allow create: if (request.auth.uid == uid
                         && request.resource.data.approved == false
                         && request.resource.data.role == 'professor')
+                    || (request.auth.uid == uid
+                        && request.resource.data.approved == true
+                        && request.resource.data.espacoId is string
+                        && exists(/databases/$(database)/documents/espacos/$(request.resource.data.espacoId)))
                     || (podeAprovar() && request.auth.uid != uid)
                     || isSuperAdmin();
 
       // ANTI-ELEVAÇÃO: ninguém altera o próprio documento de acesso.
       allow update, delete: if isSuperAdmin()
                             || (podeAprovar() && request.auth.uid != uid);
+    }
+
+    // ---------------------- espacos/* e espacos_indice/* ---------------------
+    // [FASE 3] A escola vira um ESPACO com codigo de convite.
+    //
+    //  espacos_indice/<sha256("profsis-v1:" + codigo)> -> < espacoId >
+    //  espacos/<uuid>                                  -> nome, timbre, salt, legacySchoolId
+    //
+    // LEITURA SEM SESSAO, DE PROPOSITO - e' a mesma licao de system/users_list:
+    // o codigo e' conferido na tela de CADASTRO, antes de existir qualquer sessao.
+    // Exigir isSignedIn() aqui trancaria todo mundo do lado de fora, de novo. E nao
+    // ha o que proteger com sessao: quem nao tem o codigo nao consegue nem calcular
+    // o endereco do indice, e o espacoId e' um UUID.
+    //
+    // `list` NEGADO nas duas colecoes: e' o que impede alguem de varrer o banco
+    // atras dos espacos dos outros. Sem list, o id so' chega a quem tem o codigo.
+    //
+    // O codigo em si NAO esta aqui - nem hasheado com salt fixo seria seguro contra
+    // forca bruta se o alfabeto fosse pequeno. Ele so' existe no aparelho de quem
+    // entrou, e e' dele que a Fase 4 vai derivar a chave da camada cifrada.
+    match /espacos/{espacoId} {
+      allow get: if true;
+      allow list: if isSuperAdmin();
+      allow create: if isSignedIn();
+      allow update: if isSuperAdmin()
+                    || (isSignedIn() && !semDocAcesso()
+                        && meuAcesso().espacoId == espacoId
+                        && meuAcesso().role == 'gestor');
+      allow delete: if isSuperAdmin();
+    }
+
+    match /espacos_indice/{codigoHash} {
+      allow get: if true;
+      allow list: if isSuperAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn();
     }
 
     // ------------------------------ system/* ---------------------------------

@@ -197,6 +197,35 @@ sobe por esquecimento — para publicá-lo é preciso escrevê-lo na lista de pr
   contra o Google e contra invasão do banco, mas **não** contra o detentor da chave privada
   de suporte. É uma escolha deliberada, para que o responsável consiga prestar assistência.
 
+### Fase 3 — a escola vira um espaço com código de convite
+
+Até aqui, "escola" era uma linha em `system/schools_list` — um documento único que qualquer
+pessoa autenticada lia e reescrevia por inteiro — e entrar numa escola era escolher o nome
+dela numa lista e esperar a liberação manual de um gestor.
+
+A partir desta fase, a escola é um **espaço** identificado por um UUID, e o portão é um
+**código de convite** de 12 caracteres:
+
+- `espacos/<uuid>` guarda nome, timbre, `salt` e o `legacySchoolId`. **Nenhum dado muda de
+  lugar:** todas as chaves de documento (`app_data_school_<id>_gestor`, `maps_school_<id>`)
+  continuam nascendo do identificador antigo.
+- `espacos_indice/<sha256("profsis-v1:" + código)>` guarda apenas `{ espacoId }`. Entrar é
+  uma leitura direta desse endereço: **quem não tem o código não consegue nem calcular onde
+  olhar**. As Regras liberam `get` e **negam `list`** nas duas coleções, então não há como
+  varrer o banco atrás dos espaços alheios.
+- **O código não é gravado em lugar nenhum do servidor.** Ele existe apenas no aparelho de
+  quem entrou — é dele que a camada cifrada da fase seguinte vai derivar a chave, e um
+  segredo que o banco conhece não protege nada contra o banco. Consequência assumida: se o
+  código se perder de todos os aparelhos, o caminho é gerar um novo pelo painel do gestor;
+  quem já entrou continua dentro.
+- **A fila de aprovação acaba para cadastros novos.** Quem entra com um código válido já
+  entra liberado, e a Regra do Firestore só aceita esse `access/<uid>` com `approved: true`
+  quando o espaço declarado **existe**. Os perfis que já estavam pendentes continuam na
+  fila, à espera do gestor — não foram liberados de carona.
+- Quem já usa o sistema **não reconfigura nada**: sem espaço, tudo segue pelo
+  `system/schools_list` de sempre. O vínculo com o espaço é criado por um botão do painel
+  super admin, que é idempotente e entrega os códigos num arquivo para distribuição.
+
 ### Sobre o acervo de quem não migrar
 
 **Decisão: nada é apagado por varredura.** Quem nunca abrir a versão nova permanece com os
