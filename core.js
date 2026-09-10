@@ -243,6 +243,9 @@ async function getData(collectionName, docId) {
             // carregava vazio — e o salvamento seguinte sobrescrevia a nuvem com vazio.
             // Marcamos a falha para que carregarDadosUsuario() bloqueie o salvamento.
             window.falhaLeituraFirestore = true;
+            // Guardamos QUAL foi a falha: "negado pelas Regras" e "sem internet" pedem
+            // conversas diferentes com o professor, e tratá-las igual já custou caro.
+            window.ultimaLeituraNegada = !!(error && error.code === 'permission-denied');
             console.error(`Erro ao buscar ${collectionName}/${docId}:`, error && error.code, error);
             if (error && error.code === 'permission-denied') {
                 console.warn('[SisProf] Leitura negada pelas Regras do Firestore (não é falta de internet).');
@@ -941,7 +944,12 @@ async function fazerCadastro(e) {
         try {
             espacoEncontrado = await buscarEspacoPorCodigo(codigoDigitado);
         } catch (e) {
-            alert('Não consegui conferir o código agora — parece falta de conexão.\n\nTente de novo quando a internet voltar. Sua conta ainda NÃO foi criada.');
+            // Enquanto as Regras novas não forem publicadas no console do Firebase, a
+            // leitura do índice é NEGADA — e dizer "sem internet" para quem está com
+            // internet manda a pessoa procurar o problema no lugar errado.
+            alert(e && e.message === 'negado'
+                ? 'A entrada por código ainda não foi liberada no banco de dados.\n\nAvise a gestão/suporte: falta publicar as Regras novas do Firestore. Sua conta ainda NÃO foi criada.'
+                : 'Não consegui conferir o código agora — parece falta de conexão.\n\nTente de novo quando a internet voltar. Sua conta ainda NÃO foi criada.');
             return;
         }
         if (!espacoEncontrado) {

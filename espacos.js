@@ -114,8 +114,11 @@ async function buscarEspacoPorCodigo(codigo) {
 
     const indice = await getData('espacos_indice', await hashCodigo(limpo));
     if (window.falhaLeituraFirestore) {
+        const negado = !!window.ultimaLeituraNegada;
         window.falhaLeituraFirestore = antes;
-        throw new Error('rede');
+        // 'negado' = as Regras recusaram (falta publicar a versão nova no console).
+        // 'rede'   = o banco não respondeu. São problemas de gente diferente.
+        throw new Error(negado ? 'negado' : 'rede');
     }
     window.falhaLeituraFirestore = antes;
 
