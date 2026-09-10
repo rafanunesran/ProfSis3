@@ -56,6 +56,7 @@ async function iniciarApp() {
         // aparelho salvou a abertura: o professor precisa saber que o que ele fizer
         // agora ainda não subiu.
         if (carregouOk === false || window.bloquearEscritaNuvem) mostrarBannerLeituraFalhou();
+        else if (precisaRestaurarNesteAparelho()) mostrarBannerSemDadosLocais();
 
         // [ADEQUAÇÃO SEDUC] Antes do corte, lembra o professor duas vezes por dia.
         // Depois do corte, leva o dado pessoal para o aparelho antes de qualquer coisa.
@@ -448,7 +449,7 @@ async function abrirModalPerfil() {
         <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #feb2b2;">
             <h4 style="color:#c53030; margin-bottom:5px; font-size:14px;">🆘 Backup e Segurança</h4>
             <p style="font-size:11px; color:#718096; margin-bottom:10px;">Baixe uma cópia completa dos seus dados ou gerencie versões na nuvem.</p>
-            <button class="btn btn-sm btn-primary" onclick="baixarBackupCompleto()" style="width:100%; margin-bottom:5px;">💾 Baixar Backup Total (JSON)</button>
+            <button class="btn btn-sm btn-primary" onclick="exportarArquivoProfsis()" style="width:100%; margin-bottom:5px;">💾 Baixar minha cópia de segurança</button>
             <button class="btn btn-sm btn-info" onclick="listarBackupsNuvem()" style="width:100%; margin-bottom:5px;">☁️ Histórico na Nuvem</button>
             <button class="btn btn-sm btn-danger" onclick="abrirPainelRecuperacaoAvancada()" style="width:100%; font-weight:bold;">🔍 Busca de Backups Antigos</button>
         </div>
@@ -839,6 +840,46 @@ function mostrarBannerLeituraFalhou() {
     document.body.insertBefore(banner, document.body.firstChild);
 }
 
+// Aparelho novo, ou navegador limpo, numa conta que JA fez a transicao: as turmas
+// vem da nuvem, mas os estudantes ficaram no outro aparelho. Sem este aviso o
+// professor ve a lista vazia e conclui que perdeu tudo.
+//
+// De proposito NAO bloqueia a tela. Uma tela cheia aqui dependeria de eu acertar a
+// deteccao em todos os casos - e um falso positivo trancaria alguem que esta bem.
+// Aviso em faixa erra para o lado seguro: no maximo incomoda quem nao precisa.
+function precisaRestaurarNesteAparelho() {
+    if (typeof podeEnviarDadoPessoal === 'function' && podeEnviarDadoPessoal()) return false;
+    if (!data) return false;
+    const temNuvem = (data.turmas || []).length > 0;
+    const semPessoal = (data.estudantes || []).length === 0
+                    && (data.tutorados || []).length === 0
+                    && (data.ocorrencias || []).length === 0;
+    return temNuvem && semPessoal;
+}
+
+function mostrarBannerSemDadosLocais() {
+    if (document.getElementById('bannerSemDadosLocais')) return;
+    const banner = document.createElement('div');
+    banner.id = 'bannerSemDadosLocais';
+    banner.style.cssText = 'position:sticky; top:0; z-index:10001; background:#2c5282; color:#fff; ' +
+        'padding:12px 16px; text-align:center; font-size:14px; box-shadow:0 2px 6px rgba(0,0,0,0.25);';
+    banner.innerHTML =
+        '<div style="max-width:760px; margin:0 auto;">' +
+          '<strong>Suas turmas estão aqui, mas os estudantes não.</strong><br>' +
+          '<span style="font-size:13px; opacity:.95;">Os dados dos estudantes ficam no aparelho onde ' +
+          'você fez a transição. Traga-os com a sua cópia de segurança.</span>' +
+          '<div style="margin-top:9px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">' +
+            '<button class="btn btn-sm" style="background:#fff; color:#2c5282; font-weight:bold;" ' +
+              'onclick="abrirSeletorArquivoProfsis()">Restaurar do meu arquivo</button>' +
+            '<button class="btn btn-sm" style="background:rgba(255,255,255,.18); color:#fff;" ' +
+              'onclick="listarBackupsNuvem()">Ver backups na nuvem</button>' +
+            '<button class="btn btn-sm" style="background:transparent; color:#fff; text-decoration:underline;" ' +
+              'onclick="this.closest(\'#bannerSemDadosLocais\').remove()">Agora não</button>' +
+          '</div>' +
+        '</div>';
+    document.body.insertBefore(banner, document.body.firstChild);
+}
+
 // [SEGURANÇA] Tela de bloqueio para perfil novo aguardando liberação da gestão.
 // Substitui completamente a interface do app: nenhum dado da escola é carregado e
 // nenhuma ferramenta fica acessível enquanto o gestor não confirmar o acesso.
@@ -1040,8 +1081,8 @@ async function renderDashboard() {
                     <div style="background:white; padding:12px; border-radius:6px; border:1px solid #e2e8f0;">
                         <h4 style="margin:0 0 10px 0; font-size:13px; color:#2d3748; border-bottom:1px solid #eee; padding-bottom:5px;">💻 Arquivo Local / Emergência</h4>
                         <div style="display:flex; flex-direction:column; gap:8px;">
-                            <button class="btn btn-sm btn-info" onclick="baixarBackupCompleto()" style="text-align:left;">⬇️ Baixar Backup Total (JSON)</button>
-                            <button class="btn btn-sm btn-secondary" onclick="abrirModalRestaurarBackup()" style="text-align:left;">⬆️ Restaurar de Arquivo</button>
+                            <button class="btn btn-sm btn-info" onclick="exportarArquivoProfsis()" style="text-align:left;">⬇️ Baixar minha cópia de segurança</button>
+                            <button class="btn btn-sm btn-secondary" onclick="abrirSeletorArquivoProfsis()" style="text-align:left;">⬆️ Restaurar do meu arquivo</button>
                             <button class="btn btn-sm btn-danger" onclick="restaurarBackupLocalParaNuvem()" style="text-align:left;" title="Recuperar dados do cache do navegador">🆘 Recuperar do Cache</button>
                         </div>
                     </div>
@@ -1085,7 +1126,7 @@ async function renderDashboard() {
                 </div>
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
                     <button class="btn btn-sm btn-primary" onclick="criarBackupNuvem()" style="text-align:left;">💾 Salvar na Nuvem Agora</button>
-                    <button class="btn btn-sm btn-info" onclick="baixarBackupCompleto()" style="text-align:left;">⬇️ Baixar Backup Total (JSON)</button>
+                    <button class="btn btn-sm btn-info" onclick="exportarArquivoProfsis()" style="text-align:left;">⬇️ Baixar minha cópia de segurança</button>
                 </div>
             </div>
 
@@ -1131,7 +1172,7 @@ async function renderDashboard() {
             </div>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
                 <button class="btn btn-sm btn-primary" onclick="criarBackupNuvem()" style="text-align:left;">💾 Sincronizar Nuvem Agora</button>
-                <button class="btn btn-sm btn-info" onclick="baixarBackupCompleto()" style="text-align:left;">⬇️ Baixar Backup Total (JSON)</button>
+                <button class="btn btn-sm btn-info" onclick="exportarArquivoProfsis()" style="text-align:left;">⬇️ Baixar minha cópia de segurança</button>
             </div>
         </div>
 
@@ -8253,45 +8294,27 @@ function baixarBackupCompleto() {
     downloadAnchorNode.remove();
 }
 
+// [APOSENTADO] Este par de funções abria um seletor filtrado em `.json` e validava
+// procurando `turmas`/`estudantes` na RAIZ do arquivo. O arquivo que a transição
+// obriga o professor a guardar é o `.profsis`, que embrulha tudo em
+// { formato, versao, dados }. Resultado: o arquivo não aparecia sequer na janela de
+// escolha e, se forçado, era recusado como "backup inválido" — a pessoa era mandada
+// guardar uma cópia de segurança que não tinha volta.
+//
+// Quem sabe ler os dois formatos é abrirSeletorArquivoProfsis/importarArquivoProfsis,
+// em migracao.js. Mantemos o nome antigo apenas como atalho, para qualquer chamada
+// remanescente continuar funcionando.
 function abrirModalRestaurarBackup() {
-    let input = document.getElementById('inputBackupRestore');
-    if (!input) {
-        input = document.createElement('input');
-        input.type = 'file';
-        input.id = 'inputBackupRestore';
-        input.accept = '.json';
-        input.style.display = 'none';
-        input.onchange = processarRestauracaoBackup;
-        document.body.appendChild(input);
-    }
-    input.click();
+    if (typeof abrirSeletorArquivoProfsis === 'function') return abrirSeletorArquivoProfsis();
+    alert('O módulo de restauração não carregou. Recarregue a página.');
 }
 
-function processarRestauracaoBackup(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async function(e) {
-        try {
-            const json = JSON.parse(e.target.result);
-            if (json && (json.turmas || json.estudantes || json.ocorrencias)) {
-                if (confirm('⚠️ ATENÇÃO: Isso substituirá TODOS os dados atuais do sistema pelos dados do arquivo de backup.\n\nEssa ação não pode ser desfeita e será sincronizada com o banco de dados (Firestore).\n\nDeseja continuar?')) {
-                    data = json;
-                    await persistirDados(); // Salva no Firebase e LocalStorage
-                    alert('✅ Dados restaurados com sucesso! A página será recarregada.');
-                    location.reload();
-                }
-            } else {
-                alert('❌ O arquivo selecionado não parece ser um backup válido do SisProf.');
-            }
-        } catch (err) {
-            console.error(err);
-            alert('❌ Erro ao ler o arquivo: ' + err.message);
-        }
-    };
-    reader.readAsText(file);
-    event.target.value = ''; // Limpa para permitir selecionar o mesmo arquivo novamente se necessário
+// Idem: baixar a cópia de segurança agora produz o formato .profsis, que é o que a
+// restauração espera. Um arquivo que o próprio sistema não consegue reabrir não é
+// cópia de segurança nenhuma.
+function baixarBackupCompleto() {
+    if (typeof exportarArquivoProfsis === 'function') return exportarArquivoProfsis();
+    alert('O módulo de exportação não carregou. Recarregue a página.');
 }
 
 // --- PERSISTÊNCIA AUTOMÁTICA (LOCAL + FIREBASE) ---

@@ -17,7 +17,10 @@ function nomeArquivoProfsis() {
     const quem = (currentUser && (currentUser.nome || currentUser.email) || 'professor')
         .toString().normalize('NFD').replace(/[̀-ͯ]/g, '')
         .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
-    return 'profsis-' + quem + '-' + new Date().toISOString().slice(0, 10) + '.profsis';
+    // O nome precisa se explicar sozinho na pasta de Downloads. Um professor baixou
+    // este arquivo achando que era o programa e tentou abri-lo; o nome antigo
+    // ("profsis-fulano-data.profsis") nao ajudava a desfazer o engano.
+    return 'copia-de-seguranca-profsis-' + quem + '-' + new Date().toISOString().slice(0, 10) + '.profsis';
 }
 
 // Baixa TUDO (as duas camadas) num arquivo só. Devolve true se o download começou.
@@ -159,15 +162,23 @@ function _pedirConfirmacaoDoArquivo(censo) {
                 '<p style="color:#2d3748; font-size:14px; line-height:1.6;">Seus dados foram gravados neste ' +
                 'aparelho: <strong>' + censo.estudantes + ' estudante(s)</strong>, ' +
                 censo.ocorrencias + ' ocorrência(s), ' + censo.tutorados + ' tutorado(s).</p>' +
-                '<p style="color:#2d3748; font-size:14px; line-height:1.6;">Baixe o arquivo de segurança e ' +
-                'guarde-o em lugar seguro. <strong>Nada será apagado da nuvem até você confirmar que o ' +
+                '<p style="color:#2d3748; font-size:14px; line-height:1.6;">Baixe a cópia de segurança e ' +
+                'guarde-a em lugar seguro. <strong>Nada será apagado da nuvem até você confirmar que o ' +
                 'arquivo está com você.</strong></p>' +
+                '<div style="background:#ebf8ff; border:1px solid #bee3f8; border-radius:8px; padding:11px 13px; margin:12px 0;">' +
+                    '<strong style="color:#2c5282; font-size:13px;">Este arquivo NÃO é o programa</strong>' +
+                    '<p style="margin:5px 0 0; font-size:13px; color:#2a4365; line-height:1.55;">' +
+                    'Não tente abri-lo: ele guarda os seus dados, não o sistema. O ProfSis continua ' +
+                    'no mesmo endereço de sempre, no navegador.<br>' +
+                    'Se um dia precisar dos dados de volta, entre no sistema e use ' +
+                    '<strong>Dados &gt; Restaurar do meu arquivo</strong>.</p>' +
+                '</div>' +
                 '<button class="btn btn-primary" id="btnBaixarNaConfirma" style="width:100%; margin:14px 0;">' +
-                    'Baixar o arquivo de segurança</button>' +
+                    'Baixar minha cópia de segurança</button>' +
                 '<label style="display:flex; align-items:flex-start; gap:9px; font-size:13px; color:#4a5568;' +
                 'background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:11px 13px;">' +
                     '<input type="checkbox" id="chkArquivoGuardado" disabled style="margin-top:2px; width:auto;">' +
-                    '<span>Confirmo que baixei o arquivo e sei onde ele está.<br>' +
+                    '<span>Confirmo que baixei a cópia e sei onde ela está guardada.<br>' +
                     '<em style="color:#a0aec0;">Baixe o arquivo acima para liberar esta opção.</em></span>' +
                 '</label>' +
                 '<div style="display:flex; gap:10px; margin-top:16px;">' +
@@ -278,7 +289,10 @@ async function migrarParaLocal(opcoes) {
                   'SOMENTE neste aparelho.\n\n' +
                   'Turmas, agenda, planos de aula e documentação continuam funcionando online, e o ' +
                   'backup diário na nuvem volta a rodar CIFRADO — ilegível para qualquer um que não ' +
-                  'seja você.');
+                  'seja você.\n\n' +
+                  'A cópia que você baixou não abre sozinha: ela serve para trazer seus dados de ' +
+                  'volta se você trocar de aparelho ou limpar o navegador.\n' +
+                  'Para usá-la: Dados > Restaurar do meu arquivo, aqui dentro do sistema.');
         }
         return true;
     } catch (e) {
