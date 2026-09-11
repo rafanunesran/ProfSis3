@@ -98,6 +98,14 @@ service cloud.firestore {
       return isSignedIn();
     }
 
+    // Conta que o super admin marcou para seguir 100% online. O campo mora em
+    // access/<uid> e só o super admin escreve nele (ver o bloco de access abaixo),
+    // então isto não é uma porta que o próprio usuário consegue abrir.
+    function isentoDoCorte() {
+      return isSignedIn() && !semDocAcesso()
+             && meuAcesso().get('modoOnlineCompleto', false) == true;
+    }
+
     // Pode LIBERAR/RECUSAR o acesso de outra pessoa?
     // super_admin, gestor já liberado, ou usuário antigo (equipe existente).
     // Um cadastro novo (approved:false) nunca satisfaz nenhuma das condições.
@@ -220,11 +228,19 @@ service cloud.firestore {
 
       // Antes do corte, idêntico ao que sempre foi. Depois dele, o documento só
       // entra se não trouxer campo pessoal, ou for um backup REALMENTE cifrado
-      // (o nome `backup_` sozinho não isenta).
+      // (o nome `backup_` sozinho não isenta), ou pertencer a uma conta que o super
+      // admin marcou como isenta.
+      //
+      // A isenção existe no aplicativo desde a Fase 1 (modoOnlineCompleto, em
+      // access/<uid>, gravável só pelo super admin) e FALTAVA aqui. A consequência
+      // era silenciosa e diária: a conta isenta mandava o dado pessoal, porque o
+      // aplicativo a autorizava, e o banco recusava tudo com "Missing or
+      // insufficient permissions" a cada salvamento.
       allow create, update: if liberado() && (
            !depoisDoCorte()
         || semCamposPessoais()
         || (docId.matches('^backup_.*') && request.resource.data.get('cifrado', false) == true)
+        || isentoDoCorte()
       );
     }
     match /shared_attendance/{docId} {

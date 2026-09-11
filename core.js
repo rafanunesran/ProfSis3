@@ -84,6 +84,13 @@ function mostrarIndicadorAmbiente(texto) {
 // 07/09/2026 07:00 em São Paulo (UTC-3) = 10:00 UTC.
 const DATA_CORTE_PADRAO = '2026-09-07T10:00:00Z';
 
+// A MESMA data está escrita, na mão, dentro do firestore.rules
+// (depoisDoCorte). Adiar o corte exige mudar os dois lugares — é de propósito: o
+// cliente sozinho não decide se a lei vale. Esta cópia existe para o aplicativo
+// saber o que o servidor vai recusar ANTES de tentar, em vez de descobrir por
+// "Missing or insufficient permissions" a cada salvamento.
+const DATA_CORTE_REGRA = '2026-09-07T10:00:00Z';
+
 // Adiar ou antecipar o corte: campo `dataCorte` em system/config_sistema (só o super
 // admin escreve, ver firestore.rules). Mudar aqui exigiria publicar o site de novo.
 // ATENÇÃO: a data também está escrita na Regra do Firestore. Adiar de verdade é
@@ -174,7 +181,21 @@ function estadoCorte() {
 // Dado pessoal ainda pode subir para a nuvem?
 function podeEnviarDadoPessoal() {
     const e = estadoCorte();
-    return e === 'antes' || e === 'migrado_isento';
+    if (e !== 'antes' && e !== 'migrado_isento') return false;
+    // O aplicativo pode achar que ainda está antes do corte (relógio do aparelho,
+    // configuração adiada) enquanto a Regra do Firestore, que tem a data escrita na
+    // mão, já está depois. Nesse desacordo quem manda é a Regra: insistir só produz
+    // recusa a cada salvamento — e o professor não tem como adivinhar o motivo.
+    // A conta isenta é a exceção, porque a Regra também a isenta.
+    if (e === 'antes' && regraDoServidorBloqueiaPessoal()) return false;
+    return true;
+}
+
+// A Regra já está depois do corte? (Para a conta isenta, a Regra não bloqueia.)
+function regraDoServidorBloqueiaPessoal() {
+    if (window.usuarioOnlineCompleto) return false;
+    try { return agoraConfiavel() >= new Date(DATA_CORTE_REGRA); }
+    catch (e) { return false; }
 }
 
 // ============================================================================
@@ -202,6 +223,38 @@ function _varrerChavesPessoais(valor, orcamento) {
         if (achado) return achado;
     }
     return null;
+}
+
+// "Missing or insufficient permissions" não diz NADA a quem está tentando trabalhar,
+// e pouco a quem vai consertar: não diz qual documento, com quais campos, nem em que
+// estado o aplicativo estava. Sem isso, todo diagnóstico vira adivinhação — e neste
+// projeto a adivinhação já custou dias. Esta função responde as três coisas.
+function explicarRecusaDeGravacao(colecao, docId, obj) {
+    const chaves = (obj && typeof obj === 'object') ? Object.keys(obj) : [];
+    const pessoais = (typeof CAMPOS_PESSOAIS !== 'undefined')
+        ? chaves.filter(k => CAMPOS_PESSOAIS.indexOf(k) !== -1) : [];
+    const estado = (typeof estadoCorte === 'function') ? estadoCorte() : '?';
+
+    let causa;
+    if (pessoais.length) {
+        causa = 'O documento levava dado de estudante (' + pessoais.join(', ') + ') e, depois ' +
+                'do corte, a Regra do Firestore recusa isso. Se esta conta deveria ser isenta, ' +
+                'peça ao super admin para ligar o "modo online completo" — e conferir que as ' +
+                'Regras publicadas já têm a cláusula de isenção.';
+    } else if (colecao === 'access') {
+        causa = 'Ninguém altera o próprio documento de acesso — só a gestão ou o super admin.';
+    } else {
+        causa = 'A Regra publicada não permite esta gravação para o seu perfil. ' +
+                'Mostre este aviso à gestão/suporte: é com ele que dá para achar a causa.';
+    }
+
+    return 'Não consegui salvar na nuvem.\n\n' + causa +
+           '\n\n--- para o suporte ---\n' +
+           'documento: ' + colecao + '/' + docId + '\n' +
+           'campos: ' + (chaves.join(', ') || '(nenhum)') + '\n' +
+           'estado: ' + estado + (window.usuarioOnlineCompleto ? ' (conta isenta)' : '') + '\n' +
+           'hora confiável: ' + (typeof agoraConfiavel === 'function' ? agoraConfiavel().toISOString() : '?') +
+           '\n\nO que você fez continua guardado NESTE APARELHO — nada foi perdido.';
 }
 
 function assertSemDadosPessoais(colecao, docId, obj) {
@@ -330,6 +383,8 @@ async function saveData(collectionName, docId, dataObj) {
                 alert('Não consegui salvar: você está no sistema, mas sem sessão no Firebase.\n\n' +
                       'O banco recusa gravação assim. Clique em "Entrar de novo" na faixa do topo ' +
                       '(ou saia e entre com e-mail e senha). Nada foi apagado.');
+            } else if (error && error.code === 'permission-denied') {
+                alert(explicarRecusaDeGravacao(collectionName, docId, dataObj));
             } else {
                 alert(`Erro ao salvar dados online: ${error.message}\nVerifique se as Regras do Firestore permitem escrita.`);
             }

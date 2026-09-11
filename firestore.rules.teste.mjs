@@ -52,6 +52,9 @@ const cenarios = [
   ['LOGADO: CRIA espaco                       ', 'u-aprov', {email:'b@e.com',email_verified:false}, d=>setDoc(doc(d,'espacos/esp-novo'),{nome:'Nova',legacySchoolId:'99'})],
   ['SEM SESSAO: CRIA espaco                   ', null,      null,                                   d=>setDoc(doc(d,'espacos/esp-invasor'),{nome:'X'})],
   ['LOGADO: sonda no indice (set)             ', 'u-aprov', {email:'b@e.com',email_verified:false}, d=>setDoc(doc(d,'espacos_indice/_sonda_u-aprov'),{sonda:true})],
+  ['ISENTO: grava COM estudantes              ', 'u-isento',{email:'i@e.com',email_verified:false}, d=>setDoc(doc(d,'app_data/app_data_u-isento'),{estudantes:[{id:1}]})],
+  ['NAO isento: grava COM estudantes          ', 'u-aprov', {email:'b@e.com',email_verified:false}, d=>setDoc(doc(d,'app_data/app_data_u-aprov'),{estudantes:[{id:1}]})],
+  ['ISENTO: tenta ligar a propria isencao     ', 'u-aprov', {email:'b@e.com',email_verified:false}, d=>setDoc(doc(d,'access/u-aprov'),{approved:true,role:'professor',modoOnlineCompleto:true})],
 ];
 
 async function rodar(arquivo) {
@@ -68,6 +71,8 @@ async function rodar(arquivo) {
     await setDoc(doc(d,'access/u-gestor'),{approved:true,role:'gestor',espacoId:'esp-1'});
     await setDoc(doc(d,'espacos/esp-1'),{nome:'Escola Teste',legacySchoolId:'77',salt:'aa'});
     await setDoc(doc(d,'espacos_indice/hash-do-codigo'),{espacoId:'esp-1'});
+    await setDoc(doc(d,'access/u-isento'),{approved:true,role:'professor',modoOnlineCompleto:true});
+    await setDoc(doc(d,'app_data/app_data_u-isento'),{turmas:[]});
   });
   const ctx = {};
   const res = [];
