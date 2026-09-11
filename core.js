@@ -987,8 +987,12 @@ async function fazerCadastro(e) {
             espacoEncontrado = { espacoId: criado.espacoId, espaco: criado.espaco };
             codigoNovoEspaco = criado.codigo;
         } catch (e) {
-            alert('A conta foi criada, mas não consegui criar o espaço da escola: ' + e.message +
-                  '\n\nFaça login e tente criar o espaço pelo painel.');
+            // Com criarEspaco() estrito, isto agora dispara de verdade quando o banco
+            // recusa - antes a criação "dava certo" e o professor saía com um código
+            // que não levava a lugar nenhum.
+            alert('A conta foi criada, mas o espaço da escola NÃO foi criado.\n\n' + e.message +
+                  '\n\nNenhum código foi gerado. Avise a gestão/suporte e faça login depois ' +
+                  'para criar o espaço pelo painel.');
             return;
         }
     }

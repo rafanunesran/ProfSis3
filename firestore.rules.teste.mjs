@@ -49,6 +49,9 @@ const cenarios = [
   ['LOGADO: entra em espaco INEXISTENTE       ', 'u-novo2', {email:'n2@e.com',email_verified:false},d=>setDoc(doc(d,'access/u-novo2'),{approved:true,role:'professor',espacoId:'esp-nao-existe'})],
   ['GESTOR do espaco: edita o espaco          ', 'u-gestor',{email:'g@e.com',email_verified:false}, d=>updateDoc(doc(d,'espacos/esp-1'),{nome:'Nome novo'})],
   ['PROFESSOR: edita o espaco                 ', 'u-aprov', {email:'b@e.com',email_verified:false}, d=>updateDoc(doc(d,'espacos/esp-1'),{nome:'Invadido'})],
+  ['LOGADO: CRIA espaco                       ', 'u-aprov', {email:'b@e.com',email_verified:false}, d=>setDoc(doc(d,'espacos/esp-novo'),{nome:'Nova',legacySchoolId:'99'})],
+  ['SEM SESSAO: CRIA espaco                   ', null,      null,                                   d=>setDoc(doc(d,'espacos/esp-invasor'),{nome:'X'})],
+  ['LOGADO: sonda no indice (set)             ', 'u-aprov', {email:'b@e.com',email_verified:false}, d=>setDoc(doc(d,'espacos_indice/_sonda_u-aprov'),{sonda:true})],
 ];
 
 async function rodar(arquivo) {

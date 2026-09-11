@@ -30,28 +30,56 @@ async function migrarEscolasParaEspacos() {
     const escolas = await fetchEscolas();
     if (!escolas.length) return alert('Não há escolas cadastradas para migrar.');
 
-    const pendentes = escolas.filter(e => !e.espacoId);
+    // Conferir ANTES de tentar. Sem isto, uma recusa do banco virava "Espaços criados: N"
+    // com nada gravado - foi o que aconteceu na primeira tentativa.
+    const diag = await diagnosticarEspacos();
+    if (!diag.ok) {
+        alert('Não dá para criar os espaços agora.\n\n' + diag.mensagem +
+              '\n\nNada foi gravado e nenhum código foi gerado.');
+        return;
+    }
+
+    // Uma escola marcada com espacoId cujo documento NÃO existe ficou assim por uma
+    // tentativa que falhou em silêncio. Ela volta a contar como pendente - é o que
+    // destrava quem já clicou no botão e levou erro de permissão.
+    const pendentes = [];
+    let recuperadas = 0;
+    for (const escola of escolas) {
+        if (!escola.espacoId) { pendentes.push(escola); continue; }
+        const existe = await getData('espacos', escola.espacoId);
+        if (!existe) { pendentes.push(escola); recuperadas++; }
+    }
+
     if (!pendentes.length) return alert('Todas as escolas já têm espaço. Nada a fazer.');
 
-    if (!confirm('Criar espaço e código de convite para ' + pendentes.length + ' escola(s)?\n\n' +
-                 'Nenhum dado sai do lugar. Ao final, um arquivo com os códigos será baixado — ' +
+    if (!confirm('Criar espaço e código de convite para ' + pendentes.length + ' escola(s)?' +
+                 (recuperadas ? '\n\n(' + recuperadas + ' delas ficaram marcadas por uma tentativa ' +
+                                'anterior que não chegou a gravar, e serão refeitas.)' : '') +
+                 '\n\nNenhum dado sai do lugar. Ao final, um arquivo com os códigos será baixado — ' +
                  'os códigos não ficam guardados no servidor, então guarde esse arquivo.')) return;
 
     const linhas = [];
-    let criados = 0, falhas = 0;
+    let criados = 0, falhas = 0, ultimoErro = '';
 
     for (const escola of pendentes) {
         try {
             const criado = await criarEspaco(Object.assign({}, escola, { legacySchoolId: escola.id }),
                                              currentUser && currentUser.uid);
+            // Só marca depois de criarEspaco() ter conferido os dois documentos no banco.
             escola.espacoId = criado.espacoId;
             linhas.push(escola.nome + '\t' + formatarCodigo(criado.codigo) + '\t' + criado.espacoId);
             criados++;
         } catch (e) {
             console.error('[Espaços] Falhou em ' + escola.nome + ':', e);
-            linhas.push(escola.nome + '\tFALHOU: ' + (e && e.message));
+            ultimoErro = (e && e.message) || String(e);
             falhas++;
         }
+    }
+
+    if (!criados) {
+        alert('Nenhum espaço foi criado.\n\n' + ultimoErro +
+              '\n\nA lista de escolas não foi alterada.');
+        return;
     }
 
     await saveEscolasData(escolas);
@@ -65,7 +93,9 @@ async function migrarEscolasParaEspacos() {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 60000);
 
-    alert('Espaços criados: ' + criados + (falhas ? ' | falhas: ' + falhas : '') +
+    alert('Espaços criados: ' + criados +
+          (recuperadas ? ' (' + recuperadas + ' refeitos de tentativa anterior)' : '') +
+          (falhas ? '\nFalhas: ' + falhas + ' — ' + ultimoErro : '') +
           '\n\nO arquivo com os códigos foi baixado. Guarde-o: o servidor não tem cópia.');
     renderAdminEscolas();
 }

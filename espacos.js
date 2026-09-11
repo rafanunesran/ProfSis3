@@ -97,9 +97,67 @@ async function criarEspaco(dadosEscola, uidCriador) {
         legacySchoolId: escola.legacySchoolId || espacoId
     };
 
-    await saveData('espacos', espacoId, espaco);
-    await saveData('espacos_indice', await hashCodigo(codigo), { espacoId: espacoId, criadoEm: espaco.criadoEm });
+    const hash = await hashCodigo(codigo);
+    await _gravarEstrito('espacos', espacoId, espaco);
+    await _gravarEstrito('espacos_indice', hash, { espacoId: espacoId, criadoEm: espaco.criadoEm });
+
+    // Relê antes de devolver o código. Um código que não é encontrável de volta não é
+    // um código: entregá-lo ao professor seria pior do que falhar aqui.
+    const conferido = await getData('espacos', espacoId);
+    const indice = await getData('espacos_indice', hash);
+    if (!conferido || !indice || indice.espacoId !== espacoId) {
+        throw new Error('O espaço não pôde ser confirmado no banco depois de gravado. ' +
+                        'Nenhum código foi entregue. ' + (await diagnosticarEspacos()).mensagem);
+    }
+
     return { espacoId: espacoId, codigo: codigo, espaco: espaco };
+}
+
+// Grava SEM a rede de proteção do saveData().
+//
+// saveData() captura o erro do Firestore, mostra um alerta e volta como se tivesse
+// dado certo. Para o salvamento comum isso é proposital - o professor nao pode perder
+// o que digitou por causa de uma recusa -, mas aqui e' veneno: a criacao do espaco
+// "dava certo" sem nada ser gravado, a escola era marcada como migrada e os codigos
+// entregues nao levavam a lugar nenhum. Aqui o erro precisa subir.
+//
+// A guarda de conformidade continua valendo: ela e' chamada na mao, nao herdada.
+async function _gravarEstrito(colecao, id, obj) {
+    if (typeof assertSemDadosPessoais === 'function') assertSemDadosPessoais(colecao, id, obj);
+    if (typeof db === 'undefined' || !db) throw new Error('O banco de dados não carregou nesta página.');
+    await db.collection(colecao).doc(String(id)).set(JSON.parse(JSON.stringify(obj)));
+}
+
+// Por que a gravação de espaços não está funcionando? Responder isso e' metade do
+// conserto: "permission-denied" sozinho nao diz se faltam as Regras novas ou se falta
+// sessao, e chutar entre as duas ja custou dias neste projeto.
+async function diagnosticarEspacos() {
+    if (typeof db === 'undefined' || !db) {
+        return { ok: false, causa: 'sem-banco',
+                 mensagem: 'O banco de dados não carregou nesta página. Recarregue e tente de novo.' };
+    }
+    const sessao = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null;
+    if (!sessao) {
+        return { ok: false, causa: 'sem-sessao',
+                 mensagem: 'Você está no painel, mas sem sessão no Firebase Auth — o banco recusa ' +
+                           'toda escrita assim. Saia e entre de novo com e-mail e senha.' };
+    }
+    const sonda = '_sonda_' + sessao.uid;
+    try {
+        await db.collection('espacos_indice').doc(sonda).set({ sonda: true });
+        await db.collection('espacos_indice').doc(sonda).delete();
+        return { ok: true, causa: null, mensagem: 'Escrita liberada.' };
+    } catch (e) {
+        if (e && e.code === 'permission-denied') {
+            return { ok: false, causa: 'regras',
+                     mensagem: 'As Regras novas do Firestore ainda não foram publicadas no console ' +
+                               'do Firebase. Publique o firestore.rules (com os blocos espacos e ' +
+                               'espacos_indice) e tente de novo.' };
+        }
+        return { ok: false, causa: 'rede',
+                 mensagem: 'O banco não respondeu (' + (e && (e.code || e.message)) + '). ' +
+                           'Verifique a conexão e tente de novo.' };
+    }
 }
 
 // Procura o espaço pelo código digitado.
@@ -191,7 +249,13 @@ async function resolverEscolaAtual(user) {
 // access/<uid>, não no código.
 async function gerarNovoCodigoEspaco(espacoId, codigoAtual) {
     const novo = gerarCodigoEspaco();
-    await saveData('espacos_indice', await hashCodigo(novo), { espacoId: espacoId, criadoEm: new Date().toISOString() });
+    const hash = await hashCodigo(novo);
+    await _gravarEstrito('espacos_indice', hash, { espacoId: espacoId, criadoEm: new Date().toISOString() });
+    const indice = await getData('espacos_indice', hash);
+    if (!indice || indice.espacoId !== espacoId) {
+        throw new Error('O código novo não foi confirmado no banco. O código anterior continua valendo. ' +
+                        (await diagnosticarEspacos()).mensagem);
+    }
     if (codigoAtual) {
         try { await db.collection('espacos_indice').doc(await hashCodigo(codigoAtual)).delete(); }
         catch (e) { console.warn('[Espaços] Índice antigo continuou de pé:', e); }
