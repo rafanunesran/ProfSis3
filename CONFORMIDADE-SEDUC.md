@@ -171,6 +171,21 @@ sobe por esquecimento — para publicá-lo é preciso escrevê-lo na lista de pr
 - Isenção controlada: o super admin pode marcar contas específicas para seguirem 100%
   online (campo `modoOnlineCompleto` em `access/{uid}`, gravável só por ele). Usada para
   contas de teste e suporte durante a transição.
+  A marca só pode ser lida **com sessão no Firebase Auth**, então ela é lida duas vezes:
+  na abertura da página (para quem já tinha sessão salva) e no início de `iniciarApp()`
+  (para quem acabou de digitar e-mail e senha — naquele instante ainda não havia sessão).
+  O aparelho guarda a última resposta do banco, para que uma rede ruim na abertura não
+  rebaixe a conta isenta a uma conta comum; quem decide de verdade continua sendo a
+  Regra do Firestore, que confere o mesmo campo no servidor.
+
+- Proteção da camada local (`censoPessoal`, em shared.js): depois da transição o aparelho
+  é a **única** cópia do dado pessoal, então ele ganha a mesma proteção que a nuvem sempre
+  teve. A cada salvamento é gravado um censo (quantas chamadas, notas, ocorrências...) e a
+  cada abertura ele é conferido. Se a leitura local voltar **vazia** onde havia registro —
+  IndexedDB que não respondeu, cota, aba anônima, chave de documento diferente — a gravação
+  é bloqueada, uma tarja explica o que faltou, e o backup se recusa a gravar a tela vazia
+  por cima de um backup bom. Sem isso, `localGet` devolvendo `null` era indistinguível de
+  "conta vazia" e o salvamento seguinte apagava o ano letivo do professor.
 
 ### Fase 2 — backup cifrado e transição condicional
 

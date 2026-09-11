@@ -156,16 +156,50 @@ async function carregarConfigCorte() {
 // O super admin pode marcar contas específicas para seguirem 100% online (ver
 // firestore.rules: só ele grava este campo). A marca vale para a guarda, para a
 // persistência e para a migração — a conta se comporta como antes da adequação.
+function _chaveIsencao(uid) { return 'isencaoOnline_' + uid; }
+
 async function carregarIsencaoOnline() {
     window.usuarioOnlineCompleto = false;
     if (!USE_FIREBASE || typeof db === 'undefined' || !db) return;
     const fbUser = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null;
     if (!fbUser) return;
+
+    // A última resposta conhecida DESTE aparelho, por conta (aparelho de escola é
+    // compartilhado). Ela vale enquanto a leitura abaixo não responder: sem isso, uma
+    // rede ruim na abertura rebaixava a conta isenta a uma conta comum — e o professor
+    // era recebido com o pedido de transição, que é justamente o que a isenção evita.
+    //
+    // Lembrar não abre porta nenhuma: quem decide o que entra na nuvem é a Regra do
+    // Firestore, que confere o mesmo campo no servidor. Uma lembrança errada rende, no
+    // máximo, uma recusa de gravação explicada (ver explicarRecusaDeGravacao).
+    let lembrada = false;
+    try {
+        if (typeof metaGet === 'function') lembrada = !!(await metaGet(_chaveIsencao(fbUser.uid)));
+    } catch (e) {}
+    window.usuarioOnlineCompleto = lembrada;
+
     try {
         const doc = await db.collection('access').doc(fbUser.uid).get();
-        window.usuarioOnlineCompleto = !!(doc.exists && doc.data().modoOnlineCompleto === true);
-        if (window.usuarioOnlineCompleto) console.log('[SisProf] Conta isenta do corte (modo online completo).');
-    } catch (e) { console.warn('[SisProf] Não consegui ler o documento de acesso:', e); }
+        const isento = !!(doc.exists && doc.data().modoOnlineCompleto === true);
+        window.usuarioOnlineCompleto = isento;
+        // Grava os dois desfechos: é assim que o super admin consegue TIRAR a isenção
+        // de uma conta e o aparelho obedecer na abertura seguinte.
+        try { if (typeof metaSet === 'function') await metaSet(_chaveIsencao(fbUser.uid), isento); } catch (e) {}
+        if (isento) console.log('[SisProf] Conta isenta do corte (modo online completo).');
+    } catch (e) {
+        console.warn('[SisProf] Não consegui ler o documento de acesso; vale a última resposta conhecida ' +
+                     '(isenta: ' + lembrada + '):', e);
+    }
+}
+
+// As duas leituras do corte que EXIGEM sessão no Firebase Auth, juntas num lugar só.
+// Elas rodam na abertura da página, mas naquele instante quem acabou de digitar e-mail
+// e senha ainda não tinha sessão — e o resultado era uma conta 100% online abrindo como
+// se não fosse isenta: modal de transição, estudante saindo da nuvem, cara de conta
+// offline. Por isso iniciarApp() chama isto de novo, já com a sessão de pé.
+async function prepararRegraDoCorte() {
+    try { await carregarConfigCorte(); } catch (e) { console.warn('[SisProf] Configuração do corte:', e); }
+    try { await carregarIsencaoOnline(); } catch (e) { console.warn('[SisProf] Isenção do corte:', e); }
 }
 
 // Três estados, um lugar só. Consultado pela guarda, pela persistência e pela interface.
@@ -511,8 +545,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Hora do servidor e configuração do corte. Ambas best-effort: sem rede o app abre
     // igual, usando o relógio local (e sem rede não há função online para bloquear).
     try { await sincronizarRelogioServidor(); } catch (e) {}
-    try { await carregarConfigCorte(); } catch (e) {}
-    try { await carregarIsencaoOnline(); } catch (e) {}
+    await prepararRegraDoCorte();
 
     init();
 
@@ -1457,6 +1490,43 @@ function toggleSenha(id, btn) {
     }
 }
 
+// ============================================================================
+//  A CAMADA LOCAL TAMBEM PRECISA DE PROTEÇÃO CONTRA LEITURA FALHA
+// ----------------------------------------------------------------------------
+//  A nuvem sempre teve: getData marca falhaLeituraFirestore, carregarDadosUsuario
+//  bloqueia a escrita e uma tarja vermelha avisa. Depois da transição os papéis se
+//  invertem — quem guarda chamada, nota e ocorrência é o APARELHO — e essa metade
+//  não tinha proteção nenhuma.
+//
+//  localGet devolve null tanto para "este aparelho não tem nada" quanto para "o
+//  IndexedDB não respondeu" (aba anônima, cota, o limite de 5s em localdb.js) ou
+//  "a chave do documento mudou" (getStorageKey depende de currentViewMode). Nos
+//  três casos juntarDados montava um `data` com as listas pessoais VAZIAS,
+//  carregarDadosUsuario devolvia true, dadosCarregados ficava true — e o primeiro
+//  salvamento gravava esse vazio por cima da única cópia que existia.
+//
+//  O censo resolve: gravado a cada salvamento, conferido a cada abertura. Ele só
+//  interrompe no caso catastrófico (havia registro, voltou ZERO), porque apagar
+//  tudo de propósito é coisa que ninguém faz sem perceber.
+// ============================================================================
+
+function _chaveCenso(chave) { return 'censoLocal_' + chave; }
+
+async function _conferirCamadaLocal(chave, local, montado) {
+    if (typeof metaGet !== 'function' || typeof censoPessoal !== 'function') return { ok: true };
+
+    let anterior = null;
+    try { anterior = await metaGet(_chaveCenso(chave)); } catch (e) { return { ok: true }; }
+    if (!anterior || !anterior.total) return { ok: true };   // nunca houve nada aqui
+
+    const agora = censoPessoal(montado);
+    if (agora.total > 0) return { ok: true };
+
+    return { ok: false, anterior: anterior, agora: agora,
+             semDocumento: !local, chave: chave,
+             perdas: (typeof descreverPerda === 'function') ? descreverPerda(anterior, agora) : [] };
+}
+
 // Carregamento de Dados
 // Retorna true se os dados foram carregados com segurança; false se a leitura falhou
 // (permissão negada / rede). Quem chama usa isso para LIBERAR ou BLOQUEAR o salvamento:
@@ -1492,7 +1562,14 @@ async function carregarDadosUsuario() {
     // Antes da transição nada mudou: a nuvem continua sendo a fonte completa, como
     // sempre foi. Só depois de migrar é que a camada local passa a mandar no pessoal.
     if (podeEnviarDadoPessoal() && nuvem) {
-        data = Object.assign({}, initial, nuvem);
+        // A conta isenta pelo super admin caía aqui e via a lista de estudantes vazia
+        // quando ESTE aparelho já tinha feito a transição antes da isenção: a nuvem
+        // ficou sem a parte pessoal, e só o aparelho a tem. Preenchemos essas lacunas
+        // (e só elas — a nuvem nunca é sobrescrita). No primeiro salvamento a conta
+        // volta inteira para a nuvem sozinha, porque a isenção deixa subir tudo.
+        const completar = window.usuarioOnlineCompleto && window.dadosMigradosLocalmente
+                          && typeof completarComLocal === 'function';
+        data = Object.assign({}, initial, completar ? completarComLocal(nuvem, local) : nuvem);
         window.pessoalCifradoLido = false;   // neste modo a camada cifrada não é usada
         return true;
     }
@@ -1525,6 +1602,21 @@ async function carregarDadosUsuario() {
         console.warn('[SisProf] Há dados cifrados na nuvem, mas a chave não está neste aparelho.');
     } else {
         console.warn('[SisProf] Camada pessoal cifrada não pôde ser lida; envio suspenso.');
+    }
+
+    // Última conferência, e de propósito só aqui: a camada pessoal pode ter vindo do
+    // aparelho OU da nuvem cifrada (Fase 7), e conferir antes disso reprovaria uma
+    // recuperação que deu certo. Se depois de as duas tentativas o `data` continua
+    // sem NENHUM registro onde este aparelho já teve, não é conta vazia — é leitura
+    // que falhou, e gravar por cima apaga o ano letivo do professor.
+    const veredito = await _conferirCamadaLocal(key, local, data);
+    if (!veredito.ok) {
+        window.bloquearEscritaLocal = true;
+        window.bloquearEscritaNuvem = true;
+        window.perdaLocalDetectada = veredito;
+        console.error('[SisProf] A cópia deste aparelho voltou vazia, mas tinha ' +
+            veredito.anterior.total + ' registro(s). Salvamento BLOQUEADO.');
+        return false;
     }
 
     return true;
@@ -1667,7 +1759,25 @@ async function enviarCamadaPessoalCifrada(chave, dados) {
 }
 
 async function salvarDadosUsuario(chave, dados) {
-    if (typeof localSet === 'function') await localSet(chave, dados);
+    // Bloqueio de perda: a abertura detectou que a cópia deste aparelho voltou vazia
+    // onde havia registro. Enquanto isso não for resolvido, nada é gravado — nem
+    // local, nem nuvem. Gravar aqui é exatamente o que apagaria o que ainda dá para
+    // recuperar.
+    if (window.bloquearEscritaLocal) {
+        console.warn('[SisProf] Gravação bloqueada: a cópia deste aparelho não carregou por inteiro.');
+        return;
+    }
+
+    if (typeof localSet === 'function') {
+        await localSet(chave, dados);
+        // O censo é gravado DEPOIS da gravação, e só dela: é o retrato do que este
+        // aparelho passou a ter, e é contra ele que a próxima abertura se compara.
+        try {
+            if (typeof metaSet === 'function' && typeof censoPessoal === 'function') {
+                await metaSet(_chaveCenso(chave), censoPessoal(dados));
+            }
+        } catch (e) { console.warn('[SisProf] Não consegui gravar o censo local:', e); }
+    }
 
     if (window.bloquearEscritaNuvem) return;
 

@@ -1893,12 +1893,24 @@ async function abrirBackupsUsuarioAdmin(userId) {
     const listaEl = document.getElementById('listaBackupsUsuarioAdmin');
     if (!statusEl || !listaEl) return; // modal fechado durante a busca
 
+    // "Nenhum backup encontrado" nunca pode ser a resposta final: quem chega aqui
+    // chegou porque um professor perdeu dados. A varredura forçada olha em todos os
+    // IDs, nos documentos vivos e nas sobras, e diz para onde mandar o professor
+    // quando a nuvem realmente não tem mais nada.
+    const botaoVarredura = '<div style="margin-top:10px;">' +
+        '<button class="btn btn-sm btn-danger" onclick="abrirVarreduraForcada()" ' +
+        'title="Procura em todos os IDs, nos documentos vivos e nas sobras, e diz o que ainda dá para recuperar">' +
+        '🔦 Varredura forçada</button></div>';
+
     if (encontrados.length === 0) {
-        statusEl.innerHTML = '<span style="color:#e53e3e; font-weight:bold;">❌ Nenhum backup encontrado para este usuário.</span>';
+        statusEl.innerHTML = '<span style="color:#e53e3e; font-weight:bold;">❌ Nenhum backup no histórico desta conta.</span>' +
+            '<div style="font-size:12px; color:#718096; margin-top:6px;">Se este professor passou pela transição, ' +
+            'é o esperado: o histórico em texto claro é apagado ali. Faça a varredura forçada para ver o que sobrou.</div>' +
+            botaoVarredura;
         return;
     }
 
-    statusEl.innerHTML = `<span style="color:#276749; font-weight:bold;">✅ ${encontrados.length} backup(s) encontrado(s).</span>`;
+    statusEl.innerHTML = `<span style="color:#276749; font-weight:bold;">✅ ${encontrados.length} backup(s) encontrado(s).</span>` + botaoVarredura;
     listaEl.innerHTML = encontrados.map((b, i) => `
         <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
             <div>
@@ -2073,4 +2085,408 @@ async function restaurarBackupUsuarioAdmin(idx) {
     } catch (e) {
         alert('Erro ao restaurar: ' + e.message);
     }
+}
+// ============================================================================
+//  VARREDURA FORÇADA — quando "não há backups" não pode ser a resposta final
+// ----------------------------------------------------------------------------
+//  A transição apaga, de propósito, TODO o histórico de backups em texto claro
+//  (migracao.js, passo 7): eram documentos com nome de estudante dentro, e é isso
+//  que a determinação da Secretaria manda tirar da nuvem. O Firestore não tem
+//  lixeira — apagado ali é apagado de verdade.
+//
+//  O resultado é que o painel de backups responde "nenhum backup encontrado" e
+//  para por aí, como se o trabalho do professor tivesse sumido. Não tinha: o que
+//  a transição faz ANTES de apagar qualquer coisa é gravar tudo no aparelho dele
+//  e exigir o download do arquivo .profsis. A varredura abaixo procura o que
+//  sobrou em TODO lugar da nuvem, e — mais importante — diz em que estado a conta
+//  está, para o responsável saber para onde mandar o professor.
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+//  ENUMERAR, EM VEZ DE ADIVINHAR
+// ----------------------------------------------------------------------------
+//  Tanto o painel de backups quanto a primeira versão desta varredura procuravam
+//  nos IDs que a gente CONHECE: o uid do Firebase Auth e o id numérico antigo do
+//  cadastro. Se o histórico do professor foi gravado sob um terceiro ID — conta
+//  recriada no Auth, uid trocado depois de um login legado, cadastro refeito — ele
+//  está no banco e ninguém o encontra, porque ninguém sabe o que procurar.
+//
+//  As Regras dão `read` em app_data para quem está autenticado, e em Firestore
+//  `read` cobre `list`. Então dá para PERGUNTAR ao banco quais históricos existem,
+//  em vez de tentar acertar o nome. Lemos só os documentos `backup_index_*`, que
+//  são a lista de datas de cada histórico — pequenos, e sem dado de estudante
+//  dentro. Os slots (que são grandes) só depois, e só do ID escolhido.
+// ----------------------------------------------------------------------------
+
+async function _enumerarIndicesDeBackup() {
+    if (typeof db === 'undefined' || !db) return { ok: false, motivo: 'sem conexão', indices: [] };
+    try {
+        const campoId = firebase.firestore.FieldPath.documentId();
+        const snap = await db.collection('app_data')
+            .orderBy(campoId)
+            .startAt('backup_index_')
+            .endAt('backup_index_\uf8ff')
+            .get();
+
+        const indices = [];
+        snap.forEach(doc => {
+            const dono = doc.id.slice('backup_index_'.length);
+            const dados = doc.data() || {};
+            const slots = Array.isArray(dados.slots) ? dados.slots : [];
+            const recente = slots.reduce((m, sl) => Math.max(m, sl.timestamp || 0), 0);
+            indices.push({ dono: dono, slots: slots.length, maisRecente: recente || null });
+        });
+        return { ok: true, motivo: '', indices: indices };
+    } catch (e) {
+        // Regra publicada sem `list`, ou sem sessão: a varredura continua pelos IDs
+        // conhecidos, e o painel diz que a enumeração não foi possível em vez de
+        // fingir que o banco não tem nada.
+        return { ok: false, motivo: (e && e.code) || e.message || 'desconhecido', indices: [] };
+    }
+}
+
+// Quem são os donos que o cadastro conhece. O que sobra são históricos órfãos — e é
+// exatamente neles que mora o backup que "não existe".
+function _donosConhecidos(users) {
+    const mapa = {};
+    (users || []).forEach(u => {
+        if (u.uid) mapa[String(u.uid)] = u;
+        if (u.id) mapa[String(u.id)] = u;
+    });
+    return mapa;
+}
+
+// Varre os slots de um dono específico — usado quando o responsável manda inspecionar
+// um histórico órfão que a enumeração revelou.
+async function inspecionarDonoBackup(dono) {
+    const user = window._backupUsuarioAlvo;
+    const listaEl = document.getElementById('listaBackupsUsuarioAdmin');
+    if (!listaEl) return;
+
+    listaEl.insertAdjacentHTML('afterbegin',
+        '<div id="inspecionandoDono" style="padding:10px; text-align:center; color:#4a5568; font-size:13px;">' +
+        '🔎 Abrindo os slots de <strong>' + dono + '</strong>...</div>');
+
+    const achados = window._achadosVarredura || [];
+    let novos = 0;
+    for (let i = 1; i <= BACKUP_SLOTS_ADMIN; i++) {
+        const chave = 'backup_' + dono + '_slot_' + i;
+        if (achados.some(a => a.chave === chave)) continue;
+        let doc = null;
+        try { doc = await getData('app_data', chave); } catch (e) { continue; }
+        if (!doc) continue;
+        achados.push({ tipo: 'slot', chave: chave, ownerId: dono, slot: i,
+                       doc: doc, resumo: _resumoConteudo(doc) });
+        novos++;
+    }
+    window._achadosVarredura = achados;
+
+    const aviso = document.getElementById('inspecionandoDono');
+    if (aviso) aviso.remove();
+    if (!novos) {
+        listaEl.insertAdjacentHTML('afterbegin',
+            '<div style="padding:10px 12px; border-radius:8px; background:#fffaf0; border:1px solid #fbd38d; ' +
+            'font-size:13px; color:#744210;">O índice de <strong>' + dono + '</strong> existe, mas os slots dele ' +
+            'não estão mais no banco: foi um histórico apagado, e sobrou só a lista de datas.</div>');
+        return;
+    }
+    listaEl.innerHTML = achados.map((a, i) => _linhaAchado(a, i)).join('');
+    if (user) console.log('[Varredura] ' + novos + ' slot(s) abertos do dono ' + dono);
+}
+
+// Todo lugar da nuvem onde pode ter sobrado dado desta conta.
+function _alvosVarredura(user) {
+    const alvos = [];
+    const escola = user.schoolId || 'default';
+
+    for (const id of idsBackupUsuario(user)) {
+        alvos.push({ tipo: 'indice', chave: 'backup_index_' + id, ownerId: id });
+        for (let i = 1; i <= BACKUP_SLOTS_ADMIN; i++) {
+            alvos.push({ tipo: 'slot', chave: 'backup_' + id + '_slot_' + i, ownerId: id, slot: i });
+            // Sobras de backup cifrado: a transição apaga o documento principal e
+            // NÃO apaga as continuações. Sozinhas elas não abrem (o iv e o primeiro
+            // pedaço estavam no principal), mas denunciam que houve backup ali.
+            alvos.push({ tipo: 'sobra', chave: 'backup_' + id + '_slot_' + i + '_p2', ownerId: id, slot: i });
+        }
+    }
+
+    // Os documentos VIVOS. O painel de backups nunca olhou para cá, e é justamente
+    // aqui que sobrevive o que a transição não apaga: turmas, agenda, planos de aula.
+    if (user.uid) alvos.push({ tipo: 'vivo', chave: 'app_data_' + user.uid, ownerId: user.uid });
+    if (user.id && user.id !== user.uid) alvos.push({ tipo: 'vivo', chave: 'app_data_' + user.id, ownerId: user.id });
+    ['gestor', 'aee', 'projeto'].forEach(papel => {
+        alvos.push({ tipo: 'vivo', chave: 'app_data_school_' + escola + '_' + papel, ownerId: escola });
+    });
+
+    return alvos;
+}
+
+function _resumoConteudo(doc) {
+    if (!doc) return null;
+    if (doc.cifrado === true) return { cifrado: true };
+    const n = k => (doc[k] || []).length;
+    return {
+        cifrado: false,
+        estudantes: n('estudantes'), turmas: n('turmas'), notas: n('notas'),
+        ocorrencias: n('ocorrencias'), tutorados: n('tutorados'), presencas: n('presencas'),
+        // "Tem alguma coisa que valha a pena" — um documento só com turmas ainda
+        // serve, mas é o que a transição deixa para trás de propósito.
+        temPessoal: n('estudantes') + n('tutorados') + n('ocorrencias') > 0
+    };
+}
+
+// Varre tudo e devolve um relatório honesto: o que existe, o que está vazio e o
+// que não existe mais. Não esconde o resultado ruim — é o resultado ruim que diz
+// ao responsável que a recuperação tem de vir do aparelho do professor.
+async function varreduraForcadaBackups(user) {
+    const achados = [];
+    const alvos = _alvosVarredura(user);
+    let lidos = 0;
+
+    // Pergunta ao banco quais históricos existem, em vez de adivinhar o nome deles.
+    const enumeracao = await _enumerarIndicesDeBackup();
+    let dataUsers = null;
+    try { dataUsers = await getData('system', 'users_list'); } catch (e) {}
+    const conhecidos = _donosConhecidos((dataUsers && dataUsers.list) || []);
+    const meus = idsBackupUsuario(user).map(String);
+
+    const historicos = enumeracao.indices.map(ix => {
+        const dono = conhecidos[String(ix.dono)];
+        return Object.assign({}, ix, {
+            meu: meus.indexOf(String(ix.dono)) !== -1,
+            deOutro: !!dono && meus.indexOf(String(ix.dono)) === -1,
+            nomeDono: dono ? (dono.nome || dono.email) : null,
+            orfao: !dono
+        });
+    });
+
+    // Um histórico órfão pode ser o deste professor sob um ID que ninguém lembra.
+    // Varremos os slots dele junto, para o responsável não precisar de um segundo passo.
+    historicos.filter(h => h.orfao).forEach(h => {
+        alvos.push({ tipo: 'indice', chave: 'backup_index_' + h.dono, ownerId: h.dono, orfao: true });
+        for (let i = 1; i <= BACKUP_SLOTS_ADMIN; i++) {
+            alvos.push({ tipo: 'slot', chave: 'backup_' + h.dono + '_slot_' + i, ownerId: h.dono, slot: i, orfao: true });
+        }
+    });
+
+    for (const alvo of alvos) {
+        lidos++;
+        let doc = null;
+        try { doc = await getData('app_data', alvo.chave); } catch (e) { continue; }
+        if (!doc) continue;
+        achados.push(Object.assign({}, alvo, { doc: doc, resumo: _resumoConteudo(doc) }));
+    }
+
+    // A chave de cifra existe? Sem ela nem a chave de suporte abre backup cifrado,
+    // e é o que explica uma conta que parou de gerar backup depois da transição.
+    let chaves = null;
+    if (user.uid) {
+        try {
+            const d = await db.collection('chaves_backup').doc(String(user.uid)).get();
+            if (d.exists) {
+                const c = d.data();
+                chaves = { existe: true, temSuporte: !!c.wrapSuporte, atualizadoEm: c.atualizadoEm || null };
+            } else {
+                chaves = { existe: false, temSuporte: false, atualizadoEm: null };
+            }
+        } catch (e) { chaves = null; }
+    }
+
+    return { achados: achados, documentosLidos: lidos, chaves: chaves,
+             enumeracao: enumeracao, historicos: historicos };
+}
+
+function _linhaAchado(a, i) {
+    const r = a.resumo || {};
+    let detalhe;
+    if (a.tipo === 'indice') {
+        const slots = (a.doc.slots || []).length;
+        detalhe = 'Índice de backups — ' + slots + ' entrada(s) registrada(s)' +
+                  (slots ? '. Se os slots não aparecem abaixo, eles foram apagados e só o índice sobrou.' : '.');
+    } else if (a.tipo === 'sobra') {
+        detalhe = 'Continuação de um backup cifrado cujo documento principal não existe mais. ' +
+                  'Sozinha ela não abre — serve como prova de que houve backup, e precisa ser apagada.';
+    } else if (r.cifrado) {
+        detalhe = 'Backup cifrado — abre com a chave de suporte.';
+    } else {
+        detalhe = r.estudantes + ' estudante(s), ' + r.turmas + ' turma(s), ' + r.notas + ' nota(s), ' +
+                  r.ocorrencias + ' ocorrência(s)' + (r.temPessoal ? '' : ' — sem dado pessoal (é o que a transição deixa)');
+    }
+    const recuperavel = a.tipo !== 'sobra' && (r.temPessoal || r.cifrado);
+    const cor = a.tipo === 'sobra' ? '#c05621' : (recuperavel ? '#276749' : '#4a5568');
+    return '<div style="padding:10px 12px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">' +
+        '<div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">' +
+            '<div><div style="font-weight:bold; color:' + cor + '; font-size:13px;">' + a.chave + '</div>' +
+            '<div style="font-size:12px; color:#718096;">' + detalhe + '</div></div>' +
+            (recuperavel
+                ? '<button class="btn btn-sm btn-info" style="flex-shrink:0;" onclick="baixarAchadoVarredura(' + i + ')">⬇️ Baixar</button>'
+                : '') +
+        '</div></div>';
+}
+
+// Entrega o que a varredura achou no MESMO formato que o professor importa no
+// aparelho dele. Não reenviamos nada para a nuvem: depois do corte, dado pessoal
+// volta pelo aparelho, não pelo Firestore.
+function baixarAchadoVarredura(idx) {
+    const a = (window._achadosVarredura || [])[idx];
+    const user = window._backupUsuarioAlvo;
+    if (!a || !user) return;
+    if (a.doc && a.doc.cifrado === true) {
+        return alert('Este achado está cifrado.\n\nUse "🔐 Recuperar com a chave" na lista de backups, ' +
+                     'que decifra aqui no seu navegador com o arquivo .pem.');
+    }
+    const pacote = {
+        formato: 'profsis', versao: 1, geradoEm: new Date().toISOString(),
+        origem: 'varredura-forcada:' + a.chave,
+        usuario: { nome: user.nome, email: user.email }, dados: a.doc
+    };
+    const nome = (user.nome || user.email || 'professor').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const blob = new Blob([JSON.stringify(pacote)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const el = document.createElement('a');
+    el.href = url;
+    el.download = 'varredura-' + nome + '-' + a.chave + '.profsis';
+    document.body.appendChild(el); el.click(); el.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+// O veredito. É a parte que faltava: dizer ao responsável o que fazer quando a
+// nuvem realmente não tem mais nada.
+function _vereditoVarredura(rel) {
+    // A `sobra` fica de fora de propósito: uma continuação sem o documento principal
+    // não abre (o iv e o primeiro pedaço estavam lá). Contá-la como recuperável faria
+    // o painel dizer "há o que recuperar" para quem não tem nada — que é a mentira
+    // mais cara que este painel poderia contar.
+    const comPessoal = rel.achados.filter(a => a.tipo !== 'sobra' && a.resumo && (a.resumo.temPessoal || a.resumo.cifrado));
+    const sobras = rel.achados.filter(a => a.tipo === 'sobra');
+    const indices = rel.achados.filter(a => a.tipo === 'indice');
+
+    if (comPessoal.length) {
+        return { cor: '#276749', fundo: '#f0fff4', titulo: '✅ Há o que recuperar na nuvem',
+            texto: comPessoal.length + ' documento(s) ainda trazem dado do professor. Baixe o que ' +
+                   'interessa e envie a ele: no aparelho dele, <strong>Dados &gt; Restaurar do meu arquivo</strong>.' };
+    }
+
+    // Chegar aqui com histórico órfão significa que a enumeração achou o índice, a
+    // varredura abriu os slots dele — e não veio nada. O índice sobreviveu, os backups
+    // não. Prometer "clique em Abrir para ver o conteúdo" aqui seria mandar o
+    // responsável atrás de um documento que já foi lido e está vazio.
+    const orfaos = (rel.historicos || []).filter(h => h.orfao);
+    if (orfaos.length) {
+        return { cor: '#975a16', fundo: '#fffaf0', titulo: '🔎 Só sobrou a lista de datas',
+            texto: orfaos.length + ' histórico(s) de backup no banco não pertencem a nenhum cadastro atual — ' +
+                   'podem ser desta pessoa, sob um ID antigo (conta recriada no Auth, uid trocado depois de um ' +
+                   'login legado). Mas os <strong>slots deles já foram varridos e estão vazios</strong>: ficou o ' +
+                   'índice com as datas, e os backups em si foram apagados.' +
+                   '<br><br>As datas abaixo ainda servem: mostram até quando esta conta teve backup, ' +
+                   'e é por elas que se escolhe o dia a recuperar pelo Point-in-Time Recovery do Firestore ' +
+                   '(janela de 7 dias, no console do Google Cloud).' };
+    }
+
+    const passouPelaTransicao = indices.length > 0 || sobras.length > 0;
+    return { cor: '#9b2c2c', fundo: '#fff5f5',
+        titulo: passouPelaTransicao ? '⚠️ Os backups foram apagados pela transição' : '⚠️ A nuvem não tem backup desta conta',
+        texto:
+            (passouPelaTransicao
+                ? 'Encontrei o rastro do histórico (' + (indices.length ? 'o índice' : 'sobras de backup cifrado') +
+                  ') mas não os backups em si. Isso é o passo 7 da transição: os backups em texto claro ' +
+                  'levavam nome de estudante e são apagados para atender à Secretaria. O Firestore não tem lixeira.'
+                : 'Não há índice nem slot desta conta em nenhum dos IDs conhecidos.') +
+            '<br><br><strong>Os dados do professor não foram perdidos junto.</strong> A transição grava tudo ' +
+            'no aparelho dele e confere antes de apagar qualquer coisa da nuvem. Peça, nesta ordem:' +
+            '<br>1. O arquivo <strong>.profsis</strong> que ele baixou durante a transição (sem ele a transição não ' +
+            'teria concluído) — e <strong>Dados &gt; Restaurar do meu arquivo</strong>.' +
+            '<br>2. Se ele ainda usa o <strong>mesmo navegador e aparelho</strong> da transição, os dados continuam lá: ' +
+            'os estudantes aparecem normalmente ao abrir o sistema.' +
+            '<br>3. Se os dois falharam, resta a recuperação do próprio Firestore (Point-in-Time Recovery, ' +
+            'janela de 7 dias, ou o export agendado) — no console do Google Cloud, fora deste sistema.' };
+}
+
+// O que o banco respondeu quando perguntamos QUAIS históricos existem. É a parte
+// que responde "meus backups não aparecem": se o histórico está sob um ID que
+// ninguém conhece, ele aparece aqui como órfão, com a data do backup mais recente —
+// e a data é o que o professor reconhece.
+function _painelHistoricos(rel) {
+    if (!rel.enumeracao.ok) {
+        return '<div style="margin-top:10px; padding:10px 12px; background:#fffaf0; border:1px solid #fbd38d; ' +
+            'border-radius:8px; font-size:13px; color:#744210;"><strong>Não consegui listar os históricos do banco</strong> ' +
+            '(' + rel.enumeracao.motivo + '). A varredura acima usou só os IDs conhecidos desta conta. ' +
+            'Se as Regras publicadas não permitem <code>list</code> em <code>app_data</code>, esta parte fica cega.</div>';
+    }
+    if (!rel.historicos.length) {
+        return '<div style="margin-top:10px; padding:10px 12px; background:#f7fafc; border:1px solid #e2e8f0; ' +
+            'border-radius:8px; font-size:13px; color:#4a5568;">O banco não tem <strong>nenhum</strong> índice de ' +
+            'backup — de ninguém. Todos os históricos da escola foram apagados ou nunca existiram.</div>';
+    }
+
+    const linha = h => {
+        const quando = h.maisRecente ? new Date(h.maisRecente).toLocaleString('pt-BR') : 'sem data no índice';
+        let quem, cor;
+        if (h.meu) { quem = 'desta conta'; cor = '#276749'; }
+        else if (h.deOutro) { quem = 'de ' + h.nomeDono; cor = '#a0aec0'; }
+        else { quem = 'ÓRFÃO — não pertence a nenhum cadastro'; cor = '#c05621'; }
+        return '<div style="display:flex; justify-content:space-between; gap:10px; align-items:center; ' +
+            'padding:8px 10px; border-bottom:1px solid #edf2f7;">' +
+            '<div><div style="font-size:12px; font-weight:bold; color:' + cor + ';">' + h.dono + ' — ' + quem + '</div>' +
+            '<div style="font-size:11px; color:#718096;">' + h.slots + ' backup(s) no índice · mais recente: ' + quando + '</div></div>' +
+            (h.meu ? '' : '<button class="btn btn-sm btn-secondary" style="flex-shrink:0;" ' +
+                'onclick="inspecionarDonoBackup(\'' + h.dono + '\')">🔎 Abrir</button>') +
+            '</div>';
+    };
+
+    // Órfãos primeiro: é o que interessa a quem está procurando um backup sumido.
+    const ordem = rel.historicos.slice().sort((a, b) =>
+        (a.orfao ? 0 : a.meu ? 1 : 2) - (b.orfao ? 0 : b.meu ? 1 : 2));
+
+    return '<div style="margin-top:10px; padding:10px 12px; background:#fff; border:1px solid #e2e8f0; ' +
+        'border-radius:8px; text-align:left;">' +
+        '<div style="font-size:13px; font-weight:bold; color:#2d3748; margin-bottom:6px;">' +
+        'Históricos de backup que existem no banco (' + rel.historicos.length + ')</div>' +
+        '<div style="font-size:12px; color:#718096; margin-bottom:8px;">Perguntei ao banco em vez de adivinhar o ID. ' +
+        'Um histórico <strong>órfão</strong> pode ser o desta pessoa sob um ID antigo — confira pela data.</div>' +
+        ordem.map(linha).join('') + '</div>';
+}
+
+async function abrirVarreduraForcada() {
+    const user = window._backupUsuarioAlvo;
+    if (!user) return alert('Abra a varredura pela lista de backups do usuário.');
+
+    const statusEl = document.getElementById('statusBackupsUsuarioAdmin');
+    const listaEl = document.getElementById('listaBackupsUsuarioAdmin');
+    if (statusEl) statusEl.innerHTML = '🔦 Varredura forçada em andamento — procurando em todos os IDs e documentos...';
+    if (listaEl) listaEl.innerHTML = '';
+
+    const rel = await varreduraForcadaBackups(user);
+    window._achadosVarredura = rel.achados;
+
+    if (!document.getElementById('statusBackupsUsuarioAdmin')) return;  // modal fechado
+
+    const v = _vereditoVarredura(rel);
+    let chaveTxt = '';
+    if (rel.chaves && !rel.chaves.existe) {
+        chaveTxt = '<div style="margin-top:10px; padding:10px 12px; background:#fffaf0; border:1px solid #fbd38d; ' +
+            'border-radius:8px; font-size:13px; color:#744210;"><strong>Esta conta não tem chave de backup.</strong> ' +
+            'Sem ela o backup diário cifrado não é criado — a conta fica sem histórico novo depois da transição. ' +
+            'Peça ao professor para <strong>sair e entrar de novo com e-mail e senha</strong> (é o login que cria a chave).</div>';
+    } else if (rel.chaves && rel.chaves.existe && !rel.chaves.temSuporte) {
+        chaveTxt = '<div style="margin-top:10px; padding:10px 12px; background:#fffaf0; border:1px solid #fbd38d; ' +
+            'border-radius:8px; font-size:13px; color:#744210;">A chave desta conta foi criada <strong>sem cópia de ' +
+            'suporte</strong>: os backups cifrados dela só abrem com a senha do próprio professor.</div>';
+    }
+
+    document.getElementById('statusBackupsUsuarioAdmin').innerHTML =
+        '<div style="text-align:left; padding:12px 14px; background:' + v.fundo + '; border:1px solid ' + v.cor +
+        '33; border-radius:8px;">' +
+            '<div style="font-weight:bold; color:' + v.cor + '; margin-bottom:6px;">' + v.titulo + '</div>' +
+            '<div style="font-size:13px; color:#2d3748; line-height:1.6;">' + v.texto + '</div>' +
+        '</div>' + chaveTxt + _painelHistoricos(rel) +
+        '<div style="font-size:11px; color:#a0aec0; margin-top:8px; text-align:left;">' +
+            rel.documentosLidos + ' documentos consultados · ' + rel.achados.length + ' com conteúdo</div>';
+
+    document.getElementById('listaBackupsUsuarioAdmin').innerHTML =
+        rel.achados.length
+            ? rel.achados.map((a, i) => _linhaAchado(a, i)).join('')
+            : '<div style="padding:14px; text-align:center; color:#718096; font-size:13px;">' +
+              'Nenhum documento desta conta respondeu. Nem os vivos — confira se o usuário tem UID ' +
+              'do Firebase Auth e se a escola dele está correta no cadastro.</div>';
 }

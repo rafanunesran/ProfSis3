@@ -187,6 +187,72 @@ function juntarDados(local, nuvem) {
         dividirDados(local || {}).local);
 }
 
+// "Vazio" para efeito de remontagem: nada que o professor tenha escrito. Um array
+// sem itens, um objeto sem chaves e uma string em branco contam como ausência.
+function _semConteudo(valor) {
+    if (valor === undefined || valor === null || valor === '') return true;
+    if (Array.isArray(valor)) return valor.length === 0;
+    if (typeof valor === 'object') return Object.keys(valor).length === 0;
+    return false;
+}
+
+// A conta isenta do corte ("100% online") tem a nuvem como fonte da verdade, e é
+// assim que ela deve continuar. Mas um aparelho que fez a transição ANTES de o super
+// admin ligar a isenção guarda estudantes que a nuvem não tem mais — a transição os
+// tirou de lá. Sem isto, a conta isenta abriria com a lista de estudantes vazia.
+//
+// A nuvem continua mandando: daqui só entram as chaves PESSOAIS que a nuvem não traz.
+// Nada que a nuvem tenha é sobrescrito, então o aparelho parado não ressuscita o que
+// o professor apagou de outro lugar.
+function completarComLocal(nuvem, local) {
+    const base = Object.assign({}, nuvem || {});
+    const pessoal = dividirDados(local || {}).local;
+    Object.keys(pessoal).forEach(chave => {
+        if (_semConteudo(base[chave]) && !_semConteudo(pessoal[chave])) base[chave] = pessoal[chave];
+    });
+    return base;
+}
+
+// Quanto dado pessoal existe aqui dentro. Depois da transição a camada local é a
+// ÚNICA cópia do que identifica estudante — chamada, nota, ocorrência, tutoria — e
+// "carregou vazio" e "está vazio" deixam de ser a mesma coisa: o primeiro é uma
+// falha de leitura, o segundo é uma conta nova. Confundir os dois custa o ano
+// letivo de um professor, porque o salvamento seguinte grava o vazio por cima.
+//
+// O censo é a prova material: é gravado a cada salvamento e conferido a cada
+// abertura. Conta qualquer chave pessoal, não uma lista fixa, então um campo novo
+// entra na proteção sozinho.
+function censoPessoal(dados) {
+    const pessoal = dividirDados(dados || {}).local;
+    const por = {};
+    let total = 0;
+    Object.keys(pessoal).forEach(chave => {
+        const valor = pessoal[chave];
+        const n = Array.isArray(valor) ? valor.length
+                : (valor && typeof valor === 'object' ? Object.keys(valor).length : 0);
+        if (n) { por[chave] = n; total += n; }
+    });
+    return { por: por, total: total, em: new Date().toISOString() };
+}
+
+// O que sumiu entre um censo e outro, em texto que o professor entende.
+function descreverPerda(antes, depois) {
+    const nomes = {
+        presencas: 'chamadas', notas: 'notas', ocorrencias: 'ocorrências',
+        estudantes: 'estudantes', tutorados: 'tutorados', encontros: 'encontros de tutoria',
+        atrasos: 'atrasos', trabalhos: 'trabalhos', compensacoes: 'compensações',
+        registrosAula: 'registros de aula', registrosAdministrativos: 'registros administrativos',
+        caderno: 'anotações do caderno', mapeamentos: 'mapas de sala'
+    };
+    const partes = [];
+    Object.keys((antes && antes.por) || {}).forEach(chave => {
+        const tinha = antes.por[chave];
+        const tem = ((depois && depois.por) || {})[chave] || 0;
+        if (tinha > tem) partes.push((tinha - tem) + ' ' + (nomes[chave] || chave));
+    });
+    return partes;
+}
+
 // "João Pedro da Silva Souza" -> "João S." — usado onde o nome precisa aparecer para
 // um colega sem que o nome completo viaje (histórico de tutoria compartilhado).
 function abreviarNome(nomeCompleto) {

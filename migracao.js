@@ -178,12 +178,46 @@ async function _apagarBackupsEmClaro(userId) {
     const limite = (typeof BACKUP_MAX_DIAS === 'number' ? BACKUP_MAX_DIAS : 20);
     let n = 0;
     const alvos = ['backup_index_' + userId];
-    for (let i = 1; i <= limite; i++) alvos.push('backup_' + userId + '_slot_' + i);
+    for (let i = 1; i <= limite; i++) {
+        alvos.push('backup_' + userId + '_slot_' + i);
+        // As continuações (`_p2`, `_p3`...) ficavam para trás. Um backup grande de
+        // antes da adequação deixava pedaços de dado de estudante na nuvem depois de
+        // a transição se declarar concluída — e o painel do super admin os encontrava
+        // como "sobra". Saem junto. O teto de 6 cobre um backup de ~5 MB; o que
+        // passar disso a varredura forçada mostra e o responsável apaga.
+        for (let parte = 2; parte <= 6; parte++) {
+            alvos.push('backup_' + userId + '_slot_' + i + '_p' + parte);
+        }
+    }
     for (const id of alvos) {
         try { await db.collection('app_data').doc(id).delete(); n++; }
         catch (e) { /* já não existia, ou regra negou — segue */ }
     }
     return n;
+}
+
+// O histórico recomeça do zero logo depois de ser apagado — mas só se a chave de
+// cifra estiver neste aparelho. Quando não está, o backup diário desiste em silêncio
+// (verificarBackupAutomatico) e a conta fica SEM backup nenhum por tempo indefinido:
+// os antigos foram apagados e os novos nunca começam. Foi assim que um professor em
+// transição ficou sem histórico algum.
+//
+// Então o primeiro backup cifrado é criado AQUI, na própria transição, e o resultado
+// é dito ao professor em vez de virar um aviso de console que ninguém lê.
+async function _recomecarHistoricoCifrado() {
+    try {
+        if (typeof criarBackupNuvem !== 'function') return false;
+        const chave = (typeof obterChaveBackup === 'function') ? await obterChaveBackup() : null;
+        if (!chave) {
+            console.warn('[Migração] Sem chave de cifra neste aparelho: o histórico de backup fica vazio até o próximo login com senha.');
+            return false;
+        }
+        await criarBackupNuvem(true);
+        return true;
+    } catch (e) {
+        console.warn('[Migração] Não consegui recomeçar o histórico de backup:', e);
+        return false;
+    }
 }
 
 // Conta o que precisa sobreviver à transição. Usado para comparar o que estava em
@@ -331,8 +365,14 @@ async function migrarParaLocal(opcoes) {
             }
         }
 
-        // 7. Backups em texto claro. Os cifrados começam do zero.
+        // 7. Backups em texto claro. Levavam nome de estudante dentro e é isso que a
+        //    determinação manda tirar da nuvem — o Firestore não tem lixeira, então
+        //    daqui não se volta. Por isso o passo 3 exigiu o arquivo .profsis.
         await _apagarBackupsEmClaro(currentUser.uid || currentUser.id);
+
+        // 7b. E o histórico recomeça JÁ, cifrado, em vez de esperar o backup diário —
+        //     que não roda sem a chave e deixava a conta sem histórico nenhum.
+        const historicoRecomecou = await _recomecarHistoricoCifrado();
 
         // 8. Marca a transição feita neste aparelho.
         await metaSet('migracaoV2', new Date().toISOString());
@@ -343,9 +383,15 @@ async function migrarParaLocal(opcoes) {
             alert('Transição concluída.\n\n' +
                   censoAntes.estudantes + ' estudante(s) e todos os registros ligados a eles agora ficam ' +
                   'SOMENTE neste aparelho.\n\n' +
-                  'Turmas, agenda, planos de aula e documentação continuam funcionando online, e o ' +
-                  'backup diário na nuvem volta a rodar CIFRADO — ilegível para qualquer um que não ' +
-                  'seja você.\n\n' +
+                  'Turmas, agenda, planos de aula e documentação continuam funcionando online.\n\n' +
+                  (historicoRecomecou
+                    ? 'O histórico de backup na nuvem foi recomeçado agora, CIFRADO — ilegível para ' +
+                      'qualquer um que não seja você. Os backups antigos, que estavam em texto claro, ' +
+                      'foram apagados: eram eles que a Secretaria determinou tirar da internet.\n\n'
+                    : 'ATENÇÃO: os backups antigos foram apagados (estavam em texto claro, com nome de ' +
+                      'estudante) e o novo histórico cifrado NÃO pôde ser criado agora, porque a chave ' +
+                      'de cifra não está neste aparelho.\nSaia e entre de novo com e-mail e senha: ' +
+                      'é o login que libera a chave e faz o backup diário voltar a rodar.\n\n') +
                   'A cópia que você baixou não abre sozinha: ela serve para trazer seus dados de ' +
                   'volta se você trocar de aparelho ou limpar o navegador.\n' +
                   'Para usá-la: Dados > Restaurar do meu arquivo, aqui dentro do sistema.');
