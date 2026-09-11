@@ -1490,6 +1490,43 @@ function toggleSenha(id, btn) {
     }
 }
 
+// ============================================================================
+//  A CAMADA LOCAL TAMBEM PRECISA DE PROTEÇÃO CONTRA LEITURA FALHA
+// ----------------------------------------------------------------------------
+//  A nuvem sempre teve: getData marca falhaLeituraFirestore, carregarDadosUsuario
+//  bloqueia a escrita e uma tarja vermelha avisa. Depois da transição os papéis se
+//  invertem — quem guarda chamada, nota e ocorrência é o APARELHO — e essa metade
+//  não tinha proteção nenhuma.
+//
+//  localGet devolve null tanto para "este aparelho não tem nada" quanto para "o
+//  IndexedDB não respondeu" (aba anônima, cota, o limite de 5s em localdb.js) ou
+//  "a chave do documento mudou" (getStorageKey depende de currentViewMode). Nos
+//  três casos juntarDados montava um `data` com as listas pessoais VAZIAS,
+//  carregarDadosUsuario devolvia true, dadosCarregados ficava true — e o primeiro
+//  salvamento gravava esse vazio por cima da única cópia que existia.
+//
+//  O censo resolve: gravado a cada salvamento, conferido a cada abertura. Ele só
+//  interrompe no caso catastrófico (havia registro, voltou ZERO), porque apagar
+//  tudo de propósito é coisa que ninguém faz sem perceber.
+// ============================================================================
+
+function _chaveCenso(chave) { return 'censoLocal_' + chave; }
+
+async function _conferirCamadaLocal(chave, local, montado) {
+    if (typeof metaGet !== 'function' || typeof censoPessoal !== 'function') return { ok: true };
+
+    let anterior = null;
+    try { anterior = await metaGet(_chaveCenso(chave)); } catch (e) { return { ok: true }; }
+    if (!anterior || !anterior.total) return { ok: true };   // nunca houve nada aqui
+
+    const agora = censoPessoal(montado);
+    if (agora.total > 0) return { ok: true };
+
+    return { ok: false, anterior: anterior, agora: agora,
+             semDocumento: !local, chave: chave,
+             perdas: (typeof descreverPerda === 'function') ? descreverPerda(anterior, agora) : [] };
+}
+
 // Carregamento de Dados
 // Retorna true se os dados foram carregados com segurança; false se a leitura falhou
 // (permissão negada / rede). Quem chama usa isso para LIBERAR ou BLOQUEAR o salvamento:
@@ -1535,6 +1572,19 @@ async function carregarDadosUsuario() {
         data = Object.assign({}, initial, completar ? completarComLocal(nuvem, local) : nuvem);
     } else {
         data = juntarDados(local, nuvem);
+
+        // A camada local é a fonte da verdade aqui. Se ela veio vazia onde antes
+        // havia registro, isto NÃO é uma conta vazia — é leitura que falhou, e
+        // gravar por cima apaga o ano letivo do professor.
+        const veredito = await _conferirCamadaLocal(key, local, data);
+        if (!veredito.ok) {
+            window.bloquearEscritaLocal = true;
+            window.bloquearEscritaNuvem = true;
+            window.perdaLocalDetectada = veredito;
+            console.error('[SisProf] A cópia deste aparelho voltou vazia, mas tinha ' +
+                veredito.anterior.total + ' registro(s). Salvamento BLOQUEADO.');
+            return false;
+        }
     }
     return true;
 }
@@ -1557,7 +1607,25 @@ async function lerDocUsuario(chave) {
 // Grava o `data` do professor separando as duas camadas. É chamada por
 // persistirDados() (app.js), que é quem sabe a hora certa de salvar.
 async function salvarDadosUsuario(chave, dados) {
-    if (typeof localSet === 'function') await localSet(chave, dados);
+    // Bloqueio de perda: a abertura detectou que a cópia deste aparelho voltou vazia
+    // onde havia registro. Enquanto isso não for resolvido, nada é gravado — nem
+    // local, nem nuvem. Gravar aqui é exatamente o que apagaria o que ainda dá para
+    // recuperar.
+    if (window.bloquearEscritaLocal) {
+        console.warn('[SisProf] Gravação bloqueada: a cópia deste aparelho não carregou por inteiro.');
+        return;
+    }
+
+    if (typeof localSet === 'function') {
+        await localSet(chave, dados);
+        // O censo é gravado DEPOIS da gravação, e só dela: é o retrato do que este
+        // aparelho passou a ter, e é contra ele que a próxima abertura se compara.
+        try {
+            if (typeof metaSet === 'function' && typeof censoPessoal === 'function') {
+                await metaSet(_chaveCenso(chave), censoPessoal(dados));
+            }
+        } catch (e) { console.warn('[SisProf] Não consegui gravar o censo local:', e); }
+    }
 
     if (window.bloquearEscritaNuvem) return;
 
