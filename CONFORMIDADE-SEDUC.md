@@ -171,6 +171,12 @@ sobe por esquecimento — para publicá-lo é preciso escrevê-lo na lista de pr
 - Isenção controlada: o super admin pode marcar contas específicas para seguirem 100%
   online (campo `modoOnlineCompleto` em `access/{uid}`, gravável só por ele). Usada para
   contas de teste e suporte durante a transição.
+  A marca só pode ser lida **com sessão no Firebase Auth**, então ela é lida duas vezes:
+  na abertura da página (para quem já tinha sessão salva) e no início de `iniciarApp()`
+  (para quem acabou de digitar e-mail e senha — naquele instante ainda não havia sessão).
+  O aparelho guarda a última resposta do banco, para que uma rede ruim na abertura não
+  rebaixe a conta isenta a uma conta comum; quem decide de verdade continua sendo a
+  Regra do Firestore, que confere o mesmo campo no servidor.
 
 ### Fase 2 — backup cifrado e transição condicional
 

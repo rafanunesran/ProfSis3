@@ -156,16 +156,50 @@ async function carregarConfigCorte() {
 // O super admin pode marcar contas específicas para seguirem 100% online (ver
 // firestore.rules: só ele grava este campo). A marca vale para a guarda, para a
 // persistência e para a migração — a conta se comporta como antes da adequação.
+function _chaveIsencao(uid) { return 'isencaoOnline_' + uid; }
+
 async function carregarIsencaoOnline() {
     window.usuarioOnlineCompleto = false;
     if (!USE_FIREBASE || typeof db === 'undefined' || !db) return;
     const fbUser = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null;
     if (!fbUser) return;
+
+    // A última resposta conhecida DESTE aparelho, por conta (aparelho de escola é
+    // compartilhado). Ela vale enquanto a leitura abaixo não responder: sem isso, uma
+    // rede ruim na abertura rebaixava a conta isenta a uma conta comum — e o professor
+    // era recebido com o pedido de transição, que é justamente o que a isenção evita.
+    //
+    // Lembrar não abre porta nenhuma: quem decide o que entra na nuvem é a Regra do
+    // Firestore, que confere o mesmo campo no servidor. Uma lembrança errada rende, no
+    // máximo, uma recusa de gravação explicada (ver explicarRecusaDeGravacao).
+    let lembrada = false;
+    try {
+        if (typeof metaGet === 'function') lembrada = !!(await metaGet(_chaveIsencao(fbUser.uid)));
+    } catch (e) {}
+    window.usuarioOnlineCompleto = lembrada;
+
     try {
         const doc = await db.collection('access').doc(fbUser.uid).get();
-        window.usuarioOnlineCompleto = !!(doc.exists && doc.data().modoOnlineCompleto === true);
-        if (window.usuarioOnlineCompleto) console.log('[SisProf] Conta isenta do corte (modo online completo).');
-    } catch (e) { console.warn('[SisProf] Não consegui ler o documento de acesso:', e); }
+        const isento = !!(doc.exists && doc.data().modoOnlineCompleto === true);
+        window.usuarioOnlineCompleto = isento;
+        // Grava os dois desfechos: é assim que o super admin consegue TIRAR a isenção
+        // de uma conta e o aparelho obedecer na abertura seguinte.
+        try { if (typeof metaSet === 'function') await metaSet(_chaveIsencao(fbUser.uid), isento); } catch (e) {}
+        if (isento) console.log('[SisProf] Conta isenta do corte (modo online completo).');
+    } catch (e) {
+        console.warn('[SisProf] Não consegui ler o documento de acesso; vale a última resposta conhecida ' +
+                     '(isenta: ' + lembrada + '):', e);
+    }
+}
+
+// As duas leituras do corte que EXIGEM sessão no Firebase Auth, juntas num lugar só.
+// Elas rodam na abertura da página, mas naquele instante quem acabou de digitar e-mail
+// e senha ainda não tinha sessão — e o resultado era uma conta 100% online abrindo como
+// se não fosse isenta: modal de transição, estudante saindo da nuvem, cara de conta
+// offline. Por isso iniciarApp() chama isto de novo, já com a sessão de pé.
+async function prepararRegraDoCorte() {
+    try { await carregarConfigCorte(); } catch (e) { console.warn('[SisProf] Configuração do corte:', e); }
+    try { await carregarIsencaoOnline(); } catch (e) { console.warn('[SisProf] Isenção do corte:', e); }
 }
 
 // Três estados, um lugar só. Consultado pela guarda, pela persistência e pela interface.
@@ -511,8 +545,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Hora do servidor e configuração do corte. Ambas best-effort: sem rede o app abre
     // igual, usando o relógio local (e sem rede não há função online para bloquear).
     try { await sincronizarRelogioServidor(); } catch (e) {}
-    try { await carregarConfigCorte(); } catch (e) {}
-    try { await carregarIsencaoOnline(); } catch (e) {}
+    await prepararRegraDoCorte();
 
     init();
 
@@ -1492,7 +1525,14 @@ async function carregarDadosUsuario() {
     // Antes da transição nada mudou: a nuvem continua sendo a fonte completa, como
     // sempre foi. Só depois de migrar é que a camada local passa a mandar no pessoal.
     if (podeEnviarDadoPessoal() && nuvem) {
-        data = Object.assign({}, initial, nuvem);
+        // A conta isenta pelo super admin caía aqui e via a lista de estudantes vazia
+        // quando ESTE aparelho já tinha feito a transição antes da isenção: a nuvem
+        // ficou sem a parte pessoal, e só o aparelho a tem. Preenchemos essas lacunas
+        // (e só elas — a nuvem nunca é sobrescrita). No primeiro salvamento a conta
+        // volta inteira para a nuvem sozinha, porque a isenção deixa subir tudo.
+        const completar = window.usuarioOnlineCompleto && window.dadosMigradosLocalmente
+                          && typeof completarComLocal === 'function';
+        data = Object.assign({}, initial, completar ? completarComLocal(nuvem, local) : nuvem);
     } else {
         data = juntarDados(local, nuvem);
     }

@@ -45,6 +45,16 @@ async function iniciarApp() {
         currentViewMode = currentUser.role;
     }
 
+    // [ADEQUAÇÃO SEDUC] Releitura obrigatória ANTES de carregar qualquer dado.
+    // A isenção "100% online" mora num documento do Firestore que só se lê com sessão
+    // no Auth, e na abertura da página quem ainda ia digitar e-mail e senha não tinha
+    // sessão nenhuma. Sem repetir a leitura aqui, a conta isenta abria como conta
+    // comum: pedia a transição e guardava o estudante só no aparelho — exatamente o
+    // oposto do que a isenção significa.
+    if (typeof prepararRegraDoCorte === 'function') {
+        await prepararRegraDoCorte();
+    }
+
     // Carregar dados
     carregarDadosUsuario().then(async (carregouOk) => {
         // [SEGURANÇA] Confirma que os dados foram baixados com sucesso.
