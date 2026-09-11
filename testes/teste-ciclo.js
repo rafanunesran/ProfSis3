@@ -57,6 +57,7 @@ async function lerGravado(page) {
   const temBanner = await page.isVisible('#bannerSemDadosLocais');
   const textoBotao = await page.textContent('#bannerSemDadosLocais button');
   console.log('2. detectou aparelho sem dados? ' + precisa + ' | faixa visivel: ' + temBanner + ' | botao: "' + textoBotao.trim() + '"');
+  if (textoBotao.indexOf('Importar') === -1) { console.log('   *** o rotulo do botao mudou ***'); process.exit(1); }
 
   // --- 3. Restaurar pelo botao da faixa, com o arquivo .profsis ---
   const [chooser] = await Promise.all([ page.waitForEvent('filechooser'),

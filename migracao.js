@@ -77,8 +77,18 @@ async function importarArquivoProfsis(evento) {
 
     // Aceita tanto o .profsis novo quanto o backup .json antigo (que era o `data` cru).
     const dados = (pacote && pacote.formato === 'profsis') ? pacote.dados : pacote;
-    if (!dados || (!dados.turmas && !dados.estudantes)) {
+    // Um professor de AEE pode não ter turma nenhuma, só tutorados: exigir turmas ou
+    // estudantes recusaria justamente o arquivo dele.
+    if (!dados || (!dados.turmas && !dados.estudantes && !dados.tutorados && !dados.ocorrencias)) {
         return alert('Este arquivo não parece um backup do SisProf.');
+    }
+
+    // Sem conta aberta não há onde gravar: getStorageKey() nasce do usuário. Gravar
+    // assim mesmo seria escrever no vazio e recarregar por cima — que é exatamente
+    // como uma importação "some" sem explicação.
+    if (typeof currentUser === 'undefined' || !currentUser) {
+        return alert('Entre na sua conta antes de importar.\n\n' +
+                     'O arquivo é guardado na SUA conta neste aparelho, então preciso saber quem é você.');
     }
 
     const qtd = (dados.estudantes || []).length;
@@ -90,8 +100,54 @@ async function importarArquivoProfsis(evento) {
     data = Object.assign(getInitialData(), dados);
     window.dadosCarregados = true;
     await persistirDados();
-    alert('Dados restaurados. A página vai recarregar.');
+
+    // Confere no aparelho ANTES de recarregar. persistirDados() desiste em silêncio em
+    // mais de um caso, e recarregar por cima de uma gravação que não aconteceu apaga a
+    // evidência e transforma a falha em mistério — foi assim que "importei e não
+    // carregou" chegou até aqui.
+    const conferido = await _conferirImportacao(dados);
+    if (!conferido.ok) {
+        alert('A importação NÃO foi concluída.\n\n' + conferido.motivo +
+              '\n\nNada foi apagado e a página não vai recarregar. ' +
+              'Guarde o arquivo e avise a gestão/suporte.');
+        return;
+    }
+
+    alert('Dados importados neste aparelho:\n\n' +
+          conferido.turmas + ' turma(s), ' + conferido.estudantes + ' estudante(s), ' +
+          conferido.tutorados + ' tutorado(s).\n\nA página vai recarregar.');
     location.reload();
+}
+
+// Relê do IndexedDB, pela mesma chave que o app usa para carregar, e compara com o que
+// veio no arquivo. É a única prova de que a importação sobreviveu ao recarregamento.
+async function _conferirImportacao(dados) {
+    const esperado = {
+        turmas: (dados.turmas || []).length,
+        estudantes: (dados.estudantes || []).length,
+        tutorados: (dados.tutorados || []).length
+    };
+    if (typeof localGet !== 'function' || typeof getStorageKey !== 'function') {
+        return Object.assign({ ok: true, motivo: '' }, esperado);   // sem como conferir: não trava o professor
+    }
+    let gravado = null;
+    try { gravado = await localGet(getStorageKey(currentUser)); }
+    catch (e) { return { ok: false, motivo: 'Não consegui reler o que foi gravado: ' + e.message }; }
+
+    if (!gravado) return { ok: false, motivo: 'Nada chegou ao armazenamento deste aparelho.' };
+
+    const real = {
+        turmas: (gravado.turmas || []).length,
+        estudantes: (gravado.estudantes || []).length,
+        tutorados: (gravado.tutorados || []).length
+    };
+    if (real.estudantes < esperado.estudantes || real.tutorados < esperado.tutorados
+        || real.turmas < esperado.turmas) {
+        return { ok: false, motivo: 'O arquivo trazia ' + esperado.estudantes + ' estudante(s) e ' +
+                 esperado.turmas + ' turma(s), mas só encontrei ' + real.estudantes + ' e ' +
+                 real.turmas + ' gravados.' };
+    }
+    return Object.assign({ ok: true, motivo: '' }, real);
 }
 
 // --- A transição ------------------------------------------------------------

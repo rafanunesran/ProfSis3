@@ -452,6 +452,7 @@ async function abrirModalPerfil() {
             <h4 style="color:#c53030; margin-bottom:5px; font-size:14px;">🆘 Backup e Segurança</h4>
             <p style="font-size:11px; color:#718096; margin-bottom:10px;">Baixe uma cópia completa dos seus dados ou gerencie versões na nuvem.</p>
             <button class="btn btn-sm btn-primary" onclick="exportarArquivoProfsis()" style="width:100%; margin-bottom:5px;">💾 Baixar minha cópia de segurança</button>
+            <button class="btn btn-sm btn-success" onclick="abrirSeletorArquivoProfsis()" style="width:100%; margin-bottom:5px; font-weight:bold;">⬆️ Importar dados do arquivo</button>
             <button class="btn btn-sm btn-info" onclick="listarBackupsNuvem()" style="width:100%; margin-bottom:5px;">☁️ Histórico na Nuvem</button>
             <button class="btn btn-sm btn-danger" onclick="abrirPainelRecuperacaoAvancada()" style="width:100%; font-weight:bold;">🔍 Busca de Backups Antigos</button>
         </div>
@@ -838,7 +839,15 @@ function mostrarBannerLeituraFalhou() {
     const banner = document.createElement('div');
     banner.id = 'bannerLeituraFalhou';
     banner.style.cssText = 'position:sticky; top:0; z-index:10001; background:#9b2c2c; color:#fff; padding:10px 16px; text-align:center; font-weight:bold; font-size:14px; box-shadow:0 2px 6px rgba(0,0,0,0.25);';
-    banner.innerHTML = '🛑 Não foi possível carregar seus dados da nuvem. <strong>O salvamento está bloqueado</strong> para proteger seus dados — nada será apagado. Recarregue a página; se continuar, avise a gestão/suporte.';
+    banner.innerHTML =
+        '<div style="max-width:820px; margin:0 auto;">' +
+          '🛑 Não foi possível carregar seus dados da nuvem. <strong>O salvamento está bloqueado</strong> ' +
+          'para proteger seus dados — nada será apagado. Recarregue a página; se continuar, avise a gestão/suporte.' +
+          '<div style="margin-top:9px;">' +
+            '<button class="btn btn-sm" style="background:#fff; color:#9b2c2c; font-weight:bold;" ' +
+              'onclick="abrirSeletorArquivoProfsis()">⬆️ Importar dados do arquivo</button>' +
+          '</div>' +
+        '</div>';
     document.body.insertBefore(banner, document.body.firstChild);
 }
 
@@ -852,11 +861,14 @@ function mostrarBannerLeituraFalhou() {
 function precisaRestaurarNesteAparelho() {
     if (typeof podeEnviarDadoPessoal === 'function' && podeEnviarDadoPessoal()) return false;
     if (!data) return false;
-    const temNuvem = (data.turmas || []).length > 0;
+    // Antes exigia turmas > 0 na nuvem. Quem chega numa maquina nova e cuja leitura da
+    // nuvem tambem falhou ficava sem aviso E sem botao - o caso exato do professor que
+    // baixou o arquivo e nao tinha por onde carrega-lo.
     const semPessoal = (data.estudantes || []).length === 0
                     && (data.tutorados || []).length === 0
                     && (data.ocorrencias || []).length === 0;
-    return temNuvem && semPessoal;
+    const contaJaMigrou = !!window.dadosMigradosLocalmente;
+    return semPessoal && (contaJaMigrou || (data.turmas || []).length > 0);
 }
 
 function mostrarBannerSemDadosLocais() {
@@ -872,7 +884,7 @@ function mostrarBannerSemDadosLocais() {
           'você fez a transição. Traga-os com a sua cópia de segurança.</span>' +
           '<div style="margin-top:9px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">' +
             '<button class="btn btn-sm" style="background:#fff; color:#2c5282; font-weight:bold;" ' +
-              'onclick="abrirSeletorArquivoProfsis()">Restaurar do meu arquivo</button>' +
+              'onclick="abrirSeletorArquivoProfsis()">⬆️ Importar dados do arquivo</button>' +
             '<button class="btn btn-sm" style="background:rgba(255,255,255,.18); color:#fff;" ' +
               'onclick="listarBackupsNuvem()">Ver backups na nuvem</button>' +
             '<button class="btn btn-sm" style="background:transparent; color:#fff; text-decoration:underline;" ' +
@@ -1082,7 +1094,7 @@ async function renderDashboard() {
                         <h4 style="margin:0 0 10px 0; font-size:13px; color:#2d3748; border-bottom:1px solid #eee; padding-bottom:5px;">💻 Arquivo Local / Emergência</h4>
                         <div style="display:flex; flex-direction:column; gap:8px;">
                             <button class="btn btn-sm btn-info" onclick="exportarArquivoProfsis()" style="text-align:left;">⬇️ Baixar minha cópia de segurança</button>
-                            <button class="btn btn-sm btn-secondary" onclick="abrirSeletorArquivoProfsis()" style="text-align:left;">⬆️ Restaurar do meu arquivo</button>
+                            <button class="btn btn-sm btn-success" onclick="abrirSeletorArquivoProfsis()" style="text-align:left; font-weight:bold;">⬆️ Importar dados do arquivo</button>
                             <button class="btn btn-sm btn-danger" onclick="restaurarBackupLocalParaNuvem()" style="text-align:left;" title="Recuperar dados do cache do navegador">🆘 Recuperar do Cache</button>
                         </div>
                     </div>
@@ -1127,6 +1139,7 @@ async function renderDashboard() {
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
                     <button class="btn btn-sm btn-primary" onclick="criarBackupNuvem()" style="text-align:left;">💾 Salvar na Nuvem Agora</button>
                     <button class="btn btn-sm btn-info" onclick="exportarArquivoProfsis()" style="text-align:left;">⬇️ Baixar minha cópia de segurança</button>
+                    <button class="btn btn-sm btn-success" onclick="abrirSeletorArquivoProfsis()" style="text-align:left; grid-column:1 / -1; font-weight:bold;">⬆️ Importar dados do arquivo</button>
                 </div>
             </div>
 
@@ -1173,7 +1186,12 @@ async function renderDashboard() {
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
                 <button class="btn btn-sm btn-primary" onclick="criarBackupNuvem()" style="text-align:left;">💾 Sincronizar Nuvem Agora</button>
                 <button class="btn btn-sm btn-info" onclick="exportarArquivoProfsis()" style="text-align:left;">⬇️ Baixar minha cópia de segurança</button>
+                <button class="btn btn-sm btn-success" onclick="abrirSeletorArquivoProfsis()" style="text-align:left; grid-column:1 / -1; font-weight:bold;">⬆️ Importar dados do arquivo</button>
             </div>
+            <p style="font-size:12px; color:#718096; margin:8px 0 0;">
+                Trocou de computador ou limpou o navegador? <strong>Importar</strong> traz de volta o
+                arquivo que você baixou — é nele que estão os dados dos estudantes.
+            </p>
         </div>
 
         <div class="card" style="margin-top: 20px;">
