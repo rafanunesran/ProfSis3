@@ -55,7 +55,10 @@ async function iniciarApp() {
         // O aviso vale sempre que a NUVEM não respondeu, mesmo quando a cópia deste
         // aparelho salvou a abertura: o professor precisa saber que o que ele fizer
         // agora ainda não subiu.
-        if (carregouOk === false || window.bloquearEscritaNuvem) mostrarBannerLeituraFalhou();
+        // Sem sessão no Auth o banco recusa gravação, mesmo com tudo o mais certo.
+        // É mais específico que o banner vermelho genérico, então vem primeiro.
+        if (typeof precisaAvisarSemSessao === 'function' && precisaAvisarSemSessao()) mostrarBannerSemSessao();
+        else if (carregouOk === false || window.bloquearEscritaNuvem) mostrarBannerLeituraFalhou();
         else if (precisaRestaurarNesteAparelho()) mostrarBannerSemDadosLocais();
 
         // [ADEQUAÇÃO SEDUC] Antes do corte, lembra o professor duas vezes por dia.

@@ -5,6 +5,12 @@ function iniciarAdmin() {
     document.getElementById('authContainer').style.display = 'none';
     document.getElementById('appContainer').style.display = 'none';
     document.getElementById('adminContainer').style.display = 'block';
+    // O painel abre a partir do localStorage, sem exigir sessão no Auth — e sem
+    // sessão TODA gravação é recusada pelas Regras. Avisar na abertura evita que
+    // isso só apareça como "sem permissão" no meio de uma operação.
+    if (typeof precisaAvisarSemSessao === 'function' && precisaAvisarSemSessao()) {
+        mostrarBannerSemSessao();
+    }
     renderAdminEscolas();
     renderBackupOptions(); // Nova função
     renderChavesIANav();

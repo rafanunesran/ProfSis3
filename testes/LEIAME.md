@@ -23,6 +23,7 @@ Variáveis opcionais: `PROFSIS_URL` (padrão `http://localhost:8877`) e
 | `teste-espacos.js` | Cadastro por código de convite: código errado não deixa conta órfã no Auth; quem cria o espaço vira gestor e o código **não** é gravado no banco; código digitado torto (minúsculo, com espaços) funciona; conta antiga sem espaço segue na mesma chave de documento; perfil pendente de antes continua na fila. |
 | `teste-migra-espacos.js` | Migração das escolas antigas: um espaço por escola, `legacySchoolId` preservado, usuários vinculados, pendentes **não** liberados de carona, arquivo de códigos baixado, e rodar de novo não duplica. |
 | `teste-espacos-falha.js` | Os três desfechos de falha: banco recusando a escrita (não marca nada, não baixa nada), painel sem sessão no Firebase Auth (mensagem certa), e estado envenenado por tentativa anterior se recuperando sozinho. |
+| `teste-sem-sessao.js` | Estar no sistema sem sessão no Firebase Auth: a faixa aparece na abertura do painel, a gravação recusada fala de **sessão** e não manda conferir as Regras, e sem rede o aviso não aparece (seria inútil). |
 | `teste-ciclo.js` | O ciclo do arquivo `.profsis`: baixar, chegar num aparelho sem dados, restaurar — conferido no IndexedDB, não na memória. Aceita também o `.json` do formato antigo. |
 
 As Regras do Firestore têm um teste próprio, fora daqui: `firestore.rules.teste.mjs`

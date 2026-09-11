@@ -322,7 +322,17 @@ async function saveData(collectionName, docId, dataObj) {
             }
         } catch (error) {
             console.error("Erro ao salvar no Firebase:", error);
-            alert(`Erro ao salvar dados online: ${error.message}\nVerifique se as Regras do Firestore permitem escrita.`);
+            // "Sem permissão" com sessão e "sem permissão" sem sessão são problemas
+            // diferentes, e mandar conferir as Regras quando o que falta é a sessão
+            // já fez o responsável procurar no lugar errado.
+            if (!sessaoFirebaseAtiva()) {
+                if (typeof mostrarBannerSemSessao === 'function') mostrarBannerSemSessao();
+                alert('Não consegui salvar: você está no sistema, mas sem sessão no Firebase.\n\n' +
+                      'O banco recusa gravação assim. Clique em "Entrar de novo" na faixa do topo ' +
+                      '(ou saia e entre com e-mail e senha). Nada foi apagado.');
+            } else {
+                alert(`Erro ao salvar dados online: ${error.message}\nVerifique se as Regras do Firestore permitem escrita.`);
+            }
         }
     } else {
         // Comportamento LocalStorage
@@ -1149,6 +1159,69 @@ async function gravarAcessoUsuario(uid, dados) {
     } catch (e) {
         console.warn('Não foi possível gravar o documento de acesso (access/' + uid + '):', e && e.message);
     }
+}
+
+// ============================================================================
+//  SESSÃO NO FIREBASE AUTH — a diferença entre "estar no sistema" e "poder gravar"
+// ----------------------------------------------------------------------------
+//  init() abre o painel a partir do `app_current_user` guardado no localStorage,
+//  SEM exigir sessão no Auth. Isso é de propósito (é o que deixa o sistema abrir
+//  sem rede), mas produz um estado traiçoeiro: a pessoa está dentro, vê tudo, e
+//  toda gravação é recusada pelas Regras — que pedem `request.auth != null`.
+//
+//  Foi exatamente o que aconteceu com o super admin em 11/09/2026: as Regras
+//  estavam publicadas, o painel abria, e "Gerar espaços e códigos" respondia
+//  "Missing or insufficient permissions". A conta vinha de um `app_current_user`
+//  gravado na época em que o administrador entrava sem Auth nenhum — e esse
+//  registro sobrevive para sempre no navegador.
+//
+//  Agora o sistema diz isso na cara, em vez de deixar a pessoa descobrir por
+//  tentativa e erro.
+// ============================================================================
+function sessaoFirebaseAtiva() {
+    if (!USE_FIREBASE) return true;
+    if (typeof firebase === 'undefined' || !firebase.auth) return false;
+    try { return !!firebase.auth().currentUser; } catch (e) { return false; }
+}
+
+// Sem rede, não ter sessão é normal e não há o que fazer a respeito — o aviso só
+// atrapalharia quem está trabalhando no aparelho.
+function precisaAvisarSemSessao() {
+    if (sessaoFirebaseAtiva()) return false;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return false;
+    return !!currentUser;
+}
+
+function mostrarBannerSemSessao() {
+    if (typeof document === 'undefined') return;
+    if (document.getElementById('bannerSemSessao')) return;
+    const banner = document.createElement('div');
+    banner.id = 'bannerSemSessao';
+    banner.style.cssText = 'position:sticky; top:0; z-index:10002; background:#975a16; color:#fff; ' +
+        'padding:12px 16px; text-align:center; font-size:14px; box-shadow:0 2px 6px rgba(0,0,0,0.25);';
+    banner.innerHTML =
+        '<div style="max-width:780px; margin:0 auto;">' +
+          '<strong>Você está no sistema, mas sem sessão no Firebase.</strong><br>' +
+          '<span style="font-size:13px; opacity:.95;">Dá para ver tudo, mas o banco recusa qualquer ' +
+          'gravação — é o que faz aparecer "sem permissão" ao salvar. Entrar de novo resolve; ' +
+          'nada é apagado.</span>' +
+          '<div style="margin-top:9px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">' +
+            '<button class="btn btn-sm" style="background:#fff; color:#975a16; font-weight:bold;" ' +
+              'onclick="entrarDeNovo()">Entrar de novo</button>' +
+            '<button class="btn btn-sm" style="background:transparent; color:#fff; text-decoration:underline;" ' +
+              'onclick="this.closest(\'#bannerSemSessao\').remove()">Agora não</button>' +
+          '</div>' +
+        '</div>';
+    document.body.insertBefore(banner, document.body.firstChild);
+}
+
+// Encerra só a sessão local e volta ao login. NÃO apaga dado: o que o professor
+// tem continua em app_data_<uid> e no IndexedDB deste aparelho.
+async function entrarDeNovo() {
+    try { if (USE_FIREBASE && typeof firebase !== 'undefined' && firebase.auth) await firebase.auth().signOut(); }
+    catch (e) {}
+    localStorage.removeItem('app_current_user');
+    location.reload();
 }
 
 // --- ACEITE ÚNICO DOS TERMOS DE USO (usuários já cadastrados) ---
