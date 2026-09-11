@@ -127,19 +127,40 @@ service cloud.firestore {
       //      ele é um UUID, `list` está negado em /espacos e o índice do código só
       //      pode ser lido por quem sabe o código para calcular o endereço.
       // Gestor/admin podem criar o documento de outra pessoa.
-      allow create: if (request.auth.uid == uid
-                        && request.resource.data.approved == false
-                        && request.resource.data.role == 'professor')
-                    || (request.auth.uid == uid
-                        && request.resource.data.approved == true
-                        && request.resource.data.espacoId is string
-                        && exists(/databases/$(database)/documents/espacos/$(request.resource.data.espacoId)))
+      // Campos que SO' o super admin concede. Sem esta trava, bastava o proprio
+      // usuario incluir <modoOnlineCompleto: true> no documento que ele mesmo cria no
+      // cadastro para se isentar do corte - e a isencao autoriza gravar dado pessoal
+      // em claro. O bloqueio de alteracao ja' existia; o de CRIACAO faltava.
+      allow create: if ((request.auth.uid == uid
+                        && !request.resource.data.keys().hasAny(['modoOnlineCompleto', 'limiteTerminais'])
+                        && (
+                             (request.resource.data.approved == false
+                              && request.resource.data.role == 'professor')
+                          || (request.resource.data.approved == true
+                              && request.resource.data.espacoId is string
+                              && exists(/databases/$(database)/documents/espacos/$(request.resource.data.espacoId)))
+                        ))
                     || (podeAprovar() && request.auth.uid != uid)
-                    || isSuperAdmin();
+                    || isSuperAdmin());
 
       // ANTI-ELEVAÇÃO: ninguém altera o próprio documento de acesso.
       allow update, delete: if isSuperAdmin()
                             || (podeAprovar() && request.auth.uid != uid);
+    }
+
+    // ----------------------------- terminais/* -------------------------------
+    // [FASE 7] Quantas telas podem ver a conta ao mesmo tempo. O limite mora em
+    // access/<uid>.limiteTerminais (ausente = 1, zero = ilimitado) e SO' o super
+    // admin escreve, como o modoOnlineCompleto.
+    //
+    // Este documento aqui e' so' a lista de quem esta' ocupando as vagas, e o dono
+    // escreve nela de proposito: e' assim que ele assume a vaga ao trocar de maquina.
+    // Registro honesto: isto e' REGRA DE USO, nao barreira de seguranca - o dono da
+    // conta tem a senha e a chave, e quem quiser burlar o limite consegue. Serve
+    // contra o descuido e o compartilhamento casual.
+    match /terminais/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
+      allow write: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
     }
 
     // ---------------------- espacos/* e espacos_indice/* ---------------------

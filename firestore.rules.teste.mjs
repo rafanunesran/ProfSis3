@@ -55,6 +55,13 @@ const cenarios = [
   ['ISENTO: grava COM estudantes              ', 'u-isento',{email:'i@e.com',email_verified:false}, d=>setDoc(doc(d,'app_data/app_data_u-isento'),{estudantes:[{id:1}]})],
   ['NAO isento: grava COM estudantes          ', 'u-aprov', {email:'b@e.com',email_verified:false}, d=>setDoc(doc(d,'app_data/app_data_u-aprov'),{estudantes:[{id:1}]})],
   ['ISENTO: tenta ligar a propria isencao     ', 'u-aprov', {email:'b@e.com',email_verified:false}, d=>setDoc(doc(d,'access/u-aprov'),{approved:true,role:'professor',modoOnlineCompleto:true})],
+  ['CADASTRO ja nasce isento (buraco)         ', 'u-esperto',{email:'e@e.com',email_verified:false},d=>setDoc(doc(d,'access/u-esperto'),{approved:true,role:'professor',espacoId:'esp-1',modoOnlineCompleto:true})],
+  ['CADASTRO ja nasce ilimitado (buraco)      ', 'u-esperto2',{email:'e2@e.com',email_verified:false},d=>setDoc(doc(d,'access/u-esperto2'),{approved:true,role:'professor',espacoId:'esp-1',limiteTerminais:0})],
+  ['CADASTRO normal por codigo                ', 'u-esperto3',{email:'e3@e.com',email_verified:false},d=>setDoc(doc(d,'access/u-esperto3'),{approved:true,role:'professor',espacoId:'esp-1'})],
+  ['TERMINAIS: escreve a propria lista        ', 'u-aprov', {email:'b@e.com',email_verified:false}, d=>setDoc(doc(d,'terminais/u-aprov'),{lista:[]})],
+  ['TERMINAIS: escreve a lista de OUTRO       ', 'u-aprov', {email:'b@e.com',email_verified:false}, d=>setDoc(doc(d,'terminais/u-antigo'),{lista:[]})],
+  ['PESSOAL CIFRADO: grava pacote             ', 'u-aprov', {email:'b@e.com',email_verified:false}, d=>setDoc(doc(d,'app_data/pessoal_app_data_u-aprov'),{cifrado:true,iv:'a',ct:'b',partes:1})],
+  ['PESSOAL: tenta gravar EM CLARO            ', 'u-aprov', {email:'b@e.com',email_verified:false}, d=>setDoc(doc(d,'app_data/pessoal_app_data_u-aprov'),{estudantes:[{id:1}]})],
 ];
 
 async function rodar(arquivo) {

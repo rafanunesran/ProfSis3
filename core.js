@@ -1493,9 +1493,40 @@ async function carregarDadosUsuario() {
     // sempre foi. Só depois de migrar é que a camada local passa a mandar no pessoal.
     if (podeEnviarDadoPessoal() && nuvem) {
         data = Object.assign({}, initial, nuvem);
-    } else {
-        data = juntarDados(local, nuvem);
+        window.pessoalCifradoLido = false;   // neste modo a camada cifrada não é usada
+        return true;
     }
+
+    data = juntarDados(local, nuvem);
+
+    // [FASE 7] A camada pessoal cifrada. É ela que faz uma máquina nova funcionar sem
+    // arquivo: o aparelho não tem os estudantes, a nuvem tem — ilegível para ela.
+    window.pessoalCifradoLido = false;
+    window.pessoalSemChave = false;
+    const remoto = await lerCamadaPessoalCifrada(key);
+
+    if (remoto.estado === 'vazio') {
+        // Nada lá: esta sessão sabe o que há na nuvem (nada), então pode gravar.
+        window.pessoalCifradoLido = true;
+    } else if (remoto.estado === 'ok') {
+        window.pessoalCifradoLido = true;
+        const localVazio = !local || ((local.estudantes || []).length === 0
+                                   && (local.tutorados || []).length === 0
+                                   && (local.ocorrencias || []).length === 0);
+        // O aparelho manda quando tem algo; a nuvem só entra quando o aparelho está
+        // vazio. Assim um terminal desatualizado nunca sobrescreve o trabalho local.
+        if (localVazio) {
+            data = juntarDados(remoto.dados, nuvem);
+            try { if (typeof localSet === 'function') await localSet(key, data); } catch (e) {}
+            console.log('[SisProf] Camada pessoal recuperada da nuvem (cifrada).');
+        }
+    } else if (remoto.estado === 'sem-chave') {
+        window.pessoalSemChave = true;
+        console.warn('[SisProf] Há dados cifrados na nuvem, mas a chave não está neste aparelho.');
+    } else {
+        console.warn('[SisProf] Camada pessoal cifrada não pôde ser lida; envio suspenso.');
+    }
+
     return true;
 }
 
@@ -1516,6 +1547,125 @@ async function lerDocUsuario(chave) {
 
 // Grava o `data` do professor separando as duas camadas. É chamada por
 // persistirDados() (app.js), que é quem sabe a hora certa de salvar.
+// ============================================================================
+//  CAMADA PESSOAL CIFRADA NA NUVEM  (Fase 7)
+// ----------------------------------------------------------------------------
+//  O modo local puro custou caro: quem trocava de maquina ficava sem os dados e
+//  dependia de lembrar de um arquivo. Agora a camada pessoal TAMBEM sobe, cifrada
+//  com a chave da conta (a mesma do backup da Fase 2, derivada da senha e guardada
+//  so' no aparelho). Para o Firestore e' ruido; para qualquer terminal autorizado,
+//  basta a senha.
+//
+//  A Regra do Firestore nao precisou mudar para isto: semCamposPessoais() olha as
+//  CHAVES do documento, e um pacote cifrado nao tem nenhuma delas. Se um dia alguem
+//  gravar dado em claro com este nome, a Regra recusa sozinha.
+// ============================================================================
+function chavePessoalCifrada(chave) { return 'pessoal_' + chave; }
+
+// Terminal que entrou pela sessao restaurada (onAuthStateChanged) nao passou pela
+// senha, entao nao tem a chave. Ha' dado cifrado esperando por ele na nuvem e nao
+// adianta ficar em silencio: sem a chave, o aparelho nao ve' os estudantes E nao
+// pode subir nada, porque gravar sem ter lido apagaria o que esta' la'.
+function mostrarBannerPessoalSemChave() {
+    if (typeof document === 'undefined') return;
+    if (document.getElementById('bannerPessoalSemChave')) return;
+    const banner = document.createElement('div');
+    banner.id = 'bannerPessoalSemChave';
+    banner.style.cssText = 'position:sticky; top:0; z-index:10002; background:#2a4365; color:#fff; ' +
+        'padding:12px 16px; text-align:center; font-size:14px; box-shadow:0 2px 6px rgba(0,0,0,0.25);';
+    banner.innerHTML =
+        '<div style="max-width:780px; margin:0 auto;">' +
+          '<strong>Seus dados estão na nuvem, cifrados — e a chave não está neste aparelho.</strong><br>' +
+          '<span style="font-size:13px; opacity:.95;">Informe a senha da sua conta uma vez para abrir. ' +
+          'Ela não é enviada a lugar nenhum: serve para derivar a chave aqui mesmo.</span>' +
+          '<div style="margin-top:9px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">' +
+            '<button class="btn btn-sm" style="background:#fff; color:#2a4365; font-weight:bold;" ' +
+              'onclick="desbloquearPessoalComSenha()">Abrir meus dados</button>' +
+            '<button class="btn btn-sm" style="background:transparent; color:#fff; text-decoration:underline;" ' +
+              'onclick="this.closest(\'#bannerPessoalSemChave\').remove()">Agora não</button>' +
+          '</div>' +
+        '</div>';
+    document.body.insertBefore(banner, document.body.firstChild);
+}
+
+async function desbloquearPessoalComSenha() {
+    const fbUser = (typeof firebase !== 'undefined' && firebase.auth) ? firebase.auth().currentUser : null;
+    if (!fbUser) return alert('Entre de novo com e-mail e senha para abrir seus dados.');
+
+    const senha = prompt('Senha da sua conta (' + (fbUser.email || '') + '):');
+    if (!senha) return;
+    try {
+        await desbloquearChaveBackupComSenha(fbUser.uid, senha);
+        const chave = (typeof obterChaveBackup === 'function') ? await obterChaveBackup() : null;
+        if (!chave) throw new Error('a chave não ficou disponível');
+        alert('Chave aberta neste aparelho. A página vai recarregar para trazer seus dados.');
+        location.reload();
+    } catch (e) {
+        alert('Não consegui abrir com essa senha.\n\n' + (e && e.message) +
+              '\n\nSe você redefiniu a senha por e-mail, os dados cifrados antes da troca ' +
+              'só voltam pela restauração do suporte. Avise a gestão.');
+    }
+}
+
+// Le e decifra a camada pessoal da nuvem. Devolve:
+//   { estado: 'ok', dados }        decifrou
+//   { estado: 'vazio' }            nao existe la' (nada a perder)
+//   { estado: 'sem-chave' }        existe, mas este aparelho nao tem a chave
+//   { estado: 'erro', erro }       existe e nao deu para ler
+async function lerCamadaPessoalCifrada(chave) {
+    const id = chavePessoalCifrada(chave);
+    const doc = await getData('app_data', id);
+    if (window.falhaLeituraFirestore) return { estado: 'erro', erro: 'leitura da nuvem falhou' };
+    if (!doc) return { estado: 'vazio' };
+
+    const dek = (typeof obterChaveBackup === 'function') ? await obterChaveBackup() : null;
+    if (!dek) return { estado: 'sem-chave' };
+
+    try {
+        const dados = await decifrarPacote(doc, dek, (n) => getData('app_data', id + '_p' + n));
+        return { estado: 'ok', dados: dados };
+    } catch (e) {
+        console.error('[SisProf] Não consegui decifrar a camada pessoal:', e);
+        return { estado: 'erro', erro: e.message };
+    }
+}
+
+// Sobe a camada pessoal cifrada.
+//
+// A TRAVA QUE NAO PODE FALTAR: um pacote cifrado vazio e' indistinguivel de um cheio
+// a olho nu, entao gravar por cima sem ter lido o que estava la' apagaria tudo sem
+// ninguem perceber. So' grava quando esta sessao SABE o que ha' na nuvem - porque
+// decifrou, ou porque confirmou que nao existe nada.
+async function enviarCamadaPessoalCifrada(chave, dados) {
+    if (window.pessoalCifradoLido !== true) {
+        console.warn('[SisProf] Camada pessoal não enviada: esta sessão não confirmou o que há na nuvem.');
+        return false;
+    }
+    const dek = (typeof obterChaveBackup === 'function') ? await obterChaveBackup() : null;
+    if (!dek) { window.pessoalSemChave = true; return false; }
+
+    const id = chavePessoalCifrada(chave);
+    const pessoal = dividirDados(dados).local;
+    try {
+        const pacote = await cifrarPacote(pessoal, dek);
+        await saveData('app_data', id, pacote.principal);
+        for (const cont of pacote.continuacoes) {
+            await saveData('app_data', id + '_p' + cont.parte, cont);
+        }
+        // Sobras de uma versao anterior com MAIS partes confundiriam a remontagem.
+        const antes = window._partesPessoal || 1;
+        for (let i = pacote.principal.partes + 1; i <= antes; i++) {
+            try { await db.collection('app_data').doc(id + '_p' + i).delete(); }
+            catch (e) { console.warn('[SisProf] Sobra da camada pessoal não removida:', e); }
+        }
+        window._partesPessoal = pacote.principal.partes;
+        return true;
+    } catch (e) {
+        console.error('[SisProf] Falha ao enviar a camada pessoal cifrada:', e);
+        return false;
+    }
+}
+
 async function salvarDadosUsuario(chave, dados) {
     if (typeof localSet === 'function') await localSet(chave, dados);
 
@@ -1524,10 +1674,14 @@ async function salvarDadosUsuario(chave, dados) {
     if (podeEnviarDadoPessoal()) {
         // Antes do corte (ou usuário isento pelo super admin): sobe tudo, como hoje.
         await saveData('app_data', chave, dados);
-    } else {
-        // Depois da transição: só a camada que não identifica estudante.
-        await saveData('app_data', chave, dividirDados(dados).nuvem);
+        return;
     }
+
+    // Depois da transição: em claro, só a camada que não identifica estudante...
+    await saveData('app_data', chave, dividirDados(dados).nuvem);
+    // ...e a camada pessoal vai junto, cifrada, para o professor reencontrá-la em
+    // qualquer terminal autorizado sem depender de arquivo nenhum.
+    await enviarCamadaPessoalCifrada(chave, dados);
 }
 
 // [NOVO] Função de Migração (Pode ser chamada pelo console ou botão de Admin)

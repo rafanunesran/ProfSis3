@@ -226,6 +226,39 @@ A partir desta fase, a escola é um **espaço** identificado por um UUID, e o po
   `system/schools_list` de sempre. O vínculo com o espaço é criado por um botão do painel
   super admin, que é idempotente e entrega os códigos num arquivo para distribuição.
 
+### Fase 7 — a camada pessoal volta à nuvem, cifrada, e o acesso ganha limite de telas
+
+O modo local puro cobrou um preço prático alto: quem trocava de computador ficava sem os
+dados e dependia de lembrar de um arquivo. A partir desta fase:
+
+- **A camada pessoal sobe cifrada**, em `app_data/pessoal_<chave>` (dividida em partes
+  quando passa de 700 KB), com a mesma chave da Fase 2 — AES-GCM, chave derivada da senha
+  da conta por PBKDF2-SHA256 e guardada apenas no aparelho. O documento em claro continua
+  levando só o que não identifica estudante.
+- **Nenhuma Regra precisou ser afrouxada para isso.** `semCamposPessoais()` examina as
+  chaves do documento, e um pacote cifrado não tem nenhuma delas. O contrário também vale:
+  tentar gravar dado em claro com esse nome é recusado pela Regra — verificado no emulador.
+- **Qualquer terminal autorizado recupera os dados com a senha**, sem arquivo. O terminal
+  que não tem a chave é avisado, e — isto é essencial — **fica proibido de gravar** a
+  camada pessoal: um pacote cifrado vazio é indistinguível de um cheio, e sobrescrever sem
+  ter lido apagaria tudo em silêncio.
+
+**O que isto é, e o que não é:**
+
+- É dado pessoal em ambiente externo **cifrado em repouso**, com a chave derivada da senha
+  do profissional, que nunca sai do aparelho. Para o Firebase, para o Google e para quem
+  invadir o banco, é ruído.
+- **Não** é sigilo contra o responsável pelo sistema: a segunda cópia do envelope (RSA de
+  suporte) existe para socorrer quem perdeu a senha, e quem detém a chave privada lê o
+  conteúdo. Foi escolha explícita na Fase 2 e continua registrada aqui.
+- O **limite de telas por conta** (`access/<uid>.limiteTerminais`: ausente = 1, zero =
+  ilimitado, gravável só pelo super admin) impede que a mesma conta fique aberta em vários
+  lugares ao mesmo tempo. Trocar de máquina exige confirmação e toma a vaga do terminal
+  visto há mais tempo, que não perde nada: a cópia dele continua no aparelho.
+- **O limite é regra de uso, não barreira de segurança.** O dono da conta tem a senha e a
+  chave; quem quiser burlá-lo consegue. Serve contra o descuido e o compartilhamento
+  casual, e está escrito assim no código e nas Regras.
+
 ### Sobre o acervo de quem não migrar
 
 **Decisão: nada é apagado por varredura.** Quem nunca abrir a versão nova permanece com os

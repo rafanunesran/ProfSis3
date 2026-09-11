@@ -33,6 +33,18 @@ async function iniciarApp() {
         return;
     }
 
+    // [FASE 7] Limite de telas por conta. Vem ANTES de carregar os dados da escola:
+    // se a vaga estiver ocupada, nada é baixado nem exibido até a pessoa decidir.
+    if (typeof reivindicarTerminal === 'function') {
+        try {
+            const vaga = await reivindicarTerminal();
+            if (vaga.estado === 'precisa-confirmar') {
+                renderTelaTerminalOcupado(vaga);
+                return;
+            }
+        } catch (e) { console.warn('[Terminais] Seguindo sem verificar a vaga:', e); }
+    }
+
     // [TERMOS] Popup único de aceite para usuários já cadastrados; sem concordância,
     // o acesso é encerrado (ver core.js).
     if (typeof verificarAceiteTermos === 'function') verificarAceiteTermos();
@@ -58,6 +70,9 @@ async function iniciarApp() {
         // Sem sessão no Auth o banco recusa gravação, mesmo com tudo o mais certo.
         // É mais específico que o banner vermelho genérico, então vem primeiro.
         if (typeof precisaAvisarSemSessao === 'function' && precisaAvisarSemSessao()) mostrarBannerSemSessao();
+        // [FASE 7] Ha' dado cifrado na nuvem e a chave nao esta' aqui: sem isso o
+        // professor ve' a lista vazia e conclui que perdeu tudo.
+        else if (window.pessoalSemChave && typeof mostrarBannerPessoalSemChave === 'function') mostrarBannerPessoalSemChave();
         else if (carregouOk === false || window.bloquearEscritaNuvem) mostrarBannerLeituraFalhou();
         else if (precisaRestaurarNesteAparelho()) mostrarBannerSemDadosLocais();
 
@@ -893,6 +908,101 @@ function mostrarBannerSemDadosLocais() {
         '</div>';
     document.body.insertBefore(banner, document.body.firstChild);
 }
+
+// [FASE 7] Todas as telas da conta estao ocupadas.
+//
+// Nao e' erro nem punicao: a conta vale para um numero de terminais, e este aqui
+// chegou depois. A tela diz QUAIS estao ocupando e ha' quanto tempo, para a pessoa
+// reconhecer o proprio computador antigo antes de tomar a vaga.
+function renderTelaTerminalOcupado(vaga) {
+    ['authContainer', 'appContainer', 'adminContainer'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+
+    const quando = (t) => {
+        const min = Math.round((Date.now() - (t.visto || 0)) / 60000);
+        if (min < 2) return 'agora há pouco';
+        if (min < 60) return 'há ' + min + ' min';
+        const h = Math.round(min / 60);
+        if (h < 24) return 'há ' + h + 'h';
+        return 'há ' + Math.round(h / 24) + ' dia(s)';
+    };
+
+    let tela = document.getElementById('telaTerminalOcupado');
+    if (!tela) {
+        tela = document.createElement('div');
+        tela.id = 'telaTerminalOcupado';
+        tela.style.cssText = 'position:fixed; inset:0; z-index:10000; background:#f4f6fb; display:flex; ' +
+            'align-items:center; justify-content:center; padding:20px; overflow:auto;';
+        document.body.appendChild(tela);
+    }
+    tela.style.display = 'flex';
+
+    const ocupados = vaga.ocupados || [];
+    const lista = ocupados.map(t =>
+        '<li style="margin:6px 0;"><strong>' + (t.apelido || 'Terminal') + '</strong>' +
+        ' <span style="color:#718096;">— visto ' + quando(t) + '</span></li>').join('');
+
+    // Dois casos diferentes: cheguei depois e a vaga está ocupada, ou eu TINHA a vez e
+    // alguém assumiu enquanto eu estava com a aba parada.
+    const perdiAVez = ocupados.length === 0;
+    const titulo = perdiAVez ? 'Sua vez foi assumida em outro terminal'
+                             : 'Sua conta já está aberta em outro lugar';
+    const explicacao = perdiAVez
+        ? '<p style="color:#4a5568; font-size:14px; line-height:1.6;">Alguém entrou nesta conta em outra ' +
+          'tela e assumiu a vez. <strong>Nada foi apagado aqui</strong> — o que você já tinha continua ' +
+          'neste aparelho, e o envio para a nuvem ficou suspenso para não sobrescrever o trabalho de lá.</p>'
+        : '<p style="color:#4a5568; font-size:14px; line-height:1.6;">Esta conta vale para <strong>' +
+          vaga.limite + ' tela(s) ao mesmo tempo</strong>, e ela já está sendo usada em:</p>' +
+          '<ul style="color:#2d3748; font-size:14px; padding-left:20px;">' + lista + '</ul>';
+
+    tela.innerHTML =
+        '<div style="background:#fff; border-radius:12px; max-width:520px; padding:28px; ' +
+             'box-shadow:0 10px 30px rgba(0,0,0,.12);">' +
+          '<div style="font-size:40px; text-align:center;">🖥️</div>' +
+          '<h2 style="text-align:center; color:#2b6cb0; margin:10px 0 4px;">' + titulo + '</h2>' +
+          explicacao +
+          (perdiAVez ? '' :
+            '<p style="color:#4a5568; font-size:14px; line-height:1.6;">Se um desses é o seu computador antigo, ' +
+            'você pode <strong>assumir a vez aqui</strong>. O outro terminal não perde nada: a cópia dele ' +
+            'continua no aparelho, e ele pode assumir de volta quando quiser.</p>') +
+          '<button class="btn btn-primary" style="width:100%; margin-top:14px;" ' +
+            'onclick="confirmarAssumirTerminal(this)">' +
+            (perdiAVez ? 'Assumir de volta neste terminal' : 'Assumir a vez neste terminal') + '</button>' +
+          '<button class="btn btn-secondary" style="width:100%; margin-top:8px;" onclick="logout()">Sair</button>' +
+          '<p style="color:#a0aec0; font-size:12px; margin-top:14px; text-align:center;">' +
+            'Precisa de mais telas? A gestão pode pedir o aumento do limite ao suporte.</p>' +
+        '</div>';
+}
+
+async function confirmarAssumirTerminal(botao) {
+    if (botao) { botao.disabled = true; botao.textContent = 'Assumindo...'; }
+    try {
+        await assumirVaga();
+        location.reload();
+    } catch (e) {
+        alert('Não consegui assumir a vez: ' + (e && e.message));
+        if (botao) { botao.disabled = false; botao.textContent = 'Assumir a vez neste terminal'; }
+    }
+}
+
+// Ao voltar para a aba, confere se a vez continua sendo desta tela. Sem temporizador:
+// verificar a cada poucos minutos com a aba parada seria leitura paga sem serventia.
+let _ultimaConferenciaTerminal = 0;
+document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible') return;
+    if (!currentUser || typeof terminalAindaTemVaga !== 'function') return;
+    if (Date.now() - _ultimaConferenciaTerminal < 5 * 60000) return;
+    _ultimaConferenciaTerminal = Date.now();
+    try {
+        if (await terminalAindaTemVaga()) return;
+        // Perdeu a vez enquanto estava fora: trava o envio para a nuvem (esta tela
+        // pode estar desatualizada) e explica, sem apagar nada.
+        window.bloquearEscritaNuvem = true;
+        renderTelaTerminalOcupado({ limite: '—', ocupados: [] });
+    } catch (e) { /* nunca trancar por falha de rede */ }
+});
 
 // [SEGURANÇA] Tela de bloqueio para perfil novo aguardando liberação da gestão.
 // Substitui completamente a interface do app: nenhum dado da escola é carregado e

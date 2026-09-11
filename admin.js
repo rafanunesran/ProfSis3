@@ -366,15 +366,76 @@ async function verUsuariosEscola(escolaId) {
 // na hora de decidir se aceitam campo pessoal em app_data.
 async function _lerIsencoesOnline(usuarios) {
     const mapa = {};
+    window._limitesTerminais = {};
     if (typeof db === 'undefined' || !db) return mapa;
     for (const u of usuarios) {
         if (!u.uid) continue;
         try {
             const doc = await db.collection('access').doc(String(u.uid)).get();
-            mapa[u.uid] = !!(doc.exists && doc.data().modoOnlineCompleto === true);
+            const d = doc.exists ? doc.data() : {};
+            mapa[u.uid] = d.modoOnlineCompleto === true;
+            // Ausente = 1 tela. Zero = ilimitado. Mesma leitura, nenhum custo a mais.
+            window._limitesTerminais[u.uid] = (typeof d.limiteTerminais === 'number') ? d.limiteTerminais : 1;
         } catch (e) { /* sem permissão ou sem rede: fica como não isento */ }
     }
     return mapa;
+}
+
+// [EXCLUSIVO DO SUPER ADMIN] Quantas telas esta conta pode ter abertas ao mesmo tempo.
+// Mora em access/{uid} pelo mesmo motivo do modoOnlineCompleto: é lá que as Regras
+// protegem o campo de quem ele limita.
+async function definirLimiteTerminais(uid, nome) {
+    if (!uid) return alert('Este usuário ainda não tem UID do Firebase Auth.\n\nRode "Sincronizar UIDs" antes.');
+    if (typeof db === 'undefined' || !db) return alert('Sem conexão com o banco.');
+
+    const atual = (window._limitesTerminais || {})[uid];
+    const resposta = prompt('Quantas telas ' + nome + ' pode usar ao mesmo tempo?\n\n' +
+                            '1 = só um terminal por vez (padrão)\n' +
+                            '0 = ilimitado\n\n' +
+                            'Hoje: ' + (atual === 0 ? 'ilimitado' : (atual || 1)),
+                            String(atual === undefined ? 1 : atual));
+    if (resposta === null) return;
+
+    const n = parseInt(resposta, 10);
+    if (isNaN(n) || n < 0) return alert('Informe um número inteiro: 0 para ilimitado, ou quantas telas pode abrir.');
+
+    try {
+        await db.collection('access').doc(String(uid)).set({
+            limiteTerminais: n,
+            limiteTerminaisEm: new Date().toISOString(),
+            limiteTerminaisPor: (currentUser && currentUser.email) || 'super_admin'
+        }, { merge: true });
+        alert(nome + ': ' + (n === 0 ? 'acesso ilimitado' : n + ' tela(s) ao mesmo tempo') +
+              '.\n\nVale a partir da próxima abertura de cada terminal.');
+        renderListaUsuariosAdmin();
+    } catch (e) {
+        alert('Não consegui gravar: ' + e.message);
+    }
+}
+
+// Computador perdido ou formatado deixa a vaga presa. Isto devolve a vaga ao bolo
+// sem precisar esperar os 30 dias de ociosidade.
+async function verTerminaisUsuario(uid, nome) {
+    if (!uid) return alert('Este usuário ainda não tem UID do Firebase Auth.');
+    const doc = await getData('terminais', uid);
+    const lista = (doc && doc.lista) || [];
+    if (!lista.length) return alert(nome + ' não tem nenhum terminal ocupando vaga.');
+
+    const linhas = lista.map((t, i) => {
+        const dias = Math.round((Date.now() - (t.visto || 0)) / 86400000);
+        return (i + 1) + ') ' + (t.apelido || 'Terminal') + ' — visto há ' + dias + ' dia(s)';
+    }).join('\n');
+
+    const escolha = prompt('Terminais de ' + nome + ':\n\n' + linhas +
+                           '\n\nDigite o número de um deles para liberar a vaga, ou cancele.');
+    if (!escolha) return;
+    const idx = parseInt(escolha, 10) - 1;
+    if (isNaN(idx) || !lista[idx]) return;
+
+    try {
+        const restantes = await liberarVagaTerminal(uid, lista[idx].id);
+        alert('Vaga liberada. Terminais restantes: ' + restantes + '.');
+    } catch (e) { alert('Não consegui liberar: ' + e.message); }
 }
 
 // [EXCLUSIVO DO SUPER ADMIN] Liga/desliga o modo 100% online de uma conta. Com ele
@@ -440,6 +501,7 @@ async function renderListaUsuariosAdmin() {
                     const roleInfo = roleMap[u.role] || roleMap['professor'];
                     const ehContribuinte = u.contribuidor === true;
                     const isento = !!isencoes[u.uid];
+                    const limite = (window._limitesTerminais || {})[u.uid];
                     return `
                     <tr>
                         <td>${ehContribuinte ? '💛 ' : ''}${u.nome}</td>
@@ -451,6 +513,8 @@ async function renderListaUsuariosAdmin() {
                             <button class="btn btn-secondary btn-sm" onclick="editarUsuarioAdmin('${u.id}')" title="Alterar Perfil/Nome">✏️ Perfil</button>
                             <button class="btn ${ehContribuinte ? 'btn-success' : 'btn-secondary'} btn-sm" onclick="alternarContribuinteAdmin('${u.id}')" title="${ehContribuinte ? 'Remover marca de contribuinte' : 'Marcar como contribuinte'}">${ehContribuinte ? '💛 Contribuinte' : '💛 Marcar'}</button>
                             <button class="btn ${isento ? 'btn-warning' : 'btn-secondary'} btn-sm" onclick="alternarModoOnlineCompleto('${u.uid || ''}', '${(u.nome || '').replace(/'/g, "\\'")}')" title="${isento ? 'Esta conta está isenta do corte: ainda guarda dados de estudante online' : 'Isentar do corte (mantém tudo online)'}">${isento ? '🌐 Online total' : '🌐 Isentar'}</button>
+                            <button class="btn btn-secondary btn-sm" onclick="definirLimiteTerminais('${u.uid || ''}', '${(u.nome || '').replace(/'/g, "\\'")}')" title="Quantas telas esta conta pode abrir ao mesmo tempo">🖥️ ${limite === 0 ? 'Ilimitado' : limite + ' tela(s)'}</button>
+                            <button class="btn btn-secondary btn-sm" onclick="verTerminaisUsuario('${u.uid || ''}', '${(u.nome || '').replace(/'/g, "\\'")}')" title="Ver e liberar vagas ocupadas">📋 Vagas</button>
                             <button class="btn btn-danger btn-sm" onclick="excluirUsuarioAdmin(${u.id})">🗑️</button>
                         </td>
                     </tr>
