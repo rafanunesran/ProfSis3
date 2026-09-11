@@ -1829,12 +1829,24 @@ async function abrirBackupsUsuarioAdmin(userId) {
     const listaEl = document.getElementById('listaBackupsUsuarioAdmin');
     if (!statusEl || !listaEl) return; // modal fechado durante a busca
 
+    // "Nenhum backup encontrado" nunca pode ser a resposta final: quem chega aqui
+    // chegou porque um professor perdeu dados. A varredura forçada olha em todos os
+    // IDs, nos documentos vivos e nas sobras, e diz para onde mandar o professor
+    // quando a nuvem realmente não tem mais nada.
+    const botaoVarredura = '<div style="margin-top:10px;">' +
+        '<button class="btn btn-sm btn-danger" onclick="abrirVarreduraForcada()" ' +
+        'title="Procura em todos os IDs, nos documentos vivos e nas sobras, e diz o que ainda dá para recuperar">' +
+        '🔦 Varredura forçada</button></div>';
+
     if (encontrados.length === 0) {
-        statusEl.innerHTML = '<span style="color:#e53e3e; font-weight:bold;">❌ Nenhum backup encontrado para este usuário.</span>';
+        statusEl.innerHTML = '<span style="color:#e53e3e; font-weight:bold;">❌ Nenhum backup no histórico desta conta.</span>' +
+            '<div style="font-size:12px; color:#718096; margin-top:6px;">Se este professor passou pela transição, ' +
+            'é o esperado: o histórico em texto claro é apagado ali. Faça a varredura forçada para ver o que sobrou.</div>' +
+            botaoVarredura;
         return;
     }
 
-    statusEl.innerHTML = `<span style="color:#276749; font-weight:bold;">✅ ${encontrados.length} backup(s) encontrado(s).</span>`;
+    statusEl.innerHTML = `<span style="color:#276749; font-weight:bold;">✅ ${encontrados.length} backup(s) encontrado(s).</span>` + botaoVarredura;
     listaEl.innerHTML = encontrados.map((b, i) => `
         <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
             <div>
@@ -2009,4 +2021,228 @@ async function restaurarBackupUsuarioAdmin(idx) {
     } catch (e) {
         alert('Erro ao restaurar: ' + e.message);
     }
+}
+// ============================================================================
+//  VARREDURA FORÇADA — quando "não há backups" não pode ser a resposta final
+// ----------------------------------------------------------------------------
+//  A transição apaga, de propósito, TODO o histórico de backups em texto claro
+//  (migracao.js, passo 7): eram documentos com nome de estudante dentro, e é isso
+//  que a determinação da Secretaria manda tirar da nuvem. O Firestore não tem
+//  lixeira — apagado ali é apagado de verdade.
+//
+//  O resultado é que o painel de backups responde "nenhum backup encontrado" e
+//  para por aí, como se o trabalho do professor tivesse sumido. Não tinha: o que
+//  a transição faz ANTES de apagar qualquer coisa é gravar tudo no aparelho dele
+//  e exigir o download do arquivo .profsis. A varredura abaixo procura o que
+//  sobrou em TODO lugar da nuvem, e — mais importante — diz em que estado a conta
+//  está, para o responsável saber para onde mandar o professor.
+// ============================================================================
+
+// Todo lugar da nuvem onde pode ter sobrado dado desta conta.
+function _alvosVarredura(user) {
+    const alvos = [];
+    const escola = user.schoolId || 'default';
+
+    for (const id of idsBackupUsuario(user)) {
+        alvos.push({ tipo: 'indice', chave: 'backup_index_' + id, ownerId: id });
+        for (let i = 1; i <= BACKUP_SLOTS_ADMIN; i++) {
+            alvos.push({ tipo: 'slot', chave: 'backup_' + id + '_slot_' + i, ownerId: id, slot: i });
+            // Sobras de backup cifrado: a transição apaga o documento principal e
+            // NÃO apaga as continuações. Sozinhas elas não abrem (o iv e o primeiro
+            // pedaço estavam no principal), mas denunciam que houve backup ali.
+            alvos.push({ tipo: 'sobra', chave: 'backup_' + id + '_slot_' + i + '_p2', ownerId: id, slot: i });
+        }
+    }
+
+    // Os documentos VIVOS. O painel de backups nunca olhou para cá, e é justamente
+    // aqui que sobrevive o que a transição não apaga: turmas, agenda, planos de aula.
+    if (user.uid) alvos.push({ tipo: 'vivo', chave: 'app_data_' + user.uid, ownerId: user.uid });
+    if (user.id && user.id !== user.uid) alvos.push({ tipo: 'vivo', chave: 'app_data_' + user.id, ownerId: user.id });
+    ['gestor', 'aee', 'projeto'].forEach(papel => {
+        alvos.push({ tipo: 'vivo', chave: 'app_data_school_' + escola + '_' + papel, ownerId: escola });
+    });
+
+    return alvos;
+}
+
+function _resumoConteudo(doc) {
+    if (!doc) return null;
+    if (doc.cifrado === true) return { cifrado: true };
+    const n = k => (doc[k] || []).length;
+    return {
+        cifrado: false,
+        estudantes: n('estudantes'), turmas: n('turmas'), notas: n('notas'),
+        ocorrencias: n('ocorrencias'), tutorados: n('tutorados'), presencas: n('presencas'),
+        // "Tem alguma coisa que valha a pena" — um documento só com turmas ainda
+        // serve, mas é o que a transição deixa para trás de propósito.
+        temPessoal: n('estudantes') + n('tutorados') + n('ocorrencias') > 0
+    };
+}
+
+// Varre tudo e devolve um relatório honesto: o que existe, o que está vazio e o
+// que não existe mais. Não esconde o resultado ruim — é o resultado ruim que diz
+// ao responsável que a recuperação tem de vir do aparelho do professor.
+async function varreduraForcadaBackups(user) {
+    const achados = [];
+    const alvos = _alvosVarredura(user);
+    let lidos = 0;
+
+    for (const alvo of alvos) {
+        lidos++;
+        let doc = null;
+        try { doc = await getData('app_data', alvo.chave); } catch (e) { continue; }
+        if (!doc) continue;
+        achados.push(Object.assign({}, alvo, { doc: doc, resumo: _resumoConteudo(doc) }));
+    }
+
+    // A chave de cifra existe? Sem ela nem a chave de suporte abre backup cifrado,
+    // e é o que explica uma conta que parou de gerar backup depois da transição.
+    let chaves = null;
+    if (user.uid) {
+        try {
+            const d = await db.collection('chaves_backup').doc(String(user.uid)).get();
+            if (d.exists) {
+                const c = d.data();
+                chaves = { existe: true, temSuporte: !!c.wrapSuporte, atualizadoEm: c.atualizadoEm || null };
+            } else {
+                chaves = { existe: false, temSuporte: false, atualizadoEm: null };
+            }
+        } catch (e) { chaves = null; }
+    }
+
+    return { achados: achados, documentosLidos: lidos, chaves: chaves };
+}
+
+function _linhaAchado(a, i) {
+    const r = a.resumo || {};
+    let detalhe;
+    if (a.tipo === 'indice') {
+        const slots = (a.doc.slots || []).length;
+        detalhe = 'Índice de backups — ' + slots + ' entrada(s) registrada(s)' +
+                  (slots ? '. Se os slots não aparecem abaixo, eles foram apagados e só o índice sobrou.' : '.');
+    } else if (a.tipo === 'sobra') {
+        detalhe = 'Continuação de um backup cifrado cujo documento principal não existe mais. ' +
+                  'Sozinha ela não abre — serve como prova de que houve backup, e precisa ser apagada.';
+    } else if (r.cifrado) {
+        detalhe = 'Backup cifrado — abre com a chave de suporte.';
+    } else {
+        detalhe = r.estudantes + ' estudante(s), ' + r.turmas + ' turma(s), ' + r.notas + ' nota(s), ' +
+                  r.ocorrencias + ' ocorrência(s)' + (r.temPessoal ? '' : ' — sem dado pessoal (é o que a transição deixa)');
+    }
+    const recuperavel = a.tipo !== 'sobra' && (r.temPessoal || r.cifrado);
+    const cor = a.tipo === 'sobra' ? '#c05621' : (recuperavel ? '#276749' : '#4a5568');
+    return '<div style="padding:10px 12px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">' +
+        '<div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">' +
+            '<div><div style="font-weight:bold; color:' + cor + '; font-size:13px;">' + a.chave + '</div>' +
+            '<div style="font-size:12px; color:#718096;">' + detalhe + '</div></div>' +
+            (recuperavel
+                ? '<button class="btn btn-sm btn-info" style="flex-shrink:0;" onclick="baixarAchadoVarredura(' + i + ')">⬇️ Baixar</button>'
+                : '') +
+        '</div></div>';
+}
+
+// Entrega o que a varredura achou no MESMO formato que o professor importa no
+// aparelho dele. Não reenviamos nada para a nuvem: depois do corte, dado pessoal
+// volta pelo aparelho, não pelo Firestore.
+function baixarAchadoVarredura(idx) {
+    const a = (window._achadosVarredura || [])[idx];
+    const user = window._backupUsuarioAlvo;
+    if (!a || !user) return;
+    if (a.doc && a.doc.cifrado === true) {
+        return alert('Este achado está cifrado.\n\nUse "🔐 Recuperar com a chave" na lista de backups, ' +
+                     'que decifra aqui no seu navegador com o arquivo .pem.');
+    }
+    const pacote = {
+        formato: 'profsis', versao: 1, geradoEm: new Date().toISOString(),
+        origem: 'varredura-forcada:' + a.chave,
+        usuario: { nome: user.nome, email: user.email }, dados: a.doc
+    };
+    const nome = (user.nome || user.email || 'professor').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const blob = new Blob([JSON.stringify(pacote)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const el = document.createElement('a');
+    el.href = url;
+    el.download = 'varredura-' + nome + '-' + a.chave + '.profsis';
+    document.body.appendChild(el); el.click(); el.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+// O veredito. É a parte que faltava: dizer ao responsável o que fazer quando a
+// nuvem realmente não tem mais nada.
+function _vereditoVarredura(rel) {
+    // A `sobra` fica de fora de propósito: uma continuação sem o documento principal
+    // não abre (o iv e o primeiro pedaço estavam lá). Contá-la como recuperável faria
+    // o painel dizer "há o que recuperar" para quem não tem nada — que é a mentira
+    // mais cara que este painel poderia contar.
+    const comPessoal = rel.achados.filter(a => a.tipo !== 'sobra' && a.resumo && (a.resumo.temPessoal || a.resumo.cifrado));
+    const sobras = rel.achados.filter(a => a.tipo === 'sobra');
+    const indices = rel.achados.filter(a => a.tipo === 'indice');
+
+    if (comPessoal.length) {
+        return { cor: '#276749', fundo: '#f0fff4', titulo: '✅ Há o que recuperar na nuvem',
+            texto: comPessoal.length + ' documento(s) ainda trazem dado do professor. Baixe o que ' +
+                   'interessa e envie a ele: no aparelho dele, <strong>Dados &gt; Restaurar do meu arquivo</strong>.' };
+    }
+
+    const passouPelaTransicao = indices.length > 0 || sobras.length > 0;
+    return { cor: '#9b2c2c', fundo: '#fff5f5',
+        titulo: passouPelaTransicao ? '⚠️ Os backups foram apagados pela transição' : '⚠️ A nuvem não tem backup desta conta',
+        texto:
+            (passouPelaTransicao
+                ? 'Encontrei o rastro do histórico (' + (indices.length ? 'o índice' : 'sobras de backup cifrado') +
+                  ') mas não os backups em si. Isso é o passo 7 da transição: os backups em texto claro ' +
+                  'levavam nome de estudante e são apagados para atender à Secretaria. O Firestore não tem lixeira.'
+                : 'Não há índice nem slot desta conta em nenhum dos IDs conhecidos.') +
+            '<br><br><strong>Os dados do professor não foram perdidos junto.</strong> A transição grava tudo ' +
+            'no aparelho dele e confere antes de apagar qualquer coisa da nuvem. Peça, nesta ordem:' +
+            '<br>1. O arquivo <strong>.profsis</strong> que ele baixou durante a transição (sem ele a transição não ' +
+            'teria concluído) — e <strong>Dados &gt; Restaurar do meu arquivo</strong>.' +
+            '<br>2. Se ele ainda usa o <strong>mesmo navegador e aparelho</strong> da transição, os dados continuam lá: ' +
+            'os estudantes aparecem normalmente ao abrir o sistema.' +
+            '<br>3. Se os dois falharam, resta a recuperação do próprio Firestore (Point-in-Time Recovery, ' +
+            'janela de 7 dias, ou o export agendado) — no console do Google Cloud, fora deste sistema.' };
+}
+
+async function abrirVarreduraForcada() {
+    const user = window._backupUsuarioAlvo;
+    if (!user) return alert('Abra a varredura pela lista de backups do usuário.');
+
+    const statusEl = document.getElementById('statusBackupsUsuarioAdmin');
+    const listaEl = document.getElementById('listaBackupsUsuarioAdmin');
+    if (statusEl) statusEl.innerHTML = '🔦 Varredura forçada em andamento — procurando em todos os IDs e documentos...';
+    if (listaEl) listaEl.innerHTML = '';
+
+    const rel = await varreduraForcadaBackups(user);
+    window._achadosVarredura = rel.achados;
+
+    if (!document.getElementById('statusBackupsUsuarioAdmin')) return;  // modal fechado
+
+    const v = _vereditoVarredura(rel);
+    let chaveTxt = '';
+    if (rel.chaves && !rel.chaves.existe) {
+        chaveTxt = '<div style="margin-top:10px; padding:10px 12px; background:#fffaf0; border:1px solid #fbd38d; ' +
+            'border-radius:8px; font-size:13px; color:#744210;"><strong>Esta conta não tem chave de backup.</strong> ' +
+            'Sem ela o backup diário cifrado não é criado — a conta fica sem histórico novo depois da transição. ' +
+            'Peça ao professor para <strong>sair e entrar de novo com e-mail e senha</strong> (é o login que cria a chave).</div>';
+    } else if (rel.chaves && rel.chaves.existe && !rel.chaves.temSuporte) {
+        chaveTxt = '<div style="margin-top:10px; padding:10px 12px; background:#fffaf0; border:1px solid #fbd38d; ' +
+            'border-radius:8px; font-size:13px; color:#744210;">A chave desta conta foi criada <strong>sem cópia de ' +
+            'suporte</strong>: os backups cifrados dela só abrem com a senha do próprio professor.</div>';
+    }
+
+    document.getElementById('statusBackupsUsuarioAdmin').innerHTML =
+        '<div style="text-align:left; padding:12px 14px; background:' + v.fundo + '; border:1px solid ' + v.cor +
+        '33; border-radius:8px;">' +
+            '<div style="font-weight:bold; color:' + v.cor + '; margin-bottom:6px;">' + v.titulo + '</div>' +
+            '<div style="font-size:13px; color:#2d3748; line-height:1.6;">' + v.texto + '</div>' +
+        '</div>' + chaveTxt +
+        '<div style="font-size:11px; color:#a0aec0; margin-top:8px; text-align:left;">' +
+            rel.documentosLidos + ' documentos consultados · ' + rel.achados.length + ' com conteúdo</div>';
+
+    document.getElementById('listaBackupsUsuarioAdmin').innerHTML =
+        rel.achados.length
+            ? rel.achados.map((a, i) => _linhaAchado(a, i)).join('')
+            : '<div style="padding:14px; text-align:center; color:#718096; font-size:13px;">' +
+              'Nenhum documento desta conta respondeu. Nem os vivos — confira se o usuário tem UID ' +
+              'do Firebase Auth e se a escola dele está correta no cadastro.</div>';
 }

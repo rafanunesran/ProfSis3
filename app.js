@@ -904,6 +904,61 @@ function mostrarBannerSemDadosLocais() {
     document.body.insertBefore(banner, document.body.firstChild);
 }
 
+// Depois da transição o backup diário só sobe CIFRADO, e a chave que o cifra vive
+// neste aparelho desde o último login com senha. Quem ficou logado por sessão
+// restaurada não a tem — e sem ela NENHUM backup é criado. Como os backups antigos
+// já foram apagados pela transição, o silêncio aqui significa conta sem nenhuma
+// rede de proteção. Esta faixa existe para que isso nunca mais passe despercebido.
+function mostrarBannerBackupSemChave() {
+    if (document.getElementById('bannerBackupSemChave')) return;
+    const banner = document.createElement('div');
+    banner.id = 'bannerBackupSemChave';
+    banner.style.cssText = 'position:sticky; top:0; z-index:10001; background:#975a16; color:#fff; ' +
+        'padding:12px 16px; text-align:center; font-size:14px; box-shadow:0 2px 6px rgba(0,0,0,0.25);';
+    banner.innerHTML =
+        '<div style="max-width:780px; margin:0 auto;">' +
+          '<strong>Seus backups na nuvem estão parados.</strong><br>' +
+          '<span style="font-size:13px; opacity:.95;">Depois da transição o backup sobe cifrado, e a ' +
+          'chave que o abre só é liberada quando você entra com a sua senha. Enquanto isso, nenhum ' +
+          'backup novo está sendo criado.</span>' +
+          '<div style="margin-top:9px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">' +
+            '<button class="btn btn-sm" style="background:#fff; color:#975a16; font-weight:bold;" ' +
+              'onclick="liberarChaveBackup()">🔑 Liberar meus backups</button>' +
+            '<button class="btn btn-sm" style="background:rgba(255,255,255,.18); color:#fff;" ' +
+              'onclick="exportarArquivoProfsis()">⬇️ Baixar cópia agora</button>' +
+          '</div>' +
+        '</div>';
+    document.body.insertBefore(banner, document.body.firstChild);
+}
+
+// Pede a senha uma vez, libera a chave e faz o backup na hora — para o professor ver
+// o resultado, em vez de ficar esperando a próxima abertura do sistema.
+async function liberarChaveBackup() {
+    if (!currentUser || !currentUser.uid) {
+        return alert('Não consigo identificar sua conta no Firebase.\n\nSaia e entre de novo com e-mail e senha.');
+    }
+    if (typeof desbloquearChaveBackupComSenha !== 'function') {
+        return alert('O módulo de criptografia não carregou. Recarregue a página.');
+    }
+    const senha = prompt('Digite a senha da sua conta para liberar a chave de backup deste aparelho:');
+    if (!senha) return;
+
+    try {
+        const chave = await desbloquearChaveBackupComSenha(currentUser.uid, senha);
+        if (!chave) return alert('Não consegui liberar a chave. Confira a senha e tente de novo.');
+
+        const b = document.getElementById('bannerBackupSemChave');
+        if (b) b.remove();
+        window.backupSemChave = false;
+
+        await criarBackupNuvem(true);
+        alert('Pronto. A chave está neste aparelho e um backup cifrado acabou de ser criado.\n\n' +
+              'O backup diário volta a rodar sozinho.');
+    } catch (e) {
+        alert('Não consegui liberar a chave: ' + e.message);
+    }
+}
+
 // [SEGURANÇA] Tela de bloqueio para perfil novo aguardando liberação da gestão.
 // Substitui completamente a interface do app: nenhum dado da escola é carregado e
 // nenhuma ferramenta fica acessível enquanto o gestor não confirmar o acesso.
@@ -8450,10 +8505,18 @@ async function verificarBackupAutomatico() {
     if (typeof podeEnviarDadoPessoal === 'function' && !podeEnviarDadoPessoal()) {
         const chave = (typeof obterChaveBackup === 'function') ? await obterChaveBackup() : null;
         if (!chave) {
-            console.warn('Backup na nuvem adiado: a chave de cifra ainda não está neste aparelho (entre com e-mail e senha uma vez).');
+            // Isto era só um console.warn — e foi assim que uma conta passou a
+            // transição inteira sem backup nenhum: os antigos tinham sido apagados
+            // (é o que a adequação manda) e os novos nunca começavam, sem nada na
+            // tela dizendo isso. A sessão restaurada não traz a chave: só o login
+            // com senha traz. Então aqui pedimos a senha, uma vez.
+            console.warn('Backup na nuvem adiado: a chave de cifra não está neste aparelho.');
+            window.backupSemChave = true;
+            mostrarBannerBackupSemChave();
             return;
         }
     }
+    window.backupSemChave = false;
 
     try {
         const indexKey = `backup_index_${userId}`;
