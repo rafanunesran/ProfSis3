@@ -2385,20 +2385,22 @@ function _vereditoVarredura(rel) {
 
     const passouPelaTransicao = indices.length > 0 || sobras.length > 0;
     return { cor: '#9b2c2c', fundo: '#fff5f5',
-        titulo: passouPelaTransicao ? '⚠️ Os backups foram apagados pela transição' : '⚠️ A nuvem não tem backup desta conta',
+        titulo: passouPelaTransicao ? '⚠️ O histórico desta conta foi apagado' : '⚠️ A nuvem não tem backup desta conta',
         texto:
             (passouPelaTransicao
                 ? 'Encontrei o rastro do histórico (' + (indices.length ? 'o índice' : 'sobras de backup cifrado') +
-                  ') mas não os backups em si. Isso é o passo 7 da transição: os backups em texto claro ' +
-                  'levavam nome de estudante e são apagados para atender à Secretaria. O Firestore não tem lixeira.'
+                  ') mas não os backups em si. Contas que passaram pela transição para o modo local, quando ela ' +
+                  'existia, tiveram o histórico em texto claro APAGADO ali — e o Firestore não tem lixeira. ' +
+                  '(Hoje esses backups são convertidos para cifrado, não apagados.)'
                 : 'Não há índice nem slot desta conta em nenhum dos IDs conhecidos.') +
-            '<br><br><strong>Os dados do professor não foram perdidos junto.</strong> A transição grava tudo ' +
-            'no aparelho dele e confere antes de apagar qualquer coisa da nuvem. Peça, nesta ordem:' +
-            '<br>1. O arquivo <strong>.profsis</strong> que ele baixou durante a transição (sem ele a transição não ' +
-            'teria concluído) — e <strong>Dados &gt; Restaurar do meu arquivo</strong>.' +
-            '<br>2. Se ele ainda usa o <strong>mesmo navegador e aparelho</strong> da transição, os dados continuam lá: ' +
-            'os estudantes aparecem normalmente ao abrir o sistema.' +
-            '<br>3. Se os dois falharam, resta a recuperação do próprio Firestore (Point-in-Time Recovery, ' +
+            '<br><br><strong>Isso não quer dizer que o professor perdeu o trabalho.</strong> Peça, nesta ordem:' +
+            '<br>1. O arquivo <strong>.profsis</strong> que ele tenha baixado — e ' +
+            '<strong>Dados &gt; Restaurar do meu arquivo</strong>.' +
+            '<br>2. O <strong>navegador e aparelho de sempre</strong>: a cópia do aparelho é independente do ' +
+            'histórico de backup, e costuma estar intacta.' +
+            '<br>3. A camada pessoal cifrada na nuvem (<code>pessoal_*</code>), que volta em qualquer terminal ' +
+            'com a senha dele.' +
+            '<br>4. Se nada disso deu, resta a recuperação do próprio Firestore (Point-in-Time Recovery, ' +
             'janela de 7 dias, ou o export agendado) — no console do Google Cloud, fora deste sistema.' };
 }
 

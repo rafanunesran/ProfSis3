@@ -274,6 +274,33 @@ dados e dependia de lembrar de um arquivo. A partir desta fase:
   chave; quem quiser burlá-lo consegue. Serve contra o descuido e o compartilhamento
   casual, e está escrito assim no código e nas Regras.
 
+### Setembro/2026 — o desenho vigente: online, cifrado, com limite de telas
+
+O modo local puro foi **cancelado**. Ele custou caro na prática (professor sem os dados ao
+trocar de máquina, importação manual que ninguém lembrava) e não era a única forma de
+atender ao Comunicado. O desenho que fica:
+
+- **O sistema é online para todos.** Não há mais migração forçada, modal bloqueante nem
+  pop-up duas vezes por dia. Esse ritual saiu inteiro.
+- **O dado de estudante mora na nuvem cifrado em repouso** (`app_data/pessoal_<chave>`,
+  AES-GCM, chave derivada da senha do profissional por PBKDF2-SHA256, nunca enviada ao
+  servidor). Para o Firebase, para o Google e para quem invadir o banco, é ruído.
+- **Dado pessoal em claro continua proibido** e a Regra do Firestore continua recusando —
+  é o que separa este desenho do anterior à adequação.
+- **A ordem de gravação é parte da proteção:** a cópia cifrada sobe primeiro e é relida
+  uma vez por sessão; só depois o documento em claro é reescrito. Falhando a cifrada, o
+  documento em claro **não é tocado** — melhor desatualizado do que inexistente.
+- **Backups antigos em texto claro são convertidos, não apagados:** ficam cifrados no
+  mesmo lugar, e o índice permanece. Sem a chave no aparelho, nada é convertido nem
+  apagado.
+- **O controle de uso é o limite de telas por conta** (`access/<uid>.limiteTerminais`:
+  ausente = 1, zero = ilimitado, gravável só pelo super admin). Trocar de terminal exige
+  confirmação; o anterior não perde nada.
+
+Ressalva mantida da Fase 2: a segunda cópia do envelope (RSA de suporte) permite ao
+responsável socorrer quem perdeu a senha — ou seja, o sigilo é contra o provedor e contra
+invasão, **não** contra o administrador do sistema.
+
 ### Sobre o acervo de quem não migrar
 
 **Decisão: nada é apagado por varredura.** Quem nunca abrir a versão nova permanece com os

@@ -908,8 +908,9 @@ function mostrarBannerSemDadosLocais() {
     banner.innerHTML =
         '<div style="max-width:760px; margin:0 auto;">' +
           '<strong>Suas turmas estão aqui, mas os estudantes não.</strong><br>' +
-          '<span style="font-size:13px; opacity:.95;">Os dados dos estudantes ficam no aparelho onde ' +
-          'você fez a transição. Traga-os com a sua cópia de segurança.</span>' +
+          '<span style="font-size:13px; opacity:.95;">Se você tem uma cópia de segurança, pode ' +
+          'importá-la agora. Normalmente os dados voltam sozinhos pela nuvem — se não voltaram, ' +
+          'veja o aviso no topo da página.</span>' +
           '<div style="margin-top:9px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">' +
             '<button class="btn btn-sm" style="background:#fff; color:#2c5282; font-weight:bold;" ' +
               'onclick="abrirSeletorArquivoProfsis()">⬆️ Importar dados do arquivo</button>' +
@@ -8728,6 +8729,15 @@ async function verificarBackupAutomatico() {
             window.backupSemChave = true;
             mostrarBannerBackupSemChave();
             return;
+        }
+        // Com a chave em mãos, aproveita para cifrar os backups antigos que ficaram em
+        // texto claro no banco. Eles NÃO são apagados: o histórico continua lá, agora
+        // ilegível. Roda uma vez por sessão e é silencioso — se falhar, tenta de novo
+        // amanhã e nada se perde.
+        if (!window._backupsAntigosConvertidos && typeof converterBackupsEmClaro === 'function') {
+            window._backupsAntigosConvertidos = true;
+            try { await converterBackupsEmClaro(userId); }
+            catch (e) { console.warn('[Backups] Conversão adiada:', e); }
         }
     }
     window.backupSemChave = false;

@@ -150,386 +150,97 @@ async function _conferirImportacao(dados) {
     return Object.assign({ ok: true, motivo: '' }, real);
 }
 
-// --- A transição ------------------------------------------------------------
-
-// Apaga os documentos de chamada compartilhada da escola. Eles mapeiam
-// idDoEstudante -> professores que marcaram falta, ou seja, são dado pessoal
-// pseudonimizado, e o recurso deixa de existir depois da transição.
-async function _apagarChamadaCompartilhada(schoolId) {
-    if (typeof db === 'undefined' || !db || !schoolId) return 0;
-    try {
-        const prefixo = 'school_' + schoolId + '_';
-        const snap = await db.collection('shared_attendance')
-            .orderBy(firebase.firestore.FieldPath.documentId())
-            .startAt(prefixo).endAt(prefixo + '').limit(500).get();
-        let n = 0;
-        for (const doc of snap.docs) { await doc.ref.delete(); n++; }
-        return n;
-    } catch (e) {
-        console.warn('[Migração] Não consegui limpar a chamada compartilhada:', e);
-        return 0;
-    }
-}
-
-// Os backups diários antigos estão em texto claro no Firestore, com estudantes
-// dentro. São exatamente o que não pode ficar online, então saem.
-async function _apagarBackupsEmClaro(userId) {
-    if (typeof db === 'undefined' || !db || !userId) return 0;
-    const limite = (typeof BACKUP_MAX_DIAS === 'number' ? BACKUP_MAX_DIAS : 20);
-    let n = 0;
-    const alvos = ['backup_index_' + userId];
-    for (let i = 1; i <= limite; i++) {
-        alvos.push('backup_' + userId + '_slot_' + i);
-        // As continuações (`_p2`, `_p3`...) ficavam para trás. Um backup grande de
-        // antes da adequação deixava pedaços de dado de estudante na nuvem depois de
-        // a transição se declarar concluída — e o painel do super admin os encontrava
-        // como "sobra". Saem junto. O teto de 6 cobre um backup de ~5 MB; o que
-        // passar disso a varredura forçada mostra e o responsável apaga.
-        for (let parte = 2; parte <= 6; parte++) {
-            alvos.push('backup_' + userId + '_slot_' + i + '_p' + parte);
-        }
-    }
-    for (const id of alvos) {
-        try { await db.collection('app_data').doc(id).delete(); n++; }
-        catch (e) { /* já não existia, ou regra negou — segue */ }
-    }
-    return n;
-}
-
-// O histórico recomeça do zero logo depois de ser apagado — mas só se a chave de
-// cifra estiver neste aparelho. Quando não está, o backup diário desiste em silêncio
-// (verificarBackupAutomatico) e a conta fica SEM backup nenhum por tempo indefinido:
-// os antigos foram apagados e os novos nunca começam. Foi assim que um professor em
-// transição ficou sem histórico algum.
+// ============================================================================
+//  A TRANSIÇÃO PARA O MODO LOCAL FOI CANCELADA
+// ----------------------------------------------------------------------------
+//  O sistema voltou a ser online para todo mundo. O que ficava aqui — migração
+//  forçada na abertura, modal que não se dispensava, pop-up duas vezes por dia e
+//  a limpeza da nuvem — saiu de cena inteiro.
 //
-// Então o primeiro backup cifrado é criado AQUI, na própria transição, e o resultado
-// é dito ao professor em vez de virar um aviso de console que ninguém lê.
-async function _recomecarHistoricoCifrado() {
-    try {
-        if (typeof criarBackupNuvem !== 'function') return false;
-        const chave = (typeof obterChaveBackup === 'function') ? await obterChaveBackup() : null;
-        if (!chave) {
-            console.warn('[Migração] Sem chave de cifra neste aparelho: o histórico de backup fica vazio até o próximo login com senha.');
-            return false;
-        }
-        await criarBackupNuvem(true);
-        return true;
-    } catch (e) {
-        console.warn('[Migração] Não consegui recomeçar o histórico de backup:', e);
-        return false;
-    }
-}
-
-// Conta o que precisa sobreviver à transição. Usado para comparar o que estava em
-// memória com o que voltou do IndexedDB — se não bater, a nuvem não é tocada.
-function _censo(dados) {
-    const c = {};
-    ['estudantes', 'ocorrencias', 'tutorados', 'encontros', 'presencas', 'notas',
-     'registrosAdministrativos'].forEach(k => { c[k] = (dados && dados[k] || []).length; });
-    return c;
-}
-
-function _censoIgual(a, b) {
-    return Object.keys(a).every(k => a[k] === b[k]);
-}
-
-// Pede ao professor a confirmação EXPLÍCITA de que o arquivo de segurança está com
-// ele. Não é um `confirm` de passagem: sem marcar a caixa, o botão não habilita, e
-// sem isso nada é apagado da nuvem. Devolve true só quando ele confirma.
-function _pedirConfirmacaoDoArquivo(censo) {
-    return new Promise((resolve) => {
-        const anterior = document.getElementById('modalConfirmaArquivo');
-        if (anterior) anterior.remove();
-
-        const div = document.createElement('div');
-        div.id = 'modalConfirmaArquivo';
-        div.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:10001;' +
-            'display:flex; align-items:center; justify-content:center; padding:16px;';
-        div.innerHTML =
-            '<div style="background:#fff; border-radius:12px; max-width:520px; width:100%; padding:26px 28px;' +
-            'box-shadow:0 20px 40px rgba(0,0,0,0.3); max-height:90vh; overflow:auto;">' +
-                '<h2 style="margin:0 0 14px; color:#2c5282; font-size:19px;">Guarde o arquivo antes de continuar</h2>' +
-                '<p style="color:#2d3748; font-size:14px; line-height:1.6;">Seus dados foram gravados neste ' +
-                'aparelho: <strong>' + censo.estudantes + ' estudante(s)</strong>, ' +
-                censo.ocorrencias + ' ocorrência(s), ' + censo.tutorados + ' tutorado(s).</p>' +
-                '<p style="color:#2d3748; font-size:14px; line-height:1.6;">Baixe a cópia de segurança e ' +
-                'guarde-a em lugar seguro. <strong>Nada será apagado da nuvem até você confirmar que o ' +
-                'arquivo está com você.</strong></p>' +
-                '<div style="background:#ebf8ff; border:1px solid #bee3f8; border-radius:8px; padding:11px 13px; margin:12px 0;">' +
-                    '<strong style="color:#2c5282; font-size:13px;">Este arquivo NÃO é o programa</strong>' +
-                    '<p style="margin:5px 0 0; font-size:13px; color:#2a4365; line-height:1.55;">' +
-                    'Não tente abri-lo: ele guarda os seus dados, não o sistema. O ProfSis continua ' +
-                    'no mesmo endereço de sempre, no navegador.<br>' +
-                    'Se um dia precisar dos dados de volta, entre no sistema e use ' +
-                    '<strong>Dados &gt; Restaurar do meu arquivo</strong>.</p>' +
-                '</div>' +
-                '<button class="btn btn-primary" id="btnBaixarNaConfirma" style="width:100%; margin:14px 0;">' +
-                    'Baixar minha cópia de segurança</button>' +
-                '<label style="display:flex; align-items:flex-start; gap:9px; font-size:13px; color:#4a5568;' +
-                'background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:11px 13px;">' +
-                    '<input type="checkbox" id="chkArquivoGuardado" disabled style="margin-top:2px; width:auto;">' +
-                    '<span>Confirmo que baixei a cópia e sei onde ela está guardada.<br>' +
-                    '<em style="color:#a0aec0;">Baixe o arquivo acima para liberar esta opção.</em></span>' +
-                '</label>' +
-                '<div style="display:flex; gap:10px; margin-top:16px;">' +
-                    '<button class="btn btn-secondary" id="btnCancelarTransicao" style="flex:1;">Cancelar</button>' +
-                    '<button class="btn btn-success" id="btnConcluirTransicao" style="flex:2;" disabled>Concluir a transição</button>' +
-                '</div>' +
-            '</div>';
-        document.body.appendChild(div);
-
-        const chk = div.querySelector('#chkArquivoGuardado');
-        const btnOk = div.querySelector('#btnConcluirTransicao');
-        let baixou = false;
-
-        div.querySelector('#btnBaixarNaConfirma').onclick = () => {
-            baixou = exportarArquivoProfsis() || baixou;
-            if (baixou) chk.disabled = false;
-        };
-        chk.onchange = () => { btnOk.disabled = !chk.checked; };
-        div.querySelector('#btnCancelarTransicao').onclick = () => { div.remove(); resolve(false); };
-        btnOk.onclick = () => { div.remove(); resolve(true); };
-    });
-}
-
-let _migracaoEmAndamento = false;
-
-// Leva o dado pessoal para o aparelho e SÓ ENTÃO limpa a nuvem.
+//  O que garante a adequação agora não é tirar o dado da nuvem, é ele subir
+//  CIFRADO: a camada pessoal vai para app_data/pessoal_<chave> com a chave
+//  derivada da senha do professor, que nunca sai do aparelho (ver core.js e
+//  cripto.js). Para o banco é ruído; para qualquer terminal autorizado, basta a
+//  senha. O controle de uso passou a ser o limite de telas (terminais.js).
 //
-// A ordem importa e é o coração desta função: gravamos no aparelho, CONFERIMOS que
-// chegou inteiro, exigimos a confirmação de que o professor guardou o arquivo, e só
-// depois disso mexemos na nuvem. Qualquer passo que falhe deixa a nuvem intacta —
-// nunca ficamos com o dado apagado de um lado sem estar seguro do outro.
-async function migrarParaLocal(opcoes) {
-    opcoes = opcoes || {};
-    if (_migracaoEmAndamento) return false;
-    if (window.usuarioOnlineCompleto) {
-        console.log('[Migração] Conta isenta pelo super admin — nada a fazer.');
-        return false;
-    }
-    if (!currentUser) return false;
+//  O arquivo .profsis continua acima, inteiro: baixar e importar seguem sendo
+//  rede de proteção — agora por escolha do professor, não por obrigação.
+// ============================================================================
 
-    _migracaoEmAndamento = true;
+// Chamado por iniciarApp(). Não bloqueia nada: só conta o que mudou, uma vez por
+// aparelho, e some quando a pessoa fecha.
+async function aplicarRegraDoCorte() {
     try {
-        const chave = getStorageKey(currentUser);
+        if (typeof metaGet === 'function' && await metaGet('avisoModoOnlineVisto')) return;
+    } catch (e) {}
+    if (!currentUser) return;
 
-        // Se a leitura da nuvem falhou, o que está em memória pode ser parcial.
-        // Migrar em cima disso apagaria o trabalho do professor.
-        if (!window.dadosCarregados || window.bloquearEscritaNuvem) {
-            alert('Não consegui confirmar seus dados com o servidor agora.\n\n' +
-                  'A transição foi adiada para não arriscar seus registros. ' +
-                  'Tente de novo com uma conexão estável.');
-            return false;
-        }
+    _mostrarAvisoModoOnline();
 
-        const { local, nuvem } = dividirDados(data);
-        const censoAntes = _censo(data);
-
-        // 1. Grava no aparelho.
-        await localSet(chave, local);
-
-        // 2. Relê e confere. Um IndexedDB que recusou a gravação em silêncio (cota,
-        //    modo restrito) seria descoberto aqui, e não depois de apagar a nuvem.
-        const conferencia = await localGet(chave);
-        if (!conferencia || !_censoIgual(censoAntes, _censo(conferencia))) {
-            alert('Não consegui confirmar a gravação dos seus dados neste aparelho.\n\n' +
-                  'NADA foi alterado na nuvem. Seus dados continuam onde estavam.\n\n' +
-                  'Tente por outro navegador, ou libere espaço de armazenamento e tente de novo.');
-            return false;
-        }
-
-        // 3. Arquivo de segurança, com confirmação explícita. Enquanto o professor
-        //    não disser que o arquivo está com ele, a nuvem não é tocada.
-        if (!opcoes.pularArquivo) {
-            const confirmou = await _pedirConfirmacaoDoArquivo(censoAntes);
-            if (!confirmou) {
-                console.log('[Migração] Cancelada pelo professor. Nuvem intacta.');
-                return false;
-            }
-        }
-
-        // --- Daqui para baixo, e só daqui, a nuvem é alterada ---
-
-        // 4. Regrava o documento só com a camada que não identifica estudante.
-        //    O .set() sobrescreve o documento inteiro, então os campos pessoais somem.
-        await saveData('app_data', chave, nuvem);
-
-        // 5. Espelho antigo do localStorage.
-        try { localStorage.removeItem(chave); } catch (e) {}
-
-        // 6. Link público e chamada compartilhada.
-        if (currentUser.schoolId) {
-            await _apagarChamadaCompartilhada(currentUser.schoolId);
-            if (currentUser.role === 'gestor' && typeof atualizarLinkCompartilhamentoGestor === 'function') {
-                try { await atualizarLinkCompartilhamentoGestor(); } catch (e) {}
-            }
-        }
-
-        // 7. Backups em texto claro. Levavam nome de estudante dentro e é isso que a
-        //    determinação manda tirar da nuvem — o Firestore não tem lixeira, então
-        //    daqui não se volta. Por isso o passo 3 exigiu o arquivo .profsis.
-        await _apagarBackupsEmClaro(currentUser.uid || currentUser.id);
-
-        // 7b. E o histórico recomeça JÁ, cifrado, em vez de esperar o backup diário —
-        //     que não roda sem a chave e deixava a conta sem histórico nenhum.
-        const historicoRecomecou = await _recomecarHistoricoCifrado();
-
-        // 8. Marca a transição feita neste aparelho.
-        await metaSet('migracaoV2', new Date().toISOString());
-        window.dadosMigradosLocalmente = true;
-
-        console.log('[Migração] Concluída. ' + censoAntes.estudantes + ' estudante(s) agora só neste aparelho.');
-        if (!opcoes.silencioso) {
-            alert('Transição concluída.\n\n' +
-                  censoAntes.estudantes + ' estudante(s) e todos os registros ligados a eles agora ficam ' +
-                  'SOMENTE neste aparelho.\n\n' +
-                  'Turmas, agenda, planos de aula e documentação continuam funcionando online.\n\n' +
-                  (historicoRecomecou
-                    ? 'O histórico de backup na nuvem foi recomeçado agora, CIFRADO — ilegível para ' +
-                      'qualquer um que não seja você. Os backups antigos, que estavam em texto claro, ' +
-                      'foram apagados: eram eles que a Secretaria determinou tirar da internet.\n\n'
-                    : 'ATENÇÃO: os backups antigos foram apagados (estavam em texto claro, com nome de ' +
-                      'estudante) e o novo histórico cifrado NÃO pôde ser criado agora, porque a chave ' +
-                      'de cifra não está neste aparelho.\nSaia e entre de novo com e-mail e senha: ' +
-                      'é o login que libera a chave e faz o backup diário voltar a rodar.\n\n') +
-                  'A cópia que você baixou não abre sozinha: ela serve para trazer seus dados de ' +
-                  'volta se você trocar de aparelho ou limpar o navegador.\n' +
-                  'Para usá-la: Dados > Restaurar do meu arquivo, aqui dentro do sistema.');
-        }
-        return true;
-    } catch (e) {
-        console.error('[Migração] Falhou:', e);
-        alert('A transição não pôde ser concluída: ' + e.message +
-              '\n\nSeus dados na nuvem NÃO foram alterados.');
-        return false;
-    } finally {
-        _migracaoEmAndamento = false;
-    }
+    try { if (typeof metaSet === 'function') await metaSet('avisoModoOnlineVisto', true); } catch (e) {}
 }
 
-// --- Aviso ao professor -----------------------------------------------------
-
-function _periodoDoDia() { return new Date().getHours() < 12 ? 'manha' : 'tarde'; }
-function _diaHoje() {
-    const d = new Date();
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-}
-
-function _diasAteCorte() {
-    return Math.ceil((dataCorte().getTime() - agoraConfiavel().getTime()) / 86400000);
-}
-
-function _textoPrazo() {
-    const ms = dataCorte().getTime() - agoraConfiavel().getTime();
-    if (ms <= 0) return 'O prazo terminou.';
-    const dias = Math.floor(ms / 86400000);
-    const horas = Math.floor((ms % 86400000) / 3600000);
-    if (dias > 0) return 'Faltam ' + dias + ' dia(s) e ' + horas + ' hora(s).';
-    return 'Faltam ' + horas + ' hora(s).';
-}
-
-function fecharAvisoCorte() {
-    const m = document.getElementById('modalAvisoCorte');
+function fecharAvisoModoOnline() {
+    const m = document.getElementById('avisoModoOnline');
     if (m) m.remove();
 }
 
-async function _confirmarTransicaoPeloAviso() {
-    fecharAvisoCorte();
-    const ok = await migrarParaLocal();
-    if (ok) location.reload();
-    else if (estadoCorte() === 'apos') _mostrarModalCorte(true);  // não deixa a tela vazia
+function _mostrarAvisoModoOnline() {
+    if (document.getElementById('avisoModoOnline')) return;
+    const caixa = document.createElement('div');
+    caixa.id = 'avisoModoOnline';
+    caixa.style.cssText = 'position:fixed; right:16px; bottom:16px; z-index:9999; max-width:380px; ' +
+        'background:#fff; border-left:4px solid #2b6cb0; border-radius:10px; padding:16px 18px; ' +
+        'box-shadow:0 10px 30px rgba(0,0,0,.18); font-size:13px; color:#2d3748; line-height:1.55;';
+    caixa.innerHTML =
+        '<strong style="color:#2b6cb0;">Seus dados voltaram para a nuvem — cifrados</strong>' +
+        '<p style="margin:8px 0 0;">Não é mais preciso migrar nada nem carregar arquivo: entre em ' +
+        'qualquer computador com a sua conta e os dados estarão lá. No banco eles ficam ilegíveis; ' +
+        'só o seu acesso abre.</p>' +
+        '<p style="margin:8px 0 0; color:#718096;">Baixar uma cópia de segurança continua disponível ' +
+        'em <strong>Backup e Segurança</strong>, quando você quiser.</p>' +
+        '<button class="btn btn-sm btn-primary" style="width:100%; margin-top:12px;" ' +
+        'onclick="fecharAvisoModoOnline()">Entendi</button>';
+    document.body.appendChild(caixa);
 }
 
-function _mostrarModalCorte(jaPassou) {
-    fecharAvisoCorte();
-    const quando = dataCorte().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+// --- Restos em texto claro ---------------------------------------------------
 
-    const div = document.createElement('div');
-    div.id = 'modalAvisoCorte';
-    div.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:10000;' +
-        'display:flex; align-items:center; justify-content:center; padding:16px;';
-    div.innerHTML =
-        '<div style="background:#fff; border-radius:12px; max-width:540px; width:100%; padding:26px 28px;' +
-        'box-shadow:0 20px 40px rgba(0,0,0,0.25); max-height:90vh; overflow:auto;">' +
-            '<h2 style="margin:0 0 6px; color:#2c5282; font-size:20px;">' +
-                (jaPassou ? 'Seus dados precisam vir para este aparelho' : 'Mudança no dia ' + quando) + '</h2>' +
-            '<p style="color:#718096; font-size:13px; margin:0 0 16px;">' +
-                (jaPassou ? 'O prazo terminou.' : _textoPrazo()) + '</p>' +
-            '<p style="color:#2d3748; font-size:14px; line-height:1.6;">' +
-                'Para atender à determinação da Secretaria, <strong>nome de estudante, ocorrências, ' +
-                'frequência, notas e tutoria deixam de ficar guardados na internet</strong> e passam a ' +
-                'viver somente no seu aparelho.</p>' +
-            '<p style="color:#2d3748; font-size:14px; line-height:1.6;">' +
-                'Turmas, agenda, planos de aula, documentação e a biblioteca continuam funcionando ' +
-                'online normalmente.</p>' +
-            '<div style="background:#fffaf0; border:1px solid #fbd38d; border-radius:8px; padding:12px 14px; margin:16px 0;">' +
-                '<strong style="color:#975a16; font-size:13px;">O que isso exige de você</strong>' +
-                '<p style="margin:6px 0 0; font-size:13px; color:#744210; line-height:1.55;">' +
-                'Como os dados passam a ficar só aqui, <strong>baixe o arquivo de segurança</strong> e ' +
-                'guarde-o. Se trocar de aparelho ou limpar os dados do navegador, é por ele que você ' +
-                'recupera tudo.</p>' +
-            '</div>' +
-            '<div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:18px;">' +
-                '<button class="btn btn-primary" onclick="exportarArquivoProfsis()" ' +
-                    'style="flex:1; min-width:190px;">Baixar meus dados agora</button>' +
-                '<button class="btn btn-success" onclick="_confirmarTransicaoPeloAviso()" ' +
-                    'style="flex:1; min-width:190px;">Fazer a transição agora</button>' +
-            '</div>' +
-            (jaPassou ? '' :
-                '<div style="text-align:center; margin-top:14px;">' +
-                '<span onclick="fecharAvisoCorte()" style="cursor:pointer; color:#718096; font-size:13px; ' +
-                'text-decoration:underline;">Depois</span></div>') +
-        '</div>';
-    document.body.appendChild(div);
-}
+// Contas que nunca converteram deixaram backups diários em TEXTO CLARO no banco,
+// com estudante dentro. Eles não podem ficar assim — e apagar não é a única saída:
+// aqui eles são CIFRADOS por cima do mesmo documento, então o histórico continua no
+// banco, agora ilegível para o banco.
+//
+// Sem a chave no aparelho, não converte e não apaga nada: fica para a próxima
+// abertura. O índice (backup_index_<uid>) nunca é tocado — não tem dado pessoal e é
+// o que mantém o histórico listável no painel.
+async function converterBackupsEmClaro(userId) {
+    if (typeof db === 'undefined' || !db || !userId) return { convertidos: 0, motivo: 'sem banco' };
+    const chave = (typeof obterChaveBackup === 'function') ? await obterChaveBackup() : null;
+    if (!chave) return { convertidos: 0, motivo: 'sem chave neste aparelho' };
 
-// Uma vez de manhã e uma à tarde, por aparelho. Depois do corte, uma vez por dia,
-// até a pessoa ter migrado.
-async function verificarAvisoCorte() {
-    if (window.usuarioOnlineCompleto) return;
-    if (!currentUser) return;
+    const limite = (typeof BACKUP_MAX_DIAS === 'number' ? BACKUP_MAX_DIAS : 20);
+    let convertidos = 0, falhas = 0;
 
-    const estado = estadoCorte();
-    if (estado === 'migrado' || estado === 'migrado_isento') return;
+    for (let i = 1; i <= limite; i++) {
+        const id = 'backup_' + userId + '_slot_' + i;
+        let doc = null;
+        try { doc = await getData('app_data', id); } catch (e) { continue; }
+        if (!doc || doc.cifrado === true) continue;          // não existe, ou já está cifrado
 
-    const hoje = _diaHoje();
-    const periodo = estado === 'apos' ? 'dia' : _periodoDoDia();
-
-    let registro = {};
-    try { registro = (await metaGet('avisoCorte')) || {}; } catch (e) {}
-    const jaVistos = registro[hoje] || [];
-    if (jaVistos.indexOf(periodo) !== -1) return;
-
-    _mostrarModalCorte(estado === 'apos');
-
-    // Guarda só o dia de hoje: não interessa manter histórico.
-    try { await metaSet('avisoCorte', { [hoje]: jaVistos.concat([periodo]) }); } catch (e) {}
-}
-
-// Quem deixa o sistema aberto o dia inteiro atravessa o meio-dia sem recarregar —
-// e passaria pela data de corte sem perceber. Meia hora é frequência suficiente.
-function iniciarVigilanciaCorte() {
-    if (window._vigilanciaCorteAtiva) return;
-    window._vigilanciaCorteAtiva = true;
-    setInterval(() => {
-        if (estadoCorte() === 'apos' && !window.dadosMigradosLocalmente) {
-            _mostrarModalCorte(true);
-        } else {
-            verificarAvisoCorte();
+        try {
+            const pacote = await cifrarPacote(doc, chave);
+            await saveData('app_data', id, pacote.principal);
+            for (const cont of pacote.continuacoes) {
+                await saveData('app_data', id + '_p' + cont.parte, cont);
+            }
+            convertidos++;
+        } catch (e) {
+            console.warn('[Backups] Não consegui cifrar ' + id + ':', e);
+            falhas++;
         }
-    }, 30 * 60 * 1000);
-}
-
-// Chamado por iniciarApp() logo depois de os dados carregarem.
-async function aplicarRegraDoCorte() {
-    if (estadoCorte() === 'apos') {
-        // Passou da data e a pessoa não migrou. O modal NÃO tem como ser dispensado e
-        // não migramos sozinhos: a transição depende de o professor baixar o arquivo e
-        // confirmar. Enquanto isso, a Regra do Firestore já recusa dado pessoal, então
-        // não existe janela em que ele trabalhe achando que está salvando na nuvem.
-        _mostrarModalCorte(true);
-    } else {
-        await verificarAvisoCorte();
     }
-    iniciarVigilanciaCorte();
+
+    if (convertidos) console.log('[Backups] Slots em texto claro cifrados: ' + convertidos);
+    return { convertidos: convertidos, falhas: falhas };
 }

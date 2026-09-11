@@ -1549,6 +1549,12 @@ async function carregarDadosUsuario() {
     // 2) Camada NUVEM — turmas, agenda, planos de aula, documentação.
     const nuvem = await getData('app_data', key);
 
+    // Conta que nunca converteu ainda tem dado pessoal EM CLARO neste documento. Saber
+    // disso é o que impede o salvamento seguinte de apagá-lo antes de existir a cópia
+    // cifrada — a única cópia na nuvem não pode morrer numa gravação que falhou.
+    window.nuvemTemPessoalEmClaro = !!(nuvem && typeof CAMPOS_PESSOAIS !== 'undefined'
+        && Object.keys(nuvem).some(k => CAMPOS_PESSOAIS.indexOf(k) !== -1));
+
     if (window.falhaLeituraFirestore) {
         // [PROTEÇÃO] Leitura falhou. NÃO assumir "conta vazia": salvar depois disso
         // apagaria os dados do professor na nuvem. Mostramos o que temos no aparelho e
@@ -1751,6 +1757,23 @@ async function enviarCamadaPessoalCifrada(chave, dados) {
             catch (e) { console.warn('[SisProf] Sobra da camada pessoal não removida:', e); }
         }
         window._partesPessoal = pacote.principal.partes;
+
+        // Uma vez por sessão, reler e decifrar o que acabou de subir. Gravar e nunca
+        // conferir é como o backup que ninguém testou: parece existir até o dia em que
+        // precisa. Falhando aqui, a conta NÃO é dada por convertida.
+        if (!window._pessoalConferidoNestaSessao) {
+            try {
+                const volta = await lerCamadaPessoalCifrada(chave);
+                if (volta.estado !== 'ok') {
+                    console.error('[SisProf] O pacote cifrado não voltou legível:', volta.estado);
+                    return false;
+                }
+                window._pessoalConferidoNestaSessao = true;
+            } catch (e) {
+                console.error('[SisProf] Não consegui conferir o pacote cifrado:', e);
+                return false;
+            }
+        }
         return true;
     } catch (e) {
         console.error('[SisProf] Falha ao enviar a camada pessoal cifrada:', e);
@@ -1787,11 +1810,27 @@ async function salvarDadosUsuario(chave, dados) {
         return;
     }
 
-    // Depois da transição: em claro, só a camada que não identifica estudante...
+    // A ORDEM AQUI E' A PROTECAO, e ela ja' esteve errada: o documento em claro era
+    // reescrito primeiro (o que remove os campos pessoais que ainda estivessem la') e a
+    // camada cifrada ia depois. Falhando a segunda - sem chave, rede, Regra -, o banco
+    // ficava SEM COPIA NENHUMA do dado pessoal. Cifrado primeiro, claro depois.
+    const cifradoOk = await enviarCamadaPessoalCifrada(chave, dados);
+
+    if (window.nuvemTemPessoalEmClaro && !cifradoOk) {
+        // Esta conta ainda tem o dado pessoal em claro na nuvem e a cópia cifrada não
+        // entrou. Reescrever o documento agora apagaria a única cópia que existe lá.
+        // Melhor um documento desatualizado do que nenhum: o trabalho está salvo no
+        // aparelho e a faixa do topo avisa.
+        console.warn('[SisProf] Documento em claro preservado: a cópia cifrada não foi gravada.');
+        window.pessoalNaoSincronizou = true;
+        return;
+    }
+
     await saveData('app_data', chave, dividirDados(dados).nuvem);
-    // ...e a camada pessoal vai junto, cifrada, para o professor reencontrá-la em
-    // qualquer terminal autorizado sem depender de arquivo nenhum.
-    await enviarCamadaPessoalCifrada(chave, dados);
+    if (cifradoOk) {
+        window.nuvemTemPessoalEmClaro = false;   // convertida: o pessoal agora é o pacote cifrado
+        window.pessoalNaoSincronizou = false;
+    }
 }
 
 // [NOVO] Função de Migração (Pode ser chamada pelo console ou botão de Admin)
