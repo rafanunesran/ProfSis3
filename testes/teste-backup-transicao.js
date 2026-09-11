@@ -22,12 +22,34 @@ const FAKE = () => {
     set: async (obj) => { window.__docs[col + '/' + id] = JSON.parse(JSON.stringify(obj)); },
     delete: async () => { delete window.__docs[col + '/' + id]; }
   });
+  // A varredura enumera os indices por intervalo de documentId. Sem `list` no fake,
+  // o teste nao provaria nada sobre a parte que encontra historico sob ID desconhecido.
+  window.__listasNegadas = false;
+  const consulta = (col) => {
+    let de = '', ate = '\uffff';
+    const q = {
+      orderBy: () => q,
+      startAt: (v) => { de = v; return q; },
+      endAt: (v) => { ate = v; return q; },
+      get: async () => {
+        if (window.__listasNegadas) { const e = new Error('Missing or insufficient permissions.'); e.code = 'permission-denied'; throw e; }
+        const ids = Object.keys(window.__docs)
+          .filter(k => k.indexOf(col + '/') === 0)
+          .map(k => k.slice(col.length + 1))
+          .filter(id => id >= de && id <= ate)
+          .sort();
+        return { forEach: (fn) => ids.forEach(id => fn({ id: id, data: () => JSON.parse(JSON.stringify(window.__docs[col + '/' + id])) })) };
+      }
+    };
+    return q;
+  };
   window.firebase = {
     initializeApp: () => {}, analytics: () => {},
     auth: () => ({ currentUser: window.__sessao, onAuthStateChanged: (cb) => setTimeout(() => cb(null), 0), signOut: async () => {} }),
-    firestore: () => ({ collection: (col) => ({ doc: (id) => ref(col, String(id)) }) })
+    firestore: () => ({ collection: (col) => Object.assign(consulta(col), { doc: (id) => ref(col, String(id)) }) })
   };
   window.firebase.firestore.FieldValue = { serverTimestamp: () => null };
+  window.firebase.firestore.FieldPath = { documentId: () => '__name__' };
 };
 
 const ENTRAR = () => {
@@ -136,13 +158,71 @@ const ENTRAR = () => {
   console.log('5. com rastro do historico -> veredito: "' + r5.titulo
     + '" | nomeia a causa: ' + r5.culpaATransicao);
 
+  // 6. O caso que a varredura por adivinhacao nao pegava: o historico existe, mas
+  //    sob um ID que nao esta' em cadastro nenhum. Adivinhar uid/id nunca chegaria
+  //    la'; perguntar ao banco chega.
+  const r6 = await p.evaluate(async () => {
+    window.__docs['app_data/backup_index_uid-antigo-9z'] = {
+      slots: [{ id: 3, timestamp: Date.parse('2026-09-01T12:00:00Z'), dateStr: '2026-09-01', label: 'Backup Diario' }], nextSlot: 4 };
+    window.__docs['app_data/backup_uid-antigo-9z_slot_3'] = {
+      turmas: [{ id: 1 }], estudantes: [{ id: 5, nome_completo: 'Ana Silva' }, { id: 6, nome_completo: 'Bruno Costa' }] };
+    const user = { id: 1, uid: 'u1', nome: 'Prof', email: 'p@e.com', role: 'professor', schoolId: '77' };
+    const rel = await varreduraForcadaBackups(user);
+    const v = _vereditoVarredura(rel);
+    const orfao = (rel.historicos || []).find(h => h.dono === 'uid-antigo-9z');
+    return {
+      enumerou: rel.enumeracao.ok,
+      achouOrfao: !!(orfao && orfao.orfao),
+      dataDoOrfao: orfao && orfao.maisRecente ? new Date(orfao.maisRecente).toISOString().slice(0, 10) : null,
+      abriuOSlot: rel.achados.some(a => a.chave === 'backup_uid-antigo-9z_slot_3' && a.resumo.estudantes === 2),
+      titulo: v.titulo
+    };
+  });
+  console.log('6. historico sob ID desconhecido -> enumerou o banco: ' + r6.enumerou
+    + ' | achou o orfao: ' + r6.achouOrfao + ' (' + r6.dataDoOrfao + ')'
+    + ' | abriu o slot com os 2 estudantes: ' + r6.abriuOSlot);
+  console.log('   veredito: "' + r6.titulo + '"');
+
+  // 6b. Indice orfao cujos slots ja' foram apagados: o veredito nao pode prometer
+  //     conteudo que a propria varredura acabou de ler e achar vazio.
+  const r6b = await p.evaluate(async () => {
+    delete window.__docs['app_data/backup_uid-antigo-9z_slot_3'];
+    const user = { id: 1, uid: 'u1', nome: 'Prof', email: 'p@e.com', role: 'professor', schoolId: '77' };
+    const v = _vereditoVarredura(await varreduraForcadaBackups(user));
+    return { titulo: v.titulo,
+             admiteQueEstaVazio: v.texto.indexOf('estão vazios') !== -1,
+             naoPrometeConteudo: v.texto.indexOf('para ver o conteúdo') === -1,
+             apontaOPitr: v.texto.indexOf('Point-in-Time Recovery') !== -1 };
+  });
+  console.log('6b. indice orfao sem slots -> veredito: "' + r6b.titulo
+    + '" | admite que esta vazio: ' + r6b.admiteQueEstaVazio
+    + ' | aponta o PITR: ' + r6b.apontaOPitr);
+
+  // 7. Regra publicada sem `list`: a varredura nao pode fingir que o banco esta' vazio
+  const r7 = await p.evaluate(async () => {
+    window.__listasNegadas = true;
+    const user = { id: 1, uid: 'u1', nome: 'Prof', email: 'p@e.com', role: 'professor', schoolId: '77' };
+    const rel = await varreduraForcadaBackups(user);
+    window.__listasNegadas = false;
+    const html = _painelHistoricos(rel);
+    return { ok: rel.enumeracao.ok, motivo: rel.enumeracao.motivo,
+             dizQueEstaCega: html.indexOf('Não consegui listar os históricos') !== -1 };
+  });
+  console.log('7. banco recusa `list` -> enumerou: ' + r7.ok + ' (' + r7.motivo + ')'
+    + ' | avisa que esta cega em vez de dizer "nao ha nada": ' + r7.dizQueEstaCega);
+
   const ok = r1.claroApagado && r1.sobraApagada && r1.temIndiceNovo && r1.slotNovoCifrado && r1.migrou
           && aviso1.indexOf('recomeçado agora, CIFRADO') !== -1
           && r2.claroApagado && avisou
           && r3.faixa && r3.temBotao && r3.temLiberar
           && r4.achouVivo && r4.mandaParaOAparelho && r4.semChave
           && r4.titulo.indexOf('não tem backup desta conta') !== -1
-          && r5.titulo.indexOf('apagados pela transição') !== -1 && r5.culpaATransicao;
+          && r5.titulo.indexOf('apagados pela transição') !== -1 && r5.culpaATransicao
+          && r6.enumerou && r6.achouOrfao && r6.dataDoOrfao === '2026-09-01' && r6.abriuOSlot
+          && r6.titulo.indexOf('Há o que recuperar') !== -1
+          && r6b.titulo.indexOf('Só sobrou a lista de datas') !== -1
+          && r6b.admiteQueEstaVazio && r6b.naoPrometeConteudo && r6b.apontaOPitr
+          && r7.ok === false && r7.dizQueEstaCega;
   console.log('\n' + (ok ? 'OK: a transicao nao deixa mais a conta sem historico, e o que sobrou se acha'
                          : '*** FALHOU ***'));
   await b.close();
