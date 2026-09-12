@@ -469,7 +469,8 @@ async function abrirModalPerfil() {
             <button class="btn btn-sm btn-primary" onclick="exportarArquivoProfsis()" style="width:100%; margin-bottom:5px;">💾 Baixar minha cópia de segurança</button>
             <button class="btn btn-sm btn-success" onclick="abrirSeletorArquivoProfsis()" style="width:100%; margin-bottom:5px; font-weight:bold;">⬆️ Importar dados do arquivo</button>
             <button class="btn btn-sm btn-info" onclick="listarBackupsNuvem()" style="width:100%; margin-bottom:5px;">☁️ Histórico na Nuvem</button>
-            <button class="btn btn-sm btn-danger" onclick="abrirPainelRecuperacaoAvancada()" style="width:100%; font-weight:bold;">🔍 Busca de Backups Antigos</button>
+            <button class="btn btn-sm btn-danger" onclick="abrirCentralResgate()" style="width:100%; margin-bottom:5px; font-weight:bold;" title="Procura seus dados em todas as origens: aparelho, nuvem, camada cifrada e os 20 slots de backup, um por um">🛟 Central de Resgate (perdi dados)</button>
+            <button class="btn btn-sm btn-secondary" onclick="abrirPainelRecuperacaoAvancada()" style="width:100%;">🔍 Busca por ID antigo</button>
         </div>
     `;
 
@@ -903,6 +904,8 @@ function mostrarBannerSemDadosLocais() {
               'onclick="abrirSeletorArquivoProfsis()">⬆️ Importar dados do arquivo</button>' +
             '<button class="btn btn-sm" style="background:rgba(255,255,255,.18); color:#fff;" ' +
               'onclick="listarBackupsNuvem()">Ver backups na nuvem</button>' +
+            '<button class="btn btn-sm" style="background:rgba(255,255,255,.18); color:#fff;" ' +
+              'onclick="abrirCentralResgate()">🛟 Procurar em tudo</button>' +
             '<button class="btn btn-sm" style="background:transparent; color:#fff; text-decoration:underline;" ' +
               'onclick="this.closest(\'#bannerSemDadosLocais\').remove()">Agora não</button>' +
           '</div>' +
@@ -1207,6 +1210,7 @@ async function renderDashboard() {
                             <button class="btn btn-sm btn-info" onclick="exportarArquivoProfsis()" style="text-align:left;">⬇️ Baixar minha cópia de segurança</button>
                             <button class="btn btn-sm btn-success" onclick="abrirSeletorArquivoProfsis()" style="text-align:left; font-weight:bold;">⬆️ Importar dados do arquivo</button>
                             <button class="btn btn-sm btn-danger" onclick="restaurarBackupLocalParaNuvem()" style="text-align:left;" title="Recuperar dados do cache do navegador">🆘 Recuperar do Cache</button>
+                            <button class="btn btn-sm btn-danger" onclick="abrirCentralResgate()" style="text-align:left; font-weight:bold;" title="Vasculha TODAS as origens que sobraram, inclusive os backups que sumiram do histórico">🛟 Central de Resgate</button>
                         </div>
                     </div>
                 </div>

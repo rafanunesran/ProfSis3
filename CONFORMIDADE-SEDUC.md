@@ -286,20 +286,35 @@ Ressalva mantida da Fase 2: a segunda cópia do envelope (RSA de suporte) permit
 responsável socorrer quem perdeu a senha — ou seja, o sigilo é contra o provedor e contra
 invasão, **não** contra o administrador do sistema.
 
-### Sobre o acervo de quem não migrar
+### O que a transição cancelada deixou apagado — e como se recupera
 
-**Decisão: nada é apagado por varredura.** Quem nunca abrir a versão nova permanece com os
-dados como estão. Quando abrir, a tela exige a transição para continuar, e a limpeza da
-nuvem só ocorre depois de confirmado que a cópia local chegou. A consequência assumida é
-que contas abandonadas seguem com dado pessoal armazenado — congelado, sem receber nada
-novo, porque a Regra do Firestore recusa qualquer gravação de campo pessoal a partir do
-corte.
+Enquanto o modo local esteve de pé, quem clicou em "Fazer a transição agora" rodou
+`migrarParaLocal()`, que **depois** de gravar a cópia no aparelho, conferi-la e exigir o
+download do `.profsis`: regravou `app_data/<chave>` sem os campos pessoais, apagou a
+chamada compartilhada da escola e apagou `backup_index_<uid>` com os 20 slots de backup
+diário. O passo dos backups engolia as falhas, então slot que a Regra recusou apagar
+**continua no banco** — invisível, porque o índice que o listava morreu no mesmo laço.
+
+A recuperação está no sistema, em **Perfil → Backup e Segurança → 🛟 Central de Resgate**
+(`resgate.js`): ela varre o aparelho, o armazenamento antigo do navegador, os documentos
+na nuvem, a camada cifrada e os 20 slots **um por um, sem depender do índice**; mescla
+sem apagar o trabalho de hoje; e refaz o índice para o histórico voltar a listar o que
+sobreviveu. O procedimento completo, incluindo o PITR do Firestore para o que foi apagado
+de verdade, está em `RECUPERACAO-BACKUPS.md`.
+
+**Nada é apagado por varredura.** Quem nunca abriu a versão nova permanece com os dados
+como estão, e agora não há mais transição a fazer: o sistema é online para todos e o dado
+pessoal sobe cifrado. Contas abandonadas seguem com dado pessoal em claro armazenado —
+congelado, sem receber nada novo, porque a Regra do Firestore recusa gravação de campo
+pessoal a partir do corte; quando a conta é aberta com a senha, `converterBackupsEmClaro()`
+cifra esse acervo por cima, sem apagar.
 
 ### Consequências assumidas
 
 - **A cópia de segurança passa a ser responsabilidade compartilhada.** O arquivo `.profsis`
   é a proteção que fica na mão do professor; o backup cifrado na nuvem é a rede que o
-  responsável consegue puxar. A transição não termina sem que o professor gere o arquivo.
+  responsável consegue puxar. Baixá-lo é escolha do professor, não mais obrigação de um
+  ritual — e a Central de Resgate existe para quando nem ele estiver à mão.
 - **Recursos que dependiam de juntar dados de estudantes entre colegas param.** A chamada
   compartilhada entre professores deixa de existir; a visão nominal do gestor e o painel
   AEE compartilhado da escola voltam depois, cifrados com uma chave que só a escola tem.
