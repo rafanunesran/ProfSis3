@@ -124,48 +124,45 @@ de Resgate lê e decifra sozinha, com a mesma exigência de senha do caminho 3.
 ### 5. PITR do Firestore — o único caminho para o que foi apagado de verdade
 
 Documento apagado ou sobrescrito no Firestore não volta pelo aplicativo. Só o
-*point-in-time recovery* do projeto traz, e **apenas se o PITR já estava ligado antes
-do apagamento** — ele não é retroativo.
+*point-in-time recovery* do projeto traz — e **apenas se o PITR já estava ligado antes
+da perda**, porque ele não é retroativo. A janela é de **7 dias e anda sozinha**: cada
+dia que passa leva junto um dia do que dá para recuperar.
 
-Primeiro, descubra se há o que recuperar:
+Há dois arquivos prontos em `ferramentas/`, feitos para rodar no **Cloud Shell** do
+Google (console.cloud.google.com, ícone de terminal no topo — o `gcloud` já vem logado,
+não precisa instalar nada):
 
-```bash
-gcloud config set project SEU_PROJETO
-gcloud firestore databases describe --database='(default)'
-```
-
-Olhe dois campos: `pointInTimeRecoveryEnablement` e `earliestVersionTime`. Com o PITR
-desligado, o Firestore mantém só cerca de **1 hora** de versões; ligado, **7 dias**. Se
-`earliestVersionTime` for posterior ao dia da transição, este caminho está fechado —
-não há o que tentar, e insistir só gasta tempo de quem está esperando os dados.
-
-Estando dentro da janela, exporte o instante ANTERIOR à transição para um bucket e
-importe num banco **separado** (nunca no `(default)`, que sobrescreveria o trabalho de
-hoje de todo mundo):
+**1. `recuperar-pitr.sh`** — diz se há o que recuperar, exporta o retrato do banco no
+instante que você escolher e importa num banco **separado**. A produção não é tocada.
 
 ```bash
-# 1. Exporta o retrato do banco às 18:00 UTC do dia anterior (minuto cheio, dentro da janela)
-gcloud firestore export gs://SEU_BUCKET/pitr-2026-09-10 \
-    --snapshot-time=2026-09-10T18:00:00Z \
-    --collection-ids=app_data,shared_attendance
+# só para ver se o PITR está ligado e até quando dá para voltar:
+PROJETO=seu-projeto bash recuperar-pitr.sh
 
-# 2. Cria um banco separado e importa o retrato nele
-gcloud firestore databases create --database=recuperado --location=SUA_REGIAO
-gcloud firestore import gs://SEU_BUCKET/pitr-2026-09-10 --database=recuperado
+# depois, com o instante anterior à perda (minuto cheio, UTC; SP = UTC-3):
+PROJETO=seu-projeto INSTANTE=2026-09-06T12:00:00Z bash recuperar-pitr.sh
 ```
 
-Depois, leia de `recuperado` os documentos `backup_<uid>_slot_N` e
-`app_data/app_data_<uid>` do professor, salve cada um como `.profsis`
-(`{"formato":"profsis","versao":1,"dados": <o documento> }`) e devolva pelo botão
-**Importar dados do arquivo**. Assim o dado volta pelo caminho que o aplicativo já sabe
-conferir, sem ninguém escrever no banco de produção na mão.
+Se ele disser que o PITR está desligado, ele mesmo mostra como procurar **backups
+agendados**, que são outro mecanismo e podem existir mesmo sem PITR.
 
-Se o projeto tiver *backup schedules* configurados, `gcloud firestore backups list
---location=SUA_REGIAO` e `gcloud firestore databases restore
---source-backup=... --destination-database=recuperado` fazem o mesmo papel.
+**2. `extrair-profsis.js`** — lê o banco recuperado e grava **um `.profsis` por
+professor**, juntando o documento principal com todos os backups diários dele (o backup
+de três dias antes costuma ter a nota que sumiu depois; juntando por `id`, nada se perde
+na escolha).
 
-> As opções do `gcloud` mudam de nome entre versões. Confira com
-> `gcloud firestore databases update --help` antes de rodar em produção.
+```bash
+npm install firebase-admin
+PROJETO=seu-projeto BANCO=recuperado node extrair-profsis.js
+# arquivos em ./recuperados/ ; baixe com:  cloudshell download recuperados/NOME.profsis
+```
+
+Cada arquivo entra pelo botão **Importar dados do arquivo** (substitui) ou pela
+**Central de Resgate → Mesclar** (junta, sem apagar nada do que já existe).
+
+O que esses arquivos **não** trazem são os documentos `pessoal_*`: são cifrados com a
+senha do professor, e nem o suporte abre. Esses voltam sozinhos quando a pessoa entra
+no sistema com e-mail e senha, no próprio aparelho dela.
 
 ## Para isto não se repetir
 
