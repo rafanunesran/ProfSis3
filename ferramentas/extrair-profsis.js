@@ -12,7 +12,7 @@
 //
 //  COMO RODAR (no Cloud Shell, na mesma pasta)
 //      npm install firebase-admin
-//      PROJETO=seu-projeto BANCO=recuperado node extrair-profsis.js
+//      BANCO=recuperado node extrair-profsis.js
 //
 //  O que ele NÃO consegue abrir: os documentos `pessoal_*`, que são cifrados com
 //  a senha do professor. Esses voltam sozinhos quando a pessoa entra no sistema
@@ -116,12 +116,10 @@ function montarPacotes(documentos) {
 }
 
 async function main() {
-    const projeto = process.env.PROJETO;
+    // O projeto do ProfSis vem escrito aqui pelo mesmo motivo do recuperar-pitr.sh:
+    // o Cloud Shell costuma abrir com outro selecionado.
+    const projeto = process.env.PROJETO || 'profsis3';
     const banco = process.env.BANCO || 'recuperado';
-    if (!projeto) {
-        console.error('Faltou dizer o projeto:  PROJETO=seu-projeto BANCO=recuperado node extrair-profsis.js');
-        process.exit(1);
-    }
     if (banco === '(default)') {
         console.error('Recuso ler o banco de produção por engano. Use o banco recuperado (BANCO=recuperado).');
         process.exit(1);

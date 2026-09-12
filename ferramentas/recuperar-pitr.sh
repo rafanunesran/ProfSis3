@@ -9,6 +9,7 @@
 #    console.cloud.google.com > ícone do terminal no topo ("Ativar Cloud Shell").
 #    O gcloud já vem pronto e logado. Cole este arquivo lá e rode:
 #        bash recuperar-pitr.sh
+#    O projeto ja' vem certo (profsis3); nao precisa passar nada.
 #
 #  O QUE ELE FAZ
 #    1. Diz se há o que recuperar (PITR ligado? até que data?).
@@ -22,7 +23,11 @@
 # ============================================================================
 set -euo pipefail
 
-PROJETO="${PROJETO:-}"
+# O projeto do ProfSis, tirado de core.js. Vem escrito aqui de proposito: o Cloud Shell
+# costuma abrir com OUTRO projeto selecionado, e rodar no projeto errado responde "nao ha
+# banco" - do que se conclui, errado, que tudo se perdeu.
+PROJETO_DO_PROFSIS="profsis3"
+PROJETO="${PROJETO:-$PROJETO_DO_PROFSIS}"
 BANCO_ORIGEM="${BANCO_ORIGEM:-(default)}"
 BANCO_DESTINO="${BANCO_DESTINO:-recuperado}"
 INSTANTE="${INSTANTE:-}"          # ex.: 2026-09-06T12:00:00Z
@@ -32,13 +37,25 @@ titulo() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
 erro()   { printf '\033[31m%s\033[0m\n' "$1" >&2; }
 
 titulo "1. Projeto"
-if [ -z "$PROJETO" ]; then PROJETO="$(gcloud config get-value project 2>/dev/null || true)"; fi
-if [ -z "$PROJETO" ] || [ "$PROJETO" = "(unset)" ]; then
-    erro "Não sei o projeto. Rode:  PROJETO=seu-projeto bash $0"
-    exit 1
+SELECIONADO="$(gcloud config get-value project 2>/dev/null || true)"
+if [ "$PROJETO" != "$PROJETO_DO_PROFSIS" ]; then
+    erro "ATENÇÃO: você pediu o projeto '$PROJETO', e o banco do ProfSis é '$PROJETO_DO_PROFSIS'."
+    erro "Se não for de propósito, rode sem a variável PROJETO."
+fi
+if [ -n "$SELECIONADO" ] && [ "$SELECIONADO" != "(unset)" ] && [ "$SELECIONADO" != "$PROJETO" ]; then
+    echo "(o Cloud Shell estava em '$SELECIONADO'; usando '$PROJETO')"
 fi
 gcloud config set project "$PROJETO" >/dev/null
 echo "Projeto: $PROJETO"
+
+# Existe banco Firestore aqui? Sem isto, projeto errado vira "perdi tudo".
+if ! gcloud firestore databases list --format="value(name)" >/dev/null 2>&1; then
+    erro "Não consegui listar bancos Firestore em '$PROJETO'."
+    erro "Confira se é o projeto certo e se você tem acesso a ele:  gcloud projects list"
+    exit 1
+fi
+echo "Bancos neste projeto:"
+gcloud firestore databases list --format="table(name.basename():label=BANCO, locationId:label=REGIAO, pointInTimeRecoveryEnablement:label=PITR, earliestVersionTime:label=VOLTA_ATE)"
 
 titulo "2. Há o que recuperar?"
 # earliestVersionTime é o limite: antes disso o Firestore não tem mais as versões.
