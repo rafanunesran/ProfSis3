@@ -245,6 +245,30 @@ const FAKE = () => {
   cobrar(r10.avisa, 'avisa que a copia e de outro painel antes de mesclar/substituir');
   cobrar(r10.calaQuandoEhOMesmo, 'e nao atrapalha quando e o proprio documento');
 
+  // 11. ID QUE COLIDE: numa conta real, 57 notas bimestrais carregavam o id de OUTRO
+  //     estudante (Date.now()+Math.random() perde a parte aleatoria num double). Juntar
+  //     por id apagava a nota de uma aluna por causa da nota de outra.
+  const r11 = await p.evaluate(() => {
+    const hoje = Object.assign(getInitialData(), { notasBimestraisOficiais: [
+      { id: 1784656465424.1921, nome_estudante_norm: 'ANA JULIA', disciplina: 'CIENCIAS', valor: '10' } ] });
+    const achado = { notasBimestraisOficiais: [
+      { id: 1784656465424.1921, nome_estudante_norm: 'ANA LUIZA', disciplina: 'CIENCIAS', valor: '6' },
+      { id: 1784656465424.1921, nome_estudante_norm: 'ANA JULIA', disciplina: 'CIENCIAS', valor: '10' } ] };
+    const { dados } = resgateUniao(hoje, achado);
+    const notas = dados.notasBimestraisOficiais;
+    return { total: notas.length,
+             temAnaJulia: notas.filter(n => n.nome_estudante_norm === 'ANA JULIA').length,
+             temAnaLuiza: notas.filter(n => n.nome_estudante_norm === 'ANA LUIZA').length,
+             idNovoNaoColide: (function () {
+               const vistos = new Set();
+               for (let i = 0; i < 3000; i++) vistos.add(novoId());
+               return vistos.size === 3000; })() };
+  });
+  console.log('11. id que colide -> ' + JSON.stringify(r11));
+  cobrar(r11.temAnaLuiza === 1, 'A NOTA DA OUTRA ALUNA, com id colidente, NAO e mais descartada');
+  cobrar(r11.temAnaJulia === 1 && r11.total === 2, 'e a duplicata de verdade continua sendo descartada');
+  cobrar(r11.idNovoNaoColide, 'novoId() nao repete em 3000 chamadas seguidas');
+
   await b.close();
   console.log(falhas ? ('\n*** ' + falhas + ' falha(s) ***') : '\nTudo certo.');
   process.exit(falhas ? 1 : 0);

@@ -101,6 +101,57 @@ function getStorageKey(user) {
     return 'app_data_' + (user ? user.id : 'temp'); // Fallback para usuários antigos/locais sem UID
 }
 
+// Identificador de registro.
+//
+// Era `Date.now() + Math.random()`, e isso COLIDE de verdade: um double guarda ~15
+// dígitos significativos, o timestamp já ocupa 13, e sobra quase nada para a parte
+// aleatória. Numa importação de mapão, em que centenas de registros nascem no mesmo
+// milissegundo, o resultado apareceu numa conta real: 57 notas bimestrais com o id de
+// OUTRO estudante. Como toda mesclagem e toda edição procuram o registro pelo id, uma
+// nota some por causa da nota de outra pessoa — sem erro, sem aviso.
+//
+// Agora o id é uma string: o mesmo tempo (para continuar ordenável) mais bits de
+// aleatoriedade que ninguém soma a coisa nenhuma. Ids antigos, numéricos, continuam
+// valendo — a comparação no sistema é solta (==), e nada precisa ser convertido.
+function novoId() {
+    const aleatorio = (typeof crypto !== 'undefined' && crypto.getRandomValues)
+        ? Array.from(crypto.getRandomValues(new Uint8Array(6)), b => b.toString(36)).join('')
+        : Math.random().toString(36).slice(2, 12);
+    return Date.now().toString(36) + '-' + aleatorio;
+}
+
+// Dois registros são o MESMO registro?
+//
+// Perguntar só pelo id não serve: ids antigos colidem (ver novoId acima), e numa conta
+// real 57 notas bimestrais carregavam o id de outro estudante. Toda junção que
+// perguntava "já existe alguém com este id?" respondia "sim" e descartava a nota certa.
+//
+// Regra: ids diferentes, registros diferentes. Ids iguais e conteúdo idêntico, é o
+// mesmo. Ids iguais e conteúdo diferente, olhamos a IDENTIDADE NATURAL do registro —
+// de quem é, de qual trabalho, de qual bimestre. Divergindo, são registros distintos
+// que por azar nasceram com o mesmo id, e os dois ficam. Na dúvida, nada se perde.
+const CAMPOS_DE_IDENTIDADE = ['nome_estudante_norm', 'nome_estudante', 'nome_completo',
+    'nome_estudante_display', 'id_estudante', 'id_trabalho', 'id_turma', 'disciplina',
+    'bimestre', 'data', 'nome'];
+
+function identidadeNatural(r) {
+    if (!r || typeof r !== 'object') return '';
+    return CAMPOS_DE_IDENTIDADE
+        .filter(c => r[c] !== undefined && r[c] !== null && r[c] !== '')
+        .map(c => c + '=' + String(r[c]).toUpperCase())
+        .join('|');
+}
+
+function mesmoRegistro(a, b) {
+    if (!a || !b) return false;
+    if (a.id === undefined || b.id === undefined) return JSON.stringify(a) === JSON.stringify(b);
+    if (String(a.id) !== String(b.id)) return false;
+    if (JSON.stringify(a) === JSON.stringify(b)) return true;
+    const ia = identidadeNatural(a), ib = identidadeNatural(b);
+    if (!ia || !ib) return true;              // sem como distinguir: mantém o de hoje
+    return ia === ib;
+}
+
 function getInitialData() {
     return {
         turmas: [], estudantes: [], horariosAulas: [], aulas: [],

@@ -2744,7 +2744,7 @@ async function salvarChamadaManual() {
 
         if (!presente) { // Salva apenas faltas para economizar espaço ou conforme lógica
             data.presencas.push({
-                id: Date.now() + Math.random(),
+                id: novoId(),
                 id_estudante: estId,
                 data: dataChamada,
                 status: 'falta'
@@ -2753,7 +2753,7 @@ async function salvarChamadaManual() {
             // Presente E elegível a falta automática (faltoso ou <50%): grava 'presente' explícito
             // para a regra padrão não contá-lo como ausente.
             data.presencas.push({
-                id: Date.now() + Math.random(),
+                id: novoId(),
                 id_estudante: estId,
                 data: dataChamada,
                 status: 'presente'
@@ -2771,7 +2771,7 @@ async function salvarChamadaManual() {
             data.registrosAula[idxRegistro].cardsMaterialDigital = cardsMaterialDigital;
         } else {
             data.registrosAula.push({
-                id: Date.now() + Math.random(),
+                id: novoId(),
                 id_turma: turmaAtual,
                 data: dataChamada,
                 conteudo: registroAulaConteudo,
@@ -4384,7 +4384,7 @@ async function salvarNota(trabalhoId, estudanteId, valor) {
         nota.valor = String(valor).trim();
     } else {
         if (valor === "" || valor === null || valor === undefined) return;
-        data.notas.push({ id: Date.now() + Math.random(), id_trabalho: trabalhoId, id_estudante: estudanteId, valor: String(valor).trim() });
+        data.notas.push({ id: novoId(), id_trabalho: trabalhoId, id_estudante: estudanteId, valor: String(valor).trim() });
     }
     await persistirDados();
     // Atualiza apenas a média do estudante no DOM para não perder o foco no input
@@ -4586,7 +4586,7 @@ async function toggleRubrica(trabalhoId, estudanteId, rubricId, isChecked) {
     const trabalho = data.trabalhos.find(t => t.id == trabalhoId);
     
     if (!nota) {
-        nota = { id: Date.now() + Math.random(), id_trabalho: trabalhoId, id_estudante: estudanteId, valor: 0, rubricas_marcadas: [] };
+        nota = { id: novoId(), id_trabalho: trabalhoId, id_estudante: estudanteId, valor: 0, rubricas_marcadas: [] };
         data.notas.push(nota);
     }
     
@@ -4857,7 +4857,7 @@ function gerarCompensacoesAutomatico() {
         if (jaExiste) return;
 
         data.compensacoes.push({
-            id: Date.now() + Math.random(),
+            id: novoId(),
             id_turma: turmaAtual,
             id_estudante: e.id,
             mes_referencia: mes,
@@ -4979,7 +4979,7 @@ async function salvarStatusCaderno(estudanteId, valor, campo) {
         reg[campo] = valor;
     } else {
         const novo = {
-            id: Date.now() + Math.random(),
+            id: novoId(),
             id_estudante: estudanteId,
             id_turma: turmaAtual,
             data: dataReg,
@@ -5567,7 +5567,7 @@ async function agendarTodosTutorados(listaOrdenada = null) {
         if (blocosDeTutoriaParaHoje.length > 0) {
             blocosDeTutoriaParaHoje.forEach(b => {
                 // Adiciona o novo slot diretamente na nova lista, sem verificar existência.
-                novosAgendamentos.push({ id: Date.now() + Math.random(), data: dataStr, inicio: b.inicio, fim: b.fim, tutoradoId: null });
+                novosAgendamentos.push({ id: novoId(), data: dataStr, inicio: b.inicio, fim: b.fim, tutoradoId: null });
             });
         }
         // Avança o cursor para o próximo dia de forma segura
@@ -6653,7 +6653,7 @@ async function gerarAgendamentosTutoria() {
             const exists = data.agendamentos.find(a => a.data === dataStr && a.inicio === b.inicio);
             if (!exists) {
                 data.agendamentos.push({
-                    id: Date.now() + Math.random(),
+                    id: novoId(),
                     data: dataStr,
                     inicio: b.inicio,
                     fim: b.fim,
@@ -7953,7 +7953,7 @@ async function adicionarAlunoAeeGrade(blocoId, alunoId) {
     
     if (!aula) {
         aula = {
-            id: Date.now() + Math.random(),
+            id: novoId(),
             id_bloco: Number(blocoId),
             tipo: 'atendimento_aee',
             aee_alunos: []
@@ -7998,7 +7998,7 @@ function salvarAulaGrade(blocoId, valor) {
     
     if (valor) {
         const novo = {
-            id: Date.now() + Math.random(),
+            id: novoId(),
             id_bloco: Number(blocoId), // Garante formato numérico
             tipo: 'aula', // default
             id_turma: null,
@@ -8998,8 +8998,11 @@ async function mesclarBackupNuvem(slotId, dataLabel, userId) {
         // 1. Recuperar Trabalhos (Atividades) que não existem hoje
         if (backupData.trabalhos) {
             if (!data.trabalhos) data.trabalhos = [];
+            // mesmoRegistro() e nao "mesmo id": ids antigos colidem (ver novoId em
+            // shared.js), e comparar so' o id descartava o registro certo por causa de
+            // outro que por azar nasceu no mesmo milissegundo.
             backupData.trabalhos.forEach(tOld => {
-                if (!data.trabalhos.find(tNew => tNew.id == tOld.id)) {
+                if (!data.trabalhos.some(tNew => mesmoRegistro(tNew, tOld))) {
                     data.trabalhos.push(tOld);
                 }
             });
@@ -9025,7 +9028,7 @@ async function mesclarBackupNuvem(slotId, dataLabel, userId) {
             if (backupData[key]) {
                 if (!data[key]) data[key] = [];
                 backupData[key].forEach(itemOld => {
-                    if (!data[key].find(itemNew => itemNew.id == itemOld.id)) {
+                    if (!data[key].some(itemNew => mesmoRegistro(itemNew, itemOld))) {
                         data[key].push(itemOld);
                     }
                 });
@@ -9036,7 +9039,7 @@ async function mesclarBackupNuvem(slotId, dataLabel, userId) {
         if (backupData.ocorrencias) {
             if (!data.ocorrencias) data.ocorrencias = [];
             backupData.ocorrencias.forEach(oOld => {
-                if (!data.ocorrencias.find(oNew => oNew.id == oOld.id)) {
+                if (!data.ocorrencias.some(oNew => mesmoRegistro(oNew, oOld))) {
                     data.ocorrencias.push(oOld);
                 }
             });

@@ -1841,7 +1841,7 @@ function carregarDiaAtipico() {
         // Copia a grade padrão para editar
         blocos = (data.gradeHoraria || [])
             .filter(g => g.diaSemana == diaSemana)
-            .map(g => ({ ...g, id: Date.now() + Math.random() })); // Novos IDs para não alterar a padrão
+            .map(g => ({ ...g, id: novoId() })); // Novos IDs para não alterar a padrão
     }
 
     // Renderiza editor simples
@@ -1893,7 +1893,7 @@ function salvarDiaAtipico(dataStr) {
         const fim = div.querySelector('.fim').value;
         const tipo = div.querySelector('.tipo').value;
         if (inicio && fim) {
-            novosBlocos.push({ id: Date.now() + Math.random(), inicio, fim, tipo, diaSemana: -1 }); // diaSemana -1 indica exceção
+            novosBlocos.push({ id: novoId(), inicio, fim, tipo, diaSemana: -1 }); // diaSemana -1 indica exceção
         }
     });
 
@@ -1937,7 +1937,7 @@ function salvarGradeLote() {
 
     checks.forEach(chk => {
         data.gradeHoraria.push({ 
-            id: Date.now() + Math.random(), 
+            id: novoId(), 
             diaSemana: parseInt(chk.value), 
             inicio, 
             fim 

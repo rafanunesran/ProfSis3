@@ -314,15 +314,20 @@ function resgateUniao(atual, achado) {
 
         if (Array.isArray(vindo)) {
             const aqui = Array.isArray(novo[chave]) ? novo[chave].slice() : [];
-            // Identidade: `id` quando os dois lados têm; senão a forma inteira do
-            // registro. Presença sem id nenhum não pode virar duplicata silenciosa.
-            const vistos = new Set(aqui.map(it => (it && it.id != null)
-                ? 'id:' + it.id : 'js:' + JSON.stringify(it)));
+            // Identidade por mesmoRegistro() (shared.js), NUNCA só pelo id: ids antigos
+            // colidem, e deduplicar por id aqui apagava a nota de um estudante por causa
+            // da nota de outro. O índice por id mantém a busca barata sem essa troca.
+            const porId = {};
+            aqui.forEach(it => {
+                const k = (it && it.id != null) ? String(it.id) : 'js:' + JSON.stringify(it);
+                (porId[k] = porId[k] || []).push(it);
+            });
             let entraram = 0;
             vindo.forEach(it => {
-                const assinatura = (it && it.id != null) ? 'id:' + it.id : 'js:' + JSON.stringify(it);
-                if (vistos.has(assinatura)) return;
-                vistos.add(assinatura);
+                const k = (it && it.id != null) ? String(it.id) : 'js:' + JSON.stringify(it);
+                const candidatos = porId[k] || [];
+                if (candidatos.some(j => mesmoRegistro(j, it))) return;
+                (porId[k] = candidatos).push(it);
                 aqui.push(it);
                 entraram++;
             });

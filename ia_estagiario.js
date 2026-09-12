@@ -2803,7 +2803,7 @@ async function exportarDocumentoFinal(tipo) {
                 diasAlvo.forEach(diaStr => {
                     const registroExistente = data.registrosAula.find(r => r.id_turma == turma.id && r.data == diaStr);
                     if (registroExistente) return;
-                    data.registrosAula.push({ id: Date.now() + Math.random(), id_turma: turma.id, data: diaStr, conteudo: conteudoResumo.substring(0, 1000), cardsMaterialDigital: cardsMaterialDigitalSelecionados });
+                    data.registrosAula.push({ id: novoId(), id_turma: turma.id, data: diaStr, conteudo: conteudoResumo.substring(0, 1000), cardsMaterialDigital: cardsMaterialDigitalSelecionados });
                     algumCriado = true;
                 });
             });

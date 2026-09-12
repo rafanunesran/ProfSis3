@@ -50,9 +50,13 @@ function unir(base, vindo) {
         const novo = vindo[chave];
         if (Array.isArray(novo)) {
             const atual = Array.isArray(saida[chave]) ? saida[chave].slice() : [];
-            const vistos = new Set(atual.map(it => (it && it.id != null) ? 'id:' + it.id : 'js:' + JSON.stringify(it)));
+            // Identidade pelo CONTEUDO, nunca so' pelo id: ids gerados por
+            // Date.now()+Math.random() colidem, e numa conta real 57 notas bimestrais
+            // carregavam o id de outro estudante. Deduplicar por id apagaria a nota de
+            // uma aluna por causa da nota de outra.
+            const vistos = new Set(atual.map(it => JSON.stringify(it)));
             novo.forEach(it => {
-                const assinatura = (it && it.id != null) ? 'id:' + it.id : 'js:' + JSON.stringify(it);
+                const assinatura = JSON.stringify(it);
                 if (vistos.has(assinatura)) return;
                 vistos.add(assinatura);
                 atual.push(it);
