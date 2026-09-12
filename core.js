@@ -1535,6 +1535,17 @@ function toggleSenha(id, btn) {
 // Retorna true se os dados foram carregados com segurança; false se a leitura falhou
 // (permissão negada / rede). Quem chama usa isso para LIBERAR ou BLOQUEAR o salvamento:
 // salvar depois de uma leitura falha apagaria os dados do professor na nuvem.
+// Junta o documento em claro da nuvem (que ainda traz o pessoal) com a cópia deste
+// aparelho, sem perder nada dos dois lados: a nuvem entra inteira e o aparelho
+// sobrescreve campo a campo, só onde ele tem conteúdo. Usada na primeira abertura da
+// versão nova por uma conta que nunca converteu.
+function _adotarPessoalEmClaro(initial, nuvem, local) {
+    const temConteudo = (v) => Array.isArray(v) ? v.length > 0 : (v !== undefined && v !== null && v !== '');
+    const juntos = Object.assign({}, initial, nuvem || {});
+    Object.keys(local || {}).forEach(k => { if (temConteudo(local[k])) juntos[k] = local[k]; });
+    return juntos;
+}
+
 async function carregarDadosUsuario() {
     if (!currentUser) return false;
     const key = typeof getStorageKey === 'function' ? getStorageKey(currentUser) : 'app_data_' + currentUser.id;
@@ -1577,7 +1588,27 @@ async function carregarDadosUsuario() {
         return true;
     }
 
-    data = juntarDados(local, nuvem);
+    // A PRIMEIRA ABERTURA DA VERSÃO NOVA, numa conta que nunca converteu.
+    //
+    // juntarDados() só aceita da nuvem as chaves da camada NUVEM — é o certo depois da
+    // conversão, quando o pessoal vive cifrado em outro documento. Mas a conta que
+    // nunca converteu ainda tem estudante, nota e chamada EM CLARO neste documento, e
+    // aqui isso significaria: abrir a versão nova e ver as turmas sem os estudantes.
+    // Pior, o primeiro salvamento gravaria um pacote cifrado VAZIO e depois reescreveria
+    // o documento em claro sem os campos pessoais — apagando a única cópia que existe.
+    //
+    // Então o pessoal em claro é ADOTADO, não descartado. O aparelho continua mandando
+    // no que ele já tem: cada campo só vem da nuvem quando aqui está vazio.
+    data = window.nuvemTemPessoalEmClaro
+        ? _adotarPessoalEmClaro(initial, nuvem, local)
+        : juntarDados(local, nuvem);
+
+    if (window.nuvemTemPessoalEmClaro) {
+        // Grava no aparelho já: é o que faz o trabalho sobreviver mesmo que a conversão
+        // para cifrado não aconteça hoje (sem a chave, por exemplo).
+        try { if (typeof localSet === 'function') await localSet(key, data); } catch (e) {}
+        console.log('[SisProf] Conta ainda não convertida: dado pessoal em claro adotado da nuvem.');
+    }
 
     // [FASE 7] A camada pessoal cifrada. É ela que faz uma máquina nova funcionar sem
     // arquivo: o aparelho não tem os estudantes, a nuvem tem — ilegível para ela.
