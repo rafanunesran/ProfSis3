@@ -361,6 +361,31 @@ async function _resgateGravarEConferir(novos) {
     return { ok: true };
 }
 
+// Este achado pertence ao documento que está aberto agora?
+//
+// Quem é gestor E professor na mesma conta tem dois documentos, e eles se parecem: os
+// dois têm turmas, estudantes, ocorrências. Mesclar o do Gestor dentro do painel do
+// Professor mistura os dois para sempre, e SUBSTITUIR troca um pelo outro - levando
+// junto as notas e as faltas que só existiam no que foi substituído.
+function _resgateAvisoDeOutroDocumento(achado) {
+    const atual = (typeof getStorageKey === 'function') ? getStorageKey(currentUser) : null;
+    const dele = String(achado && achado.detalhe || '');
+    if (!atual || !dele || dele === atual) return '';
+    if (dele.indexOf('backup_') === 0) return '';          // backup é da própria conta
+    if (dele.indexOf('app_data') !== 0 && dele.indexOf('pessoal_') !== 0) return '';
+
+    const painel = (k) => k.indexOf('_gestor') !== -1 ? 'Painel do Gestor'
+                   : k.indexOf('_aee') !== -1 ? 'Painel AEE'
+                   : k.indexOf('_projeto') !== -1 ? 'Painel de Projetos'
+                   : k.indexOf('_tutoria') !== -1 ? 'documento de tutoria da escola'
+                   : 'painel do Professor';
+    return '⚠️ ATENÇÃO: esta cópia é de OUTRO documento.\n\n' +
+           'Você está no ' + painel(atual) + ' (' + atual + ')\n' +
+           'e esta cópia veio do ' + painel(dele) + ' (' + dele + ').\n\n' +
+           'São documentos separados, com conteúdos parecidos. Juntá-los mistura os dois, ' +
+           'e substituir troca um pelo outro — levando junto o que só existia no seu.\n\n';
+}
+
 async function resgateMesclar(indice) {
     const achado = (window._resgateAchados || [])[indice];
     if (!achado) return;
@@ -371,7 +396,8 @@ async function resgateMesclar(indice) {
         return alert('Nada de novo nesta cópia: tudo o que ela tem já está nos seus dados de hoje.\n\n' +
                      'Nada foi alterado.');
     }
-    if (!confirm('MESCLAR (nada é apagado)\n\nDe "' + achado.rotulo + '" vão entrar:\n\n' +
+    if (!confirm(_resgateAvisoDeOutroDocumento(achado) +
+                 'MESCLAR (nada é apagado)\n\nDe "' + achado.rotulo + '" vão entrar:\n\n' +
                  linhas.join('\n') + '\n\nO que você lançou hoje continua como está. Continuar?')) return;
 
     try {
@@ -395,7 +421,8 @@ async function resgateSubstituir(indice) {
     const vem = achado.censo;
     const perde = RESGATE_CAMPOS_CENSO.filter(k => vem[k] < agora[k]);
 
-    let texto = 'SUBSTITUIR TUDO pelos dados de "' + achado.rotulo + '".\n\n' +
+    let texto = _resgateAvisoDeOutroDocumento(achado) +
+                'SUBSTITUIR TUDO pelos dados de "' + achado.rotulo + '".\n\n' +
                 'Hoje: ' + _resgateResumo(agora) + '\nNesta cópia: ' + _resgateResumo(vem) + '\n\n';
     if (perde.length) {
         texto += '⚠️ Esta cópia tem MENOS registros em: ' + perde.map(k => _resgateNome(k, 2)).join(', ') + '.\n' +

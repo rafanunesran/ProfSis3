@@ -213,6 +213,38 @@ const FAKE = () => {
   cobrar(r8.notasNaNuvem === 1 && r8.agendaNaNuvem === 1, 'o que foi recusado sobe depois');
   cobrar(r8.filaVazia, 'a fila se esvazia quando sobe');
 
+  // 9. A MESMA CONTA em dois papeis: o dado so' volta para o documento de onde veio.
+  //    Foi assim que um documento de professor, com as notas e faltas do bimestre,
+  //    terminou com o conteudo do painel de gestao dentro.
+  const r9 = await p.evaluate(async () => {
+    window.usuarioOnlineCompleto = true;
+    window.__regraDoCorte = false;
+    window.chaveDosDadosCarregados = 'app_data_school_77_gestor';   // abriu como gestor
+    window._avisouChaveErrada = true;                               // sem caixa de dialogo no teste
+    const antes = JSON.stringify(window.__docs['app_data/app_data_u1'] || null);
+    await salvarDadosUsuario('app_data_u1', { estudantes: [{ id: 1 }], notas: [] });
+    const depois = JSON.stringify(window.__docs['app_data/app_data_u1'] || null);
+    const espelho = await localGet('app_data_u1');
+    window.chaveDosDadosCarregados = null;
+    return { intacto: antes === depois, recusa: !!window.gravacaoEmChaveErrada,
+             espelhoIntacto: !!(espelho && espelho.notas) };
+  });
+  console.log('9. gestor+professor na mesma conta -> ' + JSON.stringify(r9));
+  cobrar(r9.recusa, 'a gravacao em documento diferente do carregado e RECUSADA');
+  cobrar(r9.intacto, 'o documento do outro painel fica INTACTO na nuvem');
+
+  // 10. E a Central de Resgate avisa antes de misturar dois documentos.
+  const r10 = await p.evaluate(() => {
+    window.currentViewMode = 'professor';
+    const aviso = _resgateAvisoDeOutroDocumento({ detalhe: 'app_data_school_77_gestor' });
+    const semAviso = _resgateAvisoDeOutroDocumento({ detalhe: 'app_data_u1' });
+    return { avisa: aviso.indexOf('OUTRO documento') !== -1 && aviso.indexOf('Gestor') !== -1,
+             calaQuandoEhOMesmo: semAviso === '' };
+  });
+  console.log('10. aviso na Central de Resgate -> ' + JSON.stringify(r10));
+  cobrar(r10.avisa, 'avisa que a copia e de outro painel antes de mesclar/substituir');
+  cobrar(r10.calaQuandoEhOMesmo, 'e nao atrapalha quando e o proprio documento');
+
   await b.close();
   console.log(falhas ? ('\n*** ' + falhas + ' falha(s) ***') : '\nTudo certo.');
   process.exit(falhas ? 1 : 0);

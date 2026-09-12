@@ -1620,6 +1620,13 @@ async function carregarDadosUsuario() {
     if (!currentUser) return false;
     const key = typeof getStorageKey === 'function' ? getStorageKey(currentUser) : 'app_data_' + currentUser.id;
 
+    // De QUAL documento este `data` veio. Sem isto, um `data` carregado no painel do
+    // Gestor pode ser gravado por cima do documento do Professor — a mesma pessoa usa
+    // os dois, e as duas chaves são diferentes (getStorageKey, em shared.js). Foi isso
+    // que fez um documento de professor, com as notas e as faltas do bimestre, terminar
+    // com o conteúdo do painel de gestão dentro.
+    window.chaveDosDadosCarregados = key;
+
     window.falhaLeituraFirestore = false;
     window.bloquearEscritaNuvem = false;
 
@@ -1893,6 +1900,33 @@ async function salvarDadosUsuario(chave, dados) {
     // recuperar.
     if (window.bloquearEscritaLocal) {
         console.warn('[SisProf] Gravação bloqueada: a cópia deste aparelho não carregou por inteiro.');
+        return;
+    }
+
+    // O DADO SÓ VOLTA PARA O DOCUMENTO DE ONDE VEIO.
+    //
+    // Quem é gestor E professor na mesma conta tem dois documentos: o do painel de
+    // gestão (app_data_school_<escola>_gestor) e o pessoal (app_data_<uid>). Se o
+    // `data` carregado de um for gravado na chave do outro, o segundo documento é
+    // substituído inteiro — e as notas e faltas que só existiam nele acabam.
+    //
+    // Trocar de painel recarrega a página, então em uso normal a chave da gravação é
+    // sempre a mesma do carregamento. Divergiu: alguma coisa saiu do lugar, e o certo
+    // é não gravar. O trabalho continua na tela e na cópia do aparelho.
+    if (window.chaveDosDadosCarregados && chave !== window.chaveDosDadosCarregados) {
+        console.error('[SisProf] Gravação RECUSADA: os dados na tela vieram de "' +
+            window.chaveDosDadosCarregados + '" e a gravação iria para "' + chave + '".');
+        window.gravacaoEmChaveErrada = { de: window.chaveDosDadosCarregados, para: chave };
+        if (!window._avisouChaveErrada) {
+            window._avisouChaveErrada = true;
+            alert('Não gravei, de propósito.\n\n' +
+                  'Os dados que estão na tela vieram do documento "' + window.chaveDosDadosCarregados +
+                  '", mas a gravação iria para "' + chave + '". São documentos diferentes: gravar ' +
+                  'assim substituiria um pelo outro e levaria junto o que só existe lá ' +
+                  '(notas e faltas, por exemplo).\n\n' +
+                  'NADA foi perdido: o que está na tela continua aí. Recarregue a página; ' +
+                  'se voltar a acontecer, avise o suporte.');
+        }
         return;
     }
 
