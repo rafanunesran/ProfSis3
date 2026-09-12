@@ -13,6 +13,15 @@ que prova se o banco está recusando as gravações.
 
 O veredito dele diz qual dos dois cenários é o seu.
 
+**Se ele disser que não há nada, não acredite antes de rodar o raio-X.** O diagnóstico
+conta uma lista de campos escrita à mão, e uma lista dessas sempre fica para trás: ela
+não cobria os campos de nota do gestor (`notasAvaliacoesGestor`, `notasBimestraisOficiais`,
+`lotesMapaoGestor`) e por isso respondia "não achei notas" sobre uma conta que as tinha.
+`ferramentas/raio-x-console.js` não decide nada por conta própria: mostra **todas** as
+chaves de **todos** os documentos, em todas as origens, numa tabela; **decifra** o que
+estiver cifrado se a chave estiver no aparelho; diz onde cada campo está mais completo;
+e baixa um `.profsis` por origem, para você ter tudo em disco antes de mexer em nada.
+
 ## Causa A — as Regras recusam e o trabalho nunca chega a ser gravado
 
 **Sintoma:** sumiu *tudo* junto — agenda, notas, registros de aula, chamadas — e some
