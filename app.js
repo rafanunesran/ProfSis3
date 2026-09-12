@@ -57,6 +57,16 @@ async function iniciarApp() {
         currentViewMode = currentUser.role;
     }
 
+    // [ADEQUAÇÃO SEDUC] Releitura obrigatória ANTES de carregar qualquer dado.
+    // A isenção "100% online" mora num documento do Firestore que só se lê com sessão
+    // no Auth, e na abertura da página quem ainda ia digitar e-mail e senha não tinha
+    // sessão nenhuma. Sem repetir a leitura aqui, a conta isenta abria como conta
+    // comum: pedia a transição e guardava o estudante só no aparelho — exatamente o
+    // oposto do que a isenção significa.
+    if (typeof prepararRegraDoCorte === 'function') {
+        await prepararRegraDoCorte();
+    }
+
     // Carregar dados
     carregarDadosUsuario().then(async (carregouOk) => {
         // [SEGURANÇA] Confirma que os dados foram baixados com sucesso.
@@ -69,7 +79,10 @@ async function iniciarApp() {
         // agora ainda não subiu.
         // Sem sessão no Auth o banco recusa gravação, mesmo com tudo o mais certo.
         // É mais específico que o banner vermelho genérico, então vem primeiro.
-        if (typeof precisaAvisarSemSessao === 'function' && precisaAvisarSemSessao()) mostrarBannerSemSessao();
+        // A perda da camada pessoal vem antes de tudo: com a gravação já bloqueada,
+        // qualquer outra tarja mandaria o professor procurar no lugar errado.
+        if (window.perdaLocalDetectada) mostrarBannerPerdaLocal();
+        else if (typeof precisaAvisarSemSessao === 'function' && precisaAvisarSemSessao()) mostrarBannerSemSessao();
         // [FASE 7] Ha' dado cifrado na nuvem e a chave nao esta' aqui: sem isso o
         // professor ve' a lista vazia e conclui que perdeu tudo.
         else if (window.pessoalSemChave && typeof mostrarBannerPessoalSemChave === 'function') mostrarBannerPessoalSemChave();
@@ -1008,6 +1021,160 @@ document.addEventListener('visibilitychange', async () => {
     } catch (e) { /* nunca trancar por falha de rede */ }
 });
 
+// "Forçar o backup" de uma conta depois da transição não é um botão só: o dado
+// pessoal mora no aparelho e a nuvem só aceita o bloco cifrado. Então isto faz as
+// duas coisas, na ordem que não depende de nada dar certo: primeiro o arquivo, que
+// sempre funciona e fica na mão do professor, e só depois a nuvem, que pode falhar
+// por falta de chave ou de rede. E relata os dois desfechos, sem arredondar.
+async function forcarBackupAgora() {
+    if (!currentUser) return alert('Entre na sua conta primeiro.');
+
+    if (window.bloquearEscritaLocal) {
+        return alert('Não vou forçar backup agora.\n\nA abertura detectou que a cópia deste aparelho ' +
+            'não carregou por inteiro, e um backup feito assim gravaria a tela vazia por cima de um ' +
+            'backup bom.\n\nRecarregue a página primeiro.');
+    }
+
+    const censo = (typeof censoPessoal === 'function') ? censoPessoal(data) : { total: 0, por: {} };
+    const resumo = Object.keys(censo.por).map(k => censo.por[k] + ' ' + k).join(', ') || 'nenhum registro pessoal';
+
+    if (!confirm('Forçar backup agora?\n\nVai ser guardado: ' + resumo + '.\n\n' +
+        '1. O arquivo .profsis é baixado para este aparelho.\n' +
+        '2. O backup na nuvem é criado (cifrado, depois da transição).')) return;
+
+    const baixou = (typeof exportarArquivoProfsis === 'function') ? exportarArquivoProfsis() : false;
+
+    let nuvem = 'não tentado';
+    try {
+        const antes = window._ultimoBackupOk;
+        window._ultimoBackupOk = null;
+        await criarBackupNuvem(true);
+        nuvem = window._ultimoBackupOk ? 'criado' : 'não criado (veja o aviso no console)';
+        if (!window._ultimoBackupOk) window._ultimoBackupOk = antes;
+    } catch (e) {
+        nuvem = 'falhou: ' + e.message;
+    }
+
+    alert('Backup forçado.\n\n' +
+          'Arquivo neste aparelho: ' + (baixou ? 'BAIXADO' : 'NÃO baixado') + '\n' +
+          'Backup na nuvem: ' + nuvem + '\n\n' +
+          'Conteúdo: ' + resumo + '.\n\n' +
+          (baixou ? 'Guarde o arquivo fora deste aparelho: é a cópia que não depende de nada.' : ''));
+}
+
+// A abertura detectou que a cópia DESTE aparelho voltou vazia onde havia registro.
+// Depois da transição esta cópia é a única que existe, então isto é a emergência do
+// sistema: tudo já está bloqueado (core.js), e esta tarja existe para o professor
+// não fechar a aba achando que perdeu o ano — e para não deixá-lo sem saída.
+function mostrarBannerPerdaLocal() {
+    if (document.getElementById('bannerPerdaLocal')) return;
+    const v = window.perdaLocalDetectada || {};
+    const perdas = (v.perdas || []).slice(0, 4).join(', ');
+
+    const banner = document.createElement('div');
+    banner.id = 'bannerPerdaLocal';
+    banner.style.cssText = 'position:sticky; top:0; z-index:10002; background:#742a2a; color:#fff; ' +
+        'padding:14px 16px; text-align:center; font-size:14px; box-shadow:0 2px 10px rgba(0,0,0,0.35);';
+    banner.innerHTML =
+        '<div style="max-width:820px; margin:0 auto;">' +
+          '🛑 <strong>Seus dados não carregaram — e o salvamento está BLOQUEADO.</strong><br>' +
+          '<span style="font-size:13px; opacity:.95;">Este aparelho tinha ' +
+            ((v.anterior && v.anterior.total) || 0) + ' registro(s)' +
+            (perdas ? ' (' + perdas + ')' : '') + ' e desta vez a leitura voltou vazia. ' +
+            '<strong>Nada foi apagado</strong>: o bloqueio existe justamente para o sistema não ' +
+            'gravar essa tela vazia por cima do que está guardado.</span>' +
+          '<div style="margin-top:10px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">' +
+            '<button class="btn btn-sm" style="background:#fff; color:#742a2a; font-weight:bold;" ' +
+              'onclick="location.reload()">🔄 Tentar carregar de novo</button>' +
+            '<button class="btn btn-sm" style="background:rgba(255,255,255,.2); color:#fff;" ' +
+              'onclick="abrirSeletorArquivoProfsis()">⬆️ Importar do meu arquivo</button>' +
+            '<button class="btn btn-sm" style="background:rgba(255,255,255,.2); color:#fff;" ' +
+              'onclick="listarBackupsNuvem()">📋 Ver backups na nuvem</button>' +
+            '<button class="btn btn-sm" style="background:transparent; color:#fff; text-decoration:underline;" ' +
+              'onclick="liberarGravacaoAposPerda()">Fui eu que apaguei — liberar</button>' +
+          '</div>' +
+        '</div>';
+    document.body.insertBefore(banner, document.body.firstChild);
+}
+
+// A saída para quem realmente apagou tudo de propósito. Existe porque um bloqueio
+// sem saída é uma prisão: o professor que esvaziou a conta de propósito não pode
+// ficar impedido de trabalhar por causa de uma proteção que errou a favor dele.
+async function liberarGravacaoAposPerda() {
+    const v = window.perdaLocalDetectada || {};
+    if (!confirm('Só confirme se você REALMENTE apagou seus dados de propósito.\n\n' +
+        'Este aparelho registrava ' + ((v.anterior && v.anterior.total) || 0) + ' item(ns). ' +
+        'Ao liberar, o sistema volta a gravar — e a tela vazia de agora passa a ser o que fica guardado.\n\n' +
+        'Se você não apagou nada, clique em Cancelar e tente "Tentar carregar de novo".')) return;
+
+    try {
+        const chave = getStorageKey(currentUser);
+        if (typeof metaSet === 'function') await metaSet('censoLocal_' + chave, { por: {}, total: 0, em: new Date().toISOString() });
+    } catch (e) {}
+
+    window.bloquearEscritaLocal = false;
+    window.perdaLocalDetectada = null;
+    window.dadosCarregados = true;
+    const b = document.getElementById('bannerPerdaLocal');
+    if (b) b.remove();
+    alert('Gravação liberada. O sistema volta a salvar normalmente.');
+}
+
+// Depois da transição o backup diário só sobe CIFRADO, e a chave que o cifra vive
+// neste aparelho desde o último login com senha. Quem ficou logado por sessão
+// restaurada não a tem — e sem ela NENHUM backup é criado. Como os backups antigos
+// já foram apagados pela transição, o silêncio aqui significa conta sem nenhuma
+// rede de proteção. Esta faixa existe para que isso nunca mais passe despercebido.
+function mostrarBannerBackupSemChave() {
+    if (document.getElementById('bannerBackupSemChave')) return;
+    const banner = document.createElement('div');
+    banner.id = 'bannerBackupSemChave';
+    banner.style.cssText = 'position:sticky; top:0; z-index:10001; background:#975a16; color:#fff; ' +
+        'padding:12px 16px; text-align:center; font-size:14px; box-shadow:0 2px 6px rgba(0,0,0,0.25);';
+    banner.innerHTML =
+        '<div style="max-width:780px; margin:0 auto;">' +
+          '<strong>Seus backups na nuvem estão parados.</strong><br>' +
+          '<span style="font-size:13px; opacity:.95;">Depois da transição o backup sobe cifrado, e a ' +
+          'chave que o abre só é liberada quando você entra com a sua senha. Enquanto isso, nenhum ' +
+          'backup novo está sendo criado.</span>' +
+          '<div style="margin-top:9px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">' +
+            '<button class="btn btn-sm" style="background:#fff; color:#975a16; font-weight:bold;" ' +
+              'onclick="liberarChaveBackup()">🔑 Liberar meus backups</button>' +
+            '<button class="btn btn-sm" style="background:rgba(255,255,255,.18); color:#fff;" ' +
+              'onclick="exportarArquivoProfsis()">⬇️ Baixar cópia agora</button>' +
+          '</div>' +
+        '</div>';
+    document.body.insertBefore(banner, document.body.firstChild);
+}
+
+// Pede a senha uma vez, libera a chave e faz o backup na hora — para o professor ver
+// o resultado, em vez de ficar esperando a próxima abertura do sistema.
+async function liberarChaveBackup() {
+    if (!currentUser || !currentUser.uid) {
+        return alert('Não consigo identificar sua conta no Firebase.\n\nSaia e entre de novo com e-mail e senha.');
+    }
+    if (typeof desbloquearChaveBackupComSenha !== 'function') {
+        return alert('O módulo de criptografia não carregou. Recarregue a página.');
+    }
+    const senha = prompt('Digite a senha da sua conta para liberar a chave de backup deste aparelho:');
+    if (!senha) return;
+
+    try {
+        const chave = await desbloquearChaveBackupComSenha(currentUser.uid, senha);
+        if (!chave) return alert('Não consegui liberar a chave. Confira a senha e tente de novo.');
+
+        const b = document.getElementById('bannerBackupSemChave');
+        if (b) b.remove();
+        window.backupSemChave = false;
+
+        await criarBackupNuvem(true);
+        alert('Pronto. A chave está neste aparelho e um backup cifrado acabou de ser criado.\n\n' +
+              'O backup diário volta a rodar sozinho.');
+    } catch (e) {
+        alert('Não consegui liberar a chave: ' + e.message);
+    }
+}
+
 // [SEGURANÇA] Tela de bloqueio para perfil novo aguardando liberação da gestão.
 // Substitui completamente a interface do app: nenhum dado da escola é carregado e
 // nenhuma ferramenta fica acessível enquanto o gestor não confirmar o acesso.
@@ -1198,6 +1365,7 @@ async function renderDashboard() {
                         <h4 style="margin:0 0 10px 0; font-size:13px; color:#2b6cb0; border-bottom:1px solid #eee; padding-bottom:5px;">☁️ Nuvem (Automático)</h4>
                         <div style="display:flex; flex-direction:column; gap:8px;">
                             <button class="btn btn-sm btn-primary" onclick="criarBackupNuvem()" style="text-align:left;">💾 Criar Backup Agora</button>
+                            <button class="btn btn-sm btn-danger" onclick="forcarBackupAgora()" style="text-align:left;" title="Baixa o arquivo E cria o backup na nuvem, e diz o que deu certo em cada um">🛟 Forçar backup (arquivo + nuvem)</button>
                             <button class="btn btn-sm btn-warning" onclick="restaurarUltimoBackup()" style="text-align:left;">⏮️ Restaurar Último</button>
                             <button class="btn btn-sm btn-secondary" onclick="listarBackupsNuvem()" style="text-align:left;">📋 Ver Histórico Completo</button>
                         </div>
@@ -1253,6 +1421,7 @@ async function renderDashboard() {
                 </div>
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
                     <button class="btn btn-sm btn-primary" onclick="criarBackupNuvem()" style="text-align:left;">💾 Salvar na Nuvem Agora</button>
+                    <button class="btn btn-sm btn-danger" onclick="forcarBackupAgora()" style="text-align:left;" title="Baixa o arquivo E cria o backup na nuvem, e diz o que deu certo em cada um">🛟 Forçar backup (arquivo + nuvem)</button>
                     <button class="btn btn-sm btn-info" onclick="exportarArquivoProfsis()" style="text-align:left;">⬇️ Baixar minha cópia de segurança</button>
                     <button class="btn btn-sm btn-success" onclick="abrirSeletorArquivoProfsis()" style="text-align:left; grid-column:1 / -1; font-weight:bold;">⬆️ Importar dados do arquivo</button>
                 </div>
@@ -8555,7 +8724,14 @@ async function verificarBackupAutomatico() {
     if (typeof podeEnviarDadoPessoal === 'function' && !podeEnviarDadoPessoal()) {
         const chave = (typeof obterChaveBackup === 'function') ? await obterChaveBackup() : null;
         if (!chave) {
-            console.warn('Backup na nuvem adiado: a chave de cifra ainda não está neste aparelho (entre com e-mail e senha uma vez).');
+            // Isto era só um console.warn — e foi assim que uma conta passou a
+            // transição inteira sem backup nenhum: os antigos tinham sido apagados
+            // (é o que a adequação manda) e os novos nunca começavam, sem nada na
+            // tela dizendo isso. A sessão restaurada não traz a chave: só o login
+            // com senha traz. Então aqui pedimos a senha, uma vez.
+            console.warn('Backup na nuvem adiado: a chave de cifra não está neste aparelho.');
+            window.backupSemChave = true;
+            mostrarBannerBackupSemChave();
             return;
         }
         // Com a chave em mãos, aproveita para cifrar os backups antigos que ficaram em
@@ -8568,6 +8744,7 @@ async function verificarBackupAutomatico() {
             catch (e) { console.warn('[Backups] Conversão adiada:', e); }
         }
     }
+    window.backupSemChave = false;
 
     try {
         const indexKey = `backup_index_${userId}`;
@@ -8599,6 +8776,28 @@ async function criarBackupNuvem(silent = false) {
         console.warn('Backup cancelado: dados não carregados da nuvem (evita gravar backup vazio).');
         if (!silent) alert('Backup cancelado: seus dados não foram carregados da nuvem.\n\nRecarregue a página e tente de novo — isso protege seu histórico de backups.');
         return;
+    }
+
+    // [PROTEÇÃO CONTRA BACKUP VAZIO, PARTE 2] A verificação acima só pergunta se a
+    // NUVEM respondeu. Depois da transição o que importa é a cópia do aparelho, e um
+    // `data` sem nada pessoal com censo dizendo o contrário significa que a leitura
+    // local falhou. Gravar isso consome um slot bom do histórico e, um dia por vez,
+    // esvazia os 20 — que é como um professor chega ao suporte sem backup nenhum.
+    if (typeof censoPessoal === 'function' && typeof metaGet === 'function') {
+        try {
+            const chave = getStorageKey(currentUser);
+            const anterior = await metaGet('censoLocal_' + chave);
+            const agora = censoPessoal(data);
+            if (anterior && anterior.total > 0 && agora.total === 0) {
+                console.error('Backup cancelado: o aparelho registrava ' + anterior.total +
+                              ' item(ns) e o que está carregado não tem nenhum.');
+                if (!silent) alert('Backup CANCELADO para proteger seu histórico.\n\n' +
+                    'Este aparelho registrava ' + anterior.total + ' item(ns) (chamadas, notas, ocorrências) ' +
+                    'e o que está carregado agora não tem nenhum.\n\nGravar este backup apagaria um backup bom. ' +
+                    'Recarregue a página; se continuar vazio, use "Importar do meu arquivo".');
+                return;
+            }
+        } catch (e) { /* sem censo não dá para comparar: segue o fluxo normal */ }
     }
 
     if (!silent && !confirm(`Criar um novo backup na nuvem?\n\nO sistema guarda 1 backup por dia dos últimos ${BACKUP_MAX_DIAS} dias. O backup mais antigo é substituído automaticamente.`)) return;
@@ -8675,6 +8874,7 @@ async function criarBackupNuvem(silent = false) {
 
         await saveData('app_data', indexKey, indexData);
 
+        window._ultimoBackupOk = true;
         if (!silent) {
             alert('Backup criado com sucesso!');
             listarBackupsNuvem();
