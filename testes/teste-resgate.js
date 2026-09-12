@@ -8,13 +8,37 @@ const { chromium } = require('playwright');
 
 const FAKE = () => {
   window.__docs = {};
+  // window.__regraDoCorte liga a Regra publicada: recusa documento com campo pessoal.
+  window.__regraDoCorte = false;
+  const PESSOAIS = ['estudantes', 'presencas', 'notas', 'tutorados', 'ocorrencias', 'agendamentos'];
+  const permitido = (id, o) => {
+    if (!window.__regraDoCorte) return true;
+    if (String(id).indexOf('backup_') === 0 && o && o.cifrado === true) return true;
+    return !Object.keys(o || {}).some(k => PESSOAIS.indexOf(k) !== -1);
+  };
   const ref = (col, id) => ({
     get: async () => { const d = window.__docs[col + '/' + id]; return { exists: !!d, data: () => d ? JSON.parse(JSON.stringify(d)) : null }; },
-    set: async (o) => { window.__docs[col + '/' + id] = JSON.parse(JSON.stringify(o)); },
+    set: async (o) => {
+      if (!permitido(id, o)) { const e = new Error('Missing or insufficient permissions.'); e.code = 'permission-denied'; throw e; }
+      window.__docs[col + '/' + id] = JSON.parse(JSON.stringify(o)); },
     delete: async () => { delete window.__docs[col + '/' + id]; } });
+  const colecao = (c) => {
+    const consulta = (depois, lim) => ({
+      limit: (n) => consulta(depois, n),
+      startAfter: (d) => consulta(d.id, lim),
+      get: async () => {
+        let ids = Object.keys(window.__docs).filter(k => k.indexOf(c + '/') === 0)
+                        .map(k => k.slice(c.length + 1)).sort();
+        if (depois) ids = ids.filter(i => i > depois);
+        ids = ids.slice(0, lim || 100);
+        return { empty: ids.length === 0,
+                 docs: ids.map(i => ({ id: i, data: () => JSON.parse(JSON.stringify(window.__docs[c + '/' + i])) })) }; } });
+    return { doc: (i) => ref(c, String(i)), orderBy: () => consulta(null, 100) };
+  };
   window.firebase = { initializeApp: () => {}, analytics: () => {},
     auth: () => ({ currentUser: { uid: 'u1', email: 'm@e.com' }, onAuthStateChanged: (cb) => setTimeout(() => cb(null), 0), signOut: async () => {} }),
-    firestore: () => ({ collection: (c) => ({ doc: (i) => ref(c, String(i)) }) }) };
+    firestore: () => ({ collection: colecao }) };
+  window.firebase.firestore.FieldPath = { documentId: () => '__name__' };
   window.firebase.firestore.FieldValue = { serverTimestamp: () => null };
 };
 
@@ -46,6 +70,13 @@ const FAKE = () => {
     window.__docs['app_data/backup_u1_slot_5'] = { cifrado: true, partes: 1, iv: 'x', dados: 'ruido', turmas: [{ id: 9 }] };
     // 5. Um documento vazio nao pode virar "resgate".
     window.__docs['app_data/app_data_school_77_gestor'] = { turmas: [] };
+    // 5b. A conta mudou de uid: o documento antigo tem o id antigo no nome, e
+    //     nenhuma adivinhacao de chave chega nele - so' listar a colecao chega.
+    window.__docs['app_data/app_data_99887766'] = {
+      turmas: [{ id: 3, nome: '3C' }], eventos: [{ id: 1, data: '2026-09-02' }],
+      notas: [{ id: 1 }, { id: 2 }], registrosAula: [{ id: 1 }] };
+    // 5c. Documento de OUTRA pessoa: o conteudo nao pode ser guardado.
+    window.__docs['app_data/app_data_naoEhMinha'] = { estudantes: [{ id: 1, nome_completo: 'Alheio' }] };
     // 6. A copia inteira ficou no aparelho que migrou.
     await localSet('app_data_u1', { turmas: [{ id: 1, nome: '1A' }, { id: 2, nome: '2B' }],
       estudantes: [{ id: 7, nome_completo: 'Ana' }, { id: 8, nome_completo: 'Bruno' }, { id: 9, nome_completo: 'Caio' }],
@@ -114,6 +145,73 @@ const FAKE = () => {
   console.log('5. porta de entrada -> ' + JSON.stringify(r5));
   cobrar(r5.funcao === 'function', 'abrirCentralResgate() existe');
   cobrar(r5.faixa, 'a faixa de "estudantes sumiram" oferece a busca');
+
+  // 6. A varredura por nome NAO acha o documento de uid antigo; a profunda acha,
+  //    e nao guarda o conteudo de quem nao e' desta conta.
+  const r6 = await p.evaluate(async () => {
+    const prof = await resgateVarreduraProfunda();
+    return { meus: prof.meus.map(a => a.detalhe), lidos: prof.lidos,
+             outros: prof.outros.map(o => o.id),
+             vazouConteudo: JSON.stringify(prof.outros).indexOf('Alheio') !== -1 };
+  });
+  console.log('6. varredura profunda -> ' + JSON.stringify(r6));
+  cobrar(r1.rotulos.every(t => t.indexOf('99887766') === -1), 'a busca por nome nao chega no uid antigo');
+  cobrar(r6.meus.indexOf('app_data_99887766') !== -1, 'listar a colecao chega');
+  cobrar(r6.outros.indexOf('app_data_naoEhMinha') !== -1 && !r6.vazouConteudo,
+         'de documento alheio fica so a contagem, nunca o conteudo');
+
+  // 7. A REGRA RECUSANDO: o espelho do aparelho tem de sobreviver a recusa.
+  //    E' o defeito que custou agenda, notas, registros e chamadas.
+  const r7 = await p.evaluate(async () => {
+    // O desencontro real de producao: o APLICATIVO acha que pode mandar (conta
+    // isenta / antes do corte pelo relogio dele) e a REGRA publicada recusa.
+    window.usuarioOnlineCompleto = true;               // guarda do app libera
+    window.__regraDoCorte = true;                      // Regra do corte publicada
+    await saveData('app_data', 'app_data_u1', {
+      turmas: [{ id: 1 }], eventos: [{ id: 9, data: '2026-09-12' }],
+      notas: [{ id: 7 }], presencas: [{ id: 1 }] });
+    const espelho = await localGet('app_data_u1');
+    const fila = await listarGravacoesRecusadas();
+    return { subiuNaNuvem: !!(window.__docs['app_data/app_data_u1'] || {}).notas,
+             noAparelho: !!(espelho && espelho.notas && espelho.eventos),
+             agendaNoAparelho: !!(espelho && espelho.eventos),
+             fila: fila.map(f => f.docId + ':' + f.codigo) };
+  });
+  console.log('7. banco recusando -> ' + JSON.stringify(r7));
+  cobrar(!r7.subiuNaNuvem, 'a Regra recusou mesmo (o cenario esta montado)');
+  cobrar(r7.noAparelho, 'O TRABALHO SOBREVIVE NO APARELHO mesmo com o banco recusando');
+  cobrar(r7.agendaNoAparelho, 'a agenda, que cai junto no mesmo documento, tambem sobrevive');
+  cobrar(r7.fila.indexOf('app_data_u1:permission-denied') !== -1, 'a recusa fica anotada para reenvio');
+
+  // 7b. O outro caminho: a guarda de conformidade do proprio app estoura. Ela existe
+  //     para impedir o ENVIO, nunca para jogar fora o que a pessoa digitou.
+  const r7b = await p.evaluate(async () => {
+    window.usuarioOnlineCompleto = false;              // guarda do app volta a valer
+    let estourou = false;
+    try {
+      await saveData('app_data', 'app_data_school_77_tutoria', {
+        eventos: [{ id: 5 }], encontros: [{ id: 1, relato: 'x' }] });
+    } catch (e) { estourou = true; }
+    const espelho = await localGet('app_data_school_77_tutoria');
+    return { estourou: estourou, noAparelho: !!(espelho && espelho.encontros && espelho.eventos),
+             naNuvem: !!window.__docs['app_data/app_data_school_77_tutoria'] };
+  });
+  console.log('7b. guarda do app -> ' + JSON.stringify(r7b));
+  cobrar(r7b.estourou && !r7b.naNuvem, 'a guarda continua impedindo o envio (falha alto)');
+  cobrar(r7b.noAparelho, 'mas o trabalho fica guardado no aparelho em vez de evaporar');
+
+  // 8. Corrigida a causa, o que foi recusado sobe - sem redigitar nada.
+  const r8 = await p.evaluate(async () => {
+    window.__regraDoCorte = false;
+    const r = await reenviarGravacoesRecusadas();
+    const nuvem = window.__docs['app_data/app_data_u1'] || {};
+    return { r: r, notasNaNuvem: (nuvem.notas || []).length,
+             agendaNaNuvem: (nuvem.eventos || []).length,
+             filaVazia: (await listarGravacoesRecusadas()).length === 0 };
+  });
+  console.log('8. reenvio -> ' + JSON.stringify(r8));
+  cobrar(r8.notasNaNuvem === 1 && r8.agendaNaNuvem === 1, 'o que foi recusado sobe depois');
+  cobrar(r8.filaVazia, 'a fila se esvazia quando sobe');
 
   await b.close();
   console.log(falhas ? ('\n*** ' + falhas + ' falha(s) ***') : '\nTudo certo.');

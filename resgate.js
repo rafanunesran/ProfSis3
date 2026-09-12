@@ -241,6 +241,64 @@ async function resgateVarrer(aoAndar) {
     return { achados: achados, avisos: avisos };
 }
 
+// --- Varredura profunda: listar a coleção ----------------------------------
+// A varredura acima só encontra o que ela consegue ADIVINHAR o nome. Quando a conta
+// mudou de uid, a escola mudou de id, ou o documento nasceu com outra chave, o dado
+// está lá e nenhuma tentativa de adivinhação chega nele.
+//
+// As Regras dão `allow read` em app_data, e no Firestore `read` inclui `list`: dá
+// para percorrer a coleção e ver os nomes de verdade. É lento e lê muito documento,
+// então é um botão separado, não o caminho padrão.
+//
+// DADO DOS OUTROS NÃO FICA AQUI. De documento que não é desta conta guardamos só a
+// contagem, para o professor poder dizer "esse número parece o meu" — nunca o
+// conteúdo, que é justamente o que a adequação existe para proteger.
+function _resgateTokensDaConta() {
+    const u = currentUser || {};
+    return [u.uid, u.id, u.schoolId, u.legacySchoolId, u.espacoId]
+        .filter(Boolean).map(String);
+}
+
+async function resgateVarreduraProfunda(aoAndar) {
+    if (typeof db === 'undefined' || !db) return { meus: [], outros: [], lidos: 0, erro: 'sem banco' };
+    const tokens = _resgateTokensDaConta();
+    const meus = [], outros = [];
+    let lidos = 0, ultimo = null, erro = null;
+
+    try {
+        for (let pagina = 0; pagina < 60; pagina++) {
+            if (aoAndar) aoAndar('Percorrendo a coleção... ' + lidos + ' documento(s) lidos.');
+            let q = db.collection('app_data')
+                      .orderBy(firebase.firestore.FieldPath.documentId()).limit(100);
+            if (ultimo) q = q.startAfter(ultimo);
+            const snap = await q.get();
+            if (snap.empty) break;
+
+            snap.docs.forEach(doc => {
+                lidos++;
+                const corpo = doc.data();
+                if (!_resgateParecemDados(corpo)) return;
+                const censo = _resgateCenso(corpo);
+                if (_resgateTotal(censo) === 0) return;
+                if (tokens.some(t => doc.id.indexOf(t) !== -1)) {
+                    meus.push({ origem: 'colecao', rotulo: 'Documento encontrado na coleção',
+                                detalhe: doc.id, censo: censo, dados: corpo });
+                } else {
+                    outros.push({ id: doc.id, censo: censo });   // só a contagem
+                }
+            });
+
+            ultimo = snap.docs[snap.docs.length - 1];
+            if (snap.docs.length < 100) break;
+        }
+    } catch (e) {
+        erro = (e && e.code === 'permission-denied')
+            ? 'as Regras não deixam listar a coleção com esta conta'
+            : ((e && e.message) || String(e));
+    }
+    return { meus: meus, outros: outros, lidos: lidos, erro: erro };
+}
+
 // --- Mesclagem -------------------------------------------------------------
 // União, nunca substituição: o que está na tela hoje permanece, e o que só existe
 // no achado entra. Vale para TODAS as listas do `data`, e não só para as seis que a
@@ -429,9 +487,14 @@ function abrirCentralResgate() {
                 'Procura seus dados em <strong>todas</strong> as origens que sobraram: este aparelho, o ' +
                 'armazenamento antigo do navegador, os documentos na nuvem, a camada cifrada e os 20 slots ' +
                 'de backup diário — um por um, sem depender do índice (que a transição apagou).</p>' +
-            '<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">' +
+            '<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">' +
                 '<button class="btn btn-primary" style="flex:2; min-width:220px;" onclick="resgateProcurar()">🔍 Procurar em tudo</button>' +
                 '<button class="btn btn-success" style="flex:1; min-width:180px;" onclick="abrirSeletorArquivoProfsis()">📂 Tenho o arquivo .profsis</button>' +
+            '</div>' +
+            '<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;">' +
+                '<button class="btn btn-secondary" style="flex:1; min-width:220px;" onclick="resgateProcurar(true)" ' +
+                    'title="Percorre a coleção inteira em vez de adivinhar o nome da chave. Demora mais.">' +
+                    '🐢 Não achou? Procurar documento por documento</button>' +
             '</div>' +
             '<div id="resgateStatus" style="padding:12px; background:#f7fafc; border-radius:8px; ' +
                 'font-size:13px; color:#4a5568; text-align:center;">Clique em "Procurar em tudo" para começar.</div>' +
@@ -442,7 +505,7 @@ function abrirCentralResgate() {
         '</div></div>');
 }
 
-async function resgateProcurar() {
+async function resgateProcurar(profunda) {
     const status = document.getElementById('resgateStatus');
     const lista = document.getElementById('resgateLista');
     const avisos = document.getElementById('resgateAvisos');
@@ -454,6 +517,34 @@ async function resgateProcurar() {
     try { r = await resgateVarrer(t => { status.textContent = t; }); }
     catch (e) { status.innerHTML = '<span style="color:#c53030;">A busca falhou: ' + e.message + '</span>'; return; }
 
+    if (profunda) {
+        const p = await resgateVarreduraProfunda(t => { status.textContent = t; });
+        // Documento que a varredura por nome já trouxe não entra de novo.
+        const jaTem = new Set(r.achados.map(a => a.detalhe));
+        p.meus.forEach(a => { if (!jaTem.has(a.detalhe)) r.achados.push(a); });
+        if (p.erro) r.avisos.push('A varredura documento por documento parou: ' + p.erro + '.');
+        else r.avisos.push('Percorri ' + p.lidos + ' documento(s) da coleção.' +
+            (p.outros.length ? ' ' + p.outros.length + ' têm conteúdo mas não trazem nenhum ' +
+             'identificador desta conta no nome — se algum número abaixo for o seu, me diga o nome ' +
+             'do documento: ' + p.outros.slice(0, 12).map(o => o.id + ' (' + _resgateResumo(o.censo) + ')').join('; ')
+             : ''));
+        r.achados.sort((a, b) => _resgateTotal(b.censo) - _resgateTotal(a.censo));
+    }
+
+    // Gravações que o banco recusou: o trabalho está no aparelho e nunca subiu.
+    try {
+        if (typeof listarGravacoesRecusadas === 'function') {
+            const fila = await listarGravacoesRecusadas();
+            if (fila.length) {
+                r.avisos.unshift('O banco RECUSOU ' + fila.length + ' gravação(ões) desta conta (a mais ' +
+                    'recente em ' + (fila[0].quando || '?').slice(0, 16).replace('T', ' ') + ', motivo: ' +
+                    (fila[0].codigo || fila[0].motivo) + '). O que você digitou está guardado NESTE ' +
+                    'APARELHO, mas não subiu. Depois que a causa for corrigida, use "Reenviar o que foi recusado".');
+                window._resgateTemRecusadas = true;
+            }
+        }
+    } catch (e) {}
+
     window._resgateAchados = r.achados;
 
     if (r.avisos.length) {
@@ -462,7 +553,10 @@ async function resgateProcurar() {
             'margin-bottom:8px; font-size:12px; color:#744210; line-height:1.5;">⚠️ ' + a + '</div>').join('') +
             (r.achados.some(a => a.origem === 'backup')
                 ? '<button class="btn btn-sm btn-info" style="width:100%; margin-bottom:8px;" ' +
-                  'onclick="resgateRefazerIndice()">🗂️ Refazer o índice dos backups</button>' : '');
+                  'onclick="resgateRefazerIndice()">🗂️ Refazer o índice dos backups</button>' : '') +
+            (window._resgateTemRecusadas
+                ? '<button class="btn btn-sm btn-warning" style="width:100%; margin-bottom:8px;" ' +
+                  'onclick="resgateReenviar()">📤 Reenviar o que foi recusado</button>' : '');
     }
 
     if (!r.achados.length) {
@@ -491,4 +585,22 @@ async function resgateProcurar() {
                     'title="Substitui TUDO por esta cópia">⚠️ Substituir</button>' +
             '</div>' +
         '</div>').join('');
+}
+
+// Reenvia, com o que está no espelho do aparelho, o que o banco recusou. Serve para o
+// dia em que a causa da recusa for corrigida: o trabalho sobe em vez de ficar preso.
+async function resgateReenviar() {
+    if (typeof reenviarGravacoesRecusadas !== 'function') return;
+    if (!confirm('Reenviar para a nuvem o que o banco recusou?\n\nO conteúdo vem da cópia ' +
+                 'deste aparelho. Nada é apagado.')) return;
+    const r = await reenviarGravacoesRecusadas();
+    if (r.subiram && !r.continuamRecusadas) {
+        alert('✅ ' + r.subiram + ' documento(s) subiram agora.');
+    } else if (r.continuamRecusadas) {
+        alert('Ainda recusado: ' + r.continuamRecusadas + ' de ' + r.total + ' documento(s).\n\n' +
+              'A causa da recusa continua de pé — enquanto ela não for corrigida, o trabalho fica ' +
+              'guardado neste aparelho e não sobe. Nada foi perdido.');
+    } else {
+        alert('Não havia cópia local dos documentos recusados para reenviar.');
+    }
 }

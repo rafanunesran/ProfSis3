@@ -1,10 +1,67 @@
-# Recuperar o backup apagado na transição cancelada
+# Perda de dados: descobrir a causa antes de tentar recuperar
 
-> Para quem perdeu dados entre a Fase 1 e o commit `a16f986` ("Cancela o modo local").
-> Comece pelo caminho 1: ele resolve a maioria dos casos em dois minutos, sem ninguém
-> de TI no meio.
+> **Comece aqui, não pelos caminhos de recuperação.** Há duas causas possíveis e elas
+> pedem ações opostas. Tentar recuperar sem saber qual é gasta o tempo de quem está
+> sem os dados — e, na causa A, a perda continua acontecendo enquanto se procura.
 
-## O que exatamente foi apagado, e quando
+## Passo zero: rode o diagnóstico
+
+`ferramentas/diagnostico-console.js` é um arquivo para colar no Console do navegador
+(F12), no site, com a conta aberta. Ele **não altera nada seu**: lê, conta e baixa um
+relatório `.json`. A única escrita é numa sonda descartável, apagada em seguida — é ela
+que prova se o banco está recusando as gravações.
+
+O veredito dele diz qual dos dois cenários é o seu.
+
+## Causa A — as Regras recusam e o trabalho nunca chega a ser gravado
+
+**Sintoma:** sumiu *tudo* junto — agenda, notas, registros de aula, chamadas — e some
+de novo a cada dia de trabalho. No diagnóstico, a sonda responde
+`comCampoPessoal: "RECUSADO: permission-denied"` e `semCampoPessoal: "ACEITOU"`.
+
+**O que está acontecendo:** as Regras do Firestore com o corte (`depoisDoCorte()`,
+válido desde 07/09/2026 10:00 UTC) foram publicadas no projeto, mas o site publicado
+ainda é a versão que grava o documento **inteiro** de uma vez, em texto claro. A Regra
+recusa qualquer documento que tenha `notas`, `presencas`, `estudantes` ou `ocorrencias`
+— e, como tudo mora no mesmo documento, a agenda e os registros de aula caem junto na
+mesma recusa. O professor vê um alerta, continua trabalhando e fecha a página: o dia
+inteiro foi recusado pelo banco e não existe em lugar nenhum.
+
+Nenhuma das duas partes está errada sozinha. Juntas, apagam o dia.
+
+**O que NÃO adianta:** procurar backup. Desde 07/09 o backup diário também é recusado
+(ele grava `data` inteiro em texto claro e não é `cifrado`), então não há backup novo
+para achar.
+
+**O que resolve, e é uma escolha de quem responde pelo sistema:**
+
+1. **Publicar a versão que cifra** (esta branch: `cripto.js` + `core.js` + `index.html`).
+   A camada pessoal sobe cifrada, a Regra aceita, e a adequação continua de pé. É o
+   caminho recomendado — resolve sem afrouxar nada.
+2. **Suspender o corte nas Regras temporariamente**, publicando no Console do Firebase a
+   regra de `app_data` sem a condição `depoisDoCorte()`. Destrava na hora, mas volta a
+   permitir dado pessoal em texto claro no banco — exatamente o que o Comunicado da
+   SEDUC não quer. Se for esse o caminho, que seja com hora para acabar.
+
+**O que dá para salvar do que já se perdeu:** o que foi recusado nunca chegou ao banco.
+Sobra o que estiver (a) numa aba ainda aberta — o diagnóstico avisa e ensina a salvar
+antes de fechar; (b) no `localStorage` do navegador, de antes de 07/09; (c) no próprio
+Firestore, até a data em que as gravações começaram a ser recusadas. O diagnóstico
+mostra as três coisas e até que dia cada uma vai.
+
+**A correção para não repetir** já está nesta branch: `saveData()` grava o espelho do
+aparelho **antes** de falar com a nuvem e antes da guarda de conformidade. Recusa do
+banco passou a significar "não subiu", nunca mais "sumiu": o trabalho fica no aparelho,
+a recusa fica anotada, e o botão *Reenviar o que foi recusado* sobe tudo quando a causa
+for corrigida.
+
+## Causa B — a transição cancelada apagou os backups
+
+Vale para quem chegou a rodar a versão do modo local e clicou em "Fazer a transição
+agora". Se o site publicado nunca teve `migracao.js`, **não é o seu caso** — vá para a
+causa A.
+
+### O que exatamente foi apagado, e quando
 
 Quem clicou em **"Fazer a transição agora"** rodava `migrarParaLocal()` (versão
 anterior de `migracao.js`). Depois de gravar a cópia no aparelho, conferir que ela
@@ -27,7 +84,7 @@ Duas coisas importam para a recuperação:
   Firestore recusou apagar continua no banco até hoje — invisível, porque o índice que
   o listava foi apagado no mesmo laço, e `listarBackupsNuvem()` só olha o índice.
 
-## Os cinco caminhos, do mais provável para o último recurso
+### Os cinco caminhos, do mais provável para o último recurso
 
 ### 1. Este aparelho (resolve a maioria)
 

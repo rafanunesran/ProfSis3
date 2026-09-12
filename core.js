@@ -329,6 +329,80 @@ async function getData(collectionName, docId) {
     }
 }
 
+// Espelho local de um documento. MESCLA em vez de substituir, e a razão é séria: o
+// que sobe para a nuvem pode ser só a camada não-pessoal, e um espelho que
+// substituísse apagaria os estudantes da cópia local — que é a única completa.
+// Preservamos as chaves que o documento local já tem e que a gravação atual não traz.
+//
+// Backups não são espelhados: são grandes, e o aparelho já tem o documento vivo.
+async function _espelharLocalmente(docId, cleanData) {
+    try {
+        if (String(docId).startsWith('backup_') || typeof localSet !== 'function') return;
+        const existente = await localGet(String(docId));
+        const mesclado = (existente && typeof existente === 'object' && !Array.isArray(existente))
+            ? Object.assign({}, existente, cleanData)
+            : cleanData;
+        await localSet(String(docId), mesclado);
+    } catch (localError) {
+        console.warn('Aviso: Espelho local falhou:', localError);
+    }
+}
+
+// --- Gravações que o banco recusou -----------------------------------------
+// A fila guarda só o endereço e o motivo. O conteúdo está no espelho local, e
+// duplicá-lo aqui seria espalhar dado pessoal por mais um lugar sem necessidade.
+const RECUSADAS_CHAVE = 'gravacoesRecusadas';
+
+async function _lembrarGravacaoRecusada(colecao, docId, erro) {
+    if (typeof metaGet !== 'function' || typeof metaSet !== 'function') return;
+    try {
+        const fila = (await metaGet(RECUSADAS_CHAVE)) || {};
+        fila[docId] = {
+            colecao: colecao, quando: new Date().toISOString(),
+            codigo: (erro && erro.code) || '', motivo: (erro && erro.message) || String(erro)
+        };
+        await metaSet(RECUSADAS_CHAVE, fila);
+        window.temGravacaoRecusada = true;
+    } catch (e) { console.warn('[SisProf] Não consegui anotar a gravação recusada:', e); }
+}
+
+async function _esquecerGravacaoRecusada(docId) {
+    if (typeof metaGet !== 'function' || typeof metaSet !== 'function') return;
+    try {
+        const fila = (await metaGet(RECUSADAS_CHAVE)) || {};
+        if (!fila[docId]) return;
+        delete fila[docId];
+        await metaSet(RECUSADAS_CHAVE, fila);
+        window.temGravacaoRecusada = Object.keys(fila).length > 0;
+    } catch (e) {}
+}
+
+async function listarGravacoesRecusadas() {
+    if (typeof metaGet !== 'function') return [];
+    try {
+        const fila = (await metaGet(RECUSADAS_CHAVE)) || {};
+        return Object.keys(fila).map(id => Object.assign({ docId: id }, fila[id]));
+    } catch (e) { return []; }
+}
+
+// Tenta de novo, com o que está no espelho do aparelho. Serve para o dia em que a
+// causa da recusa for corrigida: o trabalho recusado sobe, em vez de ficar só aqui.
+async function reenviarGravacoesRecusadas() {
+    const pendentes = await listarGravacoesRecusadas();
+    let subiram = 0, continuamRecusadas = 0;
+    for (const item of pendentes) {
+        let corpo = null;
+        try { corpo = await localGet(item.docId); } catch (e) {}
+        if (!corpo) continue;                       // sem cópia local não há o que reenviar
+        try {
+            await db.collection(item.colecao || 'app_data').doc(item.docId).set(corpo);
+            await _esquecerGravacaoRecusada(item.docId);
+            subiram++;
+        } catch (e) { continuamRecusadas++; }
+    }
+    return { subiram: subiram, continuamRecusadas: continuamRecusadas, total: pendentes.length };
+}
+
 async function saveData(collectionName, docId, dataObj) {
     // [MODO SOMENTE LEITURA] Professor inativado pela gestão acessa o sistema, mas não
     // pode gravar alterações. Este é o ponto único de persistência (Firebase e localStorage),
@@ -337,6 +411,24 @@ async function saveData(collectionName, docId, dataObj) {
         alert('Sua conta está inativada. Você está em modo somente leitura e não pode salvar alterações.\n\nFale com a gestão da sua escola para reativar seu acesso.');
         return;
     }
+
+    // SANITIZAÇÃO: Remove campos 'undefined' que fazem o Firebase travar
+    const cleanData = (USE_FIREBASE && dataObj) ? JSON.parse(JSON.stringify(dataObj)) : dataObj;
+
+    // O ESPELHO VEM ANTES DE TUDO, e isto não é preferência de ordem: é a correção do
+    // defeito que custou dias inteiros de trabalho.
+    //
+    // O espelho ficava DENTRO do try, DEPOIS do .set(). Quando o banco recusava a
+    // gravação — e a Regra do corte recusa todo documento que tenha nota, chamada,
+    // estudante ou ocorrência —, o código pulava direto para o catch e o espelho
+    // NUNCA era escrito. O professor via um alerta, seguia trabalhando e fechava a
+    // página: o dia tinha sido recusado pelo banco e não existia em lugar nenhum.
+    //
+    // A guarda de conformidade logo abaixo tem o mesmo efeito quando estoura, então o
+    // espelho precisa vir antes dela também. Guardar no APARELHO nunca foi o que a
+    // adequação proíbe — o que ela proíbe é subir. Recusar o envio não pode significar
+    // jogar fora o trabalho de quem digitou.
+    if (USE_FIREBASE) await _espelharLocalmente(String(docId), cleanData);
 
     // [CONFORMIDADE] Porteiro único: nada de pessoal sai daqui depois do corte.
     // Deixamos estourar de propósito — falhar alto é melhor que vazar calado.
@@ -348,33 +440,15 @@ async function saveData(collectionName, docId, dataObj) {
             return;
         }
         try {
-            // SANITIZAÇÃO: Remove campos 'undefined' que fazem o Firebase travar
-            const cleanData = JSON.parse(JSON.stringify(dataObj));
-            
             console.log(`Salvando no Firebase: ${collectionName}/${docId}`);
             await db.collection(collectionName).doc(String(docId)).set(cleanData);
-            
-            try {
-                // Espelho local. Era localStorage (teto de ~5 MB, que uma escola grande
-                // estoura); agora vai para o IndexedDB, via localdb.js.
-                //
-                // MESCLA em vez de substituir, e a razão é séria: depois da transição o
-                // que sobe para a nuvem é só a camada não-pessoal, e um espelho que
-                // substituísse apagaria os estudantes da cópia local — a única que
-                // existe. Preservamos as chaves que o documento local já tem e que a
-                // gravação atual não traz.
-                if (!String(docId).startsWith('backup_') && typeof localSet === 'function') {
-                    const existente = await localGet(String(docId));
-                    const mesclado = (existente && typeof existente === 'object' && !Array.isArray(existente))
-                        ? Object.assign({}, existente, cleanData)
-                        : cleanData;
-                    await localSet(String(docId), mesclado);
-                }
-            } catch (localError) {
-                console.warn("Aviso: Espelho local falhou:", localError);
-            }
+            await _esquecerGravacaoRecusada(String(docId));
         } catch (error) {
             console.error("Erro ao salvar no Firebase:", error);
+            // Guarda QUE este documento foi recusado (não o conteúdo: ele já está no
+            // espelho). É o que permite reenviar depois, quando a causa for corrigida,
+            // em vez de descobrir a perda semanas mais tarde.
+            await _lembrarGravacaoRecusada(collectionName, String(docId), error);
             // "Sem permissão" com sessão e "sem permissão" sem sessão são problemas
             // diferentes, e mandar conferir as Regras quando o que falta é a sessão
             // já fez o responsável procurar no lugar errado.
