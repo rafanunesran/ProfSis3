@@ -8812,65 +8812,63 @@ async function criarBackupNuvem(silent = false) {
 
         const hoje = dataLocalISO();
 
-        // Escolhe o slot (1 a BACKUP_MAX_DIAS) obedecendo à regra de 1 por dia:
-        let slotId;
-        const slotDeHoje = indexData.slots.find(s => (s.dateStr || dataLocalISO(s.timestamp)) === hoje);
-        if (slotDeHoje) {
-            // Já há um backup de hoje: atualiza o mesmo slot (não consome um novo dia).
-            slotId = slotDeHoje.id;
-        } else {
-            // Preenche primeiro os slots livres; ao encher os 15, substitui o dia mais antigo.
-            const usados = new Set(indexData.slots.map(s => s.id));
-            slotId = null;
-            for (let i = 1; i <= BACKUP_MAX_DIAS; i++) {
-                if (!usados.has(i)) { slotId = i; break; }
-            }
-            if (slotId === null) {
-                const maisAntigo = [...indexData.slots].sort((a, b) => a.timestamp - b.timestamp)[0];
-                slotId = maisAntigo.id;
-            }
+        // UM DOCUMENTO NOVO POR DIA, QUE NUNCA MAIS MUDA.
+        //
+        // Antes, os backups giravam em 20 slots numerados: o de hoje reescrevia o slot,
+        // e ao encher, o dia mais antigo era substituído. Reescrever é perder a versão
+        // que estava ali — e foi de um laço apagando slots que uma conta ficou sem
+        // nenhuma cópia. Agora o nome do documento carrega a DATA, então cada dia nasce
+        // no seu próprio documento e nenhum dia pisa no outro.
+        //
+        // `criadoEmMs` não é enfeite: é o que a Regra do Firestore lê para recusar a
+        // exclusão antes de 30 dias. Backup sem essa marca não pode ser apagado nunca,
+        // o que é o lado seguro de errar.
+        const backupKey = `backup_${userId}_d${hoje}`;
+
+        // Já existe o de hoje? Então está feito. As Regras recusam reescrever um backup,
+        // e insistir só produziria um erro sem sentido na cara do professor.
+        const jaExiste = await getData('app_data', backupKey);
+        if (jaExiste) {
+            if (!silent) alert('O backup de hoje já está guardado.\n\nBackups não são reescritos: ' +
+                               'o de hoje continua como foi gravado, e amanhã nasce outro.');
+            else console.log('Backup de hoje já existe; nada a fazer.');
+            return;
         }
 
-        // Salva os dados no slot. Depois do corte, cifrado e partido em quantos
-        // documentos forem necessários (o teto do Firestore é 1 MB por documento).
-        const backupKey = `backup_${userId}_slot_${slotId}`;
         const chave = (typeof obterChaveBackup === 'function') ? await obterChaveBackup() : null;
+        const marca = { criadoEmMs: Date.now(), criadoEm: new Date().toISOString() };
 
         if (typeof podeEnviarDadoPessoal === 'function' && !podeEnviarDadoPessoal()) {
             if (!chave) throw new Error('A chave de cifra do backup não está neste aparelho. Saia e entre de novo com e-mail e senha.');
             const pacote = await cifrarPacote(data, chave);
-            await saveData('app_data', backupKey, pacote.principal);
+            await saveData('app_data', backupKey, Object.assign({}, pacote.principal, marca));
             for (const cont of pacote.continuacoes) {
-                await saveData('app_data', `${backupKey}_p${cont.parte}`, cont);
+                await saveData('app_data', `${backupKey}_p${cont.parte}`, Object.assign({}, cont, marca));
             }
-            // Restos de um backup anterior que tinha MAIS partes que este continuariam
-            // no banco e confundiriam a remontagem. O índice guarda quantas partes o
-            // backup anterior tinha, então apagamos só o excesso — e não uma dezena de
-            // exclusões às cegas a cada backup diário.
-            const partesAntes = (indexData.slots.find(sl => sl.id === slotId) || {}).partes || 1;
-            for (let i = pacote.principal.partes + 1; i <= partesAntes; i++) {
-                try { await db.collection('app_data').doc(`${backupKey}_p${i}`).delete(); }
-                catch (e) { console.warn('Sobra de backup não removida:', e); }
-            }
+            // Não há sobra de parte para limpar: cada dia tem documento próprio, então
+            // nada de ontem se mistura com o de hoje. O laço de exclusão que existia
+            // aqui deixou de ter função — e era ele que apagava o que não devia.
             window._ultimasPartesBackup = pacote.principal.partes;
         } else {
-            await saveData('app_data', backupKey, data);
+            await saveData('app_data', backupKey, Object.assign({}, data, marca));
         }
 
-        // Atualiza o índice (remove entrada antiga desse slot, se houver)
-        indexData.slots = indexData.slots.filter(s => s.id !== slotId);
+        // CONFERE. Backup gravado e nunca lido é promessa, não cópia.
+        const conferido = await getData('app_data', backupKey);
+        if (!conferido) throw new Error('gravei o backup e ele não voltou na leitura — nada foi registrado no índice');
+
+        indexData.slots = indexData.slots.filter(s => s.dia !== hoje);
 
         const label = silent ? 'Backup Diário Automático' : `Backup Manual (${data.turmas ? data.turmas.length : 0} turmas)`;
         indexData.slots.push({
-            id: slotId, timestamp: Date.now(), dateStr: hoje, label: label,
+            id: backupKey, dia: hoje, timestamp: Date.now(), dateStr: hoje, label: label,
             // Quantos documentos este backup ocupa. Sem isto não dá para saber quais
             // sobras apagar no backup seguinte. Não é dado pessoal.
             partes: window._ultimasPartesBackup || 1
         });
         window._ultimasPartesBackup = null;
 
-        // Mantido por retrocompatibilidade com índices antigos
-        indexData.nextSlot = slotId + 1;
+        // Guarda quantos dias o índice já lista. `nextSlot` some: não há mais slot.
 
         await saveData('app_data', indexKey, indexData);
 
@@ -8933,8 +8931,8 @@ function exibirModalBackups(slots, userId) {
                                     <div style="font-size:12px; color:#718096;">${b.label}</div>
                                 </div>
                                 <div style="display:flex; gap:5px;">
-                                    <button class="btn btn-sm btn-info" onclick="mesclarBackupNuvem(${b.id}, '${new Date(b.timestamp).toLocaleString('pt-BR')}', '${userId}')" title="Recupera notas de domingo sem apagar as chamadas de hoje">🧩 Mesclar</button>
-                                    <button class="btn btn-sm btn-warning" onclick="restaurarBackupNuvem(${b.id}, '${new Date(b.timestamp).toLocaleString('pt-BR')}', '${userId}')" title="Sobrescreve tudo com a versão de domingo">⚠️ Substituir</button>
+                                    <button class="btn btn-sm btn-info" onclick="mesclarBackupNuvem('${b.id}', '${new Date(b.timestamp).toLocaleString('pt-BR')}', '${userId}')" title="Recupera notas de domingo sem apagar as chamadas de hoje">🧩 Mesclar</button>
+                                    <button class="btn btn-sm btn-warning" onclick="restaurarBackupNuvem('${b.id}', '${new Date(b.timestamp).toLocaleString('pt-BR')}', '${userId}')" title="Sobrescreve tudo com a versão de domingo">⚠️ Substituir</button>
                                 </div>
                             </div>
                         `).join('')}
@@ -8952,7 +8950,11 @@ function exibirModalBackups(slots, userId) {
 // Lê um slot de backup, decifrando e remontando as partes quando for o caso.
 // Ponto único de leitura: restaurar e mesclar passam os dois por aqui.
 async function lerBackupSlot(uId, slotId) {
-    const backupKey = `backup_${uId}_slot_${slotId}`;
+    // Aceita os dois formatos: o id novo ja' vem completo com a data
+    // (backup_<uid>_d2026-09-13) e o antigo e' so' o numero do slot.
+    const backupKey = String(slotId).indexOf('backup_') === 0
+        ? String(slotId)
+        : `backup_${uId}_slot_${slotId}`;
     const doc = await getData('app_data', backupKey);
     if (!doc) return null;
 

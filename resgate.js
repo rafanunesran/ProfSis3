@@ -187,8 +187,32 @@ async function resgateVarrer(aoAndar) {
         }
     }
 
-    // 5. Os slots, por força bruta. O índice foi a primeira coisa apagada, então
-    //    perguntar a ele é perguntar a quem já não sabe. Vamos de 1 a 20 em cada id.
+    // 5a. Os backups diários no formato novo: um documento por dia, com a data no
+    //     nome (backup_<uid>_d2026-09-13). Varremos os últimos 60 dias — é barato e
+    //     não depende do índice, que já foi apagado uma vez.
+    for (const uid of _resgateIdsDeUsuario()) {
+        for (let d = 0; d < 60; d++) {
+            const dia = new Date(Date.now() - d * 86400000);
+            const iso = new Date(dia.getTime() - dia.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+            if (d % 10 === 0) anda('Procurando backups diários (' + iso + ')...');
+            const id = 'backup_' + uid + '_d' + iso;
+            const doc = await _resgateLerNuvem(id);
+            if (!doc) continue;
+            let dados = doc;
+            if (doc.cifrado === true) {
+                try { dados = await _resgateDecifrar(id, doc); }
+                catch (e) { avisos.push('O backup de ' + iso + ' não abriu: ' + e.message); continue; }
+                if (!dados) { avisos.push('O backup de ' + iso + ' está cifrado e a chave não está neste aparelho.'); continue; }
+            }
+            const censo = _resgateCenso(dados);
+            if (_resgateTotal(censo) === 0) continue;
+            achados.push({ origem: 'backup', rotulo: 'Backup de ' + iso, detalhe: id,
+                           censo: censo, dados: dados, slot: id, uid: uid });
+        }
+    }
+
+    // 5b. Os slots numerados antigos. O índice foi a primeira coisa apagada, então
+    //     perguntar a ele é perguntar a quem já não sabe. Vamos de 1 a 20 em cada id.
     const limite = (typeof BACKUP_MAX_DIAS === 'number' ? BACKUP_MAX_DIAS : 20);
     for (const uid of _resgateIdsDeUsuario()) {
         const slotsVivos = [];
