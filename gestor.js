@@ -4131,9 +4131,9 @@ async function renderEscolaGestor() {
 
 // [FASE 3] O código de convite do espaço.
 //
-// O código NÃO fica guardado no servidor — é dele que a Fase 4 vai derivar a chave
-// da camada cifrada, e um segredo que o banco conhece não protege nada contra o
-// banco. Consequência assumida: só aparece aqui no aparelho onde o espaço foi
+// O código NÃO fica guardado no servidor: é o portão de entrada da escola, e um
+// portão que o banco conhece não é portão nenhum.
+// Consequência assumida: só aparece aqui no aparelho onde o espaço foi
 // criado (ou onde alguém entrou com ele). Sumiu de todos os aparelhos, o caminho é
 // gerar um novo — os colegas que já entraram continuam dentro.
 async function montarCartaoCodigoEspaco(escola) {
@@ -4171,9 +4171,9 @@ async function montarCartaoCodigoEspaco(escola) {
 //
 // Desde a adequação de setembro/2026 o documento em claro da gestão não leva mais
 // `estudantes` (CAMPOS_PESSOAIS, shared.js), e a camada pessoal de cada conta é
-// cifrada com a chave DELA. Sem este retrato compartilhado, transferência, matrícula
-// nova e exclusão feitas aqui não chegam a professor nenhum — e ninguém percebe,
-// porque a turma continua na tela com a lista do dia da virada.
+// cifrada com a chave DELA. Sem esta publicação, transferência, matrícula nova e
+// exclusão feitas aqui não chegam a professor nenhum — e ninguém percebe, porque a
+// turma continua na tela com a lista do dia da virada.
 async function montarCartaoListaEscola() {
     if (typeof lerListaEscola !== 'function') return '';
 
@@ -4192,37 +4192,22 @@ async function montarCartaoListaEscola() {
         miolo = `<p style="margin:0; font-size:14px; color:#744210;">
                     Ainda não publicada. Enquanto isso, os professores não recebem as mudanças feitas aqui.
                  </p>`;
-    } else if (estado.estado === 'sem-espaco') {
-        miolo = `<p style="margin:0; font-size:14px; color:#744210;">
-                    Sua escola ainda não é um espaço com código, e é do código que sai a chave da lista.
-                    Sem ele não há como publicar sem deixar nome de estudante legível no banco — o que a
-                    adequação proíbe. Peça ao administrador para vincular a escola a um espaço.
-                 </p>`;
-    } else if (estado.estado === 'sem-codigo') {
-        miolo = `<p style="margin:0; font-size:14px; color:#744210;">
-                    O código da escola não está neste aparelho — e o servidor não tem cópia dele, de propósito.
-                    Informe o código para publicar a lista daqui.
-                 </p>
-                 <button class="btn btn-sm btn-primary" style="margin-top:10px;" onclick="informarCodigoDaEscola()">🔑 Informar o código</button>`;
     } else {
         miolo = `<p style="margin:0; font-size:14px; color:#742a2a;">
                     Não consegui ler a lista publicada: ${estado.erro || estado.estado}.
                  </p>`;
     }
 
-    const podePublicar = estado.estado === 'ok' || estado.estado === 'vazio';
-
     return `
         <div class="card" style="margin:20px 0; border-left:4px solid #3182ce;">
             <h2>📋 Lista da escola para os professores</h2>
             ${miolo}
-            ${podePublicar ? `
             <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
                 <button class="btn btn-sm btn-primary" onclick="publicarListaEscolaAgora()">📤 Publicar agora</button>
             </div>
             <p style="font-size:11px; color:#718096; margin:10px 0 0;">
                 A publicação é automática a cada alteração. Este botão serve para conferir na hora.
-            </p>` : ''}
+            </p>
         </div>`;
 }
 

@@ -324,7 +324,7 @@ congelado, sem receber nada novo, porque a Regra do Firestore recusa gravação 
 pessoal a partir do corte; quando a conta é aberta com a senha, `converterBackupsEmClaro()`
 cifra esse acervo por cima, sem apagar.
 
-### Setembro/2026 — a lista da escola volta para os professores, cifrada
+### Setembro/2026 — a escola é um ambiente compartilhado
 
 O desenho acima resolveu o dado de CADA profissional e deixou um buraco no que é da
 ESCOLA. Enquanto `estudantes` era campo em claro, o professor abria a turma e o sistema
@@ -338,29 +338,42 @@ sincronização de `abrirTurma` parou de rodar inteiro, e a lista do professor c
 dia da virada. **Matrícula nova, transferência e exclusão feitas pela gestão não chegavam
 a professor nenhum** — sem erro, sem aviso, sem nada na tela. Era a consequência que a
 seção anterior já previa ("recursos que dependiam de juntar dados de estudantes entre
-colegas param"), e o conserto prometido ("a visão nominal do gestor volta depois, cifrada
-com uma chave que só a escola tem") é este.
+colegas param"), e o conserto é este.
 
-- **Quem publica.** O painel do gestor grava um retrato da lista em
-  `app_data/lista_school_<escola>_gestor` (partido em `_p2`, `_p3`… quando passa de 700 KB),
-  cifrado com AES-GCM. Os painéis AEE e Projeto publicam do mesmo jeito, em
+**A decisão de desenho, tomada pelo responsável:** a lista de estudantes é da ESCOLA, não
+de um profissional. A escola é um **ambiente compartilhado com informações
+compartilhadas** — quem é da escola vê a lista da escola, sem digitar código, sem guardar
+chave, sem passo de configuração. Uma versão anterior deste recurso derivava a chave do
+código de convite do espaço e cobrava de cada professor que o digitasse; foi descartada
+por isso.
+
+- **Quem publica.** O painel do gestor grava a lista em
+  `app_data/lista_school_<escola>_gestor` (partida em `_p2`, `_p3`… quando passa de 700 KB),
+  cifrada com AES-GCM. Os painéis AEE e Projeto publicam do mesmo jeito, em
   `lista_school_<escola>_aee` e `_projeto`, e o que sai deles é só a marcação do tutorado
   — os Anexos III e IV **não** saem do painel que os escreveu.
-- **De onde vem a chave.** PBKDF2-SHA256, 210 mil iterações, sobre o **código de convite
-  do espaço** (Fase 3) com o `salt` do espaço. O código não está gravado em lugar nenhum
-  do servidor, de propósito: é o que faz o retrato ser ruído para o Firebase, para o
-  Google e para quem invadir o banco. Quem tem o código — a escola — abre; mais ninguém.
-- **Nenhuma Regra precisou ser afrouxada.** `semCamposPessoais()` olha as chaves do
-  documento, e um pacote cifrado não tem nenhuma delas. Gravar a lista em claro com esse
-  nome continua sendo recusado pela Regra.
+- **A chave é da escola** e mora em `app_data/chave_lista_school_<escola>`. Nasce sozinha
+  na primeira publicação, não se reescreve e não se apaga (a Regra recusa os dois:
+  reescrevê-la tornaria ilegível tudo o que já foi publicado com ela).
+- **Por que ainda é cifrado, se a chave está no mesmo banco.** Porque `estudantes` em
+  claro continua proibido — pela Regra e pela guarda do app —, e a cifra é o que mantém o
+  nome do estudante ilegível no documento. Ela vale contra um dump do banco, contra quem
+  lê o documento e contra o backup do provedor.
+- **O que protege de verdade é a Regra, e ela é nova.** Este par (lista + chave) é o
+  **primeiro do sistema em que a Regra do Firestore confere `schoolId`**: os dois só saem
+  do banco para quem declara a mesma escola no próprio `access/<uid>`. É justamente o item
+  que a seção "Ainda em aberto" listava como pendente, agora fechado para estes
+  documentos. Usuário antigo (sem documento de acesso) continua passando, pelo Princípio
+  de Ouro.
+- **O que isto NÃO é.** Enquanto as Regras novas não forem publicadas no console do
+  Firebase, a conferência de escola não existe no servidor e a cifra vale apenas contra o
+  dump do banco — qualquer usuário autenticado alcançaria os dois documentos, como já
+  alcança `app_data_school_<escola>_gestor` desde sempre. **Publicar o `firestore.rules`
+  deste commit é parte da entrega, não um detalhe.**
 - **O que sobe é uma lista curta, escrita à mão:** nome e situação do estudante,
   ocorrências e registros administrativos. Campo pessoal novo em `data` não entra sozinho
   — alguém precisa escrevê-lo em `recorteDaEscola()`, olhando para ele. É a mesma regra de
   ouro de `CAMPOS_NUVEM`.
-- **Quem não tem o código vê uma faixa, não uma turma vazia.** O professor que abre num
-  aparelho sem o código informa o código uma vez (ele não é enviado a lugar nenhum: fica
-  no aparelho). Quem entrou no espaço por convite passa a guardá-lo no cadastro — antes só
-  quem CRIAVA o espaço ficava com ele.
 
 **As duas travas, porque este recurso apaga lista se errar:**
 
@@ -384,8 +397,8 @@ Coberto por `testes/teste-lista-escola.js`.
   ritual — e a Central de Resgate existe para quando nem ele estiver à mão.
 - **Recursos que dependiam de juntar dados de estudantes entre colegas param.** A chamada
   compartilhada entre professores deixa de existir. A visão nominal do gestor e o painel
-  AEE compartilhado **voltaram** na seção acima, cifrados com a chave que sai do código do
-  espaço — que é a "chave que só a escola tem" prometida aqui.
+  AEE compartilhado **voltaram** na seção acima, como ambiente compartilhado da escola:
+  cifrados no banco e liberados pela Regra apenas a quem é da mesma escola.
 - **Mapa de sala e painel AEE por horário continuam online** porque nunca guardaram nome:
   registram apenas identificadores, e o nome é resolvido no aparelho.
 
@@ -396,9 +409,12 @@ Coberto por `testes/teste-lista-escola.js`.
   pseudonimizado.
 - O Google Agenda recebe o título dos compromissos; se o título de uma tutoria trouxer o
   nome do estudante, o nome vai junto.
-- As Regras do Firestore não conferem `schoolId`: um usuário liberado de uma escola
-  alcança o documento de outra se souber o identificador. Deixou de expor estudantes com
-  esta adequação, mas continua a corrigir.
+- As Regras do Firestore não conferem `schoolId` — **exceto** no par lista+chave do
+  ambiente compartilhado da escola (`lista_school_*` e `chave_lista_school_*`), onde a
+  conferência passou a existir. Nos demais documentos, um usuário liberado de uma escola
+  ainda alcança o documento de outra se souber o identificador. Deixou de expor estudantes
+  com esta adequação, mas continua a corrigir — e o par acima é o primeiro passo dessa
+  correção, agora com um exemplo funcionando para os outros seguirem.
 
 ## 5. Solicitação de análise técnica (pendente de envio)
 

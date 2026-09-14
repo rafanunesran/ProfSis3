@@ -1831,12 +1831,12 @@ function editarTurma(id) {
 // documento `app_data_school_<escola>_gestor` deixou de ser a resposta inteira:
 // desde a adequação de setembro/2026 ele não leva mais `estudantes`,
 // `ocorrencias` nem `registrosAdministrativos` (CAMPOS_PESSOAIS, em shared.js).
-// Essa parte chega agora pelo retrato cifrado que o painel do gestor publica
-// (listaescola.js), aberto com a chave da escola.
+// Essa parte chega agora pela lista que o painel do gestor publica no ambiente
+// compartilhado da escola (listaescola.js).
 //
 // As três origens, em ordem:
 //   1. documento em claro — turmas, grade, avisos, bimestres (nunca foi pessoal);
-//   2. retrato cifrado da escola — estudantes, ocorrências, registros;
+//   2. a lista publicada pela escola — estudantes, ocorrências, registros;
 //   3. conta isenta / antes do corte — o documento em claro ainda traz tudo, e aí
 //      ele manda: é a única fonte que existe para ela.
 //
@@ -1865,13 +1865,9 @@ async function obterDadosGestor(opcoes) {
         });
     }
 
-    // Há lista publicada e este aparelho não abre: avisa, em vez de mostrar uma
-    // turma congelada no dia da virada sem dizer por quê.
-    if (lista.estado === 'sem-codigo' || lista.estado === 'sem-espaco') {
-        if (typeof mostrarBannerListaEscolaSemChave === 'function') mostrarBannerListaEscolaSemChave(lista.estado);
-    } else if (lista.estado === 'erro') {
-        console.warn('[SisProf] Lista da escola não pôde ser lida:', lista.erro);
-    }
+    // Não deu para ler: devolve o documento em claro SEM `estudantes`, e quem chama
+    // entende isso como "não mexa na lista da turma" (ver abrirTurma).
+    if (lista.estado === 'erro') console.warn('[SisProf] Lista da escola não pôde ser lida:', lista.erro);
     return gestorData;
 }
 
@@ -8744,14 +8740,12 @@ async function persistirDados() {
                 atualizarLinkCompartilhamentoGestor().catch(err => console.warn('Erro ao atualizar visão compartilhada:', err));
             }
 
-            // Publica a lista da escola para os professores (listaescola.js).
+            // Publica a lista no ambiente compartilhado da escola (listaescola.js).
             //
             // Sem isto, o que o gestor faz na lista — matrícula nova, transferência,
             // exclusão — não sai do aparelho dele: desde a adequação o documento em
             // claro não leva mais `estudantes`, e a camada pessoal de cada um é
-            // cifrada com a chave DELE. O retrato compartilhado é cifrado com a
-            // chave da escola, que sai do código do espaço. Debounced: persistirDados
-            // roda a cada clique.
+            // cifrada com a chave DELE. Debounced: persistirDados roda a cada clique.
             if (typeof agendarPublicacaoListaEscola === 'function') {
                 agendarPublicacaoListaEscola(data);
             }

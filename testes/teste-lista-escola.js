@@ -7,16 +7,17 @@
 // transferencia, matricula nova e exclusao feitas pela gestao nao chegavam a ninguem
 // - sem erro, sem aviso, sem nada na tela.
 //
-// Aqui cobramos o conserto (listaescola.js) e as duas travas que impedem que ele
-// custe mais caro do que o problema:
+// A escola e' um ambiente compartilhado: a gestao publica e todo mundo da escola le',
+// sem digitar nada. Cobrimos o conserto (listaescola.js) e as travas que impedem que
+// ele custe mais caro do que o problema:
 //   1. o nome do estudante NAO aparece em claro em lugar nenhum do banco;
-//   2. professor sem a chave nao tem a turma apagada - ela so' fica parada;
+//   2. professor sem chave (a gestao ainda nao publicou / leitura falhou) nao tem a
+//      turma apagada - ela so' fica parada;
 //   3. painel que abriu sem dados nao publica lista vazia por cima da cheia.
 const { chromium } = require('playwright');
 
 const URL = (process.env.PROFSIS_URL || 'http://localhost:8877') + '/index.html';
 const CHROME = process.env.PROFSIS_CHROMIUM || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-const CODIGO = 'ABCDEFGHJKMN';
 
 const FAKE = () => {
   window.__docs = {};
@@ -31,9 +32,9 @@ const FAKE = () => {
 };
 
 const GESTOR = { id:'g1', uid:'g1', nome:'Gestora', email:'g@e.com', role:'gestor',
-                 schoolId:'77', espacoId:'esp-1', legacySchoolId:'77' };
+                 schoolId:'77', legacySchoolId:'77' };
 const PROF   = { id:'p1', uid:'p1', nome:'Professor', email:'p@e.com', role:'professor',
-                 schoolId:'77', espacoId:'esp-1', legacySchoolId:'77' };
+                 schoolId:'77', legacySchoolId:'77' };
 
 // Turmas do professor: 500 aponta para a 10 da gestao, 600 para a 20.
 const TURMAS_PROF = [ { id:500, nome:'1A', masterId:10, disciplina:'Matematica' },
@@ -48,21 +49,12 @@ async function novaAba(browser) {
   return p;
 }
 
-// Prepara o espaco e guarda o codigo NESTE aparelho.
-const PREPARAR_ESPACO = async (codigo, comCodigo) => {
-  window.__docs['espacos/esp-1'] = { nome:'Escola Teste', salt:'salt-do-espaco', legacySchoolId:'77' };
-  window.__docs['espacos_indice/' + (await hashCodigo(codigo))] = { espacoId:'esp-1' };
-  if (comCodigo) await lembrarEspaco('esp-1', codigo, window.__docs['espacos/esp-1']);
-  else await lembrarEspaco('esp-1', null, window.__docs['espacos/esp-1']);
-};
-
 (async () => {
   const b = await chromium.launch({ executablePath: CHROME });
 
   // ====================== 1. A GESTAO PUBLICA =============================
   const pg = await novaAba(b);
-  const r1 = await pg.evaluate(async ([u, codigo, preparar]) => {
-    await eval('(' + preparar + ')')(codigo, true);
+  const r1 = await pg.evaluate(async (u) => {
     currentUser = u; currentViewMode = 'gestor';
     window.dadosMigradosLocalmente = true;    // depois do corte
     window.usuarioOnlineCompleto = false;
@@ -84,19 +76,20 @@ const PREPARAR_ESPACO = async (codigo, comCodigo) => {
     return { publicou: pub.estado,
              claroTemNome: claro.indexOf('Ana Paula') !== -1,
              existePublicado: !!window.__docs['app_data/lista_school_77_gestor'],
-             publicadoTemNome: publicado.indexOf('Ana Paula') !== -1 };
-  }, [GESTOR, CODIGO, PREPARAR_ESPACO.toString()]);
+             publicadoTemNome: publicado.indexOf('Ana Paula') !== -1,
+             criouChaveDaEscola: !!window.__docs['app_data/chave_lista_school_77'] };
+  }, GESTOR);
   console.log('1. gestao publica -> ' + r1.publicou
     + ' | nome no documento em claro? ' + r1.claroTemNome
-    + ' | documento publicado existe: ' + r1.existePublicado
-    + ' | da\' para ler o nome nele? ' + r1.publicadoTemNome);
+    + ' | lista publicada existe: ' + r1.existePublicado
+    + ' | da\' para ler o nome nela? ' + r1.publicadoTemNome
+    + ' | chave da escola criada sozinha: ' + r1.criouChaveDaEscola);
 
-  // ============ 2. O PROFESSOR COM O CODIGO RECEBE A LISTA ================
+  // ======= 2. O PROFESSOR DA ESCOLA RECEBE, SEM CONFIGURAR NADA ===========
   const docs1 = await pg.evaluate(() => JSON.stringify(window.__docs));
   const pp = await novaAba(b);
-  const r2 = await pp.evaluate(async ([u, codigo, preparar, turmas, docs]) => {
+  const r2 = await pp.evaluate(async ([u, turmas, docs]) => {
     window.__docs = JSON.parse(docs);
-    await eval('(' + preparar + ')')(codigo, true);
     currentUser = u; currentViewMode = 'professor';
     window.dadosMigradosLocalmente = true;
     window.dadosCarregados = true;
@@ -108,7 +101,7 @@ const PREPARAR_ESPACO = async (codigo, comCodigo) => {
     await abrirTurma(600);
     const nomes = (id) => data.estudantes.filter(e => e.id_turma == id).map(e => e.nome_completo).sort();
     return { t500: nomes(500), t600: nomes(600) };
-  }, [PROF, CODIGO, PREPARAR_ESPACO.toString(), TURMAS_PROF, docs1]);
+  }, [PROF, TURMAS_PROF, docs1]);
   console.log('2. professor abre as turmas -> 1A: [' + r2.t500 + '] | 2B: [' + r2.t600 + ']');
 
   // ====== 3. A GESTAO MEXE NA LISTA: transfere, matricula e exclui =======
@@ -133,11 +126,16 @@ const PREPARAR_ESPACO = async (codigo, comCodigo) => {
   console.log('3. gestao transfere/matricula/exclui (' + r3.publicou + ') -> professor ve\' 1A: ['
     + r4.t500 + '] | 2B: [' + r4.t600 + ']');
 
-  // ======== 4. PROFESSOR SEM O CODIGO: fica parado, NAO fica vazio ========
+  // ==== 4. LISTA QUE NAO CHEGA: a turma fica PARADA, nao fica VAZIA ======
   const ps = await novaAba(b);
-  const r5 = await ps.evaluate(async ([u, codigo, preparar, turmas, docs]) => {
-    window.__docs = JSON.parse(docs);
-    await eval('(' + preparar + ')')(codigo, false);      // entrou no espaco SEM guardar o codigo
+  const r5 = await ps.evaluate(async ([u, turmas, docs]) => {
+    const banco = JSON.parse(docs);
+    // A gestao publicou, mas este professor nao consegue ler a lista (Regra que
+    // ainda nao foi publicada, escola diferente, rede). O que NAO pode acontecer
+    // e' a turma dele ser apagada por causa disso.
+    delete banco['app_data/chave_lista_school_77'];
+    window.__docs = banco;
+
     currentUser = u; currentViewMode = 'professor';
     window.dadosMigradosLocalmente = true;
     window.dadosCarregados = true;
@@ -150,26 +148,20 @@ const PREPARAR_ESPACO = async (codigo, comCodigo) => {
 
     const lida = await lerListaEscola('gestor', { forcar:true });
     await abrirTurma(500);
-    const semCodigo = { estado: lida.estado,
-                        sobrou: data.estudantes.filter(e => e.id_turma == 500).length,
-                        temFaixa: !!document.getElementById('bannerListaEscolaSemChave') };
+    const parada = { estado: lida.estado,
+                     sobrou: data.estudantes.filter(e => e.id_turma == 500).length };
 
-    // A saida que a faixa oferece: informar o codigo uma vez.
-    let recusouOutraEscola = false;
-    try { await guardarCodigoEscolaDigitado('ZZZZZZZZZZZZ'); }
-    catch (e) { recusouOutraEscola = true; }
-
-    await guardarCodigoEscolaDigitado(codigo);
+    // A chave volta (a Regra foi publicada, a rede voltou): a lista chega sozinha,
+    // sem ninguem digitar nada.
+    window.__docs['app_data/chave_lista_school_77'] = JSON.parse(docs)['app_data/chave_lista_school_77'];
+    limparCacheListaEscola();
     await abrirTurma(500);
-    return { semCodigo: semCodigo,
-             recusouOutraEscola: recusouOutraEscola,
+    return { parada: parada,
              depois: data.estudantes.filter(e => e.id_turma == 500).map(e => e.nome_completo).sort() };
-  }, [PROF, CODIGO, PREPARAR_ESPACO.toString(), TURMAS_PROF, docs2]);
-  console.log('4. professor SEM o codigo -> leitura: ' + r5.semCodigo.estado
-    + ' | alunos que sobraram na turma (tem de ser 2): ' + r5.semCodigo.sobrou
-    + ' | faixa explicando: ' + r5.semCodigo.temFaixa);
-  console.log('   informando o codigo -> codigo de outra escola recusado: ' + r5.recusouOutraEscola
-    + ' | turma passa a mostrar: [' + r5.depois + ']');
+  }, [PROF, TURMAS_PROF, docs2]);
+  console.log('4. lista que nao chega -> leitura: ' + r5.parada.estado
+    + ' | alunos que sobraram na turma (tem de ser 2): ' + r5.parada.sobrou);
+  console.log('   quando ela volta -> turma passa a mostrar: [' + r5.depois + ']');
 
   // ===== 5. PAINEL QUE ABRIU VAZIO NAO APAGA A LISTA DE TODO MUNDO =======
   const r6 = await pg.evaluate(async () => {
@@ -182,14 +174,15 @@ const PREPARAR_ESPACO = async (codigo, comCodigo) => {
   console.log('5. painel vazio tenta publicar -> ' + r6.estado + ' | lista publicada intacta? ' + r6.intacto);
 
   const ok = r1.publicou === 'ok' && !r1.claroTemNome && r1.existePublicado && !r1.publicadoTemNome
+          && r1.criouChaveDaEscola
           && String(r2.t500) === 'Ana Paula,Bruno Silva' && String(r2.t600) === 'Carla Dias'
           && r3.publicou === 'ok'
           && String(r4.t500) === 'Diego Novo' && String(r4.t600) === 'Bruno Silva,Carla Dias'
-          && r5.semCodigo.estado === 'sem-codigo' && r5.semCodigo.sobrou === 2 && r5.semCodigo.temFaixa
-          && r5.recusouOutraEscola && String(r5.depois) === 'Diego Novo'
+          && r5.parada.estado === 'erro' && r5.parada.sobrou === 2
+          && String(r5.depois) === 'Diego Novo'
           && r6.estado === 'recusado' && r6.intacto;
 
-  console.log('\n' + (ok ? 'OK: o que a gestao muda na lista chega ao professor, e so\' a quem tem o codigo'
+  console.log('\n' + (ok ? 'OK: o que a gestao muda na lista chega a escola inteira, sem ninguem configurar nada'
                          : '*** FALHOU ***'));
   await b.close();
   process.exit(ok ? 0 : 1);

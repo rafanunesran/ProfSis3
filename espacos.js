@@ -6,9 +6,12 @@
 //    era escolher o nome dela numa lista e esperar um gestor liberar na mão.
 //
 //    Agora a escola é um ESPAÇO com um CÓDIGO. Quem cria recebe o código e o passa
-//    aos colegas; quem tem o código entra direto, sem fila. O código também é o
-//    segredo de onde a Fase 4 vai derivar a chave da camada cifrada — por isso ele
-//    NÃO fica gravado em lugar nenhum do banco.
+//    aos colegas; quem tem o código entra direto, sem fila. O código é o PORTÃO DE
+//    ENTRADA, e só isso — por isso ele não fica gravado em lugar nenhum do banco.
+//
+//    (Houve um plano de derivar dele a chave da camada cifrada da escola. Foi
+//    descartado: a lista da escola é da escola inteira e não pode custar um código
+//    digitado a cada professor. Ver listaescola.js.)
 //
 //  COMO A BUSCA FUNCIONA SEM ENTREGAR NADA
 //    `espacos_indice/<sha256("profsis-v1:" + codigo)>` guarda só `{ espacoId }`.
@@ -35,7 +38,7 @@ function gerarCodigoEspaco() {
     let saida = '';
     // Módulo simples: o alfabeto tem 30 símbolos e 256 % 30 != 0, então há um viés
     // ínfimo. Para um código de convite (não é chave), isso não tem consequência —
-    // a entropia continua em ~59 bits, e a chave da Fase 4 sai de PBKDF2 com salt.
+    // a entropia continua em ~59 bits, que é de sobra para um portão de entrada.
     for (let i = 0; i < bytes.length; i++) saida += ESPACO_ALFABETO[bytes[i] % ESPACO_ALFABETO.length];
     return saida;
 }
@@ -65,8 +68,8 @@ function _uuidEspaco() {
     return Array.from(b).map(x => x.toString(16).padStart(2, '0')).join('');
 }
 
-// Salt aleatório do espaço. Não protege o código (ele já é aleatório); serve para a
-// Fase 4 derivar a chave da camada cifrada com PBKDF2(codigo, salt).
+// Salt aleatório do espaço. Não protege o código (ele já é aleatório); fica guardado
+// para quem precisar de um valor único e público por espaço.
 function _saltEspaco() {
     const s = new Uint8Array(16);
     crypto.getRandomValues(s);
@@ -186,8 +189,8 @@ async function buscarEspacoPorCodigo(codigo) {
     return { espacoId: indice.espacoId, espaco: espaco };
 }
 
-// Guarda o espaço no aparelho: é daqui que o timbre dos documentos sai quando não
-// há rede, e é aqui que a Fase 4 vai buscar o código para derivar a chave.
+// Guarda o espaço no aparelho: é daqui que o timbre dos documentos sai quando não há
+// rede, e é aqui que o painel do gestor relê o código para mostrá-lo aos colegas.
 async function lembrarEspaco(espacoId, codigo, espaco) {
     if (typeof metaSet !== 'function') return;
     try {

@@ -264,18 +264,66 @@ service cloud.firestore {
              && request.time.toMillis() > resource.data.get('criadoEmMs', 0) + 2592000000;
     }
 
-    // Aqui moram tres familias de documento, e a Regra trata as tres pela MESMA
+    // ---------------- O AMBIENTE COMPARTILHADO DA ESCOLA ---------------------
+    //
+    // A escola e' um ambiente compartilhado: o painel da gestao publica a lista em
+    // `lista_school_<escola>_<painel>` e a chave que a abre em
+    // `chave_lista_school_<escola>`, e todo mundo DA ESCOLA le' os dois, sem
+    // digitar nada (listaescola.js).
+    //
+    // "Da escola" precisa valer no SERVIDOR, e nao so' no aplicativo. Guardar a
+    // chave ao lado do dado sem esta conferencia nao seria cifra: seria enfeite -
+    // qualquer pessoa autenticada leria os dois documentos e abriria a lista de
+    // qualquer escola. Com a conferencia, o par chave+lista so' sai para quem tem a
+    // mesma escola no proprio documento de acesso.
+    //
+    // Esta e' a primeira Regra do sistema que confere `schoolId` - o item que a
+    // CONFORMIDADE-SEDUC.md lista em "ainda em aberto". Ela vale POR ENQUANTO so'
+    // para estes dois nomes; os documentos antigos seguem como sempre foram, para
+    // nao trancar ninguem que ja' usa o sistema.
+    function ehListaDaEscola(docId) {
+      return docId.matches('^lista_school_.*');
+    }
+    function ehChaveDaEscola(docId) {
+      return docId.matches('^chave_lista_school_.*');
+    }
+
+    // A escola declarada no proprio documento de acesso. `legacySchoolId` e'
+    // o id que nomeia todos os documentos (ver espacos.js); `schoolId` e' o
+    // nome antigo do mesmo campo.
+    function minhaEscola() {
+      return meuAcesso().get('legacySchoolId', meuAcesso().get('schoolId', ''));
+    }
+
+    // PRINCIPIO DE OURO: usuario antigo (sem documento de acesso) nao e' trancado.
+    // Ele passa aqui como passa em tudo o mais - e continua limitado pelo
+    // aplicativo, que so' pede a lista da escola dele.
+    function podeVerDaEscola(docId) {
+      return (!ehListaDaEscola(docId) && !ehChaveDaEscola(docId))
+             || isSuperAdmin()
+             || semDocAcesso()
+             || (minhaEscola() != '' && (
+                    docId.matches('^lista_school_' + string(minhaEscola()) + '_.*')
+                 || docId == 'chave_lista_school_' + string(minhaEscola())
+                ));
+    }
+
+    // Aqui moram quatro familias de documento, e a Regra trata as quatro pela MESMA
     // pergunta - "tem campo pessoal dentro?":
-    //   app_data_*        o documento em claro de cada conta (sem campo pessoal);
-    //   pessoal_*         a camada pessoal de cada conta, cifrada com a chave dela;
-    //   lista_school_*    o retrato que o painel da escola publica para os
-    //                     professores, cifrado com a chave que sai do codigo do
-    //                     espaco (listaescola.js). Um pacote cifrado nao tem
-    //                     nenhuma das chaves pessoais, entao passa; tentar gravar a
-    //                     lista em CLARO com esse nome continua sendo recusado.
+    //   app_data_*          o documento em claro de cada conta (sem campo pessoal);
+    //   pessoal_*           a camada pessoal de cada conta, cifrada com a chave dela;
+    //   lista_school_*      a lista que o painel da escola publica para a escola,
+    //                       cifrada com a chave da escola (listaescola.js);
+    //   chave_lista_school_* a chave dessa lista.
+    // Um pacote cifrado nao tem nenhuma das chaves pessoais, entao passa; tentar
+    // gravar a lista em CLARO com esse nome continua sendo recusado. As duas
+    // ultimas familias respondem TAMBEM a pergunta "e' da sua escola?".
     match /app_data/{docId} {
-      allow read: if liberado();
-      allow delete: if liberado() && (!ehBackup(docId) || backupJaPodeSair());
+      allow read: if liberado() && podeVerDaEscola(docId);
+      // A chave da escola nao se apaga: apagada, a lista publicada vira lixo
+      // ilegivel para a escola inteira.
+      allow delete: if liberado() && podeVerDaEscola(docId) && !ehChaveDaEscola(docId)
+                    && (!ehBackup(docId) || backupJaPodeSair());
 
       // Antes do corte, idêntico ao que sempre foi. Depois dele, o documento só
       // entra se não trouxer campo pessoal, ou for um backup REALMENTE cifrado
@@ -287,7 +335,7 @@ service cloud.firestore {
       // era silenciosa e diária: a conta isenta mandava o dado pessoal, porque o
       // aplicativo a autorizava, e o banco recusava tudo com "Missing or
       // insufficient permissions" a cada salvamento.
-      allow create: if liberado() && (
+      allow create: if liberado() && podeVerDaEscola(docId) && (
            !depoisDoCorte()
         || semCamposPessoais()
         || (docId.matches('^backup_.*') && request.resource.data.get('cifrado', false) == true)
@@ -297,7 +345,14 @@ service cloud.firestore {
       // Update segue igual para tudo, MENOS para backup: backup nasce e fica como
       // nasceu. Reescrever um backup é perder a versão que ele guardava, que é a única
       // razão de ele existir.
-      allow update: if liberado() && !ehBackup(docId) && (
+      //
+      // A chave da escola entra na mesma frase, e pelo mesmo motivo: ela NASCE e fica
+      // como nasceu. Reescreve-la tornaria ilegivel tudo o que ja' foi publicado com
+      // ela - o jeito mais barato de apagar a lista da escola inteira sem apagar
+      // documento nenhum. (Precisa ser UMA condicao so': allow's do mesmo metodo sao
+      // somados, entao um `allow update: if false` separado nao restringiria nada.)
+      allow update: if liberado() && !ehBackup(docId) && !ehChaveDaEscola(docId)
+                    && podeVerDaEscola(docId) && (
            !depoisDoCorte()
         || semCamposPessoais()
         || isentoDoCorte()
