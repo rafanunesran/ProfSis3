@@ -1106,9 +1106,15 @@ async function fazerCadastro(e) {
     const vaiCriarEspaco = !!window.cadastroCriandoEspaco;
     const campoCodigo = document.getElementById('cadCodigo');
     let espacoEncontrado = null;
+    // O código que a pessoa digitou para entrar precisa sobreviver a este bloco: é
+    // com ele que este aparelho abre a lista cifrada da escola (listaescola.js).
+    // Antes só quem CRIAVA o espaço guardava o código, e o colega que entrava com
+    // ele ficava sem — sem chave para ver a lista que a gestão publica.
+    let codigoDeEntrada = null;
 
     if (!vaiCriarEspaco) {
         const codigoDigitado = campoCodigo ? campoCodigo.value : '';
+        codigoDeEntrada = codigoDigitado;
         if (!normalizarCodigo(codigoDigitado)) {
             alert('Digite o código do espaço da sua escola, ou escolha "criar um espaço novo".');
             return;
@@ -1230,7 +1236,7 @@ async function fazerCadastro(e) {
     // Guarda o espaço neste aparelho: é de onde sai o timbre dos documentos sem rede
     // e, para quem criou, é o ÚNICO lugar onde o código fica — ele não vai para o banco.
     if (espacoId && typeof lembrarEspaco === 'function') {
-        await lembrarEspaco(espacoId, codigoNovoEspaco, espacoEncontrado.espaco);
+        await lembrarEspaco(espacoId, codigoNovoEspaco || codigoDeEntrada, espacoEncontrado.espaco);
     }
 
     if (codigoNovoEspaco) {

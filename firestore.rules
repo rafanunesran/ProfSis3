@@ -264,6 +264,15 @@ service cloud.firestore {
              && request.time.toMillis() > resource.data.get('criadoEmMs', 0) + 2592000000;
     }
 
+    // Aqui moram tres familias de documento, e a Regra trata as tres pela MESMA
+    // pergunta - "tem campo pessoal dentro?":
+    //   app_data_*        o documento em claro de cada conta (sem campo pessoal);
+    //   pessoal_*         a camada pessoal de cada conta, cifrada com a chave dela;
+    //   lista_school_*    o retrato que o painel da escola publica para os
+    //                     professores, cifrado com a chave que sai do codigo do
+    //                     espaco (listaescola.js). Um pacote cifrado nao tem
+    //                     nenhuma das chaves pessoais, entao passa; tentar gravar a
+    //                     lista em CLARO com esse nome continua sendo recusado.
     match /app_data/{docId} {
       allow read: if liberado();
       allow delete: if liberado() && (!ehBackup(docId) || backupJaPodeSair());

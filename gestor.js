@@ -4084,9 +4084,11 @@ async function renderEscolaGestor() {
         : `<img id="previewLogoEscolaGestor" style="max-height:80px; display:none; border-radius:4px; margin-top:8px;">`;
 
     const cartaoCodigo = await montarCartaoCodigoEspaco(escola);
+    const cartaoLista = await montarCartaoListaEscola();
 
     tela.innerHTML = `
         ${cartaoCodigo}
+        ${cartaoLista}
         <div class="card" style="margin:20px 0;">
             <h2>🏫 Configurações da Escola</h2>
             <p style="color:#666; font-size:14px; margin-bottom:15px;">Ajuste os dados da sua escola. Essas informações aparecem no cabeçalho do sistema e em documentos.</p>
@@ -4163,6 +4165,90 @@ async function montarCartaoCodigoEspaco(escola) {
                 <button class="btn btn-sm btn-danger" onclick="gerarCodigoEspacoGestor('${espacoId}')">♻️ Gerar novo código</button>
             </div>
         </div>`;
+}
+
+// A lista da escola que os professores enxergam.
+//
+// Desde a adequação de setembro/2026 o documento em claro da gestão não leva mais
+// `estudantes` (CAMPOS_PESSOAIS, shared.js), e a camada pessoal de cada conta é
+// cifrada com a chave DELA. Sem este retrato compartilhado, transferência, matrícula
+// nova e exclusão feitas aqui não chegam a professor nenhum — e ninguém percebe,
+// porque a turma continua na tela com a lista do dia da virada.
+async function montarCartaoListaEscola() {
+    if (typeof lerListaEscola !== 'function') return '';
+
+    const estado = await lerListaEscola('gestor', { forcar: true });
+    let miolo = '';
+
+    if (estado.estado === 'ok') {
+        const d = estado.dados || {};
+        const quando = d.geradoEm ? new Date(d.geradoEm).toLocaleString('pt-BR') : 'data desconhecida';
+        miolo = `<p style="margin:0; font-size:14px; color:#22543d;">
+                    ✅ Publicada em <strong>${quando}</strong> —
+                    ${(d.estudantes || []).length} estudante(s) e ${(d.ocorrencias || []).length} ocorrência(s).
+                 </p>
+                 <p style="font-size:12px; color:#4a5568; margin:8px 0 0;">Os professores recebem esta lista ao abrir a turma.</p>`;
+    } else if (estado.estado === 'vazio') {
+        miolo = `<p style="margin:0; font-size:14px; color:#744210;">
+                    Ainda não publicada. Enquanto isso, os professores não recebem as mudanças feitas aqui.
+                 </p>`;
+    } else if (estado.estado === 'sem-espaco') {
+        miolo = `<p style="margin:0; font-size:14px; color:#744210;">
+                    Sua escola ainda não é um espaço com código, e é do código que sai a chave da lista.
+                    Sem ele não há como publicar sem deixar nome de estudante legível no banco — o que a
+                    adequação proíbe. Peça ao administrador para vincular a escola a um espaço.
+                 </p>`;
+    } else if (estado.estado === 'sem-codigo') {
+        miolo = `<p style="margin:0; font-size:14px; color:#744210;">
+                    O código da escola não está neste aparelho — e o servidor não tem cópia dele, de propósito.
+                    Informe o código para publicar a lista daqui.
+                 </p>
+                 <button class="btn btn-sm btn-primary" style="margin-top:10px;" onclick="informarCodigoDaEscola()">🔑 Informar o código</button>`;
+    } else {
+        miolo = `<p style="margin:0; font-size:14px; color:#742a2a;">
+                    Não consegui ler a lista publicada: ${estado.erro || estado.estado}.
+                 </p>`;
+    }
+
+    const podePublicar = estado.estado === 'ok' || estado.estado === 'vazio';
+
+    return `
+        <div class="card" style="margin:20px 0; border-left:4px solid #3182ce;">
+            <h2>📋 Lista da escola para os professores</h2>
+            ${miolo}
+            ${podePublicar ? `
+            <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
+                <button class="btn btn-sm btn-primary" onclick="publicarListaEscolaAgora()">📤 Publicar agora</button>
+            </div>
+            <p style="font-size:11px; color:#718096; margin:10px 0 0;">
+                A publicação é automática a cada alteração. Este botão serve para conferir na hora.
+            </p>` : ''}
+        </div>`;
+}
+
+async function publicarListaEscolaAgora() {
+    let r = await publicarListaEscola(data, 'gestor', { forcar: true });
+
+    // A recusa não pode ser uma parede: a escola que REALMENTE esvaziou a lista
+    // (fim de ano, recadastro inteiro) precisa conseguir publicar isso. O que ela
+    // não pode é acontecer por descuido, num painel que abriu sem os dados.
+    if (r.estado === 'recusado') {
+        const sair = confirm('Não publiquei ainda, de propósito.\n\n' +
+            'Este painel está com a lista VAZIA e a lista publicada tem conteúdo. Publicar assim ' +
+            'apagaria a lista de TODOS os professores da escola de uma vez.\n\n' +
+            'Se o painel abriu sem carregar os estudantes, clique em Cancelar, recarregue a página ' +
+            'e confira a aba Turmas antes de tentar de novo.\n\n' +
+            'Foi você que esvaziou a lista de propósito? Então confirme para publicar assim mesmo.');
+        if (!sair) { renderEscolaGestor(); return; }
+        r = await publicarListaEscola(data, 'gestor', { forcar: true, mesmoVazio: true });
+    }
+
+    if (r.estado === 'ok') {
+        alert('Lista publicada. Os professores passam a ver as alterações ao abrir a turma.');
+    } else {
+        alert('Não consegui publicar: ' + (r.erro || r.estado));
+    }
+    renderEscolaGestor();
 }
 
 function copiarCodigoEspaco() {

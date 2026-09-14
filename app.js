@@ -98,6 +98,13 @@ async function iniciarApp() {
         // [AUTO-BACKUP] Cria no máximo 1 backup por dia; mantém histórico dos últimos 15 dias
         verificarBackupAutomatico();
 
+        // Publica a lista da escola assim que o painel da gestão abre (listaescola.js).
+        // Sem isto, um gestor que só consulta — sem editar nada — nunca dispararia
+        // persistirDados(), e a lista dos professores continuaria a do dia da virada.
+        if (window.dadosCarregados && typeof agendarPublicacaoListaEscola === 'function') {
+            agendarPublicacaoListaEscola(data);
+        }
+
         // Reverifica a cada 2 horas enquanto o sistema estiver aberto. Se já houver
         // backup do dia, a verificação apenas ignora; se o app cruzar a meia-noite ou
         // for reaberto, garante que o backup do novo dia seja criado.
@@ -1493,10 +1500,11 @@ async function renderDashboard() {
     let gradeEscola = [];
     let excecoesGrade = [];
     
-    // Busca dados da Escola (Gestor) para sincronizar Avisos e Grade
+    // Busca dados da Escola (Gestor) para sincronizar Avisos e Grade.
+    // Os faltosos/atestados são campo pessoal e vêm do retrato cifrado da escola —
+    // ver obterDadosGestor.
     if (currentUser && currentUser.schoolId) {
-        const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
-        const gestorData = await getData('app_data', key);
+        const gestorData = await obterDadosGestor();
         if (gestorData) {
             gradeEscola = gestorData.gradeHoraria || [];
             excecoesGrade = gestorData.gradeHorariaExcecoes || [];
@@ -1817,6 +1825,78 @@ function editarTurma(id) {
     }
 }
 
+// ==================== O QUE A GESTÃO PUBLICOU PARA O PROFESSOR ====================
+//
+// Ponto ÚNICO de leitura dos dados da gestão pelo professor. Existe porque o
+// documento `app_data_school_<escola>_gestor` deixou de ser a resposta inteira:
+// desde a adequação de setembro/2026 ele não leva mais `estudantes`,
+// `ocorrencias` nem `registrosAdministrativos` (CAMPOS_PESSOAIS, em shared.js).
+// Essa parte chega agora pelo retrato cifrado que o painel do gestor publica
+// (listaescola.js), aberto com a chave da escola.
+//
+// As três origens, em ordem:
+//   1. documento em claro — turmas, grade, avisos, bimestres (nunca foi pessoal);
+//   2. retrato cifrado da escola — estudantes, ocorrências, registros;
+//   3. conta isenta / antes do corte — o documento em claro ainda traz tudo, e aí
+//      ele manda: é a única fonte que existe para ela.
+//
+// Devolve null quando nem o documento em claro respondeu. NUNCA devolve
+// `estudantes: []` de consolo: quem chama usa a presença desse campo para decidir
+// se REESCREVE a lista da turma, e um array vazio de mentira apagaria a turma.
+async function obterDadosGestor(opcoes) {
+    if (!currentUser || !currentUser.schoolId) return null;
+
+    const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
+    const gestorData = await getData('app_data', key);
+
+    // Conta isenta (ou período anterior ao corte): o pessoal ainda está aqui.
+    if (gestorData && Array.isArray(gestorData.estudantes) && gestorData.estudantes.length) return gestorData;
+    if (typeof lerListaEscola !== 'function') return gestorData;
+
+    const lista = await lerListaEscola('gestor', opcoes);
+
+    if (lista.estado === 'ok') {
+        const base = gestorData || {};
+        return Object.assign({}, base, {
+            estudantes: lista.dados.estudantes || [],
+            registrosAdministrativos: lista.dados.registrosAdministrativos || base.registrosAdministrativos || [],
+            ocorrencias: lista.dados.ocorrencias || base.ocorrencias || [],
+            _listaEscolaGeradoEm: lista.dados.geradoEm || null
+        });
+    }
+
+    // Há lista publicada e este aparelho não abre: avisa, em vez de mostrar uma
+    // turma congelada no dia da virada sem dizer por quê.
+    if (lista.estado === 'sem-codigo' || lista.estado === 'sem-espaco') {
+        if (typeof mostrarBannerListaEscolaSemChave === 'function') mostrarBannerListaEscolaSemChave(lista.estado);
+    } else if (lista.estado === 'erro') {
+        console.warn('[SisProf] Lista da escola não pôde ser lida:', lista.erro);
+    }
+    return gestorData;
+}
+
+// Os tutorados que o painel AEE/Projeto publicou para a escola — é o que acende o
+// marcador 🧩 na lista da turma. Mesma história dos estudantes: `tutorados` é campo
+// pessoal e sumiu do documento em claro.
+async function obterTutoradosDaEscola() {
+    if (!currentUser || !currentUser.schoolId) return [];
+    const schoolId = currentUser.schoolId;
+
+    const [aeeData, projData] = await Promise.all([
+        getData('app_data', `app_data_school_${schoolId}_aee`),
+        getData('app_data', `app_data_school_${schoolId}_projeto`)
+    ]);
+
+    const juntos = [...((aeeData && aeeData.tutorados) || []), ...((projData && projData.tutorados) || [])];
+    if (juntos.length || typeof lerListaEscola !== 'function') return juntos;
+
+    const [lAee, lProj] = await Promise.all([lerListaEscola('aee'), lerListaEscola('projeto')]);
+    return [
+        ...(lAee.estado === 'ok' ? (lAee.dados.tutorados || []) : []),
+        ...(lProj.estado === 'ok' ? (lProj.dados.tutorados || []) : [])
+    ];
+}
+
 // Grava o nome do aluno em cada registro administrativo (Faltoso/Atestado) ao sincronizar os dados
 // da gestão para o professor. Assim as telas do professor conseguem casar o faltoso por NOME
 // quando o id do aluno na lista do professor não bate com o id usado no registro da gestão (o
@@ -2014,27 +2094,39 @@ async function abrirTurma(id) {
     // --- SINCRONIZAÇÃO DE ALUNOS (PROFESSOR) ---
     // Se for professor e a turma tiver um vínculo (masterId), atualiza a lista de alunos
     if (currentViewMode !== 'gestor' && turma.masterId && currentUser.schoolId) {
-        const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
-        const gestorData = await getData('app_data', key);
-
-        const schoolId = currentUser.schoolId;
-        const [aeeData, projData] = await Promise.all([
-            getData('app_data', `app_data_school_${schoolId}_aee`),
-            getData('app_data', `app_data_school_${schoolId}_projeto`)
-        ]);
+        // Uma leitura só, das três origens possíveis (ver obterDadosGestor). O que a
+        // gestão muda na lista — matrícula nova, transferência, exclusão — entra por
+        // aqui, e é isto que faz a alteração dela aparecer para quem adicionou a turma.
+        const gestorData = await obterDadosGestor();
+        const tutorados = await obterTutoradosDaEscola();
 
         if (gestorData && gestorData.estudantes) {
             // 1. Pega os alunos da turma original do gestor
             const alunosGestor = gestorData.estudantes.filter(e => e.id_turma == turma.masterId);
-            
-            // 2. Remove os alunos antigos dessa turma na base local do professor
+
             if (!data.estudantes) data.estudantes = [];
-            data.estudantes = data.estudantes.filter(e => e.id_turma != turmaAtual);
+            const locaisDaTurma = data.estudantes.filter(e => e.id_turma == turmaAtual);
+
+            // A REESCRITA SÓ ACONTECE COM LISTA NA MÃO.
+            //
+            // O passo 2 apaga a turma inteira do professor para o passo 3 remontá-la.
+            // Se a lista da gestão vier vazia para ESTA turma enquanto o professor tem
+            // alunos nela, o passo 3 não remonta nada e o professor abre a turma
+            // zerada — sem mensagem, e do jeito que mais assusta. Turma que a gestão
+            // realmente esvaziou é rara; lista que não chegou inteira não é. Na dúvida,
+            // fica o que está: nada se perde, e a próxima abertura tenta de novo.
+            const podeReescrever = alunosGestor.length > 0 || locaisDaTurma.length === 0;
+
+            if (!podeReescrever) {
+                console.warn('[SisProf] Sincronização adiada: a gestão não trouxe nenhum aluno para esta turma ' +
+                             'e o professor tem ' + locaisDaTurma.length + '. A lista atual foi mantida.');
+            }
+
+            // 2. Remove os alunos antigos dessa turma na base local do professor
+            if (podeReescrever) data.estudantes = data.estudantes.filter(e => e.id_turma != turmaAtual);
 
             // 3. Adiciona os alunos atualizados (mantendo o ID original do aluno para preservar notas/presença)
-            alunosGestor.forEach(alunoMaster => {
-                const tutorados = [...((aeeData && aeeData.tutorados) || []), ...((projData && projData.tutorados) || [])];
-                
+            if (podeReescrever) alunosGestor.forEach(alunoMaster => {
                 // Busca reforçada por ID ou Nome
                 const infoAee = tutorados.find(t => 
                     String(t.id_estudante_origem) === String(alunoMaster.id) || 
@@ -8650,6 +8742,18 @@ async function persistirDados() {
             if (currentViewMode === 'gestor' && typeof atualizarLinkCompartilhamentoGestor === 'function') {
                 // Faz o update de forma silenciosa e sem aguardar (para não lentificar a UI)
                 atualizarLinkCompartilhamentoGestor().catch(err => console.warn('Erro ao atualizar visão compartilhada:', err));
+            }
+
+            // Publica a lista da escola para os professores (listaescola.js).
+            //
+            // Sem isto, o que o gestor faz na lista — matrícula nova, transferência,
+            // exclusão — não sai do aparelho dele: desde a adequação o documento em
+            // claro não leva mais `estudantes`, e a camada pessoal de cada um é
+            // cifrada com a chave DELE. O retrato compartilhado é cifrado com a
+            // chave da escola, que sai do código do espaço. Debounced: persistirDados
+            // roda a cada clique.
+            if (typeof agendarPublicacaoListaEscola === 'function') {
+                agendarPublicacaoListaEscola(data);
             }
 
             // [NOVO] Espelha as mudanças do professor no Google Agenda (se conectado). Debounced.

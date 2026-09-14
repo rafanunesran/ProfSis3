@@ -324,6 +324,58 @@ congelado, sem receber nada novo, porque a Regra do Firestore recusa gravação 
 pessoal a partir do corte; quando a conta é aberta com a senha, `converterBackupsEmClaro()`
 cifra esse acervo por cima, sem apagar.
 
+### Setembro/2026 — a lista da escola volta para os professores, cifrada
+
+O desenho acima resolveu o dado de CADA profissional e deixou um buraco no que é da
+ESCOLA. Enquanto `estudantes` era campo em claro, o professor abria a turma e o sistema
+lia a lista direto de `app_data/app_data_school_<escola>_gestor`. Com a adequação, esse
+documento deixou de levar `estudantes`, `ocorrencias` e `registrosAdministrativos`, e a
+camada pessoal de cada conta passou a ser cifrada com a chave dela — que não abre o
+pacote de ninguém mais.
+
+O efeito foi silencioso e diário: `gestorData.estudantes` virou `undefined`, o bloco de
+sincronização de `abrirTurma` parou de rodar inteiro, e a lista do professor congelou no
+dia da virada. **Matrícula nova, transferência e exclusão feitas pela gestão não chegavam
+a professor nenhum** — sem erro, sem aviso, sem nada na tela. Era a consequência que a
+seção anterior já previa ("recursos que dependiam de juntar dados de estudantes entre
+colegas param"), e o conserto prometido ("a visão nominal do gestor volta depois, cifrada
+com uma chave que só a escola tem") é este.
+
+- **Quem publica.** O painel do gestor grava um retrato da lista em
+  `app_data/lista_school_<escola>_gestor` (partido em `_p2`, `_p3`… quando passa de 700 KB),
+  cifrado com AES-GCM. Os painéis AEE e Projeto publicam do mesmo jeito, em
+  `lista_school_<escola>_aee` e `_projeto`, e o que sai deles é só a marcação do tutorado
+  — os Anexos III e IV **não** saem do painel que os escreveu.
+- **De onde vem a chave.** PBKDF2-SHA256, 210 mil iterações, sobre o **código de convite
+  do espaço** (Fase 3) com o `salt` do espaço. O código não está gravado em lugar nenhum
+  do servidor, de propósito: é o que faz o retrato ser ruído para o Firebase, para o
+  Google e para quem invadir o banco. Quem tem o código — a escola — abre; mais ninguém.
+- **Nenhuma Regra precisou ser afrouxada.** `semCamposPessoais()` olha as chaves do
+  documento, e um pacote cifrado não tem nenhuma delas. Gravar a lista em claro com esse
+  nome continua sendo recusado pela Regra.
+- **O que sobe é uma lista curta, escrita à mão:** nome e situação do estudante,
+  ocorrências e registros administrativos. Campo pessoal novo em `data` não entra sozinho
+  — alguém precisa escrevê-lo em `recorteDaEscola()`, olhando para ele. É a mesma regra de
+  ouro de `CAMPOS_NUVEM`.
+- **Quem não tem o código vê uma faixa, não uma turma vazia.** O professor que abre num
+  aparelho sem o código informa o código uma vez (ele não é enviado a lugar nenhum: fica
+  no aparelho). Quem entrou no espaço por convite passa a guardá-lo no cadastro — antes só
+  quem CRIAVA o espaço ficava com ele.
+
+**As duas travas, porque este recurso apaga lista se errar:**
+
+1. **Publicar vazio por cima de cheio é recusado.** Um painel que abriu sem os dados
+   (chave ausente, leitura que falhou) publicaria um retrato vazio e apagaria a lista de
+   todos os professores da escola de uma vez, em silêncio. A publicação relê o que está lá
+   antes de esvaziar e recusa; a escola que esvaziou de propósito confirma num aviso que
+   diz exatamente isso.
+2. **A turma do professor não é reescrita sem lista na mão.** A sincronização apaga a
+   turma para remontá-la; vindo zero aluno da gestão enquanto o professor tem alunos, a
+   lista atual fica como está e a próxima abertura tenta de novo. Nada se perde por uma
+   leitura que não chegou inteira.
+
+Coberto por `testes/teste-lista-escola.js`.
+
 ### Consequências assumidas
 
 - **A cópia de segurança passa a ser responsabilidade compartilhada.** O arquivo `.profsis`
@@ -331,8 +383,9 @@ cifra esse acervo por cima, sem apagar.
   responsável consegue puxar. Baixá-lo é escolha do professor, não mais obrigação de um
   ritual — e a Central de Resgate existe para quando nem ele estiver à mão.
 - **Recursos que dependiam de juntar dados de estudantes entre colegas param.** A chamada
-  compartilhada entre professores deixa de existir; a visão nominal do gestor e o painel
-  AEE compartilhado da escola voltam depois, cifrados com uma chave que só a escola tem.
+  compartilhada entre professores deixa de existir. A visão nominal do gestor e o painel
+  AEE compartilhado **voltaram** na seção acima, cifrados com a chave que sai do código do
+  espaço — que é a "chave que só a escola tem" prometida aqui.
 - **Mapa de sala e painel AEE por horário continuam online** porque nunca guardaram nome:
   registram apenas identificadores, e o nome é resolvido no aparelho.
 
