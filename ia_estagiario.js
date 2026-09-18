@@ -730,7 +730,7 @@ async function abrirModalGerarDocumentoIA() {
 
                 <div style="margin-top:20px; display:flex; justify-content:flex-end; align-items:center; gap:10px; flex-wrap:wrap;">
                     <button class="btn btn-secondary" onclick="closeModal('modalGerarDocumentoIA')">Cancelar</button>
-                    <button class="btn btn-secondary" id="btnGerarDocumentoManual" onclick="gerarDocumentoManualEstagiario()" title="Monta a prévia do documento com os campos em branco, sem passar pela IA - você escreve tudo direto no documento">✍️ Preencher manual</button>
+                    <button class="btn btn-secondary" id="btnGerarDocumentoManual" onclick="gerarDocumentoManualEstagiario()" title="Monta o documento sem passar pela IA: em branco ou já com o texto do último documento">✍️ Manual</button>
                     <button class="btn btn-primary" id="btnGerarDocumentoIA" onclick="gerarDocumentoIA()">Gerar Estrutura</button>
                 </div>
             </div>
@@ -1863,62 +1863,147 @@ Retorne APENAS um objeto JSON válido (sem marcações markdown e escape correta
 // MODO MANUAL (sem IA)
 // ===================================================================================================
 // Mesmo caminho do fluxo com IA (formulário -> prévia editável -> imprimir), só que sem pedir nada pra
-// IA: a prévia abre com os campos de texto em branco e o professor escreve direto no documento. Serve
-// pra quem já tem o conteúdo na cabeça (ou precisa gerar o documento com a chave de IA fora do ar) e
-// pra quem quer partir do documento anterior - na tela de revisão há o botão "Puxar anterior".
+// IA. O botão "✍️ Manual" abre um pop-up com as duas formas de começar:
+//   - Branco: o documento abre sem nenhuma informação nos campos;
+//   - Último: o documento abre já com o texto do documento anterior (no Plano de Aula, o da semana
+//     anterior guardado no aparelho), pra o professor só complementar.
+// Serve pra quem já tem o conteúdo na cabeça, pra quem está com a chave de IA fora do ar e pra quem só
+// quer atualizar o documento da semana passada. Na tela de revisão o botão "Puxar anterior" continua
+// disponível, inclusive depois de escolher "Branco".
 
-// Objeto de dados com todos os campos vazios: é o "rascunho" do modo manual. Na prévia cada campo
-// aparece como um bloco editável com o nome dele de placeholder (ver valorCampoDocumentoEstagiario).
+// Objeto de dados com todos os campos vazios: é o "rascunho" do modo manual "Branco". Na prévia cada
+// campo aparece como um bloco editável com o nome dele de placeholder (ver valorCampoDocumentoEstagiario).
 function camposVaziosEstagiario(campos) {
     const vazio = {};
     (campos || []).forEach(c => { vazio[c.key] = ''; });
     return vazio;
 }
 
-// Botão "✍️ Preencher manual" do formulário - mesma divisão por tipo de documento do gerarDocumentoIA.
+// Campos que cada documento tem - a mesma lista que a prévia torna editável.
+function camposDoTipoEstagiario(tipo) {
+    if (tipo === 'anexo3_paee') return ANEXO_PAEE_CAMPOS_IA;
+    if (tipo === 'anexo4_pei') return ANEXO_PEI_CAMPOS_IA;
+    return PLANO_AULA_CAMPOS_IA;
+}
+
+// Texto do documento anterior já no formato do rascunho (opção "Último"): só os campos deste
+// documento, o que faltar entra vazio.
+function dadosDoAnteriorEstagiario(campos, anterior) {
+    const dados = camposVaziosEstagiario(campos);
+    const origem = (anterior && anterior.dados) || {};
+    campos.forEach(c => { dados[c.key] = (origem[c.key] || '').toString(); });
+    return dados;
+}
+
+// Escolha em curso enquanto o pop-up de opções está na tela: o formulário já lido/validado e o
+// documento anterior encontrado. Clicar em "Branco"/"Último" só precisa abrir a prévia.
+let escolhaManualEstagiario = null;
+
+// Botão "✍️ Manual" do formulário: valida o formulário do tipo escolhido (mesmas checagens do fluxo
+// com IA), procura o documento anterior e abre o pop-up com as duas opções.
 async function gerarDocumentoManualEstagiario() {
     const tipo = document.getElementById('iaDocTipo').value;
     if (tipo === 'agenda_mensal') return alert('A Agenda Mensal já é montada direto da sua grade horária, sem IA - use o botão "🖨️ Gerar e Imprimir Agenda".');
-    if (tipo === 'anexo3_paee') return gerarAnexoPaeeManualEstagiario();
-    if (tipo === 'anexo4_pei') return gerarAnexoIVManualEstagiario();
-    return gerarPlanoAulaManualEstagiario();
+
+    let form = null;
+    let anterior = null;
+    if (tipo === 'anexo3_paee') {
+        form = coletarFormularioAnexoPaeeEstagiario();
+        if (!form) return;
+        anterior = encontrarAnexoPaeeAnteriorEstagiario(form.alunoId);
+    } else if (tipo === 'anexo4_pei') {
+        form = coletarFormularioAnexoIVEstagiario();
+        if (!form) return;
+        anterior = encontrarAnexoIVAnteriorEstagiario(form.alunoId, form.dadosBasicos.disciplina, form.dadosBasicos.bimestre);
+    } else {
+        form = coletarFormularioPlanoAulaEstagiario();
+        if (!form) return;
+        anterior = encontrarPlanoAulaAnteriorEstagiario(form.serie, form.disciplina);
+    }
+
+    escolhaManualEstagiario = { tipo, form, anterior };
+    abrirModalOpcoesManualEstagiario(tipo, anterior);
 }
 
-async function gerarPlanoAulaManualEstagiario() {
-    const form = coletarFormularioPlanoAulaEstagiario();
-    if (!form) return;
+// Pop-up com as duas formas de começar sem IA. Fica por cima do formulário (que continua aberto
+// atrás), então "Cancelar" devolve o professor exatamente de onde ele veio.
+function abrirModalOpcoesManualEstagiario(tipo, anterior) {
+    if (!document.getElementById('modalOpcoesManualEstagiario')) {
+        const div = document.createElement('div');
+        div.id = 'modalOpcoesManualEstagiario';
+        div.className = 'modal';
+        document.body.appendChild(div);
+    }
+    const nomeDoc = tipo === 'anexo3_paee' ? 'Anexo III - PAEE' : (tipo === 'anexo4_pei' ? 'Anexo IV - PEI' : 'Plano de Aula');
+    // Sem documento anterior a opção existe, mas desativada e explicada - some do caminho sem virar
+    // um botão que não faz nada.
+    const ultimoHtml = anterior
+        ? `<button type="button" class="btn btn-primary" style="width:100%; justify-content:center; margin:0;" onclick="escolherManualEstagiario('ultimo')">📥 Último</button>
+           <p style="font-size:12px; color:#4a5568; margin:6px 0 0;">Abre já com o texto de: ${escapeHtmlEstagiario(anterior.descricao)}. Você edita e complementa o que quiser.</p>`
+        : `<button type="button" class="btn btn-secondary" style="width:100%; justify-content:center; margin:0;" disabled>📥 Último</button>
+           <p style="font-size:12px; color:#a0aec0; margin:6px 0 0;">Ainda não há um ${nomeDoc} anterior pra puxar. Depois de imprimir o primeiro, esta opção passa a valer.</p>`;
+
+    const modal = document.getElementById('modalOpcoesManualEstagiario');
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 520px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:12px;">
+                <h2 style="margin:0; font-size:20px;">✍️ Manual — ${nomeDoc}</h2>
+                <button class="btn btn-sm btn-danger" style="padding:2px 8px;" onclick="closeModal('modalOpcoesManualEstagiario')">×</button>
+            </div>
+            <p style="font-size:13px; color:#4a5568; margin:0 0 14px;">Os dois caminhos abrem o documento pra você escrever direto nele, sem passar pela IA.</p>
+            <div style="border:1px solid #e2e8f0; border-radius:6px; padding:12px; margin-bottom:10px;">
+                <button type="button" class="btn btn-primary" style="width:100%; justify-content:center; margin:0;" onclick="escolherManualEstagiario('branco')">📄 Branco</button>
+                <p style="font-size:12px; color:#4a5568; margin:6px 0 0;">Abre sem nenhuma informação nos campos - você escreve tudo.</p>
+            </div>
+            <div style="border:1px solid #e2e8f0; border-radius:6px; padding:12px;">
+                ${ultimoHtml}
+            </div>
+            <div style="margin-top:16px; display:flex; justify-content:flex-end;">
+                <button class="btn btn-secondary" style="margin:0;" onclick="closeModal('modalOpcoesManualEstagiario')">Cancelar</button>
+            </div>
+        </div>
+    `;
+    showModal('modalOpcoesManualEstagiario');
+}
+
+// Clique em "Branco"/"Último": monta o rascunho e abre a mesma tela de revisão do fluxo com IA.
+async function escolherManualEstagiario(opcao) {
+    const escolha = escolhaManualEstagiario;
+    if (!escolha) return;
+    if (opcao === 'ultimo' && !escolha.anterior) return alert('Não há um documento anterior guardado pra puxar.');
+
+    const { tipo, form, anterior } = escolha;
+    const campos = camposDoTipoEstagiario(tipo);
+    const dados = opcao === 'ultimo' ? dadosDoAnteriorEstagiario(campos, anterior) : camposVaziosEstagiario(campos);
+
+    closeModal('modalOpcoesManualEstagiario');
+    escolhaManualEstagiario = null;
+
+    if (tipo === 'anexo3_paee') {
+        closeModal('modalGerarDocumentoIA');
+        return abrirModalRevisaoAnexoPaee(form.dadosBasicos, dados, form.alunoId, false, opcao);
+    }
+    if (tipo === 'anexo4_pei') {
+        closeModal('modalGerarDocumentoIA');
+        return abrirModalRevisaoAnexoIV(form.dadosBasicos, dados, form.alunoId, opcao);
+    }
 
     const btn = document.getElementById('btnGerarDocumentoManual');
     const originalText = btn ? btn.textContent : '';
     if (btn) { btn.textContent = 'Montando prévia... ⏳'; btn.disabled = true; }
-
     try {
         // Mesmo catálogo de Material Digital do fluxo com IA (o seletor embaixo da prévia continua lá).
         const cardsMaterialDigitalDisponiveis = await obterCardsCatalogoCompartilhado(form.disciplina, form.serie);
         closeModal('modalGerarDocumentoIA');
         abrirModalRevisaoDocumento('plano_aula', form.serie, form.disciplina, form.tema, form.semana,
-            form.turmasNomesStr, form.duracaoAulasStr, form.bimestreAtual, camposVaziosEstagiario(PLANO_AULA_CAMPOS_IA),
-            form.semanaInicioISO, form.semanaFimISO, cardsMaterialDigitalDisponiveis, { manual: true }, form.professorParceiroStr);
+            form.turmasNomesStr, form.duracaoAulasStr, form.bimestreAtual, dados,
+            form.semanaInicioISO, form.semanaFimISO, cardsMaterialDigitalDisponiveis, { manual: opcao }, form.professorParceiroStr);
     } catch (e) {
         console.error(e);
         alert('Erro ao montar a prévia do documento:\n' + e.message);
     } finally {
         if (btn) { btn.textContent = originalText; btn.disabled = false; }
     }
-}
-
-function gerarAnexoPaeeManualEstagiario() {
-    const form = coletarFormularioAnexoPaeeEstagiario();
-    if (!form) return;
-    closeModal('modalGerarDocumentoIA');
-    abrirModalRevisaoAnexoPaee(form.dadosBasicos, camposVaziosEstagiario(ANEXO_PAEE_CAMPOS_IA), form.alunoId, false, true);
-}
-
-function gerarAnexoIVManualEstagiario() {
-    const form = coletarFormularioAnexoIVEstagiario();
-    if (!form) return;
-    closeModal('modalGerarDocumentoIA');
-    abrirModalRevisaoAnexoIV(form.dadosBasicos, camposVaziosEstagiario(ANEXO_PEI_CAMPOS_IA), form.alunoId, true);
 }
 
 // ===================================================================================================
@@ -2249,10 +2334,13 @@ function zoomPreviaDocumentoEstagiario(idIframe, comando) {
 // Bloco da prévia (barra de zoom + moldura + iframe) usado pelos três modais de revisão. A altura
 // definida aqui é só a inicial: quem manda nela é o script de ajuste da prévia
 // (montarHtmlPreviaEstagiario), que encolhe o iframe até o tamanho do documento.
-function blocoPreviaDocumentoEstagiario(idIframe, manual) {
+// `modoManual`: '' (rascunho da IA), 'branco' (campos vazios) ou 'ultimo' (texto do documento anterior).
+function blocoPreviaDocumentoEstagiario(idIframe, modoManual) {
+    const origem = modoManual === 'branco' ? '(estão em branco) e escreva'
+        : (modoManual === 'ultimo' ? '(vieram do documento anterior) e edite' : '(os rascunhados pela IA) e edite');
     return `
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap;">
-            <span style="font-size:12px; color:#718096;">✏️ Clique nos campos destacados em azul ${manual ? '(estão em branco) e escreva' : '(os rascunhados pela IA) e edite'} o texto direto no documento.</span>
+            <span style="font-size:12px; color:#718096;">✏️ Clique nos campos destacados em azul ${origem} o texto direto no documento.</span>
             <span style="display:flex; gap:4px;">
                 <button type="button" class="btn btn-sm btn-secondary" style="padding:2px 10px;" title="Diminuir" onclick="zoomPreviaDocumentoEstagiario('${idIframe}', 0.8)">−</button>
                 <button type="button" class="btn btn-sm btn-secondary" style="padding:2px 10px;" title="Ajustar à largura" onclick="zoomPreviaDocumentoEstagiario('${idIframe}', 'ajustar')">⤢</button>
@@ -2301,10 +2389,10 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
            </details>`
         : '<p style="font-size:11px; color:#a0aec0; margin:10px 0 0;">📚 Nenhuma aula do Material Digital cadastrada ainda para esta disciplina/série.</p>';
 
-    // Modo manual (botão "✍️ Preencher manual"): o documento chega em branco, então não há nem
-    // rascunho de IA nem fundamentação a declarar - o aviso vira uma instrução de preenchimento.
-    const manual = !!(resumoFundamentacao && resumoFundamentacao.manual);
-    modal.dataset.manual = manual ? '1' : '';
+    // Modo manual (botão "✍️ Manual"): 'branco' ou 'ultimo'. Nos dois a IA não entrou, então não há
+    // fundamentação a declarar - o aviso vira uma instrução de preenchimento.
+    const modoManual = (resumoFundamentacao && resumoFundamentacao.manual) || '';
+    modal.dataset.manual = modoManual;
 
     // Plano de Aula anterior guardado no aparelho (ver registrarPlanoAulaNoHistoricoEstagiario) - é o
     // que o botão "📥 Puxar anterior" traz pra dentro da prévia.
@@ -2312,8 +2400,8 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
     modal.dataset.anterior = JSON.stringify(anterior ? { dados: anterior.dados, descricao: anterior.descricao } : {});
 
     // Aviso de fundamentação na base curricular oficial (planilha/PDFs) - ver montarContextoCurriculoOficial.
-    const fundamentacaoHtml = manual
-        ? `<div style="background:#ebf8ff; border:1px solid #90cdf4; color:#2c5282; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✍️ Preenchimento manual — os campos do plano estão em branco pra você escrever. Nada foi gerado por IA.</div>`
+    const fundamentacaoHtml = modoManual
+        ? `<div style="background:#ebf8ff; border:1px solid #90cdf4; color:#2c5282; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✍️ Preenchimento manual — ${modoManual === 'ultimo' ? 'o plano abriu com o texto do seu último Plano de Aula desta disciplina; edite e complemente à vontade' : 'os campos do plano estão em branco pra você escrever'}. Nada foi gerado por IA.</div>`
         : resumoFundamentacao && resumoFundamentacao.grounded
         ? `<div style="background:#f0fff4; border:1px solid #9ae6b4; color:#276749; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✅ Fundamentado no Currículo Paulista${resumoFundamentacao.fonte ? ` (${resumoFundamentacao.fonte})` : ''}${resumoFundamentacao.qtdTrechosTier2 ? ` + ${resumoFundamentacao.qtdTrechosTier2} trecho(s) de material oficial` : ''}.</div>`
         : `<div style="background:#fffaf0; border:1px solid #fbd38d; color:#975a16; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">⚠️ Gerado sem fundamentação na base curricular oficial — revise os códigos de habilidade com atenção.</div>`;
@@ -2326,7 +2414,7 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
             </div>
             ${fundamentacaoHtml}
             ${blocoPuxarAnteriorEstagiario(anterior, 'modalRevisaoDocumento', ID_PREVIA_PLANO_AULA_ESTAGIARIO, 'PLANO_AULA_CAMPOS_IA')}
-            ${blocoPreviaDocumentoEstagiario(ID_PREVIA_PLANO_AULA_ESTAGIARIO, manual)}
+            ${blocoPreviaDocumentoEstagiario(ID_PREVIA_PLANO_AULA_ESTAGIARIO, modoManual)}
             ${cardsMaterialDigitalHtml}
             <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
                 <button class="btn btn-secondary" onclick="closeModal('modalRevisaoDocumento'); showModal('modalGerarDocumentoIA')">← Voltar</button>
@@ -2363,7 +2451,7 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
 // Tela de revisão do Anexo III - PAEE: mostra o próprio Anexo III já preenchido (dados básicos e
 // checkboxes do formulário + texto rascunhado pela IA), com os campos da IA editáveis dentro do
 // documento. Pra corrigir os dados básicos/checkboxes, volte ao formulário.
-function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId, pularImpressao, manual) {
+function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId, pularImpressao, modoManual) {
     if (!document.getElementById('modalRevisaoAnexoPaee')) {
         const div = document.createElement('div');
         div.id = 'modalRevisaoAnexoPaee';
@@ -2379,7 +2467,7 @@ function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId, pularImpressao
     modal.dataset.pularImpressao = pularImpressao ? '1' : '';
     // Rascunho original da IA - usado como reserva se a prévia não puder ser lida na hora de salvar.
     modal.dataset.dadosOriginais = JSON.stringify(dados || {});
-    modal.dataset.manual = manual ? '1' : '';
+    modal.dataset.manual = modoManual || '';
 
     // Anexo III - PAEE já salvo no perfil deste estudante: base do "📥 Puxar anterior".
     const anterior = encontrarAnexoPaeeAnteriorEstagiario(alunoId);
@@ -2393,11 +2481,11 @@ function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId, pularImpressao
             </div>
             <p style="font-size:13px; color:#666; margin:0 0 12px;">${pularImpressao
                 ? 'Dados extraídos do Word enviado, montados no modelo oficial. Revise o texto antes de salvar no perfil do estudante.'
-                : (manual
-                    ? 'Documento montado com os dados do formulário anterior (volte pra corrigi-los). Os campos de texto estão em branco pra você escrever - nada foi gerado por IA.'
+                : (modoManual
+                    ? `Documento montado com os dados do formulário anterior (volte pra corrigi-los). ${modoManual === 'ultimo' ? 'Os campos de texto vieram do último Anexo III deste estudante - edite e complemente' : 'Os campos de texto estão em branco pra você escrever'} - nada foi gerado por IA.`
                     : 'Documento montado com os dados do formulário anterior (volte pra corrigi-los) e o texto rascunhado pela IA.')}</p>
             ${blocoPuxarAnteriorEstagiario(anterior, 'modalRevisaoAnexoPaee', ID_PREVIA_ANEXO_PAEE_ESTAGIARIO, 'ANEXO_PAEE_CAMPOS_IA')}
-            ${blocoPreviaDocumentoEstagiario(ID_PREVIA_ANEXO_PAEE_ESTAGIARIO, manual)}
+            ${blocoPreviaDocumentoEstagiario(ID_PREVIA_ANEXO_PAEE_ESTAGIARIO, modoManual)}
             <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
                 <button class="btn btn-secondary" onclick="${pularImpressao ? "closeModal('modalRevisaoAnexoPaee')" : "closeModal('modalRevisaoAnexoPaee'); showModal('modalGerarDocumentoIA')"}">${pularImpressao ? 'Cancelar' : '← Voltar'}</button>
                 <button class="btn btn-success" onclick="exportarAnexoPaeeFinal()" id="btnExportarAnexoPaee">${pularImpressao ? '💾 Salvar no Perfil do Estudante' : '🖨️ Imprimir'}</button>
@@ -2416,7 +2504,7 @@ function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId, pularImpressao
 
 // Tela de revisão do Anexo IV - PEI: mesmo padrão do Anexo III - o documento já montado, com os
 // campos rascunhados pela IA editáveis dentro dele.
-function abrirModalRevisaoAnexoIV(dadosBasicos, dados, alunoId, manual) {
+function abrirModalRevisaoAnexoIV(dadosBasicos, dados, alunoId, modoManual) {
     if (!document.getElementById('modalRevisaoAnexoIV')) {
         const div = document.createElement('div');
         div.id = 'modalRevisaoAnexoIV';
@@ -2428,15 +2516,15 @@ function abrirModalRevisaoAnexoIV(dadosBasicos, dados, alunoId, manual) {
     modal.dataset.basicos = JSON.stringify(dadosBasicos);
     modal.dataset.alunoId = alunoId;
     modal.dataset.dadosOriginais = JSON.stringify(dados || {});
-    modal.dataset.manual = manual ? '1' : '';
+    modal.dataset.manual = modoManual || '';
 
     // Anexo IV - PEI anterior DESTE estudante: base do "📥 Puxar anterior" (o "Criar com Ref" do
     // formulário é outra coisa - lá a base é o Anexo IV de outro estudante da mesma série/disciplina).
     const anterior = encontrarAnexoIVAnteriorEstagiario(alunoId, dadosBasicos.disciplina, dadosBasicos.bimestre);
     modal.dataset.anterior = JSON.stringify(anterior ? { dados: anterior.dados, descricao: anterior.descricao } : {});
 
-    const fichaAeeAvisoHtml = manual
-        ? `<div style="background:#ebf8ff; border:1px solid #90cdf4; color:#2c5282; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✍️ Preenchimento manual — os campos do PEI estão em branco pra você escrever. Nada foi gerado por IA.</div>`
+    const fichaAeeAvisoHtml = modoManual
+        ? `<div style="background:#ebf8ff; border:1px solid #90cdf4; color:#2c5282; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✍️ Preenchimento manual — ${modoManual === 'ultimo' ? 'o PEI abriu com o texto do último Anexo IV deste estudante; edite e complemente à vontade' : 'os campos do PEI estão em branco pra você escrever'}. Nada foi gerado por IA.</div>`
         : dadosBasicos.fichaAeeVazia
         ? `<div style="background:#fffaf0; border:1px solid #fbd38d; color:#975a16; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">⚠️ Este estudante ainda não tem o Anexo III - PAEE preenchido/gerado - as adaptações abaixo foram geradas de forma geral. Gere o Anexo III - PAEE do aluno pra rascunhos mais precisos da próxima vez.</div>`
         : `<div style="background:#f0fff4; border:1px solid #9ae6b4; color:#276749; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✅ As adaptações abaixo consideraram o Anexo III - PAEE já preenchido do estudante.</div>`;
@@ -2449,7 +2537,7 @@ function abrirModalRevisaoAnexoIV(dadosBasicos, dados, alunoId, manual) {
             </div>
             ${fichaAeeAvisoHtml}
             ${blocoPuxarAnteriorEstagiario(anterior, 'modalRevisaoAnexoIV', ID_PREVIA_ANEXO_IV_ESTAGIARIO, 'ANEXO_PEI_CAMPOS_IA')}
-            ${blocoPreviaDocumentoEstagiario(ID_PREVIA_ANEXO_IV_ESTAGIARIO, manual)}
+            ${blocoPreviaDocumentoEstagiario(ID_PREVIA_ANEXO_IV_ESTAGIARIO, modoManual)}
             <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
                 <button class="btn btn-secondary" onclick="closeModal('modalRevisaoAnexoIV'); showModal('modalGerarDocumentoIA')">← Voltar</button>
                 <button class="btn btn-success" onclick="exportarAnexoIVFinal()" id="btnExportarAnexoIV">🖨️ Imprimir</button>
@@ -3009,8 +3097,8 @@ async function exportarDocumentoFinal(tipo) {
 
         // [APRENDIZADO] Compara a saída original da IA com a versão editada e atualiza (em silêncio,
         // sem bloquear a impressão) as preferências aprendidas. Só para Plano de Aula. No modo manual
-        // não há rascunho de IA pra comparar - `dadosOriginais` vem todo vazio e nada é aprendido.
-        if (payload.tipo === 'plano_aula' && modal.dataset.manual !== '1') {
+        // ('branco'/'ultimo') não há rascunho de IA pra comparar, então nada é aprendido.
+        if (payload.tipo === 'plano_aula' && !modal.dataset.manual) {
             try {
                 aprenderPreferenciasEstagiario(dadosOriginais, payload.dados); // fire-and-forget (sem await)
             } catch (e) { console.warn('[Estagiário] Não foi possível iniciar o aprendizado:', e); }

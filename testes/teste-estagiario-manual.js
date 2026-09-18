@@ -1,15 +1,19 @@
-// O ESTAGIARIO SEM IA: PREVIA EM BRANCO + "PUXAR ANTERIOR".
+// O ESTAGIARIO SEM IA: "BRANCO", "ULTIMO" E O "PUXAR ANTERIOR".
 //
 // O fluxo do Estagiario so' existia com IA: o professor preenchia o formulario, a IA
 // rascunhava os campos e so' entao aparecia a previa editavel. Sem chave de IA (ou
 // quando o professor ja' sabe o que escrever) nao havia como chegar no documento.
 //
 // Cobrimos o caminho novo ponta a ponta:
-//   1. o botao "Preencher manual" existe e some na Agenda Mensal (que nao passa por IA);
-//   2. ele abre a MESMA previa editavel, com todos os campos vazios e sem chamar IA;
-//   3. o plano impresso entra no historico local, e so' entao o "Puxar anterior" aparece;
-//   4. puxar com a previa em branco preenche tudo;
-//   5. puxar com algo ja' escrito e respondendo "Cancelar" COMPLETA - nao sobrescreve.
+//   1. o botao "Manual" existe e some na Agenda Mensal (que nao passa por IA);
+//   2. ele abre um pop-up com "Branco" e "Ultimo" - sem documento anterior, "Ultimo"
+//      vem desativado e explicado;
+//   3. "Branco" abre a MESMA previa editavel, com todos os campos vazios e sem chamar IA;
+//   4. o plano impresso entra no historico local, e so' entao "Ultimo" e o botao
+//      "Puxar anterior" passam a valer;
+//   5. "Ultimo" abre a previa ja' com o texto do plano anterior;
+//   6. o "Puxar anterior" com algo ja' escrito, respondendo "Cancelar", COMPLETA - nao
+//      sobrescreve o que o professor escreveu.
 const { chromium } = require('playwright');
 
 const URL = (process.env.PROFSIS_URL || 'http://localhost:8877') + '/index.html';
@@ -74,19 +78,40 @@ const esperarPrevia = (p, id) => p.waitForFunction((idIframe) => {
     document.getElementById('iaDocTipo').value = 'plano_aula'; toggleTipoDocumentoIA();
     const noPlano = btn.style.display;
 
-    return { existe: !!btn, naAgenda, noPlano };
+    return { existe: !!btn, rotulo: btn ? btn.textContent : '', naAgenda, noPlano };
   }, PROF);
-  ok('o botao "Preencher manual" aparece no formulario', r1.existe);
+  ok('o botao "Manual" aparece no formulario', r1.existe);
+  ok('o botao se chama so\' "Manual"', r1.rotulo.indexOf('Manual') !== -1 && r1.rotulo.indexOf('Preencher') === -1);
   ok('some na Agenda Mensal (que nao passa por IA)', r1.naAgenda === 'none');
   ok('volta no Plano de Aula', r1.noPlano !== 'none');
 
-  // ============ 2. A PREVIA ABRE EM BRANCO, SEM IA E SEM "PUXAR ANTERIOR" ============
-  await p.evaluate(async () => {
+  // ============ 2. O POP-UP DE OPCOES, SEM NADA ANTERIOR GUARDADO ============
+  const r2a = await p.evaluate(async () => {
     document.getElementById('iaDocSerie').value = '7º Ano';
     document.getElementById('iaDocDisciplina').value = 'Historia';
     document.getElementById('iaDocTema').value = 'Revolucao Francesa';
     await gerarDocumentoManualEstagiario();
+
+    const pop = document.getElementById('modalOpcoesManualEstagiario');
+    const botoes = Array.from(pop.querySelectorAll('button'));
+    const branco = botoes.find(b => b.textContent.indexOf('Branco') !== -1);
+    const ultimo = botoes.find(b => b.textContent.indexOf('Último') !== -1);
+    return {
+      abriu: pop.classList.contains('active'),
+      temBranco: !!branco,
+      temUltimo: !!ultimo,
+      ultimoDesativado: !!ultimo && ultimo.disabled,
+      explicaFalta: pop.innerText.indexOf('Ainda não há') !== -1,
+      formularioAtras: document.getElementById('modalGerarDocumentoIA').classList.contains('active')
+    };
   });
+  ok('o "Manual" abre um pop-up em vez de ir direto pro documento', r2a.abriu);
+  ok('o pop-up oferece "Branco" e "Ultimo"', r2a.temBranco && r2a.temUltimo);
+  ok('sem documento anterior, "Ultimo" vem desativado e explicado', r2a.ultimoDesativado && r2a.explicaFalta);
+  ok('o formulario continua aberto atras do pop-up (Cancelar volta pra ele)', r2a.formularioAtras);
+
+  // ============ 2b. "BRANCO" ABRE A PREVIA VAZIA, SEM IA ============
+  await p.evaluate(async () => { await escolherManualEstagiario('branco'); });
   await esperarPrevia(p);
 
   const r2 = await p.evaluate(() => {
@@ -101,7 +126,7 @@ const esperarPrevia = (p, id) => p.waitForFunction((idIframe) => {
       foiNaIA: window.__chamadasDeRede.some(u => /googleapis|openai|groq|openrouter|nvidia|anthropic/i.test(u))
     };
   });
-  ok('a previa abre com os 7 campos do Plano de Aula editaveis', r2.qtdCampos === 7);
+  ok('"Branco" abre a previa com os 7 campos do Plano de Aula editaveis', r2.qtdCampos === 7);
   ok('todos os campos chegam vazios (nada foi rascunhado)', r2.todosVazios);
   ok('a tela avisa que o preenchimento e\' manual', r2.avisoManual);
   ok('nenhuma chamada de IA saiu no caminho manual', r2.foiNaIA === false);
@@ -131,34 +156,42 @@ const esperarPrevia = (p, id) => p.waitForFunction((idIframe) => {
       && r3.primeiro.disciplina === 'Historia'
       && r3.primeiro.dados.objetivos === 'Entender a queda da Bastilha');
 
-  // ============ 4. O PROXIMO PLANO JA' PODE PUXAR O ANTERIOR ============
-  await p.evaluate(async () => {
+  // ============ 4. COM UM PLANO GUARDADO, O "ULTIMO" PASSA A VALER ============
+  const r4a = await p.evaluate(async () => {
+    closeModal('modalRevisaoDocumento');
     await abrirModalGerarDocumentoIA();
     document.getElementById('iaDocSerie').value = '7º Ano';
     document.getElementById('iaDocDisciplina').value = 'Historia';
     document.getElementById('iaDocTema').value = 'Era Napoleonica';
     await gerarDocumentoManualEstagiario();
-  });
-  await esperarPrevia(p);
 
-  resposta = 'accept'; // previa vazia nem chega a perguntar
-  const r4 = await p.evaluate(() => {
-    const modal = document.getElementById('modalRevisaoDocumento');
-    const botao = modal.querySelector('button[onclick*="puxarDocumentoAnteriorEstagiario"]');
-    if (!botao) return { temPuxar:false };
-    botao.click();
-    const d = document.getElementById('previaPlanoAulaEstagiario').contentDocument;
+    const pop = document.getElementById('modalOpcoesManualEstagiario');
+    const ultimo = Array.from(pop.querySelectorAll('button')).find(b => b.textContent.indexOf('Último') !== -1);
     return {
-      temPuxar: true,
-      descricaoNaTela: modal.innerText.indexOf('Revolucao Francesa') !== -1,
-      objetivos: d.querySelector('[data-campo="objetivos"]').innerText.trim(),
-      conteudos: d.querySelector('[data-campo="conteudos"]').innerText.trim()
+      ultimoAtivo: !!ultimo && !ultimo.disabled,
+      dizQualPlano: pop.innerText.indexOf('Revolucao Francesa') !== -1
     };
   });
-  ok('com um plano anterior guardado, o botao "Puxar anterior" aparece', r4.temPuxar);
-  ok('a tela diz de qual plano anterior se trata', r4.descricaoNaTela);
-  ok('puxar na previa em branco traz o texto do plano anterior', r4.objetivos === 'Entender a queda da Bastilha'
+  ok('com um plano anterior guardado, "Ultimo" fica disponivel', r4a.ultimoAtivo);
+  ok('o pop-up diz de qual plano anterior se trata', r4a.dizQualPlano);
+
+  await p.evaluate(async () => { await escolherManualEstagiario('ultimo'); });
+  await esperarPrevia(p);
+
+  const r4 = await p.evaluate(() => {
+    const d = document.getElementById('previaPlanoAulaEstagiario').contentDocument;
+    const modal = document.getElementById('modalRevisaoDocumento');
+    return {
+      objetivos: d.querySelector('[data-campo="objetivos"]').innerText.trim(),
+      conteudos: d.querySelector('[data-campo="conteudos"]').innerText.trim(),
+      avisaOrigem: modal.innerText.indexOf('último Plano de Aula') !== -1,
+      temPuxar: !!modal.querySelector('button[onclick*="puxarDocumentoAnteriorEstagiario"]')
+    };
+  });
+  ok('"Ultimo" abre a previa ja com o texto do plano anterior', r4.objetivos === 'Entender a queda da Bastilha'
       && r4.conteudos === 'Antigo Regime; 1789');
+  ok('a tela avisa que o texto veio do ultimo plano', r4.avisaOrigem);
+  ok('o botao "Puxar anterior" continua na tela de revisao', r4.temPuxar);
 
   // ============ 5. "CANCELAR" NO AVISO COMPLETA EM VEZ DE SOBRESCREVER ============
   await p.evaluate(async () => {
@@ -168,6 +201,7 @@ const esperarPrevia = (p, id) => p.waitForFunction((idIframe) => {
     document.getElementById('iaDocDisciplina').value = 'Historia';
     document.getElementById('iaDocTema').value = 'Congresso de Viena';
     await gerarDocumentoManualEstagiario();
+    await escolherManualEstagiario('branco');
   });
   await esperarPrevia(p);
 
@@ -203,6 +237,7 @@ const esperarPrevia = (p, id) => p.waitForFunction((idIframe) => {
     toggleTipoDocumentoIA();
     document.getElementById('anexoPaeeAluno').value = '9';
     await gerarDocumentoManualEstagiario();
+    await escolherManualEstagiario('branco');
   });
   await esperarPrevia(p, 'previaAnexoPaeeEstagiario');
 
