@@ -142,6 +142,7 @@ async function renderAdminEscolas() {
         <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom: 15px;">
             <button class="btn btn-secondary" onclick="migrarEscolasParaEspacos()" title="Cria um espaço com código de convite para cada escola desta lista, sem mover nenhum dado">🔑 Gerar espaços e códigos</button>
             <button class="btn btn-info" onclick="abrirModalConfigGerais()">⚙️ Config. Globais (Estado/Região)</button>
+            <button class="btn btn-success" onclick="abrirModalAssinaturasAdmin()" title="Links de cobrança dos planos e endereço do webhook">💳 Assinaturas</button>
         </div>
     `;
 
@@ -512,6 +513,7 @@ async function renderListaUsuariosAdmin() {
                             <button class="btn btn-success btn-sm" onclick="abrirBackupsUsuarioAdmin('${u.id}')" title="Ver e restaurar backups deste usuário">🛟 Backups</button>
                             <button class="btn btn-secondary btn-sm" onclick="editarUsuarioAdmin('${u.id}')" title="Alterar Perfil/Nome">✏️ Perfil</button>
                             <button class="btn ${ehContribuinte ? 'btn-success' : 'btn-secondary'} btn-sm" onclick="alternarContribuinteAdmin('${u.id}')" title="${ehContribuinte ? 'Remover marca de contribuinte' : 'Marcar como contribuinte'}">${ehContribuinte ? '💛 Contribuinte' : '💛 Marcar'}</button>
+                            <button class="btn btn-secondary btn-sm" onclick="definirPlanoUsuarioAdmin('${u.uid || ''}', '${(u.nome || '').replace(/'/g, "\\'")}')" title="Conceder plano de cortesia (o pagamento pelo cartão é reconhecido sozinho)">💳 Plano</button>
                             <button class="btn ${isento ? 'btn-warning' : 'btn-secondary'} btn-sm" onclick="alternarModoOnlineCompleto('${u.uid || ''}', '${(u.nome || '').replace(/'/g, "\\'")}')" title="${isento ? 'Esta conta está isenta do corte: ainda guarda dados de estudante online' : 'Isentar do corte (mantém tudo online)'}">${isento ? '🌐 Online total' : '🌐 Isentar'}</button>
                             <button class="btn btn-secondary btn-sm" onclick="definirLimiteTerminais('${u.uid || ''}', '${(u.nome || '').replace(/'/g, "\\'")}')" title="Quantas telas esta conta pode abrir ao mesmo tempo">🖥️ ${limite === 0 ? 'Ilimitado' : limite + ' tela(s)'}</button>
                             <button class="btn btn-secondary btn-sm" onclick="verTerminaisUsuario('${u.uid || ''}', '${(u.nome || '').replace(/'/g, "\\'")}')" title="Ver e liberar vagas ocupadas">📋 Vagas</button>
@@ -536,6 +538,134 @@ async function alternarContribuinteAdmin(id) {
     u.contribuidor = !(u.contribuidor === true);
     await saveData('system', 'users_list', { list: users });
     renderListaUsuariosAdmin();
+}
+
+// ---------------------------------------------------------------------------
+// ASSINATURA: os links de cobranca e a cortesia manual
+// ---------------------------------------------------------------------------
+// A partir da cobranca automatica, marcar contribuinte na mao virou EXCECAO: quem
+// paga pelo cartao e' reconhecido pelo webhook (pasta assinatura/), que escreve
+// `assinaturas/<uid>` com credencial de conta de servico. O que sobra para o painel
+// e' (a) guardar os links de checkout e (b) conceder plano de cortesia.
+
+const PLANOS_ADMIN = {
+    free: { nome: 'Gratuito', valor: 0 },
+    apoiase: { nome: 'Apoia-se', valor: 10 },
+    professor: { nome: 'Professor', valor: 20 }
+};
+
+async function abrirModalAssinaturasAdmin() {
+    let div = document.getElementById('modalAssinaturasAdmin');
+    if (!div) {
+        div = document.createElement('div');
+        div.id = 'modalAssinaturasAdmin';
+        div.className = 'modal';
+        document.body.appendChild(div);
+    }
+
+    let cfg = null;
+    try { cfg = await getData('assinaturas_config', 'publico'); } catch (e) {}
+    const links = cfg || {};
+
+    div.innerHTML = `
+        <div class="modal-content" style="max-width:640px;">
+            <div class="modal-header">
+                <h2>💳 Assinaturas</h2>
+                <button class="close-btn" onclick="closeModal('modalAssinaturasAdmin')">×</button>
+            </div>
+            <div style="padding:20px 25px;">
+                <p style="font-size:13px; color:#4a5568; line-height:1.5;">
+                    Cole aqui o link de checkout de cada plano criado no Mercado Pago
+                    (Seu negócio &gt; Assinaturas &gt; criar plano). O app gruda no link o
+                    <code>external_reference</code> com o uid de quem clicou — é assim que o
+                    webhook sabe de quem é o pagamento.
+                </p>
+                <label style="display:block; margin-top:12px; font-size:13px;">💛 Apoia-se — R$ 10,00/mês
+                    <input type="text" id="linkPlanoApoiase" style="width:100%; padding:8px;"
+                           placeholder="https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=..."
+                           value="${(links.apoiase || '').replace(/"/g, '&quot;')}">
+                </label>
+                <label style="display:block; margin-top:10px; font-size:13px;">🎓 Professor — R$ 20,00/mês
+                    <input type="text" id="linkPlanoProfessor" style="width:100%; padding:8px;"
+                           placeholder="https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=..."
+                           value="${(links.professor || '').replace(/"/g, '&quot;')}">
+                </label>
+                <button class="btn btn-primary" style="margin-top:14px;" onclick="salvarLinksAssinatura()">Salvar links</button>
+
+                <div style="margin-top:18px; border-top:1px dashed #e2e8f0; padding-top:14px; font-size:12px; color:#4a5568;">
+                    <strong>Webhook</strong> (Mercado Pago &gt; Suas integrações &gt; Notificações):
+                    aponte para o endereço do Worker publicado a partir da pasta <code>assinatura/</code>
+                    e marque os eventos <em>Assinaturas</em> e <em>Pagamentos recorrentes</em>.
+                    O passo a passo está em <code>assinatura/LEIAME.md</code>.
+                </div>
+                <div style="margin-top:12px; font-size:12px; color:#975a16; background:#fffaf0; border:1px solid #fbd38d; border-radius:6px; padding:10px;">
+                    <strong>Plano antigo de R$ 7,00:</strong> cancele as assinaturas no painel do Mercado Pago.
+                    Quem pagava vê, ao entrar, o aviso com as três saídas (continuar no gratuito,
+                    Apoia-se ou Professor) — ninguém fica sem resposta.
+                </div>
+            </div>
+        </div>`;
+    showModal('modalAssinaturasAdmin');
+}
+
+async function salvarLinksAssinatura() {
+    const apoiase = (document.getElementById('linkPlanoApoiase').value || '').trim();
+    const professor = (document.getElementById('linkPlanoProfessor').value || '').trim();
+
+    // Link de cobranca e' dinheiro dos professores: recusamos qualquer coisa que nao
+    // seja um endereco https do proprio Mercado Pago.
+    const valido = (u) => !u || /^https:\/\/[a-z0-9.-]*mercadopago\.com(\.br)?\//i.test(u);
+    if (!valido(apoiase) || !valido(professor)) {
+        alert('O link precisa começar com https:// e apontar para o mercadopago.com.br.');
+        return;
+    }
+    try {
+        await saveData('assinaturas_config', 'publico', {
+            apoiase: apoiase, professor: professor, atualizadoEm: new Date().toISOString()
+        });
+        alert('Links salvos. Os professores já veem os planos novos ao abrir o pop-up de apoio.');
+        closeModal('modalAssinaturasAdmin');
+    } catch (e) {
+        alert('Não consegui salvar: ' + (e && e.message ? e.message : e));
+    }
+}
+
+// Concede (ou tira) um plano na mao. Usado para cortesia, parceria e teste.
+// O documento fica com `versaoMs: 0`, entao a primeira notificacao real do Mercado
+// Pago passa por cima dele sem briga.
+async function definirPlanoUsuarioAdmin(uid, nome) {
+    if (!uid) {
+        alert('Esta conta ainda não tem uid do Firebase Auth. Rode "Sincronizar UIDs" antes.');
+        return;
+    }
+    const escolha = prompt('Plano de cortesia para ' + nome + ':\n\n' +
+        '1 - Gratuito (remove a cortesia)\n' +
+        '2 - Apoia-se (R$ 10,00)\n' +
+        '3 - Professor (R$ 20,00, com premium)\n\n' +
+        'Digite 1, 2 ou 3:');
+    if (!escolha) return;
+
+    const plano = ({ '1': 'free', '2': 'apoiase', '3': 'professor' })[String(escolha).trim()];
+    if (!plano) { alert('Opção inválida.'); return; }
+
+    try {
+        await saveData('assinaturas', String(uid), {
+            uid: String(uid),
+            plano: plano,
+            planoContratado: plano,
+            status: plano === 'free' ? 'cancelada' : 'ativa',
+            valor: PLANOS_ADMIN[plano].valor,
+            legado: false,
+            origem: 'cortesia',
+            versaoMs: 0,
+            concedidoPor: (currentUser && currentUser.email) || 'super_admin',
+            atualizadoEm: new Date().toISOString()
+        });
+        alert('Pronto: ' + nome + ' está no plano ' + PLANOS_ADMIN[plano].nome + '.');
+        renderListaUsuariosAdmin();
+    } catch (e) {
+        alert('Não consegui gravar a assinatura: ' + (e && e.message ? e.message : e));
+    }
 }
 
 function abrirModalUsuarioAdmin() {

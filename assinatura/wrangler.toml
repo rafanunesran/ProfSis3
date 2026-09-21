@@ -1,0 +1,9 @@
+# Cloudflare Worker do webhook de assinatura do SisProf.
+#   wrangler deploy
+# Os segredos NAO ficam aqui - ver LEIAME.md (wrangler secret put ...).
+name = "sisprof-assinatura"
+main = "webhook.mjs"
+compatibility_date = "2024-11-01"
+
+[vars]
+FIREBASE_PROJECT_ID = "profsis3"

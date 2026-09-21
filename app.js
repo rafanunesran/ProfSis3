@@ -175,7 +175,9 @@ async function iniciarApp() {
 
         // [MODO SOMENTE LEITURA] Aviso fixo para professor inativado pela gestão
         atualizarBannerContaInativa();
-        atualizarBannerApoio();
+        // A tarja e o botao de apoio vivem em assinatura.js. Se o arquivo nao carregar,
+        // o painel abre do mesmo jeito - apoio nunca pode barrar quem veio dar aula.
+        if (typeof atualizarBannerApoio === 'function') atualizarBannerApoio();
 
         // Injeta o botão de alternância se for Gestor
         if (currentUser.role === 'gestor') {
@@ -184,7 +186,7 @@ async function iniciarApp() {
 
         // Injeta botão de Perfil e aplica tema
         injectProfileButton();
-        injectApoieButton();
+        if (typeof injectApoieButton === 'function') injectApoieButton();
         aplicarTemaSalvo();
 
         // Sincroniza marcadores AEE de toda a escola para a equipe
@@ -328,86 +330,9 @@ function injectProfileButton() {
     container.insertBefore(btn, btnSair);
 }
 
-// [NOVO] Função para injetar o botão de Apoio
-function injectApoieButton() {
-    const container = document.getElementById('headerUserArea');
-    if (!container || document.getElementById('btnApoie')) return;
-
-    const ehContribuinte = currentUser && currentUser.contribuidor === true;
-    const btn = document.createElement('button');
-    btn.id = 'btnApoie';
-    btn.className = 'btn btn-sm btn-success';
-    btn.style.marginTop = '5px';
-    btn.style.marginRight = '5px';
-    btn.innerHTML = ehContribuinte ? '🤝 TMJ' : '❤️ Apoie';
-    btn.title = ehContribuinte ? 'Tamo junto! Obrigado pelo apoio 💛' : 'Apoie o projeto';
-    btn.onclick = abrirModalApoie;
-
-    // Insere antes do botão Sair
-    const btnSair = container.querySelector('.btn-danger');
-    container.insertBefore(btn, btnSair);
-}
-
-function abrirModalApoie() {
-    if (!document.getElementById('modalApoie')) {
-        const div = document.createElement('div');
-        div.id = 'modalApoie';
-        div.className = 'modal';
-        div.innerHTML = `
-            <div class="modal-content" style="max-width: 450px; text-align: center;">
-                <div class="modal-header">
-                    <h2>❤️ Apoie o Projeto</h2>
-                    <button class="close-btn" onclick="closeModal('modalApoie')">×</button>
-                </div>
-                <div style="padding: 20px 25px;">
-                    <p style="font-size:16px; color:#4a5568; line-height:1.5;">O projeto é e sempre será gratuito. Devido aos custos operacionais, estamos abrindo para apoio financeiro por meio de assinatura mensal.</p>
-                    <a href="https://mpago.la/2gkfmyw" target="_blank" class="btn btn-primary" style="display:block; padding: 15px; font-size: 18px; font-weight: bold; text-decoration: none; margin-top: 25px;">Apoiar com R$ 7,00/mês</a>
-                    <p style="font-size:11px; color:#718096; margin-top:8px;">Pagamento seguro via Mercado Pago.</p>
-                    <div id="apoieContribuintes" style="margin-top:20px; border-top:1px dashed #e2e8f0; padding-top:15px;"></div>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(div);
-    }
-    showModal('modalApoie');
-    carregarContribuintesApoie(); // atualiza a lista a cada abertura
-}
-
-// Formata o nome do contribuinte como "Primeiro S." (primeiro nome + inicial do sobrenome).
-function formatarNomeContribuinte(nome) {
-    const partes = (nome || '').trim().split(/\s+/).filter(Boolean);
-    if (partes.length === 0) return 'Professor(a)';
-    if (partes.length === 1) return partes[0];
-    return `${partes[0]} ${partes[partes.length - 1].charAt(0).toUpperCase()}.`;
-}
-
-// Preenche a seção "Obrigado a quem é parça" com os contribuintes da escola do usuário.
-async function carregarContribuintesApoie() {
-    const alvo = document.getElementById('apoieContribuintes');
-    if (!alvo) return;
-    alvo.innerHTML = '<p style="font-size:12px; color:#a0aec0;">Carregando...</p>';
-    try {
-        const dataUsers = await getData('system', 'users_list');
-        const users = (dataUsers && dataUsers.list && Array.isArray(dataUsers.list)) ? dataUsers.list : [];
-        const contribuintes = users.filter(u => u.contribuidor === true &&
-            (!currentUser || !currentUser.schoolId || String(u.schoolId || '') === String(currentUser.schoolId)));
-        if (contribuintes.length === 0) {
-            alvo.innerHTML = '<p style="font-size:13px; color:#718096;">Seja o primeiro a apoiar e ajude a manter o SisProf sempre melhorando! 💛</p>';
-            return;
-        }
-        const nomes = contribuintes
-            .map(u => formatarNomeContribuinte(u.nome))
-            .sort((a, b) => a.localeCompare(b, 'pt'));
-        alvo.innerHTML = `
-            <p style="font-size:14px; font-weight:bold; color:#2f855a; margin-bottom:8px;">🙌 Obrigado a quem é parça</p>
-            <div style="display:flex; flex-wrap:wrap; gap:6px; justify-content:center;">
-                ${nomes.map(n => `<span class="badge badge-success" style="font-size:12px;">💛 ${n}</span>`).join('')}
-            </div>`;
-    } catch (e) {
-        console.warn('[Apoie] Erro ao carregar contribuintes:', e);
-        alvo.innerHTML = '';
-    }
-}
+// O botao de apoio, a tarja, o pop-up dos planos e a lista de contribuintes moraram aqui
+// ate a assinatura virar cobranca automatica no cartao. Agora vivem em assinatura.js,
+// junto com os planos (Apoia-se / Professor) e o portao das funcoes premium.
 
 // --- SISTEMA DE TEMAS ---
 const TEMAS_APP = {
@@ -1267,26 +1192,8 @@ async function verificarLiberacaoAcesso() {
     iniciarApp();
 }
 
-// Tarja amarela persuasiva de apoio — só para quem AINDA não contribui (some para contribuintes e
-// super admin). Clicável: abre o popup de apoio.
-function atualizarBannerApoio() {
-    const mostrar = (currentUser && currentUser.contribuidor !== true && currentUser.role !== 'super_admin');
-    let banner = document.getElementById('bannerApoio');
-
-    if (!mostrar) {
-        if (banner) banner.remove();
-        return;
-    }
-
-    if (!banner) {
-        banner = document.createElement('div');
-        banner.id = 'bannerApoio';
-        banner.style.cssText = 'position:sticky; top:0; z-index:9998; background:#f6e05e; color:#5a4b00; padding:9px 16px; text-align:center; font-weight:bold; font-size:14px; box-shadow:0 2px 6px rgba(0,0,0,0.15); cursor:pointer;';
-        banner.innerHTML = '💛 Está gostando do sistema? Considere contribuir — sua ajuda financeira mantém o SisProf sempre melhorando. <span style="text-decoration:underline;">Apoie aqui</span>.';
-        banner.onclick = abrirModalApoie;
-        document.body.insertBefore(banner, document.body.firstChild);
-    }
-}
+// A tarja de apoio virou parte de assinatura.js (atualizarBannerApoio), junto com os
+// planos e o estado da assinatura no cartao.
 
 // Helper para buscar grade da escola
 async function getGradeEscola() {

@@ -225,6 +225,40 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
+    // --------------------------- assinaturas/* -------------------------------
+    // [ASSINATURA] Quem paga, que plano tem e ate' quando. Escrito pelo WEBHOOK do
+    // Mercado Pago (pasta assinatura/), que usa credencial de conta de servico e
+    // por isso passa por cima destas Regras.
+    //
+    // NINGUEM MAIS ESCREVE AQUI — nem o dono da conta. E' de proposito: se o
+    // professor pudesse escrever o proprio documento, bastaria uma linha no console
+    // do navegador para se declarar assinante do plano Professor. Como so' o
+    // webhook escreve, o que esta' gravado aqui reflete dinheiro que entrou de
+    // verdade.
+    //
+    // Para a cortesia manual (bolsa, parceria, teste), o super admin escreve.
+    match /assinaturas/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isSuperAdmin());
+      allow write: if isSuperAdmin();
+    }
+
+    // Pagamento que chegou sem dono identificavel (o Mercado Pago nao devolveu o
+    // external_reference e o e-mail do pagador nao bate com nenhuma conta). Fica
+    // aqui esperando o super admin ligar a assinatura a' pessoa certa — perder o
+    // registro de um pagamento seria bem pior do que guardar este resto.
+    match /assinaturas_sem_dono/{docId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // Os links de checkout dos planos. Leitura publica (sao links de pagamento,
+    // abertos por definicao); escrita SO' do super admin. Nao podem morar em
+    // system/*, onde qualquer conta logada escreve: link trocado manda o dinheiro
+    // do professor para a conta de outra pessoa.
+    match /assinaturas_config/{docId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
     // ------------------ shared_views: relatório por link ---------------------
     // O link público (?share=ID) é aberto por visitantes sem login.
     // O link público (?share=ID) é aberto SEM LOGIN: tudo aqui está na internet.

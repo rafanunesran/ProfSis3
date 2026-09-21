@@ -1,0 +1,284 @@
+// O WEBHOOK DA ASSINATURA, SEM REDE E SEM NAVEGADOR.
+//
+// Aqui mora a parte que decide: "o Mercado Pago avisou X" vira "fulano esta' no
+// plano Y". Rodamos as funcoes puras de assinatura/regras.mjs e o miolo do
+// webhook (processarNotificacao) com dependencias de mentira.
+//
+// Cobrimos:
+//   1. valor e id do plano viram o plano certo (inclusive a assinatura antiga de R$ 7);
+//   2. so' `authorized` conta como ativa - `paused` NAO libera nada;
+//   3. quem e' a pessoa: external_reference, e o e-mail como rede de seguranca;
+//   4. pagamento sem dono identificavel nao evapora - fica guardado para o admin;
+//   5. notificacao repetida e notificacao ATRASADA nao estragam o que ja' esta' gravado;
+//   6. aviso que nao e' de assinatura e' ignorado sem quebrar;
+//   7. os valores dos planos batem entre o servidor (regras.mjs) e o navegador (assinatura.js).
+const fs = require('fs');
+const path = require('path');
+
+const RAIZ = path.join(__dirname, '..');
+
+const falhas = [];
+const ok = (nome, cond) => {
+  console.log((cond ? '  ok   ' : '  FALHA') + ' - ' + nome);
+  if (!cond) falhas.push(nome);
+};
+
+// Uma assinatura como o Mercado Pago devolve em GET /preapproval/<id>.
+const assinaturaMp = (extra) => Object.assign({
+  id: 'PRE-1',
+  status: 'authorized',
+  payer_email: 'professor@escola.com',
+  external_reference: 'uid-professor',
+  preapproval_plan_id: 'PLANO-PROF',
+  auto_recurring: { frequency: 1, frequency_type: 'months', transaction_amount: 20, currency_id: 'BRL' },
+  next_payment_date: '2026-10-21T12:00:00.000-03:00',
+  last_modified: '2026-09-21T12:00:00.000-03:00'
+}, extra || {});
+
+(async () => {
+  const R = await import('../assinatura/regras.mjs');
+  const W = await import('../assinatura/webhook.mjs');
+
+  // ================= 1. DE QUANTO FOI A COBRANCA PARA QUAL PLANO =================
+  console.log('\n1. O valor e o id do plano viram o plano certo');
+  const config = { planoApoiaseId: 'PLANO-APOIA', planoProfessorId: 'PLANO-PROF' };
+
+  ok('R$ 20 e o plano do Professor', R.mapearPlano(assinaturaMp(), config) === 'professor');
+  ok('R$ 10 e o Apoia-se', R.mapearPlano(assinaturaMp({
+        preapproval_plan_id: 'PLANO-APOIA',
+        auto_recurring: { transaction_amount: 10 } }), config) === 'apoiase');
+  ok('o id do plano manda mais que o valor (reajuste nao rebaixa ninguem)',
+      R.mapearPlano(assinaturaMp({ preapproval_plan_id: 'PLANO-PROF',
+        auto_recurring: { transaction_amount: 21.5 } }), config) === 'professor');
+  ok('assinatura sem plano associado cai no valor',
+      R.mapearPlano(assinaturaMp({ preapproval_plan_id: '',
+        auto_recurring: { transaction_amount: 20 } }), config) === 'professor');
+  ok('a assinatura antiga de R$ 7 continua sendo apoio (ninguem perde o selo)',
+      R.mapearPlano(assinaturaMp({ preapproval_plan_id: '',
+        auto_recurring: { transaction_amount: 7 } }), config) === 'apoiase');
+  ok('R$ 7 e marcado como legado', R.ehValorLegado(7) === true && R.ehValorLegado(10) === false);
+
+  // ================= 2. SO' `authorized` LIBERA =================
+  console.log('\n2. Situacao da cobranca');
+  ok('authorized = ativa', R.mapearStatus('authorized') === 'ativa');
+  ok('pending = pendente', R.mapearStatus('pending') === 'pendente');
+  ok('paused = pausada', R.mapearStatus('paused') === 'pausada');
+  ok('cancelled = cancelada', R.mapearStatus('cancelled') === 'cancelada');
+  ok('so a ativa vale', R.assinaturaVale('ativa') && !R.assinaturaVale('pausada')
+      && !R.assinaturaVale('pendente') && !R.assinaturaVale('cancelada'));
+
+  const pausada = R.montarAssinatura(assinaturaMp({ status: 'paused' }), config);
+  ok('cartao recusado derruba o plano para free, mas guarda o que foi contratado',
+      pausada.plano === 'free' && pausada.planoContratado === 'professor' && pausada.status === 'pausada');
+
+  const ativa = R.montarAssinatura(assinaturaMp(), config);
+  ok('assinatura ativa vira documento completo',
+      ativa.plano === 'professor' && ativa.status === 'ativa' && ativa.valor === 20
+      && ativa.preapprovalId === 'PRE-1' && ativa.origem === 'mercadopago'
+      && ativa.proximaCobranca.indexOf('2026-10-21') === 0 && ativa.legado === false);
+
+  // ================= 3. DE QUEM E' ESTE PAGAMENTO =================
+  console.log('\n3. Achar o dono do pagamento');
+  ok('o external_reference e o uid',
+      R.identificarUsuario(assinaturaMp()).uid === 'uid-professor');
+  ok('external_reference com @ e tratado como e-mail, nao como uid',
+      R.identificarUsuario(assinaturaMp({ external_reference: 'Outro@Escola.com' })).uid === ''
+      && R.identificarUsuario(assinaturaMp({ external_reference: 'Outro@Escola.com' })).email === 'outro@escola.com');
+
+  const bancoFalso0 = (inicial) => {
+    const docs = Object.assign({}, inicial || {});
+    return {
+      docs,
+      ler: async (c) => (c in docs ? JSON.parse(JSON.stringify(docs[c])) : null),
+      gravar: async (c, d) => { docs[c] = JSON.parse(JSON.stringify(d)); }
+    };
+  };
+  let banco0;
+  const lista = [{ email: 'Professor@Escola.com', uid: 'uid-professor', nome: 'Ana' }];
+  ok('sem external_reference, o e-mail encontra a conta (sem ligar para maiuscula)',
+      R.acharUidPorEmail(lista, 'professor@escola.com') === 'uid-professor');
+  ok('e-mail que nao existe nao inventa dono', R.acharUidPorEmail(lista, 'ninguem@x.com') === '');
+
+  // O e-mail do Mercado Pago quase nunca e' o mesmo do cadastro (e' o pessoal, o do
+  // conjuge, o da escola). Quando a referencia nao acha, o do pagador ainda tenta.
+  banco0 = bancoFalso0({ 'system/users_list': { list: lista } });
+  const achou = await W.processarNotificacao(
+      { type: 'subscription_preapproval', data: { id: 'PRE-1' } },
+      { MP_PLANO_PROFESSOR_ID: 'PLANO-PROF' },
+      { buscar: async () => assinaturaMp({ external_reference: 'conta-antiga@x.com',
+          payer_email: 'Professor@Escola.com' }),
+        ler: banco0.ler, gravar: banco0.gravar });
+  ok('quando a referencia nao bate, o e-mail do pagador ainda encontra a conta',
+      achou.feito === true && achou.uid === 'uid-professor');
+
+  // ================= 4. O MIOLO DO WEBHOOK =================
+  console.log('\n4. O webhook de ponta a ponta (com dependencias de mentira)');
+
+  // Banco de mentira: guarda o que foi gravado, devolve o que foi lido.
+  const bancoFalso = (inicial) => {
+    const docs = Object.assign({}, inicial || {});
+    return {
+      docs,
+      ler: async (caminho) => (caminho in docs ? JSON.parse(JSON.stringify(docs[caminho])) : null),
+      gravar: async (caminho, dados) => { docs[caminho] = JSON.parse(JSON.stringify(dados)); }
+    };
+  };
+  const ambiente = { MP_PLANO_APOIASE_ID: 'PLANO-APOIA', MP_PLANO_PROFESSOR_ID: 'PLANO-PROF' };
+
+  // 4a. caminho feliz
+  let banco = bancoFalso();
+  let r = await W.processarNotificacao(
+      { type: 'subscription_preapproval', data: { id: 'PRE-1' } }, ambiente,
+      { buscar: async () => assinaturaMp(), ler: banco.ler, gravar: banco.gravar });
+  ok('o aviso de assinatura grava assinaturas/<uid>',
+      r.feito === true && !!banco.docs['assinaturas/uid-professor']);
+  ok('o documento sai com uid, plano e situacao',
+      banco.docs['assinaturas/uid-professor'].uid === 'uid-professor'
+      && banco.docs['assinaturas/uid-professor'].plano === 'professor'
+      && banco.docs['assinaturas/uid-professor'].status === 'ativa');
+
+  // 4b. a cobranca mensal tambem atualiza (volta da cobranca para a assinatura)
+  banco = bancoFalso();
+  let pediu = null;
+  r = await W.processarNotificacao(
+      { type: 'subscription_authorized_payment', data: { id: 'PAY-9' } }, ambiente,
+      { buscar: async (acao) => { pediu = acao; return assinaturaMp(); },
+        ler: banco.ler, gravar: banco.gravar });
+  ok('a cobranca mensal e' + ' tratada como aviso de cobranca',
+      pediu && pediu.acao === 'buscar-cobranca' && pediu.id === 'PAY-9' && r.feito === true);
+
+  // 4c. sem external_reference, o e-mail salva
+  banco = bancoFalso({ 'system/users_list': { list: lista } });
+  r = await W.processarNotificacao(
+      { type: 'subscription_preapproval', data: { id: 'PRE-1' } }, ambiente,
+      { buscar: async () => assinaturaMp({ external_reference: '' }),
+        ler: banco.ler, gravar: banco.gravar });
+  ok('sem a referencia, o e-mail do pagador encontra a conta',
+      r.feito === true && r.uid === 'uid-professor' && !!banco.docs['assinaturas/uid-professor']);
+
+  // 4d. dinheiro que entrou sem dono NAO pode sumir
+  banco = bancoFalso({ 'system/users_list': { list: [] } });
+  r = await W.processarNotificacao(
+      { type: 'subscription_preapproval', data: { id: 'PRE-1' } }, ambiente,
+      { buscar: async () => assinaturaMp({ external_reference: '', payer_email: 'desconhecido@x.com' }),
+        ler: banco.ler, gravar: banco.gravar });
+  ok('pagamento sem dono fica guardado para o super admin resolver',
+      r.feito === false && !!banco.docs['assinaturas_sem_dono/PRE-1']
+      && banco.docs['assinaturas_sem_dono/PRE-1'].email === 'desconhecido@x.com');
+  ok('e nao inventa documento de assinatura para ninguem',
+      Object.keys(banco.docs).filter(k => k.indexOf('assinaturas/') === 0).length === 0);
+
+  // 4e. notificacao repetida nao reescreve
+  banco = bancoFalso();
+  const gravacoes = [];
+  const contando = { ler: banco.ler,
+    gravar: async (c, d) => { gravacoes.push(c); return banco.gravar(c, d); } };
+  const buscarFixo = { buscar: async () => assinaturaMp() };
+  await W.processarNotificacao({ type: 'subscription_preapproval', data: { id: 'PRE-1' } },
+      ambiente, Object.assign({}, buscarFixo, contando));
+  const r2 = await W.processarNotificacao({ type: 'subscription_preapproval', data: { id: 'PRE-1' } },
+      ambiente, Object.assign({}, buscarFixo, contando));
+  ok('o mesmo aviso chegando duas vezes grava uma vez so',
+      gravacoes.length === 1 && r2.feito === false);
+
+  // 4f. notificacao ATRASADA nao desfaz a mais nova (o Mercado Pago entrega fora de ordem)
+  banco = bancoFalso();
+  await W.processarNotificacao({ type: 'subscription_preapproval', data: { id: 'PRE-1' } }, ambiente,
+      { buscar: async () => assinaturaMp({ status: 'authorized',
+          last_modified: '2026-09-21T15:00:00.000-03:00' }), ler: banco.ler, gravar: banco.gravar });
+  await W.processarNotificacao({ type: 'subscription_preapproval', data: { id: 'PRE-1' } }, ambiente,
+      { buscar: async () => assinaturaMp({ status: 'cancelled',
+          last_modified: '2026-09-21T09:00:00.000-03:00' }), ler: banco.ler, gravar: banco.gravar });
+  ok('um aviso velho NAO cancela uma assinatura mais nova',
+      banco.docs['assinaturas/uid-professor'].status === 'ativa');
+
+  // ... mas o cancelamento de verdade (mais novo) passa
+  await W.processarNotificacao({ type: 'subscription_preapproval', data: { id: 'PRE-1' } }, ambiente,
+      { buscar: async () => assinaturaMp({ status: 'cancelled',
+          last_modified: '2026-09-22T09:00:00.000-03:00' }), ler: banco.ler, gravar: banco.gravar });
+  ok('o cancelamento mais novo derruba o plano',
+      banco.docs['assinaturas/uid-professor'].status === 'cancelada'
+      && banco.docs['assinaturas/uid-professor'].plano === 'free');
+
+  // 4g. cortesia dada pelo painel (sem carimbo) cede lugar ao pagamento de verdade
+  banco = bancoFalso({ 'assinaturas/uid-professor': {
+      uid: 'uid-professor', plano: 'professor', origem: 'cortesia', versaoMs: 0 } });
+  r = await W.processarNotificacao({ type: 'subscription_preapproval', data: { id: 'PRE-1' } }, ambiente,
+      { buscar: async () => assinaturaMp({ auto_recurring: { transaction_amount: 10 },
+          preapproval_plan_id: 'PLANO-APOIA' }), ler: banco.ler, gravar: banco.gravar });
+  ok('a assinatura paga substitui a cortesia do painel',
+      r.feito === true && banco.docs['assinaturas/uid-professor'].origem === 'mercadopago'
+      && banco.docs['assinaturas/uid-professor'].plano === 'apoiase');
+
+  // ================= 5. AVISO QUE NAO E' DE ASSINATURA =================
+  console.log('\n5. Avisos fora do escopo');
+  ok('pagamento avulso e ignorado sem quebrar',
+      R.interpretarNotificacao({ type: 'payment', data: { id: '1' } }).acao === 'ignorar');
+  ok('aviso sem id e ignorado',
+      R.interpretarNotificacao({ type: 'subscription_preapproval', data: {} }).acao === 'ignorar');
+  banco = bancoFalso();
+  r = await W.processarNotificacao({ type: 'payment', data: { id: '1' } }, ambiente,
+      { buscar: async () => { throw new Error('nao deveria buscar'); },
+        ler: banco.ler, gravar: banco.gravar });
+  ok('e nao encosta no banco', r.feito === false && Object.keys(banco.docs).length === 0);
+
+  // ================= 6. A CONFERENCIA DE ORIGEM =================
+  console.log('\n6. So aceita aviso assinado pelo Mercado Pago');
+  const cabecalhos = (obj) => ({ get: (k) => obj[k.toLowerCase()] || null });
+
+  let conf = await W.conferirAssinaturaMp(cabecalhos({}), 'PRE-1', '');
+  ok('sem segredo configurado, o webhook recusa tudo (nao nasce aberto)', conf.ok === false);
+
+  conf = await W.conferirAssinaturaMp(
+      cabecalhos({ 'x-signature': 'ts=' + Math.floor(Date.now() / 1000) + ',v1=naoconfere',
+                   'x-request-id': 'req-1' }), 'PRE-1', 'segredo');
+  ok('assinatura errada e recusada', conf.ok === false && conf.motivo.indexOf('confere') !== -1);
+
+  // Assina de verdade, do mesmo jeito que o Mercado Pago assina.
+  const crypto = require('crypto');
+  const ts = String(Math.floor(Date.now() / 1000));
+  const manifesto = R.manifestoAssinatura('PRE-1', 'req-1', ts);
+  const v1 = crypto.createHmac('sha256', 'segredo').update(manifesto).digest('hex');
+  conf = await W.conferirAssinaturaMp(
+      cabecalhos({ 'x-signature': 'ts=' + ts + ',v1=' + v1, 'x-request-id': 'req-1' }),
+      'PRE-1', 'segredo');
+  ok('assinatura correta passa', conf.ok === true);
+
+  const tsVelho = String(Math.floor(Date.now() / 1000) - 3600);
+  const v1Velho = crypto.createHmac('sha256', 'segredo')
+      .update(R.manifestoAssinatura('PRE-1', 'req-1', tsVelho)).digest('hex');
+  conf = await W.conferirAssinaturaMp(
+      cabecalhos({ 'x-signature': 'ts=' + tsVelho + ',v1=' + v1Velho, 'x-request-id': 'req-1' }),
+      'PRE-1', 'segredo');
+  ok('aviso antigo reenviado por terceiros e recusado (janela de tempo)', conf.ok === false);
+
+  // O Mercado Pago assina o id que vai na QUERY STRING. Pegar o id so' do corpo
+  // resulta em 401 eterno: eles reenviam, nos recusamos, e a assinatura de quem
+  // pagou nunca sincroniza.
+  ok('o id do manifesto sai da query string quando ela existe',
+      W.idDaNotificacao({ url: 'https://w.dev/?data.id=PRE-9&type=subscription_preapproval' },
+                        { data: { id: 'DO-CORPO' } }) === 'PRE-9');
+  ok('sem query string, vale o id do corpo',
+      W.idDaNotificacao({ url: 'https://w.dev/' }, { data: { id: 'DO-CORPO' } }) === 'DO-CORPO');
+
+  // ================= 7. OS VALORES BATEM NOS DOIS LADOS =================
+  console.log('\n7. Servidor e navegador falam do mesmo preco');
+  const front = fs.readFileSync(path.join(RAIZ, 'assinatura.js'), 'utf8');
+  const valorNoFront = (id) => {
+    const trecho = front.split("    " + id + ": {")[1] || '';
+    const m = trecho.match(/valor:\s*([0-9.]+)/);
+    return m ? Number(m[1]) : null;
+  };
+  ok('Apoia-se vale R$ 10 no servidor e no navegador',
+      R.PLANOS.apoiase.valor === 10 && valorNoFront('apoiase') === 10);
+  ok('Professor vale R$ 20 no servidor e no navegador',
+      R.PLANOS.professor.valor === 20 && valorNoFront('professor') === 20);
+  ok('so o plano Professor e premium',
+      R.PLANOS.professor.premium === true && R.PLANOS.apoiase.premium === false
+      && R.PLANOS.free.premium === false);
+
+  console.log('\n' + (falhas.length === 0
+    ? 'TUDO CERTO: a assinatura automatica se comporta.'
+    : 'FALHARAM ' + falhas.length + ': ' + falhas.join(' | ')));
+  process.exit(falhas.length === 0 ? 0 : 1);
+})().catch(e => { console.error('ERRO NO TESTE:', e); process.exit(1); });
