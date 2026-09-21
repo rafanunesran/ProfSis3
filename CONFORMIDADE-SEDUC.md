@@ -125,6 +125,12 @@ onde a decisão não depende do que roda no navegador do usuário.
 | Tutoria (encontros e agendamentos) | Avisos, bimestres, feriados |
 | Anexos III (PAEE) e IV (PEI) | Biblioteca e currículo |
 | Registros administrativos e busca ativa | Documentação |
+| Histórico de documentos do Estagiário | — |
+
+O **histórico de documentos do Estagiário** (`historicoDocumentos`) nasceu com a tela
+"Documentos" e entrou na lista do aparelho: ele guarda o texto dos planos de aula já
+impressos e a ficha dos Anexos III/IV gerados — que diz de qual estudante é o Anexo. Como
+todo o resto que identifica estudante, fica no aparelho e sobe apenas cifrado.
 
 A lista está em `shared.js` (`CAMPOS_PESSOAIS` e `CAMPOS_NUVEM`) e é repetida na Regra do
 Firestore. **Campo desconhecido é tratado como pessoal**: um campo criado no futuro não

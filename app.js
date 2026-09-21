@@ -766,7 +766,7 @@ function renderProfessorPanel() {
         <button class="active" onclick="showScreen('dashboard', event)"><span class="icon">📊</span><span class="label">Dashboard</span></button>
         <button onclick="showScreen('turmas', event)"><span class="icon">👥</span><span class="label">Turmas</span></button>
         <button onclick="showScreen('tutoria', event)"><span class="icon">🎓</span><span class="label">Tutoria</span></button>
-        <button onclick="showScreen('agenda', event)"><span class="icon">📅</span><span class="label">Agenda</span></button>
+        <button onclick="showScreen('documentos', event)"><span class="icon">📁</span><span class="label">Documentos</span></button>
         <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
         <button onclick="showScreen('biblioteca', event)"><span class="icon">📚</span><span class="label">Biblioteca</span></button>
@@ -780,7 +780,7 @@ function renderAeePanel() {
     nav.innerHTML = `
         <button class="active" onclick="showScreen('dashboard', event)"><span class="icon">🧩</span><span class="label">Dashboard AEE</span></button>
         <button onclick="showScreen('tutoria', event)"><span class="icon">👥</span><span class="label">Meus Alunos</span></button>
-        <button onclick="showScreen('agenda', event)"><span class="icon">📅</span><span class="label">Agenda</span></button>
+        <button onclick="showScreen('documentos', event)"><span class="icon">📁</span><span class="label">Documentos</span></button>
         <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
         <button onclick="showScreen('biblioteca', event)"><span class="icon">📚</span><span class="label">Biblioteca</span></button>
@@ -795,7 +795,7 @@ function renderProjetoPanel() {
         <button class="active" onclick="showScreen('dashboard', event)"><span class="icon">🚀</span><span class="label">Dashboard Projeto</span></button>
         <button onclick="showScreen('turmas', event)"><span class="icon">👥</span><span class="label">Turmas</span></button>
         <button onclick="showScreen('tutoria', event)"><span class="icon">🎓</span><span class="label">Meus Alunos</span></button>
-        <button onclick="showScreen('agenda', event)"><span class="icon">📅</span><span class="label">Agenda</span></button>
+        <button onclick="showScreen('documentos', event)"><span class="icon">📁</span><span class="label">Documentos</span></button>
         <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
         <button onclick="showScreen('biblioteca', event)"><span class="icon">📚</span><span class="label">Biblioteca</span></button>
@@ -805,6 +805,10 @@ function renderProjetoPanel() {
 }
 
 function showScreen(screenId, evt) {
+    // A antiga tela "Agenda" virou a tela "Documentos" (grade de horários + planos + anexos +
+    // histórico, em abas). O nome antigo continua valendo pra não quebrar nenhum atalho guardado.
+    if (screenId === 'agenda') screenId = 'documentos';
+
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     const screen = document.getElementById(screenId);
     if (screen) {
@@ -820,7 +824,7 @@ function showScreen(screenId, evt) {
     if (screenId === 'dashboard') renderDashboard();
     if (screenId === 'turmas') renderTurmas();
     if (screenId === 'tutoria') renderTutoria(); // Reutiliza a tela de Tutoria para "Meus Alunos" do AEE
-    if (screenId === 'agenda') renderAgenda();
+    if (screenId === 'documentos') renderDocumentos();
     if (screenId === 'registrosProfessor') renderRegistrosProfessor();
     if (screenId === 'registrosGestor') renderRegistrosGestor();
     if (screenId === 'aeeVisaoGeral') renderAeeVisaoGeral();
@@ -6765,11 +6769,316 @@ function removerAgendamento(id) {
     }
 }
 
-// --- AGENDA ---
+// --- DOCUMENTOS (antiga tela "Agenda") ---
+// Uma tela só, em abas: a grade de horários da semana ("Minha Agenda"), os Planos de Aula já
+// impressos, os Anexos IV - PEI para consulta/reimpressão e o histórico completo do que o professor
+// gerou pelo Estagiário. O botão "✨ Estagiário" mora no cabeçalho da tela (index.html), fora das
+// abas, então continua disponível em todas elas.
+const ABAS_DOCUMENTOS = [
+    { id: 'agenda',    container: 'tabDocAgenda',    icone: '📅', label: 'Minha Agenda' },
+    { id: 'planos',    container: 'tabDocPlanos',    icone: '📝', label: 'Planos de Aula' },
+    { id: 'anexoIV',   container: 'tabDocAnexoIV',   icone: '📘', label: 'Anexo IV - PEI' },
+    { id: 'historico', container: 'tabDocHistorico', icone: '🗂️', label: 'Histórico' }
+];
+let abaDocumentosAtual = 'agenda';
+// Anexo IV - PEI é preenchido por cada professor de componente curricular sobre o mesmo estudante:
+// por padrão a aba mostra só os desta conta, com o botão pra ver os da escola inteira.
+let documentosAnexoIVTodosProfessores = false;
+
+async function renderDocumentos(aba) {
+    const alvo = aba || abaDocumentosAtual;
+    const nav = document.getElementById('navDocumentos');
+
+    if (nav) {
+        nav.innerHTML = `
+            <style>
+                .doc-nav-btn {
+                    display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px;
+                    background: transparent; border: none; cursor: pointer;
+                    color: #718096; border-bottom: 3px solid transparent;
+                    transition: all 0.2s; font-size: 16px;
+                }
+                .doc-nav-btn.active { color: #3182ce; border-bottom: 3px solid #3182ce; background: #ebf8ff; border-radius: 4px 4px 0 0; }
+                .doc-nav-btn:hover { background: #f7fafc; }
+                /* O nome da aba fica sempre visível - a regra geral de <nav> esconde rótulo de botão
+                   que não está ativo, e aqui as quatro abas precisam se identificar de uma vez. */
+                #navDocumentos .doc-nav-btn .label {
+                    font-size: 14px; font-weight: bold;
+                    max-width: none; opacity: 1; margin-left: 0;
+                }
+                /* Em tela estreita não cabem os quatro nomes: fica só o ícone, e o nome aparece na
+                   aba aberta (mesmo comportamento das abas da turma). */
+                @media (max-width: 760px) {
+                    #navDocumentos .doc-nav-btn .label { display: none; }
+                    #navDocumentos .doc-nav-btn.active .label { display: inline; }
+                }
+            </style>
+            ${ABAS_DOCUMENTOS.map(a => `
+                <button class="doc-nav-btn" data-aba="${a.id}" onclick="showDocumentosTab('${a.id}')">
+                    <span class="icon">${a.icone}</span><span class="label">${a.label}</span>
+                </button>
+            `).join('')}
+        `;
+    }
+
+    await showDocumentosTab(alvo);
+}
+
+// Mantém o nome antigo funcionando (quem chamava renderAgenda continua chamando).
 async function renderAgenda() {
-    await renderGradeHorariaProfessor();
-    // Card de integração com o Google Agenda + tentativa de sincronização silenciosa ao abrir.
-    if (typeof gcalAoAbrirAgenda === 'function') gcalAoAbrirAgenda();
+    await renderDocumentos();
+}
+
+async function showDocumentosTab(aba) {
+    const def = ABAS_DOCUMENTOS.find(a => a.id === aba) || ABAS_DOCUMENTOS[0];
+    abaDocumentosAtual = def.id;
+
+    document.querySelectorAll('.documentos-tab').forEach(t => t.style.display = 'none');
+    const el = document.getElementById(def.container);
+    if (el) el.style.display = 'block';
+
+    // A aba aberta se marca pelo id, não pelo clique: assim quem chama pelo código (a abertura da
+    // tela, por exemplo) também deixa o destaque no lugar certo.
+    document.querySelectorAll('#navDocumentos .doc-nav-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.aba === def.id);
+    });
+
+    if (def.id === 'agenda') {
+        await renderGradeHorariaProfessor();
+        // Card de integração com o Google Agenda + tentativa de sincronização silenciosa ao abrir.
+        if (typeof gcalAoAbrirAgenda === 'function') gcalAoAbrirAgenda();
+    }
+    if (def.id === 'planos') renderDocumentosPlanos();
+    if (def.id === 'anexoIV') await renderDocumentosAnexosIV();
+    if (def.id === 'historico') renderDocumentosHistorico();
+}
+
+// dd/mm/aaaa a partir do AAAA-MM-DD que o sistema guarda.
+function formatarDataDocumentos(iso) {
+    if (!iso) return '—';
+    const partes = String(iso).split('-');
+    return partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : iso;
+}
+
+// --- ABA: PLANOS DE AULA ---
+// Lista os planos já impressos (ia_estagiario.js: lerHistoricoPlanoAulaEstagiario), do mais recente
+// pro mais antigo, com o texto à mão para consulta e o botão de reimprimir sem rodar a IA de novo.
+function renderDocumentosPlanos() {
+    const container = document.getElementById('tabDocPlanos');
+    if (!container) return;
+
+    const planos = (typeof lerHistoricoPlanoAulaEstagiario === 'function') ? lerHistoricoPlanoAulaEstagiario() : [];
+
+    if (planos.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <p>Nenhum plano de aula gerado ainda.</p>
+                <p style="font-size:12px; color:#666;">Os planos que você imprimir pelo "✨ Estagiário" ficam guardados aqui, prontos para consultar, reimprimir e reaproveitar.</p>
+            </div>`;
+        return;
+    }
+
+    const campos = (typeof PLANO_AULA_CAMPOS_IA !== 'undefined') ? PLANO_AULA_CAMPOS_IA : [];
+
+    container.innerHTML = `
+        <p style="color:#718096; font-size:14px; margin-top:0;">${planos.length} plano(s) de aula guardado(s). Clique em um deles para ver o conteúdo.</p>
+        ${planos.map(p => {
+            const titulo = `${escapeHtmlEstagiario(p.disciplina || 'Sem disciplina')}${p.serie ? ' · ' + escapeHtmlEstagiario(p.serie) : ''}`;
+            const detalhe = [p.tema ? `Tema: ${p.tema}` : '', p.semana ? `Semana ${p.semana}` : ''].filter(Boolean).join(' · ');
+            const preenchidos = campos.filter(c => (p.dados && (p.dados[c.key] || '').toString().trim()));
+            const temTexto = preenchidos.length > 0;
+            const corpo = temTexto
+                ? preenchidos.map(c => `
+                    <div style="margin-bottom:10px;">
+                        <div style="font-size:12px; font-weight:bold; color:#2c5282;">${escapeHtmlEstagiario(c.label)}</div>
+                        <div style="font-size:13px; color:#4a5568;">${textoParaHtmlEstagiario(p.dados[c.key])}</div>
+                    </div>`).join('')
+                : '<p style="font-size:13px; color:#718096;">O texto deste plano não está mais guardado (o sistema mantém o texto completo dos planos mais recentes). A ficha dele continua aqui no histórico.</p>';
+
+            return `
+                <div style="border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:10px;">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
+                        <div>
+                            <div style="font-weight:bold; color:#2d3748;">📝 ${titulo}</div>
+                            <div style="font-size:13px; color:#718096;">${escapeHtmlEstagiario(detalhe) || '&nbsp;'}</div>
+                            <div style="font-size:12px; color:#a0aec0;">Gerado em ${formatarDataDocumentos(p.salvoEm)}</div>
+                        </div>
+                        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                            ${temTexto ? `<button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirPlanoAulaHistoricoEstagiario('${escapeAttrEstagiario(p.id || '')}')">🖨️ Reimprimir</button>` : ''}
+                            <button class="btn btn-sm btn-danger" style="padding:4px 10px; font-size:12px;" onclick="excluirPlanoAulaHistoricoEstagiario('${escapeAttrEstagiario(p.id || '')}')">🗑️ Excluir</button>
+                        </div>
+                    </div>
+                    <details style="margin-top:8px;">
+                        <summary style="cursor:pointer; font-size:13px; color:#3182ce;">Ver conteúdo do plano</summary>
+                        <div style="margin-top:10px; background:#f7fafc; border-radius:6px; padding:12px;">${corpo}</div>
+                    </details>
+                </div>`;
+        }).join('')}
+    `;
+}
+
+// --- ABA: ANEXO IV - PEI ---
+// Consulta e reimpressão dos PEIs já gerados. A fonte é o Painel AEE compartilhado da escola
+// (app_data_school_<id>_aee, lista `anexosIV` de cada estudante) - o mesmo lugar onde o Estagiário
+// grava (ia_estagiario.js: salvarAnexoIVSchoolWide), então o que aparece aqui está sempre atual.
+async function renderDocumentosAnexosIV() {
+    const container = document.getElementById('tabDocAnexoIV');
+    if (!container) return;
+    container.innerHTML = '<p>Carregando os Anexos IV - PEI da escola...</p>';
+
+    if (!currentUser || !currentUser.schoolId) {
+        container.innerHTML = '<p class="empty-state" style="color:red;">Sua conta não está vinculada a uma escola, então não há Painel AEE para consultar.</p>';
+        return;
+    }
+
+    let tutorados = [];
+    try {
+        const aeeKey = `app_data_school_${currentUser.schoolId}_aee`;
+        // lerDocUsuario junta as duas camadas: os Anexos III/IV ficam no aparelho depois do corte.
+        const aeeData = (typeof lerDocUsuario === 'function')
+            ? await lerDocUsuario(aeeKey)
+            : await getData('app_data', aeeKey);
+        tutorados = (aeeData && Array.isArray(aeeData.tutorados)) ? aeeData.tutorados : [];
+        // Guarda a lista pra reimpressão (encontrarTutoradoAeeEmQualquerContexto): o professor comum
+        // não mantém `data.tutorados`, então sem isto o botão "Reimprimir" não acharia o documento.
+        container.dataset.aeeTutorados = JSON.stringify(tutorados);
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = `<p class="empty-state" style="color:red;">Erro ao buscar os Anexos IV - PEI: ${escapeHtmlEstagiario(e.message)}</p>`;
+        return;
+    }
+
+    // Achata a lista: um item por Anexo IV (o estudante pode ter vários, um por disciplina+bimestre).
+    const todos = [];
+    tutorados.forEach(t => {
+        (Array.isArray(t.anexosIV) ? t.anexosIV : []).forEach(a => {
+            if (a && a.dadosBasicos) todos.push({ tutoradoId: t.id, nomeEstudante: t.nome_estudante, turma: t.turma, anexo: a });
+        });
+    });
+
+    const meuNome = (currentUser.nome || '').trim();
+    const meus = todos.filter(x => (x.anexo.dadosBasicos.professorRegente || '').trim() === meuNome);
+    const lista = documentosAnexoIVTodosProfessores ? todos : meus;
+
+    lista.sort((a, b) => (a.nomeEstudante || '').localeCompare(b.nomeEstudante || '')
+        || String(a.anexo.dadosBasicos.bimestre || '').localeCompare(String(b.anexo.dadosBasicos.bimestre || '')));
+
+    const campos = (typeof ANEXO_PEI_CAMPOS_IA !== 'undefined') ? ANEXO_PEI_CAMPOS_IA : [];
+    // Os rótulos do modelo são a pergunta inteira do formulário oficial (uma linha e meia cada). Pra
+    // consulta em lista, um nome curto lê melhor; o documento impresso continua com o texto oficial.
+    const nomesCurtos = {
+        habilidades_curriculo: 'Conteúdos e habilidades do bimestre',
+        estrategias_intervencoes: 'Estratégias, intervenções e acessibilidade',
+        instrumentos: 'Instrumentos de acompanhamento'
+    };
+
+    const cabecalho = `
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+            <p style="color:#718096; font-size:14px; margin:0;">
+                ${documentosAnexoIVTodosProfessores
+                    ? `Todos os Anexos IV - PEI da escola (${todos.length}).`
+                    : `Seus Anexos IV - PEI (${meus.length} de ${todos.length} na escola).`}
+            </p>
+            <button class="btn btn-sm btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="alternarAnexosIVTodosProfessores()">
+                ${documentosAnexoIVTodosProfessores ? '👤 Ver só os meus' : '🏫 Ver os da escola'}
+            </button>
+        </div>`;
+
+    if (lista.length === 0) {
+        container.innerHTML = cabecalho + `
+            <div class="empty-state">
+                <p>Nenhum Anexo IV - PEI ${documentosAnexoIVTodosProfessores ? 'gerado na escola' : 'gerado por você'} ainda.</p>
+                <p style="font-size:12px; color:#666;">Gere pelo "✨ Estagiário" — o documento fica guardado no perfil do estudante e aparece aqui para consulta e reimpressão.</p>
+            </div>`;
+        return;
+    }
+
+    container.innerHTML = cabecalho + lista.map(item => {
+        const b = item.anexo.dadosBasicos || {};
+        const d = item.anexo.dados || {};
+        const corpo = campos
+            .filter(c => (d[c.key] || '').toString().trim())
+            .map(c => `
+                <div style="margin-bottom:10px;">
+                    <div style="font-size:12px; font-weight:bold; color:#2c5282;">${escapeHtmlEstagiario(nomesCurtos[c.key] || c.label)}</div>
+                    <div style="font-size:13px; color:#4a5568;">${textoParaHtmlEstagiario(d[c.key])}</div>
+                </div>`).join('') || '<p style="font-size:13px; color:#718096;">Sem texto preenchido neste Anexo IV.</p>';
+
+        return `
+            <div style="border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:10px;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
+                    <div>
+                        <div style="font-weight:bold; color:#2d3748;">📘 ${escapeHtmlEstagiario(item.nomeEstudante || 'Estudante')}${item.turma ? ` <span style="font-weight:normal; color:#718096;">(${escapeHtmlEstagiario(item.turma)})</span>` : ''}</div>
+                        <div style="font-size:13px; color:#718096;">${escapeHtmlEstagiario(b.disciplina || 'Sem disciplina')}${b.bimestre ? ` · ${escapeHtmlEstagiario(b.bimestre)}º bimestre` : ''}</div>
+                        <div style="font-size:12px; color:#a0aec0;">Professor: ${escapeHtmlEstagiario(b.professorRegente || '—')} · Atualizado em ${formatarDataDocumentos(item.anexo.atualizadoEm)}</div>
+                    </div>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                        <button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${item.tutoradoId}, ${item.anexo.id})">🖨️ Reimprimir</button>
+                    </div>
+                </div>
+                <details style="margin-top:8px;">
+                    <summary style="cursor:pointer; font-size:13px; color:#3182ce;">Ver conteúdo do PEI</summary>
+                    <div style="margin-top:10px; background:#f7fafc; border-radius:6px; padding:12px;">${corpo}</div>
+                </details>
+            </div>`;
+    }).join('');
+}
+
+function alternarAnexosIVTodosProfessores() {
+    documentosAnexoIVTodosProfessores = !documentosAnexoIVTodosProfessores;
+    renderDocumentosAnexosIV();
+}
+
+// --- ABA: HISTÓRICO ---
+// Tudo que o professor gerou pelo Estagiário, em ordem, sem separar por tipo: o registro de que o
+// documento existiu, quando saiu e sobre quem/o quê (ia_estagiario.js: histórico do professor).
+function renderDocumentosHistorico() {
+    const container = document.getElementById('tabDocHistorico');
+    if (!container) return;
+
+    const historico = (typeof lerHistoricoDocumentosProfessor === 'function') ? lerHistoricoDocumentosProfessor() : [];
+
+    if (historico.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <p>Nenhum documento gerado ainda.</p>
+                <p style="font-size:12px; color:#666;">Plano de Aula, Agenda Mensal, Anexo III - PAEE e Anexo IV - PEI ficam registrados aqui conforme você os gera pelo "✨ Estagiário".</p>
+            </div>`;
+        return;
+    }
+
+    const icones = { plano_aula: '📝', agenda_mensal: '📅', anexo3_paee: '📋', anexo4_pei: '📘' };
+    const nomesTipo = { plano_aula: 'Plano de Aula', agenda_mensal: 'Agenda Mensal', anexo3_paee: 'Anexo III - PAEE', anexo4_pei: 'Anexo IV - PEI' };
+
+    // Agrupa por mês pra o histórico continuar legível quando o ano avança.
+    const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    const porMes = {};
+    historico.forEach(h => {
+        const partes = String(h.criadoEm || '').split('-');
+        const chave = partes.length === 3 ? `${meses[parseInt(partes[1], 10) - 1] || partes[1]} de ${partes[0]}` : 'Sem data';
+        if (!porMes[chave]) porMes[chave] = [];
+        porMes[chave].push(h);
+    });
+
+    container.innerHTML = `
+        <p style="color:#718096; font-size:14px; margin-top:0;">${historico.length} documento(s) no seu histórico.</p>
+        ${Object.keys(porMes).map(mes => `
+            <h4 style="margin:15px 0 5px; color:#2c5282; border-bottom:1px solid #e2e8f0;">${escapeHtmlEstagiario(mes)}</h4>
+            ${porMes[mes].map(h => `
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; border-bottom:1px solid #edf2f7; padding:8px 0;">
+                    <div>
+                        <div style="color:#2d3748;">${icones[h.tipo] || '📄'} ${escapeHtmlEstagiario(h.titulo || nomesTipo[h.tipo] || 'Documento')}</div>
+                        ${h.subtitulo ? `<div style="font-size:13px; color:#718096;">${escapeHtmlEstagiario(h.subtitulo)}</div>` : ''}
+                        <div style="font-size:12px; color:#a0aec0;">${escapeHtmlEstagiario(nomesTipo[h.tipo] || h.tipo || '')} · ${formatarDataDocumentos(h.criadoEm)}</div>
+                    </div>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                        ${h.tipo === 'plano_aula' && h.payload ? `<button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirPlanoAulaHistoricoEstagiario('${escapeAttrEstagiario(h.id)}')">🖨️ Reimprimir</button>` : ''}
+                        ${h.tipo === 'anexo4_pei' && h.refTutoradoId && h.refAnexoId ? `<button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${h.refTutoradoId}, ${h.refAnexoId})">🖨️ Reimprimir</button>` : ''}
+                    </div>
+                </div>
+            `).join('')}
+        `).join('')}
+    `;
 }
 
 
@@ -7885,9 +8194,6 @@ async function renderGradeHorariaProfessor() {
     let html = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
             <p style="color:#718096; font-size:14px; margin:0;">Configure sua disponibilidade semanal.</p>
-            <div style="display:flex; gap:10px;">
-                <button class="btn btn-info" onclick="abrirModalGerarDocumentoIA()">✨ Estagiário</button>
-            </div>
         </div>
         <div class="grid" style="grid-template-columns: repeat(5, 1fr); gap: 15px; align-items: start;">
     `;
@@ -8495,9 +8801,18 @@ function encontrarTutoradoAeeEmQualquerContexto(tutoradoId) {
         const tLocal = data.tutorados.find(x => x.id == tutoradoId);
         if (tLocal) return tLocal;
     }
-    const container = document.getElementById('aeeVisaoGeral');
-    const tutorados = container ? JSON.parse(container.dataset.aeeTutorados || '[]') : [];
-    return tutorados.find(x => x.id == tutoradoId) || null;
+    // Painel AEE e aba "Anexo IV - PEI" (tela Documentos) guardam a lista da escola que carregaram -
+    // é por ela que o professor comum, que não mantém `data.tutorados`, reimprime um Anexo já salvo.
+    const containers = ['aeeVisaoGeral', 'tabDocAnexoIV'];
+    for (const id of containers) {
+        const container = document.getElementById(id);
+        if (!container || !container.dataset.aeeTutorados) continue;
+        try {
+            const achado = JSON.parse(container.dataset.aeeTutorados).find(x => x.id == tutoradoId);
+            if (achado) return achado;
+        } catch (e) { console.warn('[AEE] Lista de estudantes guardada em #' + id + ' ilegível:', e); }
+    }
+    return null;
 }
 
 // Reimprime um Anexo III-PAEE já salvo (sem rodar IA de novo) - delega o preenchimento do template

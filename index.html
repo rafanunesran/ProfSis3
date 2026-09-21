@@ -13,7 +13,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="SisProf">
     <link rel="apple-touch-icon" href="resources/app-icon.svg">
-    <script src="shared.js?v=3.17"></script>
+    <script src="shared.js?v=3.18"></script>
     <!-- Armazenamento local (IndexedDB): onde o dado pessoal do estudante passa a viver -->
     <script src="localdb.js?v=1.0"></script>
     <!-- Backup cifrado (WebCrypto): o Firestore so guarda bloco ilegivel -->
@@ -38,13 +38,13 @@
     <script src="core.js?v=3.39" defer></script>
     <script src="admin.js?v=3.35" defer></script>
     <script src="gestor.js?v=3.30" defer></script>
-    <script src="app.js?v=3.63" defer></script>
+    <script src="app.js?v=3.64" defer></script>
     <!-- Transicao para a versao local + aviso da data de corte -->
     <script src="migracao.js?v=1.4" defer></script>
 
     <!-- Central de Resgate: procura dados em todas as origens que sobraram (ver resgate.js). -->
     <script src="resgate.js?v=1.4" defer></script>
-    <script src="ia_estagiario.js?v=3.44" defer></script>
+    <script src="ia_estagiario.js?v=3.45" defer></script>
     <script src="biblioteca.js?v=1.3" defer></script>
     <!-- Calendário escolar + sincronização com o Google Agenda -->
     <script src="feriados.js?v=1.0" defer></script>
@@ -138,14 +138,27 @@
                 </div>
             </div>
 
-            <div id="agenda" class="screen">
+            <!-- DOCUMENTOS (antiga tela "Agenda") - grade de horários, planos de aula, Anexos IV e o
+                 histórico do professor, tudo em abas. O botão "✨ Estagiário" fica no cabeçalho da
+                 tela, fora das abas, pra continuar à mão em qualquer uma delas. -->
+            <div id="documentos" class="screen">
                 <div class="card">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <h2 style="margin: 0;">📅 Grade de Horários</h2>
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
+                        <h2 style="margin: 0;">📁 Documentos</h2>
+                        <button class="btn btn-info" onclick="abrirModalGerarDocumentoIA()">✨ Estagiário</button>
                     </div>
 
-                    <div id="gcalCard"></div>
-                    <div id="containerGradeHoraria"></div>
+                    <nav id="navDocumentos" style="margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">
+                        <!-- Abas injetadas via JS (app.js: renderDocumentos) -->
+                    </nav>
+
+                    <div id="tabDocAgenda" class="documentos-tab">
+                        <div id="gcalCard"></div>
+                        <div id="containerGradeHoraria"></div>
+                    </div>
+                    <div id="tabDocPlanos" class="documentos-tab" style="display:none;"></div>
+                    <div id="tabDocAnexoIV" class="documentos-tab" style="display:none;"></div>
+                    <div id="tabDocHistorico" class="documentos-tab" style="display:none;"></div>
                 </div>
             </div>
 

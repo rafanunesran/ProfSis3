@@ -159,7 +159,7 @@ function getInitialData() {
         compensacoes: [], tutorados: [], encontros: [], eventos: [],
         ocorrencias: [], gradeHoraria: [], agendamentos: [], registrosAula: [],
         registrosAdministrativos: [], mapeamentos: [],
-        caderno: []
+        caderno: [], historicoDocumentos: []
     };
 }
 // ============================================================================
@@ -185,7 +185,8 @@ const CAMPOS_PESSOAIS = [
     'ocorrencias',             // relato + ids_estudantes
     'registrosAdministrativos',// atestados, busca ativa
     'caderno', 'baixaFrequencia',
-    'notasAvaliacoesGestor', 'notasBimestraisOficiais', 'lotesMapaoGestor'
+    'notasAvaliacoesGestor', 'notasBimestraisOficiais', 'lotesMapaoGestor',
+    'historicoDocumentos'      // histórico do Estagiário: planos de aula e os Anexos III/IV gerados
 ];
 
 // Não identifica estudante. Continua na nuvem, como sempre esteve.
@@ -293,7 +294,8 @@ function descreverPerda(antes, depois) {
         estudantes: 'estudantes', tutorados: 'tutorados', encontros: 'encontros de tutoria',
         atrasos: 'atrasos', trabalhos: 'trabalhos', compensacoes: 'compensações',
         registrosAula: 'registros de aula', registrosAdministrativos: 'registros administrativos',
-        caderno: 'anotações do caderno', mapeamentos: 'mapas de sala'
+        caderno: 'anotações do caderno', mapeamentos: 'mapas de sala',
+        historicoDocumentos: 'documentos do histórico'
     };
     const partes = [];
     Object.keys((antes && antes.por) || {}).forEach(chave => {

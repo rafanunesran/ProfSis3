@@ -363,15 +363,84 @@ Atualize a lista de preferências DURÁVEIS de estilo/formato deste professor (e
     }
 }
 
-// --- HISTÓRICO LOCAL DOS PLANOS DE AULA (base do "Puxar anterior") ---
-// O Plano de Aula não fica guardado em lugar nenhum hoje (na exportação ele só vira rascunho de
-// registro de aula), então os últimos planos impressos ficam aqui pra o professor poder reaproveitar
-// o texto do plano anterior em vez de redigir tudo de novo - principalmente no modo manual, sem IA.
-// Mora no próprio aparelho (localStorage), igual às preferências aprendidas acima.
+// --- HISTÓRICO DE DOCUMENTOS DO PROFESSOR ---
+// Tudo que o Estagiário imprime (Plano de Aula, Agenda Mensal, Anexo III - PAEE e Anexo IV - PEI)
+// deixa um registro aqui. É o que a tela "Documentos" (app.js: renderDocumentos) mostra nas abas
+// "Planos de Aula", "Anexo IV - PEI" e "Histórico" - antes disso, o documento saía pela impressora e
+// não sobrava nada no sistema.
+//
+// Mora em `data.historicoDocumentos`, que é campo PESSOAL (shared.js: CAMPOS_PESSOAIS): não sobe em
+// claro pra nuvem, mas acompanha o professor de um aparelho pro outro pela camada pessoal cifrada.
+// Dos Anexos III/IV guarda só a ficha de identificação (quem, qual disciplina, qual bimestre) e o
+// ponteiro pro documento no Painel AEE da escola - o texto continua com dono único lá, pra não haver
+// duas cópias do mesmo Anexo divergindo com o tempo.
+//
+// O histórico inteiro é gravado junto com o resto dos dados do professor, então não pode crescer sem
+// limite: guarda a ficha (o que foi gerado, quando e sobre quem) dos últimos MAX_HISTORICO documentos
+// e o TEXTO completo só dos MAX_PLANOS_COM_TEXTO planos de aula mais recentes - que é o que permite
+// reimprimir sem refazer nada. Passou disso, o texto do plano antigo sai e a ficha dele fica.
+const MAX_HISTORICO_DOCUMENTOS_PROFESSOR = 300;
+const MAX_PLANOS_COM_TEXTO_HISTORICO_PROFESSOR = 40;
+
+function podarHistoricoDocumentosProfessor(historico) {
+    const cortado = historico.slice(0, MAX_HISTORICO_DOCUMENTOS_PROFESSOR);
+    let comTexto = 0;
+    cortado.forEach(h => {
+        if (!h || h.tipo !== 'plano_aula' || !h.payload) return;
+        comTexto++;
+        if (comTexto > MAX_PLANOS_COM_TEXTO_HISTORICO_PROFESSOR) {
+            delete h.payload;
+            h.textoArquivado = true;
+        }
+    });
+    return cortado;
+}
+
+function lerHistoricoDocumentosProfessor() {
+    if (typeof data === 'undefined' || !data) return [];
+    return Array.isArray(data.historicoDocumentos) ? data.historicoDocumentos : [];
+}
+
+// Guarda mais um documento no topo do histórico (mais recente primeiro) e corta o excedente.
+// Nunca interrompe a impressão: qualquer falha (dados ainda não carregados, cota cheia) vira só
+// aviso no console. Devolve o registro criado (ou null) pra quem precisar do id.
+function registrarDocumentoNoHistoricoProfessor(entrada) {
+    try {
+        if (typeof data === 'undefined' || !data) return null;
+        if (!Array.isArray(data.historicoDocumentos)) data.historicoDocumentos = [];
+
+        const registro = Object.assign({
+            id: 'doc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+            ts: Date.now(),
+            criadoEm: getTodayString(),
+            professor: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.nome : ''
+        }, entrada || {});
+
+        data.historicoDocumentos.unshift(registro);
+        data.historicoDocumentos = podarHistoricoDocumentosProfessor(data.historicoDocumentos);
+        if (typeof persistirDados === 'function') persistirDados();
+        return registro;
+    } catch (e) {
+        console.warn('[Estagiário] Não foi possível guardar o documento no histórico:', e);
+        return null;
+    }
+}
+
+// Tira um registro do histórico do professor. Não mexe no documento em si: apagar o registro de um
+// Anexo IV aqui não apaga o Anexo IV do Painel AEE da escola (isso é app.js: excluirAnexoIVSalvo).
+async function excluirDocumentoHistoricoProfessor(id) {
+    if (typeof data === 'undefined' || !data || !Array.isArray(data.historicoDocumentos)) return;
+    data.historicoDocumentos = data.historicoDocumentos.filter(h => String(h.id) !== String(id));
+    if (typeof persistirDados === 'function') await persistirDados();
+}
+
+// --- PLANOS DE AULA ---
+// O espelho no próprio aparelho (localStorage) é mais antigo que o histórico acima e continua aqui:
+// é ele que sustenta o "📥 Puxar anterior" mesmo quando os dados da conta ainda não carregaram.
 const CHAVE_HISTORICO_PLANO_AULA_ESTAGIARIO = 'estagiario_planos_aula_recentes';
 const MAX_HISTORICO_PLANO_AULA_ESTAGIARIO = 30;
 
-function lerHistoricoPlanoAulaEstagiario() {
+function lerHistoricoPlanoAulaLocalEstagiario() {
     try {
         const lista = JSON.parse(localStorage.getItem(CHAVE_HISTORICO_PLANO_AULA_ESTAGIARIO) || '[]');
         return Array.isArray(lista) ? lista : [];
@@ -381,26 +450,135 @@ function lerHistoricoPlanoAulaEstagiario() {
     }
 }
 
-// Guarda o plano recém-impresso no topo da lista (mais recente primeiro) e corta o excedente. Nunca
+// Momento em que o plano foi impresso. Registros antigos não têm `ts`, só a data (AAAA-MM-DD) - aí
+// vale o meio-dia daquele dia, que basta pra ordenar.
+function momentoPlanoAulaEstagiario(h) {
+    if (h && h.ts) return h.ts;
+    const dia = h && (h.salvoEm || h.criadoEm);
+    return dia ? (Date.parse(dia + 'T12:00:00') || 0) : 0;
+}
+
+// Lista única dos planos já impressos, do mais recente pro mais antigo, juntando o histórico da conta
+// (que atravessa aparelhos) com o espelho local (que tem os planos antigos, de antes do histórico).
+// O mesmo plano aparece nos dois lugares: sai uma vez só, pelo id (ou, nos registros antigos que não
+// têm id, pela identificação do plano + dia).
+function lerHistoricoPlanoAulaEstagiario() {
+    const daConta = lerHistoricoDocumentosProfessor()
+        .filter(h => h && h.tipo === 'plano_aula')
+        .map(h => ({
+            id: h.id,
+            ts: momentoPlanoAulaEstagiario(h),
+            serie: h.serie || '',
+            disciplina: h.disciplina || '',
+            tema: h.tema || '',
+            semana: h.semana || '',
+            salvoEm: h.criadoEm || '',
+            dados: (h.payload && h.payload.dados) || h.dados || {},
+            payload: h.payload || null
+        }));
+
+    const doAparelho = lerHistoricoPlanoAulaLocalEstagiario().map(h => ({
+        id: h.id,
+        ts: momentoPlanoAulaEstagiario(h),
+        serie: h.serie || '',
+        disciplina: h.disciplina || '',
+        tema: h.tema || '',
+        semana: h.semana || '',
+        salvoEm: h.salvoEm || '',
+        dados: h.dados || {},
+        payload: h.payload || null
+    }));
+
+    const vistos = new Set();
+    return daConta.concat(doAparelho)
+        .filter(h => {
+            const chave = h.id || [h.disciplina, h.serie, h.tema, h.semana, h.salvoEm].join('|');
+            if (vistos.has(chave)) return false;
+            vistos.add(chave);
+            return true;
+        })
+        .sort((a, b) => b.ts - a.ts);
+}
+
+// Guarda o plano recém-impresso nos dois lugares (histórico da conta + espelho no aparelho). Nunca
 // interrompe a impressão: qualquer falha (cota do localStorage, por exemplo) só vira aviso no console.
 function registrarPlanoAulaNoHistoricoEstagiario(payload) {
+    const dados = (payload && payload.dados) || {};
+    // Plano em branco não serve de base pra nada - não ocupa espaço no histórico.
+    if (!PLANO_AULA_CAMPOS_IA.some(c => (dados[c.key] || '').toString().trim())) return;
+
+    const identificacao = {
+        serie: payload.serie || '',
+        disciplina: payload.disciplina || '',
+        tema: payload.tema || '',
+        semana: payload.semana || ''
+    };
+
+    // O payload inteiro vai junto: é o que permite reimprimir o plano depois, exatamente como saiu,
+    // sem rodar a IA de novo (reimprimirPlanoAulaHistoricoEstagiario).
+    const registro = registrarDocumentoNoHistoricoProfessor(Object.assign({
+        tipo: 'plano_aula',
+        titulo: `Plano de Aula - ${identificacao.disciplina || 'sem disciplina'}${identificacao.serie ? ' (' + identificacao.serie + ')' : ''}`,
+        subtitulo: [identificacao.tema, identificacao.semana ? `semana ${identificacao.semana}` : ''].filter(Boolean).join(' · '),
+        payload: Object.assign({}, payload)
+    }, identificacao));
+
     try {
-        const dados = (payload && payload.dados) || {};
-        // Plano em branco não serve de base pra nada - não ocupa espaço no histórico.
-        if (!PLANO_AULA_CAMPOS_IA.some(c => (dados[c.key] || '').toString().trim())) return;
-        const historico = lerHistoricoPlanoAulaEstagiario();
-        historico.unshift({
-            serie: payload.serie || '',
-            disciplina: payload.disciplina || '',
-            tema: payload.tema || '',
-            semana: payload.semana || '',
+        const historico = lerHistoricoPlanoAulaLocalEstagiario();
+        historico.unshift(Object.assign({
+            id: registro ? registro.id : undefined,
+            ts: Date.now(),
             salvoEm: getTodayString(),
-            dados
-        });
+            dados,
+            payload: Object.assign({}, payload)
+        }, identificacao));
         localStorage.setItem(CHAVE_HISTORICO_PLANO_AULA_ESTAGIARIO, JSON.stringify(historico.slice(0, MAX_HISTORICO_PLANO_AULA_ESTAGIARIO)));
     } catch (e) {
         console.warn('[Estagiário] Não foi possível guardar o plano no histórico local:', e);
     }
+}
+
+// Reimprime um Plano de Aula já gerado, a partir do que ficou guardado no histórico - sem IA e sem
+// refazer o formulário. Chamada pela aba "Planos de Aula" da tela Documentos (app.js).
+// Registros antigos (anteriores ao histórico) não guardaram o payload inteiro: nesse caso o
+// documento é remontado com o que existe, e os campos que nunca foram guardados saem em branco.
+async function reimprimirPlanoAulaHistoricoEstagiario(id) {
+    const plano = lerHistoricoPlanoAulaEstagiario().find(h => String(h.id) === String(id));
+    if (!plano) return alert('Plano de aula não encontrado no histórico.');
+
+    const payload = Object.assign({
+        tipo: 'plano_aula',
+        serie: plano.serie,
+        disciplina: plano.disciplina,
+        tema: plano.tema,
+        semana: plano.semana,
+        dados: plano.dados
+    }, plano.payload || {});
+    if (!payload.professor) payload.professor = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.nome : '';
+
+    try {
+        imprimirDocumentoEstagiario(await montarHtmlPlanoAula(payload));
+    } catch (e) {
+        console.error(e);
+        alert('Erro ao reimprimir o plano de aula: ' + e.message);
+    }
+}
+
+// Apaga um plano do histórico (dos dois lugares onde ele fica). O documento que o professor já
+// imprimiu ou salvou em PDF não é afetado - aqui só sai o registro guardado no sistema.
+async function excluirPlanoAulaHistoricoEstagiario(id) {
+    if (!confirm('Tirar este plano de aula do histórico? Essa ação não pode ser desfeita.')) return;
+
+    await excluirDocumentoHistoricoProfessor(id);
+    try {
+        const historico = lerHistoricoPlanoAulaLocalEstagiario().filter(h => String(h.id) !== String(id));
+        localStorage.setItem(CHAVE_HISTORICO_PLANO_AULA_ESTAGIARIO, JSON.stringify(historico));
+    } catch (e) {
+        console.warn('[Estagiário] Não foi possível atualizar o histórico local de planos:', e);
+    }
+
+    if (typeof renderDocumentosPlanos === 'function') renderDocumentosPlanos();
+    if (typeof renderDocumentosHistorico === 'function' && document.getElementById('tabDocHistorico')) renderDocumentosHistorico();
 }
 
 // Plano anterior mais próximo do que está sendo feito agora: primeiro o da mesma série + disciplina,
@@ -1215,6 +1393,15 @@ async function gerarAgendaMensalEstagiario() {
         win.document.write(doc.documentElement.outerHTML);
         win.document.close();
         setTimeout(() => { win.print(); }, 500);
+
+        // A Agenda Mensal é montada na hora, a partir da grade e dos registros do mês - por isso o
+        // histórico guarda só o fato de ter sido gerada (mês/ano); gerar de novo devolve a versão
+        // atualizada, que é o que o professor quer.
+        registrarDocumentoNoHistoricoProfessor({
+            tipo: 'agenda_mensal',
+            titulo: `Agenda Mensal - ${mesesNomeEstagiario[mes] || (mes + 1)}/${ano}`,
+            subtitulo: 'Gerada a partir da grade de horários do mês'
+        });
 
         closeModal('modalGerarDocumentoIA');
     } catch (e) {
@@ -2665,6 +2852,14 @@ async function exportarAnexoPaeeFinal() {
                 if (typeof atualizarFichaAeeReadOnlyAposSalvar === 'function') {
                     atualizarFichaAeeReadOnlyAposSalvar(alunoId, anexoPaeeSalvo);
                 }
+                // Mesmo rastro do Anexo IV: identificação + ponteiro pro documento no Painel AEE.
+                registrarDocumentoNoHistoricoProfessor({
+                    tipo: 'anexo3_paee',
+                    titulo: `Anexo III - PAEE - ${dadosBasicos.nomeEstudante || 'estudante'}`,
+                    subtitulo: dadosBasicos.escolaridade || '',
+                    nomeEstudante: dadosBasicos.nomeEstudante || '',
+                    refTutoradoId: alunoId
+                });
                 if (pularImpressao) alert('Anexo III - PAEE salvo no perfil do estudante!');
             } catch (eSalvar) {
                 console.error(eSalvar);
@@ -2813,6 +3008,19 @@ async function exportarAnexoIVFinal() {
                 if (typeof atualizarFichaAeeReadOnlyAposSalvarAnexoIV === 'function') {
                     atualizarFichaAeeReadOnlyAposSalvarAnexoIV(alunoId, anexoIVSalvo);
                 }
+                // Deixa o rastro no histórico do professor (tela Documentos). Só a identificação e o
+                // ponteiro: o texto do PEI continua com dono único no Painel AEE da escola, que é de
+                // onde a aba "Anexo IV - PEI" lê pra consultar e reimprimir.
+                registrarDocumentoNoHistoricoProfessor({
+                    tipo: 'anexo4_pei',
+                    titulo: `Anexo IV - PEI - ${dadosBasicos.nomeEstudante || 'estudante'}`,
+                    subtitulo: [dadosBasicos.disciplina, dadosBasicos.bimestre ? `${dadosBasicos.bimestre}º bimestre` : ''].filter(Boolean).join(' · '),
+                    disciplina: dadosBasicos.disciplina || '',
+                    bimestre: dadosBasicos.bimestre || '',
+                    nomeEstudante: dadosBasicos.nomeEstudante || '',
+                    refTutoradoId: alunoId,
+                    refAnexoId: anexoIVSalvo.id
+                });
             } catch (eSalvar) {
                 console.error(eSalvar);
                 alert('O documento foi impresso, mas houve um erro ao salvar no perfil do estudante:\n' + eSalvar.message);
