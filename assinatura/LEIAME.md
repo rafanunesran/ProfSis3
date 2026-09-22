@@ -72,11 +72,16 @@ por assinatura, por mês.
    | `MP_PLANO_APOIASE_ID` | opcional: id do plano de R$ 10 |
    | `MP_PLANO_PROFESSOR_ID` | opcional: id do plano de R$ 20 |
    | `ORIGENS_PERMITIDAS` | opcional: origens que podem chamar o cancelamento, separadas por vírgula (o padrão já inclui `https://rafanunesran.github.io`) |
+   | `MP_PACOTES_PIX` | pacotes de apoio no Pix: `apoiase:3:30,professor:3:60,professor:12:240` (plano:meses:valor) |
+   | `CRON_SECRET` | segredo da varredura diária. **O nome importa**: só com ele exatamente assim a Vercel manda o cabeçalho de autorização no cron |
+   | `DIAS_TOLERANCIA` | opcional: carência usada pela varredura (o painel guarda a que a tela usa) |
 
    Marque os três ambientes (Production, Preview, Development).
-5. **Deploy**. Dois endereços nascem daqui:
+5. **Deploy**. Três endereços nascem daqui:
    - `https://<seu-projeto>.vercel.app/api/webhook` — o webhook do Mercado Pago
    - `https://<seu-projeto>.vercel.app/api/cancelar` — o cancelamento pedido pelo professor
+   - `https://<seu-projeto>.vercel.app/api/reconciliar` — a varredura diária (roda pelo
+     Cron configurado no `vercel.json`, todo dia às 9h UTC; não fica aberta na internet)
 6. Abra esse endereço no navegador. Ele responde
    *"SisProf - webhook de assinatura no ar."* — se responder 404, a Root Directory
    não ficou em `assinatura`.
@@ -169,11 +174,68 @@ cobrança foi encerrada e escolhendo entre **continuar no gratuito**, **Apoia-se
 | Cancelou, por conta própria ou pelo Mercado Pago (`cancelada`) | não | não |
 | Cortesia concedida pelo super admin | sim | conforme o plano concedido |
 | Campo `contribuidor` no perfil, sem pagamento | **não** | **não** |
+| Pix aprovado, dentro da validade | sim | conforme o pacote |
+| Pix ou cartão vencido além da carência | **não** | **não** |
+| Vencido, mas ainda dentro da carência | sim (com aviso na tela) | sim (com aviso) |
 
 A última linha é a que mudou. Existe uma única fonte: `assinaturas/<uid>`, escrito só
 pelo webhook (conta de serviço) e pelo super admin. A vitrine "Obrigado a quem é
 parça" veio junto: agora mora em `contribuintes/<uid>`, mesma proteção, guardando só
 nome abreviado e escola — nem plano, nem valor, nem e-mail.
+
+## O corte por atraso (a parte que não depende de aviso)
+
+O corte por cartão recusado já vinha do webhook. Mas ele depende de o Mercado Pago
+**avisar** — e existe um caso que aviso nenhum cobre: a notificação que se perde.
+Webhook fora do ar por umas horas, deploy no meio do caminho, evento não reenviado, e
+o documento fica `ativa` para sempre. A pessoa segue com premium e selo sem pagar, e
+ninguém descobre, porque não existe evento para descobrir.
+
+Por isso o acesso tem **prazo**, e o prazo é conferido em três lugares independentes:
+
+1. **Na tela**, a cada abertura: compara `proximaCobranca` (cartão) ou `validoAte`
+   (Pix) com hoje. Vencido além da carência → plano gratuito na hora, premium
+   bloqueado, selo removido, tarja de apoio de volta. Não depende de banco nem de
+   webhook.
+2. **No webhook**, quando o Mercado Pago avisa (cartão recusado, cancelamento).
+3. **Na varredura diária** (`/api/reconciliar`), que conserta o banco: derruba quem
+   venceu e — importante — **devolve o acesso de quem pagou e cujo aviso se perdeu**,
+   perguntando ao Mercado Pago como a assinatura está de verdade.
+
+A **carência** fica em Painel Super Admin → 💳 Assinaturas → *Dias de carência*
+(padrão 5). Ela existe porque a cobrança recorrente não cai no minuto exato: o Mercado
+Pago tenta de novo por alguns dias, e cortar no primeiro segundo de atraso seria
+cortar por causa da fila do banco, não por falta de pagamento. Dentro da carência a
+tela **avisa** ("seu acesso continua por 3 dia(s)") em vez de cortar — quem esqueceu
+merece o aviso, não a surpresa.
+
+## Pix: apoio sem cartão
+
+O Mercado Pago **não faz cobrança recorrente no Pix** — recorrência automática lá é
+cartão, e não há como mudar isso do nosso lado. Então o Pix entra por outro caminho:
+**pacote de meses**. O professor paga uma vez, o apoio vale pelo período e vence
+sozinho. Nada fica sendo cobrado sem autorização, e não há o que cancelar.
+
+Como montar:
+
+1. No Mercado Pago, crie um **link de pagamento** para cada pacote (ex.: R$ 60,00 para
+   3 meses de Professor). O link aceita Pix.
+2. **Painel Super Admin → 💳 Assinaturas → Pacotes de apoio no Pix**, um por linha:
+   `professor;3;60;https://mpago.la/xxxx`
+3. **Cadastre os mesmos pacotes na variável `MP_PACOTES_PIX`** do serviço, no formato
+   `plano:meses:valor`. Isto não é redundância: o link de pagamento do Mercado Pago nem
+   sempre devolve a referência de quem pagou, e é pelo **valor recebido** que o servidor
+   reconhece qual pacote foi. Se os dois lugares discordarem, o professor paga e o
+   sistema não credita.
+
+Regras que o servidor aplica:
+
+- só `status: approved` credita — Pix pendente não libera nada;
+- pagamento fora dos pacotes cadastrados **não vira plano por acidente** (a conta pode
+  receber outras coisas);
+- o mesmo Pix avisado duas vezes não credita o dobro (o id do pagamento é a defesa);
+- renovar **antes** de vencer soma a partir da data que a pessoa já tinha — ninguém
+  perde os dias que faltavam por pagar adiantado.
 
 ## Como o cancelamento funciona
 

@@ -102,6 +102,149 @@ export function assinaturaVale(status) {
 }
 
 // ----------------------------------------------------------------------------
+// Vencimento: o corte que NAO depende de aviso
+// ----------------------------------------------------------------------------
+// O corte por cartao recusado ja' funcionava, mas so' quando o Mercado Pago avisava.
+// E ha' um caso silencioso que essa logica nao pega: a notificacao que se perde.
+// Webhook fora do ar por umas horas, deploy no meio do caminho, evento que o Mercado
+// Pago nao reenviou — e o documento fica `ativa` para sempre. A pessoa segue com o
+// premium e o selo sem pagar, e ninguem descobre, porque nao existe evento nenhum
+// para descobrir.
+//
+// Entao o acesso passa a ter PRAZO. A data ja' esta' gravada (`proximaCobranca`, que
+// o Mercado Pago manda, ou `validoAte`, no caso do Pix), e o aplicativo compara com
+// o dia de hoje. Silencio deixa de ser "tudo certo" e passa a ser vencimento.
+
+// Quantos dias depois do vencimento o acesso ainda vale. Existe porque a cobranca
+// recorrente nao cai no minuto exato: o Mercado Pago tenta de novo por alguns dias,
+// e cortar o professor no primeiro segundo de atraso seria cortar por causa da fila
+// do banco, nao por falta de pagamento.
+export const DIAS_TOLERANCIA_PADRAO = 5;
+
+export function diasDeTolerancia(config) {
+    const n = Number((config || {}).diasTolerancia);
+    if (!isFinite(n) || n < 0) return DIAS_TOLERANCIA_PADRAO;
+    return Math.min(n, 60); // teto de sanidade: 60 dias de graca nao e' tolerancia
+}
+
+// Quando este acesso vence, em ms. Zero = nao vence por data (cortesia sem prazo).
+export function venceEmMs(doc) {
+    if (!doc) return 0;
+    const bruto = doc.validoAte || doc.proximaCobranca || '';
+    const ms = Date.parse(bruto);
+    return isFinite(ms) ? ms : 0;
+}
+
+export function assinaturaVencida(doc, config, agoraMs) {
+    const vence = venceEmMs(doc);
+    if (!vence) return false;
+    const agora = agoraMs || Date.now();
+    return agora > vence + diasDeTolerancia(config) * 86400000;
+}
+
+// Esta' em atraso, mas ainda dentro da carencia? Serve para a tela avisar ANTES de
+// cortar — quem esta' esquecido do Pix ou com cartao a vencer merece o aviso, nao a
+// surpresa.
+export function assinaturaEmAtraso(doc, config, agoraMs) {
+    const vence = venceEmMs(doc);
+    if (!vence) return false;
+    const agora = agoraMs || Date.now();
+    return agora > vence && !assinaturaVencida(doc, config, agoraMs);
+}
+
+// A PALAVRA FINAL sobre o plano de uma conta. Tudo (servidor, tela, portao premium)
+// passa por aqui: status ativo E dentro do prazo.
+export function planoValido(doc, config, agoraMs) {
+    if (!doc || doc.status !== 'ativa') return 'free';
+    if (assinaturaVencida(doc, config, agoraMs)) return 'free';
+    if (PLANOS[doc.plano]) return doc.plano;
+    if (doc.planoContratado && PLANOS[doc.planoContratado]) return doc.planoContratado;
+    return 'free';
+}
+
+// ----------------------------------------------------------------------------
+// Pix: apoio pago em pacote de meses
+// ----------------------------------------------------------------------------
+// O Mercado Pago NAO faz assinatura recorrente no Pix — recorrencia automatica lá e'
+// cartao. Como muito professor nao tem (ou nao quer usar) cartao, o Pix entra como
+// pagamento avulso que CREDITA MESES: R$ 60 no Pix = 3 meses de Professor, e o acesso
+// vence sozinho no fim do periodo, pela regra de vencimento acima. Nada para
+// cancelar, nada para cobrar de novo sem autorizacao.
+
+// De um pagamento aprovado para "qual plano, quantos meses".
+// Duas formas de descobrir, nesta ordem:
+//   1. `external_reference` no formato "<uid>|<plano>|<meses>", que o aplicativo
+//      gruda no link quando consegue;
+//   2. o VALOR pago, comparado com os pacotes cadastrados no painel. Este e' o
+//      caminho que sempre funciona: link de pagamento do Mercado Pago nem sempre
+//      repassa a referencia, mas o valor recebido e' sempre exato.
+export function lerReferenciaPix(referencia) {
+    const partes = String(referencia || '').split('|');
+    if (partes.length < 3) return null;
+    const plano = String(partes[1] || '').trim().toLowerCase();
+    const meses = Math.round(Number(partes[2]));
+    if (!PLANOS[plano] || !isFinite(meses) || meses < 1 || meses > 24) return null;
+    return { uid: String(partes[0] || '').trim(), plano: plano, meses: meses };
+}
+
+// Acha o pacote cadastrado que corresponde ao valor pago. A tolerancia de centavos
+// existe porque taxa, arredondamento e promocao mexem no ultimo digito, e recusar um
+// pagamento de R$ 59,99 por causa de um centavo seria absurdo.
+export function pacotePorValor(valorPago, pacotes) {
+    const valor = Number(valorPago);
+    if (!isFinite(valor) || valor <= 0) return null;
+    let melhor = null;
+    let menorDiferenca = Infinity;
+    for (const pacote of (pacotes || [])) {
+        const alvo = Number(pacote && pacote.valor);
+        const meses = Math.round(Number(pacote && pacote.meses));
+        if (!isFinite(alvo) || alvo <= 0 || !isFinite(meses) || meses < 1) continue;
+        if (!PLANOS[pacote && pacote.plano]) continue;
+
+        const diferenca = Math.abs(valor - alvo);
+        if (diferenca > 0.05) continue;
+        if (diferenca < menorDiferenca) {
+            menorDiferenca = diferenca;
+            melhor = { uid: '', plano: pacote.plano, meses: meses };
+        }
+    }
+    return melhor;
+}
+
+// Soma meses ao acesso. Quem paga antes de vencer NAO perde o que falta: os meses
+// novos entram a partir da data que ele ja' tinha.
+export function somarMeses(validoAteAtual, meses, agoraMs) {
+    const agora = agoraMs || Date.now();
+    const atual = Date.parse(validoAteAtual || '');
+    const base = new Date(isFinite(atual) && atual > agora ? atual : agora);
+    const fim = new Date(base.getTime());
+    fim.setMonth(fim.getMonth() + Math.round(Number(meses) || 0));
+    return fim.toISOString();
+}
+
+// O documento de um apoio pago no Pix.
+export function montarApoioPix(pagamento, credito, docAtual, agoraMs) {
+    const validoAte = somarMeses(docAtual && docAtual.validoAte, credito.meses, agoraMs);
+    return {
+        plano: credito.plano,
+        planoContratado: credito.plano,
+        status: 'ativa',
+        valor: Number((pagamento && pagamento.transaction_amount) || 0),
+        meses: credito.meses,
+        validoAte: validoAte,
+        legado: false,
+        email: String(((pagamento && pagamento.payer && pagamento.payer.email) || '')).toLowerCase(),
+        // Pix nao tem assinatura para cancelar: nao inventamos um preapprovalId.
+        preapprovalId: (docAtual && docAtual.preapprovalId) || '',
+        ultimoPagamento: (pagamento && pagamento.date_approved) || new Date(agoraMs || Date.now()).toISOString(),
+        ultimoPagamentoId: String((pagamento && pagamento.id) || ''),
+        origem: 'pix',
+        versaoMs: (agoraMs || Date.now()),
+        atualizadoEm: new Date(agoraMs || Date.now()).toISOString()
+    };
+}
+
+// ----------------------------------------------------------------------------
 // Quem e' a pessoa
 // ----------------------------------------------------------------------------
 
@@ -212,6 +355,12 @@ export function interpretarNotificacao(corpo) {
     }
     if (tipo === 'subscription_authorized_payment' || tipo === 'authorized_payment') {
         return { acao: 'buscar-cobranca', id: id };
+    }
+    // Pagamento avulso: era ignorado, e agora e' o caminho do Pix. Continua sendo
+    // ignorado se, ao buscar, nao corresponder a nenhum pacote de apoio — a conta do
+    // Mercado Pago pode receber outras coisas, e nada disso vira plano por acidente.
+    if (tipo === 'payment') {
+        return { acao: 'buscar-pagamento', id: id };
     }
     return { acao: 'ignorar', motivo: 'tipo fora do escopo de assinatura: ' + (tipo || '(vazio)') };
 }

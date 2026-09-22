@@ -189,6 +189,28 @@ export async function gravarDoc(projeto, caminho, dados, contaServico) {
     return true;
 }
 
+// Lista os documentos de uma colecao, pagina por pagina. Usado pela varredura
+// diaria: sem listar, nao ha' como descobrir a assinatura cujo aviso se perdeu —
+// ela nao gera evento nenhum, e' justamente esse o problema dela.
+export async function listarDocs(projeto, colecao, contaServico, paginaToken) {
+    const token = await pegarToken(contaServico);
+    const parametros = new URLSearchParams({ pageSize: '300' });
+    if (paginaToken) parametros.set('pageToken', paginaToken);
+
+    const resposta = await fetch(enderecoDoc(projeto, colecao) + '?' + parametros.toString(), {
+        headers: { authorization: 'Bearer ' + token }
+    });
+    if (!resposta.ok) {
+        throw new Error('Falha ao listar ' + colecao + ': ' + resposta.status +
+                        ' ' + (await resposta.text()).slice(0, 300));
+    }
+    const dados = await resposta.json();
+    const documentos = (dados.documents || []).map(d => Object.assign(
+        { _id: String(d.name || '').split('/').pop() },
+        camposParaObjeto(d.fields || {})));
+    return { documentos: documentos, proximaPagina: dados.nextPageToken || '' };
+}
+
 // Apaga um documento. Usado quando a assinatura deixa de valer: o nome sai da
 // lista publica de contribuintes na hora, sem esperar ninguem passar limpando.
 export async function apagarDoc(projeto, caminho, contaServico) {

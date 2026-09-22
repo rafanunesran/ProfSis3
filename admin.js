@@ -599,6 +599,39 @@ async function abrirModalAssinaturasAdmin() {
                     Sem isto, o botão "Cancelar assinatura" manda o professor cancelar na mão,
                     no painel do Mercado Pago. Com isto, ele cancela pelo próprio sistema.
                 </p>
+                <div style="margin-top:16px; border-top:1px dashed #e2e8f0; padding-top:14px;">
+                    <label style="display:block; font-size:13px;">⏰ Dias de carência após o vencimento
+                        <input type="number" id="diasToleranciaAssinatura" min="0" max="60" step="1"
+                               style="width:90px; padding:8px;" value="${Number(links.diasTolerancia) >= 0 ? Number(links.diasTolerancia) : 5}">
+                    </label>
+                    <p style="font-size:11px; color:#718096; margin:4px 0 0 0;">
+                        Passado o vencimento + esta carência, o acesso premium e o selo de apoiador
+                        <strong>caem automaticamente</strong> — sem depender de o Mercado Pago avisar.
+                        A carência existe porque a cobrança recorrente não cai no minuto exato: o Mercado
+                        Pago tenta de novo por alguns dias. Padrão: 5 dias.
+                    </p>
+                </div>
+
+                <div style="margin-top:16px; border-top:1px dashed #e2e8f0; padding-top:14px;">
+                    <div style="font-size:13px; font-weight:bold;">📱 Pacotes de apoio no Pix</div>
+                    <p style="font-size:11px; color:#718096; margin:4px 0 8px 0;">
+                        O Mercado Pago <strong>não faz cobrança recorrente no Pix</strong> — recorrência
+                        automática lá é cartão. Então o Pix entra como pacote: o professor paga uma vez,
+                        o apoio vale pelos meses escolhidos e vence sozinho. Um por linha, no formato
+                        <code>plano;meses;valor;link</code> — por exemplo:<br>
+                        <code>professor;3;60;https://mpago.la/xxxx</code>
+                    </p>
+                    <textarea id="pacotesPixAssinatura" rows="4" style="width:100%; padding:8px; font-family:monospace; font-size:12px;"
+                              placeholder="apoiase;3;30;https://mpago.la/aaaa&#10;professor;3;60;https://mpago.la/bbbb&#10;professor;12;240;https://mpago.la/cccc">${(Array.isArray(links.pacotesPix) ? links.pacotesPix : []).map(p => [p.plano, p.meses, p.valor, p.link].join(';')).join('\n')}</textarea>
+                    <p style="font-size:11px; color:#975a16; background:#fffaf0; border:1px solid #fbd38d; border-radius:6px; padding:8px; margin-top:6px;">
+                        <strong>Importante:</strong> cadastre os mesmos pacotes na variável
+                        <code>MP_PACOTES_PIX</code> do serviço (Vercel), no formato
+                        <code>plano:meses:valor</code> separado por vírgula. É por ela que o servidor
+                        reconhece o pagamento pelo valor recebido — o link de pagamento do Mercado Pago
+                        nem sempre devolve a referência de quem pagou.
+                    </p>
+                </div>
+
                 <button class="btn btn-primary" style="margin-top:14px;" onclick="salvarLinksAssinatura()">Salvar</button>
 
                 <div style="margin-top:18px; border-top:1px dashed #e2e8f0; padding-top:14px; font-size:12px; color:#4a5568;">
@@ -648,12 +681,41 @@ async function salvarLinksAssinatura() {
         alert('O endereço do serviço precisa começar com https://');
         return;
     }
+    const dias = Number(document.getElementById('diasToleranciaAssinatura').value);
+    if (!isFinite(dias) || dias < 0 || dias > 60) {
+        alert('A carência precisa ser um número de 0 a 60 dias.');
+        return;
+    }
+
+    // Os pacotes de Pix, um por linha: plano;meses;valor;link
+    const pacotesPix = [];
+    const linhas = (document.getElementById('pacotesPixAssinatura').value || '')
+        .split('\n').map(l => l.trim()).filter(Boolean);
+    for (const linha of linhas) {
+        const [plano, meses, valor, link] = linha.split(';').map(x => (x || '').trim());
+        if (!PLANOS_ADMIN[plano] || plano === 'free') {
+            alert('Linha do Pix com plano inválido (use apoiase ou professor):\n\n' + linha);
+            return;
+        }
+        if (!(Number(meses) >= 1) || !(Number(valor) > 0)) {
+            alert('Linha do Pix com meses ou valor inválido:\n\n' + linha);
+            return;
+        }
+        if (!valido(link)) {
+            alert('O link do Pix precisa ser um endereço https do Mercado Pago:\n\n' + linha);
+            return;
+        }
+        pacotesPix.push({ plano: plano, meses: Number(meses), valor: Number(valor), link: link });
+    }
+
     try {
         await saveData('assinaturas_config', 'publico', {
             apoiase: apoiase, professor: professor, servico: servico,
+            diasTolerancia: dias, pacotesPix: pacotesPix,
             atualizadoEm: new Date().toISOString()
         });
-        alert('Links salvos. Os professores já veem os planos novos ao abrir o pop-up de apoio.');
+        alert('Configuração salva. Os professores já veem os planos, o Pix e a carência nova ' +
+              'ao abrir o pop-up de apoio.');
         closeModal('modalAssinaturasAdmin');
     } catch (e) {
         alert('Não consegui salvar: ' + (e && e.message ? e.message : e));

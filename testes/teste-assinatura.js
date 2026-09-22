@@ -426,14 +426,166 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
   ok('e NAO finge que cancelou: o plano continua ativo ate a pessoa cancelar de fato',
       r7d.plano === 'professor');
 
-  // ============ 8. A ASSINATURA NAO PODE ATRAPALHAR QUEM VEIO DAR AULA ============
+  // ============ 8. CORTE POR ATRASO, NA TELA ============
+  // O corte tem que valer SEM depender de o Mercado Pago avisar: notificacao que se
+  // perde deixaria a pessoa com premium para sempre, sem pagar, e sem evento para
+  // alguem descobrir. A tela compara a data gravada com hoje.
+  console.log('\n8. Corte por atraso na tela');
+
+  const emDias = (n) => new Date(Date.now() + n * 86400000).toISOString();
+
+  // Ativa, dentro do prazo.
+  await entrar(ANA, ATIVA('professor', { proximaCobranca: emDias(9) }), LINKS);
+  let r8 = await p.evaluate(() => ({ plano: planoDoUsuario(), premium: ehPremium(),
+    vencida: assinaturaVencida(), atraso: assinaturaEmAtraso() }));
+  ok('em dia: premium vale', r8.plano === 'professor' && r8.premium === true && !r8.vencida);
+
+  // Venceu ontem: continua valendo, mas a tela avisa.
+  await entrar(ANA, ATIVA('professor', { proximaCobranca: emDias(-1) }), LINKS);
+  r8 = await p.evaluate(async () => {
+    const el = document.getElementById('modalApoie'); if (el) el.remove();
+    await abrirModalApoie();
+    await new Promise(r => setTimeout(r, 250));
+    return { plano: planoDoUsuario(), premium: ehPremium(), atraso: assinaturaEmAtraso(),
+             texto: document.getElementById('conteudoModalApoie').textContent };
+  });
+  ok('atrasado 1 dia: o acesso continua (carencia de 5 dias)',
+      r8.plano === 'professor' && r8.premium === true && r8.atraso === true);
+  ok('e a tela AVISA antes de cortar, dizendo quantos dias restam',
+      /ainda nao foi confirmado/i.test(r8.texto) && /dia\(s\)/.test(r8.texto));
+
+  // Passou a carencia: corta, mesmo com o documento dizendo "ativa".
+  await entrar(ANA, ATIVA('professor', { proximaCobranca: emDias(-9) }), LINKS);
+  r8 = await p.evaluate(async () => {
+    const el = document.getElementById('modalApoie'); if (el) el.remove();
+    const bloqueou = !exigirPremium('Relatorio automatico da turma');
+    await new Promise(r => setTimeout(r, 250));
+    return { plano: planoDoUsuario(), premium: ehPremium(), contribui: ehContribuinte(),
+             bloqueou: bloqueou, tarja: !!document.getElementById('bannerApoio'),
+             botao: document.getElementById('btnApoie').textContent.trim(),
+             texto: (document.getElementById('conteudoModalApoie') || {}).textContent || '' };
+  });
+  ok('passada a carencia, o premium E CORTADO mesmo com o documento dizendo ativa',
+      r8.plano === 'free' && r8.premium === false && r8.bloqueou === true);
+  ok('e a tag de apoiador tambem cai (tarja volta, botao vira "Apoie")',
+      r8.contribui === false && r8.tarja === true && r8.botao.indexOf('Apoie') !== -1);
+  ok('a tela explica que venceu e que libera sozinho se o pagamento for reconhecido',
+      /venceu em/i.test(r8.texto) && /libera sozinho/i.test(r8.texto));
+
+  // A carencia e configuravel: 20 dias segura quem 5 cortaria.
+  await entrar(ANA, ATIVA('professor', { proximaCobranca: emDias(-9) }),
+               Object.assign({}, LINKS, { diasTolerancia: 20 }));
+  r8 = await p.evaluate(() => ({ plano: planoDoUsuario(), premium: ehPremium(),
+    tolerancia: diasDeTolerancia() }));
+  ok('a carencia configurada no painel manda: 20 dias segura quem 5 cortaria',
+      r8.tolerancia === 20 && r8.plano === 'professor' && r8.premium === true);
+
+  // Carencia zero: corta no dia seguinte.
+  await entrar(ANA, ATIVA('professor', { proximaCobranca: emDias(-2) }),
+               Object.assign({}, LINKS, { diasTolerancia: 0 }));
+  r8 = await p.evaluate(() => ({ plano: planoDoUsuario() }));
+  ok('carencia zero corta assim que vence', r8.plano === 'free');
+
+  // Cortesia sem prazo nao vence por data.
+  await entrar(ANA, { uid: 'uid-ana', plano: 'professor', planoContratado: 'professor',
+      status: 'ativa', origem: 'cortesia', versaoMs: 0 }, LINKS);
+  r8 = await p.evaluate(() => ({ plano: planoDoUsuario(), vencida: assinaturaVencida() }));
+  ok('cortesia sem prazo nao vence por data (e decisao do admin, nao atraso)',
+      r8.plano === 'professor' && r8.vencida === false);
+
+  // ============ 9. PIX: APOIO SEM CARTAO ============
+  console.log('\n9. Pix: apoio sem cartao');
+
+  const COM_PIX = Object.assign({}, LINKS, { pacotesPix: [
+    { plano: 'apoiase', meses: 3, valor: 30, link: 'https://mpago.la/pixA' },
+    { plano: 'professor', meses: 3, valor: 60, link: 'https://mpago.la/pixP3' },
+    { plano: 'professor', meses: 12, valor: 240, link: 'https://mpago.la/pixP12' }
+  ] });
+
+  await entrar(ANA, null, COM_PIX);
+  const r9 = await p.evaluate(async () => {
+    const el = document.getElementById('modalApoie'); if (el) el.remove();
+    await abrirModalApoie();
+    await new Promise(r => setTimeout(r, 300));
+    const texto = document.getElementById('conteudoModalApoie').textContent;
+    return {
+      temSecao: /Prefere Pix/i.test(texto),
+      explicaSemRecorrencia: /sem cobranca automatica/i.test(texto)
+                             && /nada e cobrado de voce sem autorizacao/i.test(texto),
+      temPacotes: /3 meses/.test(texto) && /12 meses/.test(texto),
+      temValores: /R\$ 60,00/.test(texto) && /R\$ 240,00/.test(texto),
+      mostraPorMes: /R\$ 20,00\/mes/.test(texto)
+    };
+  });
+  ok('o pop-up mostra a opcao de Pix quando ha pacotes cadastrados', r9.temSecao);
+  ok('explicando que Pix nao e cobranca automatica', r9.explicaSemRecorrencia);
+  ok('com os pacotes de meses e seus valores', r9.temPacotes && r9.temValores);
+
+  const r9b = await p.evaluate(async () => {
+    window.__abriu = [];
+    await pagarComPix('professor', 12);
+    await new Promise(r => setTimeout(r, 200));
+    return { destino: window.__abriu[0] || '' };
+  });
+  ok('escolher um pacote abre o link de Pix daquele pacote',
+      r9b.destino.indexOf('mpago.la/pixP12') !== -1);
+  ok('levando quem paga, o plano e os meses na referencia',
+      /external_reference=uid-ana%7Cprofessor%7C12/.test(r9b.destino));
+
+  // Sem pacotes cadastrados, a secao simplesmente nao aparece.
+  await entrar(ANA, null, LINKS);
+  const r9c = await p.evaluate(async () => {
+    const el = document.getElementById('modalApoie'); if (el) el.remove();
+    await abrirModalApoie();
+    await new Promise(r => setTimeout(r, 250));
+    return { temSecao: /Prefere Pix/i.test(document.getElementById('conteudoModalApoie').textContent) };
+  });
+  ok('sem pacotes cadastrados, a secao de Pix nao aparece', r9c.temSecao === false);
+
+  // Apoio por Pix vale ate a data, e a tela mostra isso em vez de "proxima cobranca".
+  await entrar(ANA, { uid: 'uid-ana', plano: 'professor', planoContratado: 'professor',
+      status: 'ativa', origem: 'pix', meses: 3, validoAte: emDias(70), versaoMs: 1 }, COM_PIX);
+  const r9d = await p.evaluate(async () => {
+    const el = document.getElementById('modalApoie'); if (el) el.remove();
+    await abrirModalApoie();
+    await new Promise(r => setTimeout(r, 250));
+    const texto = document.getElementById('conteudoModalApoie').textContent;
+    return { plano: planoDoUsuario(), premium: ehPremium(),
+             falaDeValidade: /apoio garantido ate/i.test(texto),
+             naoFalaDeCobranca: !/proxima cobranca/i.test(texto) };
+  });
+  ok('apoio pago no Pix da premium igual ao cartao',
+      r9d.plano === 'professor' && r9d.premium === true);
+  ok('e a tela fala de validade, nao de proxima cobranca', r9d.falaDeValidade && r9d.naoFalaDeCobranca);
+
+  // Pix vencido corta, e o aviso chama para renovar pelo Pix.
+  await entrar(ANA, { uid: 'uid-ana', plano: 'professor', planoContratado: 'professor',
+      status: 'ativa', origem: 'pix', validoAte: emDias(-2), versaoMs: 1 }, COM_PIX);
+  const r9e = await p.evaluate(async () => {
+    const el = document.getElementById('modalApoie'); if (el) el.remove();
+    await abrirModalApoie();
+    await new Promise(r => setTimeout(r, 250));
+    return { plano: planoDoUsuario(),
+             chamaParaRenovar: /renove pelo Pix/i.test(document.getElementById('conteudoModalApoie').textContent) };
+  });
+  ok('Pix atrasado dentro da carencia chama para renovar pelo proprio Pix',
+      r9e.plano === 'professor' && r9e.chamaParaRenovar);
+
+  await entrar(ANA, { uid: 'uid-ana', plano: 'professor', planoContratado: 'professor',
+      status: 'ativa', origem: 'pix', validoAte: emDias(-10), versaoMs: 1 }, COM_PIX);
+  const r9f = await p.evaluate(() => ({ plano: planoDoUsuario(), premium: ehPremium(),
+    contribui: ehContribuinte() }));
+  ok('Pix vencido alem da carencia corta premium e tag de apoiador',
+      r9f.plano === 'free' && r9f.premium === false && r9f.contribui === false);
+
+  // ============ 10. A ASSINATURA NAO PODE ATRAPALHAR QUEM VEIO DAR AULA ============
   // Enquanto as Regras novas nao forem publicadas no console do Firebase, TODA conta
   // recebe 'permission-denied' ao ler assinaturas/<uid>. Se essa leitura marcasse a
   // falha global de leitura, o sistema entenderia "a nuvem caiu" e bloquearia a
   // gravacao do trabalho do professor — por causa de um coracao amarelo.
-  console.log('\n8. Leitura negada pelas Regras nao contamina o resto do sistema');
+  console.log('\n10. Leitura negada pelas Regras nao contamina o resto do sistema');
   await entrar(ANA, ATIVA('professor'), LINKS);
-  const r8 = await p.evaluate(async () => {
+  const r10 = await p.evaluate(async () => {
     window.falhaLeituraFirestore = false;
     window.__alertas = 0;
     const alertOriginal = window.alert;
@@ -463,10 +615,10 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
     window.alert = alertOriginal;
     return estado;
   });
-  ok('Regras nao publicadas NAO marcam falha de leitura da nuvem', r8.falhaGlobal === false);
-  ok('e nao enchem a tela do professor de alerta de conexao', r8.alertas === 0);
-  ok('o que ja se sabia do plano continua valendo', r8.planoContinua === 'professor');
-  ok('e o link conhecido do checkout nao se perde', r8.linkContinua === true);
+  ok('Regras nao publicadas NAO marcam falha de leitura da nuvem', r10.falhaGlobal === false);
+  ok('e nao enchem a tela do professor de alerta de conexao', r10.alertas === 0);
+  ok('o que ja se sabia do plano continua valendo', r10.planoContinua === 'professor');
+  ok('e o link conhecido do checkout nao se perde', r10.linkContinua === true);
 
   await b.close();
   console.log('\n' + (falhas.length === 0
