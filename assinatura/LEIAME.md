@@ -77,7 +77,10 @@ por assinatura, por mês.
    | `DIAS_TOLERANCIA` | opcional: carência usada pela varredura (o painel guarda a que a tela usa) |
 
    Marque os três ambientes (Production, Preview, Development).
-5. **Deploy**. Três endereços nascem daqui:
+5. **Deploy**. Três endereços nascem daqui (o `vercel.json` traz *rewrites* para que
+   cada um responda **com e sem** o prefixo `/api` — assim tanto faz cadastrar o
+   endereço do serviço como `https://projeto.vercel.app` ou
+   `https://projeto.vercel.app/api`):
    - `https://<seu-projeto>.vercel.app/api/webhook` — o webhook do Mercado Pago
    - `https://<seu-projeto>.vercel.app/api/cancelar` — o cancelamento pedido pelo professor
    - `https://<seu-projeto>.vercel.app/api/pix` — gera o QR Code do Pix

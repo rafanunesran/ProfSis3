@@ -567,9 +567,15 @@ async function cancelarAssinatura() {
         renderConteudoModalApoie();
         alert('Assinatura cancelada. Nao havera mais cobranca.\n\nObrigado por ter apoiado o projeto 💛');
     } catch (e) {
+        // Mesma licao do Pix: `fetch` que estoura costuma ser endereco errado, nao
+        // internet. Dizemos qual endereco foi chamado para a conversa comecar do
+        // lugar certo.
         console.warn('[Assinatura] Falha ao cancelar:', e);
-        alert('Nao consegui falar com o servico de cancelamento. Verifique sua internet e tente de novo, ' +
-              'ou cancele pelo painel do Mercado Pago (Assinaturas).');
+        const onde = (_linksAssinatura && _linksAssinatura.servico) || '(nao configurado)';
+        alert('Nao consegui falar com o servico de cancelamento.\n\n' +
+              'Endereco chamado: ' + onde + '\n\n' +
+              'Voce pode cancelar agora mesmo pelo painel do Mercado Pago, em "Assinaturas" — ' +
+              'tem efeito imediato.');
     } finally {
         if (botao) { botao.disabled = false; botao.textContent = 'Cancelar assinatura'; }
     }
@@ -808,9 +814,19 @@ async function gerarQrCodePix(planoId, meses, pacote) {
         mostrarQrCodePix(dados);
         marcarEsperandoConfirmacao(planoId);
     } catch (e) {
+        // Um `fetch` que ESTOURA (em vez de devolver erro) quase nunca e' falta de
+        // internet: e' o navegador bloqueando a resposta. A causa mais comum e' o
+        // endereco do servico apontando para um lugar que nao existe — a resposta 404
+        // do provedor nao carrega cabecalho de CORS, e o navegador recusa entregar.
+        // Por isso a mensagem mostra o endereco chamado: sem ele, a pessoa vai
+        // conferir a internet, que esta' funcionando, e nao chega a lugar nenhum.
         console.warn('[Assinatura] Falha ao gerar o Pix:', e);
         if (area) area.style.display = 'none';
-        alert('Nao consegui falar com o servico do Pix. Verifique sua internet e tente de novo.');
+        const onde = (_linksAssinatura && _linksAssinatura.servico) || '(nao configurado)';
+        alert('Nao consegui falar com o servico do Pix.\n\n' +
+              'Endereco chamado: ' + onde + '\n\n' +
+              'Se a sua internet esta funcionando, o endereco do servico pode estar errado ' +
+              'no painel. Avise a administracao — e, enquanto isso, o cartao continua funcionando.');
     }
 }
 

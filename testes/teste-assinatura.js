@@ -400,6 +400,35 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
   });
   ok('o botao chama o servico de cancelamento (e nao a API do Mercado Pago pelo navegador)',
       r7c.chamou === 'https://sisprof.vercel.app/api/cancelar' && r7c.metodo === 'POST');
+
+  // O endereco do servico pode estar cadastrado COM ou SEM o /api - o deploy responde
+  // nos dois caminhos. Em producao o endereco foi salvo sem /api, o site chamou
+  // /pix, a Vercel devolveu 404 SEM cabecalho de CORS, o navegador bloqueou a
+  // resposta e o fetch estourou: a pessoa via "verifique sua internet" com a
+  // internet funcionando perfeitamente.
+  await entrar(ANA, ATIVA('professor'), Object.assign({}, LINKS, { servico: 'https://sisprof.vercel.app' }));
+  const r7cSemApi = await p.evaluate(async () => {
+    const el = document.getElementById('modalApoie'); if (el) el.remove();
+    await abrirModalApoie();
+    await new Promise(r => setTimeout(r, 250));
+    window.__pedidos = [];
+    window.fetch = async (url, opcoes) => {
+      window.__pedidos.push(String(url));
+      return { ok: true, json: async () => ({ cancelada: true }) };
+    };
+    document.getElementById('btnCancelarAssinatura').click();
+    await new Promise(r => setTimeout(r, 400));
+    return { chamou: window.__pedidos[0] || '' };
+  });
+  ok('endereco sem /api monta a rota sem inventar caminho (o deploy responde nos dois)',
+      r7cSemApi.chamou === 'https://sisprof.vercel.app/cancelar');
+
+  await entrar(ANA, ATIVA('professor'), COM_SERVICO);
+  await p.evaluate(async () => {
+    const el = document.getElementById('modalApoie'); if (el) el.remove();
+    await abrirModalApoie();
+    await new Promise(r => setTimeout(r, 200));
+  });
   ok('levando o cracha da sessao, para o servidor saber de quem e a assinatura',
       r7c.levouCracha.indexOf('Bearer ') === 0);
   ok('depois de cancelar, a conta volta ao gratuito na hora',

@@ -597,7 +597,11 @@ async function abrirModalAssinaturasAdmin() {
                 </label>
                 <p style="font-size:11px; color:#718096; margin:4px 0 0 0;">
                     Sem isto, o botão "Cancelar assinatura" manda o professor cancelar na mão,
-                    no painel do Mercado Pago. Com isto, ele cancela pelo próprio sistema.
+                    no painel do Mercado Pago, e o Pix volta a depender de link. Com isto, o
+                    cancelamento e o QR Code do Pix acontecem dentro do sistema.
+                    <br>
+                    Pode ser <code>https://projeto.vercel.app</code> ou
+                    <code>https://projeto.vercel.app/api</code> — os dois funcionam.
                 </p>
                 <div style="margin-top:16px; border-top:1px dashed #e2e8f0; padding-top:14px;">
                     <label style="display:block; font-size:13px;">⏰ Dias de carência após o vencimento
