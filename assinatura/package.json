@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "name": "sisprof-assinatura",
+  "type": "module",
+  "description": "Webhook de assinatura do SisProf (Mercado Pago -> Firestore). Nao faz parte do site."
+}

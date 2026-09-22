@@ -49,54 +49,70 @@ Os valores moram em `regras.mjs` (servidor) e em `assinatura.js` (navegador).
    webhook sabe de quem é o pagamento. Quando o Mercado Pago não devolve essa
    referência, o webhook procura o e-mail do pagador na lista de usuários.
 
-## Passo 2 — publicar o webhook (Cloudflare Workers)
+## Passo 2 — publicar o webhook na Vercel
 
-```bash
-npm install -g wrangler        # uma vez
-cd assinatura
-wrangler login
-wrangler deploy                # usa o wrangler.toml desta pasta
-```
+O plano gratuito da Vercel dá conta com folga: este webhook é chamado algumas vezes
+por assinatura, por mês.
 
-Guarde os segredos (eles **nunca** entram no repositório):
+1. [vercel.com](https://vercel.com) → **Add New… → Project** → importe o repositório
+   `rafanunesran/ProfSis3`.
+2. **Root Directory: `assinatura`** (clique em *Edit*, ao lado do campo, e escolha a
+   pasta). Isso é o que importa mais nesta tela: com a raiz apontando para cá, a
+   Vercel enxerga só esta pasta e **não publica uma segunda cópia do site** — o
+   SisProf continua morando no GitHub Pages.
+3. Framework Preset: **Other**. Não há build command nem output directory.
+4. Antes de clicar em Deploy, abra **Environment Variables** e cadastre:
 
-```bash
-wrangler secret put MP_ACCESS_TOKEN          # token de produção do Mercado Pago
-wrangler secret put MP_WEBHOOK_SECRET        # "chave secreta" do webhook (passo 3)
-wrangler secret put FIREBASE_SERVICE_ACCOUNT # o JSON da conta de serviço, inteiro
-wrangler secret put MP_PLANO_APOIASE_ID      # opcional: id do plano de R$ 10
-wrangler secret put MP_PLANO_PROFESSOR_ID    # opcional: id do plano de R$ 20
-```
+   | Nome | Valor |
+   |---|---|
+   | `MP_ACCESS_TOKEN` | token de **produção** do Mercado Pago (começa com `APP_USR-`) |
+   | `MP_WEBHOOK_SECRET` | a chave secreta do webhook (vem no passo 3) |
+   | `FIREBASE_PROJECT_ID` | `profsis3` |
+   | `FIREBASE_SERVICE_ACCOUNT` | o JSON inteiro da conta de serviço |
+   | `MP_PLANO_APOIASE_ID` | opcional: id do plano de R$ 10 |
+   | `MP_PLANO_PROFESSOR_ID` | opcional: id do plano de R$ 20 |
 
-`FIREBASE_PROJECT_ID` já está no `wrangler.toml` (`profsis3`).
+   Marque os três ambientes (Production, Preview, Development).
+5. **Deploy**. O endereço do webhook é `https://<seu-projeto>.vercel.app/api/webhook`.
+6. Abra esse endereço no navegador. Ele responde
+   *"SisProf - webhook de assinatura no ar."* — se responder 404, a Root Directory
+   não ficou em `assinatura`.
 
 A conta de serviço sai do Console do Firebase → **Configurações do projeto → Contas
-de serviço → Gerar nova chave privada**. Cole o JSON inteiro (ou o mesmo JSON em
-base64, se o painel estragar as quebras de linha).
+de serviço → Gerar nova chave privada**. Cole o JSON inteiro no campo (ou o mesmo
+JSON em base64, se o painel estragar as quebras de linha). Essa chave dá acesso
+total ao banco: ela vive só nas variáveis da Vercel, nunca no repositório.
 
-### Alternativa: Vercel
+O `MP_WEBHOOK_SECRET` você só terá no passo 3 — cadastre um valor qualquer agora e
+volte para corrigi-lo depois (Settings → Environment Variables → Edit → **Redeploy**,
+porque variável nova só vale no deploy seguinte). Enquanto ele estiver errado, o
+webhook recusa tudo com 401, de propósito: um webhook aberto deixaria qualquer
+pessoa na internet se declarar assinante do plano Professor.
 
-O mesmo código roda como função Edge. Crie `api/webhook-assinatura.js` no projeto da
-Vercel com:
+### Alternativa: Cloudflare Workers
 
-```js
-import { tratarRequisicao } from '../assinatura/webhook.mjs';
-export const config = { runtime: 'edge' };
-export default (request) => tratarRequisicao(request, process.env);
+O mesmo código roda como Worker, sem mudar nada:
+
+```bash
+npm install -g wrangler
+cd assinatura
+wrangler login
+wrangler deploy                              # usa o wrangler.toml desta pasta
+wrangler secret put MP_ACCESS_TOKEN          # e os demais segredos da tabela acima
 ```
-
-E cadastre as mesmas variáveis em Settings → Environment Variables.
 
 ## Passo 3 — apontar o Mercado Pago para o webhook
 
 Mercado Pago → **Suas integrações → sua aplicação → Webhooks/Notificações**:
 
-- URL: o endereço do Worker (ex.: `https://sisprof-assinatura.<conta>.workers.dev`)
+- URL: o endereço publicado no passo 2 (ex.: `https://sisprof.vercel.app/api/webhook`)
 - Eventos: **Assinaturas** (`subscription_preapproval`) e **Pagamentos recorrentes**
   (`subscription_authorized_payment`)
-- Copie a **chave secreta** que a tela mostra e guarde como `MP_WEBHOOK_SECRET`
+- Copie a **chave secreta** que a tela mostra, guarde como `MP_WEBHOOK_SECRET` e **refaça o
+  deploy** (variável de ambiente nova só entra em vigor no deploy seguinte)
 
-Abrir a URL no navegador (GET) deve responder *"SisProf - webhook de assinatura no ar."*.
+O painel do Mercado Pago tem um botão **Simular notificação**: use-o depois de salvar.
+Uma simulação bem-sucedida responde 200; 401 quer dizer que o segredo não confere.
 
 ## Passo 4 — publicar as Regras do Firestore
 

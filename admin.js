@@ -594,8 +594,9 @@ async function abrirModalAssinaturasAdmin() {
 
                 <div style="margin-top:18px; border-top:1px dashed #e2e8f0; padding-top:14px; font-size:12px; color:#4a5568;">
                     <strong>Webhook</strong> (Mercado Pago &gt; Suas integrações &gt; Notificações):
-                    aponte para o endereço do Worker publicado a partir da pasta <code>assinatura/</code>
-                    e marque os eventos <em>Assinaturas</em> e <em>Pagamentos recorrentes</em>.
+                    aponte para o endereço publicado a partir da pasta <code>assinatura/</code>
+                    (na Vercel, <code>https://&lt;projeto&gt;.vercel.app/api/webhook</code>) e marque os
+                    eventos <em>Assinaturas</em> e <em>Pagamentos recorrentes</em>.
                     O passo a passo está em <code>assinatura/LEIAME.md</code>.
                 </div>
                 <div style="margin-top:12px; font-size:12px; color:#975a16; background:#fffaf0; border:1px solid #fbd38d; border-radius:6px; padding:10px;">
