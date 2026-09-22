@@ -7,7 +7,7 @@
 //
 // O que este teste cobre:
 //   1. o botao PDF aparece nos quatro perfis e a tela nasce sob demanda;
-//   2. o catalogo lista as 48 ferramentas e a busca filtra;
+//   2. o catalogo lista as 49 ferramentas e a busca filtra;
 //   3. o PORTAO: conta gratuita nao abre ferramenta (o convite do plano aparece);
 //   4. as contas de verdade: juntar, dividir, girar, marca d'agua, numerar, N-up,
 //      proteger/desbloquear, metadados e formulario;
@@ -158,9 +158,9 @@ function ok(nome, condicao, extra) {
         };
     });
     ok('a tela foi criada e ficou ativa', catalogo.criada && catalogo.ativa);
-    ok('48 ferramentas no catalogo', catalogo.totalNoCatalogo === 48, String(catalogo.totalNoCatalogo));
+    ok('49 ferramentas no catalogo', catalogo.totalNoCatalogo === 49, String(catalogo.totalNoCatalogo));
     ok('8 grupos', catalogo.grupos === 8);
-    ok('todas as ferramentas aparecem na grade', catalogo.botoes === 48, catalogo.botoes + ' botoes');
+    ok('todas as ferramentas aparecem na grade', catalogo.botoes === 49, catalogo.botoes + ' botoes');
     ok('a tela avisa que o arquivo nao sai do aparelho', catalogo.temAvisoDePrivacidade);
     ok('nenhuma ferramenta aponta para operacao que nao existe', !catalogo.acoesQuebradas.length, catalogo.acoesQuebradas.join(', '));
     ok('nenhuma ferramenta aponta para extra que nao existe', !catalogo.extrasQuebrados.length, catalogo.extrasQuebrados.join(', '));
@@ -183,7 +183,7 @@ function ok(nome, condicao, extra) {
     ok('a busca filtra ("senha")', busca.comSenha > 0 && busca.comSenha < 48, busca.comSenha + ' resultados');
     ok('a busca ignora acento', busca.comAcento);
     ok('busca sem resultado explica', busca.vazio);
-    ok('limpar a busca devolve o catalogo', busca.voltouTudo === 48);
+    ok('limpar a busca devolve o catalogo', busca.voltouTudo === 49);
 
     console.log('\n3. O portao do plano Professor');
     const portao = await page.evaluate(async () => {
@@ -235,7 +235,7 @@ function ok(nome, condicao, extra) {
         fecharFerramentaPdf();
         return problemas;
     });
-    ok('as 48 ferramentas montam a tela sem erro', !abertura.length, abertura.join(' | '));
+    ok('as 49 ferramentas montam a tela sem erro', !abertura.length, abertura.join(' | '));
 
     // Aquecimento: baixa as bibliotecas ANTES de medir qualquer coisa. Sem isto, uma
     // oscilacao de rede (comum em proxy e em Wi-Fi de escola) apareceria como se a
@@ -336,6 +336,25 @@ function ok(nome, condicao, extra) {
         const achatada = (await ops.preencher({ arquivo: ficha, valores: { nome: 'Ana' }, achatar: true })).arquivos[0].bytes;
         r.achatadaSemCampos = (await window.PDFOPS.inspecionar.camposFormulario({ nome: 'f.pdf', bytes: achatada })).length;
 
+        // Criar o formulario que nao existia e, em seguida, preencher o que foi criado:
+        // as duas ferramentas sao um par, e e' o par que precisa funcionar.
+        const fichaEmBranco = await fazerPdf(1, 'Ficha');
+        const comCampos = (await ops.criarFormulario({ arquivo: fichaEmBranco, itens: [
+            { tipo: 'campo-texto', pagina: 0, x: 60, y: 600, largura: 300, altura: 22, nome: 'estudante' },
+            { tipo: 'campo-texto', pagina: 0, x: 60, y: 540, largura: 300, altura: 60, nome: 'observacoes', multilinha: true },
+            { tipo: 'campo-marcacao', pagina: 0, x: 60, y: 500, largura: 16, altura: 16, nome: 'autorizado' },
+            { tipo: 'campo-texto', pagina: 0, x: 60, y: 460, largura: 200, altura: 22, nome: 'estudante' }
+        ] })).arquivos[0].bytes;
+        const criados = await window.PDFOPS.inspecionar.camposFormulario({ nome: 'f.pdf', bytes: comCampos });
+        r.camposCriados = criados.map(c => c.nome + ':' + c.tipo).sort().join(', ');
+        const cheia2 = (await ops.preencher({ arquivo: { nome: 'f.pdf', bytes: comCampos },
+            valores: { estudante: 'Ana Lima', observacoes: 'Precisa de apoio', autorizado: true } })).arquivos[0].bytes;
+        const lidos = await window.PDFOPS.inspecionar.camposFormulario({ nome: 'f.pdf', bytes: cheia2 });
+        r.formularioCriadoPreenche = (lidos.find(c => c.nome === 'estudante') || {}).valor === 'Ana Lima' &&
+                                     (lidos.find(c => c.nome === 'autorizado') || {}).valor === true;
+        try { await ops.criarFormulario({ arquivo: fichaEmBranco, itens: [] }); r.erroSemCampo = 'passou'; }
+        catch (e) { r.erroSemCampo = e.message; }
+
         // Erro tratado: mensagem em portugues, nao "stack trace".
         try { await ops.juntar({ arquivos: [a] }); r.erroJuntar = 'passou'; } catch (e) { r.erroJuntar = e.message; }
         try { await ops.removerPaginas({ arquivo: a, paginas: 'todas' }); r.erroRemover = 'passou'; } catch (e) { r.erroRemover = e.message; }
@@ -374,6 +393,11 @@ function ok(nome, condicao, extra) {
     ok('remover todas e recusado', /TODAS/.test(contas.erroRemover), contas.erroRemover);
     ok('arquivo cifrado manda desbloquear primeiro', /Desbloquear/.test(contas.erroCifrado), contas.erroCifrado);
     ok('faixas de pagina', contas.faixas === '[0,1,2,4] [1,2,3] [1,3]', contas.faixas);
+    ok('criar formulario: 4 campos, o nome repetido virou "estudante_2"',
+       contas.camposCriados === 'autorizado:marcacao, estudante:texto, estudante_2:texto, observacoes:texto',
+       contas.camposCriados);
+    ok('o formulario criado aceita ser preenchido', contas.formularioCriadoPreenche === true);
+    ok('criar formulario sem campo explica', /Desenhe/.test(contas.erroSemCampo), contas.erroSemCampo);
 
     console.log('\n6. O que so existe no navegador (canvas, pdf.js, zip)');
     const navegador = await page.evaluate(async () => {

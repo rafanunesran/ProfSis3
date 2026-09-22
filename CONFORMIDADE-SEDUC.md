@@ -408,10 +408,11 @@ contratou, sem base legal e sem que a escola saiba; e a escola é quem responde.
 Não havia como proibir esse uso: o trabalho é real e precisa ser feito. Então ele passou a
 ser possível **dentro** do sistema, sem upload:
 
-- 48 ferramentas de PDF (`pdf_ferramentas.js` monta a tela, `pdf_operacoes.js` faz as
+- 49 ferramentas de PDF (`pdf_ferramentas.js` monta a tela, `pdf_operacoes.js` faz as
   contas) cobrindo o que se usa de fato: juntar, dividir, reorganizar, girar, N páginas por
   folha, marca d'água, numerar, assinar, preencher formulário, proteger com senha,
-  desbloquear, censurar, OCR, comprimir, reparar, PDF/A e conversão de e para Word, Excel,
+  desbloquear, censurar, OCR, comprimir, reparar, PDF/A, criar formulário preenchível e
+  conversão de e para Word, Excel,
   imagem, texto e HTML.
 - **Nenhuma operação faz upload.** O arquivo é lido para a memória do navegador,
   transformado ali e devolvido para download. O que sai pela rede são as bibliotecas de

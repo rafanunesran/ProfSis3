@@ -127,9 +127,31 @@ async function libPdfJs() {
     if (!_pdfjs) throw new Error('pdf.js nao carregou.');
     // Sem o worker o pdf.js roda na thread da interface e a pagina congela em PDF grande.
     if (_pdfjs.GlobalWorkerOptions && !_pdfjs.GlobalWorkerOptions.workerSrc) {
-        _pdfjs.GlobalWorkerOptions.workerSrc = CDN.pdfjsWork;
+        _pdfjs.GlobalWorkerOptions.workerSrc = await urlDoWorkerPdfJs();
     }
     return _pdfjs;
+}
+
+// O worker do pdf.js (mais de 1 MB) e' baixado pelo PROPRIO pdf.js, por fora do nosso
+// carregarScript — e quando essa busca falha o pdf.js tenta um "fake worker" e morre com
+// "Setting up fake worker failed", que nao diz nada a ninguem. Buscamos o arquivo aqui,
+// com as mesmas tres tentativas, e entregamos como blob local: o worker passa a ter a
+// mesma teimosia do resto, e uma oscilacao de rede deixa de derrubar a ferramenta.
+let _urlWorker = null;
+async function urlDoWorkerPdfJs() {
+    if (_urlWorker) return _urlWorker;
+    for (let tentativa = 0; tentativa < 3; tentativa++) {
+        if (tentativa) await new Promise(ok => setTimeout(ok, tentativa * 900));
+        try {
+            const resposta = await fetch(CDN.pdfjsWork);
+            if (!resposta.ok) throw new Error('HTTP ' + resposta.status);
+            const codigo = await resposta.blob();
+            _urlWorker = URL.createObjectURL(codigo);
+            return _urlWorker;
+        } catch (_) { /* tenta de novo */ }
+    }
+    // Ultimo recurso: deixa o pdf.js tentar sozinho, como antes. Nao piora nada.
+    return CDN.pdfjsWork;
 }
 
 async function libJsPdf() {
@@ -2827,39 +2849,111 @@ async function qrCode(e, prog) {
 
 // Le os campos de um formulario PDF para a tela poder montar um campo de digitacao
 // para cada um. Sem isto, "Preencher PDF" seria adivinhacao.
+// Que tipo de campo e' este. Perguntar por `campo.constructor.name` parece o caminho
+// obvio e e' uma armadilha: a biblioteca que o navegador baixa e' a versao MINIFICADA,
+// onde `PDFCheckBox` virou uma letra qualquer. O codigo funcionava no teste de Node
+// (que carrega a versao legivel) e classificava TODA marcacao como campo de texto no
+// aparelho do professor — uma autorizacao marcada seria salva com `setText`. Compara-se
+// com as classes exportadas, que sobrevivem a minificacao.
+async function tipoDoCampo(campo) {
+    const PDFLib = await libPdfLib();
+    if (PDFLib.PDFCheckBox && campo instanceof PDFLib.PDFCheckBox) return 'marcacao';
+    if (PDFLib.PDFRadioGroup && campo instanceof PDFLib.PDFRadioGroup) return 'escolha';
+    if (PDFLib.PDFDropdown && campo instanceof PDFLib.PDFDropdown) return 'lista';
+    if (PDFLib.PDFOptionList && campo instanceof PDFLib.PDFOptionList) return 'lista';
+    if (PDFLib.PDFSignature && campo instanceof PDFLib.PDFSignature) return 'assinatura';
+    if (PDFLib.PDFButton && campo instanceof PDFLib.PDFButton) return 'botao';
+    return 'texto';
+}
+
 async function lerCamposFormulario(arquivo) {
     const doc = await abrirPdf(arquivo);
     let form;
     try { form = doc.getForm(); } catch (_) { return []; }
 
-    return form.getFields().map(campo => {
-        const construtor = campo.constructor && campo.constructor.name || '';
+    const saida = [];
+    for (const campo of form.getFields()) {
         const base = { nome: campo.getName(), somenteLeitura: !!(campo.isReadOnly && campo.isReadOnly()) };
+        const tipo = await tipoDoCampo(campo);
         try {
-            if (/CheckBox/.test(construtor)) {
-                return Object.assign(base, { tipo: 'marcacao', valor: campo.isChecked() });
+            if (tipo === 'marcacao') {
+                saida.push(Object.assign(base, { tipo: tipo, valor: campo.isChecked() }));
+            } else if (tipo === 'escolha') {
+                saida.push(Object.assign(base, { tipo: tipo, valor: campo.getSelected() || '', opcoes: campo.getOptions() }));
+            } else if (tipo === 'lista') {
+                saida.push(Object.assign(base, { tipo: tipo, valor: (campo.getSelected() || [])[0] || '', opcoes: campo.getOptions() }));
+            } else if (tipo === 'botao' || tipo === 'assinatura') {
+                saida.push(Object.assign(base, { tipo: tipo, valor: '' }));
+            } else {
+                saida.push(Object.assign(base, {
+                    tipo: 'texto',
+                    valor: campo.getText() || '',
+                    multilinha: !!(campo.isMultiline && campo.isMultiline())
+                }));
             }
-            if (/RadioGroup/.test(construtor)) {
-                return Object.assign(base, { tipo: 'escolha', valor: campo.getSelected() || '', opcoes: campo.getOptions() });
-            }
-            if (/Dropdown/.test(construtor)) {
-                return Object.assign(base, { tipo: 'lista', valor: (campo.getSelected() || [])[0] || '', opcoes: campo.getOptions() });
-            }
-            if (/OptionList/.test(construtor)) {
-                return Object.assign(base, { tipo: 'lista', valor: (campo.getSelected() || [])[0] || '', opcoes: campo.getOptions() });
-            }
-            if (/Button/.test(construtor)) {
-                return Object.assign(base, { tipo: 'botao', valor: '' });
-            }
-            return Object.assign(base, {
-                tipo: 'texto',
-                valor: campo.getText() || '',
-                multilinha: !!(campo.isMultiline && campo.isMultiline())
-            });
         } catch (_) {
-            return Object.assign(base, { tipo: 'texto', valor: '' });
+            saida.push(Object.assign(base, { tipo: tipo, valor: '' }));
+        }
+    }
+    return saida;
+}
+
+// Cria os campos de um formulario PDF, a partir dos retangulos desenhados na tela.
+// E' o par que faltava de "Preencher PDF": preencher so' serve quando o campo JA existe,
+// e a ficha que a escola manda em PDF costuma nao ter campo nenhum — e' papel para
+// imprimir. Com isto ela vira formulario digital uma vez e todo ano e' so' preencher.
+async function criarFormulario(e, prog) {
+    const arquivo = listaDe(e.arquivo)[0];
+    const doc = await abrirPdf(arquivo);
+    const itens = Array.isArray(e.itens) ? e.itens : JSON.parse(e.itens || '[]');
+    if (!itens.length) throw new Error('Desenhe na pagina onde cada campo deve ficar.');
+
+    const form = doc.getForm();
+    const fonte = await fonteHelvetica(doc, false);
+    const usados = new Set(form.getFields().map(c => c.getName()));
+    let criados = 0;
+    const problemas = [];
+
+    itens.forEach((it, i) => {
+        if (prog) prog(Math.round(i / itens.length * 90), 'Criando campo ' + (i + 1));
+        // Nome unico: no PDF, dois campos com o mesmo nome compartilham o VALOR — dois
+        // "nome" na mesma ficha passariam a mostrar sempre a mesma coisa.
+        let nome = String(it.nome || '').trim() || 'campo';
+        if (usados.has(nome)) {
+            let n = 2;
+            while (usados.has(nome + '_' + n)) n++;
+            nome = nome + '_' + n;
+        }
+        usados.add(nome);
+
+        const pagina = doc.getPage(Math.max(0, Math.min(doc.getPageCount() - 1, it.pagina || 0)));
+        const caixa = { x: it.x, y: it.y, width: it.largura, height: it.altura };
+        try {
+            if (it.tipo === 'campo-marcacao') {
+                // Quadrado: uma marcacao achatada ou esticada fica torta em todo leitor.
+                const lado = Math.max(8, Math.min(caixa.width, caixa.height));
+                const campo = form.createCheckBox(nome);
+                campo.addToPage(pagina, { x: caixa.x, y: caixa.y, width: lado, height: lado });
+            } else {
+                const campo = form.createTextField(nome);
+                if (it.multilinha) campo.enableMultiline();
+                campo.setFontSize(Math.max(6, Math.min(20, it.altura * (it.multilinha ? 0.35 : 0.6))));
+                campo.addToPage(pagina, Object.assign({ font: fonte }, caixa));
+            }
+            criados++;
+        } catch (erro) {
+            problemas.push(nome + ' (' + (erro.message || erro) + ')');
         }
     });
+
+    doc.setProducer('SisProf — Ferramentas PDF');
+    if (prog) prog(95, 'Gravando');
+    return {
+        arquivos: [{ nome: semExtensao(arquivo.nome) + '_formulario.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
+        mensagem: criados + ' campo(s) criados. Agora este PDF pode ser preenchido aqui mesmo, ' +
+                  'em "Preencher formulário PDF", ou em qualquer leitor de PDF.' +
+                  (problemas.length ? ' Nao deu em: ' + problemas.join('; ') + '.' : '')
+    };
 }
 
 async function preencher(e, prog) {
@@ -2877,21 +2971,19 @@ async function preencher(e, prog) {
     let preenchidos = 0;
     const problemas = [];
 
-    campos.forEach(campo => {
+    for (const campo of campos) {
         const nome = campo.getName();
-        if (!(nome in valores)) return;
+        if (!(nome in valores)) continue;
         const valor = valores[nome];
-        const construtor = campo.constructor && campo.constructor.name || '';
+        const tipo = await tipoDoCampo(campo);      // instanceof, nao constructor.name — ver tipoDoCampo
         try {
-            if (/CheckBox/.test(construtor)) {
+            if (tipo === 'marcacao') {
                 if (valor === true || valor === 'true' || valor === 'on' || valor === '1') campo.check();
                 else campo.uncheck();
-            } else if (/RadioGroup/.test(construtor)) {
+            } else if (tipo === 'escolha' || tipo === 'lista') {
                 if (String(valor)) campo.select(String(valor));
-            } else if (/Dropdown|OptionList/.test(construtor)) {
-                if (String(valor)) campo.select(String(valor));
-            } else if (/Button/.test(construtor)) {
-                return;                            // botao nao recebe valor
+            } else if (tipo === 'botao' || tipo === 'assinatura') {
+                continue;                          // botao e assinatura nao recebem valor de texto
             } else {
                 campo.setText(limparParaWinAnsi(valor == null ? '' : String(valor)));
             }
@@ -2899,7 +2991,7 @@ async function preencher(e, prog) {
         } catch (erro) {
             problemas.push(nome + ' (' + (erro.message || erro) + ')');
         }
-    });
+    }
 
     if (e.achatar) {
         // Achatado, o valor passa a fazer parte da pagina: ninguem reabre e muda a nota.
@@ -3014,6 +3106,7 @@ const ops = {
     infoDocumento: infoDocumento,
     anotar: anotar,
     preencher: preencher,
+    criarFormulario: criarFormulario,
     assinar: assinar,
     // Converter para PDF
     imagensParaPdf: imagensParaPdf,

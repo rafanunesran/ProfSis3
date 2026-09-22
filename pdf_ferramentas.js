@@ -13,16 +13,17 @@
 //   problema de conformidade que o site gratuito cria.
 //
 // COMO A TELA E' FEITA
-//   Nenhuma das 48 ferramentas tem HTML escrito a mao. Cada uma se DESCREVE no
+//   Nenhuma das 49 ferramentas tem HTML escrito a mao. Cada uma se DESCREVE no
 //   catalogo (CATALOGO_PDF) — quais campos pede, de que tipo, com que padrao — e um
 //   unico motor de formulario monta a tela, le os arquivos, chama a operacao,
 //   acompanha o andamento e oferece o download (em .zip quando sai mais de um
 //   arquivo). Acrescentar uma ferramenta nova e' acrescentar uma entrada no catalogo
 //   e uma funcao em pdf_operacoes.js.
 //
-//   As sete ferramentas que precisam de mais do que campos — visualizar, reorganizar
-//   com miniaturas, anotar, assinar desenhando, censurar arrastando o mouse,
-//   preencher formulario e a camera — declaram `extra` e entram em PDF_EXTRAS.
+//   As ferramentas que precisam de mais do que campos — visualizar, reorganizar com
+//   miniaturas, anotar, assinar desenhando, censurar arrastando o mouse, criar e
+//   preencher formulario, ler as informacoes do arquivo e a camera — declaram
+//   `extra` e entram em PDF_EXTRAS.
 //
 // O PORTAO PREMIUM
 //   O catalogo fica VISIVEL para todo mundo (quem nao assina precisa poder ver o que
@@ -336,6 +337,14 @@ const CATALOGO_PDF = [
             { id: 'criador', tipo: 'texto', rotulo: 'Programa criador' },
             { id: 'idioma', tipo: 'texto', rotulo: 'Idioma', padrao: 'pt-BR' }
         ]
+    },
+    {
+        id: 'criar-formulario', grupo: 'editar', emoji: '🗒️', nome: 'Criar formulário preenchível',
+        acao: 'criarFormulario', extra: 'criarFormulario',
+        resumo: 'Transforma uma ficha em PDF num formulário que se digita na tela.',
+        detalhe: 'Desenhe onde vai cada campo e dê um nome a ele. Feito uma vez, todo ano é só preencher — ' +
+                 'em "Preencher formulário PDF" ou em qualquer leitor de PDF.',
+        campos: [cPdf('Ficha em PDF')]
     },
     {
         id: 'preencher', grupo: 'editar', emoji: '🖊️', nome: 'Preencher formulário PDF', acao: 'preencher',
@@ -1447,6 +1456,70 @@ const PDF_EXTRAS = {
         }
     },
 
+    // ------------------------------------------------------------ criarFormulario
+    criarFormulario: {
+        async aoTrocarArquivo() {
+            const doc = await pdfAbrirNoVisor();
+            if (!doc) return;
+            pdfExtra = {
+                doc: doc, pagina: 1, itens: [], modo: 'campo-texto', cor: '#3182ce',
+                nomeCampo: '', contador: 0,
+                // O palco chama isto a cada retangulo desenhado: e' onde o campo ganha nome.
+                aoAcrescentar: (item) => {
+                    pdfExtra.contador++;
+                    const base = String(pdfExtra.nomeCampo || '').trim();
+                    item.nome = base || ('campo' + pdfExtra.contador);
+                    item.multilinha = !!pdfExtra.multilinha;
+                    // Nome digitado e' usado uma vez; depois volta a numerar, para nao
+                    // sair uma ficha inteira com o mesmo nome sem ninguem perceber.
+                    pdfExtra.nomeCampo = '';
+                    const campo = document.getElementById('pdfNomeCampo');
+                    if (campo) { campo.value = ''; campo.focus(); }
+                }
+            };
+        },
+        render(div) {
+            if (!pdfExtra.doc) {
+                div.innerHTML = '<p style="color:#718096; font-size:13px;">Escolha a ficha em PDF para marcar onde ficam os campos.</p>';
+                return;
+            }
+            div.innerHTML = `
+                <div style="background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:12px;">
+                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">
+                        <button class="btn btn-sm ${pdfExtra.modo === 'campo-texto' ? 'btn-primary' : 'btn-secondary'}"
+                                onclick="pdfAnotarModo('campo-texto')">🔤 Campo de texto</button>
+                        <button class="btn btn-sm ${pdfExtra.modo === 'campo-marcacao' ? 'btn-primary' : 'btn-secondary'}"
+                                onclick="pdfAnotarModo('campo-marcacao')">☑️ Caixa de marcação</button>
+                    </div>
+                    <input type="text" id="pdfNomeCampo" placeholder="Nome deste campo (ex.: nome_do_estudante) — em branco numera sozinho"
+                           oninput="pdfExtra.nomeCampo = this.value"
+                           style="width:100%; padding:8px 10px; border:1px solid #cbd5e0; border-radius:6px; box-sizing:border-box;">
+                    ${pdfExtra.modo === 'campo-texto' ? `
+                        <label style="display:block; font-size:12px; color:#4a5568; margin-top:8px; cursor:pointer;">
+                            <input type="checkbox" ${pdfExtra.multilinha ? 'checked' : ''}
+                                   onchange="pdfExtra.multilinha = this.checked"> aceitar várias linhas (campo de observações)
+                        </label>` : ''}
+                    <div style="font-size:12px; color:#718096; margin-top:8px;">
+                        Arraste sobre a linha da ficha onde a pessoa vai escrever.
+                    </div>
+                </div>
+                ${pdfBarraDePaginaHtml()}
+                <div id="pdfPalcoArea" style="position:relative; display:inline-block; max-width:100%;
+                     box-shadow:0 2px 12px rgba(0,0,0,.15); background:white;">
+                    <canvas id="pdfPalcoFundo" style="display:block; max-width:100%;"></canvas>
+                    <canvas id="pdfPalcoMarcas" style="position:absolute; left:0; top:0; width:100%; height:100%; cursor:crosshair;"></canvas>
+                </div>
+                <div id="pdfListaItens" style="margin-top:12px;"></div>`;
+            pdfPalcoRedesenhar();
+        },
+        coletar() {
+            if (!pdfExtra.itens || !pdfExtra.itens.length) {
+                throw new Error('Nenhum campo desenhado. Arraste sobre a pagina para criar o primeiro.');
+            }
+            return { itens: pdfExtra.itens };
+        }
+    },
+
     // ----------------------------------------------------------------- preencher
     preencher: {
         async aoTrocarArquivo() {
@@ -1816,6 +1889,10 @@ function pdfPalcoLigar() {
             if (largura > 3 && altura > 3) {
                 pdfExtra.itens.push({ tipo: modo, pagina: pdfExtra.pagina - 1,
                                       x: x, y: y, largura: largura, altura: altura, cor: pdfExtra.cor });
+                // "Criar formulario" usa este gancho para batizar o campo recem-desenhado.
+                if (typeof pdfExtra.aoAcrescentar === 'function') {
+                    pdfExtra.aoAcrescentar(pdfExtra.itens[pdfExtra.itens.length - 1]);
+                }
             }
         }
         inicio = null;
@@ -1892,7 +1969,8 @@ function pdfRenderListaItens() {
         area.innerHTML = '<p style="font-size:12px; color:#a0aec0;">Nada marcado ainda.</p>';
         return;
     }
-    const nomes = { texto: 'Texto', destaque: 'Destaque', retangulo: 'Caixa', linha: 'Linha', tarja: 'Tarja' };
+    const nomes = { texto: 'Texto', destaque: 'Destaque', retangulo: 'Caixa', linha: 'Linha', tarja: 'Tarja',
+                    'campo-texto': 'Campo de texto', 'campo-marcacao': 'Caixa de marcação' };
     area.innerHTML = `
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
             <span style="font-size:13px; font-weight:600; color:#4a5568;">${itens.length} marcação(ões)</span>
@@ -1902,7 +1980,7 @@ function pdfRenderListaItens() {
             <div style="display:flex; align-items:center; gap:8px; font-size:12px; padding:5px 8px;
                         background:#f7fafc; border-radius:5px; margin-bottom:4px;">
                 <span style="width:10px; height:10px; border-radius:2px; background:${it.tipo === 'tarja' ? '#000' : escPdf(it.cor || '#e53e3e')};"></span>
-                <span style="flex:1;">${nomes[it.tipo] || it.tipo} — página ${it.pagina + 1}${it.texto ? ': "' + escPdf(it.texto.slice(0, 40)) + '"' : ''}</span>
+                <span style="flex:1;">${nomes[it.tipo] || it.tipo} — página ${it.pagina + 1}${it.nome ? ': ' + escPdf(it.nome) : ''}${it.texto ? ': "' + escPdf(it.texto.slice(0, 40)) + '"' : ''}</span>
                 <button onclick="pdfRemoverItem(${i})" style="border:none; background:none; cursor:pointer; color:#e53e3e;">×</button>
             </div>`).join('')}`;
 }
