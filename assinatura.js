@@ -72,7 +72,12 @@ const PLANOS_SISPROF = {
 // escreve — ver firestore.rules.
 const LINKS_ASSINATURA_PADRAO = {
     apoiase: '',    // https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=...
-    professor: ''   // idem, plano de R$ 20,00
+    professor: '',  // idem, plano de R$ 20,00
+    // Endereco do servico publicado a partir da pasta assinatura/ (Vercel ou
+    // Cloudflare). E' quem cancela a assinatura no Mercado Pago a pedido do
+    // professor. Sem ele, o botao de cancelar leva a pessoa ao painel do Mercado
+    // Pago — funciona, so' da' mais trabalho.
+    servico: ''
 };
 
 // Enquanto os planos novos nao estiverem criados no Mercado Pago, o botao explica
@@ -127,28 +132,33 @@ async function carregarAssinaturaAtual(forcar) {
 
 // Qual plano vale para esta conta AGORA.
 //
-// A ordem importa, e ja' escondeu um defeito: QUANDO EXISTE documento de
-// assinatura, e' ele quem manda — inclusive para dizer que acabou. A marca
-// `contribuidor` do perfil so' vale para quem NAO tem documento nenhum, que e'
-// como os apoiadores antigos (o plano de R$ 7,00) estao registrados ate' hoje.
+// SO' PAGAMENTO CONFIRMADO CONCEDE APOIO. A unica fonte e' `assinaturas/<uid>`,
+// documento que nem o dono da conta escreve: quem escreve e' o webhook, depois que
+// o Mercado Pago confirma a cobranca, ou o super admin ao conceder cortesia.
 //
-// Se a marca do perfil pudesse falar por cima de um documento cancelado, quem
-// cancelasse a assinatura ficaria com o selo para sempre: o proprio aplicativo
-// acende essa marca ao ver a assinatura ativa, e ela passaria a se sustentar
-// sozinha depois do cancelamento.
+// Antes havia um segundo caminho: o campo `contribuidor` em system/users_list. Era
+// um buraco de verdade — as Regras liberam ESCRITA em system/* para qualquer conta
+// logada (ver o comentario la', que explica por que), entao bastava uma linha no
+// console do navegador para pendurar o selo de apoiador no proprio nome sem pagar
+// nada. Esse caminho acabou: hoje o campo e' so' espelho, nunca fonte.
+//
+// Clicar em "Assinar" tambem nao concede nada: enquanto o cartao nao passa, o
+// documento vem com status `pendente`, e pendente nao e' ativa.
 function planoDoUsuario() {
     if (!currentUser) return 'free';
     if (currentUser.role === 'super_admin') return 'professor';
 
     const a = _assinaturaAtual;
-    if (a && a.status) {
-        if (a.status !== 'ativa') return 'free';
-        if (PLANOS_SISPROF[a.plano]) return a.plano;
-        if (a.planoContratado && PLANOS_SISPROF[a.planoContratado]) return a.planoContratado;
-        return 'free';
-    }
-    if (currentUser.contribuidor === true) return 'apoiase';
+    if (!a || a.status !== 'ativa') return 'free';
+    if (PLANOS_SISPROF[a.plano]) return a.plano;
+    if (a.planoContratado && PLANOS_SISPROF[a.planoContratado]) return a.planoContratado;
     return 'free';
+}
+
+// Esta conta pediu um plano e ainda espera a confirmacao do cartao?
+// Serve so' para a tela explicar a espera — nao concede nada.
+function esperandoConfirmacao() {
+    return !!(_assinaturaAtual && _assinaturaAtual.status === 'pendente');
 }
 
 function infoPlanoAtual() {
@@ -318,6 +328,7 @@ async function carregarLinksAssinatura() {
         const cfg = leitura.doc;
         links.apoiase = (typeof cfg.apoiase === 'string' ? cfg.apoiase : '') || LINKS_ASSINATURA_PADRAO.apoiase;
         links.professor = (typeof cfg.professor === 'string' ? cfg.professor : '') || LINKS_ASSINATURA_PADRAO.professor;
+        links.servico = (typeof cfg.servico === 'string' ? cfg.servico : '') || LINKS_ASSINATURA_PADRAO.servico;
         _linksAssinatura = links;
     }
     return links;
@@ -393,7 +404,6 @@ async function conferirAssinaturaAposCheckout() {
     await carregarAssinaturaAtual(true);
     atualizarBotaoApoie();
     if (typeof atualizarBannerApoio === 'function') atualizarBannerApoio();
-    await sincronizarSeloContribuinte();
     if (_assinaturaAtual && _assinaturaAtual.status === 'ativa') {
         alert('Assinatura confirmada! Obrigado por apoiar o SisProf 💛');
     } else {
@@ -407,6 +417,94 @@ async function conferirAssinaturaAposCheckout() {
         url.searchParams.delete('assinatura');
         window.history.replaceState({}, '', url.toString());
     } catch (e) {}
+}
+
+// ----------------------------------------------------------------------------
+// Cancelar a assinatura
+// ----------------------------------------------------------------------------
+// Cancelar precisa ser tao facil quanto assinar. Quem quer sair e nao encontra o
+// botao nao vira apoiador de novo: vira reclamacao no banco e assinatura contestada.
+//
+// Quem cancela de verdade e' o servico da pasta assinatura/ — o navegador nao pode
+// falar com a API do Mercado Pago (o token de producao estaria no codigo, a' vista
+// de todos). A pagina manda o cracha da sessao do Firebase junto, e o servidor
+// confere de quem e' antes de cancelar qualquer coisa.
+async function cancelarAssinatura() {
+    const a = _assinaturaAtual;
+    if (!a || ['ativa', 'pendente', 'pausada'].indexOf(a.status) === -1) {
+        alert('Nao encontrei uma assinatura ativa nesta conta.');
+        return;
+    }
+
+    const plano = PLANOS_SISPROF[a.plano] || PLANOS_SISPROF[a.planoContratado] || PLANOS_SISPROF.apoiase;
+    const certeza = confirm(
+        'Cancelar a assinatura ' + plano.nome + '?\n\n' +
+        'A cobranca mensal para de acontecer e voce volta para o plano gratuito. ' +
+        'O sistema continua funcionando igual — voce so deixa de ter o selo' +
+        (plano.premium ? ' e as funcoes premium' : '') + '.\n\n' +
+        'Pode voltar a assinar quando quiser.');
+    if (!certeza) return;
+
+    const links = await carregarLinksAssinatura();
+    const servico = links.servico;
+
+    // Sem o servico configurado, mandamos a pessoa para o painel do Mercado Pago em
+    // vez de dizer que cancelou sem ter cancelado.
+    if (!servico) {
+        alert('O cancelamento automatico ainda nao esta configurado neste sistema.\n\n' +
+              'Vou abrir o painel do Mercado Pago: entre em "Assinaturas" e cancele por la. ' +
+              'Leva um minuto e tem efeito imediato.');
+        window.open('https://www.mercadopago.com.br/subscriptions', '_blank');
+        return;
+    }
+
+    const botao = document.getElementById('btnCancelarAssinatura');
+    if (botao) { botao.disabled = true; botao.textContent = 'Cancelando...'; }
+
+    try {
+        const cracha = await pegarCrachaDaSessao();
+        if (!cracha) {
+            alert('Sua sessao expirou. Saia e entre de novo para cancelar a assinatura.');
+            return;
+        }
+        const resposta = await fetch(servico.replace(/\/$/, '') + '/cancelar', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ' + cracha, 'content-type': 'application/json' },
+            body: '{}'
+        });
+        const resultado = await resposta.json().catch(() => ({}));
+
+        if (!resposta.ok || !resultado.cancelada) {
+            alert('Nao consegui cancelar: ' + (resultado.motivo || resultado.erro || 'tente de novo em instantes') +
+                  '\n\nSe preferir, cancele direto no painel do Mercado Pago (Assinaturas).');
+            return;
+        }
+        await carregarAssinaturaAtual(true);
+        atualizarBotaoApoie();
+        if (typeof atualizarBannerApoio === 'function') atualizarBannerApoio();
+        renderConteudoModalApoie();
+        alert('Assinatura cancelada. Nao havera mais cobranca.\n\nObrigado por ter apoiado o projeto 💛');
+    } catch (e) {
+        console.warn('[Assinatura] Falha ao cancelar:', e);
+        alert('Nao consegui falar com o servico de cancelamento. Verifique sua internet e tente de novo, ' +
+              'ou cancele pelo painel do Mercado Pago (Assinaturas).');
+    } finally {
+        if (botao) { botao.disabled = false; botao.textContent = 'Cancelar assinatura'; }
+    }
+}
+
+// O cracha da sessao (ID token do Firebase Auth). E' o que prova, do lado do
+// servidor, que quem pediu o cancelamento e' o dono da conta.
+async function pegarCrachaDaSessao() {
+    try {
+        if (typeof firebase === 'undefined' || !firebase.auth) return '';
+        const usuario = firebase.auth().currentUser;
+        if (!usuario || typeof usuario.getIdToken !== 'function') return '';
+        return await usuario.getIdToken();
+    } catch (e) {
+        console.warn('[Assinatura] Nao consegui pegar o cracha da sessao:', e);
+        return '';
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -453,7 +551,8 @@ function descreverAssinatura() {
         return '<p style="font-size:13px; color:#718096;">Voce esta no plano gratuito.</p>';
     }
     if (a.status === 'pendente') {
-        return '<p style="font-size:13px; color:#b7791f;">⏳ Assinatura iniciada, aguardando a confirmacao do cartao.</p>';
+        return '<p style="font-size:13px; color:#b7791f;">⏳ Assinatura iniciada, aguardando a confirmacao do cartao. ' +
+               'O selo e as funcoes do plano entram assim que o pagamento for confirmado.</p>';
     }
     if (a.status === 'pausada') {
         return '<p style="font-size:13px; color:#c53030;">⚠️ A cobranca deste mes nao passou no cartao. ' +
@@ -494,10 +593,18 @@ function renderConteudoModalApoie(opcoes) {
             o SisProf nunca ve nem guarda esse dado. Cancele quando quiser, sem multa.
         </p>
         ${temAssinaturaViva ? `
-            <p style="font-size:12px; margin-top:8px;">
-                <a href="https://www.mercadopago.com.br/subscriptions" target="_blank" rel="noopener"
-                   style="color:#3182ce;">Gerenciar ou cancelar minha assinatura no Mercado Pago</a>
-            </p>` : ''}
+            <div style="margin-top:14px; border-top:1px dashed #e2e8f0; padding-top:14px;">
+                <button class="btn btn-danger" id="btnCancelarAssinatura" onclick="cancelarAssinatura()"
+                        style="padding:9px 18px;">Cancelar assinatura</button>
+                <p style="font-size:11px; color:#718096; margin-top:6px;">
+                    Cancelar interrompe a cobranca mensal e devolve a conta ao plano gratuito.
+                    Sem multa e sem perder nenhum dado — voce pode voltar quando quiser.
+                </p>
+                <p style="font-size:11px; margin-top:4px;">
+                    <a href="https://www.mercadopago.com.br/subscriptions" target="_blank" rel="noopener"
+                       style="color:#718096;">Ver a assinatura no painel do Mercado Pago</a>
+                </p>
+            </div>` : ''}
         <div id="apoieContribuintes" style="margin-top:18px; border-top:1px dashed #e2e8f0; padding-top:15px;"></div>`;
 }
 
@@ -545,7 +652,6 @@ function injectApoieButton() {
     carregarAssinaturaAtual().then(async () => {
         atualizarBotaoApoie();
         if (typeof atualizarBannerApoio === 'function') atualizarBannerApoio();
-        await sincronizarSeloContribuinte();
         if (precisaAvisarDaTransicao()) abrirAvisoTransicao();
         else if (voltandoDoCheckout()) conferirAssinaturaAposCheckout();
     });
@@ -587,65 +693,49 @@ function atualizarBannerApoio() {
     }
 }
 
-// O selo 💛 e a lista "Obrigado a quem e' parca" saem de `users_list.contribuidor`,
-// que e' o unico lugar que TODA a escola consegue ler (as Regras nao deixam ninguem
-// listar `assinaturas/*` — o plano de cada um e' assunto de cada um). Entao, ao
-// descobrir que a assinatura esta' ativa, a propria conta acende o proprio selo.
+// A lista "Obrigado a quem e' parca" vinha de `users_list.contribuidor`, e o proprio
+// aplicativo escrevia esse campo para si mesmo. Nao escreve mais: era o mesmo buraco
+// do plano — system/* aceita escrita de qualquer conta logada, entao o coracao
+// amarelo podia ser pendurado no proprio nome pelo console, sem pagamento nenhum.
 //
-// Nao ha' o que burlar aqui: marcar-se contribuinte na lista so' coloca um coracao
-// amarelo ao lado do nome. O que libera funcao premium e' `assinaturas/<uid>`, que
-// nenhuma conta comum escreve.
-async function sincronizarSeloContribuinte() {
-    if (!currentUser || currentUser.role === 'super_admin') return;
-    const deveter = ehContribuinte();
-    if (currentUser.contribuidor === deveter) return;
-    try {
-        const dados = await getData('system', 'users_list');
-        const lista = (dados && Array.isArray(dados.list)) ? dados.list : [];
-        const eu = lista.find(u => u.email === currentUser.email);
-        if (!eu || eu.contribuidor === deveter) return;
-        eu.contribuidor = deveter;
-        if (deveter) eu.contribuiuAntes = true;
-        currentUser.contribuidor = deveter;
-        try { localStorage.setItem('app_current_user', JSON.stringify(currentUser)); } catch (e) {}
-        await saveData('system', 'users_list', { list: lista });
-    } catch (e) {
-        console.warn('[Assinatura] Nao consegui atualizar o selo de contribuinte:', e);
-    }
-}
+// Agora a vitrine mora em `contribuintes/<uid>`, que SO' o webhook escreve, depois
+// da confirmacao do pagamento (ver assinatura/webhook.mjs). O campo antigo continua
+// existindo para o painel do super admin, mas ninguem le' ele para conceder nada.
 
-// Formata o nome do contribuinte como "Primeiro S." (primeiro nome + inicial do sobrenome).
-function formatarNomeContribuinte(nome) {
-    const partes = (nome || '').trim().split(/\s+/).filter(Boolean);
-    if (partes.length === 0) return 'Professor(a)';
-    if (partes.length === 1) return partes[0];
-    return `${partes[0]} ${partes[partes.length - 1].charAt(0).toUpperCase()}.`;
-}
-
-// Preenche a secao "Obrigado a quem e' parca" com os contribuintes da escola.
+// Preenche a secao "Obrigado a quem e' parca". Le `contribuintes/*`, a colecao que
+// o webhook mantem: quem esta' aqui pagou e o Mercado Pago confirmou.
 async function carregarContribuintesApoie() {
     const alvo = document.getElementById('apoieContribuintes');
     if (!alvo) return;
     alvo.innerHTML = '<p style="font-size:12px; color:#a0aec0;">Carregando...</p>';
     try {
-        const dataUsers = await getData('system', 'users_list');
-        const users = (dataUsers && dataUsers.list && Array.isArray(dataUsers.list)) ? dataUsers.list : [];
-        const contribuintes = users.filter(u => u.contribuidor === true &&
-            (!currentUser || !currentUser.schoolId || String(u.schoolId || '') === String(currentUser.schoolId)));
-        if (contribuintes.length === 0) {
+        if (typeof db === 'undefined' || !db) { alvo.innerHTML = ''; return; }
+
+        let consulta = db.collection('contribuintes');
+        if (currentUser && currentUser.schoolId) {
+            consulta = consulta.where('schoolId', '==', String(currentUser.schoolId));
+        }
+        const resultado = await consulta.limit(200).get();
+        const nomes = [];
+        resultado.forEach(doc => {
+            const d = doc.data() || {};
+            if (d.nome) nomes.push(String(d.nome));
+        });
+
+        if (nomes.length === 0) {
             alvo.innerHTML = '<p style="font-size:13px; color:#718096;">Seja o primeiro a apoiar e ajude a manter o SisProf sempre melhorando! 💛</p>';
             return;
         }
-        const nomes = contribuintes
-            .map(u => formatarNomeContribuinte(u.nome))
-            .sort((a, b) => a.localeCompare(b, 'pt'));
+        nomes.sort((a, b) => a.localeCompare(b, 'pt'));
         alvo.innerHTML = `
             <p style="font-size:14px; font-weight:bold; color:#2f855a; margin-bottom:8px;">🙌 Obrigado a quem e' parca</p>
             <div style="display:flex; flex-wrap:wrap; gap:6px; justify-content:center;">
                 ${nomes.map(n => `<span class="badge badge-success" style="font-size:12px;">💛 ${n}</span>`).join('')}
             </div>`;
     } catch (e) {
-        console.warn('[Apoie] Erro ao carregar contribuintes:', e);
+        // Lista e' agradecimento, nao funcionalidade: some calada em vez de estragar
+        // o pop-up de quem veio assinar.
+        console.warn('[Apoie] Nao consegui carregar a lista de contribuintes:', e && e.message);
         alvo.innerHTML = '';
     }
 }
@@ -665,7 +755,8 @@ window.abrirAvisoTransicao = abrirAvisoTransicao;
 window.escolherNaTransicao = escolherNaTransicao;
 window.precisaAvisarDaTransicao = precisaAvisarDaTransicao;
 window.temAssinaturaAntiga = temAssinaturaAntiga;
-window.sincronizarSeloContribuinte = sincronizarSeloContribuinte;
+window.esperandoConfirmacao = esperandoConfirmacao;
+window.cancelarAssinatura = cancelarAssinatura;
 window.atualizarBannerApoio = atualizarBannerApoio;
 window.injectApoieButton = injectApoieButton;
 window.atualizarBotaoApoie = atualizarBotaoApoie;

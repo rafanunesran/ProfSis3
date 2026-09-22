@@ -12,7 +12,13 @@
 //      traz um id — e qualquer um pode inventar um id);
 //   3. descobre de QUEM e' a assinatura (external_reference = uid; se nao vier,
 //      procura o e-mail do pagador na lista de usuarios);
-//   4. grava `assinaturas/<uid>` com credencial de conta de servico.
+//   4. grava `assinaturas/<uid>` com credencial de conta de servico, e mantem o
+//      nome de quem apoia em `contribuintes/<uid>` (a lista que a escola inteira ve).
+//
+// TAMBEM ATENDE O CANCELAMENTO (POST em /cancelar). O professor cancela pelo proprio
+// sistema, sem precisar caçar a tela do Mercado Pago. Quem manda o pedido prova ser
+// quem diz ser com o cracha do Firebase Auth (ver auth-firebase.mjs): confiar no uid
+// que o navegador envia deixaria qualquer um cancelar a assinatura de qualquer outro.
 //
 // ONDE RODA
 //   Cloudflare Workers (`wrangler deploy`) ou funcao Edge da Vercel — o codigo e' o
@@ -30,7 +36,8 @@ import {
     interpretarNotificacao, montarAssinatura, identificarUsuario,
     acharUidPorEmail, devoGravar, manifestoAssinatura, lerCabecalhoAssinatura
 } from './regras.mjs';
-import { lerDoc, gravarDoc, lerContaServico } from './firestore-rest.mjs';
+import { lerDoc, gravarDoc, apagarDoc, lerContaServico } from './firestore-rest.mjs';
+import { verificarTokenFirebase } from './auth-firebase.mjs';
 
 const MP_API = 'https://api.mercadopago.com';
 
@@ -154,7 +161,85 @@ export async function processarNotificacao(corpo, ambiente, ferramentas) {
     }
 
     await gravar('assinaturas/' + uid, Object.assign({ uid: uid }, doc));
+    await atualizarVitrineDeContribuintes(uid, doc, ferramentas);
     return { feito: true, uid: uid, plano: doc.plano, status: doc.status };
+}
+
+// A LISTA "OBRIGADO A QUEM E' PARCA".
+//
+// Ela existia lendo o campo `contribuidor` de system/users_list — documento que
+// QUALQUER conta logada escreve. Dava para pendurar o coracao amarelo no proprio
+// nome pelo console do navegador, sem pagar nada. Agora quem escreve esta lista e'
+// so' o webhook, depois do pagamento confirmado, e as Regras nao deixam mais ninguem
+// tocar nela.
+//
+// Guarda o minimo: nome abreviado e a escola. Nem plano, nem valor, nem e-mail —
+// quanto alguem paga nao e' assunto da sala dos professores.
+export async function atualizarVitrineDeContribuintes(uid, doc, ferramentas) {
+    const { ler, gravar, apagar } = ferramentas;
+    const vale = doc.status === 'ativa' && doc.plano !== 'free';
+
+    if (!vale) {
+        if (apagar) await apagar('contribuintes/' + uid);
+        return;
+    }
+    const lista = await ler('system/users_list');
+    const pessoa = ((lista && lista.list) || []).find(u =>
+        String((u && (u.uid || u.id)) || '') === String(uid));
+
+    await gravar('contribuintes/' + uid, {
+        uid: String(uid),
+        nome: abreviarNomeContribuinte((pessoa && pessoa.nome) || ''),
+        schoolId: String((pessoa && pessoa.schoolId) || ''),
+        desde: doc.atualizadoEm || new Date().toISOString()
+    });
+}
+
+// "Ana Carolina Souza" -> "Ana S." — o mesmo formato que a tela sempre mostrou.
+export function abreviarNomeContribuinte(nome) {
+    const partes = String(nome || '').trim().split(/\s+/).filter(Boolean);
+    if (partes.length === 0) return 'Professor(a)';
+    if (partes.length === 1) return partes[0];
+    return partes[0] + ' ' + partes[partes.length - 1].charAt(0).toUpperCase() + '.';
+}
+
+// ----------------------------------------------------------------------------
+// Cancelamento pedido pelo proprio professor
+// ----------------------------------------------------------------------------
+
+// Cancela no Mercado Pago e derruba o plano na mesma hora — sem esperar o webhook
+// da volta. Se a notificacao vier depois, ela apenas confirma o que ja' esta' aqui
+// (o carimbo de versao cuida de nao embaralhar a ordem).
+export async function cancelarAssinatura(uid, ambiente, ferramentas) {
+    const { ler, gravar, apagar, cancelarNoMp } = ferramentas;
+
+    const atual = await ler('assinaturas/' + uid);
+    if (!atual || !atual.preapprovalId) {
+        // Cortesia concedida pelo painel nao tem o que cancelar no Mercado Pago,
+        // mas tambem nao e' cobranca: dizemos a verdade em vez de fingir que deu.
+        if (atual && atual.origem !== 'mercadopago') {
+            return { cancelada: false, motivo: 'esta conta nao tem cobranca no cartao' };
+        }
+        return { cancelada: false, motivo: 'nao encontrei assinatura para esta conta' };
+    }
+    if (atual.status === 'cancelada') {
+        return { cancelada: true, motivo: 'a assinatura ja estava cancelada' };
+    }
+
+    await cancelarNoMp(atual.preapprovalId);
+
+    const doc = Object.assign({}, atual, {
+        plano: 'free',
+        status: 'cancelada',
+        canceladaPeloUsuarioEm: new Date().toISOString(),
+        atualizadoEm: new Date().toISOString(),
+        // Um passo a' frente do que estava gravado, para a notificacao atrasada do
+        // Mercado Pago nao "reviver" a assinatura que a pessoa acabou de cancelar.
+        versaoMs: Math.max(Number(atual.versaoMs) || 0, Date.now())
+    });
+    await gravar('assinaturas/' + uid, doc);
+    await atualizarVitrineDeContribuintes(uid, doc, ferramentas);
+    return { cancelada: true, plano: 'free', status: 'cancelada' };
 }
 
 // ----------------------------------------------------------------------------
@@ -172,7 +257,108 @@ export function idDaNotificacao(request, corpo) {
     return String((corpo && corpo.data && corpo.data.id) || (corpo && corpo.id) || '');
 }
 
+// ----------------------------------------------------------------------------
+// CORS — quem pode chamar o cancelamento pelo navegador
+// ----------------------------------------------------------------------------
+// Lista fechada, de proposito. O webhook do Mercado Pago nao passa por CORS (e'
+// servidor falando com servidor); quem precisa e' o /cancelar, chamado pela pagina
+// do professor. Deixar `*` aqui nao criaria um buraco (o cracha do Firebase continua
+// sendo exigido), mas tambem nao ha' motivo para convidar tentativa de fora.
+const ORIGENS_PADRAO = [
+    'https://rafanunesran.github.io',
+    'http://localhost:8877',
+    'http://127.0.0.1:8877'
+];
+
+function origensPermitidas(ambiente) {
+    const daConfig = String(ambiente.ORIGENS_PERMITIDAS || '')
+        .split(',').map(o => o.trim()).filter(Boolean);
+    return daConfig.length ? daConfig : ORIGENS_PADRAO;
+}
+
+function cabecalhosCors(request, ambiente) {
+    const origem = request.headers.get('origin') || '';
+    if (!origem || origensPermitidas(ambiente).indexOf(origem) === -1) return {};
+    return {
+        'access-control-allow-origin': origem,
+        'access-control-allow-methods': 'POST, OPTIONS',
+        'access-control-allow-headers': 'authorization, content-type',
+        'access-control-max-age': '86400',
+        'vary': 'Origin'
+    };
+}
+
+function responder(corpo, status, extras) {
+    return new Response(JSON.stringify(corpo), {
+        status: status,
+        headers: Object.assign({ 'content-type': 'application/json' }, extras || {})
+    });
+}
+
+// ----------------------------------------------------------------------------
+// Rota do cancelamento
+// ----------------------------------------------------------------------------
+
+async function tratarCancelamento(request, ambiente) {
+    const cors = cabecalhosCors(request, ambiente);
+
+    const autorizacao = request.headers.get('authorization') || '';
+    const token = autorizacao.toLowerCase().indexOf('bearer ') === 0 ? autorizacao.slice(7).trim() : '';
+    if (!token) return responder({ erro: 'falta o cracha da sessao' }, 401, cors);
+
+    const projeto = ambiente.FIREBASE_PROJECT_ID;
+    let dono;
+    try {
+        dono = await verificarTokenFirebase(token, projeto);
+    } catch (e) {
+        console.warn('[assinatura] cancelamento recusado:', e && e.message);
+        return responder({ erro: 'sessao invalida: ' + (e && e.message) }, 401, cors);
+    }
+
+    const conta = lerContaServico(ambiente.FIREBASE_SERVICE_ACCOUNT);
+    try {
+        const resultado = await cancelarAssinatura(dono.uid, ambiente, {
+            ler: (caminho) => lerDoc(projeto, caminho, conta),
+            gravar: (caminho, dados) => gravarDoc(projeto, caminho, dados, conta),
+            apagar: (caminho) => apagarDoc(projeto, caminho, conta),
+            cancelarNoMp: (id) => cancelarNoMercadoPago(id, ambiente.MP_ACCESS_TOKEN)
+        });
+        console.log('[assinatura] cancelamento:', dono.uid, JSON.stringify(resultado));
+        return responder(resultado, resultado.cancelada ? 200 : 409, cors);
+    } catch (e) {
+        console.error('[assinatura] cancelamento falhou:', e && e.message);
+        return responder({ erro: 'nao consegui cancelar: ' + (e && e.message) }, 500, cors);
+    }
+}
+
+async function cancelarNoMercadoPago(preapprovalId, token) {
+    const resposta = await fetch(MP_API + '/preapproval/' + encodeURIComponent(preapprovalId), {
+        method: 'PUT',
+        headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'cancelled' })
+    });
+    if (!resposta.ok) {
+        throw new Error('o Mercado Pago recusou o cancelamento: ' + resposta.status +
+                        ' ' + (await resposta.text()).slice(0, 300));
+    }
+    return true;
+}
+
+function ehRotaDeCancelamento(request) {
+    try {
+        return /\/cancelar\/?$/.test(new URL(request.url).pathname);
+    } catch (e) { return false; }
+}
+
 export async function tratarRequisicao(request, ambiente) {
+    if (request.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: cabecalhosCors(request, ambiente) });
+    }
+    if (ehRotaDeCancelamento(request)) {
+        if (request.method !== 'POST') return new Response('metodo nao suportado', { status: 405 });
+        return tratarCancelamento(request, ambiente);
+    }
+
     if (request.method === 'GET') {
         // Serve para o painel do Mercado Pago testar o endereco e para a gente
         // saber, pelo navegador, que o Worker esta' no ar.
@@ -208,7 +394,8 @@ export async function tratarRequisicao(request, ambiente) {
         const resultado = await processarNotificacao(corpo, ambiente, {
             buscar: (acao) => buscarAssinatura(acao, ambiente.MP_ACCESS_TOKEN),
             ler: (caminho) => lerDoc(projeto, caminho, conta),
-            gravar: (caminho, dados) => gravarDoc(projeto, caminho, dados, conta)
+            gravar: (caminho, dados) => gravarDoc(projeto, caminho, dados, conta),
+            apagar: (caminho) => apagarDoc(projeto, caminho, conta)
         });
         console.log('[assinatura]', JSON.stringify(resultado));
         return new Response(JSON.stringify(resultado), {

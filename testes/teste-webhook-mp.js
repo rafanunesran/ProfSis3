@@ -178,8 +178,11 @@ const assinaturaMp = (extra) => Object.assign({
       ambiente, Object.assign({}, buscarFixo, contando));
   const r2 = await W.processarNotificacao({ type: 'subscription_preapproval', data: { id: 'PRE-1' } },
       ambiente, Object.assign({}, buscarFixo, contando));
+  // Contamos so as gravacoes do DOCUMENTO DA ASSINATURA: a vitrine de contribuintes
+  // e' escrita na mesma passada, e somar as duas esconderia o que se quer medir.
+  const gravacoesDaAssinatura = gravacoes.filter(c => c.indexOf('assinaturas/') === 0);
   ok('o mesmo aviso chegando duas vezes grava uma vez so',
-      gravacoes.length === 1 && r2.feito === false);
+      gravacoesDaAssinatura.length === 1 && r2.feito === false);
 
   // 4f. notificacao ATRASADA nao desfaz a mais nova (o Mercado Pago entrega fora de ordem)
   banco = bancoFalso();
@@ -261,8 +264,128 @@ const assinaturaMp = (extra) => Object.assign({
   ok('sem query string, vale o id do corpo',
       W.idDaNotificacao({ url: 'https://w.dev/' }, { data: { id: 'DO-CORPO' } }) === 'DO-CORPO');
 
-  // ================= 7. OS VALORES BATEM NOS DOIS LADOS =================
-  console.log('\n7. Servidor e navegador falam do mesmo preco');
+  // ================= 7. A VITRINE "OBRIGADO A QUEM E' PARCA" =================
+  // Ela vinha de system/users_list.contribuidor, documento que QUALQUER conta logada
+  // escreve: dava para pendurar o selo no proprio nome pelo console, sem pagar. Agora
+  // e' o webhook que mantem `contribuintes/<uid>`, depois do pagamento confirmado.
+  console.log('\n7. A vitrine de contribuintes');
+
+  const comLista = { 'system/users_list': { list: [
+      { email: 'professor@escola.com', uid: 'uid-professor', nome: 'Ana Carolina Souza', schoolId: '77' } ] } };
+
+  banco = bancoFalso(comLista);
+  let apagados = [];
+  const comApagar = () => ({ ler: banco.ler, gravar: banco.gravar,
+      apagar: async (c) => { apagados.push(c); delete banco.docs[c]; } });
+
+  r = await W.processarNotificacao({ type: 'subscription_preapproval', data: { id: 'PRE-1' } }, ambiente,
+      Object.assign({ buscar: async () => assinaturaMp() }, comApagar()));
+  ok('pagamento confirmado coloca o nome na vitrine',
+      r.feito === true && !!banco.docs['contribuintes/uid-professor']);
+  ok('com o nome abreviado, como a tela sempre mostrou',
+      banco.docs['contribuintes/uid-professor'].nome === 'Ana S.');
+  ok('e a escola, para a lista ser a da escola de quem olha',
+      banco.docs['contribuintes/uid-professor'].schoolId === '77');
+  ok('sem plano, valor nem e-mail (quanto alguem paga nao e assunto da sala dos professores)',
+      !('plano' in banco.docs['contribuintes/uid-professor'])
+      && !('valor' in banco.docs['contribuintes/uid-professor'])
+      && !('email' in banco.docs['contribuintes/uid-professor']));
+
+  // cartao recusado tira o nome da vitrine
+  apagados = [];
+  await W.processarNotificacao({ type: 'subscription_preapproval', data: { id: 'PRE-1' } }, ambiente,
+      Object.assign({ buscar: async () => assinaturaMp({ status: 'paused',
+          last_modified: '2026-09-23T10:00:00.000-03:00' }) }, comApagar()));
+  ok('assinatura pausada sai da vitrine na hora',
+      apagados.indexOf('contribuintes/uid-professor') !== -1
+      && !banco.docs['contribuintes/uid-professor']);
+
+  ok('a abreviacao aguenta nome de uma palavra e nome vazio',
+      W.abreviarNomeContribuinte('Madonna') === 'Madonna'
+      && W.abreviarNomeContribuinte('') === 'Professor(a)'
+      && W.abreviarNomeContribuinte('  Ana   Souza ') === 'Ana S.');
+
+  // ================= 8. CANCELAMENTO PEDIDO PELO PROFESSOR =================
+  console.log('\n8. O professor cancelando a propria assinatura');
+
+  const ASSINADA = { uid: 'uid-professor', plano: 'professor', planoContratado: 'professor',
+      status: 'ativa', valor: 20, origem: 'mercadopago', preapprovalId: 'PRE-1', versaoMs: 1000 };
+
+  banco = bancoFalso(Object.assign({ 'assinaturas/uid-professor': ASSINADA,
+      'contribuintes/uid-professor': { uid: 'uid-professor', nome: 'Ana S.' } }, comLista));
+  apagados = [];
+  let canceladoNoMp = null;
+  let resCancel = await W.cancelarAssinatura('uid-professor', ambiente,
+      Object.assign({ cancelarNoMp: async (id) => { canceladoNoMp = id; } }, comApagar()));
+
+  ok('cancela de verdade no Mercado Pago (nao so no nosso banco)', canceladoNoMp === 'PRE-1');
+  ok('e o plano cai para free na mesma hora, sem esperar o webhook voltar',
+      resCancel.cancelada === true
+      && banco.docs['assinaturas/uid-professor'].status === 'cancelada'
+      && banco.docs['assinaturas/uid-professor'].plano === 'free');
+  ok('o nome sai da vitrine', apagados.indexOf('contribuintes/uid-professor') !== -1);
+  ok('guarda quando foi a pessoa que cancelou',
+      !!banco.docs['assinaturas/uid-professor'].canceladaPeloUsuarioEm);
+
+  // A notificacao atrasada do Mercado Pago nao pode RESSUSCITAR o que a pessoa cancelou.
+  const antesDoRessuscita = banco.docs['assinaturas/uid-professor'].status;
+  await W.processarNotificacao({ type: 'subscription_preapproval', data: { id: 'PRE-1' } }, ambiente,
+      Object.assign({ buscar: async () => assinaturaMp({ status: 'authorized',
+          last_modified: '2026-09-21T12:00:00.000-03:00' }) }, comApagar()));
+  ok('aviso atrasado NAO reativa a assinatura que a pessoa acabou de cancelar',
+      antesDoRessuscita === 'cancelada'
+      && banco.docs['assinaturas/uid-professor'].status === 'cancelada');
+
+  // Cancelar duas vezes nao quebra nem cobra de novo.
+  canceladoNoMp = null;
+  resCancel = await W.cancelarAssinatura('uid-professor', ambiente,
+      Object.assign({ cancelarNoMp: async (id) => { canceladoNoMp = id; } }, comApagar()));
+  ok('cancelar de novo nao chama o Mercado Pago outra vez',
+      resCancel.cancelada === true && canceladoNoMp === null);
+
+  // Conta sem assinatura, e cortesia do painel (que nao tem cobranca no cartao).
+  banco = bancoFalso(comLista);
+  resCancel = await W.cancelarAssinatura('uid-professor', ambiente,
+      Object.assign({ cancelarNoMp: async () => { throw new Error('nao deveria chamar'); } }, comApagar()));
+  ok('quem nao tem assinatura recebe explicacao, nao erro',
+      resCancel.cancelada === false && /nao encontrei/.test(resCancel.motivo));
+
+  banco = bancoFalso(Object.assign({ 'assinaturas/uid-professor': {
+      uid: 'uid-professor', plano: 'professor', status: 'ativa', origem: 'cortesia', versaoMs: 0 } }, comLista));
+  resCancel = await W.cancelarAssinatura('uid-professor', ambiente,
+      Object.assign({ cancelarNoMp: async () => { throw new Error('nao deveria chamar'); } }, comApagar()));
+  ok('cortesia do painel nao finge cancelamento de cobranca inexistente',
+      resCancel.cancelada === false && /nao tem cobranca/.test(resCancel.motivo));
+
+  // ================= 9. NINGUEM CANCELA A ASSINATURA DE OUTRO =================
+  console.log('\n9. O cracha da sessao no cancelamento');
+  const semCracha = await W.tratarRequisicao(
+      new Request('https://w.dev/api/cancelar', { method: 'POST', body: '{}' }),
+      { FIREBASE_PROJECT_ID: 'profsis3' });
+  ok('pedido de cancelamento sem cracha e recusado com 401', semCracha.status === 401);
+
+  const crachaInventado = await W.tratarRequisicao(
+      new Request('https://w.dev/api/cancelar', { method: 'POST', body: '{}',
+        headers: { authorization: 'Bearer eu.sou.oprofessor' } }),
+      { FIREBASE_PROJECT_ID: 'profsis3' });
+  ok('cracha inventado tambem e recusado (nao basta parecer um token)',
+      crachaInventado.status === 401);
+
+  const metodoErrado = await W.tratarRequisicao(
+      new Request('https://w.dev/api/cancelar', { method: 'GET' }), { FIREBASE_PROJECT_ID: 'profsis3' });
+  ok('GET no cancelamento nao cancela nada', metodoErrado.status === 405);
+
+  const A = await import('../assinatura/auth-firebase.mjs');
+  let recusou = '';
+  try {
+    await A.verificarTokenFirebase(
+      'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJxdWFscXVlciIsImF1ZCI6InByb2ZzaXMzIn0.', 'profsis3');
+  } catch (e) { recusou = e.message; }
+  ok('cracha com "alg: none" e recusado antes de qualquer outra checagem',
+      /algoritmo nao aceito/.test(recusou));
+
+  // ================= 10. OS VALORES BATEM NOS DOIS LADOS =================
+  console.log('\n10. Servidor e navegador falam do mesmo preco');
   const front = fs.readFileSync(path.join(RAIZ, 'assinatura.js'), 'utf8');
   const valorNoFront = (id) => {
     const trecho = front.split("    " + id + ": {")[1] || '';

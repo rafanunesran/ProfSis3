@@ -189,6 +189,22 @@ export async function gravarDoc(projeto, caminho, dados, contaServico) {
     return true;
 }
 
+// Apaga um documento. Usado quando a assinatura deixa de valer: o nome sai da
+// lista publica de contribuintes na hora, sem esperar ninguem passar limpando.
+export async function apagarDoc(projeto, caminho, contaServico) {
+    const token = await pegarToken(contaServico);
+    const resposta = await fetch(enderecoDoc(projeto, caminho), {
+        method: 'DELETE',
+        headers: { authorization: 'Bearer ' + token }
+    });
+    // 404 tambem e' sucesso: o que se queria e' que ele nao exista.
+    if (!resposta.ok && resposta.status !== 404) {
+        throw new Error('Falha ao apagar ' + caminho + ': ' + resposta.status +
+                        ' ' + (await resposta.text()).slice(0, 300));
+    }
+    return true;
+}
+
 // A conta de servico chega como JSON numa variavel de ambiente (secret do
 // provedor). Aceita tanto o JSON cru quanto o mesmo JSON em base64, porque
 // alguns paineis estragam quebras de linha ao colar.

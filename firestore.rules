@@ -250,6 +250,19 @@ service cloud.firestore {
       allow read, write: if isSuperAdmin();
     }
 
+    // A vitrine "Obrigado a quem e' parca": um documento por apoiador, com o nome
+    // abreviado e a escola. Nada de plano, valor ou e-mail — quanto alguem paga nao
+    // e' assunto da sala dos professores.
+    //
+    // SO' O WEBHOOK ESCREVE, e so' depois do pagamento confirmado. Esta lista morava
+    // no campo `contribuidor` de system/users_list, que qualquer conta logada pode
+    // escrever: dava para pendurar o selo de apoiador no proprio nome pelo console,
+    // sem pagar nada. Era o buraco que esta colecao veio fechar.
+    match /contribuintes/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
     // Os links de checkout dos planos. Leitura publica (sao links de pagamento,
     // abertos por definicao); escrita SO' do super admin. Nao podem morar em
     // system/*, onde qualquer conta logada escreve: link trocado manda o dinheiro

@@ -27,11 +27,27 @@ const FAKE = () => {
     set: async (o) => { window.__docs[col + '/' + id] = JSON.parse(JSON.stringify(o)); },
     delete: async () => { delete window.__docs[col + '/' + id]; }
   });
+  // A vitrine de contribuintes e' lida por consulta (where/limit), nao por documento.
+  const colecao = (c) => {
+    const consulta = (filtro) => ({
+      where: (campo, _op, valor) => consulta((d) => filtro(d) && String(d[campo] || '') === String(valor)),
+      limit: () => consulta(filtro),
+      get: async () => {
+        const achados = Object.keys(window.__docs)
+          .filter(k => k.indexOf(c + '/') === 0)
+          .map(k => window.__docs[k])
+          .filter(d => d && filtro(d));
+        return { forEach: (fn) => achados.forEach(d => fn({ data: () => d })), size: achados.length };
+      }
+    });
+    return Object.assign(consulta(() => true), { doc: (i) => ref(c, String(i)) });
+  };
   window.firebase = {
     initializeApp: () => {}, analytics: () => {},
-    auth: () => ({ currentUser: { uid: 'uid-ana', email: 'ana@escola.com' },
+    auth: () => ({ currentUser: { uid: 'uid-ana', email: 'ana@escola.com',
+                     getIdToken: async () => 'cracha-de-mentira' },
                    onAuthStateChanged: (cb) => setTimeout(() => cb(null), 0), signOut: async () => {} }),
-    firestore: () => ({ collection: (c) => ({ doc: (i) => ref(c, String(i)) }) })
+    firestore: () => ({ collection: colecao })
   };
   window.firebase.firestore.FieldValue = { serverTimestamp: () => null };
   // Guarda para onde o app tentou mandar a pessoa, em vez de abrir aba de verdade.
@@ -54,11 +70,12 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
   await p.waitForTimeout(1500);
 
   // Coloca a conta dentro do app, sem passar pelo login.
-  const entrar = async (usuario, assinatura, links) => p.evaluate(async (args) => {
+  const entrar = async (usuario, assinatura, links, vitrine) => p.evaluate(async (args) => {
     window.__docs = {};
     window.__docs['system/users_list'] = { list: [args.usuario] };
     if (args.assinatura) window.__docs['assinaturas/' + args.usuario.uid] = args.assinatura;
     if (args.links) window.__docs['assinaturas_config/publico'] = args.links;
+    (args.vitrine || []).forEach(c => { window.__docs['contribuintes/' + c.uid] = c; });
     localStorage.removeItem('sisprof_transicao_assinatura');
 
     currentUser = args.usuario; currentViewMode = 'professor';
@@ -76,7 +93,7 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
     injectApoieButton();
     atualizarBannerApoio();
     await new Promise(r => setTimeout(r, 300));
-  }, { usuario, assinatura, links });
+  }, { usuario, assinatura, links, vitrine });
 
   const ATIVA = (plano, extra) => Object.assign({
     uid: 'uid-ana', plano: plano, planoContratado: plano, status: 'ativa',
@@ -143,16 +160,28 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
   ok('quem esta no gratuito ve a tarja de apoio', r2a.tarja);
   ok('e o botao convida a apoiar', r2a.botao.indexOf('Apoie') !== -1 && r2a.plano === 'free');
 
-  await entrar(ANA, ATIVA('apoiase'), LINKS);
-  const r2b = await p.evaluate(() => ({
-    tarja: !!document.getElementById('bannerApoio'),
-    botao: document.getElementById('btnApoie').textContent.trim(),
-    plano: planoDoUsuario(),
-    selo: (window.__docs['system/users_list'].list[0] || {}).contribuidor
-  }));
+  await entrar(ANA, ATIVA('apoiase'), LINKS,
+               [{ uid: 'uid-ana', nome: 'Ana S.', schoolId: '77' }]);
+  const r2b = await p.evaluate(async () => {
+    await abrirModalApoie();
+    await new Promise(r => setTimeout(r, 300));
+    return {
+      tarja: !!document.getElementById('bannerApoio'),
+      botao: document.getElementById('btnApoie').textContent.trim(),
+      plano: planoDoUsuario(),
+      vitrine: document.getElementById('apoieContribuintes').textContent,
+      // O aplicativo NAO escreve mais o selo no perfil: aquele campo e' gravavel por
+      // qualquer conta logada (system/*), e era por ali que dava para se declarar
+      // apoiador sem pagar.
+      escreveuNoPerfil: (window.__docs['system/users_list'].list[0] || {}).contribuidor
+    };
+  });
   ok('quem assinou o Apoia-se NAO ve mais a tarja', !r2b.tarja);
   ok('e o botao vira "TMJ"', r2b.botao.indexOf('TMJ') !== -1 && r2b.plano === 'apoiase');
-  ok('o selo 💛 acende sozinho na lista da escola (sem ninguem marcar na mao)', r2b.selo === true);
+  ok('o nome aparece na vitrine, vindo da colecao que so o webhook escreve',
+      r2b.vitrine.indexOf('Ana S.') !== -1);
+  ok('e o aplicativo NAO escreve o selo no perfil (campo que qualquer um grava)',
+      r2b.escreveuNoPerfil !== true);
 
   await entrar(ANA, ATIVA('professor'), LINKS);
   const r2c = await p.evaluate(() => ({
@@ -208,13 +237,12 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
                ATIVA('professor', { status: 'cancelada', plano: 'free' }), LINKS);
   const r4b = await p.evaluate(() => ({
     plano: planoDoUsuario(), premium: ehPremium(), contribui: ehContribuinte(),
-    tarja: !!document.getElementById('bannerApoio'),
-    selo: (window.__docs['system/users_list'].list[0] || {}).contribuidor
+    tarja: !!document.getElementById('bannerApoio')
   }));
   ok('quem cancelou volta mesmo para o gratuito',
       r4b.plano === 'free' && r4b.premium === false && r4b.contribui === false);
   ok('a tarja de apoio volta a aparecer', r4b.tarja);
-  ok('e o selo 💛 se apaga sozinho na lista da escola', r4b.selo === false);
+  ok('nem a marca antiga no perfil segura o plano de quem cancelou', r4b.contribui === false);
 
   // ============ 5. O APOIADOR ANTIGO DE R$ 7,00 ============
   console.log('\n5. O encerramento do plano antigo de R$ 7,00');
@@ -271,35 +299,141 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
   ok('quem ja migrou nao e incomodado pelo aviso', r5d.precisa === false);
 
   // ============ 6. NINGUEM SE PROMOVE SOZINHO ============
-  console.log('\n6. O plano vem do banco, nao do perfil');
+  console.log('\n6. So pagamento confirmado concede apoio');
   const r6 = await p.evaluate(async () => {
-    // O perfil (users_list) e' escrito pelo proprio app; a assinatura nao.
-    // Marcar-se contribuinte na lista da escola so' acende o coracao amarelo.
+    // O perfil (system/users_list) e' gravavel por QUALQUER conta logada — e' assim
+    // desde sempre, e as Regras explicam por que nao da' para fechar. Por isso ele
+    // deixou de conceder qualquer coisa: antes, `contribuidor: true` bastava para
+    // pendurar o selo no proprio nome, de graca, pelo console do navegador.
     currentUser.contribuidor = true;
-    window.__docs['assinaturas/uid-ana'] = null;
     delete window.__docs['assinaturas/uid-ana'];
     await carregarAssinaturaAtual(true);
-    const antes = { plano: planoDoUsuario(), premium: ehPremium() };
+    const soComOPerfil = { plano: planoDoUsuario(), premium: ehPremium(), contribui: ehContribuinte() };
 
-    // E mexer no perfil tambem nao promove.
+    // Inventar campos no perfil tambem nao promove.
     currentUser.plano = 'professor';
     currentUser.premium = true;
+    currentUser.assinatura = { status: 'ativa', plano: 'professor' };
     await carregarAssinaturaAtual(true);
-    return { antes: antes, depois: { plano: planoDoUsuario(), premium: ehPremium() } };
-  });
-  ok('marcar-se contribuinte no perfil da o selo, mas NAO da premium',
-      r6.antes.plano === 'apoiase' && r6.antes.premium === false);
-  ok('inventar campos no perfil tambem nao abre as funcoes premium',
-      r6.depois.premium === false);
+    const inventando = { plano: planoDoUsuario(), premium: ehPremium() };
 
-  // ============ 7. A ASSINATURA NAO PODE ATRAPALHAR QUEM VEIO DAR AULA ============
+    // E clicar em "Assinar" (sem o pagamento cair) tambem nao.
+    window.__docs['assinaturas/uid-ana'] = { uid: 'uid-ana', plano: 'professor',
+      planoContratado: 'professor', status: 'pendente', valor: 20, versaoMs: 1 };
+    await carregarAssinaturaAtual(true);
+    const esperando = { plano: planoDoUsuario(), premium: ehPremium(),
+                        contribui: ehContribuinte(), avisando: esperandoConfirmacao() };
+    return { soComOPerfil, inventando, esperando };
+  });
+  ok('marcar-se contribuinte no perfil NAO da mais nem o selo',
+      r6.soComOPerfil.plano === 'free' && r6.soComOPerfil.contribui === false
+      && r6.soComOPerfil.premium === false);
+  ok('inventar campos no perfil tambem nao abre as funcoes premium',
+      r6.inventando.premium === false && r6.inventando.plano === 'free');
+  ok('assinatura iniciada e ainda nao paga (pendente) nao concede nada',
+      r6.esperando.plano === 'free' && r6.esperando.premium === false
+      && r6.esperando.contribui === false);
+  ok('mas a tela sabe explicar que a confirmacao esta a caminho', r6.esperando.avisando === true);
+
+  // ============ 7. O BOTAO DE CANCELAR ============
+  // Cancelar precisa ser tao facil quanto assinar. Quem quer sair e nao encontra o
+  // botao vira reclamacao no banco e cobranca contestada, nao apoiador no mes seguinte.
+  console.log('\n7. Cancelar a assinatura');
+
+  const COM_SERVICO = Object.assign({}, LINKS, { servico: 'https://sisprof.vercel.app/api' });
+
+  await entrar(ANA, ATIVA('professor'), COM_SERVICO);
+  const r7 = await p.evaluate(async () => {
+    const el = document.getElementById('modalApoie'); if (el) el.remove();
+    await abrirModalApoie();
+    await new Promise(r => setTimeout(r, 250));
+    const botao = document.getElementById('btnCancelarAssinatura');
+    return {
+      existe: !!botao,
+      texto: botao ? botao.textContent.trim() : '',
+      explica: document.getElementById('conteudoModalApoie').textContent
+    };
+  });
+  ok('quem tem assinatura ve o botao de cancelar', r7.existe && /Cancelar assinatura/i.test(r7.texto));
+  ok('e a tela diz o que acontece ao cancelar (sem multa, sem perder dado)',
+      /sem multa/i.test(r7.explica) && /sem perder nenhum dado/i.test(r7.explica));
+
+  // Quem nao assinou nao ve botao de cancelar coisa nenhuma.
+  await entrar(ANA, null, COM_SERVICO);
+  const r7b = await p.evaluate(async () => {
+    const el = document.getElementById('modalApoie'); if (el) el.remove();
+    await abrirModalApoie();
+    await new Promise(r => setTimeout(r, 250));
+    return { existe: !!document.getElementById('btnCancelarAssinatura') };
+  });
+  ok('quem esta no gratuito nao ve botao de cancelar', r7b.existe === false);
+
+  // O cancelamento de verdade: confirma, manda o cracha da sessao e volta pro free.
+  await entrar(ANA, ATIVA('professor'), COM_SERVICO);
+  const r7c = await p.evaluate(async () => {
+    const el = document.getElementById('modalApoie'); if (el) el.remove();
+    await abrirModalApoie();
+    await new Promise(r => setTimeout(r, 250));
+
+    window.__pedidos = [];
+    window.fetch = async (url, opcoes) => {
+      window.__pedidos.push({ url: String(url), opcoes: opcoes || {} });
+      // O servidor cancela e o documento muda: o aplicativo rele' depois.
+      window.__docs['assinaturas/uid-ana'] = Object.assign(
+        {}, window.__docs['assinaturas/uid-ana'], { status: 'cancelada', plano: 'free' });
+      return { ok: true, json: async () => ({ cancelada: true, plano: 'free', status: 'cancelada' }) };
+    };
+
+    document.getElementById('btnCancelarAssinatura').click();
+    await new Promise(r => setTimeout(r, 600));
+
+    const pedido = window.__pedidos[0] || { url: '', opcoes: {} };
+    return {
+      chamou: pedido.url,
+      metodo: (pedido.opcoes.method || '').toUpperCase(),
+      levouCracha: String((pedido.opcoes.headers || {}).authorization || ''),
+      plano: planoDoUsuario(),
+      premium: ehPremium(),
+      tarjaVoltou: !!document.getElementById('bannerApoio'),
+      botao: document.getElementById('btnApoie').textContent.trim()
+    };
+  });
+  ok('o botao chama o servico de cancelamento (e nao a API do Mercado Pago pelo navegador)',
+      r7c.chamou === 'https://sisprof.vercel.app/api/cancelar' && r7c.metodo === 'POST');
+  ok('levando o cracha da sessao, para o servidor saber de quem e a assinatura',
+      r7c.levouCracha.indexOf('Bearer ') === 0);
+  ok('depois de cancelar, a conta volta ao gratuito na hora',
+      r7c.plano === 'free' && r7c.premium === false);
+  ok('a tarja e o botao de apoio voltam ao estado de quem nao assina',
+      r7c.tarjaVoltou && r7c.botao.indexOf('Apoie') !== -1);
+
+  // Servico nao configurado: manda para o Mercado Pago em vez de mentir que cancelou.
+  await entrar(ANA, ATIVA('professor'), LINKS);
+  const r7d = await p.evaluate(async () => {
+    const el = document.getElementById('modalApoie'); if (el) el.remove();
+    await abrirModalApoie();
+    await new Promise(r => setTimeout(r, 250));
+    window.__abriu = [];
+    window.__pedidos = [];
+    window.fetch = async (u) => { window.__pedidos.push(String(u)); return { ok: false, json: async () => ({}) }; };
+    document.getElementById('btnCancelarAssinatura').click();
+    await new Promise(r => setTimeout(r, 400));
+    return { abriu: window.__abriu[0] || '', pediu: window.__pedidos.length,
+             plano: planoDoUsuario() };
+  });
+  ok('sem o servico configurado, abre o painel do Mercado Pago',
+      r7d.abriu.indexOf('mercadopago.com.br/subscriptions') !== -1 && r7d.pediu === 0);
+  ok('e NAO finge que cancelou: o plano continua ativo ate a pessoa cancelar de fato',
+      r7d.plano === 'professor');
+
+  // ============ 8. A ASSINATURA NAO PODE ATRAPALHAR QUEM VEIO DAR AULA ============
   // Enquanto as Regras novas nao forem publicadas no console do Firebase, TODA conta
   // recebe 'permission-denied' ao ler assinaturas/<uid>. Se essa leitura marcasse a
   // falha global de leitura, o sistema entenderia "a nuvem caiu" e bloquearia a
   // gravacao do trabalho do professor — por causa de um coracao amarelo.
-  console.log('\n7. Leitura negada pelas Regras nao contamina o resto do sistema');
+  console.log('\n8. Leitura negada pelas Regras nao contamina o resto do sistema');
   await entrar(ANA, ATIVA('professor'), LINKS);
-  const r7 = await p.evaluate(async () => {
+  const r8 = await p.evaluate(async () => {
     window.falhaLeituraFirestore = false;
     window.__alertas = 0;
     const alertOriginal = window.alert;
@@ -329,10 +463,10 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
     window.alert = alertOriginal;
     return estado;
   });
-  ok('Regras nao publicadas NAO marcam falha de leitura da nuvem', r7.falhaGlobal === false);
-  ok('e nao enchem a tela do professor de alerta de conexao', r7.alertas === 0);
-  ok('o que ja se sabia do plano continua valendo', r7.planoContinua === 'professor');
-  ok('e o link conhecido do checkout nao se perde', r7.linkContinua === true);
+  ok('Regras nao publicadas NAO marcam falha de leitura da nuvem', r8.falhaGlobal === false);
+  ok('e nao enchem a tela do professor de alerta de conexao', r8.alertas === 0);
+  ok('o que ja se sabia do plano continua valendo', r8.planoContinua === 'professor');
+  ok('e o link conhecido do checkout nao se perde', r8.linkContinua === true);
 
   await b.close();
   console.log('\n' + (falhas.length === 0

@@ -71,9 +71,12 @@ por assinatura, por mês.
    | `FIREBASE_SERVICE_ACCOUNT` | o JSON inteiro da conta de serviço |
    | `MP_PLANO_APOIASE_ID` | opcional: id do plano de R$ 10 |
    | `MP_PLANO_PROFESSOR_ID` | opcional: id do plano de R$ 20 |
+   | `ORIGENS_PERMITIDAS` | opcional: origens que podem chamar o cancelamento, separadas por vírgula (o padrão já inclui `https://rafanunesran.github.io`) |
 
    Marque os três ambientes (Production, Preview, Development).
-5. **Deploy**. O endereço do webhook é `https://<seu-projeto>.vercel.app/api/webhook`.
+5. **Deploy**. Dois endereços nascem daqui:
+   - `https://<seu-projeto>.vercel.app/api/webhook` — o webhook do Mercado Pago
+   - `https://<seu-projeto>.vercel.app/api/cancelar` — o cancelamento pedido pelo professor
 6. Abra esse endereço no navegador. Ele responde
    *"SisProf - webhook de assinatura no ar."* — se responder 404, a Root Directory
    não ficou em `assinatura`.
@@ -124,12 +127,68 @@ Só o webhook (que usa conta de serviço e passa por cima das Regras) e o super 
 Se o professor pudesse escrever o próprio documento, uma linha no console do
 navegador bastaria para ele se declarar assinante do plano Professor.
 
-## Passo 5 — encerrar o plano antigo de R$ 7,00
+## Passo 5 — cadastrar o endereço do serviço no painel
+
+**Painel Super Admin → 💳 Assinaturas → Endereço do serviço**: cole
+`https://<seu-projeto>.vercel.app/api` (sem `/webhook` e sem `/cancelar` — o sistema
+completa o caminho).
+
+É isso que faz o botão **Cancelar assinatura** cancelar de dentro do SisProf. Sem
+esse endereço o botão continua aparecendo, mas manda o professor cancelar à mão no
+painel do Mercado Pago — e nunca diz que cancelou sem ter cancelado.
+
+## Passo 6 — migrar quem foi marcado à mão
+
+O selo de apoiador agora sai **só do pagamento confirmado**. Quem estava marcado à
+mão (o campo antigo `contribuidor`) perde o selo no instante em que esta versão entra
+no ar, porque aquele campo deixou de conceder qualquer coisa — e deixou por um motivo
+concreto: as Regras liberam escrita em `system/*` para qualquer conta logada, então
+bastava uma linha no console do navegador para pendurar o selo no próprio nome sem
+pagar nada.
+
+**Painel Super Admin → 💳 Assinaturas → 💛 Migrar apoiadores marcados à mão.** Cada
+marca antiga vira uma *cortesia registrada* em `assinaturas/<uid>`, com `versaoMs: 0`
+— assim a primeira cobrança de verdade substitui a cortesia sozinha. Rodar duas vezes
+não duplica nada, e contas sem uid do Firebase são puladas (rode "Sincronizar UIDs"
+antes para incluí-las).
+
+## Passo 7 — encerrar o plano antigo de R$ 7,00
 
 No painel do Mercado Pago, cancele as assinaturas do valor antigo. Não é preciso
 avisar ninguém à mão: quem pagava vê, ao entrar no sistema, um aviso explicando que a
 cobrança foi encerrada e escolhendo entre **continuar no gratuito**, **Apoia-se
 (R$ 10)** ou **Professor (R$ 20)**. A escolha fica registrada e o aviso não volta.
+
+## O que concede o apoio (e o que não concede)
+
+| Situação | Selo 💛 | Premium |
+|---|---|---|
+| Clicou em "Assinar" e o cartão ainda não passou (`pendente`) | não | não |
+| Pagamento confirmado pelo Mercado Pago (`ativa`) | sim | só no plano Professor |
+| Cobrança do mês falhou (`pausada`) | não | não |
+| Cancelou, por conta própria ou pelo Mercado Pago (`cancelada`) | não | não |
+| Cortesia concedida pelo super admin | sim | conforme o plano concedido |
+| Campo `contribuidor` no perfil, sem pagamento | **não** | **não** |
+
+A última linha é a que mudou. Existe uma única fonte: `assinaturas/<uid>`, escrito só
+pelo webhook (conta de serviço) e pelo super admin. A vitrine "Obrigado a quem é
+parça" veio junto: agora mora em `contribuintes/<uid>`, mesma proteção, guardando só
+nome abreviado e escola — nem plano, nem valor, nem e-mail.
+
+## Como o cancelamento funciona
+
+O navegador não pode falar com a API do Mercado Pago: o token de produção ficaria no
+código, à vista de todos. Então o botão chama `POST /api/cancelar` levando o **ID
+token do Firebase Auth** da sessão, e o servidor:
+
+1. confere o crachá contra as chaves públicas do Google (assinatura RS256, `aud`,
+   `iss`, `exp` — ver `auth-firebase.mjs`). Confiar no uid que o navegador manda
+   deixaria qualquer pessoa cancelar a assinatura de qualquer outra;
+2. lê `assinaturas/<uid>` — só a assinatura de quem está pedindo;
+3. cancela no Mercado Pago (`PUT /preapproval/<id>`);
+4. derruba o plano para gratuito na hora e tira o nome da vitrine, sem esperar o
+   webhook voltar. Um aviso atrasado do Mercado Pago não reativa o que a pessoa
+   acabou de cancelar (o carimbo de versão cuida da ordem).
 
 ## Como ligar uma função nova no plano Professor
 

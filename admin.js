@@ -590,7 +590,16 @@ async function abrirModalAssinaturasAdmin() {
                            placeholder="https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=..."
                            value="${(links.professor || '').replace(/"/g, '&quot;')}">
                 </label>
-                <button class="btn btn-primary" style="margin-top:14px;" onclick="salvarLinksAssinatura()">Salvar links</button>
+                <label style="display:block; margin-top:10px; font-size:13px;">⚙️ Endereço do serviço (webhook e cancelamento)
+                    <input type="text" id="linkServicoAssinatura" style="width:100%; padding:8px;"
+                           placeholder="https://seu-projeto.vercel.app/api"
+                           value="${(links.servico || '').replace(/"/g, '&quot;')}">
+                </label>
+                <p style="font-size:11px; color:#718096; margin:4px 0 0 0;">
+                    Sem isto, o botão "Cancelar assinatura" manda o professor cancelar na mão,
+                    no painel do Mercado Pago. Com isto, ele cancela pelo próprio sistema.
+                </p>
+                <button class="btn btn-primary" style="margin-top:14px;" onclick="salvarLinksAssinatura()">Salvar</button>
 
                 <div style="margin-top:18px; border-top:1px dashed #e2e8f0; padding-top:14px; font-size:12px; color:#4a5568;">
                     <strong>Webhook</strong> (Mercado Pago &gt; Suas integrações &gt; Notificações):
@@ -604,6 +613,18 @@ async function abrirModalAssinaturasAdmin() {
                     Quem pagava vê, ao entrar, o aviso com as três saídas (continuar no gratuito,
                     Apoia-se ou Professor) — ninguém fica sem resposta.
                 </div>
+
+                <div style="margin-top:14px; border-top:1px dashed #e2e8f0; padding-top:14px;">
+                    <button class="btn btn-secondary" onclick="migrarApoiadoresAntigos()">
+                        💛 Migrar apoiadores marcados à mão
+                    </button>
+                    <p style="font-size:11px; color:#718096; margin:6px 0 0 0;">
+                        O selo de apoiador agora vem <strong>só do pagamento confirmado</strong>. Quem foi marcado
+                        à mão (campo antigo <code>contribuidor</code>) perde o selo até isto rodar: cada um vira
+                        uma <strong>cortesia registrada</strong>, que a primeira cobrança de verdade substitui sozinha.
+                        Rodar duas vezes não duplica nada.
+                    </p>
+                </div>
             </div>
         </div>`;
     showModal('modalAssinaturasAdmin');
@@ -612,6 +633,7 @@ async function abrirModalAssinaturasAdmin() {
 async function salvarLinksAssinatura() {
     const apoiase = (document.getElementById('linkPlanoApoiase').value || '').trim();
     const professor = (document.getElementById('linkPlanoProfessor').value || '').trim();
+    const servico = (document.getElementById('linkServicoAssinatura').value || '').trim().replace(/\/$/, '');
 
     // Link de cobranca e' dinheiro dos professores: recusamos qualquer coisa que nao
     // seja um endereco https do proprio Mercado Pago.
@@ -620,15 +642,99 @@ async function salvarLinksAssinatura() {
         alert('O link precisa começar com https:// e apontar para o mercadopago.com.br.');
         return;
     }
+    // O endereco do servico recebe o cracha da sessao do professor: se apontar para
+    // um lugar errado, esse cracha vai parar na mao de outra pessoa. Exigimos https.
+    if (servico && !/^https:\/\/[a-z0-9.-]+\//i.test(servico + '/')) {
+        alert('O endereço do serviço precisa começar com https://');
+        return;
+    }
     try {
         await saveData('assinaturas_config', 'publico', {
-            apoiase: apoiase, professor: professor, atualizadoEm: new Date().toISOString()
+            apoiase: apoiase, professor: professor, servico: servico,
+            atualizadoEm: new Date().toISOString()
         });
         alert('Links salvos. Os professores já veem os planos novos ao abrir o pop-up de apoio.');
         closeModal('modalAssinaturasAdmin');
     } catch (e) {
         alert('Não consegui salvar: ' + (e && e.message ? e.message : e));
     }
+}
+
+// MIGRACAO DOS APOIADORES MARCADOS A MAO.
+//
+// O selo de apoiador passou a sair SO' de `assinaturas/<uid>` — documento que
+// nenhuma conta comum escreve. O campo antigo (`contribuidor`, em system/users_list)
+// deixou de conceder qualquer coisa, porque aquele documento aceita escrita de
+// qualquer conta logada: dava para pendurar o selo no proprio nome pelo console.
+//
+// Consequencia justa, mas indesejada: quem foi marcado a mao perde o selo no
+// instante em que a versao nova entra no ar. Esta funcao transforma cada marca
+// antiga numa CORTESIA REGISTRADA, com `versaoMs: 0` — assim a primeira notificacao
+// de pagamento de verdade passa por cima dela sem briga.
+async function migrarApoiadoresAntigos() {
+    const dados = await getData('system', 'users_list');
+    const lista = (dados && Array.isArray(dados.list)) ? dados.list : [];
+    const antigos = lista.filter(u => u && u.contribuidor === true && (u.uid || u.id));
+
+    if (antigos.length === 0) {
+        alert('Nenhum apoiador marcado à mão encontrado. Nada a migrar.');
+        return;
+    }
+    const semUid = antigos.filter(u => !u.uid).length;
+    const aviso = 'Encontrei ' + antigos.length + ' apoiador(es) marcado(s) à mão.\n\n' +
+        'Cada um vai receber uma cortesia registrada no plano Apoia-se, para não perder o selo ' +
+        'enquanto decide se migra para um plano novo.' +
+        (semUid ? '\n\nAtenção: ' + semUid + ' conta(s) sem uid do Firebase serão puladas ' +
+                  '(rode "Sincronizar UIDs" antes para incluí-las).' : '') +
+        '\n\nPosso seguir?';
+    if (!confirm(aviso)) return;
+
+    let feitos = 0, pulados = 0, falhas = 0;
+    for (const u of antigos) {
+        const uid = String(u.uid || '');
+        if (!uid) { pulados++; continue; }
+        try {
+            // Nao mexe em quem ja' tem assinatura (paga ou cortesia): o registro
+            // existente vale mais que a marca antiga.
+            const jaTem = await getData('assinaturas', uid);
+            if (jaTem && jaTem.status) { pulados++; continue; }
+
+            await saveData('assinaturas', uid, {
+                uid: uid,
+                plano: 'apoiase',
+                planoContratado: 'apoiase',
+                status: 'ativa',
+                valor: 0,
+                legado: true,           // faz o aviso de encerramento aparecer para ele
+                origem: 'cortesia',
+                versaoMs: 0,            // a cobranca de verdade substitui sem briga
+                concedidoPor: (currentUser && currentUser.email) || 'super_admin',
+                motivo: 'apoiador do plano antigo de R$ 7,00, marcado a mao',
+                atualizadoEm: new Date().toISOString()
+            });
+            await saveData('contribuintes', uid, {
+                uid: uid,
+                nome: abreviarNomeApoiador(u.nome),
+                schoolId: String(u.schoolId || ''),
+                desde: new Date().toISOString()
+            });
+            feitos++;
+        } catch (e) {
+            console.warn('[Assinaturas] Falha ao migrar', uid, e);
+            falhas++;
+        }
+    }
+    alert('Migração concluída.\n\n' + feitos + ' apoiador(es) com cortesia registrada.\n' +
+          pulados + ' pulado(s) (sem uid ou já com assinatura).\n' +
+          (falhas ? falhas + ' falha(s) — veja o console.' : 'Nenhuma falha.'));
+}
+
+// Mesmo formato que o webhook usa ao montar a vitrine: "Ana Carolina Souza" -> "Ana S."
+function abreviarNomeApoiador(nome) {
+    const partes = String(nome || '').trim().split(/\s+/).filter(Boolean);
+    if (partes.length === 0) return 'Professor(a)';
+    if (partes.length === 1) return partes[0];
+    return partes[0] + ' ' + partes[partes.length - 1].charAt(0).toUpperCase() + '.';
 }
 
 // Concede (ou tira) um plano na mao. Usado para cortesia, parceria e teste.
@@ -662,6 +768,20 @@ async function definirPlanoUsuarioAdmin(uid, nome) {
             concedidoPor: (currentUser && currentUser.email) || 'super_admin',
             atualizadoEm: new Date().toISOString()
         });
+        // A vitrine de contribuintes acompanha: cortesia concedida aparece na lista,
+        // cortesia retirada sai dela.
+        if (plano === 'free') {
+            try { await db.collection('contribuintes').doc(String(uid)).delete(); } catch (e) {}
+        } else {
+            const dados = await getData('system', 'users_list');
+            const pessoa = ((dados && dados.list) || []).find(u => String(u.uid || '') === String(uid));
+            await saveData('contribuintes', String(uid), {
+                uid: String(uid),
+                nome: abreviarNomeApoiador((pessoa && pessoa.nome) || nome),
+                schoolId: String((pessoa && pessoa.schoolId) || ''),
+                desde: new Date().toISOString()
+            });
+        }
         alert('Pronto: ' + nome + ' está no plano ' + PLANOS_ADMIN[plano].nome + '.');
         renderListaUsuariosAdmin();
     } catch (e) {
