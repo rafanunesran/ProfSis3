@@ -1870,3 +1870,101 @@ html[data-tema="ambar-noturno"] [style*="background: #f8f9fa"] {
     color: var(--text-2) !important;
     border-color: var(--border) !important;
 }
+
+/* ==========================================================================
+   Ícones (icones.js): forma de destaque atrás, cinza translúcido na frente,
+   brilho desfocado onde as duas se cruzam. Seguem o tema pelos tokens.
+   ========================================================================== */
+:root {
+    --ic-a: var(--accent);
+    --ic-b: rgba(112, 118, 130, 0.58);
+    --ic-b: color-mix(in srgb, var(--text-3) 58%, transparent);
+    --ic-brilho: #ffffff;
+    --ic-brilho: color-mix(in srgb, var(--accent) 38%, #ffffff);
+}
+
+html[data-tema="ambar-noturno"] {
+    --ic-b: rgba(160, 158, 166, 0.62);
+    --ic-brilho: #fbd9a0;
+}
+
+html[data-tema="ambar-diurno"],
+html[data-tema="hibrido"] {
+    --ic-b: rgba(110, 108, 104, 0.5);
+    --ic-brilho: #fde3a8;
+}
+
+.ico {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    display: inline-block;
+    vertical-align: middle;
+    overflow: visible;
+}
+
+.ico-texto {
+    width: 1.2em;
+    height: 1.2em;
+    margin-right: 0.4em;
+    vertical-align: -0.22em;
+}
+
+.btn > .ico-texto,
+nav button > .ico-texto {
+    margin-right: 0;
+}
+
+.card h2 > .ico-texto,
+.modal-header h2 > .ico-texto {
+    width: 1.3em;
+    height: 1.3em;
+    margin-right: 0.15em;
+}
+
+nav button .icon {
+    display: inline-grid;
+    place-items: center;
+}
+
+nav button .icon .ico {
+    width: 20px;
+    height: 20px;
+}
+
+/* Sobre fundo de cor (botão principal, item ativo do menu): o ícone vira a cor do texto */
+nav button.active,
+.btn-primary,
+.btn-success,
+.btn-danger,
+.btn-info,
+header .btn {
+    --ic-a: currentColor;
+    --ic-b: rgba(255, 255, 255, 0.42);
+    --ic-b: color-mix(in srgb, currentColor 42%, transparent);
+    --ic-brilho: currentColor;
+}
+
+html[data-estilo="ambar"] nav button.active,
+html[data-estilo="ambar"] .btn-primary {
+    --ic-b: rgba(255, 255, 255, 0.5);
+    --ic-brilho: #fff6dc;
+}
+
+/* No celular, a barra de baixo mostra o ícone colorido mesmo no item ativo */
+@media (max-width: 760px) {
+    html[data-estilo="ambar"] .app-nav button.active {
+        --ic-a: var(--accent);
+        --ic-b: rgba(160, 158, 166, 0.62);
+        --ic-brilho: #fbd9a0;
+    }
+
+    html[data-estilo="ambar"] .app-nav button .icon .ico {
+        width: 22px;
+        height: 22px;
+    }
+}
+
+@media print {
+    .ico { display: none; }
+}

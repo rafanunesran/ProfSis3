@@ -102,7 +102,7 @@ jobs:
           cp app.js admin.js core.js gestor.js biblioteca.js ia_estagiario.js _site/
           cp shared.js feriados.js google-calendar.js sw.js _site/
           cp localdb.js migracao.js cripto.js espacos.js terminais.js resgate.js _site/
-          cp listaescola.js assinatura.js _site/
+          cp listaescola.js assinatura.js icones.js _site/
           cp ferramentas.js pdf_operacoes.js pdf_ferramentas.js _site/
           cp ampliar_operacoes.js ampliar.js _site/
           cp poster_operacoes.js poster.js _site/
