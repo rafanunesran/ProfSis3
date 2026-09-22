@@ -61,6 +61,7 @@ const PLANOS_SISPROF = {
             'Tudo do Apoia-se',
             'Ferramentas: 49 ferramentas de PDF sem enviar arquivo para site nenhum',
             'Ferramentas: ampliar e limpar imagem, tambem sem enviar nada',
+            'Ferramentas: poster de parede em varias folhas A4, sem enviar nada',
             'Prioridade no suporte e nas novidades'
         ]
     }

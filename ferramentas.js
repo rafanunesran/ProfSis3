@@ -6,9 +6,10 @@
 //   gratuito qualquer — e que, naquele site, custaria mandar o arquivo de uma crianca
 //   para o servidor de um terceiro que a escola nao autorizou.
 //
-//   Ampliar uma foto tem exatamente o mesmo problema e exatamente a mesma solucao. Se
-//   cada uma dessas coisas virar um botao no menu, o menu acaba. Entao o menu ganha UM
-//   botao — "Ferramentas" — e por dentro ele tem abas.
+//   Ampliar uma foto tem exatamente o mesmo problema e exatamente a mesma solucao, e
+//   espalhar uma imagem por varias folhas para virar cartaz de parede, tambem. Se cada
+//   uma dessas coisas virar um botao no menu, o menu acaba. Entao o menu ganha UM botao
+//   — "Ferramentas" — e por dentro ele tem abas.
 //
 // COMO FUNCIONA
 //   Esta tela nao sabe nada sobre PDF nem sobre imagem. Ela so' cria o quadro, desenha as
@@ -16,6 +17,7 @@
 //
 //     aba "PDF"      -> pdf_ferramentas.js    desenha dentro de #tabFerramentasPdf
 //     aba "Ampliar"  -> ampliar.js            desenha dentro de #tabFerramentasAmpliar
+//     aba "Poster"   -> poster.js             desenha dentro de #tabFerramentasPoster
 //
 //   Acrescentar uma aba e' acrescentar uma linha em ABAS_FERRAMENTAS e um arquivo que
 //   saiba desenhar no container dela.
@@ -34,6 +36,10 @@ const ABAS_FERRAMENTAS = [
     {
         id: 'ampliar', container: 'tabFerramentasAmpliar', icone: '🔍', label: 'Ampliar',
         render: () => { if (typeof renderAmpliar === 'function') renderAmpliar(); }
+    },
+    {
+        id: 'poster', container: 'tabFerramentasPoster', icone: '🧱', label: 'Pôster',
+        render: () => { if (typeof renderPoster === 'function') renderPoster(); }
     }
 ];
 

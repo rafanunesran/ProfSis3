@@ -7,7 +7,7 @@
 //
 // O que este teste cobre:
 //   1. o botao do menu virou "Ferramentas" nos quatro perfis, e a tela nasce sob demanda;
-//   2. as duas abas existem, so' uma aparece por vez, e trocar de aba funciona;
+//   2. as tres abas existem, so' uma aparece por vez, e trocar de aba funciona;
 //   3. o atalho antigo showScreen('pdf') continua caindo na aba de PDF, com o catalogo
 //      inteiro montado dentro dela;
 //   4. a aba Ampliar monta os controles, le uma imagem de verdade e diz o tamanho certo;
@@ -18,14 +18,20 @@
 //   8. os limites que protegem o professor: arquivo que nao e' imagem e' recusado com
 //      explicacao, e a ampliacao que nao cabe na memoria fica desabilitada;
 //   9. a promessa: enquanto a aba Ampliar trabalha no motor "Nitido", NENHUM pedido de
-//      rede sai da pagina — nem para CDN, porque esse motor nao baixa nada.
+//      rede sai da pagina — nem para CDN, porque esse motor nao baixa nada;
+//  10. a aba Poster: a conta aparece na tela (folhas, centimetros, pontos) e a previa e'
+//      desenhada de verdade — nao uma tela branca;
+//  11. o portao barra a conta gratuita, e o PDF sai com UMA PAGINA POR FOLHA, conferido
+//      lendo o arquivo de volta com o pdf-lib (nos dois estilos, pontos e foto).
 //
 // Como rodar (ver testes/LEIAME.md):
 //   npm i playwright
 //   python3 -m http.server 8877 --bind 127.0.0.1 &
 //   node testes/teste-ferramentas.js
 //
-// NAO precisa de internet: a aba Ampliar foi feita para funcionar sem ela.
+// As secoes 1 a 10 NAO precisam de internet: a aba Ampliar foi feita para funcionar sem
+// ela. A secao 11 precisa — o pdf-lib da aba Poster vem do CDN, como na aba de PDF.
+// Atras de proxy, use PROFSIS_PROXY=http://host:porta.
 
 const { chromium } = require('playwright');
 
@@ -68,6 +74,10 @@ const FAKE = () => {
     };
     window.firebase.firestore.FieldValue = { serverTimestamp: () => null };
 };
+
+// Os CDNs de onde vem BIBLIOTECA (codigo), nunca dado do professor. A aba Poster usa o
+// pdf-lib, o mesmo da aba de PDF.
+const CDNS_POSTER = ['cdn.jsdelivr.net', 'cdnjs.cloudflare.com'];
 
 const falhas = [];
 function ok(nome, condicao, extra) {
@@ -164,16 +174,21 @@ const DESENHAR_PNG = ({ largura, altura }) => {
         r.depoisDeTrocar = visiveis();
         r.marcadaDepois = (Array.from(document.querySelectorAll('#navFerramentas .ferr-nav-btn'))
             .find(b => b.classList.contains('active')) || {}).dataset.aba;
+        showFerramentasTab('poster');
+        r.naAbaPoster = visiveis();
         showFerramentasTab('pdf');
         r.voltouParaPdf = visiveis();
         return r;
     });
     ok('a tela de Ferramentas nasceu e ficou ativa', abas.criada && abas.ativa);
-    ok('tem as duas abas, PDF e Ampliar', JSON.stringify(abas.abas) === '["pdf","ampliar"]', abas.rotulos.join(' | '));
+    ok('tem as tres abas: PDF, Ampliar e Poster',
+       JSON.stringify(abas.abas) === '["pdf","ampliar","poster"]', abas.rotulos.join(' | '));
     ok('so uma aba aparece por vez', abas.umaVisivelNoInicio.length === 1 && abas.depoisDeTrocar.length === 1);
     ok('abre na aba de PDF', abas.umaVisivelNoInicio[0] === 'tabFerramentasPdf');
     ok('trocar para Ampliar troca o conteudo', abas.depoisDeTrocar[0] === 'tabFerramentasAmpliar');
     ok('e marca a aba certa no menu', abas.marcadaDepois === 'ampliar');
+    ok('a terceira aba tambem abre sozinha', abas.naAbaPoster.length === 1 &&
+       abas.naAbaPoster[0] === 'tabFerramentasPoster', abas.naAbaPoster.join(', '));
     ok('e da para voltar para PDF', abas.voltouParaPdf[0] === 'tabFerramentasPdf');
 
     // -----------------------------------------------------------------------
@@ -402,10 +417,283 @@ const DESENHAR_PNG = ({ largura, altura }) => {
     const envios = await page.evaluate(() => window.__enviosDeSaida || []);
     ok('nenhum POST/PUT/beacon partiu da pagina', envios.length === 0, envios.slice(0, 5).join(' | '));
 
+    // -----------------------------------------------------------------------
+    console.log('\n10. A aba Pôster: a conta na tela');
+    // -----------------------------------------------------------------------
+    const arte = await page.evaluate(DESENHAR_PNG, { largura: 400, altura: 300 });
+    await page.evaluate(() => { showFerramentasTab('poster'); });
+    const posterVazio = await page.evaluate(() => {
+        const aba = document.getElementById('tabFerramentasPoster');
+        return {
+            apresenta: aba.innerHTML.indexOf('Pôster') !== -1,
+            privacidade: aba.innerHTML.indexOf('não sai deste aparelho') !== -1,
+            campo: !!document.getElementById('posArquivo')
+        };
+    });
+    ok('a aba Poster se apresenta', posterVazio.apresenta);
+    ok('com o mesmo aviso de privacidade das outras', posterVazio.privacidade);
+    ok('e tem campo de arquivo', posterVazio.campo);
+
+    await page.setInputFiles('#posArquivo',
+        { name: 'mapa.png', mimeType: 'image/png', buffer: Buffer.from(arte.split(',')[1], 'base64') });
+    await page.waitForTimeout(500);
+
+    const conta = await page.evaluate(() => {
+        posDefinir('papel', 'A4');
+        posDefinir('orientacao', 'retrato');
+        posDefinir('modo', 'folhas');
+        posDefinir('folhas', 3);
+        posDefinir('eixo', 'largura');
+        posDefinir('estilo', 'pontos');
+        posDefinir('passo', 12);
+        const aba = document.getElementById('tabFerramentasPoster');
+        const previa = document.getElementById('posPrevia');
+        // A previa nao pode ser uma tela branca: se ela estiver vazia, o professor esta
+        // escolhendo o tamanho do ponto no escuro.
+        let temDesenho = false;
+        if (previa && previa.width > 0) {
+            const d = previa.getContext('2d').getImageData(0, 0, previa.width, previa.height).data;
+            for (let i = 0; i < d.length; i += 4) { if (d[i] < 200) { temDesenho = true; break; } }
+        }
+        return {
+            texto: aba.textContent.replace(/\s+/g, ' '),
+            colunas: window.POSTEROPS ? null : null,
+            previaExiste: !!previa && previa.width > 10,
+            previaDesenhada: temDesenho
+        };
+    });
+    ok('a tela diz quantas folhas vao sair', /3 na largura/.test(conta.texto), 
+       (conta.texto.match(/\d+ na largura × \d+ na altura/) || ['?'])[0]);
+    ok('e diz o tamanho final em centimetros', /\d+ × \d+ cm/.test(conta.texto),
+       (conta.texto.match(/\d+ × \d+ cm/) || ['?'])[0]);
+    ok('e quantos pontos o cartaz tem', /pontos/.test(conta.texto));
+    ok('a previa foi desenhada', conta.previaExiste && conta.previaDesenhada);
+
+    // Trocar de estilo muda a conta na tela (o modo foto fala de DPI, nao de pontos).
+    const trocaEstilo = await page.evaluate(() => {
+        const conta = () => {
+            const t = document.getElementById('tabFerramentasPoster').textContent.replace(/\s+/g, ' ');
+            // A palavra "pontos" tambem aparece no botao de estilo ("Pontos") e, com
+            // numero na frente, no aviso de DPI ("22 pontos por polegada") — que e'
+            // justamente um aviso do modo FOTO. So' a contagem do reticulado conta.
+            return {
+                dpi: /\d+ DPI na impress/.test(t),
+                contagem: /[\d.,]+ pontos(?! por polegada)/.test(t)
+            };
+        };
+        posDefinir('estilo', 'foto');
+        const naFoto = conta();
+        posDefinir('estilo', 'pontos');
+        const nosPontos = conta();
+        return { naFoto: naFoto, nosPontos: nosPontos };
+    });
+    ok('no modo pontos a conta mostra quantos pontos, nao DPI',
+       trocaEstilo.nosPontos.contagem && !trocaEstilo.nosPontos.dpi);
+    ok('e no modo foto mostra DPI, nao contagem de pontos',
+       trocaEstilo.naFoto.dpi && !trocaEstilo.naFoto.contagem);
+
+    // -----------------------------------------------------------------------
+    console.log('\n11. O portao e o PDF do pôster');
+    // -----------------------------------------------------------------------
+    const portaoPoster = await page.evaluate(async () => {
+        currentUser.role = 'professor';        // volta a ser conta gratuita
+        const r = { premium: ehPremium() };
+        await posGerar();
+        for (let i = 0; i < 40 && !(document.getElementById('conteudoModalApoie') || {}).innerHTML; i++) {
+            await new Promise(ok => setTimeout(ok, 50));
+        }
+        r.convidou = !!document.getElementById('modalApoie') &&
+                     document.getElementById('modalApoie').innerHTML.indexOf('plano Professor') !== -1;
+        r.semPdf = document.getElementById('tabFerramentasPoster').textContent.indexOf('Pronto') === -1;
+        closeModal('modalApoie');
+        return r;
+    });
+    ok('conta gratuita nao monta pôster', portaoPoster.premium === false && portaoPoster.semPdf);
+    ok('e recebe o convite do plano', portaoPoster.convidou);
+
+    // Daqui para baixo PRECISA de internet: o pdf-lib vem do CDN, como na aba de PDF.
+    const antesDoPoster = pedidos.length;
+    const pdf = await page.evaluate(async () => {
+        currentUser.role = 'super_admin';
+        posDefinir('folhas', 2);
+        posDefinir('passo', 14);
+        const t = Date.now();
+        await posGerar();
+        const aba = document.getElementById('tabFerramentasPoster');
+        const texto = aba.textContent.replace(/\s+/g, ' ');
+        const r = { segundos: (Date.now() - t) / 1000, texto: texto, erro: null };
+        const link = document.getElementById('posBaixar');
+        // Link de verdade, nao botao com onclick: e' o que permite "salvar como",
+        // abrir em outra aba, e e' o que este teste consegue seguir para ler o PDF.
+        r.temLinkDeDownload = !!link && link.tagName === 'A' &&
+                              link.getAttribute('href').indexOf('blob:') === 0 &&
+                              link.hasAttribute('download');
+        r.dizPronto = texto.indexOf('Pronto') !== -1;
+        if (texto.indexOf('⚠️') !== -1) r.erro = texto.slice(texto.indexOf('⚠️'), texto.indexOf('⚠️') + 160);
+        return r;
+    });
+    ok('o PDF do pôster e montado', pdf.dizPronto && !pdf.erro, pdf.erro || (pdf.segundos.toFixed(1) + 's'));
+    ok('o download e um link de verdade (blob local, com "download")', pdf.temLinkDeDownload);
+    ok('a tela avisa para imprimir em tamanho real',
+       /Tamanho real/.test(pdf.texto) || /100%/.test(pdf.texto));
+
+    // O PDF de verdade: contado pagina por pagina, lido de volta com o pdf-lib. So' o
+    // texto da tela nao serve — ele diria "6 folhas" mesmo se o arquivo saisse com 1.
+    const arquivo = await page.evaluate(async () => {
+        const link = document.getElementById('posBaixar');
+        if (!link) return { erro: 'nao ha link de download' };
+        const bytes = new Uint8Array(await (await fetch(link.href)).arrayBuffer());
+        const PDFLib = await PDFOPS.lib.pdfLib();
+        const doc = await PDFLib.PDFDocument.load(bytes);
+        const p0 = doc.getPage(0);
+        return {
+            paginas: doc.getPageCount(),
+            bytes: bytes.length,
+            // O cabecalho de um PDF de verdade. Um blob vazio ou um HTML de erro nao tem.
+            ehPdf: bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46,
+            larguraPagina: Math.round(p0.getWidth()),
+            alturaPagina: Math.round(p0.getHeight()),
+            nome: link.getAttribute('download')
+        };
+    });
+    ok('o arquivo e um PDF de verdade', arquivo.ehPdf, arquivo.erro || (arquivo.bytes + ' bytes'));
+    ok('com uma pagina por folha do plano', arquivo.paginas === 4,
+       arquivo.paginas + ' paginas (2 colunas x 2 linhas)');
+    ok('e as paginas sao A4 em pe', arquivo.larguraPagina === 595 && arquivo.alturaPagina === 842,
+       arquivo.larguraPagina + 'x' + arquivo.alturaPagina + ' pt');
+    ok('o nome do arquivo diz o que e e de que tamanho', /poster-2x2\.pdf$/.test(arquivo.nome || ''),
+       arquivo.nome);
+
+    // A PROVA FINAL: renderizar a pagina e MEDIR A TINTA.
+    //
+    // Contar paginas nao prova que ha' cartaz nelas — um PDF com 4 paginas em branco
+    // passa em tudo o que esta acima. Aqui o PDF e' desenhado de volta com o pdf.js e a
+    // tinta e' medida: ela tem de bater com o escuro que o motor previu. Esta checagem
+    // foi escrita depois de uma tentativa de otimizacao que gerava PDF estruturalmente
+    // perfeito e visualmente VAZIO.
+    // O campo de arquivo so' existe no estado vazio da aba (como na aba Ampliar): com
+    // imagem aberta, o lugar dele e' o botao "Trocar imagem".
+    await page.evaluate(() => { posTrocarImagem(); });
+    await page.waitForTimeout(150);
+    const cinzaPng = await page.evaluate(() => {
+        const c = document.createElement('canvas');
+        c.width = 300; c.height = 300;
+        const cx = c.getContext('2d');
+        cx.fillStyle = 'rgb(128,128,128)';       // cinza exato: 50% de escuro
+        cx.fillRect(0, 0, 300, 300);
+        return c.toDataURL('image/png');
+    });
+    await page.setInputFiles('#posArquivo',
+        { name: 'cinza.png', mimeType: 'image/png', buffer: Buffer.from(cinzaPng.split(',')[1], 'base64') });
+    await page.waitForTimeout(400);
+
+    const tinta = await page.evaluate(async () => {
+        posDefinir('estilo', 'pontos');
+        posDefinir('cor', 'preto');
+        posDefinir('folhas', 1);
+        posDefinir('passo', 10);
+        posDefinir('tamanhoPonto', 1);
+        posDefinir('marcasDeCorte', false);
+        posDefinir('numerarFolhas', false);
+        await posGerar();
+
+        const link = document.getElementById('posBaixar');
+        if (!link) return { erro: 'sem PDF' };
+        const bytes = new Uint8Array(await (await fetch(link.href)).arrayBuffer());
+
+        const pdfjs = await PDFOPS.lib.pdfJs();
+        const doc = await pdfjs.getDocument({ data: bytes }).promise;
+        const pg = await doc.getPage(1);
+        const vp = pg.getViewport({ scale: 2 });      // 2x para o antisserrilhado nao mentir
+        const tela = document.createElement('canvas');
+        tela.width = Math.ceil(vp.width); tela.height = Math.ceil(vp.height);
+        const tctx = tela.getContext('2d');
+        tctx.fillStyle = '#ffffff';
+        tctx.fillRect(0, 0, tela.width, tela.height);
+        await pg.render({ canvasContext: tctx, viewport: vp }).promise;
+
+        // Mede exatamente o RETANGULO DESENHADO, e nao a area util inteira da folha.
+        // A imagem e' quadrada, entao o cartaz ocupa so' a parte de cima da folha A4 —
+        // medir a folha toda diluiria a tinta no papel branco de baixo e acusaria um
+        // erro que nao existe. (Foi o que aconteceu na primeira versao desta checagem.)
+        //
+        // A tinta e' somada como fracao de escuro, nao por limiar: os pontos sao
+        // antisserrilhados, e contar "pixel preto ou nao" erraria justamente na borda
+        // de cada ponto, que e' onde a area do ponto se decide.
+        const plano1 = POSTEROPS.planejarPoster({
+            larguraOrigem: 300, alturaOrigem: 300, papel: 'A4',
+            margem: POSTEROPS.PT_POR_CM, modo: 'folhas', folhas: 1, eixo: 'largura'
+        });
+        const dest = plano1.folhas[0].destino;
+        const e = 2;                              // a escala da renderizacao
+        const x0 = Math.round(dest.x * e);
+        // O y do PDF cresce para cima; o do canvas, para baixo.
+        const y0 = Math.round((plano1.pagina.altura - dest.y - dest.altura) * e);
+        const larg = Math.round(dest.largura * e);
+        const alt = Math.round(dest.altura * e);
+        const d = tctx.getImageData(x0, y0, larg, alt).data;
+        let soma = 0, n = 0;
+        for (let i = 0; i < d.length; i += 4) { soma += 1 - d[i] / 255; n++; }
+
+        // O que o motor previu para a MESMA imagem e as mesmas opcoes.
+        const cinza = new Uint8ClampedArray(300 * 300 * 4);
+        for (let k = 0; k < 300 * 300; k++) {
+            cinza[k * 4] = 128; cinza[k * 4 + 1] = 128; cinza[k * 4 + 2] = 128; cinza[k * 4 + 3] = 255;
+        }
+        const previsto = POSTEROPS.gerarPontos(
+            { largura: 300, altura: 300, dados: cinza }, plano1,
+            { passo: 10, tamanhoPonto: 1, cor: 'preto' }).coberturaMedia;
+
+        return { medido: soma / n, previsto: previsto, pixels: n };
+    });
+    ok('a pagina do PDF tem tinta de verdade (nao sai em branco)',
+       !tinta.erro && tinta.medido > 0.15, tinta.erro || 'tinta medida: ' + (tinta.medido * 100).toFixed(1) + '%');
+    ok('e a quantidade de tinta bate com o escuro da imagem',
+       !tinta.erro && Math.abs(tinta.medido - tinta.previsto) < 0.06,
+       'medido ' + (tinta.medido * 100).toFixed(1) + '% vs previsto ' + (tinta.previsto * 100).toFixed(1) + '%');
+
+    // Volta a imagem original para o resto do teste.
+    await page.evaluate(() => { posTrocarImagem(); });
+    await page.waitForTimeout(150);
+    await page.setInputFiles('#posArquivo',
+        { name: 'mapa.png', mimeType: 'image/png', buffer: Buffer.from(arte.split(',')[1], 'base64') });
+    await page.waitForTimeout(400);
+    await page.evaluate(async () => { posDefinir('folhas', 2); posDefinir('passo', 14); await posGerar(); });
+
+    // O modo foto tem de sair tambem — e' outro caminho de codigo inteiro (recorta a
+    // imagem e embute JPEG, em vez de desenhar circulos).
+    const modoFoto = await page.evaluate(async () => {
+        posDefinir('estilo', 'foto');
+        await posGerar();
+        const link = document.getElementById('posBaixar');
+        if (!link) return { erro: document.getElementById('tabFerramentasPoster').textContent.slice(0, 200) };
+        const bytes = new Uint8Array(await (await fetch(link.href)).arrayBuffer());
+        const PDFLib = await PDFOPS.lib.pdfLib();
+        return { paginas: (await PDFLib.PDFDocument.load(bytes)).getPageCount(), bytes: bytes.length };
+    });
+    ok('o modo foto tambem monta o PDF', modoFoto.paginas === 4,
+       modoFoto.erro || (modoFoto.paginas + ' paginas, ' + modoFoto.bytes + ' bytes'));
+
+    const origemPoster = new URL(base);
+    const foraPoster = pedidos.slice(antesDoPoster).filter(u => {
+        if (/^(blob|data|filesystem):/.test(u)) return false;
+        try {
+            const h = new URL(u).hostname;
+            if (h === origemPoster.hostname) return false;
+            if (CDNS_POSTER.indexOf(h) !== -1) return false;   // biblioteca, nao dado
+            return true;
+        } catch (_) { return false; }
+    });
+    ok('montar o pôster nao manda nada para fora (so a biblioteca vem do CDN)',
+       foraPoster.length === 0, foraPoster.slice(0, 4).join(', '));
+    const enviosPoster = await page.evaluate(() => window.__enviosDeSaida || []);
+    ok('nenhum POST/PUT/beacon partiu da pagina', enviosPoster.length === 0,
+       enviosPoster.slice(0, 4).join(' | '));
+
     await browser.close();
 
     console.log('\n' + (falhas.length
         ? '❌ ' + falhas.length + ' FALHA(S):\n  - ' + falhas.join('\n  - ')
-        : '✅ TUDO CERTO: a tela Ferramentas e a aba Ampliar se comportam.'));
+        : '✅ TUDO CERTO: a tela Ferramentas e as tres abas se comportam.'));
     process.exit(falhas.length ? 1 : 0);
 })().catch(e => { console.error('ERRO NO TESTE:', e); process.exit(1); });
