@@ -395,6 +395,42 @@ por isso.
 
 Coberto por `testes/teste-lista-escola.js`.
 
+### Setembro/2026 — as Ferramentas PDF: fechar uma porta que estava aberta
+
+Havia um vazamento que nenhuma Regra do Firestore alcançava, porque acontecia **fora** do
+sistema: para juntar dois anexos, tirar uma página, assinar uma ficha ou comprimir um
+arquivo para caber no e-mail da diretoria, o professor abria um site gratuito de PDF e
+**enviava o arquivo para o servidor de um terceiro**. Esse arquivo costuma ser justamente
+o que há de mais sensível — Anexo III‑PAEE, laudo, ata, ficha com nome, série e endereço.
+É tratamento de dado pessoal de criança e adolescente por um operador que ninguém
+contratou, sem base legal e sem que a escola saiba; e a escola é quem responde.
+
+Não havia como proibir esse uso: o trabalho é real e precisa ser feito. Então ele passou a
+ser possível **dentro** do sistema, sem upload:
+
+- 49 ferramentas de PDF (`pdf_ferramentas.js` monta a tela, `pdf_operacoes.js` faz as
+  contas) cobrindo o que se usa de fato: juntar, dividir, reorganizar, girar, N páginas por
+  folha, marca d'água, numerar, assinar, preencher formulário, proteger com senha,
+  desbloquear, censurar, OCR, comprimir, reparar, PDF/A, criar formulário preenchível e
+  conversão de e para Word, Excel,
+  imagem, texto e HTML.
+- **Nenhuma operação faz upload.** O arquivo é lido para a memória do navegador,
+  transformado ali e devolvido para download. O que sai pela rede são as bibliotecas de
+  PDF, vindas de CDN — código entrando, nunca documento saindo. `testes/teste-pdf.js`
+  mede isso: enquanto as ferramentas rodam, nenhum POST, PUT ou beacon parte da página.
+- **Censurar censura.** Cobrir o nome com um retângulo preto — o que boa parte das
+  ferramentas faz — esconde na tela e deixa o texto no arquivo, a um "copiar e colar" de
+  distância. Aqui a página marcada é redesenhada como imagem: o texto sob a tarja deixa de
+  existir. O teste confirma apagando e procurando a palavra depois.
+- **Proteger protege.** Senha com AES‑256, cifrada no aparelho. A senha não é gravada em
+  lugar nenhum e não há como recuperá-la — o que a tela diz com essas palavras.
+- A ferramenta de assinatura declara, no próprio resultado, que é assinatura **desenhada**
+  e **não** vale como assinatura digital com certificado ICP‑Brasil, apontando o
+  gov.br/assinaturaeletronica para o documento que exigir validade jurídica.
+
+É a primeira função do plano Professor. A escolha de qual seria a primeira não foi
+comercial: é a que tira dado de estudante de um caminho que ninguém estava vigiando.
+
 ### Consequências assumidas
 
 - **A cópia de segurança passa a ser responsabilidade compartilhada.** O arquivo `.profsis`

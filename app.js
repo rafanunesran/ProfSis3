@@ -695,6 +695,7 @@ function renderProfessorPanel() {
         <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
         <button onclick="showScreen('biblioteca', event)"><span class="icon">📚</span><span class="label">Biblioteca</span></button>
+        <button onclick="showScreen('pdf', event)"><span class="icon">📕</span><span class="label">PDF</span></button>
     `;
     renderDashboard();
     showScreen('dashboard');
@@ -709,6 +710,7 @@ function renderAeePanel() {
         <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
         <button onclick="showScreen('biblioteca', event)"><span class="icon">📚</span><span class="label">Biblioteca</span></button>
+        <button onclick="showScreen('pdf', event)"><span class="icon">📕</span><span class="label">PDF</span></button>
     `;
     renderDashboard();
     showScreen('dashboard');
@@ -724,6 +726,7 @@ function renderProjetoPanel() {
         <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
         <button onclick="showScreen('biblioteca', event)"><span class="icon">📚</span><span class="label">Biblioteca</span></button>
+        <button onclick="showScreen('pdf', event)"><span class="icon">📕</span><span class="label">PDF</span></button>
     `;
     renderDashboard();
     showScreen('dashboard');
@@ -759,6 +762,10 @@ function showScreen(screenId, evt) {
     if (screenId === 'horariosGestor') renderHorariosGestor();
     if (screenId === 'escolaGestor') renderEscolaGestor();
     if (screenId === 'biblioteca') renderBiblioteca();
+    // Ferramentas PDF (premium). A tela e' criada sob demanda, como a Biblioteca — ver
+    // pdf_ferramentas.js. O portao do plano fica no clique de cada ferramenta, e nao
+    // aqui: o catalogo tem de ser visivel para quem ainda nao assina.
+    if (screenId === 'pdf' && typeof renderPdf === 'function') renderPdf();
 }
 
 function showModal(modalId) {
