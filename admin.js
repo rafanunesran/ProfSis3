@@ -620,6 +620,11 @@ async function abrirModalAssinaturasAdmin() {
                         o apoio vale pelos meses escolhidos e vence sozinho. Um por linha, no formato
                         <code>plano;meses;valor;link</code> — por exemplo:<br>
                         <code>professor;3;60;https://mpago.la/xxxx</code>
+                        <br><br>
+                        ⚠️ O link aqui <strong>não é o do plano</strong> (aquele com
+                        <code>preapproval_plan_id</code>, que só aceita cartão). Crie um
+                        <strong>Link de pagamento</strong> em <em>Seu negócio → Link de pagamento</em>,
+                        com o <strong>valor total do pacote</strong> — R$ 60,00 para 3 meses, não R$ 20,00.
                     </p>
                     <textarea id="pacotesPixAssinatura" rows="4" style="width:100%; padding:8px; font-family:monospace; font-size:12px;"
                               placeholder="apoiase;3;30;https://mpago.la/aaaa&#10;professor;3;60;https://mpago.la/bbbb&#10;professor;12;240;https://mpago.la/cccc">${(Array.isArray(links.pacotesPix) ? links.pacotesPix : []).map(p => [p.plano, p.meses, p.valor, p.link].join(';')).join('\n')}</textarea>
@@ -670,10 +675,32 @@ async function salvarLinksAssinatura() {
 
     // Link de cobranca e' dinheiro dos professores: recusamos qualquer coisa que nao
     // seja um endereco https do proprio Mercado Pago.
-    const valido = (u) => !u || /^https:\/\/[a-z0-9.-]*mercadopago\.com(\.br)?\//i.test(u);
+    // Link de cobranca e' dinheiro dos professores: recusamos o que nao for endereco
+    // https do Mercado Pago. `mpago.la` entra na lista porque e' o encurtador OFICIAL
+    // deles — e' o formato em que sai todo link de pagamento, entao exigir
+    // "mercadopago.com" rejeitava justamente o link certo.
+    const valido = (u) => !u || /^https:\/\/([a-z0-9.-]*mercadopago\.com(\.br)?|mpago\.la)\//i.test(u);
     if (!valido(apoiase) || !valido(professor)) {
-        alert('O link precisa começar com https:// e apontar para o mercadopago.com.br.');
+        alert('O link precisa começar com https:// e apontar para o Mercado Pago ' +
+              '(mercadopago.com.br ou mpago.la).');
         return;
+    }
+
+    // Um link de ASSINATURA leva ao checkout recorrente, que so' aceita cartao.
+    const ehAssinatura = (u) => /preapproval_plan_id=|\/subscriptions\/checkout/i.test(String(u || ''));
+
+    // No campo do cartao esperamos justamente um link de assinatura. Aqui só avisamos,
+    // sem travar: o Mercado Pago tambem encurta link de plano, e um `mpago.la` de
+    // assinatura e' indistinguivel de um de pagamento avulso pela URL.
+    for (const [nome, link] of [['Apoia-se', apoiase], ['Professor', professor]]) {
+        if (link && !ehAssinatura(link) && link.indexOf('mpago.la') === -1) {
+            if (!confirm('O link do plano ' + nome + ' não parece ser de assinatura ' +
+                         '(o normal contém "preapproval_plan_id").\n\n' +
+                         'Se for um link de pagamento avulso, a cobrança NÃO vai se repetir todo mês ' +
+                         'e o professor vai perder o acesso no vencimento.\n\nSalvar assim mesmo?')) {
+                return;
+            }
+        }
     }
     // O endereco do servico recebe o cracha da sessao do professor: se apontar para
     // um lugar errado, esse cracha vai parar na mao de outra pessoa. Exigimos https.
@@ -702,7 +729,20 @@ async function salvarLinksAssinatura() {
             return;
         }
         if (!valido(link)) {
-            alert('O link do Pix precisa ser um endereço https do Mercado Pago:\n\n' + linha);
+            alert('O link do Pix precisa ser um endereço https do Mercado Pago ' +
+                  '(mercadopago.com.br ou mpago.la):\n\n' + linha);
+            return;
+        }
+        // O ERRO QUE ESTE BLOQUEIO EVITA: colar aqui o link do PLANO (cartão).
+        // Assinatura recorrente no Mercado Pago só aceita cartão — Pix não existe
+        // nesse fluxo. Pior que não funcionar: o professor que clicasse em
+        // "3 meses / R$ 60" cairia num checkout de R$ 10 por mês, no cartão,
+        // recorrente. Valor errado e cobrança automática que ele não pediu.
+        if (ehAssinatura(link)) {
+            alert('Este link é de ASSINATURA no cartão, não serve como pacote de Pix:\n\n' + linha +
+                  '\n\nAssinatura recorrente do Mercado Pago só aceita cartão. Para o Pix, crie um ' +
+                  '"Link de pagamento" (Seu negócio → Link de pagamento), com o valor total do pacote. ' +
+                  'Ele sai no formato https://mpago.la/... e aceita Pix.');
             return;
         }
         pacotesPix.push({ plano: plano, meses: Number(meses), valor: Number(valor), link: link });

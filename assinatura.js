@@ -407,7 +407,8 @@ async function carregarLinksAssinatura() {
             ? DIAS_TOLERANCIA_PADRAO
             : Number(cfg.diasTolerancia);
         _pacotesPix = Array.isArray(cfg.pacotesPix) ? cfg.pacotesPix.filter(p =>
-            p && PLANOS_SISPROF[p.plano] && Number(p.meses) > 0 && Number(p.valor) > 0 && p.link) : [];
+            p && PLANOS_SISPROF[p.plano] && Number(p.meses) > 0 && Number(p.valor) > 0
+            && p.link && !ehLinkDeAssinatura(p.link)) : [];
     }
     return links;
 }
@@ -726,12 +727,29 @@ function secaoPixHtml() {
         </div>`;
 }
 
+// Um link de ASSINATURA (checkout recorrente do Mercado Pago) nunca pode ser usado
+// como pacote de Pix. O checkout recorrente so' aceita cartao, e — pior que nao
+// funcionar — quem clicasse em "3 meses / R$ 60" cairia num plano de R$ 10 POR MES
+// no cartao: valor errado e cobranca automatica que a pessoa nao pediu.
+//
+// O painel ja' recusa cadastrar assim, mas a checagem vive aqui tambem porque
+// configuracao errada pode JA' estar gravada no banco, de antes da recusa existir.
+// Entre deixar alguem pagar errado e esconder o botao, escondemos o botao.
+function ehLinkDeAssinatura(link) {
+    return /preapproval_plan_id=|\/subscriptions\/checkout/i.test(String(link || ''));
+}
+
 // Abre o link de Pix do pacote, com a referencia de quem esta pagando.
 async function pagarComPix(planoId, meses) {
     await carregarLinksAssinatura();
     const pacote = _pacotesPix.find(p => p.plano === planoId && Number(p.meses) === Number(meses));
     if (!pacote || !pacote.link) {
         alert('Este pacote de Pix ainda nao esta configurado. Tente outro, ou use o cartao.');
+        return;
+    }
+    if (ehLinkDeAssinatura(pacote.link)) {
+        alert('Este pacote esta configurado com um link de assinatura no cartao, que nao aceita Pix.\n\n' +
+              'Avise a administracao do sistema. Enquanto isso, voce pode apoiar pelo cartao aqui mesmo.');
         return;
     }
     const uid = currentUser && (currentUser.uid || currentUser.id);
@@ -944,6 +962,7 @@ window.temAssinaturaAntiga = temAssinaturaAntiga;
 window.esperandoConfirmacao = esperandoConfirmacao;
 window.cancelarAssinatura = cancelarAssinatura;
 window.pagarComPix = pagarComPix;
+window.ehLinkDeAssinatura = ehLinkDeAssinatura;
 window.assinaturaVencida = assinaturaVencida;
 window.assinaturaEmAtraso = assinaturaEmAtraso;
 window.diasDeTolerancia = diasDeTolerancia;

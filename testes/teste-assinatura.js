@@ -532,6 +532,37 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
   ok('levando quem paga, o plano e os meses na referencia',
       /external_reference=uid-ana%7Cprofessor%7C12/.test(r9b.destino));
 
+  // O ERRO REAL QUE ISTO EVITA: cadastrar no Pix o link do PLANO (cartao). O checkout
+  // recorrente do Mercado Pago nao aceita Pix, e quem clicasse em "3 meses / R$ 60"
+  // cairia num plano de R$ 10 POR MES no cartao - valor errado e cobranca automatica
+  // que a pessoa nao pediu.
+  const PIX_ERRADO = Object.assign({}, LINKS, { pacotesPix: [
+    { plano: 'apoiase', meses: 1, valor: 10,
+      link: 'https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=a9d3c89c' },
+    { plano: 'professor', meses: 3, valor: 60, link: 'https://mpago.la/pixOk' }
+  ] });
+  await entrar(ANA, null, PIX_ERRADO);
+  const r9g = await p.evaluate(async () => {
+    const el = document.getElementById('modalApoie'); if (el) el.remove();
+    await abrirModalApoie();
+    await new Promise(r => setTimeout(r, 300));
+    const texto = document.getElementById('conteudoModalApoie').textContent;
+    window.__abriu = [];
+    await pagarComPix('apoiase', 1);
+    await new Promise(r => setTimeout(r, 200));
+    return { mostrouOErrado: /1 mes\b/.test(texto), mostrouOBom: /3 meses/.test(texto),
+             abriu: window.__abriu.length };
+  });
+  ok('pacote de Pix apontando para link de ASSINATURA nem aparece na tela',
+      r9g.mostrouOErrado === false && r9g.mostrouOBom === true);
+  ok('e se alguem tentar mesmo assim, nao abre o checkout de cartao', r9g.abriu === 0);
+  ok('a deteccao pega os dois formatos de link de assinatura',
+      (await p.evaluate(() => [
+        ehLinkDeAssinatura('https://www.mercadopago.com.br/subscriptions/checkout?preapproval_plan_id=x'),
+        ehLinkDeAssinatura('https://mpago.la/abc?preapproval_plan_id=x'),
+        ehLinkDeAssinatura('https://mpago.la/abc')
+      ])).join(',') === 'true,true,false');
+
   // Sem pacotes cadastrados, a secao simplesmente nao aparece.
   await entrar(ANA, null, LINKS);
   const r9c = await p.evaluate(async () => {

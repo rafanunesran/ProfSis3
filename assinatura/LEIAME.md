@@ -218,8 +218,16 @@ sozinho. Nada fica sendo cobrado sem autorização, e não há o que cancelar.
 
 Como montar:
 
-1. No Mercado Pago, crie um **link de pagamento** para cada pacote (ex.: R$ 60,00 para
-   3 meses de Professor). O link aceita Pix.
+1. No Mercado Pago, **Seu negócio → Link de pagamento**, crie um link para cada
+   pacote com o **valor total** (ex.: R$ 60,00 para 3 meses de Professor, não R$ 20,00).
+   Ele sai no formato `https://mpago.la/…` e aceita Pix.
+
+   ⚠️ **Não use aqui o link do plano** — aquele com `preapproval_plan_id`, que você
+   criou em *Assinaturas*. Assinatura recorrente do Mercado Pago **só aceita cartão**:
+   Pix não existe nesse fluxo. E o estrago passa de "não funciona": quem clicasse em
+   "3 meses / R$ 60" cairia num checkout de R$ 10 **por mês, no cartão** — valor errado
+   e cobrança automática que a pessoa não pediu. O painel recusa salvar assim, e a tela
+   esconde o pacote se a configuração errada já estiver gravada.
 2. **Painel Super Admin → 💳 Assinaturas → Pacotes de apoio no Pix**, um por linha:
    `professor;3;60;https://mpago.la/xxxx`
 3. **Cadastre os mesmos pacotes na variável `MP_PACOTES_PIX`** do serviço, no formato
