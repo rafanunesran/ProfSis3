@@ -335,12 +335,12 @@ function abrirAvisoTransicao() {
                 <button class="close-btn" onclick="closeModal('modalTransicaoAssinatura')">×</button>
             </div>
             <div style="padding: 20px 25px;">
-                <p style="color:#4a5568; line-height:1.6;">
+                <p style="color:#3d4759; line-height:1.6;">
                     O sistema de assinatura que usavamos esta' sendo desativado e a cobranca de
                     <strong>R$ 7,00/mes</strong> sera' cancelada por nos, no painel do Mercado Pago —
                     <strong>voce nao precisa fazer nada</strong> para parar de pagar.
                 </p>
-                <p style="color:#4a5568; line-height:1.6;">
+                <p style="color:#3d4759; line-height:1.6;">
                     O sistema continua <strong>gratuito</strong>. Se voce quiser seguir apoiando,
                     agora existem dois planos com cobranca mensal no cartao:
                 </p>
@@ -361,7 +361,7 @@ function abrirAvisoTransicao() {
                         <span style="font-size:12px; font-weight:normal;">Nada muda no seu uso do sistema. Obrigado pelo apoio ate' aqui!</span>
                     </button>
                 </div>
-                <p style="font-size:11px; color:#718096; margin-top:16px;">
+                <p style="font-size:11px; color:#5f6b7f; margin-top:16px;">
                     Duvida na fatura? A cobranca antiga aparece como Mercado Pago. Se ela continuar
                     depois do encerramento, fale com a gente que resolvemos.
                 </p>
@@ -454,7 +454,7 @@ async function assinarPlano(planoId) {
 function marcarEsperandoConfirmacao(planoId) {
     const alvo = document.getElementById('assinaturaEstado');
     if (alvo) {
-        alvo.innerHTML = '<p style="font-size:13px; color:#2b6cb0;">⏳ Aguardando a confirmacao do Mercado Pago... ' +
+        alvo.innerHTML = '<p style="font-size:13px; color:#1f55ad;">⏳ Aguardando a confirmacao do Mercado Pago... ' +
                          'Pode levar alguns minutos. Voce pode fechar esta janela.</p>';
     }
     let tentativas = 0;
@@ -603,12 +603,12 @@ async function pegarCrachaDaSessao() {
 
 function cartaoDePlano(plano, atual, destacar) {
     const ehAtual = plano.id === atual;
-    const borda = ehAtual ? '2px solid #38a169' : (destacar ? '2px solid #3182ce' : '1px solid #e2e8f0');
+    const borda = ehAtual ? '2px solid #38a169' : (destacar ? '2px solid #2563c9' : '1px solid #e3e8ef');
     const itens = plano.itens.map(i => `<li style="margin:3px 0;">${i}</li>`).join('');
     const rodape = ehAtual
         ? '<div style="text-align:center; color:#2f855a; font-weight:bold; padding:10px 0;">✅ Seu plano atual</div>'
         : (plano.valor === 0
-            ? '<div style="text-align:center; color:#718096; font-size:12px; padding:10px 0;">Sem cobranca</div>'
+            ? '<div style="text-align:center; color:#5f6b7f; font-size:12px; padding:10px 0;">Sem cobranca</div>'
             : `<button class="btn btn-${plano.id === 'professor' ? 'primary' : 'success'}" style="width:100%; padding:10px; font-weight:bold;"
                        id="btnAssinar_${plano.id}" onclick="assinarPlano('${plano.id}')">
                    Assinar com cartao
@@ -616,13 +616,13 @@ function cartaoDePlano(plano, atual, destacar) {
 
     return `
         <div style="flex:1; min-width:210px; border:${borda}; border-radius:10px; padding:14px; background:#fff;">
-            <div style="font-size:15px; font-weight:bold; color:#2d3748;">${plano.emoji} ${plano.nome}</div>
-            <div style="font-size:22px; font-weight:bold; color:#2d3748; margin:6px 0;">
+            <div style="font-size:15px; font-weight:bold; color:#1c2536;">${plano.emoji} ${plano.nome}</div>
+            <div style="font-size:22px; font-weight:bold; color:#1c2536; margin:6px 0;">
                 ${plano.valor === 0 ? 'R$ 0' : 'R$ ' + plano.valor.toFixed(2).replace('.', ',')}
-                <span style="font-size:12px; font-weight:normal; color:#718096;">${plano.valor === 0 ? '' : '/mes'}</span>
+                <span style="font-size:12px; font-weight:normal; color:#5f6b7f;">${plano.valor === 0 ? '' : '/mes'}</span>
             </div>
-            <div style="font-size:12px; color:#4a5568; min-height:34px;">${plano.resumo}</div>
-            <ul style="font-size:12px; color:#4a5568; padding-left:18px; margin:10px 0;">${itens}</ul>
+            <div style="font-size:12px; color:#3d4759; min-height:34px;">${plano.resumo}</div>
+            <ul style="font-size:12px; color:#3d4759; padding-left:18px; margin:10px 0;">${itens}</ul>
             ${rodape}
         </div>`;
 }
@@ -632,13 +632,13 @@ function descreverAssinatura() {
     const plano = infoPlanoAtual();
 
     if (currentUser && currentUser.role === 'super_admin') {
-        return '<p style="font-size:13px; color:#718096;">Conta de administracao: acesso completo, sem cobranca.</p>';
+        return '<p style="font-size:13px; color:#5f6b7f;">Conta de administracao: acesso completo, sem cobranca.</p>';
     }
     if (!a || a.status === 'cancelada' || !a.status) {
         if (plano.id !== 'free') {
             return '<p style="font-size:13px; color:#2f855a;">💛 Voce consta como apoiador do projeto. Obrigado!</p>';
         }
-        return '<p style="font-size:13px; color:#718096;">Voce esta no plano gratuito.</p>';
+        return '<p style="font-size:13px; color:#5f6b7f;">Voce esta no plano gratuito.</p>';
     }
     if (a.status === 'pendente') {
         return '<p style="font-size:13px; color:#b7791f;">⏳ Assinatura iniciada, aguardando a confirmacao do cartao. ' +
@@ -717,22 +717,22 @@ function secaoPixHtml() {
                         </button>`;
             }).join('');
         return `<div style="margin-top:10px;">
-                    <div style="font-size:12px; font-weight:bold; color:#2d3748;">${plano.emoji} ${plano.nome}</div>
+                    <div style="font-size:12px; font-weight:bold; color:#1c2536;">${plano.emoji} ${plano.nome}</div>
                     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">${botoes}</div>
                 </div>`;
     }).join('');
 
     return `
-        <div style="margin-top:18px; border:1px solid #e2e8f0; border-radius:10px; padding:14px; background:#f7fafc; text-align:left;">
-            <div style="font-size:14px; font-weight:bold; color:#2d3748;">📱 Prefere Pix? Sem cartao, sem cobranca automatica</div>
-            <p style="font-size:12px; color:#4a5568; margin:6px 0 0 0;">
+        <div style="margin-top:18px; border:1px solid #e3e8ef; border-radius:10px; padding:14px; background:#f6f8fb; text-align:left;">
+            <div style="font-size:14px; font-weight:bold; color:#1c2536;">📱 Prefere Pix? Sem cartao, sem cobranca automatica</div>
+            <p style="font-size:12px; color:#3d4759; margin:6px 0 0 0;">
                 Voce paga uma vez e o apoio vale pelo periodo escolhido. No fim do prazo ele
                 simplesmente acaba — <strong>nada e cobrado de voce sem autorizacao</strong>. Para continuar,
                 basta fazer outro Pix (e pagar antes de vencer nao perde os dias que faltavam).
             </p>
             ${blocos}
             <div id="areaQrPix" style="display:none; margin-top:14px;"></div>
-            <p style="font-size:11px; color:#718096; margin-top:10px;">
+            <p style="font-size:11px; color:#5f6b7f; margin-top:10px;">
                 O reconhecimento do Pix costuma levar poucos minutos. Assim que cair, o plano
                 aparece sozinho aqui — nao precisa recarregar nem avisar ninguem.
             </p>
@@ -790,7 +790,7 @@ async function gerarQrCodePix(planoId, meses, pacote) {
     const area = document.getElementById('areaQrPix');
     if (area) {
         area.style.display = 'block';
-        area.innerHTML = '<p style="font-size:13px; color:#4a5568;">Gerando seu Pix...</p>';
+        area.innerHTML = '<p style="font-size:13px; color:#3d4759;">Gerando seu Pix...</p>';
     }
     try {
         const cracha = await pegarCrachaDaSessao();
@@ -843,28 +843,28 @@ function mostrarQrCodePix(dados) {
     area.style.display = 'block';
     area.innerHTML = `
         <div style="border:2px solid #38a169; border-radius:10px; padding:16px; background:#fff; text-align:center;">
-            <div style="font-size:15px; font-weight:bold; color:#2d3748;">
+            <div style="font-size:15px; font-weight:bold; color:#1c2536;">
                 📱 Pix de R$ ${Number(dados.valor).toFixed(2).replace('.', ',')} —
                 ${plano.emoji} ${plano.nome}, ${dados.meses} ${Number(dados.meses) === 1 ? 'mes' : 'meses'}
             </div>
             ${dados.qrCodeBase64 ? `
                 <img src="data:image/png;base64,${dados.qrCodeBase64}" alt="QR Code do Pix"
-                     style="width:220px; height:220px; margin:12px auto; display:block; border:1px solid #e2e8f0; border-radius:8px;">
+                     style="width:220px; height:220px; margin:12px auto; display:block; border:1px solid #e3e8ef; border-radius:8px;">
             ` : ''}
-            <p style="font-size:12px; color:#4a5568; margin:6px 0;">
+            <p style="font-size:12px; color:#3d4759; margin:6px 0;">
                 Abra o aplicativo do seu banco, escolha <strong>Pix &gt; Pagar com QR Code</strong> e aponte a camera.
                 Ou use o codigo abaixo:
             </p>
             <textarea id="pixCopiaECola" readonly onclick="this.select()"
                       style="width:100%; height:70px; font-family:monospace; font-size:11px; padding:8px;
-                             border:1px solid #e2e8f0; border-radius:6px; resize:none;">${dados.copiaECola}</textarea>
+                             border:1px solid #e3e8ef; border-radius:6px; resize:none;">${dados.copiaECola}</textarea>
             <button class="btn btn-success" style="margin-top:8px; padding:9px 18px;" onclick="copiarCodigoPix()">
                 📋 Copiar codigo Pix
             </button>
-            ${validade ? `<p style="font-size:11px; color:#718096; margin-top:8px;">
+            ${validade ? `<p style="font-size:11px; color:#5f6b7f; margin-top:8px;">
                 Este codigo vale ate ${validade}. Depois disso, e' so gerar outro.
             </p>` : ''}
-            <p style="font-size:11px; color:#2b6cb0; margin-top:8px;">
+            <p style="font-size:11px; color:#1f55ad; margin-top:8px;">
                 ⏳ Assim que o Pix cair, seu plano e liberado sozinho — pode deixar esta tela aberta
                 ou fechar, tanto faz.
             </p>
@@ -904,7 +904,7 @@ function renderConteudoModalApoie(opcoes) {
 
     alvo.innerHTML = `
         ${aviso}
-        <p style="font-size:14px; color:#4a5568; line-height:1.5;">
+        <p style="font-size:14px; color:#3d4759; line-height:1.5;">
             O SisProf e' e sempre sera' gratuito para dar aula. Os custos de servidor, banco de dados
             e IA sao pagos por quem assina — escolha como voce quer participar.
         </p>
@@ -914,25 +914,25 @@ function renderConteudoModalApoie(opcoes) {
             ${cartaoDePlano(PLANOS_SISPROF.apoiase, atual, opts.destaque === 'apoiase')}
             ${cartaoDePlano(PLANOS_SISPROF.professor, atual, opts.destaque === 'professor')}
         </div>
-        <p style="font-size:11px; color:#718096; margin-top:12px;">
+        <p style="font-size:11px; color:#5f6b7f; margin-top:12px;">
             🔒 Cobranca mensal automatica no cartao, pelo Mercado Pago. O numero do cartao fica com eles —
             o SisProf nunca ve nem guarda esse dado. Cancele quando quiser, sem multa.
         </p>
         ${secaoPixHtml()}
         ${temAssinaturaViva ? `
-            <div style="margin-top:14px; border-top:1px dashed #e2e8f0; padding-top:14px;">
+            <div style="margin-top:14px; border-top:1px dashed #e3e8ef; padding-top:14px;">
                 <button class="btn btn-danger" id="btnCancelarAssinatura" onclick="cancelarAssinatura()"
                         style="padding:9px 18px;">Cancelar assinatura</button>
-                <p style="font-size:11px; color:#718096; margin-top:6px;">
+                <p style="font-size:11px; color:#5f6b7f; margin-top:6px;">
                     Cancelar interrompe a cobranca mensal e devolve a conta ao plano gratuito.
                     Sem multa e sem perder nenhum dado — voce pode voltar quando quiser.
                 </p>
                 <p style="font-size:11px; margin-top:4px;">
                     <a href="https://www.mercadopago.com.br/subscriptions" target="_blank" rel="noopener"
-                       style="color:#718096;">Ver a assinatura no painel do Mercado Pago</a>
+                       style="color:#5f6b7f;">Ver a assinatura no painel do Mercado Pago</a>
                 </p>
             </div>` : ''}
-        <div id="apoieContribuintes" style="margin-top:18px; border-top:1px dashed #e2e8f0; padding-top:15px;"></div>`;
+        <div id="apoieContribuintes" style="margin-top:18px; border-top:1px dashed #e3e8ef; padding-top:15px;"></div>`;
 }
 
 async function abrirModalApoie(opcoes) {
@@ -1037,7 +1037,7 @@ function atualizarBannerApoio() {
 async function carregarContribuintesApoie() {
     const alvo = document.getElementById('apoieContribuintes');
     if (!alvo) return;
-    alvo.innerHTML = '<p style="font-size:12px; color:#a0aec0;">Carregando...</p>';
+    alvo.innerHTML = '<p style="font-size:12px; color:#7a869a;">Carregando...</p>';
     try {
         if (typeof db === 'undefined' || !db) { alvo.innerHTML = ''; return; }
 
@@ -1053,7 +1053,7 @@ async function carregarContribuintesApoie() {
         });
 
         if (nomes.length === 0) {
-            alvo.innerHTML = '<p style="font-size:13px; color:#718096;">Seja o primeiro a apoiar e ajude a manter o SisProf sempre melhorando! 💛</p>';
+            alvo.innerHTML = '<p style="font-size:13px; color:#5f6b7f;">Seja o primeiro a apoiar e ajude a manter o SisProf sempre melhorando! 💛</p>';
             return;
         }
         nomes.sort((a, b) => a.localeCompare(b, 'pt'));

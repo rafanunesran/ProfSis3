@@ -82,7 +82,7 @@ function renderGestorPanel() {
 function renderRegistrosGestor() {
     const html = `
         <div class="card">
-            <div style="margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 10px;">
+            <div style="margin-bottom: 20px; border-bottom: 1px solid #e3e8ef; display: flex; gap: 10px;">
                 <button class="btn ${currentRegistrosTab === 'administrativos' ? 'btn-primary' : 'btn-secondary'}" 
                         onclick="currentRegistrosTab='administrativos'; renderRegistrosGestor()">
                     📂 Vigentes
@@ -141,12 +141,12 @@ function renderAbaRegistrosArquivados() {
                 <button class="btn btn-primary" onclick="abrirNovoRegistroGestao()">+ Novo Registro</button>
             </div>
             
-            <div class="card" style="background: #f8fafc; border: 1px solid #e2e8f0; margin-bottom: 20px; padding: 15px;">
-                <h4 style="margin-top: 0; color: #2c5282; margin-bottom: 10px;">Filtros</h4>
+            <div class="card" style="background: #f6f8fb; border: 1px solid #e3e8ef; margin-bottom: 20px; padding: 15px;">
+                <h4 style="margin-top: 0; color: #1b4488; margin-bottom: 10px;">Filtros</h4>
                 <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
                     <label style="flex: 1; min-width: 150px;">
                         <span style="font-size: 12px; font-weight: bold;">Bimestre:</span><br>
-                        <select id="filtroArqBimestre" onchange="atualizarFiltrosArquivados()" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #cbd5e0;">
+                        <select id="filtroArqBimestre" onchange="atualizarFiltrosArquivados()" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #cdd5e1;">
                             <option value="0" ${stateArqBimestre === 0 ? 'selected' : ''}>Todos</option>
                             <option value="1" ${stateArqBimestre === 1 ? 'selected' : ''}>1º Bimestre</option>
                             <option value="2" ${stateArqBimestre === 2 ? 'selected' : ''}>2º Bimestre</option>
@@ -156,14 +156,14 @@ function renderAbaRegistrosArquivados() {
                     </label>
                     <label style="flex: 1; min-width: 150px;">
                         <span style="font-size: 12px; font-weight: bold;">Turma:</span><br>
-                        <select id="filtroArqTurma" onchange="atualizarFiltrosArquivados()" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #cbd5e0;">
+                        <select id="filtroArqTurma" onchange="atualizarFiltrosArquivados()" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #cdd5e1;">
                             <option value="0" ${stateArqTurma === 0 ? 'selected' : ''}>Todas</option>
                             ${(data.turmas || []).map(t => `<option value="${t.id}" ${stateArqTurma == t.id ? 'selected' : ''}>${t.nome}</option>`).join('')}
                         </select>
                     </label>
                     <label style="flex: 2; min-width: 200px;">
                         <span style="font-size: 12px; font-weight: bold;">Buscar por Nome:</span><br>
-                        <input type="text" id="filtroArqNome" value="${stateArqNome}" oninput="atualizarFiltrosArquivados()" placeholder="Digite o nome do estudante..." style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #cbd5e0;">
+                        <input type="text" id="filtroArqNome" value="${stateArqNome}" oninput="atualizarFiltrosArquivados()" placeholder="Digite o nome do estudante..." style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #cdd5e1;">
                     </label>
                 </div>
             </div>
@@ -209,21 +209,21 @@ function renderListaArquivados() {
             
             if (today > dataFim) {
                 status = 'Vencido';
-                cor = '#718096';
+                cor = '#5f6b7f';
             } else {
-                cor = '#3182ce';
+                cor = '#2563c9';
             }
         } else if (r.tipo === 'Faltoso') {
             cor = '#ef4444';
             if (estudante.status && estudante.status !== 'Ativo') {
                 status = `Arquivado (${estudante.status})`;
-                cor = '#718096';
+                cor = '#5f6b7f';
             }
         }
 
         if (r.arquivado) {
             status = 'Arquivado';
-            cor = '#718096';
+            cor = '#5f6b7f';
         }
 
         return { ...r, estudanteNome: estudante.nome_completo, turmaNome: turma.nome, status, cor, bim };
@@ -245,16 +245,16 @@ function renderListaArquivados() {
     const bimestresOrdenados = Object.keys(grupos).sort();
 
     const html = bimestresOrdenados.length > 0 ? bimestresOrdenados.map(bimKey => `
-                <h3 style="margin-top: 20px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: #2d3748;">${bimKey}</h3>
+                <h3 style="margin-top: 20px; border-bottom: 2px solid #e3e8ef; padding-bottom: 5px; color: #1c2536;">${bimKey}</h3>
                 ${Object.keys(grupos[bimKey]).sort().map(turmaNome => `
-                    <h4 style="margin-top: 15px; color: #4a5568; background: #edf2f7; padding: 5px 10px; border-radius: 4px;">${turmaNome}</h4>
+                    <h4 style="margin-top: 15px; color: #3d4759; background: #eef2f7; padding: 5px 10px; border-radius: 4px;">${turmaNome}</h4>
                     <table>
                         <thead><tr><th>Tipo</th><th>Status</th><th>Estudante</th><th>Data/Detalhes</th><th>Ações</th></tr></thead>
                         <tbody>
                             ${grupos[bimKey][turmaNome].map(r => `
                                 <tr>
                                     <td style="color: ${r.cor}; font-weight: bold;">${r.tipo}</td>
-                                    <td><span class="badge" style="background:${r.status === 'Vencido' ? '#e2e8f0' : '#ebf8ff'}; color:${r.cor}; font-size:10px;">${r.status}</span></td>
+                                    <td><span class="badge" style="background:${r.status === 'Vencido' ? '#e3e8ef' : '#edf3fd'}; color:${r.cor}; font-size:10px;">${r.status}</span></td>
                                     <td>${getAeePrefix((data.estudantes || []).find(e => e.id == r.estudanteId))}${r.estudanteNome}</td>
                                     <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
                                     <td>
@@ -282,13 +282,13 @@ function renderAbaConfigBimestres() {
     const html = `
         <div>
             <h2>📅 Configuração de Períodos Bimestrais</h2>
-            <p style="color:#666; font-size:14px; margin-bottom:20px;">Defina as datas de início e fim de cada bimestre. Isso será usado pelos professores para o cálculo de atestados e relatórios.</p>
+            <p style="color:#5f6b7f; font-size:14px; margin-bottom:20px;">Defina as datas de início e fim de cada bimestre. Isso será usado pelos professores para o cálculo de atestados e relatórios.</p>
             
             <form onsubmit="salvarConfigBimestres(event)">
                 <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
                     ${config.map((c, i) => `
-                        <div class="card" style="padding:15px; background:#f8fafc; border:1px solid #e2e8f0;">
-                            <h4 style="margin-top:0; color:#2c5282;">${c.bim}º Bimestre</h4>
+                        <div class="card" style="padding:15px; background:#f6f8fb; border:1px solid #e3e8ef;">
+                            <h4 style="margin-top:0; color:#1b4488;">${c.bim}º Bimestre</h4>
                             <label style="font-size:12px; font-weight:bold;">Início:</label>
                             <input type="date" class="bim-inicio" data-idx="${i}" value="${c.inicio}" required style="width:100%; margin-bottom:10px;">
                             <label style="font-size:12px; font-weight:bold;">Fim:</label>
@@ -330,15 +330,15 @@ function renderAbaFeriados() {
     const html = `
         <div>
             <h2>🎉 Feriados, Recessos e Férias</h2>
-            <p style="color:#666; font-size:14px; margin-bottom:16px;">
+            <p style="color:#5f6b7f; font-size:14px; margin-bottom:16px;">
                 Estas datas são respeitadas na sincronização com o Google Agenda dos professores: nenhum compromisso é
                 marcado em feriados, recessos ou férias. As datas fora dos bimestres já contam automaticamente como férias/recesso.
                 Os <strong>feriados nacionais</strong> são calculados automaticamente — cadastre aqui apenas os
                 <strong>municipais/estaduais e recessos locais</strong>.
             </p>
 
-            <div class="card" style="background:#f8fafc; border:1px solid #e2e8f0; padding:15px; margin-bottom:16px;">
-                <h4 style="margin-top:0; color:#2c5282;">Localização da escola (para feriados regionais)</h4>
+            <div class="card" style="background:#f6f8fb; border:1px solid #e3e8ef; padding:15px; margin-bottom:16px;">
+                <h4 style="margin-top:0; color:#1b4488;">Localização da escola (para feriados regionais)</h4>
                 <div style="display:flex; gap:15px; flex-wrap:wrap;">
                     <label style="flex:2; min-width:180px;"><span style="font-size:12px; font-weight:bold;">Cidade:</span><br>
                         <input type="text" id="feriadoCidade" value="${cidade}" placeholder="Ex.: Osasco" style="width:100%; padding:6px;"></label>
@@ -415,12 +415,12 @@ async function renderAbaAlertasBuscaAtiva(forceRefresh = false) {
     
     if (forceRefresh || !document.getElementById('resultadoBuscaAtiva')) {
         container.innerHTML = `
-            <div class="card" style="margin-bottom: 15px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 15px;">
-                <h4 style="margin-top: 0; color: #2c5282; margin-bottom: 15px;">Filtros de Busca Ativa</h4>
+            <div class="card" style="margin-bottom: 15px; background: #f6f8fb; border: 1px solid #e3e8ef; padding: 15px;">
+                <h4 style="margin-top: 0; color: #1b4488; margin-bottom: 15px;">Filtros de Busca Ativa</h4>
                 <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end;">
                     <label>
                         <span style="font-size: 12px; font-weight: bold;">Vigência:</span><br>
-                        <select id="filtroVigenciaBA" onchange="processarAlertasBuscaAtiva()" style="padding: 6px; border-radius: 4px; border: 1px solid #cbd5e0;">
+                        <select id="filtroVigenciaBA" onchange="processarAlertasBuscaAtiva()" style="padding: 6px; border-radius: 4px; border: 1px solid #cdd5e1;">
                             <option value="total">Total (Ano Letivo)</option>
                             <option value="1">1º Bimestre</option>
                             <option value="2">2º Bimestre</option>
@@ -430,11 +430,11 @@ async function renderAbaAlertasBuscaAtiva(forceRefresh = false) {
                     </label>
                     <label>
                         <span style="font-size: 12px; font-weight: bold;">Porcentagem Limite (Baixa Freq.):</span><br>
-                        <input type="number" id="filtroPorcentagemBA" value="70" max="100" min="0" onchange="processarAlertasBuscaAtiva()" style="padding: 6px; width: 80px; border-radius: 4px; border: 1px solid #cbd5e0;"> %
+                        <input type="number" id="filtroPorcentagemBA" value="70" max="100" min="0" onchange="processarAlertasBuscaAtiva()" style="padding: 6px; width: 80px; border-radius: 4px; border: 1px solid #cdd5e1;"> %
                     </label>
                     <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; padding-bottom: 6px;">
                         <input type="checkbox" id="filtroOcultarFaltososBA" onchange="processarAlertasBuscaAtiva()">
-                        <span style="font-size: 13px; font-weight: bold; color: #4a5568;">Ocultar alunos já marcados como Faltosos</span>
+                        <span style="font-size: 13px; font-weight: bold; color: #3d4759;">Ocultar alunos já marcados como Faltosos</span>
                     </label>
                     <button class="btn btn-sm btn-secondary" onclick="renderAbaAlertasBuscaAtiva(true)">🔄 Atualizar Dados</button>
                 </div>
@@ -688,26 +688,26 @@ function processarAlertasBuscaAtiva() {
         let listHtml = `<h4 style="margin-top:0;">${title} (${alertList.length})</h4>`;
         
         if (currentBuscaAtivaSubTab === 'percentage') {
-            listHtml += `<div style="font-size: 11px; color: #718096; margin-bottom: 10px; background: #edf2f7; padding: 5px; border-radius: 4px;">
+            listHtml += `<div style="font-size: 11px; color: #5f6b7f; margin-bottom: 10px; background: #eef2f7; padding: 5px; border-radius: 4px;">
                 <strong>Legenda:</strong> PB = Presença Bruta | DA = Presença Descontando Atestado
             </div>`;
         }
 
         Object.keys(byTurma).sort().forEach(turmaName => {
             listHtml += `<div class="card" style="margin-bottom:10px; background:white;">
-                <h5 style="margin:0 0 5px 0; padding-bottom:5px; border-bottom:1px solid #eee;">${turmaName}</h5>
+                <h5 style="margin:0 0 5px 0; padding-bottom:5px; border-bottom:1px solid #e3e8ef;">${turmaName}</h5>
                 <ul style="margin:0; padding-left:10px; font-size:13px; list-style-type:none;">`;
             byTurma[turmaName].forEach(item => {
                 const faltosoBadge = item.isFaltoso ? `<span style="background:#fed7d7; color:#c53030; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold;">🚨 Faltoso</span>` : `<button class="btn btn-danger" style="margin-left:8px; padding:2px 8px; font-size:10px; border-radius:4px;" onclick="marcarComoFaltosoBuscaAtiva(${item.student.id}, ${item.student.id_turma})">+ Marcar Faltoso</button>`;
                 
-                const detailHtml = item.detail ? `<span style="color:#4a5568;">${item.detail}</span> | ` : '';
+                const detailHtml = item.detail ? `<span style="color:#3d4759;">${item.detail}</span> | ` : '';
                 const atestadoHtml = item.atestadosInfo ? `<div style="color:#d69e2e; font-size:12px; margin-top:2px;">${item.atestadosInfo}</div>` : '';
 
-                listHtml += `<li style="margin-bottom:8px; display:flex; flex-direction:column; border-bottom:1px dashed #edf2f7; padding-bottom:5px;">
+                listHtml += `<li style="margin-bottom:8px; display:flex; flex-direction:column; border-bottom:1px dashed #eef2f7; padding-bottom:5px;">
                     <div style="display:flex; align-items:center; flex-wrap:wrap; gap:5px;">
                         ${getAeePrefix(item.student)}<strong>${item.student.nome_completo}</strong>: 
                         ${detailHtml}
-                        <strong style="color:#2c5282;">${item.percInfo}</strong>
+                        <strong style="color:#1b4488;">${item.percInfo}</strong>
                         ${faltosoBadge}
                     </div>
                     ${atestadoHtml}
@@ -721,7 +721,7 @@ function processarAlertasBuscaAtiva() {
     const percentText = percentLimit < 100 ? `Menos de ${percentLimit}%` : `${percentLimit}%`;
 
     const subTabs = `
-        <div style="display: flex; gap: 5px; margin-bottom: 0px; border-bottom: 2px solid #e2e8f0; position: relative; z-index: 1;">
+        <div style="display: flex; gap: 5px; margin-bottom: 0px; border-bottom: 2px solid #e3e8ef; position: relative; z-index: 1;">
             <button class="btn btn-sm ${currentBuscaAtivaSubTab === 'consecutive' ? 'btn-primary' : 'btn-secondary'}" 
                     style="border-radius: 8px 8px 0 0; padding: 10px 20px; border-bottom: none; font-weight: bold; margin-bottom: -2px;"
                     onclick="currentBuscaAtivaSubTab='consecutive'; processarAlertasBuscaAtiva()">
@@ -750,7 +750,7 @@ function processarAlertasBuscaAtiva() {
         activeStyle = 'background:#fffaf0; border:1px solid #fbd38d;';
     } else {
         activeContent = renderAlertList(alerts.percentage, `Baixa Frequência (${percentText} de presença DA)`);
-        activeStyle = 'background:#ebf8ff; border:1px solid #bee3f8;';
+        activeStyle = 'background:#edf3fd; border:1px solid #d3e2fa;';
     }
 
     resultadoDiv.innerHTML = `
@@ -852,7 +852,7 @@ function renderAbaRegistrosAdministrativos() {
             <div style="margin-top: 20px;">
                 ${lista.length > 0 ? `
                     ${turmasOrdenadas.map(turmaNome => `
-                        <h3 style="margin-top: 20px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: #2d3748;">${turmaNome}</h3>
+                        <h3 style="margin-top: 20px; border-bottom: 2px solid #e3e8ef; padding-bottom: 5px; color: #1c2536;">${turmaNome}</h3>
                         <table>
                             <thead>
                                 <tr>
@@ -1008,7 +1008,7 @@ function renderOcorrenciasGestor() {
 
     const html = `
         <div class="card">
-            <div style="margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 10px;">
+            <div style="margin-bottom: 20px; border-bottom: 1px solid #e3e8ef; display: flex; gap: 10px;">
                 <button class="btn ${currentOcorrenciaTab === 'disciplinares' ? 'btn-primary' : 'btn-secondary'}" 
                         onclick="currentOcorrenciaTab='disciplinares'; renderOcorrenciasGestor()">
                     ⚠️ Disciplinares
@@ -1070,8 +1070,8 @@ function renderAbaDisciplinares(lista) {
         <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
                 <h2>⚠️ Ocorrências da Escola</h2>
-                <div style="background: #edf2f7; padding: 5px 15px; border-radius: 20px; display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 13px; font-weight: bold; color: #4a5568;">Visualizar:</span>
+                <div style="background: #eef2f7; padding: 5px 15px; border-radius: 20px; display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 13px; font-weight: bold; color: #3d4759;">Visualizar:</span>
                     <label style="cursor:pointer; display:flex; align-items:center; gap:5px;">
                         <input type="radio" name="filtroOco" value="pendente" onclick="renderOcorrenciasGestor()" ${filtro === 'pendente' ? 'checked' : ''}> Pendentes
                     </label>
@@ -1141,14 +1141,14 @@ function renderAbaDisciplinares(lista) {
                             </tr>
                             <tr>
                                 <td colspan="6" style="padding-top:0; padding-bottom:15px;">
-                                    <div style="background:#f7fafc; padding:10px; border-radius:6px; border:1px solid #edf2f7; font-size:13px; color:#4a5568; white-space: pre-wrap;">
+                                    <div style="background:#f6f8fb; padding:10px; border-radius:6px; border:1px solid #eef2f7; font-size:13px; color:#3d4759; white-space: pre-wrap;">
                                         <strong>📝 Relato:</strong> ${o.relato}
                                     </div>
                                     ${devolutivaHtml}
                                 </td>
                             </tr>
                         `;
-                    }).join('') : '<tr><td colspan="6" style="text-align:center; padding:20px; color:#a0aec0;">Nenhuma ocorrência nesta categoria.</td></tr>'}
+                    }).join('') : '<tr><td colspan="6" style="text-align:center; padding:20px; color:#7a869a;">Nenhuma ocorrência nesta categoria.</td></tr>'}
                 </tbody>
             </table>
         </div>
@@ -1159,7 +1159,7 @@ function renderAbaRapidas(lista) {
     return `
         <div>
             <h2>⚡ Histórico de Registros Rápidos</h2>
-            <p style="color:#666; font-size:13px; margin-bottom:15px;">Estes registros são apenas informativos e não geram alertas no dashboard.</p>
+            <p style="color:#5f6b7f; font-size:13px; margin-bottom:15px;">Estes registros são apenas informativos e não geram alertas no dashboard.</p>
             
             <table>
                 <thead>
@@ -1183,11 +1183,11 @@ function renderAbaRapidas(lista) {
                                 <td>${formatDate(o.data)}</td>
                                 <td>${o.turma_snapshot || '-'}</td>
                                 <td><strong>${envolvidos}</strong></td>
-                                <td><span style="background:#ebf8ff; color:#2c5282; padding:2px 8px; border-radius:10px; font-size:12px;">${o.relato}</span></td>
+                                <td><span style="background:#edf3fd; color:#1b4488; padding:2px 8px; border-radius:10px; font-size:12px;">${o.relato}</span></td>
                                 <td>${o.autor}</td>
                             </tr>
                         `;
-                    }).join('') : '<tr><td colspan="5" style="text-align:center; padding:20px; color:#a0aec0;">Nenhum registro rápido encontrado.</td></tr>'}
+                    }).join('') : '<tr><td colspan="5" style="text-align:center; padding:20px; color:#7a869a;">Nenhum registro rápido encontrado.</td></tr>'}
                 </tbody>
             </table>
         </div>
@@ -1200,16 +1200,16 @@ function renderAbaConfigOcorrencias() {
     return `
         <div>
             <h2>⚙️ Configuração de Ocorrências Rápidas</h2>
-            <p style="color:#666;">Defina as opções que aparecerão para os professores (ex: "Sem material", "Conversa paralela").</p>
+            <p style="color:#5f6b7f;">Defina as opções que aparecerão para os professores (ex: "Sem material", "Conversa paralela").</p>
             
-            <div style="display:flex; gap:10px; margin-bottom:20px; background:#f7fafc; padding:15px; border-radius:8px;">
+            <div style="display:flex; gap:10px; margin-bottom:20px; background:#f6f8fb; padding:15px; border-radius:8px;">
                 <input type="text" id="novaOpcaoRapida" placeholder="Ex: Esqueceu material" style="flex-grow:1;">
                 <button class="btn btn-success" onclick="adicionarOpcaoRapida()">+ Adicionar</button>
             </div>
 
             <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:10px;">
                 ${opcoes.map((op, index) => `
-                    <div style="border:1px solid #e2e8f0; padding:10px; border-radius:6px; display:flex; justify-content:space-between; align-items:center; background:white;">
+                    <div style="border:1px solid #e3e8ef; padding:10px; border-radius:6px; display:flex; justify-content:space-between; align-items:center; background:white;">
                         <span>${op}</span>
                         <button class="btn btn-sm btn-danger" onclick="removerOpcaoRapida(${index})">🗑️</button>
                     </div>
@@ -1272,7 +1272,7 @@ function imprimirOcorrenciaGestor(id) {
             <p><strong>Status:</strong> ${o.status ? o.status.toUpperCase() : 'PENDENTE'}</p>
             <hr>
             <h3>Relato:</h3>
-            <p style="white-space: pre-wrap; background: #f9f9f9; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">${o.relato}</p>
+            <p style="white-space: pre-wrap; background: #f9f9f9; padding: 15px; border: 1px solid #cdd5e1; border-radius: 5px;">${o.relato}</p>
             ${devolutivaHtml}
             <br><br><br>
             <div style="display: flex; justify-content: space-between; margin-top: 50px;">
@@ -1370,25 +1370,25 @@ async function carregarVistaCompartilhada(shareId) {
     // Substitui o corpo do documento para exibir apenas o relatório limpo (estilo "nova aba/html")
     document.body.innerHTML = `
         <style>
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f7fafc; color: #2d3748; margin: 0; padding: 40px; }
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f6f8fb; color: #1c2536; margin: 0; padding: 40px; }
             .report-container { max-width: 900px; margin: 0 auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
-            h1 { text-align: center; color: #2c5282; margin-bottom: 10px; font-size: 28px; }
-            .meta-info { text-align: center; color: #718096; font-size: 14px; margin-bottom: 40px; border-bottom: 1px solid #e2e8f0; padding-bottom: 20px; }
-            h3 { color: #2d3748; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 30px; font-size: 18px; }
+            h1 { text-align: center; color: #1b4488; margin-bottom: 10px; font-size: 28px; }
+            .meta-info { text-align: center; color: #5f6b7f; font-size: 14px; margin-bottom: 40px; border-bottom: 1px solid #e3e8ef; padding-bottom: 20px; }
+            h3 { color: #1c2536; border-bottom: 2px solid #e3e8ef; padding-bottom: 8px; margin-top: 30px; font-size: 18px; }
             table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-            th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #e2e8f0; }
-            th { background-color: #f8fafc; font-weight: 600; color: #4a5568; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; }
-            tr:hover { background-color: #f7fafc; }
+            th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #e3e8ef; }
+            th { background-color: #f6f8fb; font-weight: 600; color: #3d4759; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; }
+            tr:hover { background-color: #f6f8fb; }
             .badge { padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: bold; display: inline-block; }
-            .empty-state { text-align: center; padding: 40px; color: #a0aec0; font-style: italic; background: #f9fafb; border-radius: 8px; margin-top: 20px; }
-            .footer { text-align: center; margin-top: 50px; font-size: 12px; color: #cbd5e0; }
+            .empty-state { text-align: center; padding: 40px; color: #7a869a; font-style: italic; background: #f9fafb; border-radius: 8px; margin-top: 20px; }
+            .footer { text-align: center; margin-top: 50px; font-size: 12px; color: #cdd5e1; }
             @media print {
                 body { background: white; padding: 0; }
                 .report-container { box-shadow: none; padding: 0; }
             }
         </style>
         <div class="report-container">
-            <div id="loading" style="text-align: center; padding: 50px; color: #4a5568;">Carregando dados do relatório...</div>
+            <div id="loading" style="text-align: center; padding: 50px; color: #3d4759;">Carregando dados do relatório...</div>
         </div>
     `;
 
@@ -1430,7 +1430,7 @@ async function carregarVistaCompartilhada(shareId) {
                 ${tipos.map(t => `<td style="text-align:center;">${linha.tipos[t] || 0}</td>`).join('')}
                 <td style="text-align:center;"><strong>${linha.total}</strong></td></tr>`;
         });
-        html += `<tr style="background:#f8fafc;"><td><strong>Total</strong></td>
+        html += `<tr style="background:#f6f8fb;"><td><strong>Total</strong></td>
             ${tipos.map(t => `<td style="text-align:center;"><strong>${resumo.totais[t] || 0}</strong></td>`).join('')}
             <td style="text-align:center;"><strong>${resumo.total || 0}</strong></td></tr>`;
         html += `</tbody></table>`;
@@ -1465,7 +1465,7 @@ function renderAbaLimpezaDados() {
     const html = `
         <div>
             <h2>🧹 Ferramenta de Limpeza de Duplicados</h2>
-            <p style="color:#666; font-size:14px; margin-bottom:20px;">
+            <p style="color:#5f6b7f; font-size:14px; margin-bottom:20px;">
                 Esta ferramenta identifica estudantes com o mesmo nome completo que aparecem como <strong>Ativo</strong> em mais de um registro. 
                 Alunos que mudaram de turma (com status Remanejado ou Transferido) são preservados e não são considerados duplicados para unificação, garantindo a integridade do histórico de movimentação.
             </p>
@@ -1506,9 +1506,9 @@ function renderAbaLimpezaDados() {
                 <p class="empty-state">✅ Nenhum estudante duplicado encontrado. Seu banco de dados está limpo!</p>
             `}
 
-            <div id="containerDiagnosticoOrfaos" style="margin-top: 40px; border-top: 2px dashed #cbd5e0; padding-top: 20px;">
+            <div id="containerDiagnosticoOrfaos" style="margin-top: 40px; border-top: 2px dashed #cdd5e1; padding-top: 20px;">
                 <h3 style="color: #c53030;">🔍 Busca por Dados Órfãos (Vestígios)</h3>
-                <p style="font-size:13px; color:#666; margin-bottom:15px;">Esta ferramenta verifica se existem notas, faltas ou ocorrências "perdidas" que ficaram no banco de dados após um aluno ser apagado ou unificado incorretamente no passado.</p>
+                <p style="font-size:13px; color:#5f6b7f; margin-bottom:15px;">Esta ferramenta verifica se existem notas, faltas ou ocorrências "perdidas" que ficaram no banco de dados após um aluno ser apagado ou unificado incorretamente no passado.</p>
                 <button class="btn btn-secondary" onclick="executarDiagnosticoOrfaos()">Executar Varredura de Diagnóstico</button>
                 <div id="resultadoDiagnosticoOrfaos" style="margin-top:15px;"></div>
             </div>
@@ -1519,7 +1519,7 @@ function renderAbaLimpezaDados() {
 
 async function executarDiagnosticoOrfaos() {
     const resDiv = document.getElementById('resultadoDiagnosticoOrfaos');
-    resDiv.innerHTML = '<p style="color:#3182ce; font-weight:bold;">⏳ Analisando integridade do banco de dados...</p>';
+    resDiv.innerHTML = '<p style="color:#2563c9; font-weight:bold;">⏳ Analisando integridade do banco de dados...</p>';
 
     const validIds = new Set((data.estudantes || []).map(e => Number(e.id)));
     const relatorio = [];
@@ -1685,7 +1685,7 @@ function renderHorariosGestor() {
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
                 <div>
                     <h2 style="margin:0;">⏰ Grade Horária Padrão</h2>
-                    <p style="color:#666; font-size:14px; margin:0;">Defina a rotina semanal (Seg-Sex).</p>
+                    <p style="color:#5f6b7f; font-size:14px; margin:0;">Defina a rotina semanal (Seg-Sex).</p>
                 </div>
                 <div style="display:flex; gap:10px;">
                     <button class="btn btn-info" onclick="abrirGerenciadorTiposHorario()">⚙️ Tipos</button>
@@ -1693,7 +1693,7 @@ function renderHorariosGestor() {
                 </div>
             </div>
             
-            <div style="background: #edf2f7; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e2e8f0;">
+            <div style="background: #eef2f7; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #e3e8ef;">
                 <h3 style="margin-top:0; font-size: 16px; margin-bottom: 10px;">Adicionar Horário em Lote</h3>
                 <div class="form-row" style="align-items: flex-end; gap: 15px; display: flex; flex-wrap: wrap;">
                     <label>Início: <input type="time" id="loteInicio"></label>
@@ -1719,25 +1719,25 @@ function renderHorariosGestor() {
         const slots = grade.filter(g => g.diaSemana == dia.id).sort((a,b) => a.inicio.localeCompare(b.inicio));
         
         html += `
-            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; min-width: 140px;">
-                <h3 style="text-align: center; border-bottom: 2px solid #cbd5e0; padding-bottom: 5px; margin-bottom: 10px; color: #2d3748; font-size: 14px;">${dia.nome}</h3>
+            <div style="background: #f6f8fb; border: 1px solid #e3e8ef; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; min-width: 140px;">
+                <h3 style="text-align: center; border-bottom: 2px solid #cdd5e1; padding-bottom: 5px; margin-bottom: 10px; color: #1c2536; font-size: 14px;">${dia.nome}</h3>
                 
                 <div style="flex-grow: 1;">
                     ${slots.length > 0 ? slots.map(s => `
-                        <div style="background: white; padding: 6px 10px; border-radius: 4px; margin-bottom: 5px; border: 1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                        <div style="background: white; padding: 6px 10px; border-radius: 4px; margin-bottom: 5px; border: 1px solid #e3e8ef; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                <span style="font-size: 12px; font-weight: 600; color: #4a5568;">${s.inicio} - ${s.fim}</span>
+                                <span style="font-size: 12px; font-weight: 600; color: #3d4759;">${s.inicio} - ${s.fim}</span>
                                 <button class="btn btn-danger btn-sm" style="margin:0; padding: 0 5px; font-size: 14px; line-height: 1;" onclick="removerBlocoHorario(${s.id})" title="Remover">×</button>
                             </div>
                             <input type="text" placeholder="Rótulo (ex: 1ª Aula)" value="${s.label || ''}" 
-                                style="width:100%; margin-bottom:4px; font-size:11px; padding:2px; border:1px solid #cbd5e0; border-radius:3px;"
+                                style="width:100%; margin-bottom:4px; font-size:11px; padding:2px; border:1px solid #cdd5e1; border-radius:3px;"
                                 onblur="atualizarLabelBloco(${s.id}, this.value)">
-                            <select style="width:100%; font-size:11px; padding:2px; border:1px solid #cbd5e0; border-radius:3px; background-color: ${s.tipo ? '#ebf8ff' : '#fff'};" onchange="atualizarTipoBloco(${s.id}, this.value)">
+                            <select style="width:100%; font-size:11px; padding:2px; border:1px solid #cdd5e1; border-radius:3px; background-color: ${s.tipo ? '#edf3fd' : '#fff'};" onchange="atualizarTipoBloco(${s.id}, this.value)">
                                 <option value="">🔓 Livre (Prof. Escolhe)</option>
                                 ${data.tiposHorarioFixo.map(t => `<option value="${t.id}" ${s.tipo === t.id ? 'selected' : ''}>${t.nome} (Fixo)</option>`).join('')}
                             </select>
                         </div>
-                    `).join('') : '<p style="font-size: 12px; color: #a0aec0; text-align: center; padding: 10px;">--</p>'}
+                    `).join('') : '<p style="font-size: 12px; color: #7a869a; text-align: center; padding: 10px;">--</p>'}
                 </div>
             </div>
         `;
@@ -1756,16 +1756,16 @@ function abrirGerenciadorTiposHorario() {
         <div class="card">
             <button class="btn btn-secondary" onclick="renderHorariosGestor()">← Voltar</button>
             <h2 style="margin-top:15px;">⚙️ Gerenciar Tipos de Horário Fixo</h2>
-            <p style="color:#666;">Cadastre opções como Almoço, Café, Reunião, etc. para travar na grade.</p>
+            <p style="color:#5f6b7f;">Cadastre opções como Almoço, Café, Reunião, etc. para travar na grade.</p>
             
-            <div style="display:flex; gap:10px; margin-bottom:20px; background:#f7fafc; padding:15px; border-radius:8px;">
+            <div style="display:flex; gap:10px; margin-bottom:20px; background:#f6f8fb; padding:15px; border-radius:8px;">
                 <input type="text" id="novoTipoNome" placeholder="Nome (ex: 🧘 Yoga)" style="flex-grow:1;">
                 <button class="btn btn-success" onclick="adicionarTipoHorario()">+ Adicionar</button>
             </div>
 
             <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:10px;">
                 ${data.tiposHorarioFixo.map((t, index) => `
-                    <div style="border:1px solid #e2e8f0; padding:10px; border-radius:6px; display:flex; justify-content:space-between; align-items:center; background:white;">
+                    <div style="border:1px solid #e3e8ef; padding:10px; border-radius:6px; display:flex; justify-content:space-between; align-items:center; background:white;">
                         <span>${t.nome}</span>
                         <button class="btn btn-sm btn-danger" onclick="removerTipoHorario(${index})">🗑️</button>
                     </div>
@@ -1799,7 +1799,7 @@ function abrirGerenciadorDiasAtipicos() {
         <div class="card" style="border-left: 5px solid #ed8936;">
             <button class="btn btn-secondary" onclick="renderHorariosGestor()">← Voltar para Grade Padrão</button>
             <h2 style="margin-top:15px; color:#c05621;">📅 Configurar Dia Atípico</h2>
-            <p style="color:#666;">Use para dias com horários diferentes (Ex: Conselho, Eventos, Provas).</p>
+            <p style="color:#5f6b7f;">Use para dias com horários diferentes (Ex: Conselho, Eventos, Provas).</p>
 
             <div style="margin: 20px 0; padding: 15px; background: #fffaf0; border: 1px solid #ed8936; border-radius: 8px;">
                 <label style="font-weight:bold;">Selecione a Data:</label>
@@ -1847,11 +1847,11 @@ function carregarDiaAtipico() {
 
     // Renderiza editor simples
     let html = `
-        <h3 style="border-bottom:1px solid #eee; padding-bottom:5px;">Editando: ${formatDate(dataStr)} ${isNovo ? '(Novo)' : '(Salvo)'}</h3>
+        <h3 style="border-bottom:1px solid #e3e8ef; padding-bottom:5px;">Editando: ${formatDate(dataStr)} ${isNovo ? '(Novo)' : '(Salvo)'}</h3>
         
         <div id="listaBlocosAtipicos">
             ${blocos.map((b, idx) => `
-                <div class="bloco-atipico-item" style="display:flex; gap:10px; align-items:center; margin-bottom:10px; background:white; padding:10px; border:1px solid #ddd; border-radius:5px;">
+                <div class="bloco-atipico-item" style="display:flex; gap:10px; align-items:center; margin-bottom:10px; background:white; padding:10px; border:1px solid #cdd5e1; border-radius:5px;">
                     <input type="time" class="inicio" value="${b.inicio}">
                     <span>até</span>
                     <input type="time" class="fim" value="${b.fim}">
@@ -1863,7 +1863,7 @@ function carregarDiaAtipico() {
 
         <button class="btn btn-secondary btn-sm" onclick="adicionarBlocoAtipicoUI()">+ Adicionar Horário</button>
         
-        <div style="margin-top:20px; border-top:1px solid #eee; padding-top:15px; display:flex; justify-content:flex-end; gap:10px;">
+        <div style="margin-top:20px; border-top:1px solid #e3e8ef; padding-top:15px; display:flex; justify-content:flex-end; gap:10px;">
             ${!isNovo ? `<button class="btn btn-danger" onclick="excluirDiaAtipico('${dataStr}')">Restaurar Padrão</button>` : ''}
             <button class="btn btn-success" onclick="salvarDiaAtipico('${dataStr}')">💾 Salvar Exceção</button>
         </div>
@@ -1876,7 +1876,7 @@ function carregarDiaAtipico() {
 function adicionarBlocoAtipicoUI() {
     const div = document.createElement('div');
     div.className = 'bloco-atipico-item';
-    div.style = "display:flex; gap:10px; align-items:center; margin-bottom:10px; background:white; padding:10px; border:1px solid #ddd; border-radius:5px;";
+    div.style = "display:flex; gap:10px; align-items:center; margin-bottom:10px; background:white; padding:10px; border:1px solid #cdd5e1; border-radius:5px;";
     div.innerHTML = `
         <input type="time" class="inicio"> <span>até</span> <input type="time" class="fim">
         <select class="tipo"><option value="">Livre</option>${data.tiposHorarioFixo.map(t => `<option value="${t.id}">${t.nome}</option>`).join('')}</select>
@@ -2224,19 +2224,19 @@ function abrirModalImportacaoMassa() {
                     <h2>📂 Atualização de Estudantes em Massa</h2>
                     <button class="close-btn" onclick="closeModal('modalImportacaoMassa')">×</button>
                 </div>
-                <p style="font-size:13px; color:#4a5568; margin-top:0;">
+                <p style="font-size:13px; color:#3d4759; margin-top:0;">
                     Selecione os arquivos exportados da SED. O nome do arquivo não importa: a turma é
                     reconhecida pela própria lista de alunos.
                 </p>
 
-                <div style="margin: 16px 0; padding: 15px; background: #f7fafc; border: 2px dashed #cbd5e0; border-radius: 8px; text-align: center;">
+                <div style="margin: 16px 0; padding: 15px; background: #f6f8fb; border: 2px dashed #cdd5e1; border-radius: 8px; text-align: center;">
                     <input type="file" id="filesMassa" multiple accept=".csv,.htm,.html,.xlsx,.xls" onchange="analisarArquivosMassa()">
-                    <p style="margin:10px 0 0; font-size:12px; color:#718096;">Formatos aceitos: .csv, .htm e .xlsx</p>
+                    <p style="margin:10px 0 0; font-size:12px; color:#5f6b7f;">Formatos aceitos: .csv, .htm e .xlsx</p>
                 </div>
 
                 <div id="previewMassa" style="margin-bottom: 16px; display:none;"></div>
 
-                <div style="display:flex; justify-content: flex-end; gap: 10px; border-top:1px solid #e2e8f0; padding-top:15px;">
+                <div style="display:flex; justify-content: flex-end; gap: 10px; border-top:1px solid #e3e8ef; padding-top:15px;">
                     <button class="btn btn-secondary" onclick="closeModal('modalImportacaoMassa')">Cancelar</button>
                     <button class="btn btn-success" id="btnConfirmarMassa" onclick="processarImportacaoMassa()" disabled>Confirmar e Atualizar</button>
                 </div>
@@ -2260,7 +2260,7 @@ async function analisarArquivosMassa() {
     if (!files || files.length === 0) return;
 
     preview.style.display = 'block';
-    preview.innerHTML = '<p style="font-size:13px; color:#4a5568;">🔄 Lendo arquivos e procurando as turmas...</p>';
+    preview.innerHTML = '<p style="font-size:13px; color:#3d4759;">🔄 Lendo arquivos e procurando as turmas...</p>';
     document.getElementById('btnConfirmarMassa').disabled = true;
 
     importMassaGrupos = agruparTurmasFisicasImportMassa();
@@ -2338,8 +2338,8 @@ function renderPreviaImportMassa() {
         if (item.erro) {
             return `
                 <tr style="background:#fff5f5;">
-                    <td style="padding:8px; border:1px solid #e2e8f0;">${item.nomeArquivo}</td>
-                    <td style="padding:8px; border:1px solid #e2e8f0;" colspan="3">
+                    <td style="padding:8px; border:1px solid #e3e8ef;">${item.nomeArquivo}</td>
+                    <td style="padding:8px; border:1px solid #e3e8ef;" colspan="3">
                         <span style="color:#c53030;">❌ ${item.erro}</span>
                     </td>
                 </tr>`;
@@ -2347,7 +2347,7 @@ function renderPreviaImportMassa() {
 
         let selo;
         if (item.motivo === 'manual') {
-            selo = '<span style="color:#2b6cb0; font-size:11px;">escolhida por você</span>';
+            selo = '<span style="color:#1f55ad; font-size:11px;">escolhida por você</span>';
         } else if (item.grupoChave) {
             selo = `<span style="color:#276749; font-size:11px;">✅ ${Math.round(item.score * 100)}% dos nomes batem</span>`;
         } else if (item.motivo === 'ambiguo') {
@@ -2364,32 +2364,32 @@ function renderPreviaImportMassa() {
             ? `<span style="color:#276749;">+${p.criados.length} novos</span> · ` +
               `<span style="color:#b7791f;">${p.alterados.length} mudam de status</span> · ` +
               `<span style="color:#c53030;">${p.sumiram.length} sumiram da lista</span>`
-            : '<span style="color:#a0aec0;">—</span>';
+            : '<span style="color:#7a869a;">—</span>';
 
         return `
             <tr>
-                <td style="padding:8px; border:1px solid #e2e8f0; font-size:12px;">
+                <td style="padding:8px; border:1px solid #e3e8ef; font-size:12px;">
                     ${item.nomeArquivo}
                     ${item.aviso ? `<div style="color:#b7791f; font-size:11px;">⚠️ ${item.aviso}</div>` : ''}
                 </td>
-                <td style="padding:8px; border:1px solid #e2e8f0;">
+                <td style="padding:8px; border:1px solid #e3e8ef;">
                     <select style="width:100%; padding:5px; font-size:12px;" onchange="alterarTurmaImportMassa(${indice}, this.value)">${opcoes}</select>
                     ${selo}
                     ${duplicada}
                 </td>
-                <td style="padding:8px; border:1px solid #e2e8f0; text-align:center; font-size:12px;">${item.alunos.length}</td>
-                <td style="padding:8px; border:1px solid #e2e8f0; font-size:11px;">${resumo}</td>
+                <td style="padding:8px; border:1px solid #e3e8ef; text-align:center; font-size:12px;">${item.alunos.length}</td>
+                <td style="padding:8px; border:1px solid #e3e8ef; font-size:11px;">${resumo}</td>
             </tr>`;
     }).join('');
 
     preview.innerHTML = `
         <table style="width:100%; border-collapse:collapse; font-size:12px;">
             <thead>
-                <tr style="background:#edf2f7;">
-                    <th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">Arquivo</th>
-                    <th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">Turma</th>
-                    <th style="padding:8px; border:1px solid #e2e8f0;">Alunos</th>
-                    <th style="padding:8px; border:1px solid #e2e8f0; text-align:left;">O que vai mudar</th>
+                <tr style="background:#eef2f7;">
+                    <th style="padding:8px; border:1px solid #e3e8ef; text-align:left;">Arquivo</th>
+                    <th style="padding:8px; border:1px solid #e3e8ef; text-align:left;">Turma</th>
+                    <th style="padding:8px; border:1px solid #e3e8ef;">Alunos</th>
+                    <th style="padding:8px; border:1px solid #e3e8ef; text-align:left;">O que vai mudar</th>
                 </tr>
             </thead>
             <tbody>${linhas}</tbody>
@@ -2464,33 +2464,33 @@ function mostrarRelatorioImportMassa(relatorio, destinos) {
         const partes = [];
         if (r.resultado.criados.length) {
             partes.push(`<div style="color:#276749; margin-top:6px;">✔️ ${r.resultado.criados.length} novo(s)</div>
-                <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#4a5568;">
+                <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#3d4759;">
                     ${r.resultado.criados.map(c => linha(`${c.nome}${c.status !== 'Ativo' ? ` <em>(${c.status})</em>` : ''}`)).join('')}
                 </ul>`);
         }
         if (voltas.length) {
-            partes.push(`<div style="color:#2b6cb0; margin-top:6px;">🔄 ${voltas.length} reativado(s)</div>
-                <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#4a5568;">
+            partes.push(`<div style="color:#1f55ad; margin-top:6px;">🔄 ${voltas.length} reativado(s)</div>
+                <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#3d4759;">
                     ${voltas.map(a => linha(`${a.nome} <em>(${a.de} → Ativo)</em>`)).join('')}
                 </ul>`);
         }
         if (saidas.length) {
             partes.push(`<div style="color:#c53030; margin-top:6px;">➡️ ${saidas.length} saíram desta turma</div>
-                <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#4a5568;">
+                <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#3d4759;">
                     ${saidas.map(a => linha(`${a.nome} <em>(${a.para})</em>${paraOnde(a.chave)}`)).join('')}
                 </ul>`);
         }
         if (r.resultado.sumiram.length) {
             partes.push(`<div style="color:#c53030; margin-top:6px;">❌ ${r.resultado.sumiram.length} sumiram da lista (marcados Transferido)</div>
-                <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#4a5568;">
+                <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#3d4759;">
                     ${r.resultado.sumiram.map(s => linha(`${s.nome}${paraOnde(s.chave)}`)).join('')}
                 </ul>`);
         }
-        if (partes.length === 0) partes.push('<div style="color:#718096; margin-top:6px; font-size:12px;">Nada mudou.</div>');
+        if (partes.length === 0) partes.push('<div style="color:#5f6b7f; margin-top:6px; font-size:12px;">Nada mudou.</div>');
 
-        return `<div style="border:1px solid #e2e8f0; border-radius:6px; padding:10px; margin-bottom:10px;">
-            <strong style="color:#2c5282;">${r.turma}</strong>
-            <span style="font-size:11px; color:#a0aec0;"> — ${r.arquivo}</span>
+        return `<div style="border:1px solid #e3e8ef; border-radius:6px; padding:10px; margin-bottom:10px;">
+            <strong style="color:#1b4488;">${r.turma}</strong>
+            <span style="font-size:11px; color:#7a869a;"> — ${r.arquivo}</span>
             ${partes.join('')}
         </div>`;
     }).join('');
@@ -2548,22 +2548,22 @@ async function renderTutoriasGestor() {
         const html = `
             <div class="card">
                 <h2>🎓 Acompanhamento de Tutorias</h2>
-                <p style="color:#666; margin-bottom:20px;">
+                <p style="color:#5f6b7f; margin-bottom:20px;">
                     Gestor: <strong>${currentUser.nome}</strong> | Escola ID: <strong>${mySchoolId || 'Não definido'}</strong>
                 </p>
                 
                 <!-- PROFESSORES VINCULADOS -->
                 ${professoresDaEscola.length > 0 ? `
-                    <h3 style="color: #2c5282; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">Professores da Escola</h3>
+                    <h3 style="color: #1b4488; border-bottom: 1px solid #e3e8ef; padding-bottom: 5px;">Professores da Escola</h3>
                     <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px;">
                         ${professoresDaEscola.map(p => `
-                            <div style="border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; background: #f7fafc; cursor: pointer; transition: all 0.2s;" 
-                                 onmouseover="this.style.background='#ebf8ff'; this.style.borderColor='#3182ce';" 
-                                 onmouseout="this.style.background='#f7fafc'; this.style.borderColor='#e2e8f0';"
+                            <div style="border: 1px solid #e3e8ef; padding: 15px; border-radius: 8px; background: #f6f8fb; cursor: pointer; transition: all 0.2s;" 
+                                 onmouseover="this.style.background='#edf3fd'; this.style.borderColor='#2563c9';" 
+                                 onmouseout="this.style.background='#f6f8fb'; this.style.borderColor='#e3e8ef';"
                                  onclick="verTutoradosProfessor('${p.id}', '${p.nome}')">
-                                <div style="font-weight: bold; color: #2c5282; font-size: 16px;">${p.nome}</div>
-                                <div style="font-size: 12px; color: #718096; margin-top: 5px;">${p.email}</div>
-                                <div style="margin-top: 10px; text-align: right; font-size: 12px; color: #3182ce;">Ver Tutorados →</div>
+                                <div style="font-weight: bold; color: #1b4488; font-size: 16px;">${p.nome}</div>
+                                <div style="font-size: 12px; color: #5f6b7f; margin-top: 5px;">${p.email}</div>
+                                <div style="margin-top: 10px; text-align: right; font-size: 12px; color: #2563c9;">Ver Tutorados →</div>
                             </div>
                         `).join('')}
                     </div>
@@ -2571,9 +2571,9 @@ async function renderTutoriasGestor() {
 
                 <!-- PROFESSORES SEM VÍNCULO (ANTIGOS) -->
                 ${professoresSemVinculo.length > 0 ? `
-                    <div style="margin-top: 30px; border-top: 2px dashed #cbd5e0; padding-top: 20px;">
+                    <div style="margin-top: 30px; border-top: 2px dashed #cdd5e1; padding-top: 20px;">
                         <h3 style="color: #d69e2e;">⚠️ Professores Sem Vínculo (Antigos)</h3>
-                        <p style="font-size:13px; color:#666; margin-bottom:15px;">Estes usuários não têm escola definida. Clique em "Vincular" para trazê-los para sua escola.</p>
+                        <p style="font-size:13px; color:#5f6b7f; margin-bottom:15px;">Estes usuários não têm escola definida. Clique em "Vincular" para trazê-los para sua escola.</p>
                         
                         <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px;">
                             ${professoresSemVinculo.map(p => `
@@ -2598,11 +2598,11 @@ async function renderTutoriasGestor() {
                     <div style="margin-top: 20px; overflow-x: auto;">
                         <table style="width:100%; font-size:12px; border-collapse: collapse;">
                             <thead>
-                                <tr style="background: #edf2f7;">
-                                    <th style="padding:8px; border:1px solid #e2e8f0;">Nome</th>
-                                    <th style="padding:8px; border:1px solid #e2e8f0;">Email</th>
-                                    <th style="padding:8px; border:1px solid #e2e8f0;">Escola ID (Atual)</th>
-                                    <th style="padding:8px; border:1px solid #e2e8f0;">Status</th>
+                                <tr style="background: #eef2f7;">
+                                    <th style="padding:8px; border:1px solid #e3e8ef;">Nome</th>
+                                    <th style="padding:8px; border:1px solid #e3e8ef;">Email</th>
+                                    <th style="padding:8px; border:1px solid #e3e8ef;">Escola ID (Atual)</th>
+                                    <th style="padding:8px; border:1px solid #e3e8ef;">Status</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -2611,10 +2611,10 @@ async function renderTutoriasGestor() {
                                     const match = uSchoolId === mySchoolId;
                                     return `
                                     <tr style="background: ${match ? '#f0fff4' : '#fff'};">
-                                        <td style="padding:8px; border:1px solid #e2e8f0;">${u.nome}</td>
-                                        <td style="padding:8px; border:1px solid #e2e8f0;">${u.email}</td>
-                                        <td style="padding:8px; border:1px solid #e2e8f0;"><strong>${uSchoolId || '(Vazio)'}</strong></td>
-                                        <td style="padding:8px; border:1px solid #e2e8f0; color: ${match ? 'green' : 'red'}; font-weight:bold;">
+                                        <td style="padding:8px; border:1px solid #e3e8ef;">${u.nome}</td>
+                                        <td style="padding:8px; border:1px solid #e3e8ef;">${u.email}</td>
+                                        <td style="padding:8px; border:1px solid #e3e8ef;"><strong>${uSchoolId || '(Vazio)'}</strong></td>
+                                        <td style="padding:8px; border:1px solid #e3e8ef; color: ${match ? 'green' : 'red'}; font-weight:bold;">
                                             ${match ? '✅ Compatível' : '❌ Diferente'}
                                         </td>
                                     </tr>
@@ -2732,7 +2732,7 @@ async function verRelatorioTutoriaAluno(profId, profNome, alunoId, alunoNome) {
     };
 
     const infoHtml = tutoradoInfo ? `
-        <div style="background:#f7fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0; margin-top:15px; font-size:13px;">
+        <div style="background:#f6f8fb; padding:15px; border-radius:8px; border:1px solid #e3e8ef; margin-top:15px; font-size:13px;">
             <table style="width:100%; border-collapse:collapse;">
                 <tr>
                     <td style="padding-bottom:5px;"><strong>Data Nasc:</strong> ${formatDate(tutoradoInfo.data_nascimento)} (${calcIdade(tutoradoInfo.data_nascimento)} anos)</td>
@@ -2743,7 +2743,7 @@ async function verRelatorioTutoriaAluno(profId, profNome, alunoId, alunoNome) {
                     <td style="padding-bottom:5px;"><strong>Tel. Resp:</strong> ${tutoradoInfo.telefone_responsavel || '-'}</td>
                 </tr>
             </table>
-            <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #cbd5e0;">
+            <div style="margin-top:10px; padding-top:10px; border-top:1px dashed #cdd5e1;">
                 <p style="margin:3px 0;"><strong>Projeto de Vida:</strong> ${tutoradoInfo.projeto_vida || '-'}</p>
                 <p style="margin:3px 0;"><strong>Clube:</strong> ${tutoradoInfo.clube_1 || '-'} / ${tutoradoInfo.clube_2 || '-'}</p>
                 <p style="margin:3px 0;"><strong>Eletiva:</strong> ${tutoradoInfo.eletiva_1 || '-'} / ${tutoradoInfo.eletiva_2 || '-'}</p>
@@ -2765,10 +2765,10 @@ async function verRelatorioTutoriaAluno(profId, profNome, alunoId, alunoNome) {
                 <button class="btn btn-secondary" onclick="verTutoradosProfessor('${profId}', '${profNome}')">← Voltar para Lista</button>
             </div>
 
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:15px; border-bottom: 1px solid #eee; padding-bottom:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:15px; border-bottom: 1px solid #e3e8ef; padding-bottom:10px;">
                 <div>
                     <h2 style="margin:0;">Relatório de Tutoria</h2>
-                    <div style="color:#666;"><strong>Professor:</strong> ${profNome} | <strong>Estudante:</strong> ${alunoNome}</div>
+                    <div style="color:#5f6b7f;"><strong>Professor:</strong> ${profNome} | <strong>Estudante:</strong> ${alunoNome}</div>
                 </div>
                 <div class="no-print" style="display:flex; gap:10px; align-items:center;">
                     <select id="filtroSemestre" onchange="filtrarRelatorioTutoriaUI()" style="margin:0; padding:8px;">
@@ -2825,12 +2825,12 @@ function filtrarRelatorioTutoriaUI() {
     }
 
     listaDiv.innerHTML = filtrados.map(e => `
-        <div style="border: 1px solid #cbd5e0; padding: 15px; border-radius: 6px; margin-bottom: 10px; page-break-inside: avoid;">
+        <div style="border: 1px solid #cdd5e1; padding: 15px; border-radius: 6px; margin-bottom: 10px; page-break-inside: avoid;">
             <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
                 <strong>📅 ${formatDate(e.data)}</strong>
-                <span style="font-size:12px; background:#edf2f7; padding:2px 8px; border-radius:10px;">${e.tema || 'Sem tema'}</span>
+                <span style="font-size:12px; background:#eef2f7; padding:2px 8px; border-radius:10px;">${e.tema || 'Sem tema'}</span>
             </div>
-            <p style="white-space: pre-wrap; color: #4a5568; margin:0;">${e.resumo || ''}</p>
+            <p style="white-space: pre-wrap; color: #3d4759; margin:0;">${e.resumo || ''}</p>
         </div>
     `).join('');
 }
@@ -3062,14 +3062,14 @@ function renderNotasOficiaisGestor() {
     container.innerHTML = `
         <div class="card">
             <h2>🧮 Notas Oficiais</h2>
-            <p style="color:#666; margin-bottom:20px; font-size:13px;">
+            <p style="color:#5f6b7f; margin-bottom:20px; font-size:13px;">
                 Envie a planilha/PDF de uma <strong>avaliação</strong> (ex: Prova Paulista) ou do <strong>mapão bimestral</strong>.
                 Uma IA extrai as notas por aluno/disciplina/bimestre; você revisa antes de salvar.
             </p>
 
             <div style="margin-bottom: 15px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
-                    <label style="font-size:12px; font-weight:bold;">Turmas <span id="contadorTurmasNotasOficiais" style="font-weight:normal; color:#3182ce;"></span></label>
+                    <label style="font-size:12px; font-weight:bold;">Turmas <span id="contadorTurmasNotasOficiais" style="font-weight:normal; color:#2563c9;"></span></label>
                     ${turmas.length > 0 ? `
                         <div style="display:flex; gap:8px;">
                             <button type="button" class="btn btn-xs btn-secondary" onclick="marcarTodasTurmasVisiveisNotasOficiais()">Marcar todas</button>
@@ -3077,8 +3077,8 @@ function renderNotasOficiaisGestor() {
                         </div>
                     ` : ''}
                 </div>
-                ${turmas.length > 0 ? `<input type="text" placeholder="🔍 Buscar turma..." oninput="filtrarListaTurmasNotasOficiais(this.value)" style="width:100%; padding:8px; margin-bottom:6px; border:1px solid #cbd5e0; border-radius:6px; box-sizing:border-box; font-size:13px;">` : ''}
-                <div id="listaTurmasNotasOficiaisContainer" style="max-height:260px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px; background:#fff;">
+                ${turmas.length > 0 ? `<input type="text" placeholder="🔍 Buscar turma..." oninput="filtrarListaTurmasNotasOficiais(this.value)" style="width:100%; padding:8px; margin-bottom:6px; border:1px solid #cdd5e1; border-radius:6px; box-sizing:border-box; font-size:13px;">` : ''}
+                <div id="listaTurmasNotasOficiaisContainer" style="max-height:260px; overflow-y:auto; border:1px solid #e3e8ef; border-radius:6px; background:#fff;">
                     ${turmas.length === 0 ? '<p class="empty-state" style="margin:0; padding:10px;">Nenhuma turma cadastrada.</p>' : turmas.map(t => `
                         <label class="linha-turma-notas-oficiais" data-nome="${normalizarTextoComparacaoMaterialDigital(t.nome)}" style="display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid #f1f5f9; cursor:pointer; font-size:13px;">
                             <input type="checkbox" class="chk-turma-notas-oficiais" value="${t.id}" onchange="atualizarEstadoLinhaTurmaNotasOficiais(this)">
@@ -3093,7 +3093,7 @@ function renderNotasOficiaisGestor() {
                 <label><input type="radio" name="notasOficiaisModoRadio" value="mapao" onchange="toggleModoNotasOficiais('mapao')"> Mapão Bimestral (notas oficiais)</label>
             </div>
 
-            <div id="camposAvaliacaoNotasOficiais" style="margin-bottom: 15px; background:#f8fafc; padding:12px; border-radius:8px; border:1px solid #e2e8f0;">
+            <div id="camposAvaliacaoNotasOficiais" style="margin-bottom: 15px; background:#f6f8fb; padding:12px; border-radius:8px; border:1px solid #e3e8ef;">
                 <div class="form-row">
                     <label style="flex:2;">Nome da Avaliação:
                         <input type="text" id="notasOficiaisNomeAvaliacao" placeholder="Ex: Prova Paulista - 2º Bimestre">
@@ -3109,7 +3109,7 @@ function renderNotasOficiaisGestor() {
                 </div>
             </div>
 
-            <div id="infoMapaoNotasOficiais" style="display:none; margin-bottom: 15px; background:#ebf8ff; padding:12px; border-radius:8px; border:1px solid #bee3f8; font-size:12px; color:#2c5282;">
+            <div id="infoMapaoNotasOficiais" style="display:none; margin-bottom: 15px; background:#edf3fd; padding:12px; border-radius:8px; border:1px solid #d3e2fa; font-size:12px; color:#1b4488;">
                 O mapão normalmente já traz todas as notas bimestrais lançadas até agora. Não é preciso escolher o bimestre — a IA identifica cada coluna/bimestre presente no arquivo. Reenviar um mapão mais atualizado apenas corrige as notas já registradas, sem duplicar.
             </div>
 
@@ -3122,15 +3122,15 @@ function renderNotasOficiaisGestor() {
             <button class="btn btn-primary" id="btnProcessarNotasOficiais" onclick="processarArquivoNotasOficiais()">Processar</button>
 
             <div id="progressoNotasOficiais" style="display:none; margin-top:15px;">
-                <div style="background:#e2e8f0; border-radius:6px; overflow:hidden; height:18px;">
+                <div style="background:#e3e8ef; border-radius:6px; overflow:hidden; height:18px;">
                     <div id="barraProgressoNotasOficiais" style="background:#4299e1; height:100%; width:30%; transition:width .2s;"></div>
                 </div>
-                <p id="textoProgressoNotasOficiais" style="font-size:12px; color:#666; margin-top:4px;"></p>
+                <p id="textoProgressoNotasOficiais" style="font-size:12px; color:#5f6b7f; margin-top:4px;"></p>
             </div>
 
             <div id="revisaoNotasOficiais" style="margin-top:20px;"></div>
 
-            <h3 style="margin-top:30px; border-top:1px solid #e2e8f0; padding-top:15px;">Avaliações Cadastradas</h3>
+            <h3 style="margin-top:30px; border-top:1px solid #e3e8ef; padding-top:15px;">Avaliações Cadastradas</h3>
             <div id="listaAvaliacoesGestor">
                 ${avaliacoes.length === 0 ? '<p class="empty-state">Nenhuma avaliação cadastrada ainda.</p>' : `
                     <table style="font-size:13px;">
@@ -3151,7 +3151,7 @@ function renderNotasOficiaisGestor() {
                 `}
             </div>
 
-            <h3 style="margin-top:30px; border-top:1px solid #e2e8f0; padding-top:15px;">Histórico de Mapões Enviados</h3>
+            <h3 style="margin-top:30px; border-top:1px solid #e3e8ef; padding-top:15px;">Histórico de Mapões Enviados</h3>
             <div id="listaLotesMapaoGestor">
                 ${lotesMapao.length === 0 ? '<p class="empty-state">Nenhum mapão enviado ainda.</p>' : `
                     <table style="font-size:13px;">
@@ -3183,7 +3183,7 @@ function toggleModoNotasOficiais(modo) {
 // isso claro e cortava nomes de turma longos).
 function atualizarEstadoLinhaTurmaNotasOficiais(checkbox) {
     const linha = checkbox.closest('.linha-turma-notas-oficiais');
-    if (linha) linha.style.background = checkbox.checked ? '#ebf8ff' : '';
+    if (linha) linha.style.background = checkbox.checked ? '#edf3fd' : '';
     const total = document.querySelectorAll('.chk-turma-notas-oficiais:checked').length;
     const contador = document.getElementById('contadorTurmasNotasOficiais');
     if (contador) contador.textContent = total > 0 ? `(${total} selecionada${total > 1 ? 's' : ''})` : '';
@@ -3788,7 +3788,7 @@ function montarRevisaoNotasOficiais(registros, bimestreSelecionado, resumosCober
         const cor = r.faltantes.length === 0 ? '#276749' : '#7b341e';
         const fundo = r.faltantes.length === 0 ? '#f0fff4' : '#fffaf0';
         return `
-            <div style="background:${fundo}; border:1px solid #e2e8f0; color:${cor}; padding:8px 12px; border-radius:6px; font-size:12px; margin-bottom:6px;">
+            <div style="background:${fundo}; border:1px solid #e3e8ef; color:${cor}; padding:8px 12px; border-radius:6px; font-size:12px; margin-bottom:6px;">
                 <strong>${r.turmaNome}:</strong> ${r.encontrados} de ${r.total} alunos com nota lançada nesta leitura.
                 ${r.faltantes.length > 0 ? `<br>Sem nenhuma linha: ${r.faltantes.join(', ')}` : ''}
             </div>
@@ -3797,7 +3797,7 @@ function montarRevisaoNotasOficiais(registros, bimestreSelecionado, resumosCober
 
     container.innerHTML = htmlAviso + htmlCobertura + `
         <h3>Revisão antes de salvar (${notasOficiaisRegistrosPendentes.length} linhas)</h3>
-        <p style="font-size:12px; color:#666;">Confira o aluno de cada linha (a extração pode errar o casamento de nomes). Linhas em laranja têm um valor de nota que não parece válido — confira antes de salvar. Linhas marcadas "Ignorar" não serão salvas.</p>
+        <p style="font-size:12px; color:#5f6b7f;">Confira o aluno de cada linha (a extração pode errar o casamento de nomes). Linhas em laranja têm um valor de nota que não parece válido — confira antes de salvar. Linhas marcadas "Ignorar" não serão salvas.</p>
         <div style="overflow-x:auto;">
             <table style="font-size:13px;">
                 <thead><tr><th>Turma</th><th>Origem</th><th>Nome no Arquivo</th><th>Aluno</th><th>Disciplina</th><th>Bimestre</th><th>Nota</th><th>Ignorar</th></tr></thead>
@@ -4092,7 +4092,7 @@ async function renderEscolaGestor() {
         ${cartaoLista}
         <div class="card" style="margin:20px 0;">
             <h2>🏫 Configurações da Escola</h2>
-            <p style="color:#666; font-size:14px; margin-bottom:15px;">Ajuste os dados da sua escola. Essas informações aparecem no cabeçalho do sistema e em documentos.</p>
+            <p style="color:#5f6b7f; font-size:14px; margin-bottom:15px;">Ajuste os dados da sua escola. Essas informações aparecem no cabeçalho do sistema e em documentos.</p>
             <form onsubmit="salvarConfigEscolaGestor(event)">
                 <label>Nome da Escola:
                     <input type="text" id="escolaGestorNome" value="${escola.nome || ''}" required style="width:100%; padding:8px; margin-bottom:10px;">
@@ -4123,7 +4123,7 @@ async function renderEscolaGestor() {
 
         <div class="card" style="margin:20px 0;">
             <h2>👥 Professores da Escola</h2>
-            <p style="color:#666; font-size:14px; margin-bottom:15px;">Libere o acesso de perfis novos, altere o perfil ou ative/inative o acesso de edição. Perfis novos só acessam os dados da escola após a sua liberação. Professores inativos continuam acessando o sistema em modo somente leitura.</p>
+            <p style="color:#5f6b7f; font-size:14px; margin-bottom:15px;">Libere o acesso de perfis novos, altere o perfil ou ative/inative o acesso de edição. Perfis novos só acessam os dados da escola após a sua liberação. Professores inativos continuam acessando o sistema em modo somente leitura.</p>
             <div id="listaProfessoresGestor"></div>
         </div>`;
 
@@ -4150,7 +4150,7 @@ async function montarCartaoCodigoEspaco(escola) {
         ? `<div style="font-family:monospace; font-size:24px; letter-spacing:2px; color:#22543d; background:#fff;
                        border:2px dashed #9ae6b4; border-radius:8px; padding:12px; text-align:center; user-select:all;"
                 id="codigoEspacoTexto">${formatarCodigo(codigo)}</div>
-           <p style="font-size:12px; color:#4a5568; margin:8px 0 0;">Passe este código aos colegas da escola:
+           <p style="font-size:12px; color:#3d4759; margin:8px 0 0;">Passe este código aos colegas da escola:
               é com ele que eles entram, sem precisar de liberação.</p>`
         : `<p style="font-size:13px; color:#744210; background:#fffaf0; border:1px solid #fbd38d;
                      border-radius:8px; padding:10px 12px; margin:0;">
@@ -4188,7 +4188,7 @@ async function montarCartaoListaEscola() {
                     ✅ Publicada em <strong>${quando}</strong> —
                     ${(d.estudantes || []).length} estudante(s) e ${(d.ocorrencias || []).length} ocorrência(s).
                  </p>
-                 <p style="font-size:12px; color:#4a5568; margin:8px 0 0;">Os professores recebem esta lista ao abrir a turma.</p>`;
+                 <p style="font-size:12px; color:#3d4759; margin:8px 0 0;">Os professores recebem esta lista ao abrir a turma.</p>`;
     } else if (estado.estado === 'vazio') {
         miolo = `<p style="margin:0; font-size:14px; color:#744210;">
                     Ainda não publicada. Enquanto isso, os professores não recebem as mudanças feitas aqui.
@@ -4200,13 +4200,13 @@ async function montarCartaoListaEscola() {
     }
 
     return `
-        <div class="card" style="margin:20px 0; border-left:4px solid #3182ce;">
+        <div class="card" style="margin:20px 0; border-left:4px solid #2563c9;">
             <h2>📋 Lista da escola para os professores</h2>
             ${miolo}
             <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
                 <button class="btn btn-sm btn-primary" onclick="publicarListaEscolaAgora()">📤 Publicar agora</button>
             </div>
-            <p style="font-size:11px; color:#718096; margin:10px 0 0;">
+            <p style="font-size:11px; color:#5f6b7f; margin:10px 0 0;">
                 A publicação é automática a cada alteração. Este botão serve para conferir na hora.
             </p>
         </div>`;
@@ -4338,8 +4338,8 @@ async function renderListaProfessoresGestor() {
                             return `
                             <tr>
                                 <td>${u.nome || '(sem nome)'}</td>
-                                <td style="font-size:12px; color:#666;">${u.email || '—'}</td>
-                                <td style="font-size:12px; color:#666;">${formatarDataPtBr(u.pendingSince) || '—'}${recusado ? ' <span class="badge badge-danger">Recusado</span>' : ''}</td>
+                                <td style="font-size:12px; color:#5f6b7f;">${u.email || '—'}</td>
+                                <td style="font-size:12px; color:#5f6b7f;">${formatarDataPtBr(u.pendingSince) || '—'}${recusado ? ' <span class="badge badge-danger">Recusado</span>' : ''}</td>
                                 <td>
                                     <button class="btn btn-success btn-sm" onclick="aprovarProfessorGestor('${u.id}')" title="Liberar acesso">✅ Liberar acesso</button>
                                     ${recusado ? '' : `<button class="btn btn-danger btn-sm" onclick="recusarProfessorGestor('${u.id}')" title="Recusar acesso">✋ Recusar</button>`}

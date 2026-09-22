@@ -190,14 +190,14 @@ function _mostrarAvisoModoOnline() {
     const caixa = document.createElement('div');
     caixa.id = 'avisoModoOnline';
     caixa.style.cssText = 'position:fixed; right:16px; bottom:16px; z-index:9999; max-width:380px; ' +
-        'background:#fff; border-left:4px solid #2b6cb0; border-radius:10px; padding:16px 18px; ' +
-        'box-shadow:0 10px 30px rgba(0,0,0,.18); font-size:13px; color:#2d3748; line-height:1.55;';
+        'background:#fff; border-left:4px solid #1f55ad; border-radius:10px; padding:16px 18px; ' +
+        'box-shadow:0 10px 30px rgba(0,0,0,.18); font-size:13px; color:#1c2536; line-height:1.55;';
     caixa.innerHTML =
-        '<strong style="color:#2b6cb0;">Seus dados voltaram para a nuvem — cifrados</strong>' +
+        '<strong style="color:#1f55ad;">Seus dados voltaram para a nuvem — cifrados</strong>' +
         '<p style="margin:8px 0 0;">Não é mais preciso migrar nada nem carregar arquivo: entre em ' +
         'qualquer computador com a sua conta e os dados estarão lá. No banco eles ficam ilegíveis; ' +
         'só o seu acesso abre.</p>' +
-        '<p style="margin:8px 0 0; color:#718096;">Baixar uma cópia de segurança continua disponível ' +
+        '<p style="margin:8px 0 0; color:#5f6b7f;">Baixar uma cópia de segurança continua disponível ' +
         'em <strong>Backup e Segurança</strong>, quando você quiser.</p>' +
         '<button class="btn btn-sm btn-primary" style="width:100%; margin-top:12px;" ' +
         'onclick="fecharAvisoModoOnline()">Entendi</button>';

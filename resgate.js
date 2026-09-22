@@ -539,7 +539,7 @@ function abrirCentralResgate() {
                 '<h2>🛟 Central de Resgate</h2>' +
                 '<button class="close-btn" onclick="this.closest(\'.modal\').remove()">×</button>' +
             '</div>' +
-            '<p style="font-size:13px; color:#4a5568; line-height:1.6; margin-bottom:14px;">' +
+            '<p style="font-size:13px; color:#3d4759; line-height:1.6; margin-bottom:14px;">' +
                 'Procura seus dados em <strong>todas</strong> as origens que sobraram: este aparelho, o ' +
                 'armazenamento antigo do navegador, os documentos na nuvem, a camada cifrada e os 20 slots ' +
                 'de backup diário — um por um, sem depender do índice (que a transição apagou).</p>' +
@@ -552,8 +552,8 @@ function abrirCentralResgate() {
                     'title="Percorre a coleção inteira em vez de adivinhar o nome da chave. Demora mais.">' +
                     '🐢 Não achou? Procurar documento por documento</button>' +
             '</div>' +
-            '<div id="resgateStatus" style="padding:12px; background:#f7fafc; border-radius:8px; ' +
-                'font-size:13px; color:#4a5568; text-align:center;">Clique em "Procurar em tudo" para começar.</div>' +
+            '<div id="resgateStatus" style="padding:12px; background:#f6f8fb; border-radius:8px; ' +
+                'font-size:13px; color:#3d4759; text-align:center;">Clique em "Procurar em tudo" para começar.</div>' +
             '<div id="resgateAvisos" style="margin-top:12px;"></div>' +
             '<div id="resgateLista" style="margin-top:12px; max-height:340px; overflow-y:auto;"></div>' +
             '<button class="btn btn-secondary" style="width:100%; margin-top:16px;" ' +
@@ -628,10 +628,10 @@ async function resgateProcurar(profunda) {
 
     const cor = { aparelho: '#276749', backup: '#2b6cb0', nuvem: '#6b46c1', navegador: '#975a16' };
     lista.innerHTML = r.achados.map((a, i) =>
-        '<div style="border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:8px; background:#fff;">' +
+        '<div style="border:1px solid #e3e8ef; border-radius:8px; padding:12px; margin-bottom:8px; background:#fff;">' +
             '<div style="font-weight:bold; color:' + (cor[a.origem] || '#2d3748') + '; font-size:13px;">' + a.rotulo + '</div>' +
-            '<div style="font-size:11px; color:#a0aec0; margin-bottom:6px; word-break:break-all;">' + a.detalhe + '</div>' +
-            '<div style="font-size:12px; color:#2d3748; margin-bottom:10px;">' + _resgateResumo(a.censo) + '</div>' +
+            '<div style="font-size:11px; color:#7a869a; margin-bottom:6px; word-break:break-all;">' + a.detalhe + '</div>' +
+            '<div style="font-size:12px; color:#1c2536; margin-bottom:10px;">' + _resgateResumo(a.censo) + '</div>' +
             '<div style="display:flex; gap:6px; flex-wrap:wrap;">' +
                 '<button class="btn btn-sm btn-success" onclick="resgateMesclar(' + i + ')" ' +
                     'title="Traz o que falta sem tirar nada do que existe hoje">🧩 Mesclar</button>' +

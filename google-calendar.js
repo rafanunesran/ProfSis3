@@ -587,11 +587,11 @@
         const ultima = gc.lastSyncAt ? new Date(gc.lastSyncAt).toLocaleString('pt-BR') : '—';
 
         alvo.innerHTML = `
-            <div class="card" style="background:#f8fafc; border:1px solid #e2e8f0; margin-bottom:16px;">
+            <div class="card" style="background:#f6f8fb; border:1px solid #e3e8ef; margin-bottom:16px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
                     <div>
-                        <h3 style="margin:0; color:#2c5282;">📆 Google Agenda</h3>
-                        <p style="margin:4px 0 0; font-size:13px; color:#718096;">
+                        <h3 style="margin:0; color:#1b4488;">📆 Google Agenda</h3>
+                        <p style="margin:4px 0 0; font-size:13px; color:#5f6b7f;">
                             ${conectado
                                 ? 'Conectado. Ao abrir o app, clique em "Sincronizar agora" uma vez; depois disso as edições na agenda/tutorias são enviadas automaticamente.'
                                 : 'Conecte sua conta Google para espelhar automaticamente sua agenda escolar.'}
@@ -607,8 +607,8 @@
                                <button class="btn btn-secondary btn-sm" onclick="gcalAjudaIOS()">📱 iPhone/iPad</button>`}
                     </div>
                 </div>
-                ${conectado ? `<div style="margin-top:10px; font-size:12px; color:#4a5568;">Última sincronização: <strong>${ultima}</strong></div>` : ''}
-                <div id="gcalStatus" style="margin-top:8px; font-size:12px; color:#2b6cb0;"></div>
+                ${conectado ? `<div style="margin-top:10px; font-size:12px; color:#3d4759;">Última sincronização: <strong>${ultima}</strong></div>` : ''}
+                <div id="gcalStatus" style="margin-top:8px; font-size:12px; color:#1f55ad;"></div>
             </div>`;
     }
 

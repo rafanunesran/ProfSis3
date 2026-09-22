@@ -1519,15 +1519,15 @@ async function renderCadastro() {
                                autocapitalize="characters" autocomplete="off"
                                style="text-transform:uppercase; letter-spacing:1px;">
                     </label>
-                    <p style="font-size:12px; color:#718096; margin:-4px 0 8px;">
+                    <p style="font-size:12px; color:#5f6b7f; margin:-4px 0 8px;">
                         Peça o código a um colega que já usa o sistema na sua escola.
                     </p>
                 </div>
-                <div id="blocoCriarEspaco" style="display:none; background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px 12px; margin-bottom:8px;">
+                <div id="blocoCriarEspaco" style="display:none; background:#f6f8fb; border:1px solid #e3e8ef; border-radius:8px; padding:10px 12px; margin-bottom:8px;">
                     <label>Nome da escola:
                         <input type="text" id="cadEscolaNome" placeholder="Ex: E.E. Prof.ª Francisca Peralta">
                     </label>
-                    <p style="font-size:12px; color:#718096; margin:4px 0 0;">
+                    <p style="font-size:12px; color:#5f6b7f; margin:4px 0 0;">
                         Você vai receber um código para passar aos colegas — e será o gestor deste espaço.
                     </p>
                 </div>
@@ -1537,7 +1537,7 @@ async function renderCadastro() {
                         <button type="button" class="toggle-password" onclick="toggleSenha('cadSenha', this)">👁️</button>
                     </div>
                 </label>
-                <label style="display:flex; align-items:flex-start; gap:8px; font-size:12px; color:#4a5568; margin-top:6px; font-weight:normal;">
+                <label style="display:flex; align-items:flex-start; gap:8px; font-size:12px; color:#3d4759; margin-top:6px; font-weight:normal;">
                     <input type="checkbox" id="cadAceiteTermos" style="margin-top:2px; width:auto;">
                     <span>Li e concordo com os <a href="termos.html" target="_blank" class="auth-link" style="font-size:12px;">Termos de Uso</a>. Estou ciente de que os dados são de caráter auxiliar, não oficiais, não podem ser usados de forma pública, e que a escola e os desenvolvedores não se responsabilizam pelo uso da plataforma nem pelos dados publicados.</span>
                 </label>

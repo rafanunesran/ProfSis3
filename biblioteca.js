@@ -179,7 +179,7 @@ async function renderBiblioteca() {
     tela.innerHTML = `
         <div class="card" style="margin:20px 0;">
             <h2>📚 Biblioteca de Apoio</h2>
-            <p style="color:#666; font-size:14px; margin-bottom:15px;">
+            <p style="color:#5f6b7f; font-size:14px; margin-bottom:15px;">
                 Materiais de referência compartilhados entre todos os professores. O que você postar aqui
                 pode ser usado automaticamente pelo <strong>Estagiário (IA)</strong> na construção dos documentos.
             </p>
@@ -209,14 +209,14 @@ async function renderBiblioteca() {
                     <label style="display:block; margin-top:10px;">Documento (PDF, Word, Excel, PPT, imagem):
                         <input type="file" id="bibRapidoArquivo" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp" style="width:100%; padding:6px; margin-top:4px;">
                     </label>
-                    <div id="bibProgressoRapido" style="font-size:13px; color:#2c5282; margin:8px 0;"></div>
+                    <div id="bibProgressoRapido" style="font-size:13px; color:#1b4488; margin:8px 0;"></div>
                     <button type="submit" class="btn btn-primary" id="bibBtnRapido">✨ Classificar e revisar</button>
                 </form>
             </div>
 
             <!-- MODO DETALHADO (também usado como PRÉVIA do modo rápido) -->
             <div id="bibModoDetalhado" style="display:none;">
-                <div id="bibBannerClassificacao" style="display:none; background:#ebf8ff; border:1px solid #bee3f8; color:#2c5282; padding:8px 10px; border-radius:6px; font-size:13px; margin-bottom:10px;">
+                <div id="bibBannerClassificacao" style="display:none; background:#edf3fd; border:1px solid #d3e2fa; color:#1b4488; padding:8px 10px; border-radius:6px; font-size:13px; margin-bottom:10px;">
                     ✨ Classificado automaticamente pela IA — confira/ajuste os campos e publique.
                 </div>
                 <form onsubmit="bibliotecaPublicarDetalhado(event)">
@@ -251,7 +251,7 @@ async function renderBiblioteca() {
                             <input type="url" id="bibLink" style="width:100%; padding:8px; margin-bottom:10px;" placeholder="https://...">
                         </label>
                     </div>
-                    <div id="bibProgresso" style="font-size:13px; color:#2c5282; margin-bottom:8px;"></div>
+                    <div id="bibProgresso" style="font-size:13px; color:#1b4488; margin-bottom:8px;"></div>
                     <button type="submit" class="btn btn-primary" id="bibBtnEnviar">📤 Publicar material</button>
                 </form>
             </div>
@@ -357,11 +357,11 @@ function renderListaBiblioteca() {
         const data = m.createdAt && m.createdAt.toDate ? m.createdAt.toDate().toLocaleDateString('pt-BR')
                     : (m.createdAtMs ? new Date(m.createdAtMs).toLocaleDateString('pt-BR') : '');
         return `
-        <div style="border:1px solid #e2e8f0; border-radius:8px; padding:14px; margin-bottom:10px; background:#fff;">
+        <div style="border:1px solid #e3e8ef; border-radius:8px; padding:14px; margin-bottom:10px; background:#fff;">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
                 <div style="flex:1;">
                     <div style="font-weight:bold; font-size:15px;">${bibIconePorMaterial(m)} ${m.titulo || '(sem título)'}</div>
-                    <div style="font-size:12px; color:#666; margin:4px 0;">
+                    <div style="font-size:12px; color:#5f6b7f; margin:4px 0;">
                         ${m.disciplina ? `<span class="badge badge-warning" style="font-size:10px;">${m.disciplina}</span> ` : ''}
                         ${m.serie ? `<span class="badge badge-success" style="font-size:10px;">${m.serie}</span> ` : ''}
                         ${tags}
@@ -609,17 +609,17 @@ async function bibliotecaImprimirMaterial(id) {
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(m.titulo || 'Material')}</title>
     <style>
       body{font-family:Arial,Helvetica,sans-serif; color:#222; max-width:800px; margin:24px auto; padding:0 20px; line-height:1.5;}
-      header{display:flex; align-items:center; gap:12px; border-bottom:2px solid #2c5282; padding-bottom:10px; margin-bottom:16px;}
+      header{display:flex; align-items:center; gap:12px; border-bottom:2px solid #1b4488; padding-bottom:10px; margin-bottom:16px;}
       header img{max-height:60px;}
       h1{font-size:20px; margin:0 0 4px;}
-      .meta{font-size:12px; color:#666; margin-bottom:16px;}
+      .meta{font-size:12px; color:#5f6b7f; margin-bottom:16px;}
       .desc{font-style:italic; color:#444; margin-bottom:16px;}
       .conteudo{font-size:14px;}
       @media print { .noprint{display:none;} body{margin:0;} }
     </style></head><body>
       <header>
         ${logoEscola ? `<img src="${logoEscola}" alt="Logo">` : ''}
-        <div>${nomeEscola ? `<div style="font-weight:bold;">${esc(nomeEscola)}</div>` : ''}<div style="font-size:12px;color:#666;">Biblioteca de Apoio — SisProf</div></div>
+        <div>${nomeEscola ? `<div style="font-weight:bold;">${esc(nomeEscola)}</div>` : ''}<div style="font-size:12px;color:#5f6b7f;">Biblioteca de Apoio — SisProf</div></div>
       </header>
       <h1>${esc(m.titulo || 'Material')}</h1>
       <div class="meta">

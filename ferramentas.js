@@ -62,18 +62,18 @@ function garantirTelaFerramentas() {
             .ferr-nav-btn {
                 display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px;
                 background: transparent; border: none; cursor: pointer;
-                color: #718096; border-bottom: 3px solid transparent;
+                color: #5f6b7f; border-bottom: 3px solid transparent;
                 transition: all 0.2s; font-size: 16px;
             }
-            .ferr-nav-btn.active { color: #3182ce; border-bottom: 3px solid #3182ce; background: #ebf8ff; border-radius: 4px 4px 0 0; }
-            .ferr-nav-btn:hover { background: #f7fafc; }
+            .ferr-nav-btn.active { color: #2563c9; border-bottom: 3px solid #2563c9; background: #edf3fd; border-radius: 4px 4px 0 0; }
+            .ferr-nav-btn:hover { background: #f6f8fb; }
             /* A regra geral de <nav> esconde o rotulo do botao que nao esta ativo; aqui as
                abas precisam se identificar todas de uma vez. */
             #navFerramentas .ferr-nav-btn .label {
                 font-size: 14px; font-weight: bold; max-width: none; opacity: 1; margin-left: 0;
             }
         </style>
-        <nav id="navFerramentas" style="margin:18px 0 6px; border-bottom:1px solid #e2e8f0; padding-bottom:6px;"></nav>
+        <nav id="navFerramentas" style="margin:18px 0 6px; border-bottom:1px solid #e3e8ef; padding-bottom:6px;"></nav>
         ${ABAS_FERRAMENTAS.map(a => `<div id="${a.container}" class="ferramentas-tab" style="display:none;"></div>`).join('')}
     `;
     interno.appendChild(tela);

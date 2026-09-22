@@ -231,7 +231,7 @@ async function abrirModalConfigGerais() {
     document.getElementById('modalConfigGerais').innerHTML = `
         <div class="modal-content" style="max-width: 500px;">
             <h3>⚙️ Configurações Globais (Estado/Região)</h3>
-            <p style="font-size:12px; color:#666;">Estas configurações aparecem no cabeçalho dos documentos gerados (ex: Planos de Aula).</p>
+            <p style="font-size:12px; color:#5f6b7f;">Estas configurações aparecem no cabeçalho dos documentos gerados (ex: Planos de Aula).</p>
             <form onsubmit="salvarConfigGerais(event)">
                 <label>Região (Ex: REGIÃO OSASCO):
                     <input type="text" id="configRegiao" value="${configData.regiao || ''}" style="width:100%; padding:8px; margin-bottom:10px;">
@@ -574,7 +574,7 @@ async function abrirModalAssinaturasAdmin() {
                 <button class="close-btn" onclick="closeModal('modalAssinaturasAdmin')">×</button>
             </div>
             <div style="padding:20px 25px;">
-                <p style="font-size:13px; color:#4a5568; line-height:1.5;">
+                <p style="font-size:13px; color:#3d4759; line-height:1.5;">
                     Cole aqui o link de checkout de cada plano criado no Mercado Pago
                     (Seu negócio &gt; Assinaturas &gt; criar plano). O app gruda no link o
                     <code>external_reference</code> com o uid de quem clicou — é assim que o
@@ -595,7 +595,7 @@ async function abrirModalAssinaturasAdmin() {
                            placeholder="https://seu-projeto.vercel.app/api"
                            value="${(links.servico || '').replace(/"/g, '&quot;')}">
                 </label>
-                <p style="font-size:11px; color:#718096; margin:4px 0 0 0;">
+                <p style="font-size:11px; color:#5f6b7f; margin:4px 0 0 0;">
                     Sem isto, o botão "Cancelar assinatura" manda o professor cancelar na mão,
                     no painel do Mercado Pago, e o Pix volta a depender de link. Com isto, o
                     cancelamento e o QR Code do Pix acontecem dentro do sistema.
@@ -603,12 +603,12 @@ async function abrirModalAssinaturasAdmin() {
                     Pode ser <code>https://projeto.vercel.app</code> ou
                     <code>https://projeto.vercel.app/api</code> — os dois funcionam.
                 </p>
-                <div style="margin-top:16px; border-top:1px dashed #e2e8f0; padding-top:14px;">
+                <div style="margin-top:16px; border-top:1px dashed #e3e8ef; padding-top:14px;">
                     <label style="display:block; font-size:13px;">⏰ Dias de carência após o vencimento
                         <input type="number" id="diasToleranciaAssinatura" min="0" max="60" step="1"
                                style="width:90px; padding:8px;" value="${Number(links.diasTolerancia) >= 0 ? Number(links.diasTolerancia) : 5}">
                     </label>
-                    <p style="font-size:11px; color:#718096; margin:4px 0 0 0;">
+                    <p style="font-size:11px; color:#5f6b7f; margin:4px 0 0 0;">
                         Passado o vencimento + esta carência, o acesso premium e o selo de apoiador
                         <strong>caem automaticamente</strong> — sem depender de o Mercado Pago avisar.
                         A carência existe porque a cobrança recorrente não cai no minuto exato: o Mercado
@@ -616,9 +616,9 @@ async function abrirModalAssinaturasAdmin() {
                     </p>
                 </div>
 
-                <div style="margin-top:16px; border-top:1px dashed #e2e8f0; padding-top:14px;">
+                <div style="margin-top:16px; border-top:1px dashed #e3e8ef; padding-top:14px;">
                     <div style="font-size:13px; font-weight:bold;">📱 Pacotes de apoio no Pix</div>
-                    <p style="font-size:11px; color:#718096; margin:4px 0 8px 0;">
+                    <p style="font-size:11px; color:#5f6b7f; margin:4px 0 8px 0;">
                         O Mercado Pago <strong>não faz cobrança recorrente no Pix</strong> — recorrência
                         automática lá é cartão. Então o Pix entra como pacote: o professor paga uma vez,
                         o apoio vale pelos meses escolhidos e vence sozinho. Um por linha, no formato
@@ -638,7 +638,7 @@ async function abrirModalAssinaturasAdmin() {
                     </p>
                     <textarea id="pacotesPixAssinatura" rows="4" style="width:100%; padding:8px; font-family:monospace; font-size:12px;"
                               placeholder="apoiase;3;30&#10;professor;3;60&#10;professor;12;240">${(Array.isArray(links.pacotesPix) ? links.pacotesPix : []).map(p => [p.plano, p.meses, p.valor].concat(p.link ? [p.link] : []).join(';')).join('\n')}</textarea>
-                    <p style="font-size:11px; color:#718096; margin-top:6px;">
+                    <p style="font-size:11px; color:#5f6b7f; margin-top:6px;">
                         O que estiver aqui é o que o QR Code vai cobrar — o serviço lê estes pacotes
                         direto do banco. O valor nunca vem do navegador (senão daria para comprar
                         12 meses por um centavo), e só o super admin escreve nesta configuração.
@@ -651,7 +651,7 @@ async function abrirModalAssinaturasAdmin() {
 
                 <button class="btn btn-primary" style="margin-top:14px;" onclick="salvarLinksAssinatura()">Salvar</button>
 
-                <div style="margin-top:18px; border-top:1px dashed #e2e8f0; padding-top:14px; font-size:12px; color:#4a5568;">
+                <div style="margin-top:18px; border-top:1px dashed #e3e8ef; padding-top:14px; font-size:12px; color:#3d4759;">
                     <strong>Webhook</strong> (Mercado Pago &gt; Suas integrações &gt; Notificações):
                     aponte para o endereço publicado a partir da pasta <code>assinatura/</code>
                     (na Vercel, <code>https://&lt;projeto&gt;.vercel.app/api/webhook</code>) e marque os
@@ -664,11 +664,11 @@ async function abrirModalAssinaturasAdmin() {
                     Apoia-se ou Professor) — ninguém fica sem resposta.
                 </div>
 
-                <div style="margin-top:14px; border-top:1px dashed #e2e8f0; padding-top:14px;">
+                <div style="margin-top:14px; border-top:1px dashed #e3e8ef; padding-top:14px;">
                     <button class="btn btn-secondary" onclick="migrarApoiadoresAntigos()">
                         💛 Migrar apoiadores marcados à mão
                     </button>
-                    <p style="font-size:11px; color:#718096; margin:6px 0 0 0;">
+                    <p style="font-size:11px; color:#5f6b7f; margin:6px 0 0 0;">
                         O selo de apoiador agora vem <strong>só do pagamento confirmado</strong>. Quem foi marcado
                         à mão (campo antigo <code>contribuidor</code>) perde o selo até isto rodar: cada um vira
                         uma <strong>cortesia registrada</strong>, que a primeira cobrança de verdade substitui sozinha.
@@ -1130,47 +1130,47 @@ function renderBackupOptions() {
                 <p>Use esta ferramenta para transferir dados do seu computador (Local) para a internet (Firebase) ou para fazer cópias de segurança.</p>
                 
                 <div style="display: flex; gap: 20px; margin-top: 20px; flex-wrap: wrap;">
-                    <div style="flex: 1; background: #f7fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                    <div style="flex: 1; background: #f6f8fb; padding: 15px; border-radius: 8px; border: 1px solid #e3e8ef;">
                         <h3>1. Exportar (Baixar)</h3>
-                        <p style="font-size: 13px; color: #666;">Gera um arquivo com todos os dados atuais deste navegador.</p>
+                        <p style="font-size: 13px; color: #5f6b7f;">Gera um arquivo com todos os dados atuais deste navegador.</p>
                         <button class="btn btn-primary" onclick="exportarDadosSistema()">⬇️ Baixar Arquivo de Dados</button>
                     </div>
 
-                    <div style="flex: 1; background: #f7fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                    <div style="flex: 1; background: #f6f8fb; padding: 15px; border-radius: 8px; border: 1px solid #e3e8ef;">
                         <h3>2. Importar (Subir)</h3>
-                        <p style="font-size: 13px; color: #666;">Envia os dados de um arquivo para o sistema atual (Local ou Firebase).</p>
+                        <p style="font-size: 13px; color: #5f6b7f;">Envia os dados de um arquivo para o sistema atual (Local ou Firebase).</p>
                         <input type="file" id="fileBackupImport" accept=".json" style="margin-bottom: 10px;">
                         <button class="btn btn-success" onclick="importarDadosSistema()">⬆️ Importar e Salvar</button>
                     </div>
 
                     <div style="flex: 1; background: #fffaf0; padding: 15px; border-radius: 8px; border: 1px solid #fbd38d;">
                         <h3>3. Migração Auth</h3>
-                        <p style="font-size: 13px; color: #666;">Cria usuários no Firebase Auth baseados na lista atual.</p>
+                        <p style="font-size: 13px; color: #5f6b7f;">Cria usuários no Firebase Auth baseados na lista atual.</p>
                         <button class="btn btn-warning" onclick="migrarUsuariosParaFirebase()">🚀 Migrar Usuários para Auth</button>
                     </div>
 
-                    <div style="flex: 1; background: #ebf8ff; padding: 15px; border-radius: 8px; border: 1px solid #bee3f8;">
+                    <div style="flex: 1; background: #edf3fd; padding: 15px; border-radius: 8px; border: 1px solid #d3e2fa;">
                         <h3>4. Migração de Dados (Perfis)</h3>
-                        <p style="font-size: 13px; color: #666;">Recupera listas de alunos de perfis AEE/Projeto que foram salvas individualmente antes da mudança para o modo compartilhado.</p>
+                        <p style="font-size: 13px; color: #5f6b7f;">Recupera listas de alunos de perfis AEE/Projeto que foram salvas individualmente antes da mudança para o modo compartilhado.</p>
                         <button class="btn btn-info" onclick="migrarDadosAEECompartilhado()">🚀 Migrar Dados AEE/Projeto</button>
                     </div>
 
                     <div style="flex: 1; background: #fff5f5; padding: 15px; border-radius: 8px; border: 1px solid #feb2b2;">
                         <h3>🔐 Chave de Suporte</h3>
-                        <p style="font-size: 13px; color: #666;">Permite recuperar o backup de um professor que perdeu o acesso. Gere o par uma vez e <strong>guarde o arquivo .pem</strong>: ele não pode ser gerado de novo.</p>
-                        <div id="statusChaveSuporte" style="font-size:12px; color:#718096; margin-bottom:8px;"></div>
+                        <p style="font-size: 13px; color: #5f6b7f;">Permite recuperar o backup de um professor que perdeu o acesso. Gere o par uma vez e <strong>guarde o arquivo .pem</strong>: ele não pode ser gerado de novo.</p>
+                        <div id="statusChaveSuporte" style="font-size:12px; color:#5f6b7f; margin-bottom:8px;"></div>
                         <button class="btn btn-danger" onclick="gerarChaveSuporteAdmin()">🔐 Gerar par de chaves</button>
                     </div>
 
                     <div style="flex: 1; background: #faf5ff; padding: 15px; border-radius: 8px; border: 1px solid #d6bcfa;">
                         <h3>🔑 Chaves de IA</h3>
-                        <p style="font-size: 13px; color: #666;">Gerencie as chaves de API (Gemini/OpenAI/Groq/Nvidia) usadas pelo Estagiário IA e pela extração de notas.</p>
+                        <p style="font-size: 13px; color: #5f6b7f;">Gerencie as chaves de API (Gemini/OpenAI/Groq/Nvidia) usadas pelo Estagiário IA e pela extração de notas.</p>
                         <button class="btn btn-primary" onclick="renderChavesIAScreen()">🔑 Gerenciar Chaves</button>
                     </div>
 
                     <div style="flex: 1; background: #f0fff4; padding: 15px; border-radius: 8px; border: 1px solid #9ae6b4;">
                         <h3>📚 Base Curricular Oficial</h3>
-                        <p style="font-size: 13px; color: #666;">Envie a planilha de escopo-sequência e os PDFs oficiais (Cadernos, Material Digital, Guia Priorizado) que o Estagiário IA usa como fonte de verdade.</p>
+                        <p style="font-size: 13px; color: #5f6b7f;">Envie a planilha de escopo-sequência e os PDFs oficiais (Cadernos, Material Digital, Guia Priorizado) que o Estagiário IA usa como fonte de verdade.</p>
                         <button class="btn btn-success" onclick="abrirModalBaseCurricular()">📚 Gerenciar Base Curricular</button>
                     </div>
                 </div>
@@ -1442,7 +1442,7 @@ async function renderChavesIAScreen() {
                 <button class="btn btn-sm btn-secondary" title="Subir prioridade" onclick="moverChaveIA(${c.id}, -1)" ${idx === 0 ? 'disabled' : ''}>↑</button>
                 <button class="btn btn-sm btn-secondary" title="Descer prioridade" onclick="moverChaveIA(${c.id}, 1)" ${idx === chaves.length - 1 ? 'disabled' : ''}>↓</button>
             </td>
-            <td><input type="text" value="${(c.nome || '').replace(/"/g, '&quot;')}" style="width:100%; padding:6px; border:1px solid #cbd5e0; border-radius:4px;" onchange="renomearChaveIA(${c.id}, this.value)"></td>
+            <td><input type="text" value="${(c.nome || '').replace(/"/g, '&quot;')}" style="width:100%; padding:6px; border:1px solid #cdd5e1; border-radius:4px;" onchange="renomearChaveIA(${c.id}, this.value)"></td>
             <td><code>${mascararChaveIA(c.chave)}</code></td>
             <td><span class="badge">${rotularProvedorChave(c.chave)}</span></td>
             <td>${ativa ? '<span class="badge badge-success">Ativa</span>' : '<span class="badge badge-danger">Inativa</span>'}</td>
@@ -1451,42 +1451,42 @@ async function renderChavesIAScreen() {
                 <button class="btn btn-sm btn-danger" onclick="excluirChaveIA(${c.id})" title="Excluir">🗑️</button>
             </td>
         </tr>`;
-    }).join('') : `<tr><td colspan="6" style="text-align:center; color:#718096;">Nenhuma chave cadastrada.</td></tr>`;
+    }).join('') : `<tr><td colspan="6" style="text-align:center; color:#5f6b7f;">Nenhuma chave cadastrada.</td></tr>`;
 
     document.getElementById('adminChavesIAScreen').innerHTML = `
         <div class="card" style="margin-top: 20px; border-left: 5px solid #d6bcfa;">
             <h2>🔑 Chaves de IA</h2>
-            <p style="font-size: 13px; color: #666;">Usadas pelo Estagiário IA (Plano de Aula, Anexo III, Anexo IV) e pela extração de notas do Gestor. O provedor é detectado automaticamente pelo formato da chave (Gemini, OpenAI <code>sk-</code>, Groq <code>gsk_</code>, Nvidia NIM <code>nvapi-</code>, OpenRouter <code>sk-or-</code>). A <strong>ordem</strong> (de cima para baixo) define a <strong>prioridade</strong> de tentativa — use as setas ↑/↓. Chaves <strong>inativas</strong> ficam guardadas, mas não são usadas (útil para chaves que você não consegue gerar de novo). Obs: quando há uma chave do Gemini <em>ativa</em>, ela é tentada antes das demais.</p>
+            <p style="font-size: 13px; color: #5f6b7f;">Usadas pelo Estagiário IA (Plano de Aula, Anexo III, Anexo IV) e pela extração de notas do Gestor. O provedor é detectado automaticamente pelo formato da chave (Gemini, OpenAI <code>sk-</code>, Groq <code>gsk_</code>, Nvidia NIM <code>nvapi-</code>, OpenRouter <code>sk-or-</code>). A <strong>ordem</strong> (de cima para baixo) define a <strong>prioridade</strong> de tentativa — use as setas ↑/↓. Chaves <strong>inativas</strong> ficam guardadas, mas não são usadas (útil para chaves que você não consegue gerar de novo). Obs: quando há uma chave do Gemini <em>ativa</em>, ela é tentada antes das demais.</p>
             <table style="margin-top:15px;">
                 <thead><tr><th>Ordem</th><th>Nome</th><th>Chave</th><th>Provedor</th><th>Status</th><th>Ações</th></tr></thead>
                 <tbody>${linhasHtml}</tbody>
             </table>
-            <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e2e8f0; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+            <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e3e8ef; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
                 <div>
                     <label style="display:block; font-size:12px; font-weight:bold; margin-bottom:4px;">Nome</label>
-                    <input type="text" id="novaChaveIANome" placeholder="Ex: Gemini principal" style="padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                    <input type="text" id="novaChaveIANome" placeholder="Ex: Gemini principal" style="padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                 </div>
                 <div style="flex:1; min-width:250px;">
                     <label style="display:block; font-size:12px; font-weight:bold; margin-bottom:4px;">Chave</label>
-                    <input type="password" id="novaChaveIAValor" placeholder="Cole a chave aqui" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                    <input type="password" id="novaChaveIAValor" placeholder="Cole a chave aqui" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                 </div>
                 <button class="btn btn-primary" onclick="adicionarChaveIA()">+ Adicionar Chave</button>
             </div>
 
-            <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e2e8f0;">
+            <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e3e8ef;">
                 <h3 style="margin:0 0 6px; font-size:15px;">✨ Modelo do Gemini (opcional)</h3>
-                <p style="font-size:12px; color:#666; margin-bottom:8px;">O Google aposenta modelos de tempos em tempos — quando isso acontece, o professor vê "A Inteligência Artificial falhou ou rejeitou o pedido" com a mensagem <em>"is no longer available"</em>. Basta colar aqui o modelo indicado na mensagem. Deixe em branco para usar o padrão do sistema (<code>${MODELOS_GEMINI_PADRAO.join(', ')}</code>). Pode informar mais de um separado por vírgula, em ordem de preferência.</p>
+                <p style="font-size:12px; color:#5f6b7f; margin-bottom:8px;">O Google aposenta modelos de tempos em tempos — quando isso acontece, o professor vê "A Inteligência Artificial falhou ou rejeitou o pedido" com a mensagem <em>"is no longer available"</em>. Basta colar aqui o modelo indicado na mensagem. Deixe em branco para usar o padrão do sistema (<code>${MODELOS_GEMINI_PADRAO.join(', ')}</code>). Pode informar mais de um separado por vírgula, em ordem de preferência.</p>
                 <div style="display:flex; gap:10px; align-items:flex-end;">
-                    <input type="text" id="geminiModelInput" value="${(configIA.geminiModel || '').replace(/"/g, '&quot;')}" placeholder="ex: gemini-3.6-flash, gemini-2.5-flash" style="flex:1; min-width:220px; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                    <input type="text" id="geminiModelInput" value="${(configIA.geminiModel || '').replace(/"/g, '&quot;')}" placeholder="ex: gemini-3.6-flash, gemini-2.5-flash" style="flex:1; min-width:220px; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                     <button class="btn btn-primary" onclick="salvarModeloGemini()">💾 Salvar modelo</button>
                 </div>
             </div>
 
-            <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e2e8f0;">
+            <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e3e8ef;">
                 <h3 style="margin:0 0 6px; font-size:15px;">🔀 Modelo do OpenRouter (opcional)</h3>
-                <p style="font-size:12px; color:#666; margin-bottom:8px;">Só se você usa uma chave OpenRouter (<code>sk-or-…</code>). Deixe em branco para o modelo grátis padrão. Ex.: <code>meta-llama/llama-3.3-70b-instruct:free</code> ou <code>deepseek/deepseek-chat-v3-0324:free</code>.</p>
+                <p style="font-size:12px; color:#5f6b7f; margin-bottom:8px;">Só se você usa uma chave OpenRouter (<code>sk-or-…</code>). Deixe em branco para o modelo grátis padrão. Ex.: <code>meta-llama/llama-3.3-70b-instruct:free</code> ou <code>deepseek/deepseek-chat-v3-0324:free</code>.</p>
                 <div style="display:flex; gap:10px; align-items:flex-end;">
-                    <input type="text" id="openrouterModelInput" value="${(configIA.openrouterModel || '').replace(/"/g, '&quot;')}" placeholder="modelo :free (opcional)" style="flex:1; min-width:220px; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                    <input type="text" id="openrouterModelInput" value="${(configIA.openrouterModel || '').replace(/"/g, '&quot;')}" placeholder="modelo :free (opcional)" style="flex:1; min-width:220px; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                     <button class="btn btn-primary" onclick="salvarModeloOpenRouter()">💾 Salvar modelo</button>
                 </div>
             </div>
@@ -1531,7 +1531,7 @@ function mostrarMensagemBaseCurricular(texto, tipo) {
         sucesso: { bg: '#f0fff4', border: '#9ae6b4', cor: '#276749' },
         erro: { bg: '#fff5f5', border: '#feb2b2', cor: '#c53030' },
         aviso: { bg: '#fffaf0', border: '#fbd38d', cor: '#975a16' },
-        info: { bg: '#ebf8ff', border: '#bee3f8', cor: '#2b6cb0' }
+        info: { bg: '#edf3fd', border: '#d3e2fa', cor: '#1f55ad' }
     };
     const estilo = estilos[tipo] || estilos.info;
     el.style.display = 'block';
@@ -1587,18 +1587,18 @@ function abrirModalBaseCurricular() {
 
     document.getElementById('modalBaseCurricular').innerHTML = `
         <div class="modal-content" style="max-width: 750px;">
-            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e3e8ef; padding-bottom:10px; margin-bottom:15px;">
                 <h2 style="margin:0;">📚 Base Curricular Oficial</h2>
                 <button class="btn btn-sm btn-danger" style="padding:2px 8px;" onclick="closeModal('modalBaseCurricular')">×</button>
             </div>
-            <p style="font-size:13px; color:#666; margin-bottom:15px;">Os documentos enviados aqui ficam disponíveis pra todas as escolas da rede usarem como fonte de verdade no Estagiário IA (não precisa reenviar por escola).</p>
+            <p style="font-size:13px; color:#5f6b7f; margin-bottom:15px;">Os documentos enviados aqui ficam disponíveis pra todas as escolas da rede usarem como fonte de verdade no Estagiário IA (não precisa reenviar por escola).</p>
 
             <div id="baseCurricularMensagem" style="display:none; margin-bottom:15px; padding:10px 12px; border-radius:6px; font-size:13px;"></div>
 
             <div style="display:flex; gap:15px; margin-bottom:15px; flex-wrap:wrap;">
-                <div style="flex:1; min-width:260px; background:#f7fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">
+                <div style="flex:1; min-width:260px; background:#f6f8fb; padding:15px; border-radius:8px; border:1px solid #e3e8ef;">
                     <h3 style="margin-top:0; font-size:15px;">📊 Planilha de Escopo-Sequência (.xlsx)</h3>
-                    <p style="font-size:12px; color:#718096;">Cada aba = uma disciplina. As colunas de Bimestre/Aula/Habilidade/Conteúdo são lidas automaticamente.</p>
+                    <p style="font-size:12px; color:#5f6b7f;">Cada aba = uma disciplina. As colunas de Bimestre/Aula/Habilidade/Conteúdo são lidas automaticamente.</p>
                     <input type="file" id="baseCurricularArquivoXlsx" accept=".xlsx" style="width:100%; margin-bottom:10px; font-size:12px;" onchange="resetUploadArmadoBaseCurricular('xlsx')">
                     <button class="btn btn-primary btn-sm" id="btnProcessarXlsxBaseCurricular" onclick="processarPlanilhaCurriculo()">Processar e Enviar</button>
                 </div>
@@ -1622,19 +1622,19 @@ function abrirModalBaseCurricular() {
                         <label style="font-size:12px; display:inline-flex; align-items:center; gap:3px; font-weight:bold; margin-left:10px;"><input type="checkbox" id="chkSerieTodasBaseCurricular">Todas (Fund. + Médio)</label>
                     </div>
                     <input type="file" id="baseCurricularArquivoPdf" accept=".pdf" style="width:100%; margin-bottom:8px; font-size:12px;" onchange="resetUploadArmadoBaseCurricular('pdf')">
-                    <p style="font-size:11px; color:#718096; margin-bottom:10px;">O texto é extraído automaticamente do PDF (sem IA) e buscado depois por palavra-chave no Estagiário.</p>
+                    <p style="font-size:11px; color:#5f6b7f; margin-bottom:10px;">O texto é extraído automaticamente do PDF (sem IA) e buscado depois por palavra-chave no Estagiário.</p>
                     <button class="btn btn-primary btn-sm" id="btnProcessarPdfBaseCurricular" onclick="processarPdfCurriculo()">Processar e Enviar</button>
                 </div>
             </div>
 
             <div id="baseCurricularProgresso" style="display:none; margin-bottom:15px;">
-                <div style="background:#e2e8f0; border-radius:6px; overflow:hidden; height:18px;">
+                <div style="background:#e3e8ef; border-radius:6px; overflow:hidden; height:18px;">
                     <div id="baseCurricularBarraProgresso" style="background:#4299e1; height:100%; width:0%; transition:width .2s;"></div>
                 </div>
-                <p id="baseCurricularProgressoTexto" style="font-size:12px; color:#666; margin-top:4px;"></p>
+                <p id="baseCurricularProgressoTexto" style="font-size:12px; color:#5f6b7f; margin-top:4px;"></p>
             </div>
 
-            <h3 style="font-size:15px; border-top:1px solid #e2e8f0; padding-top:15px;">Documentos já enviados</h3>
+            <h3 style="font-size:15px; border-top:1px solid #e3e8ef; padding-top:15px;">Documentos já enviados</h3>
             <div id="listaBaseCurricular" style="max-height:220px; overflow-y:auto;">Carregando...</div>
         </div>
     `;
@@ -2250,12 +2250,12 @@ async function abrirBackupsUsuarioAdmin(userId) {
     }
     modal.innerHTML = `
         <div class="modal-content" style="max-width:720px;">
-            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:12px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e3e8ef; padding-bottom:10px; margin-bottom:12px;">
                 <h2 style="margin:0;">🛟 Backups de ${user.nome || user.email}</h2>
                 <button class="btn btn-sm btn-danger" style="padding:2px 8px;" onclick="closeModal('modalBackupsUsuarioAdmin')">×</button>
             </div>
-            <p style="font-size:13px; color:#666; margin-bottom:12px;">Histórico diário (até ${BACKUP_SLOTS_ADMIN} dias). <strong>Baixe</strong> o arquivo para guardar/enviar ao professor, ou <strong>restaure</strong> direto na conta dele.</p>
-            <div id="statusBackupsUsuarioAdmin" style="padding:12px; text-align:center; background:#f7fafc; border-radius:8px; margin-bottom:12px;">🔎 Procurando backups...</div>
+            <p style="font-size:13px; color:#5f6b7f; margin-bottom:12px;">Histórico diário (até ${BACKUP_SLOTS_ADMIN} dias). <strong>Baixe</strong> o arquivo para guardar/enviar ao professor, ou <strong>restaure</strong> direto na conta dele.</p>
+            <div id="statusBackupsUsuarioAdmin" style="padding:12px; text-align:center; background:#f6f8fb; border-radius:8px; margin-bottom:12px;">🔎 Procurando backups...</div>
             <div id="listaBackupsUsuarioAdmin" style="display:flex; flex-direction:column; gap:10px; max-height:340px; overflow-y:auto;"></div>
         </div>
     `;
@@ -2281,7 +2281,7 @@ async function abrirBackupsUsuarioAdmin(userId) {
 
     if (encontrados.length === 0) {
         statusEl.innerHTML = '<span style="color:#e53e3e; font-weight:bold;">❌ Nenhum backup no histórico desta conta.</span>' +
-            '<div style="font-size:12px; color:#718096; margin-top:6px;">Se este professor passou pela transição, ' +
+            '<div style="font-size:12px; color:#5f6b7f; margin-top:6px;">Se este professor passou pela transição, ' +
             'é o esperado: o histórico em texto claro é apagado ali. Faça a varredura forçada para ver o que sobrou.</div>' +
             botaoVarredura;
         return;
@@ -2289,13 +2289,13 @@ async function abrirBackupsUsuarioAdmin(userId) {
 
     statusEl.innerHTML = `<span style="color:#276749; font-weight:bold;">✅ ${encontrados.length} backup(s) encontrado(s).</span>` + botaoVarredura;
     listaEl.innerHTML = encontrados.map((b, i) => `
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border:1px solid #e3e8ef; border-radius:8px; background:#f6f8fb;">
             <div>
-                <div style="font-weight:bold; color:#2d3748;">${b.dataLabel}</div>
-                <div style="font-size:12px; color:#718096;">${b.label}${b.cifrado
-                    ? ' — <span style="color:#2b6cb0;">cifrado</span>'
+                <div style="font-weight:bold; color:#1c2536;">${b.dataLabel}</div>
+                <div style="font-size:12px; color:#5f6b7f;">${b.label}${b.cifrado
+                    ? ' — <span style="color:#1f55ad;">cifrado</span>'
                     : ` — ${b.countTurmas} turmas, ${b.countEstudantes} alunos, ${b.countNotas} notas`}</div>
-                <div style="font-size:10px; color:#a0aec0;">Slot ${b.id} · ID ${b.ownerId}</div>
+                <div style="font-size:10px; color:#7a869a;">Slot ${b.id} · ID ${b.ownerId}</div>
             </div>
             <div style="display:flex; gap:5px; flex-shrink:0;">
                 ${b.cifrado
@@ -2541,7 +2541,7 @@ async function inspecionarDonoBackup(dono) {
     if (!listaEl) return;
 
     listaEl.insertAdjacentHTML('afterbegin',
-        '<div id="inspecionandoDono" style="padding:10px; text-align:center; color:#4a5568; font-size:13px;">' +
+        '<div id="inspecionandoDono" style="padding:10px; text-align:center; color:#3d4759; font-size:13px;">' +
         '🔎 Abrindo os slots de <strong>' + dono + '</strong>...</div>');
 
     const achados = window._achadosVarredura || [];
@@ -2691,10 +2691,10 @@ function _linhaAchado(a, i) {
     }
     const recuperavel = a.tipo !== 'sobra' && (r.temPessoal || r.cifrado);
     const cor = a.tipo === 'sobra' ? '#c05621' : (recuperavel ? '#276749' : '#4a5568');
-    return '<div style="padding:10px 12px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">' +
+    return '<div style="padding:10px 12px; border:1px solid #e3e8ef; border-radius:8px; background:#f6f8fb;">' +
         '<div style="display:flex; justify-content:space-between; gap:10px; align-items:center;">' +
             '<div><div style="font-weight:bold; color:' + cor + '; font-size:13px;">' + a.chave + '</div>' +
-            '<div style="font-size:12px; color:#718096;">' + detalhe + '</div></div>' +
+            '<div style="font-size:12px; color:#5f6b7f;">' + detalhe + '</div></div>' +
             (recuperavel
                 ? '<button class="btn btn-sm btn-info" style="flex-shrink:0;" onclick="baixarAchadoVarredura(' + i + ')">⬇️ Baixar</button>'
                 : '') +
@@ -2793,8 +2793,8 @@ function _painelHistoricos(rel) {
             'Se as Regras publicadas não permitem <code>list</code> em <code>app_data</code>, esta parte fica cega.</div>';
     }
     if (!rel.historicos.length) {
-        return '<div style="margin-top:10px; padding:10px 12px; background:#f7fafc; border:1px solid #e2e8f0; ' +
-            'border-radius:8px; font-size:13px; color:#4a5568;">O banco não tem <strong>nenhum</strong> índice de ' +
+        return '<div style="margin-top:10px; padding:10px 12px; background:#f6f8fb; border:1px solid #e3e8ef; ' +
+            'border-radius:8px; font-size:13px; color:#3d4759;">O banco não tem <strong>nenhum</strong> índice de ' +
             'backup — de ninguém. Todos os históricos da escola foram apagados ou nunca existiram.</div>';
     }
 
@@ -2805,9 +2805,9 @@ function _painelHistoricos(rel) {
         else if (h.deOutro) { quem = 'de ' + h.nomeDono; cor = '#a0aec0'; }
         else { quem = 'ÓRFÃO — não pertence a nenhum cadastro'; cor = '#c05621'; }
         return '<div style="display:flex; justify-content:space-between; gap:10px; align-items:center; ' +
-            'padding:8px 10px; border-bottom:1px solid #edf2f7;">' +
+            'padding:8px 10px; border-bottom:1px solid #eef2f7;">' +
             '<div><div style="font-size:12px; font-weight:bold; color:' + cor + ';">' + h.dono + ' — ' + quem + '</div>' +
-            '<div style="font-size:11px; color:#718096;">' + h.slots + ' backup(s) no índice · mais recente: ' + quando + '</div></div>' +
+            '<div style="font-size:11px; color:#5f6b7f;">' + h.slots + ' backup(s) no índice · mais recente: ' + quando + '</div></div>' +
             (h.meu ? '' : '<button class="btn btn-sm btn-secondary" style="flex-shrink:0;" ' +
                 'onclick="inspecionarDonoBackup(\'' + h.dono + '\')">🔎 Abrir</button>') +
             '</div>';
@@ -2817,11 +2817,11 @@ function _painelHistoricos(rel) {
     const ordem = rel.historicos.slice().sort((a, b) =>
         (a.orfao ? 0 : a.meu ? 1 : 2) - (b.orfao ? 0 : b.meu ? 1 : 2));
 
-    return '<div style="margin-top:10px; padding:10px 12px; background:#fff; border:1px solid #e2e8f0; ' +
+    return '<div style="margin-top:10px; padding:10px 12px; background:#fff; border:1px solid #e3e8ef; ' +
         'border-radius:8px; text-align:left;">' +
-        '<div style="font-size:13px; font-weight:bold; color:#2d3748; margin-bottom:6px;">' +
+        '<div style="font-size:13px; font-weight:bold; color:#1c2536; margin-bottom:6px;">' +
         'Históricos de backup que existem no banco (' + rel.historicos.length + ')</div>' +
-        '<div style="font-size:12px; color:#718096; margin-bottom:8px;">Perguntei ao banco em vez de adivinhar o ID. ' +
+        '<div style="font-size:12px; color:#5f6b7f; margin-bottom:8px;">Perguntei ao banco em vez de adivinhar o ID. ' +
         'Um histórico <strong>órfão</strong> pode ser o desta pessoa sob um ID antigo — confira pela data.</div>' +
         ordem.map(linha).join('') + '</div>';
 }
@@ -2857,15 +2857,15 @@ async function abrirVarreduraForcada() {
         '<div style="text-align:left; padding:12px 14px; background:' + v.fundo + '; border:1px solid ' + v.cor +
         '33; border-radius:8px;">' +
             '<div style="font-weight:bold; color:' + v.cor + '; margin-bottom:6px;">' + v.titulo + '</div>' +
-            '<div style="font-size:13px; color:#2d3748; line-height:1.6;">' + v.texto + '</div>' +
+            '<div style="font-size:13px; color:#1c2536; line-height:1.6;">' + v.texto + '</div>' +
         '</div>' + chaveTxt + _painelHistoricos(rel) +
-        '<div style="font-size:11px; color:#a0aec0; margin-top:8px; text-align:left;">' +
+        '<div style="font-size:11px; color:#7a869a; margin-top:8px; text-align:left;">' +
             rel.documentosLidos + ' documentos consultados · ' + rel.achados.length + ' com conteúdo</div>';
 
     document.getElementById('listaBackupsUsuarioAdmin').innerHTML =
         rel.achados.length
             ? rel.achados.map((a, i) => _linhaAchado(a, i)).join('')
-            : '<div style="padding:14px; text-align:center; color:#718096; font-size:13px;">' +
+            : '<div style="padding:14px; text-align:center; color:#5f6b7f; font-size:13px;">' +
               'Nenhum documento desta conta respondeu. Nem os vivos — confira se o usuário tem UID ' +
               'do Firebase Auth e se a escola dele está correta no cadastro.</div>';
 }

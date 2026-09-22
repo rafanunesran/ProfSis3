@@ -284,9 +284,9 @@ function injectGestorToggleButton() {
             ${btnLabel}
         </button>
         <div id="dropdownModoContent" class="dropdown-content" style="display: none; position: absolute; right: 0; background-color: #f9f9f9; min-width: 160px; box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2); z-index: 1000; border-radius: 4px; overflow: hidden;">
-            <a href="#" onclick="mudarModoVisualizacao('professor')" style="color: black; padding: 12px 16px; text-decoration: none; display: block; border-bottom:1px solid #eee;">👨‍🏫 Professor</a>
-            <a href="#" onclick="mudarModoVisualizacao('gestor')" style="color: black; padding: 12px 16px; text-decoration: none; display: block; border-bottom:1px solid #eee;">🛡️ Gestor</a>
-            <a href="#" onclick="mudarModoVisualizacao('aee')" style="color: black; padding: 12px 16px; text-decoration: none; display: block; border-bottom:1px solid #eee;">🧩 AEE</a>
+            <a href="#" onclick="mudarModoVisualizacao('professor')" style="color: black; padding: 12px 16px; text-decoration: none; display: block; border-bottom:1px solid #e3e8ef;">👨‍🏫 Professor</a>
+            <a href="#" onclick="mudarModoVisualizacao('gestor')" style="color: black; padding: 12px 16px; text-decoration: none; display: block; border-bottom:1px solid #e3e8ef;">🛡️ Gestor</a>
+            <a href="#" onclick="mudarModoVisualizacao('aee')" style="color: black; padding: 12px 16px; text-decoration: none; display: block; border-bottom:1px solid #e3e8ef;">🧩 AEE</a>
             <a href="#" onclick="mudarModoVisualizacao('projeto')" style="color: black; padding: 12px 16px; text-decoration: none; display: block;">🚀 Projeto</a>
         </div>
     `;
@@ -336,7 +336,7 @@ function injectProfileButton() {
 
 // --- SISTEMA DE TEMAS ---
 const TEMAS_APP = {
-    'padrao': { nome: 'Padrão (Azul)', cor: '#3182ce', bgHeader: 'linear-gradient(135deg, #3182ce, #2c5282)', bgBody: '#f7fafc' },
+    'padrao': { nome: 'Padrão (Azul)', cor: '#2563c9', bgHeader: 'linear-gradient(135deg, #1c2d4d, #13213a)', bgBody: '#f3f5f9' },
     'natureza': { nome: 'Natureza (Verde)', cor: '#38a169', bgHeader: 'linear-gradient(135deg, #38a169, #276749)', bgBody: '#f0fff4' },
     'sunset': { nome: 'Pôr do Sol (Laranja)', cor: '#dd6b20', bgHeader: 'linear-gradient(135deg, #dd6b20, #c05621)', bgBody: '#fffaf0' },
     'oceano': { nome: 'Oceano (Ciano)', cor: '#0bc5ea', bgHeader: 'linear-gradient(135deg, #0bc5ea, #0987a0)', bgBody: '#ebf8ff' },
@@ -372,12 +372,12 @@ async function abrirModalPerfil() {
             }
         }
         coordArea.innerHTML = `
-            <div style="margin-bottom: 20px; padding: 12px; background: #ebf8ff; border-radius: 8px; border-left: 4px solid #3182ce;">
-                <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:5px; color:#2c5282;">📍 Turma de Coordenação:</label>
-                <select id="selTurmaCoord" onchange="salvarTurmaCoordenacao(this.value)" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+            <div style="margin-bottom: 20px; padding: 12px; background: #edf3fd; border-radius: 8px; border-left: 4px solid #2563c9;">
+                <label style="font-weight:bold; font-size:13px; display:block; margin-bottom:5px; color:#1b4488;">📍 Turma de Coordenação:</label>
+                <select id="selTurmaCoord" onchange="salvarTurmaCoordenacao(this.value)" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                     ${classesHtml}
                 </select>
-                <p style="font-size:10px; color:#718096; margin-top:5px; line-height:1.2;">Ao selecionar, você terá acesso a todas as ocorrências e devolutivas desta turma, como um gestor.</p>
+                <p style="font-size:10px; color:#5f6b7f; margin-top:5px; line-height:1.2;">Ao selecionar, você terá acesso a todas as ocorrências e devolutivas desta turma, como um gestor.</p>
             </div>
         `;
     }
@@ -389,12 +389,16 @@ async function abrirModalPerfil() {
         <button onclick="mudarTema('${key}')" style="
             background: ${tema.bgHeader}; 
             color: white; 
-            border: ${temaAtual === key ? '3px solid #000' : '1px solid #ddd'}; 
-            padding: 10px; 
-            border-radius: 8px; 
+            border: none;
+            box-shadow: ${temaAtual === key ? '0 0 0 2px var(--surface), 0 0 0 4px var(--text)' : 'inset 0 0 0 1px rgba(255,255,255,0.18)'};
+            padding: 11px 10px; 
+            border-radius: 10px; 
             cursor: pointer; 
-            font-weight: bold;
-            opacity: ${temaAtual === key ? '1' : '0.8'};
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 600;
+            text-align: left;
+            opacity: ${temaAtual === key ? '1' : '0.88'};
         ">
             ${temaAtual === key ? '✅ ' : ''}${tema.nome}
         </button>
@@ -410,7 +414,7 @@ async function abrirModalPerfil() {
     recoveryArea.innerHTML = `
         <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #feb2b2;">
             <h4 style="color:#c53030; margin-bottom:5px; font-size:14px;">🆘 Backup e Segurança</h4>
-            <p style="font-size:11px; color:#718096; margin-bottom:10px;">Baixe uma cópia completa dos seus dados ou gerencie versões na nuvem.</p>
+            <p style="font-size:11px; color:#5f6b7f; margin-bottom:10px;">Baixe uma cópia completa dos seus dados ou gerencie versões na nuvem.</p>
             <button class="btn btn-sm btn-primary" onclick="exportarArquivoProfsis()" style="width:100%; margin-bottom:5px;">💾 Baixar minha cópia de segurança</button>
             <button class="btn btn-sm btn-success" onclick="abrirSeletorArquivoProfsis()" style="width:100%; margin-bottom:5px; font-weight:bold;">⬆️ Importar dados do arquivo</button>
             <button class="btn btn-sm btn-info" onclick="listarBackupsNuvem()" style="width:100%; margin-bottom:5px;">☁️ Histórico na Nuvem</button>
@@ -428,19 +432,19 @@ async function abrirModalPerfil() {
     }
 
     integrationArea.innerHTML = `
-        <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cbd5e0;">
-            <h4 style="color:#2c5282; margin-bottom:5px; font-size:14px;">📚 Documentação e Termos de Uso</h4>
-            <p style="font-size:11px; color:#718096; margin-bottom:10px;">Guia de uso da plataforma e os Termos de Uso completos.</p>
+        <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cdd5e1;">
+            <h4 style="color:#1b4488; margin-bottom:5px; font-size:14px;">📚 Documentação e Termos de Uso</h4>
+            <p style="font-size:11px; color:#5f6b7f; margin-bottom:10px;">Guia de uso da plataforma e os Termos de Uso completos.</p>
             <a href="documentacao.html" target="_blank" class="btn btn-sm btn-secondary" style="width:100%; display:block; text-align:center; text-decoration:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📖 Abrir Documentação</a>
         </div>
-        <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cbd5e0;">
-            <h4 style="color:#2c5282; margin-bottom:5px; font-size:14px;">📱 App Android (APK)</h4>
-            <p style="font-size:11px; color:#718096; margin-bottom:10px;">Instala o ProfSis3 no celular. É o mesmo ProfSis do navegador, em formato de aplicativo.</p>
+        <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cdd5e1;">
+            <h4 style="color:#1b4488; margin-bottom:5px; font-size:14px;">📱 App Android (APK)</h4>
+            <p style="font-size:11px; color:#5f6b7f; margin-bottom:10px;">Instala o ProfSis3 no celular. É o mesmo ProfSis do navegador, em formato de aplicativo.</p>
             <button class="btn btn-sm btn-info" onclick="baixarApkAndroid()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">⬇️ Baixar APK</button>
         </div>
-        <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cbd5e0;">
-            <h4 style="color:#2c5282; margin-bottom:5px; font-size:14px;">🔒 Sistemas da SEDUC</h4>
-            <p style="font-size:11px; color:#718096; margin-bottom:0;">O ProfSis3 não possui extensão, integração ou automação com a Secretaria Escolar Digital / Sala do Futuro. O lançamento nos sistemas da SEDUC é sempre feito manualmente pelo profissional, no ambiente oficial da Secretaria.</p>
+        <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cdd5e1;">
+            <h4 style="color:#1b4488; margin-bottom:5px; font-size:14px;">🔒 Sistemas da SEDUC</h4>
+            <p style="font-size:11px; color:#5f6b7f; margin-bottom:0;">O ProfSis3 não possui extensão, integração ou automação com a Secretaria Escolar Digital / Sala do Futuro. O lançamento nos sistemas da SEDUC é sempre feito manualmente pelo profissional, no ambiente oficial da Secretaria.</p>
         </div>
     `;
 
@@ -584,35 +588,27 @@ function aplicarTemaSalvo() {
     style.id = 'theme-style-override';
     
     let css = `
-        /* Header e Botões Principais */
+        /* O tema troca os tokens do styles.css: botões, abas, links e campos acompanham sozinhos */
+        :root {
+            --accent: ${tema.cor};
+            --accent-hover: ${tema.cor};
+            --accent-hover: color-mix(in srgb, ${tema.cor} 84%, #000);
+            --accent-ink: color-mix(in srgb, ${tema.cor} 62%, #000);
+            --accent-soft: color-mix(in srgb, ${tema.cor} 10%, #fff);
+            --accent-ring: color-mix(in srgb, ${tema.cor} 26%, transparent);
+            --bg: ${tema.bgBody};
+        }
+
+        /* Barra do topo */
         header { background: ${tema.bgHeader} !important; }
-        .btn-primary { background-color: ${tema.cor} !important; border-color: ${tema.cor} !important; }
-        .btn-primary:hover { opacity: 0.9; }
-        
-        /* Menu Principal (Nav) */
-        nav button.active { background-color: ${tema.cor} !important; border-color: ${tema.cor} !important; color: #fff !important; }
-        nav button.active .icon { color: #fff !important; }
-        
-        /* Títulos e Textos Coloridos */
-        h2, h3, h4 { color: ${tema.cor} !important; }
-        .turma-nav-btn.active { color: ${tema.cor} !important; border-bottom-color: ${tema.cor} !important; }
-        
-        /* Cards e Bordas */
-        .card { border-left-color: ${tema.cor} !important; }
-        
-        /* Ícones e Badges */
-        .icon { color: ${tema.cor} !important; }
-        
-        /* Ajustes específicos para manter consistência */
-        a { color: ${tema.cor} !important; }
-        
+
         /* Sobrescreve cores inline comuns usadas no app.js */
-        [style*="color: #2c5282"], [style*="color:#2c5282"],
-        [style*="color: #3182ce"], [style*="color:#3182ce"],
-        [style*="color: #2b6cb0"], [style*="color:#2b6cb0"] {
+        [style*="color: #1b4488"], [style*="color:#1b4488"],
+        [style*="color: #2563c9"], [style*="color:#2563c9"],
+        [style*="color: #1f55ad"], [style*="color:#1f55ad"] {
             color: ${tema.cor} !important;
         }
-        [style*="border-left: 4px solid #3182ce"] {
+        [style*="border-left: 4px solid #2563c9"] {
             border-left-color: ${tema.cor} !important;
         }
     `;
@@ -628,10 +624,12 @@ function aplicarTemaSalvo() {
                 background-repeat: no-repeat !important;
             }
             /* Efeito Fumé (Transparência) nos Containers para ler o texto */
-            .card, .modal-content, .auth-box, .turma-tab {
-                background-color: ${tema.isDark ? 'rgba(45, 55, 72, 0.85)' : 'rgba(255, 255, 255, 0.85)'} !important;
-                backdrop-filter: blur(3px); /* Efeito de vidro fosco */
+            .card, .modal-content, .auth-box, .turma-tab, .app-nav {
+                background-color: ${tema.isDark ? 'rgba(24, 33, 49, 0.86)' : 'rgba(255, 255, 255, 0.86)'} !important;
+                backdrop-filter: blur(6px); /* Efeito de vidro fosco */
+                -webkit-backdrop-filter: blur(6px);
             }
+            .turma-tab { background-color: transparent !important; backdrop-filter: none; -webkit-backdrop-filter: none; }
         `;
     } else {
         css += `body { background-color: ${tema.bgBody} !important; }`;
@@ -640,31 +638,52 @@ function aplicarTemaSalvo() {
     // --- REGRAS ESPECÍFICAS PARA MODO ESCURO ---
     if (tema.isDark) {
         // Se tiver imagem, usa fundo escuro transparente, senão usa sólido
-        const bgCard = customBg ? 'rgba(45, 55, 72, 0.85)' : '#2d3748';
+        const bgCard = customBg ? 'rgba(24, 33, 49, 0.86)' : '#182131';
         css += `
-            body, .container { color: #e2e8f0 !important; }
-            .card, .modal-content, .auth-box { background-color: ${bgCard} !important; color: #e2e8f0 !important; border-color: #4a5568 !important; }
-            input, select, textarea { background-color: #4a5568 !important; color: #fff !important; border-color: #718096 !important; }
-            table th { background-color: #4a5568 !important; color: #fff !important; }
-            table td { border-bottom-color: #4a5568 !important; color: #e2e8f0 !important; }
-            .btn-secondary { background-color: #4a5568 !important; border-color: #718096 !important; color: #e2e8f0 !important; }
+            :root {
+                color-scheme: dark;
+                --bg: #0f1623;
+                --surface: #182131;
+                --surface-2: #1d2738;
+                --surface-3: #243044;
+                --border: #2c384c;
+                --border-strong: #3a4860;
+                --text: #e6ebf2;
+                --text-2: #c3ccd9;
+                --text-3: #97a3b6;
+                --text-4: #6d7a8f;
+                --accent-hover: color-mix(in srgb, ${tema.cor} 82%, #fff);
+                --accent-ink: color-mix(in srgb, ${tema.cor} 70%, #fff);
+                --accent-soft: color-mix(in srgb, ${tema.cor} 16%, #182131);
+                --on-accent: #0f1623;
+                --success-soft: #16301f; --success-ink: #9ee6b8;
+                --warning-soft: #33250f; --warning-ink: #f5c982;
+                --danger-soft: #3a1a1c;  --danger-ink: #f5a9a9;
+                --info-soft: #11303a;    --info-ink: #93dcef;
+                --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+                --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.2);
+                --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+                --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.35), 0 24px 56px rgba(0, 0, 0, 0.5);
+            }
+            body, .container { color: var(--text); }
+            .card, .modal-content, .auth-box { background-color: ${bgCard} !important; }
             
             /* Força elementos com fundo claro a ficarem escuros */
-            [style*="background: #f7fafc"], [style*="background:#f7fafc"],
+            [style*="background: #f6f8fb"], [style*="background:#f6f8fb"],
             [style*="background: white"], [style*="background:white"],
             [style*="background: #fff"], [style*="background:#fff"],
             [style*="background: #fffaf0"], [style*="background:#fffaf0"],
-            [style*="background: #ebf8ff"], [style*="background:#ebf8ff"] {
+            [style*="background: #edf3fd"], [style*="background:#edf3fd"] {
                 background-color: ${bgCard} !important;
-                color: #e2e8f0 !important;
-                border-color: #4a5568 !important;
+                color: #e6ebf2 !important;
+                border-color: #2c384c !important;
             }
             
             /* Ajusta textos que eram escuros para ficarem claros */
-            [style*="color: #4a5568"], [style*="color:#4a5568"],
-            [style*="color: #2d3748"], [style*="color:#2d3748"],
-            [style*="color: #718096"], [style*="color:#718096"] {
-                color: #cbd5e0 !important;
+            [style*="color: #3d4759"], [style*="color:#3d4759"],
+            [style*="color: #1c2536"], [style*="color:#1c2536"],
+            [style*="color: #5f6b7f"], [style*="color:#5f6b7f"] {
+                color: #c3ccd9 !important;
             }
             
             /* Ajuste específico para Mural de Avisos (Vermelho escuro -> Rosa claro) */
@@ -673,7 +692,6 @@ function aplicarTemaSalvo() {
             }
         `;
     }
-
     style.innerHTML = css;
     document.head.appendChild(style);
 }
@@ -855,7 +873,7 @@ function mostrarBannerSemDadosLocais() {
     if (document.getElementById('bannerSemDadosLocais')) return;
     const banner = document.createElement('div');
     banner.id = 'bannerSemDadosLocais';
-    banner.style.cssText = 'position:sticky; top:0; z-index:10001; background:#2c5282; color:#fff; ' +
+    banner.style.cssText = 'position:sticky; top:0; z-index:10001; background:#1b4488; color:#fff; ' +
         'padding:12px 16px; text-align:center; font-size:14px; box-shadow:0 2px 6px rgba(0,0,0,0.25);';
     banner.innerHTML =
         '<div style="max-width:760px; margin:0 auto;">' +
@@ -864,7 +882,7 @@ function mostrarBannerSemDadosLocais() {
           'importá-la agora. Normalmente os dados voltam sozinhos pela nuvem — se não voltaram, ' +
           'veja o aviso no topo da página.</span>' +
           '<div style="margin-top:9px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">' +
-            '<button class="btn btn-sm" style="background:#fff; color:#2c5282; font-weight:bold;" ' +
+            '<button class="btn btn-sm" style="background:#fff; color:#1b4488; font-weight:bold;" ' +
               'onclick="abrirSeletorArquivoProfsis()">⬆️ Importar dados do arquivo</button>' +
             '<button class="btn btn-sm" style="background:rgba(255,255,255,.18); color:#fff;" ' +
               'onclick="listarBackupsNuvem()">Ver backups na nuvem</button>' +
@@ -910,7 +928,7 @@ function renderTelaTerminalOcupado(vaga) {
     const ocupados = vaga.ocupados || [];
     const lista = ocupados.map(t =>
         '<li style="margin:6px 0;"><strong>' + (t.apelido || 'Terminal') + '</strong>' +
-        ' <span style="color:#718096;">— visto ' + quando(t) + '</span></li>').join('');
+        ' <span style="color:#5f6b7f;">— visto ' + quando(t) + '</span></li>').join('');
 
     // Dois casos diferentes: cheguei depois e a vaga está ocupada, ou eu TINHA a vez e
     // alguém assumiu enquanto eu estava com a aba parada.
@@ -918,28 +936,28 @@ function renderTelaTerminalOcupado(vaga) {
     const titulo = perdiAVez ? 'Sua vez foi assumida em outro terminal'
                              : 'Sua conta já está aberta em outro lugar';
     const explicacao = perdiAVez
-        ? '<p style="color:#4a5568; font-size:14px; line-height:1.6;">Alguém entrou nesta conta em outra ' +
+        ? '<p style="color:#3d4759; font-size:14px; line-height:1.6;">Alguém entrou nesta conta em outra ' +
           'tela e assumiu a vez. <strong>Nada foi apagado aqui</strong> — o que você já tinha continua ' +
           'neste aparelho, e o envio para a nuvem ficou suspenso para não sobrescrever o trabalho de lá.</p>'
-        : '<p style="color:#4a5568; font-size:14px; line-height:1.6;">Esta conta vale para <strong>' +
+        : '<p style="color:#3d4759; font-size:14px; line-height:1.6;">Esta conta vale para <strong>' +
           vaga.limite + ' tela(s) ao mesmo tempo</strong>, e ela já está sendo usada em:</p>' +
-          '<ul style="color:#2d3748; font-size:14px; padding-left:20px;">' + lista + '</ul>';
+          '<ul style="color:#1c2536; font-size:14px; padding-left:20px;">' + lista + '</ul>';
 
     tela.innerHTML =
         '<div style="background:#fff; border-radius:12px; max-width:520px; padding:28px; ' +
              'box-shadow:0 10px 30px rgba(0,0,0,.12);">' +
           '<div style="font-size:40px; text-align:center;">🖥️</div>' +
-          '<h2 style="text-align:center; color:#2b6cb0; margin:10px 0 4px;">' + titulo + '</h2>' +
+          '<h2 style="text-align:center; color:#1f55ad; margin:10px 0 4px;">' + titulo + '</h2>' +
           explicacao +
           (perdiAVez ? '' :
-            '<p style="color:#4a5568; font-size:14px; line-height:1.6;">Se um desses é o seu computador antigo, ' +
+            '<p style="color:#3d4759; font-size:14px; line-height:1.6;">Se um desses é o seu computador antigo, ' +
             'você pode <strong>assumir a vez aqui</strong>. O outro terminal não perde nada: a cópia dele ' +
             'continua no aparelho, e ele pode assumir de volta quando quiser.</p>') +
           '<button class="btn btn-primary" style="width:100%; margin-top:14px;" ' +
             'onclick="confirmarAssumirTerminal(this)">' +
             (perdiAVez ? 'Assumir de volta neste terminal' : 'Assumir a vez neste terminal') + '</button>' +
           '<button class="btn btn-secondary" style="width:100%; margin-top:8px;" onclick="logout()">Sair</button>' +
-          '<p style="color:#a0aec0; font-size:12px; margin-top:14px; text-align:center;">' +
+          '<p style="color:#7a869a; font-size:12px; margin-top:14px; text-align:center;">' +
             'Precisa de mais telas? A gestão pode pedir o aumento do limite ao suporte.</p>' +
         '</div>';
 }
@@ -1167,9 +1185,9 @@ async function renderTelaAguardandoAprovacao() {
         <div style="max-width:460px; width:100%; background:#fff; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,0.12); padding:32px; text-align:center;">
             <div style="font-size:56px; line-height:1; margin-bottom:8px;">${icone}</div>
             <h2 style="color:${cor}; margin:0 0 6px;">${titulo}</h2>
-            ${nomeEscola ? `<p style="color:#4a5568; font-weight:600; margin:0 0 14px;">🏫 ${nomeEscola}</p>` : ''}
-            <p style="color:#4a5568; font-size:15px; line-height:1.5; margin:0 0 22px;">${mensagem}</p>
-            <p style="color:#718096; font-size:13px; margin:0 0 22px;">Olá, <strong>${(currentUser && currentUser.nome) || (currentUser && currentUser.email) || 'professor(a)'}</strong>. ${rejeitado ? '' : 'Você será liberado(a) automaticamente após a confirmação.'}</p>
+            ${nomeEscola ? `<p style="color:#3d4759; font-weight:600; margin:0 0 14px;">🏫 ${nomeEscola}</p>` : ''}
+            <p style="color:#3d4759; font-size:15px; line-height:1.5; margin:0 0 22px;">${mensagem}</p>
+            <p style="color:#5f6b7f; font-size:13px; margin:0 0 22px;">Olá, <strong>${(currentUser && currentUser.nome) || (currentUser && currentUser.email) || 'professor(a)'}</strong>. ${rejeitado ? '' : 'Você será liberado(a) automaticamente após a confirmação.'}</p>
             <button class="btn btn-primary" style="width:100%; margin-bottom:10px;" onclick="verificarLiberacaoAcesso()">🔄 Já fui liberado? Verificar novamente</button>
             <button class="btn btn-secondary" style="width:100%;" onclick="logout()">Sair</button>
         </div>`;
@@ -1237,7 +1255,7 @@ async function renderDashboard() {
     const today = getTodayString();
     const dashboardContainer = document.getElementById('dashboard');
     const ultimoBackup = await getUltimoBackupInfo();
-    const infoBackupStr = ultimoBackup ? `<span style="font-size:11px; color:#718096; font-weight:normal;">(Último: ${ultimoBackup})</span>` : '';
+    const infoBackupStr = ultimoBackup ? `<span style="font-size:11px; color:#5f6b7f; font-weight:normal;">(Último: ${ultimoBackup})</span>` : '';
     
     // Limpa o conteúdo atual para evitar sobreposição ou duplicidade
     dashboardContainer.innerHTML = '';
@@ -1255,14 +1273,14 @@ async function renderDashboard() {
                 <div class="card">
                     <h2>⚠️ Ocorrências</h2>
                     <div style="font-size: 24px; font-weight: bold; color: #e53e3e;">
-                        ${ocorrencias.length} <span style="font-size:14px; color:#718096; font-weight:normal;">pendentes</span>
+                        ${ocorrencias.length} <span style="font-size:14px; color:#5f6b7f; font-weight:normal;">pendentes</span>
                     </div>
                     <button class="btn btn-sm btn-secondary" onclick="showScreen('ocorrenciasGestor')" style="margin-top:10px;">Ver Todas</button>
                 </div>
                 <div class="card">
                     <h2>📂 Administrativo</h2>
-                    <div style="font-size: 24px; font-weight: bold; color: #3182ce;">
-                        ${registros.filter(r => !r.arquivado).length} <span style="font-size:14px; color:#718096; font-weight:normal;">registros</span>
+                    <div style="font-size: 24px; font-weight: bold; color: #2563c9;">
+                        ${registros.filter(r => !r.arquivado).length} <span style="font-size:14px; color:#5f6b7f; font-weight:normal;">registros</span>
                     </div>
                     <button class="btn btn-sm btn-secondary" onclick="showScreen('registrosGestor')" style="margin-top:10px;">Gerenciar</button>
                 </div>
@@ -1272,7 +1290,7 @@ async function renderDashboard() {
                 <h2>📢 Avisos (Mural)</h2>
                 <div id="listaAvisosDashboard" style="max-height: 100px; overflow-y: auto; margin-bottom: 10px;">
                     ${avisos.length > 0 ? avisos.map(a => `
-                        <div style="font-size:12px; border-bottom:1px solid #eee; padding:5px 0; display:flex; justify-content:space-between;">
+                        <div style="font-size:12px; border-bottom:1px solid #e3e8ef; padding:5px 0; display:flex; justify-content:space-between;">
                             <span>${a.texto.substring(0, 30)}...</span>
                             <button class="btn btn-xs btn-danger" style="padding:0 5px;" onclick="excluirAviso(${a.id})">×</button>
                         </div>
@@ -1286,16 +1304,16 @@ async function renderDashboard() {
                 <p>Total de Estudantes: ${(data.estudantes || []).filter(e => !e.status || e.status === 'Ativo').length}</p>
             </div>
 
-            <div class="card" style="margin-top: 20px; border-left: 4px solid #718096; background: #f7fafc;">
+            <div class="card" style="margin-top: 20px; border-left: 4px solid #5f6b7f; background: #f6f8fb;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                    <h3 style="margin:0; color: #2d3748;">⚙️ Backup & Restauração</h3>
-                    <span style="font-size:11px; background:#e2e8f0; padding:2px 6px; border-radius:4px; color:#4a5568;">Auto: Diário</span>
+                    <h3 style="margin:0; color: #1c2536;">⚙️ Backup & Restauração</h3>
+                    <span style="font-size:11px; background:#e3e8ef; padding:2px 6px; border-radius:4px; color:#3d4759;">Auto: Diário</span>
                 </div>
                 
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
                     <!-- Nuvem -->
-                    <div style="background:white; padding:12px; border-radius:6px; border:1px solid #e2e8f0;">
-                        <h4 style="margin:0 0 10px 0; font-size:13px; color:#2b6cb0; border-bottom:1px solid #eee; padding-bottom:5px;">☁️ Nuvem (Automático)</h4>
+                    <div style="background:white; padding:12px; border-radius:6px; border:1px solid #e3e8ef;">
+                        <h4 style="margin:0 0 10px 0; font-size:13px; color:#1f55ad; border-bottom:1px solid #e3e8ef; padding-bottom:5px;">☁️ Nuvem (Automático)</h4>
                         <div style="display:flex; flex-direction:column; gap:8px;">
                             <button class="btn btn-sm btn-primary" onclick="criarBackupNuvem()" style="text-align:left;">💾 Criar Backup Agora</button>
                             <button class="btn btn-sm btn-danger" onclick="forcarBackupAgora()" style="text-align:left;" title="Baixa o arquivo E cria o backup na nuvem, e diz o que deu certo em cada um">🛟 Forçar backup (arquivo + nuvem)</button>
@@ -1305,8 +1323,8 @@ async function renderDashboard() {
                     </div>
 
                     <!-- Local -->
-                    <div style="background:white; padding:12px; border-radius:6px; border:1px solid #e2e8f0;">
-                        <h4 style="margin:0 0 10px 0; font-size:13px; color:#2d3748; border-bottom:1px solid #eee; padding-bottom:5px;">💻 Arquivo Local / Emergência</h4>
+                    <div style="background:white; padding:12px; border-radius:6px; border:1px solid #e3e8ef;">
+                        <h4 style="margin:0 0 10px 0; font-size:13px; color:#1c2536; border-bottom:1px solid #e3e8ef; padding-bottom:5px;">💻 Arquivo Local / Emergência</h4>
                         <div style="display:flex; flex-direction:column; gap:8px;">
                             <button class="btn btn-sm btn-info" onclick="exportarArquivoProfsis()" style="text-align:left;">⬇️ Baixar minha cópia de segurança</button>
                             <button class="btn btn-sm btn-success" onclick="abrirSeletorArquivoProfsis()" style="text-align:left; font-weight:bold;">⬆️ Importar dados do arquivo</button>
@@ -1335,22 +1353,22 @@ async function renderDashboard() {
                 <div class="card" style="border-left: 4px solid ${cardColor};">
                     <h2>${title}</h2>
                     <div style="font-size: 24px; font-weight: bold; color: ${textColor};">
-                        ${tutorados.length} <span style="font-size:14px; color:#718096; font-weight:normal;">acompanhados</span>
+                        ${tutorados.length} <span style="font-size:14px; color:#5f6b7f; font-weight:normal;">acompanhados</span>
                     </div>
                     <button class="btn btn-sm btn-secondary" onclick="showScreen('tutoria')" style="margin-top:10px;">Gerenciar Alunos</button>
                 </div>
-                <div class="card" style="border-left: 4px solid #3182ce;">
+                <div class="card" style="border-left: 4px solid #2563c9;">
                     <h2>📅 Atendimentos Hoje</h2>
-                    <div style="font-size: 24px; font-weight: bold; color: #2c5282;">
-                        ${agendamentosHoje.length} <span style="font-size:14px; color:#718096; font-weight:normal;">agendados</span>
+                    <div style="font-size: 24px; font-weight: bold; color: #1b4488;">
+                        ${agendamentosHoje.length} <span style="font-size:14px; color:#5f6b7f; font-weight:normal;">agendados</span>
                     </div>
                     <div id="listaAtendimentosAeeHoje" style="margin-top:10px;"></div>
                 </div>
             </div>
 
-            <div class="card" style="margin-top: 20px; border-left: 4px solid #718096; background: #f7fafc;">
+            <div class="card" style="margin-top: 20px; border-left: 4px solid #5f6b7f; background: #f6f8fb;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                    <h3 style="margin:0; color: #2d3748;">⚙️ Backup & Segurança ${infoBackupStr}</h3>
+                    <h3 style="margin:0; color: #1c2536;">⚙️ Backup & Segurança ${infoBackupStr}</h3>
                 </div>
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
                     <button class="btn btn-sm btn-primary" onclick="criarBackupNuvem()" style="text-align:left;">💾 Salvar na Nuvem Agora</button>
@@ -1371,7 +1389,7 @@ async function renderDashboard() {
         if (agendamentosHoje.length > 0) {
             listaAtendimentos.innerHTML = agendamentosHoje.map(a => {
                 const aluno = tutorados.find(t => t.id == a.tutoradoId);
-                return `<div style="padding:5px; border-bottom:1px solid #eee; font-size:13px;">
+                return `<div style="padding:5px; border-bottom:1px solid #e3e8ef; font-size:13px;">
                     <strong>${a.inicio}</strong> - ${aluno ? aluno.nome_estudante : 'Aluno removido'}
                 </div>`;
             }).join('');
@@ -1395,17 +1413,17 @@ async function renderDashboard() {
             </div>
         </div>
 
-        <div class="card" style="margin-top: 20px; border-left: 4px solid #718096; background: #f7fafc;">
+        <div class="card" style="margin-top: 20px; border-left: 4px solid #5f6b7f; background: #f6f8fb;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <h3 style="margin:0; color: #2d3748;">⚙️ Meus Backups e Segurança ${infoBackupStr}</h3>
-                <span style="font-size:11px; background:#e2e8f0; padding:2px 6px; border-radius:4px; color:#4a5568;">Auto: Diário</span>
+                <h3 style="margin:0; color: #1c2536;">⚙️ Meus Backups e Segurança ${infoBackupStr}</h3>
+                <span style="font-size:11px; background:#e3e8ef; padding:2px 6px; border-radius:4px; color:#3d4759;">Auto: Diário</span>
             </div>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
                 <button class="btn btn-sm btn-primary" onclick="criarBackupNuvem()" style="text-align:left;">💾 Sincronizar Nuvem Agora</button>
                 <button class="btn btn-sm btn-info" onclick="exportarArquivoProfsis()" style="text-align:left;">⬇️ Baixar minha cópia de segurança</button>
                 <button class="btn btn-sm btn-success" onclick="abrirSeletorArquivoProfsis()" style="text-align:left; grid-column:1 / -1; font-weight:bold;">⬆️ Importar dados do arquivo</button>
             </div>
-            <p style="font-size:12px; color:#718096; margin:8px 0 0;">
+            <p style="font-size:12px; color:#5f6b7f; margin:8px 0 0;">
                 Trocou de computador ou limpou o navegador? <strong>Importar</strong> traz de volta o
                 arquivo que você baixou — é nele que estão os dados dos estudantes.
             </p>
@@ -1608,12 +1626,12 @@ async function renderDashboard() {
 
         if (ativos.length > 0) {
             temAvisosTurma = true;
-            const disciplinasStr = grupo.disciplinas.length > 0 ? ` <span style="font-size:0.8em; font-weight:normal; color:#718096;">(${grupo.disciplinas.join(', ')})</span>` : '';
+            const disciplinasStr = grupo.disciplinas.length > 0 ? ` <span style="font-size:0.8em; font-weight:normal; color:#5f6b7f;">(${grupo.disciplinas.join(', ')})</span>` : '';
             
             htmlTurmas += `
-                <div class="card" style="border: 1px solid #e2e8f0; background: #fff; padding: 15px;">
-                    <h4 style="margin-top:0; border-bottom: 1px solid #eee; padding-bottom: 5px; color: #2c5282; margin-bottom: 10px;">${grupo.nomeBase}${disciplinasStr}</h4>
-                    <div><strong style="font-size:12px; color:#3182ce;">📂 Administrativo:</strong><ul style="margin:0; padding-left:15px; font-size:13px; color: #4a5568;">${ativos.map(r => {
+                <div class="card" style="border: 1px solid #e3e8ef; background: #fff; padding: 15px;">
+                    <h4 style="margin-top:0; border-bottom: 1px solid #e3e8ef; padding-bottom: 5px; color: #1b4488; margin-bottom: 10px;">${grupo.nomeBase}${disciplinasStr}</h4>
+                    <div><strong style="font-size:12px; color:#2563c9;">📂 Administrativo:</strong><ul style="margin:0; padding-left:15px; font-size:13px; color: #3d4759;">${ativos.map(r => {
                         const est = (data.estudantes || []).find(e => e.id == r.estudanteId);
                         const nomeEst = est ? est.nome_completo : 'Estudante';
                         let icon = r.tipo === 'Atestado' ? '🔵' : (r.tipo === 'Faltoso' ? '🔴' : '📝');
@@ -1634,22 +1652,22 @@ async function renderDashboard() {
 // --- TURMAS ---
 function renderTurmas() {
     const html = (data.turmas || []).map(t => `
-        <div class="card" style="margin-bottom:10px; border-left: 4px solid #3182ce;">
+        <div class="card" style="margin-bottom:10px; border-left: 4px solid #2563c9;">
             <div style="display:flex; justify-content:space-between;">
-                <h3 onclick="abrirTurma(${t.id})" style="cursor:pointer; color:#2c5282;">${t.nome} - ${t.disciplina}${t.tipo === 'eletiva' ? ' <span style="font-size:11px; background:#faf089; color:#744210; padding:1px 6px; border-radius:4px; vertical-align:middle;">🎯 Eletiva</span>' : ''}</h3>
+                <h3 onclick="abrirTurma(${t.id})" style="cursor:pointer; color:#1b4488;">${t.nome} - ${t.disciplina}${t.tipo === 'eletiva' ? ' <span style="font-size:11px; background:#faf089; color:#744210; padding:1px 6px; border-radius:4px; vertical-align:middle;">🎯 Eletiva</span>' : ''}</h3>
                 <div>
                     <button class="btn btn-sm btn-secondary" onclick="editarTurma(${t.id})">✏️</button>
                     <button class="btn btn-sm btn-danger" onclick="removerTurma(${t.id})">🗑️</button>
                 </div>
             </div>
-            <div style="font-size:12px; color:#718096;">${t.turno}</div>
+            <div style="font-size:12px; color:#5f6b7f;">${t.turno}</div>
             ${t.professor_parceiro ? `<div style="font-size:12px; color:#744210;">👥 Professor parceiro: <strong>${t.professor_parceiro}</strong></div>` : ''}
-            <div style="font-size:10px; color:#a0aec0; margin-top:4px;" title="Identificador interno da turma">ID: ${t.id}${t.masterId ? ' | Turma da gestão (masterId): ' + t.masterId : ''}</div>
+            <div style="font-size:10px; color:#7a869a; margin-top:4px;" title="Identificador interno da turma">ID: ${t.id}${t.masterId ? ' | Turma da gestão (masterId): ' + t.masterId : ''}</div>
         </div>
     `).join('');
     
     const btnMassa = (currentViewMode === 'gestor') 
-        ? `<div style="margin-bottom: 15px; padding: 10px; background: #ebf8ff; border: 1px solid #bee3f8; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+        ? `<div style="margin-bottom: 15px; padding: 10px; background: #edf3fd; border: 1px solid #d3e2fa; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
              <span>📂 Atualização de Estudantes em Massa (Vários CSVs)</span>
              <button class="btn btn-primary" onclick="abrirModalImportacaoMassa()">Importar Arquivos</button>
            </div>` 
@@ -2122,15 +2140,15 @@ async function abrirTurma(id) {
     nav.innerHTML = `
         <style>
             .turma-nav-btn {
-                display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px;
+                display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px;
                 background: transparent; border: none; cursor: pointer;
-                color: #718096; border-bottom: 3px solid transparent;
-                transition: all 0.2s; font-size: 16px;
+                color: var(--text-3); font-size: 16px;
+                transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
             }
-            .turma-nav-btn.active { color: #3182ce; border-bottom: 3px solid #3182ce; background: #ebf8ff; border-radius: 4px 4px 0 0; }
-            .turma-nav-btn .label { display: none; font-size: 14px; font-weight: bold; }
+            .turma-nav-btn.active { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); background: transparent; }
+            .turma-nav-btn .label { display: none; font-size: 14px; font-weight: 600; }
             .turma-nav-btn.active .label { display: inline; }
-            .turma-nav-btn:hover { background: #f7fafc; }
+            .turma-nav-btn:hover { background: var(--surface-3); }
         </style>
         <button class="turma-nav-btn active" onclick="showTurmaTab('estudantes', event)"><span class="icon">👥</span><span class="label">Estudantes</span></button>
         <button class="turma-nav-btn" onclick="showTurmaTab('chamada', event)"><span class="icon">✅</span><span class="label">Chamada</span></button>
@@ -2271,7 +2289,7 @@ async function renderEstudantes() {
                                 const diag = est.aee_diagnostico ? `(${est.aee_diagnostico})` : '';
                                 return `<div style="font-size:14px; color:#22543d; margin-bottom:5px;">
                                     <strong>${est.nome_completo}</strong> ${diag} está sendo atendido por <strong>${e.profNome}</strong>
-                                    <span style="font-size:12px; color:#4a5568; margin-left:5px;">(${e.inicio} - ${e.fim})</span>
+                                    <span style="font-size:12px; color:#3d4759; margin-left:5px;">(${e.inicio} - ${e.fim})</span>
                                 </div>`;
                             }).join('')}
                         </div>
@@ -2289,8 +2307,8 @@ async function renderEstudantes() {
         const observacoes = avisosTurma.filter(r => r.tipo === 'Observacao');
 
         muralHtml = `
-            <div class="card" style="background: #f8fafc; border: 1px solid #e2e8f0; margin-bottom: 20px;">
-                <h3 style="margin-top:0; color: #2d3748; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 15px;">📌 Dashboard da Turma</h3>
+            <div class="card" style="background: #f6f8fb; border: 1px solid #e3e8ef; margin-bottom: 20px;">
+                <h3 style="margin-top:0; color: #1c2536; border-bottom: 1px solid #e3e8ef; padding-bottom: 10px; margin-bottom: 15px;">📌 Dashboard da Turma</h3>
                 <div style="display: flex; gap: 15px; flex-wrap: wrap;">
                     ${avisosMural.length > 0 ? `
                         <div style="flex: 1; min-width: 200px; background: #fffaf0; padding: 15px; border-radius: 8px; border-left: 4px solid #ed8936;">
@@ -2302,8 +2320,8 @@ async function renderEstudantes() {
                     ` : ''}
 
                     ${atestados.length > 0 ? `
-                        <div style="flex: 1; min-width: 200px; background: #ebf8ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3182ce;">
-                            <div style="font-weight: bold; color: #2c5282; margin-bottom: 5px;">🔵 Atestados (${atestados.length})</div>
+                        <div style="flex: 1; min-width: 200px; background: #edf3fd; padding: 15px; border-radius: 8px; border-left: 4px solid #2563c9;">
+                            <div style="font-weight: bold; color: #1b4488; margin-bottom: 5px;">🔵 Atestados (${atestados.length})</div>
                             <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #2a4365;">
                                 ${atestados.map(r => {
                                     const est = estudantes.find(e => e.id == r.estudanteId);
@@ -2381,17 +2399,17 @@ async function renderEstudantes() {
                     });
 
                     if (resumoBimestres.length > 0) {
-                        badgeBimestre = `<span style="background:#e2e8f0; color:#4a5568; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #cbd5e0;" title="Atestados acumulados por bimestre">${resumoBimestres.join(' / ')}</span>`;
+                        badgeBimestre = `<span style="background:#e3e8ef; color:#3d4759; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #cdd5e1;" title="Atestados acumulados por bimestre">${resumoBimestres.join(' / ')}</span>`;
                     }
 
                     return `
                     <tr>
                         <td>
-                            ${getFaltaBadgeHtml(e.id, todayStr)}${getAeePrefix(e)} <a href="#" onclick="abrirEstudanteDetalhe(${e.id})" style="font-weight:bold; text-decoration:none; color:#2b6cb0;">${e.nome_completo}</a>
+                            ${getFaltaBadgeHtml(e.id, todayStr)}${getAeePrefix(e)} <a href="#" onclick="abrirEstudanteDetalhe(${e.id})" style="font-weight:bold; text-decoration:none; color:#1f55ad;">${e.nome_completo}</a>
                             ${diagBadge}
                             ${badgeBimestre}
                         </td>
-                        <td><span style="font-size:12px; padding:2px 6px; border-radius:4px; background:#edf2f7;">${e.status || 'Ativo'}</span></td>
+                        <td><span style="font-size:12px; padding:2px 6px; border-radius:4px; background:#eef2f7;">${e.status || 'Ativo'}</span></td>
                         <td>${isGestor ? `${e.status && e.status !== 'Ativo' ? `<button class="btn btn-success btn-sm" onclick="reativarEstudante(${e.id})" title="Marcar como Ativo de novo">🔄 Reativar</button> ` : ''}<button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})">🗑️</button>` : (ehEletiva ? `<button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})" title="Remover desta eletiva (não afeta a turma de origem)">🗑️</button>` : '<span style="color:#ccc;">-</span>')}</td>
                     </tr>
                 `}).join('')}
@@ -2479,16 +2497,16 @@ function renderAlunosImportarDeTurma() {
         const jaTem = jaNaEletiva.some(e =>
             String(chaveOrigemEletiva(e)) === String(chaveOrigemEletiva(a)) ||
             normNomeImportEletiva(e.nome_completo) === normNomeImportEletiva(a.nome_completo));
-        return `<label style="display:flex; align-items:center; gap:8px; padding:6px 4px; border-bottom:1px solid #edf2f7;">
+        return `<label style="display:flex; align-items:center; gap:8px; padding:6px 4px; border-bottom:1px solid #eef2f7;">
             <input type="checkbox" class="chk-import-eletiva" value="${a.id}" ${jaTem ? 'disabled' : ''}>
-            <span>${a.nome_completo}${jaTem ? ' <em style="color:#a0aec0; font-size:11px;">(já na eletiva)</em>' : ''}</span>
+            <span>${a.nome_completo}${jaTem ? ' <em style="color:#7a869a; font-size:11px;">(já na eletiva)</em>' : ''}</span>
         </label>`;
     }).join('');
 
     alvo.innerHTML = linhas +
         `<div style="margin-top:10px; display:flex; gap:8px; align-items:center;">
             <button class="btn btn-primary btn-sm" onclick="confirmarImportarDeTurma('${origemId}')">Importar selecionados</button>
-            <label style="font-size:12px; color:#718096; display:flex; align-items:center; gap:4px;"><input type="checkbox" onclick="document.querySelectorAll('.chk-import-eletiva:not(:disabled)').forEach(c=>c.checked=this.checked)"> marcar todos</label>
+            <label style="font-size:12px; color:#5f6b7f; display:flex; align-items:center; gap:4px;"><input type="checkbox" onclick="document.querySelectorAll('.chk-import-eletiva:not(:disabled)').forEach(c=>c.checked=this.checked)"> marcar todos</label>
         </div>`;
 }
 
@@ -2633,7 +2651,7 @@ async function renderChamada() {
                             const dataChamadaObj = new Date(dataChamadaParts[0], dataChamadaParts[1]-1, dataChamadaParts[2]);
                             
                             if (dataChamadaObj >= inicio && dataChamadaObj <= fim) {
-                                badges += `<span style="background:#bee3f8; color:#2c5282; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold;">Atestado (${r.dias}d)</span>`;
+                                badges += `<span style="background:#d3e2fa; color:#1b4488; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold;">Atestado (${r.dias}d)</span>`;
                             }
                         }
                     });
@@ -2654,7 +2672,7 @@ async function renderChamada() {
                     });
 
                     if (resumoBimestres.length > 0) {
-                        badgeBimestre = `<span style="background:#e2e8f0; color:#4a5568; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #cbd5e0;" title="Atestados acumulados por bimestre">${resumoBimestres.join(' / ')}</span>`;
+                        badgeBimestre = `<span style="background:#e3e8ef; color:#3d4759; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #cdd5e1;" title="Atestados acumulados por bimestre">${resumoBimestres.join(' / ')}</span>`;
                     }
 
                     // [NOVO] Lógica de Compartilhamento de Faltas
@@ -2686,8 +2704,8 @@ async function renderChamada() {
         </table>
         
         <div style="margin-top: 15px; margin-bottom: 15px;">
-            <label style="font-weight: bold; display: block; margin-bottom: 5px; color: #2d3748;">📝 Registro da Aula (Diário de Classe):</label>
-            <textarea id="chamadaRegistroAula" rows="3" style="width: 100%; border: 1px solid #cbd5e0; padding: 10px; border-radius: 5px; font-family: inherit;" placeholder="Descreva o conteúdo ou as atividades da aula de hoje...">${conteudoRegistro}</textarea>
+            <label style="font-weight: bold; display: block; margin-bottom: 5px; color: #1c2536;">📝 Registro da Aula (Diário de Classe):</label>
+            <textarea id="chamadaRegistroAula" rows="3" style="width: 100%; border: 1px solid #cdd5e1; padding: 10px; border-radius: 5px; font-family: inherit;" placeholder="Descreva o conteúdo ou as atividades da aula de hoje...">${conteudoRegistro}</textarea>
             ${seletorCardsMaterialDigitalHtml}
         </div>
 
@@ -2715,7 +2733,7 @@ function validarDataChamada(diasPermitidos) {
     
     if (foraDaGrade) {
         aviso.style.display = 'block';
-        aviso.style.color = '#3182ce'; // Azul informativo em vez de vermelho de erro
+        aviso.style.color = '#2563c9'; // Azul informativo em vez de vermelho de erro
         aviso.innerHTML = 'ℹ️ Não há aula prevista na grade para este dia da semana, mas o registro de chamada está liberado.';
     } else {
         aviso.style.display = 'none';
@@ -2861,7 +2879,7 @@ async function renderRelatorioMensalFaltas() {
                 <h3>Relatório Mensal de Faltas</h3>
                 <button class="btn btn-primary btn-sm" onclick="window.print()">🖨️ Imprimir</button>
             </div>
-            <div class="form-row" style="background:#f7fafc; padding:10px; border-radius:8px; margin-bottom:15px;">
+            <div class="form-row" style="background:#f6f8fb; padding:10px; border-radius:8px; margin-bottom:15px;">
                 <label>Mês: <select id="relFaltaMes" onchange="renderRelatorioMensalFaltas()">${meses.map((m, i) => `<option value="${i}" ${i === mesAtual ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
                 <label>Ano: <input type="number" id="relFaltaAno" value="${anoAtual}" onchange="renderRelatorioMensalFaltas()" style="width:80px;"></label>
             </div>
@@ -2869,9 +2887,9 @@ async function renderRelatorioMensalFaltas() {
                 <table style="font-size: 12px; border-collapse: collapse; width: 100%; min-width: 800px;">
                     <thead>
                         <tr>
-                            <th style="text-align:left; min-width: 200px; position:sticky; left:0; background:#fff; z-index:10; border-bottom:2px solid #cbd5e0;">Estudante</th>
-                            ${diasUteis.map(d => `<th style="text-align:center; width: 25px; padding: 2px; border-bottom:2px solid #cbd5e0;"><button class="btn btn-sm btn-outline-secondary" onclick="verFaltasDoDia(${d}, ${mesAtual}, ${anoAtual})" style="padding:2px 5px; font-size:10px; min-width:25px; cursor:pointer;" title="Ver lista de faltas">${d}</button></th>`).join('')}
-                            <th style="text-align:center; border-bottom:2px solid #cbd5e0;">Total</th>
+                            <th style="text-align:left; min-width: 200px; position:sticky; left:0; background:#fff; z-index:10; border-bottom:2px solid #cdd5e1;">Estudante</th>
+                            ${diasUteis.map(d => `<th style="text-align:center; width: 25px; padding: 2px; border-bottom:2px solid #cdd5e1;"><button class="btn btn-sm btn-outline-secondary" onclick="verFaltasDoDia(${d}, ${mesAtual}, ${anoAtual})" style="padding:2px 5px; font-size:10px; min-width:25px; cursor:pointer;" title="Ver lista de faltas">${d}</button></th>`).join('')}
+                            <th style="text-align:center; border-bottom:2px solid #cdd5e1;">Total</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2891,7 +2909,7 @@ async function renderRelatorioMensalFaltas() {
                                     return user ? user.nome.split(' ')[0] : 'Desconhecido'; // Pega só o primeiro nome
                                 }).join(', ');
 
-                                let cellContent = '<span style="color: #e2e8f0;">•</span>';
+                                let cellContent = '<span style="color: #e3e8ef;">•</span>';
                                 let cellStyle = '';
                                 let cellTitle = '';
                                 
@@ -2916,9 +2934,9 @@ async function renderRelatorioMensalFaltas() {
                                     }
                                 }
 
-                                return `<td style="text-align:center; border: 1px solid #e2e8f0; padding: 4px; ${cellStyle}" title="${cellTitle}">${cellContent}</td>`;
+                                return `<td style="text-align:center; border: 1px solid #e3e8ef; padding: 4px; ${cellStyle}" title="${cellTitle}">${cellContent}</td>`;
                             }).join('');
-                            return `<tr><td style="position:sticky; left:0; background:#fff; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 8px;">${getAeePrefix(e)}${e.nome_completo}</td>${cols}<td style="text-align:center; font-weight:bold; color: ${totalFaltas > 0 ? '#e53e3e' : '#2d3748'}; border-bottom: 1px solid #e2e8f0;">${totalFaltas}</td></tr>`;
+                            return `<tr><td style="position:sticky; left:0; background:#fff; border-bottom: 1px solid #e3e8ef; font-weight:bold; padding: 8px;">${getAeePrefix(e)}${e.nome_completo}</td>${cols}<td style="text-align:center; font-weight:bold; color: ${totalFaltas > 0 ? '#e53e3e' : '#1c2536'}; border-bottom: 1px solid #e3e8ef;">${totalFaltas}</td></tr>`;
                         }).join('')}
                     </tbody>
                 </table>
@@ -2944,7 +2962,7 @@ function verFaltasDoDia(dia, mes, ano) {
     const textoCopia = `Faltas dia ${dataFormatada}:\n${listaNomes.join('\n')}`;
 
     const html = `
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #e3e8ef; padding-bottom:10px;">
             <h3 style="margin:0;">Faltas em ${dataFormatada}</h3>
             <div>
                 <button class="btn btn-secondary" onclick="copiarTextoFaltas('${encodeURIComponent(textoCopia)}')" title="Copiar Lista">📋</button>
@@ -2956,7 +2974,7 @@ function verFaltasDoDia(dia, mes, ano) {
                 ? `<ul style="padding-left:20px;">${listaNomes.map(nome => `<li>${nome}</li>`).join('')}</ul>` 
                 : '<p class="empty-state">Nenhuma falta registrada neste dia.</p>'}
         </div>
-        <div style="margin-top:10px; font-size:12px; color:#666; text-align:right;">Total: ${listaNomes.length}</div>
+        <div style="margin-top:10px; font-size:12px; color:#5f6b7f; text-align:right;">Total: ${listaNomes.length}</div>
     `;
 
     document.getElementById('conteudoDetalheFaltasDia').innerHTML = html;
@@ -3027,8 +3045,8 @@ async function renderOcorrencias() {
     const html = `
         <!-- OCORRÊNCIA RÁPIDA -->
         ${opcoesRapidas.length > 0 ? `
-        <div class="card" style="margin-bottom: 20px; border: 1px solid #bee3f8; background: #ebf8ff;">
-            <h3 style="color: #2c5282; margin-top:0;">⚡ Registro Rápido</h3>
+        <div class="card" style="margin-bottom: 20px; border: 1px solid #d3e2fa; background: #edf3fd;">
+            <h3 style="color: #1b4488; margin-top:0;">⚡ Registro Rápido</h3>
             <div class="form-row" style="align-items: flex-end;">
                 <label style="flex-grow:1;">Estudante:
                     <select id="selEstudanteRapido">
@@ -3047,7 +3065,7 @@ async function renderOcorrencias() {
         </div>
         ` : ''}
 
-        <div class="card" style="margin-bottom: 20px; border: 1px solid #e2e8f0;">
+        <div class="card" style="margin-bottom: 20px; border: 1px solid #e3e8ef;">
             <h3>Nova Ocorrência</h3>
             
             <div style="margin-bottom: 10px;">
@@ -3063,18 +3081,18 @@ async function renderOcorrencias() {
 
             <div style="margin-bottom: 10px;">
                 <label style="font-weight:bold; display:block; margin-bottom:5px;">Estudantes Envolvidos:</label>
-                <div style="background: #f7fafc; padding: 10px; border-radius: 4px; border: 1px solid #e2e8f0; min-height: 40px;">
+                <div style="background: #f6f8fb; padding: 10px; border-radius: 4px; border: 1px solid #e3e8ef; min-height: 40px;">
                     ${selecionados.length > 0 ? selecionados.map(e => `
-                        <div style="display:inline-block; background:white; padding:2px 8px; border-radius:12px; border:1px solid #cbd5e0; margin-right:5px; margin-bottom:5px; font-size:12px;">
+                        <div style="display:inline-block; background:white; padding:2px 8px; border-radius:12px; border:1px solid #cdd5e1; margin-right:5px; margin-bottom:5px; font-size:12px;">
                             ${isEstudanteFalta(e.id, todayStr) ? '<strong style="color:#e53e3e;">F</strong> ' : ''}${e.nome_completo} <span style="cursor:pointer; color:red; font-weight:bold; margin-left:5px;" onclick="removerEstudanteOcorrencia(${e.id})">×</span>
                         </div>
-                    `).join('') : '<span style="color:#a0aec0; font-size:12px;">Nenhum estudante selecionado.</span>'}
+                    `).join('') : '<span style="color:#7a869a; font-size:12px;">Nenhum estudante selecionado.</span>'}
                 </div>
             </div>
 
             <textarea id="novaOcorrenciaTexto" placeholder="Descreva a ocorrência..." rows="3" style="width:100%; margin-bottom:10px;">${textoAtual}</textarea>
             
-            <div style="margin-bottom: 15px; background: #fffaf0; padding: 10px; border: 1px solid #e2e8f0; border-radius: 5px;">
+            <div style="margin-bottom: 15px; background: #fffaf0; padding: 10px; border: 1px solid #e3e8ef; border-radius: 5px;">
                 <label style="font-weight:bold; display:block; margin-bottom:5px; font-size:14px;">Classificação (Obrigatório):</label>
                 <div style="display:flex; gap:20px;">
                     <label style="cursor:pointer; display:flex; align-items:center; gap:5px;">
@@ -3097,7 +3115,7 @@ async function renderOcorrencias() {
         </div>
 
         <div style="margin-top: 30px;">
-            <div style="margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 5px;">
+            <div style="margin-bottom: 20px; border-bottom: 1px solid #e3e8ef; display: flex; gap: 5px;">
                 <button class="btn btn-sm ${currentTurmaOcorrenciaTab === 'disciplinares' ? 'btn-primary' : 'btn-secondary'}" 
                         style="border-radius: 8px 8px 0 0; padding: 10px 20px; border-bottom: none; font-weight: bold;"
                         onclick="currentTurmaOcorrenciaTab='disciplinares'; renderOcorrencias()">
@@ -3113,8 +3131,8 @@ async function renderOcorrencias() {
             ${currentTurmaOcorrenciaTab === 'disciplinares' ? `
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
                     <h3 style="margin:0; font-size:18px;">📋 Histórico Disciplinar</h3>
-                    <div style="background: #edf2f7; padding: 5px 12px; border-radius: 20px; display: flex; align-items: center; gap: 10px;">
-                        <span style="font-size: 11px; font-weight: bold; color: #4a5568; text-transform: uppercase;">Filtro:</span>
+                    <div style="background: #eef2f7; padding: 5px 12px; border-radius: 20px; display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 11px; font-weight: bold; color: #3d4759; text-transform: uppercase;">Filtro:</span>
                         <label style="font-size: 12px; cursor:pointer; display:flex; align-items:center; gap:4px;">
                             <input type="radio" name="filtroTurmaOco" value="pendente" onclick="currentTurmaOcorrenciaFiltro='pendente'; renderOcorrencias()" ${currentTurmaOcorrenciaFiltro === 'pendente' ? 'checked' : ''}> Pendentes
                         </label>
@@ -3138,14 +3156,14 @@ async function renderOcorrencias() {
                     const isRapida = o.tipo === 'rapida';
                     const status = o.status || 'pendente';
                     // Estilos baseados no tipo e status
-                    const cardStyle = isRapida ? 'background:#ebf8ff; border-left:4px solid #3182ce;' : (status === 'pendente' ? 'background:#fff5f5; border-left:4px solid #e53e3e;' : 'background:#f0fff4; border-left:4px solid #38a169;');
+                    const cardStyle = isRapida ? 'background:#edf3fd; border-left:4px solid #2563c9;' : (status === 'pendente' ? 'background:#fff5f5; border-left:4px solid #e53e3e;' : 'background:#f0fff4; border-left:4px solid #38a169;');
                     const statusLabel = !isRapida ? `<span class="badge ${status === 'pendente' ? 'badge-warning' : 'badge-success'}" style="font-size:10px; margin-left:10px; padding: 2px 8px; border-radius: 10px;">${status === 'pendente' ? '⏳ Pendente' : '✅ Confirmada'}</span>` : '';
 
                     return `
                     <div class="card" style="${cardStyle} margin-bottom:12px; padding:15px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
                         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                             <div>
-                                <small style="font-weight:bold; color:#718096; text-transform: uppercase; font-size: 10px;">📅 ${formatDate(o.data)} ${isRapida ? '• REGISTRO RÁPIDO' : ''} ${o.autor ? ` • PROF: ${o.autor}` : ''}</small>
+                                <small style="font-weight:bold; color:#5f6b7f; text-transform: uppercase; font-size: 10px;">📅 ${formatDate(o.data)} ${isRapida ? '• REGISTRO RÁPIDO' : ''} ${o.autor ? ` • PROF: ${o.autor}` : ''}</small>
                                 ${statusLabel}
                             </div>
                             <div class="no-print">
@@ -3154,8 +3172,8 @@ async function renderOcorrencias() {
                                 <button class="btn btn-sm btn-danger" onclick="removerOcorrencia(${o.id})" title="Excluir" style="padding: 2px 6px;">🗑️</button>
                             </div>
                         </div>
-                        <p style="margin: 10px 0; font-size: 13px; color: #2d3748;"><strong>Envolvidos:</strong> ${nomes || 'Nenhum selecionado'}</p>
-                        <div style="background:rgba(255,255,255,0.6); padding:12px; border-radius:6px; font-size:14px; color:#4a5568; white-space:pre-wrap; border:1px solid rgba(0,0,0,0.05); line-height: 1.4;">${o.relato}</div>
+                        <p style="margin: 10px 0; font-size: 13px; color: #1c2536;"><strong>Envolvidos:</strong> ${nomes || 'Nenhum selecionado'}</p>
+                        <div style="background:rgba(255,255,255,0.6); padding:12px; border-radius:6px; font-size:14px; color:#3d4759; white-space:pre-wrap; border:1px solid rgba(0,0,0,0.05); line-height: 1.4;">${o.relato}</div>
                         
                         ${o.devolutiva ? `
                             <div style="margin-top:12px; padding:12px; background:#fff; border:1px solid #c6f6d5; border-radius:6px; font-size:13px; color:#276749; box-shadow: inset 0 1px 2px rgba(0,0,0,0.02);">
@@ -3195,11 +3213,11 @@ async function abrirPainelRecuperacaoAvancada() {
                     <h2>🔍 Busca Avançada de Backups</h2>
                     <button class="close-btn" onclick="this.closest('.modal').remove()">×</button>
                 </div>
-                <p style="font-size:12px; color:#666; margin-bottom:15px;">Vasculhando o banco de dados por arquivos vinculados aos seus identificadores antigos e novos...</p>
-                <div id="statusBuscaBackups" style="padding:15px; text-align:center; background:#f7fafc; border-radius:8px; margin-bottom:15px;">
+                <p style="font-size:12px; color:#5f6b7f; margin-bottom:15px;">Vasculhando o banco de dados por arquivos vinculados aos seus identificadores antigos e novos...</p>
+                <div id="statusBuscaBackups" style="padding:15px; text-align:center; background:#f6f8fb; border-radius:8px; margin-bottom:15px;">
                     <p id="msgStatusBusca">Iniciando varredura...</p>
                 </div>
-                <div id="resultadoBuscaBackups" style="max-height: 300px; overflow-y:auto; display:none; border: 1px solid #e2e8f0; border-radius:8px;"></div>
+                <div id="resultadoBuscaBackups" style="max-height: 300px; overflow-y:auto; display:none; border: 1px solid #e3e8ef; border-radius:8px;"></div>
                 <div style="margin-top:20px; display:flex; gap:10px;">
                     <button class="btn btn-secondary" style="flex:1;" onclick="this.closest('.modal').remove()">Fechar</button>
                     <button class="btn btn-info" style="flex:1;" onclick="pedirIDAntigoBusca()">Outro ID...</button>
@@ -3250,10 +3268,10 @@ async function abrirPainelRecuperacaoAvancada() {
         statusMsg.innerHTML = `<span style="color:green; font-weight:bold;">✅ Localizamos ${encontrados.length} arquivos possíveis!</span>`;
         resDiv.style.display = 'block';
         resDiv.innerHTML = encontrados.map(b => `
-            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid #edf2f7; background:white;">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid #eef2f7; background:white;">
                 <div>
-                    <div style="font-size:12px; font-weight:bold; color:#2d3748;">${b.label}</div>
-                    <div style="font-size:10px; color:#718096;">ID: ${b.ownerId}</div>
+                    <div style="font-size:12px; font-weight:bold; color:#1c2536;">${b.label}</div>
+                    <div style="font-size:10px; color:#5f6b7f;">ID: ${b.ownerId}</div>
                 </div>
                 <button class="btn btn-sm btn-info" onclick="mesclarBackupNuvem(${b.id}, 'Recuperação', '${b.ownerId}')">🧩 Mesclar</button>
             </div>
@@ -3459,7 +3477,7 @@ function imprimirOcorrencia(id) {
             <p><strong>Status:</strong> ${o.status ? o.status.toUpperCase() : 'PENDENTE'}</p>
             <hr>
             <h3>Relato:</h3>
-            <p style="white-space: pre-wrap; background: #f9f9f9; padding: 15px; border: 1px solid #ddd; border-radius: 5px;">${o.relato}</p>
+            <p style="white-space: pre-wrap; background: #f9f9f9; padding: 15px; border: 1px solid #cdd5e1; border-radius: 5px;">${o.relato}</p>
             ${devolutivaHtml}
             <br><br><br>
             <div style="display: flex; justify-content: space-between; margin-top: 50px;">
@@ -3549,7 +3567,7 @@ function renderAtrasos() {
                     const lista = agrupado[estId].sort((a,b) => b.data.localeCompare(a.data));
                     
                     const tagsHtml = lista.map(a => `
-                        <span style="display:inline-flex; align-items:center; background:#edf2f7; border:1px solid #cbd5e0; padding:2px 8px; border-radius:12px; font-size:11px; margin:2px; color:#4a5568;">
+                        <span style="display:inline-flex; align-items:center; background:#eef2f7; border:1px solid #cdd5e1; padding:2px 8px; border-radius:12px; font-size:11px; margin:2px; color:#3d4759;">
                             ${formatDate(a.data)}
                             <span onclick="removerAtraso(${a.id})" style="margin-left:6px; cursor:pointer; color:#e53e3e; font-weight:bold; font-size:14px; line-height:1;" title="Remover este registro">×</span>
                         </span>
@@ -3717,7 +3735,7 @@ function renderizarSeletorCardsMaterialDigitalDeLista(cards, selecionadosAtuais,
     const renderCard = (card) => {
         const checked = idsSelecionados.has(card.id) ? 'checked' : '';
         const tituloAttr = (card.titulo || '').replace(/"/g, '&quot;');
-        return `<label style="display:flex; align-items:flex-start; gap:6px; font-size:12px; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#fff; cursor:pointer;">
+        return `<label style="display:flex; align-items:flex-start; gap:6px; font-size:12px; padding:8px; border:1px solid #e3e8ef; border-radius:6px; background:#fff; cursor:pointer;">
             <input type="checkbox" class="chk-card-material-digital" data-id="${card.id}" data-titulo="${tituloAttr}" data-codigo="${card.codigo || ''}" ${checked} onchange="onToggleCardMaterialDigital(this, '${containerId}')">
             <span>${card.titulo}${card.temTarefa ? '<div style="margin-top:4px; display:inline-block; background:#fffaf0; color:#c05621; border:1px solid #fbd38d; font-size:10px; font-weight:bold; padding:2px 6px; border-radius:10px;">📌 Aula com Tarefa</div>' : ''}</span>
         </label>`;
@@ -3730,15 +3748,15 @@ function renderizarSeletorCardsMaterialDigitalDeLista(cards, selecionadosAtuais,
     }
     const rotuloBim = (chave) => chave === 'sem' ? 'Sem bimestre' : `${chave}º Bim`;
 
-    let html = `<div id="${containerId}" style="margin-top:10px; border:1px solid #cbd5e0; border-radius:6px; padding:10px; background:#fafafa;">`;
-    html += `<label style="font-weight:bold; display:block; margin-bottom:8px; color:#2d3748;">📚 Aula do Material Digital dada (máx. ${LIMITE_CARDS_MATERIAL_DIGITAL}):</label>`;
+    let html = `<div id="${containerId}" style="margin-top:10px; border:1px solid #cdd5e1; border-radius:6px; padding:10px; background:#fafafa;">`;
+    html += `<label style="font-weight:bold; display:block; margin-bottom:8px; color:#1c2536;">📚 Aula do Material Digital dada (máx. ${LIMITE_CARDS_MATERIAL_DIGITAL}):</label>`;
 
     // Barra de abas por bimestre (só quando há mais de um grupo). Clicar troca o grupo visível.
     if (ordemGrupos.length > 1) {
         html += `<div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:8px;">`;
         ordemGrupos.forEach(chave => {
             const ativa = chave === abaAtiva;
-            html += `<button type="button" class="md-aba-btn" data-chave="${chave}" onclick="mostrarAbaBimestreMaterialDigital('${containerId}', '${chave}')" style="border:none; background:${ativa ? '#3182ce' : '#e2e8f0'}; color:${ativa ? '#fff' : '#4a5568'}; font-size:12px; font-weight:bold; padding:6px 12px; border-radius:6px; cursor:pointer;">🗓️ ${rotuloBim(chave)} (${grupos.get(chave).length})</button>`;
+            html += `<button type="button" class="md-aba-btn" data-chave="${chave}" onclick="mostrarAbaBimestreMaterialDigital('${containerId}', '${chave}')" style="border:none; background:${ativa ? '#2563c9' : '#e3e8ef'}; color:${ativa ? '#fff' : '#3d4759'}; font-size:12px; font-weight:bold; padding:6px 12px; border-radius:6px; cursor:pointer;">🗓️ ${rotuloBim(chave)} (${grupos.get(chave).length})</button>`;
         });
         html += `</div>`;
     }
@@ -3763,8 +3781,8 @@ function mostrarAbaBimestreMaterialDigital(containerId, chave) {
     });
     container.querySelectorAll('.md-aba-btn').forEach(btn => {
         const ativa = btn.getAttribute('data-chave') === String(chave);
-        btn.style.background = ativa ? '#3182ce' : '#e2e8f0';
-        btn.style.color = ativa ? '#fff' : '#4a5568';
+        btn.style.background = ativa ? '#2563c9' : '#e3e8ef';
+        btn.style.color = ativa ? '#fff' : '#3d4759';
     });
 }
 
@@ -3811,15 +3829,15 @@ function renderTurmaRegistros() {
         <h3>Histórico de Aulas</h3>
         <div class="grid" style="grid-template-columns: 1fr;">
             ${registros.length > 0 ? registros.map(r => `
-                <div class="card" style="border-left: 4px solid #3182ce; margin-bottom: 10px;">
+                <div class="card" style="border-left: 4px solid #2563c9; margin-bottom: 10px;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-                        <h4 style="margin:0 0 10px 0; color:#2c5282;">📅 ${formatDate(r.data)}</h4>
+                        <h4 style="margin:0 0 10px 0; color:#1b4488;">📅 ${formatDate(r.data)}</h4>
                         <div>
                             <button class="btn btn-sm btn-secondary" onclick="abrirModalNovoRegistroAula(${r.id})" title="Editar">✏️</button>
                             <button class="btn btn-sm btn-danger" onclick="removerRegistroAula(${r.id})">🗑️</button>
                         </div>
                     </div>
-                    <p style="white-space: pre-wrap; margin:0; color:#4a5568;">${r.conteudo}</p>
+                    <p style="white-space: pre-wrap; margin:0; color:#3d4759;">${r.conteudo}</p>
                 </div>
             `).join('') : '<p class="empty-state">Nenhum registro de aula encontrado.</p>'}
         </div>
@@ -3849,7 +3867,7 @@ async function abrirModalNovoRegistroAula(id = null) {
     const cardsCatalogoRegistro = turmaRegistro ? await obterCardsCatalogoCompartilhado(turmaRegistro.disciplina, turmaRegistro.ano_serie || turmaRegistro.nome) : [];
     document.getElementById('regAulaCardsMaterialDigitalWrap').innerHTML =
         renderizarSeletorCardsMaterialDigitalDeLista(cardsCatalogoRegistro, cardsAtuais, 'regAulaCardsMaterialDigital')
-        || '<p style="font-size:11px; color:#a0aec0; margin-top:10px;">📚 Nenhuma aula do Material Digital cadastrada ainda para esta disciplina/série.</p>';
+        || '<p style="font-size:11px; color:#7a869a; margin-top:10px;">📚 Nenhuma aula do Material Digital cadastrada ainda para esta disciplina/série.</p>';
     showModal('modalNovoRegistroAula');
 }
 
@@ -4242,28 +4260,28 @@ function renderTrabalhos() {
         <div style="margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
             <div>
                 <h3 style="margin:0;">📊 Planilha de Notas - ${currentBimestreTrabalhos}º Bimestre</h3>
-                ${totalAulasBim > 0 ? `<div style="font-size:12px; color:#718096; margin-top:2px;">📅 Total de aulas previstas no período: <strong>${totalAulasBim}</strong></div>` : ''}
+                ${totalAulasBim > 0 ? `<div style="font-size:12px; color:#5f6b7f; margin-top:2px;">📅 Total de aulas previstas no período: <strong>${totalAulasBim}</strong></div>` : ''}
             </div>
             <button class="btn btn-primary btn-sm no-print" onclick="abrirModalNovoTrabalho()">+ Criar Nova Atividade</button>
         </div>
         
-        <div style="overflow-x:auto; background: white; border-radius: 8px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+        <div style="overflow-x:auto; background: white; border-radius: 8px; border: 1px solid #e3e8ef; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
             <table style="font-size:13px; min-width: 600px; border-collapse: collapse; width: 100%;">
                 <thead>
                     <tr>
-                        <th style="text-align:left; min-width: 220px; position:sticky; left:0; background:#f8fafc; z-index:10; border-bottom:2px solid #cbd5e0; padding: 12px 15px; border-right: 2px solid #cbd5e0;">Estudante</th>
+                        <th style="text-align:left; min-width: 220px; position:sticky; left:0; background:#f6f8fb; z-index:10; border-bottom:2px solid #cdd5e1; padding: 12px 15px; border-right: 2px solid #cdd5e1;">Estudante</th>
                         ${trabalhos.map(t => `
-                            <th style="text-align:center; min-width: ${t.tipo === 'rubrica' ? (t.rubricas.length * 35 + 60) : 100}px; border-bottom:2px solid #cbd5e0; padding: 10px; background: #f8fafc;">
+                            <th style="text-align:center; min-width: ${t.tipo === 'rubrica' ? (t.rubricas.length * 35 + 60) : 100}px; border-bottom:2px solid #cdd5e1; padding: 10px; background: #f6f8fb;">
                                 <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
                                     <button class="btn btn-xs btn-secondary no-print" style="padding:0 5px; font-size:10px; opacity: 0.6;" onclick="abrirModalNovoTrabalho(${t.id})" title="Editar Atividade">✏️</button>
-                                    <span title="${t.titulo}" style="white-space: nowrap; font-weight: bold; color: #2d3748;">${t.titulo.substring(0,12)}</span>
-                                    <span style="font-size: 10px; color: #718096; font-weight: normal;">Peso: ${t.peso}</span>
+                                    <span title="${t.titulo}" style="white-space: nowrap; font-weight: bold; color: #1c2536;">${t.titulo.substring(0,12)}</span>
+                                    <span style="font-size: 10px; color: #5f6b7f; font-weight: normal;">Peso: ${t.peso}</span>
                                     <button class="btn btn-xs btn-danger no-print" style="padding:0 5px; font-size:10px; border-radius: 50%; opacity: 0.6;" onclick="removerTrabalho(${t.id})" title="Excluir Atividade">×</button>
                                 </div>
                             </th>
                         `).join('')}
-                        <th style="text-align:center; min-width: 90px; border-bottom:2px solid #cbd5e0; padding: 10px; background: #edf2f7; color: #2d3748; font-weight: bold; position: sticky; right: 80px; z-index: 10; border-left: 2px solid #cbd5e0;">MÉDIA</th>
-                        <th style="text-align:center; min-width: 80px; border-bottom:2px solid #cbd5e0; padding: 10px; background: #edf2f7; color: #2d3748; font-weight: bold; position: sticky; right: 0; z-index: 10; border-left: 1px solid #cbd5e0;">FALTAS/AT.</th>
+                        <th style="text-align:center; min-width: 90px; border-bottom:2px solid #cdd5e1; padding: 10px; background: #eef2f7; color: #1c2536; font-weight: bold; position: sticky; right: 80px; z-index: 10; border-left: 2px solid #cdd5e1;">MÉDIA</th>
+                        <th style="text-align:center; min-width: 80px; border-bottom:2px solid #cdd5e1; padding: 10px; background: #eef2f7; color: #1c2536; font-weight: bold; position: sticky; right: 0; z-index: 10; border-left: 1px solid #cdd5e1;">FALTAS/AT.</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -4335,17 +4353,17 @@ function renderTrabalhos() {
                                 const hasValue = (nota && nota.valor !== undefined && nota.valor !== "");
                                 const displayRub = hasValue ? parseFloat(nota.valor).toFixed(1).replace('.0', '').replace('.', ',') : '-';
                                 return `
-                                    <td style="text-align:center; border: 1px solid #e2e8f0; padding: 5px;">
+                                    <td style="text-align:center; border: 1px solid #e3e8ef; padding: 5px;">
                                         <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
                                             <div style="display:flex; gap:5px;">
                                                 ${t.rubricas.map(r => `
                                                     <label style="display:flex; flex-direction:column; align-items:center; cursor:pointer;" title="${r.nome} (Peso: ${r.peso})">
                                                         <input type="checkbox" onchange="toggleRubrica(${t.id}, ${e.id}, ${r.id}, this.checked)" ${marcadas.includes(r.id) ? 'checked' : ''}>
-                                                        <span style="font-size:9px; color:#a0aec0;">${r.id}</span>
+                                                        <span style="font-size:9px; color:#7a869a;">${r.id}</span>
                                                     </label>
                                                 `).join('')}
                                             </div>
-                                            <div id="rub-total-${t.id}-${e.id}" style="font-weight:bold; color:#3182ce; border-left:1px solid #e2e8f0; padding-left:8px; min-width:25px;">${displayRub}</div>
+                                            <div id="rub-total-${t.id}-${e.id}" style="font-weight:bold; color:#2563c9; border-left:1px solid #e3e8ef; padding-left:8px; min-width:25px;">${displayRub}</div>
                                         </div>
                                     </td>
                                 `;
@@ -4355,29 +4373,29 @@ function renderTrabalhos() {
                             const displayValor = (typeof valor === 'number') ? valor.toFixed(1).replace('.', ',').replace(',0', '') : valor;
 
                             return `
-                                <td style="text-align:center; border: 1px solid #e2e8f0; padding: 0;">
+                                <td style="text-align:center; border: 1px solid #e3e8ef; padding: 0;">
                                     <input type="text" value="${displayValor}" 
                                         style="width:100%; border:none; text-align:center; padding: 12px 0; background:transparent; font-size:13px; outline: none;"
                                         placeholder="-"
-                                        onfocus="this.parentElement.style.background='#ebf8ff';"
+                                        onfocus="this.parentElement.style.background='#edf3fd';"
                                         onblur="this.parentElement.style.background='transparent'; salvarNota(${t.id}, ${e.id}, this.value)">
                                 </td>
                             `;
                         }).join('');
 
                         const media = somaPesos > 0 ? (somaProdutos / somaPesos).toFixed(1) : '-';
-                        const corMedia = (media !== '-' && parseFloat(media) < 5) ? '#e53e3e' : '#2d3748';
+                        const corMedia = (media !== '-' && parseFloat(media) < 5) ? '#e53e3e' : '#1c2536';
 
                         return `
-                            <tr onmouseover="this.style.background='#f7fafc'" onmouseout="this.style.background='transparent'">
-                            <td style="position:sticky; left:0; background:inherit; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cbd5e0; z-index: 5;">${getFaltaBadgeHtml(e.id, todayStr)}${getAeePrefix(e)}${e.nome_completo} ${tagFaltoso}</td>
+                            <tr onmouseover="this.style.background='#f6f8fb'" onmouseout="this.style.background='transparent'">
+                            <td style="position:sticky; left:0; background:inherit; border-bottom: 1px solid #e3e8ef; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cdd5e1; z-index: 5;">${getFaltaBadgeHtml(e.id, todayStr)}${getAeePrefix(e)}${e.nome_completo} ${tagFaltoso}</td>
                                 ${gradeCells}                                
-                                <td id="media-est-current-${e.id}" style="text-align:center; font-weight:bold; color: ${corMedia}; background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; right: 80px; z-index: 5; border-left: 2px solid #cbd5e0;">
+                                <td id="media-est-current-${e.id}" style="text-align:center; font-weight:bold; color: ${corMedia}; background: #f6f8fb; border-bottom: 1px solid #e3e8ef; position: sticky; right: 80px; z-index: 5; border-left: 2px solid #cdd5e1;">
                                     ${media}
                                 </td>
-                                <td style="text-align:center; background: #f8fafc; border-bottom: 1px solid #e2e8f0; position: sticky; right: 0; z-index: 5; border-left: 1px solid #cbd5e0; font-size: 12px; color: #4a5568;">
+                                <td style="text-align:center; background: #f6f8fb; border-bottom: 1px solid #e3e8ef; position: sticky; right: 0; z-index: 5; border-left: 1px solid #cdd5e1; font-size: 12px; color: #3d4759;">
                                     <span style="color: ${totalFaltasBimestre > 0 ? '#e53e3e' : 'inherit'}; font-weight: bold;">${totalFaltasBimestre}</span>
-                                    <span style="color: #718096; font-size: 10px;">(${totalDiasAtestado}d)</span>
+                                    <span style="color: #5f6b7f; font-size: 10px;">(${totalDiasAtestado}d)</span>
                                 </td>
                             </tr>
                         `;
@@ -4434,14 +4452,14 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
                 </label>
             </div>
 
-            <div id="camposRubrica" style="display:none; margin-top:15px; background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0;">
-                <p style="font-size:12px; color:#4a5568; margin-bottom:10px;">Defina os critérios e seus pesos. A nota final será a soma das rubricas marcadas.</p>
+            <div id="camposRubrica" style="display:none; margin-top:15px; background:#f6f8fb; padding:15px; border-radius:8px; border:1px solid #e3e8ef;">
+                <p style="font-size:12px; color:#3d4759; margin-bottom:10px;">Defina os critérios e seus pesos. A nota final será a soma das rubricas marcadas.</p>
                 <div id="listaRubricasInputs"></div>
                 <button type="button" class="btn btn-sm btn-secondary" onclick="adicionarRubricaInput()">+ Adicionar Critério</button>
             </div>
             
-            <div id="infoCompensacao" style="display:none; margin-top:15px; background:#ebf8ff; padding:15px; border-radius:8px; border:1px solid #bee3f8;">
-                <p style="font-size:12px; color:#2c5282; margin:0;">Esta atividade terá peso 10. A nota será calculada automaticamente com base nas entregas de compensação do bimestre.</p>
+            <div id="infoCompensacao" style="display:none; margin-top:15px; background:#edf3fd; padding:15px; border-radius:8px; border:1px solid #d3e2fa;">
+                <p style="font-size:12px; color:#1b4488; margin:0;">Esta atividade terá peso 10. A nota será calculada automaticamente com base nas entregas de compensação do bimestre.</p>
             </div>
 
             <div id="infoCadernoAuto" style="display:none; margin-top:15px; background:#f0fff4; padding:15px; border-radius:8px; border:1px solid #c6f6d5;">
@@ -4520,7 +4538,7 @@ function adicionarRubricaInput(nome = '', peso = '') {
     const div = document.createElement('div');
     div.style = "display:flex; gap:10px; margin-bottom:8px; align-items:center;";
     div.innerHTML = `
-        <span style="font-weight:bold; color:#718096; width:20px;">${id}.</span>
+        <span style="font-weight:bold; color:#5f6b7f; width:20px;">${id}.</span>
         <input type="text" class="rubrica-nome" placeholder="Nome do critério" value="${nome}" style="flex:2; padding:5px; font-size:13px;">
         <input type="number" class="rubrica-peso" placeholder="Peso" step="0.1" value="${peso}" style="flex:1; padding:5px; font-size:13px;">
         <button type="button" class="btn btn-xs btn-danger" onclick="this.parentElement.remove()" style="padding:0 8px;">×</button>
@@ -4672,7 +4690,7 @@ function recalcularMediaUI(estudanteId) {
 
     if (el) {
         el.textContent = media;
-        el.style.color = (media !== '-' && parseFloat(media) < 5) ? '#e53e3e' : '#2d3748';
+        el.style.color = (media !== '-' && parseFloat(media) < 5) ? '#e53e3e' : '#1c2536';
     }
 }
 
@@ -4773,11 +4791,11 @@ function renderCompensacoes() {
                         const nomeEst = est ? est.nome_completo : 'Excluído';
                         const statusMap = {
                             'pendente': { label: '⏳ Pendente', color: '#d69e2e', bg: '#fffaf0' },
-                            'notificado': { label: '📩 Notificado', color: '#3182ce', bg: '#ebf8ff' },
+                            'notificado': { label: '📩 Notificado', color: '#2563c9', bg: '#edf3fd' },
                             'entregue': { label: '✅ Entregue', color: '#2f855a', bg: '#f0fff4' },
                             'entregue_atraso': { label: '⏰ Entregue c/ Atraso', color: '#f59e0b', bg: '#fffaf0' },
                             'nao_entregue': { label: '❌ Não Entregue', color: '#e53e3e', bg: '#fff5f5' },
-                            'nao_fez_folha': { label: '📄 Não Fez / S. Folha', color: '#718096', bg: '#edf2f7' }
+                            'nao_fez_folha': { label: '📄 Não Fez / S. Folha', color: '#5f6b7f', bg: '#eef2f7' }
                         };
                         const st = statusMap[c.status] || statusMap['pendente'];
 
@@ -4801,10 +4819,10 @@ function renderCompensacoes() {
                             <tr>
                                 <td>
                                     ${getFaltaBadgeHtml(est ? est.id : null, todayStr)}${getAeePrefix(est)}<strong>${nomeEst}</strong>
-                                    <div style="font-size:10px; color:#718096; margin-top:2px;">${logMinimizado}</div>
+                                    <div style="font-size:10px; color:#5f6b7f; margin-top:2px;">${logMinimizado}</div>
                                 </td>
                                 <td style="font-size:12px;">${meses[c.mes_referencia]}/${c.ano_referencia}</td>
-                                <td>${c.atividade} <br><span style="font-size:10px; color:#666;">Aulas comp.: ${c.peso_faltas || c.qtd_faltas}</span></td>
+                                <td>${c.atividade} <br><span style="font-size:10px; color:#5f6b7f;">Aulas comp.: ${c.peso_faltas || c.qtd_faltas}</span></td>
                                 <td>
                                     <button onclick="toggleStatusCompensacao(${c.id})" style="border:1px solid ${st.color}; background:${st.bg}; color:${st.color}; padding:5px 10px; border-radius:15px; font-weight:bold; cursor:pointer; width: 130px;">
                                         ${st.label}
@@ -4969,7 +4987,7 @@ function renderCaderno() {
                         </td>
                         <td style="text-align:center;">
                             <div style="display:flex; justify-content:center; gap:10px;">
-                                <label style="font-size:11px; cursor:pointer; color:#3182ce;"><input type="checkbox" onchange="salvarStatusCaderno(${e.id}, this.checked, 'extra_caderno')" ${extraCad ? 'checked' : ''}> Cad.</label>
+                                <label style="font-size:11px; cursor:pointer; color:#2563c9;"><input type="checkbox" onchange="salvarStatusCaderno(${e.id}, this.checked, 'extra_caderno')" ${extraCad ? 'checked' : ''}> Cad.</label>
                                 <label style="font-size:11px; cursor:pointer; color:#38a169;"><input type="checkbox" onchange="salvarStatusCaderno(${e.id}, this.checked, 'extra_pratica')" ${extraPrat ? 'checked' : ''}> Prat.</label>
                             </div>
                         </td>
@@ -5034,7 +5052,7 @@ async function renderRelatorioMensalCaderno() {
         <button class="btn btn-secondary" style="margin-bottom:15px;" onclick="renderCaderno()">← Voltar para Lançamento</button>
         <div class="card">
             <h3>Resumo Mensal do Caderno</h3>
-            <div class="form-row" style="background:#f7fafc; padding:10px; border-radius:8px; margin-bottom:15px;">
+            <div class="form-row" style="background:#f6f8fb; padding:10px; border-radius:8px; margin-bottom:15px;">
                 <label>Mês: <select id="relCadernoMes" onchange="renderRelatorioMensalCaderno()">${meses.map((m, i) => `<option value="${i}" ${i === mesAtual ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
                 <span style="font-size:12px; margin-left:15px;">Legenda: <strong>C</strong> (OK), <strong style="color:#d69e2e;">I</strong> (Incomp.), <strong style="color:#e53e3e;">N</strong> (Não fez)</span>
             </div>
@@ -5053,7 +5071,7 @@ async function renderRelatorioMensalCaderno() {
                                 const reg = registros.find(c => c.id_estudante == e.id && c.data == dataStr);
                                 
                                 let char = 'C';
-                                let style = 'color: #cbd5e0;'; // Cinza claro se for o padrão "automático"
+                                let style = 'color: #cdd5e1;'; // Cinza claro se for o padrão "automático"
                                 
                                 if (reg) {
                                     style = 'font-weight:bold;';
@@ -5062,9 +5080,9 @@ async function renderRelatorioMensalCaderno() {
                                     else { style += 'color:#2f855a;'; }
                                 }
 
-                                return `<td style="text-align:center; border: 1px solid #e2e8f0; padding: 2px; ${style}">${char}</td>`;
+                                return `<td style="text-align:center; border: 1px solid #e3e8ef; padding: 2px; ${style}">${char}</td>`;
                             }).join('');
-                            return `<tr><td style="position:sticky; left:0; background:#fff; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 4px;">${getAeePrefix(e)}${e.nome_completo}</td>${cols}</tr>`;
+                            return `<tr><td style="position:sticky; left:0; background:#fff; border-bottom: 1px solid #e3e8ef; font-weight:bold; padding: 4px;">${getAeePrefix(e)}${e.nome_completo}</td>${cols}</tr>`;
                         }).join('')}
                     </tbody>
                 </table>
@@ -5099,7 +5117,7 @@ async function renderRelatorioMensalParticipacao() {
         <button class="btn btn-secondary" style="margin-bottom:15px;" onclick="renderCaderno()">← Voltar para Lançamento</button>
         <div class="card">
             <h3>Resumo Mensal Participação (TMN)</h3>
-            <div class="form-row" style="background:#f7fafc; padding:10px; border-radius:8px; margin-bottom:15px;">
+            <div class="form-row" style="background:#f6f8fb; padding:10px; border-radius:8px; margin-bottom:15px;">
                 <label>Mês: <select id="relParticipacaoMes" onchange="renderRelatorioMensalParticipacao()">${meses.map((m, i) => `<option value="${i}" ${i === mesAtual ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
                 <span style="font-size:12px; margin-left:15px;">Legenda: <strong>T</strong> (Total), <strong style="color:#d69e2e;">M</strong> (Médio), <strong style="color:#e53e3e;">N</strong> (Não desenvolveu)</span>
             </div>
@@ -5118,7 +5136,7 @@ async function renderRelatorioMensalParticipacao() {
                                 const reg = registros.find(c => c.id_estudante == e.id && c.data == dataStr);
                                 
                                 let char = 'T';
-                                let style = 'color: #cbd5e0;'; 
+                                let style = 'color: #cdd5e1;'; 
                                 
                                 if (reg && reg.engajamento) {
                                     style = 'font-weight:bold;';
@@ -5127,9 +5145,9 @@ async function renderRelatorioMensalParticipacao() {
                                     else { char = 'T'; style += 'color:#2f855a;'; }
                                 }
 
-                                return `<td style="text-align:center; border: 1px solid #e2e8f0; padding: 2px; ${style}">${char}</td>`;
+                                return `<td style="text-align:center; border: 1px solid #e3e8ef; padding: 2px; ${style}">${char}</td>`;
                             }).join('');
-                            return `<tr><td style="position:sticky; left:0; background:#fff; border-bottom: 1px solid #e2e8f0; font-weight:bold; padding: 4px;">${getAeePrefix(e)}${e.nome_completo}</td>${cols}</tr>`;
+                            return `<tr><td style="position:sticky; left:0; background:#fff; border-bottom: 1px solid #e3e8ef; font-weight:bold; padding: 4px;">${getAeePrefix(e)}${e.nome_completo}</td>${cols}</tr>`;
                         }).join('')}
                     </tbody>
                 </table>
@@ -5203,7 +5221,7 @@ function renderTutoria() {
     if (turmasOrdenadas.length > 0) {
         turmasOrdenadas.forEach(turma => {
             porTurma[turma].sort((a, b) => a.nome_estudante.localeCompare(b.nome_estudante));
-            htmlTutoradosList += `<h4 style="margin-top:15px; margin-bottom:5px; color:#2c5282; border-bottom:1px solid #e2e8f0;">${turma}</h4>`;
+            htmlTutoradosList += `<h4 style="margin-top:15px; margin-bottom:5px; color:#1b4488; border-bottom:1px solid #e3e8ef;">${turma}</h4>`;
             htmlTutoradosList += `<table style="margin-top:0;"><tbody>`;
             // Botão rápido de "Enviar Arquivo" do Anexo III - PAEE direto na lista (só em Modo AEE) -
             // mesma análise por IA da ficha individual (ia_estagiario.js: analisarAnexoPaeeWord), mas
@@ -5224,7 +5242,7 @@ function renderTutoria() {
                         ${t.anexoPaee ? '<span title="Anexo III - PAEE já enviado" style="color:#2f855a; font-size:12px;">✅</span>' : ''}
                         <label for="quickAnexoFile_${t.id}" class="btn btn-sm btn-primary" style="padding:1px 6px; font-size:11px; margin-left:4px;" title="Enviar Anexo III (Word)" onclick="event.stopPropagation();">📤</label>
                         <input type="file" id="quickAnexoFile_${t.id}" accept=".doc,.docx" style="display:none;" onchange="analisarAnexoPaeeWord(${t.id}, 'quickAnexoFile_${t.id}', 'quickAnexoStatus_${t.id}')" onclick="event.stopPropagation();">
-                        <span id="quickAnexoStatus_${t.id}" style="font-size:11px; color:#4a5568;"></span>
+                        <span id="quickAnexoStatus_${t.id}" style="font-size:11px; color:#3d4759;"></span>
                     </span>
                 ` : '';
                 return `
@@ -5290,13 +5308,13 @@ function renderTutoria() {
         const htmlAgendaControls = `
             <div class="card" style="background: #fff5f5; margin-bottom: 15px; border: 1px solid #feb2b2;">
                 <h3 style="margin-top:0; font-size:16px; color: #c53030;">🗑️ Limpeza Manual</h3>
-                <p style="font-size:12px; color:#666; margin-bottom:10px;">Use este botão se a agenda não estiver atualizando. Ele apagará todos os agendamentos futuros para recomeçar.</p>
+                <p style="font-size:12px; color:#5f6b7f; margin-bottom:10px;">Use este botão se a agenda não estiver atualizando. Ele apagará todos os agendamentos futuros para recomeçar.</p>
                 <button class="btn btn-danger" onclick="limparAgendamentosFuturos()">Apagar Agendamentos Futuros</button>
             </div>
             
             <div class="card" style="background: #f0fff4; margin-bottom: 15px; border: 1px solid #c6f6d5;">
                 <h3 style="margin-top:0; font-size:16px;">Organização Automática</h3>
-                <p style="font-size:12px; color:#666; margin-bottom:10px;">Limpa agendamentos futuros e reorganiza todos os tutorados nos horários disponíveis.</p>
+                <p style="font-size:12px; color:#5f6b7f; margin-bottom:10px;">Limpa agendamentos futuros e reorganiza todos os tutorados nos horários disponíveis.</p>
                 <button class="btn btn-info" onclick="showModal('modalOpcoesAgendamento')">🔄 Reorganizar e Agendar Todos</button>
             </div>
             
@@ -5310,8 +5328,8 @@ function renderTutoria() {
             <div style="max-height: 600px; overflow-y: auto;">
                 ${visibleAgenda.map(a => {
                     let statusLabel = 'Livre';
-                    let statusColor = '#718096';
-                    let cardBorder = '#cbd5e0';
+                    let statusColor = '#5f6b7f';
+                    let cardBorder = '#cdd5e1';
                     
                     if (a.tutoradoId) {
                         const t = tutorados.find(x => x.id == a.tutoradoId);
@@ -5324,7 +5342,7 @@ function renderTutoria() {
                     <div class="card" style="padding: 10px; margin-bottom: 8px; border-left: 4px solid ${cardBorder}; background: #fff;">
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <div>
-                                <strong>${formatDate(a.data)}</strong> <span style="font-size:12px; color:#666;">${a.inicio} - ${a.fim}</span>
+                                <strong>${formatDate(a.data)}</strong> <span style="font-size:12px; color:#5f6b7f;">${a.inicio} - ${a.fim}</span>
                                 <div style="font-size:14px; font-weight:bold; color:${statusColor}; margin-top:2px;">${statusLabel}</div>
                             </div>
                             ${!a.tutoradoId ? `<button class="btn btn-sm btn-danger" onclick="removerAgendamento(${a.id})">🗑️</button>` : ''}
@@ -5420,11 +5438,11 @@ function abrirModalOrdenacaoManual() {
     container.innerHTML = lista.map(t => `
         <div class="manual-sort-item" draggable="true" data-id="${t.id}" 
              ondragstart="dragStartSort(event)" ondragover="allowDropMap(event)" ondrop="dropSort(event)"
-             style="background:white; padding:10px; margin-bottom:5px; border:1px solid #ddd; border-radius:5px; cursor:move; display:flex; align-items:center; gap:10px;">
-            <span style="color:#cbd5e0;">☰</span>
+             style="background:white; padding:10px; margin-bottom:5px; border:1px solid #cdd5e1; border-radius:5px; cursor:move; display:flex; align-items:center; gap:10px;">
+            <span style="color:#cdd5e1;">☰</span>
             <div style="flex-grow:1;">
                 <strong>${t.nome_estudante}</strong>
-                <div style="font-size:11px; color:#718096;">${t.turma}</div>
+                <div style="font-size:11px; color:#5f6b7f;">${t.turma}</div>
             </div>
         </div>
     `).join('');
@@ -5781,11 +5799,11 @@ function abrirFichaTutorado(id) {
         // enviado a lugar nenhum (nem IA, nem Drive). Reaproveitado no estado "nada enviado" abaixo; o
         // estado "já salvo" mostra Editar (que reabre a mesma tela de revisão) em vez de reenviar.
         const anexoPaeeUploadHtml = `
-            <div style="margin-top:12px; border-top:1px dashed #cbd5e0; padding-top:12px;">
+            <div style="margin-top:12px; border-top:1px dashed #cdd5e1; padding-top:12px;">
                 <label for="anexoPaeeArquivoFile_${t.id}" class="btn btn-sm btn-primary" style="padding:2px 8px; font-size:12px;">📤 Enviar Anexo III (Word)</label>
                 <input type="file" id="anexoPaeeArquivoFile_${t.id}" accept=".doc,.docx" style="display:none;" onchange="analisarAnexoPaeeWord(${t.id}, 'anexoPaeeArquivoFile_${t.id}', 'anexoPaeeUploadStatus_${t.id}')">
-                <span id="anexoPaeeUploadStatus_${t.id}" style="margin-left:10px; font-size:12px; color:#4a5568;"></span>
-                <p style="margin:8px 0 0 0; font-size:11px; color:#a0aec0;">Envie o Anexo III já preenchido em Word: a IA lê e preenche os campos abaixo pra você revisar e salvar (sem impressão automática).</p>
+                <span id="anexoPaeeUploadStatus_${t.id}" style="margin-left:10px; font-size:12px; color:#3d4759;"></span>
+                <p style="margin:8px 0 0 0; font-size:11px; color:#7a869a;">Envie o Anexo III já preenchido em Word: a IA lê e preenche os campos abaixo pra você revisar e salvar (sem impressão automática).</p>
             </div>
         `;
         // Substitui os antigos campos de texto livre "Diagnóstico / Voar" e "Relatório" - agora esse
@@ -5803,16 +5821,16 @@ function abrirFichaTutorado(id) {
             const camposIaHtml = (typeof ANEXO_PAEE_CAMPOS_IA !== 'undefined')
                 ? ANEXO_PAEE_CAMPOS_IA.map(c => `
                     <div style="margin-top:12px;">
-                        <label style="font-weight:bold; display:block; margin-bottom:4px; font-size:12px; color:#2c5282;">${c.label}</label>
-                        <textarea readonly rows="3" style="width:100%; border:1px solid #cbd5e0; padding:8px; border-radius:4px; font-family:inherit; font-size:12px; background-color:white;">${(anexoPaee.dados || {})[c.key] || ''}</textarea>
+                        <label style="font-weight:bold; display:block; margin-bottom:4px; font-size:12px; color:#1b4488;">${c.label}</label>
+                        <textarea readonly rows="3" style="width:100%; border:1px solid #cdd5e1; padding:8px; border-radius:4px; font-family:inherit; font-size:12px; background-color:white;">${(anexoPaee.dados || {})[c.key] || ''}</textarea>
                     </div>
                 `).join('')
                 : '';
 
             return `
                 <div style="margin-top:20px;">
-                    <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Anexo III - PAEE</label>
-                    <div style="background:#f7fafc; padding:15px; border-radius:6px; border:1px solid #e2e8f0;">
+                    <label style="font-weight:bold; display:block; margin-bottom:5px; color:#1b4488;">Anexo III - PAEE</label>
+                    <div style="background:#f6f8fb; padding:15px; border-radius:6px; border:1px solid #e3e8ef;">
                         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                             <span style="font-size:12px; color:#2f855a;">✅ Salvo (atualizado em ${formatDate(anexoPaee.atualizadoEm)})</span>
                             <button class="btn btn-sm btn-info" style="padding:2px 8px; font-size:12px;" onclick="reimprimirAnexoPaeeSalvo(${t.id})">🖨️ Reimprimir</button>
@@ -5835,9 +5853,9 @@ function abrirFichaTutorado(id) {
             `;
         })() : `
             <div style="margin-top:20px;">
-                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Anexo III - PAEE</label>
-                <div style="background:#f7fafc; padding:15px; border-radius:6px; border:1px solid #e2e8f0;">
-                    <p style="margin:0; font-size:13px; color:#718096;">Nenhum Anexo III-PAEE enviado ainda. Envie o Word já preenchido abaixo, ou gere pelo "✨ Estagiário".</p>
+                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#1b4488;">Anexo III - PAEE</label>
+                <div style="background:#f6f8fb; padding:15px; border-radius:6px; border:1px solid #e3e8ef;">
+                    <p style="margin:0; font-size:13px; color:#5f6b7f;">Nenhum Anexo III-PAEE enviado ainda. Envie o Word já preenchido abaixo, ou gere pelo "✨ Estagiário".</p>
                     ${anexoPaeeUploadHtml}
                 </div>
             </div>
@@ -5910,43 +5928,43 @@ function abrirFichaTutorado(id) {
             }
 
             infoContainer.innerHTML = `
-                <div class="card" style="margin-top:15px; background:#fff; border:1px solid #e2e8f0; padding:15px;">
-                    <h4 style="margin-top:0; color:#2c5282; border-bottom:1px solid #eee; padding-bottom:5px; margin-bottom:15px;">📝 Ficha do Estudante</h4>
+                <div class="card" style="margin-top:15px; background:#fff; border:1px solid #e3e8ef; padding:15px;">
+                    <h4 style="margin-top:0; color:#1b4488; border-bottom:1px solid #e3e8ef; padding-bottom:5px; margin-bottom:15px;">📝 Ficha do Estudante</h4>
                     
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px;">
                         <div>
                             <label style="font-size:12px; font-weight:bold; display:block;">Data de Nascimento:</label>
                             <div style="display:flex; gap:5px;">
-                                <input type="date" id="tutDataNasc" value="${dataNasc}" onchange="calcularIdadeTutorado(); salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">
-                                <input type="text" id="tutIdade" value="${idade}" readonly placeholder="Idade" style="width:60px; padding:5px; background:#f7fafc; color:#718096; border:1px solid #cbd5e0; border-radius:4px; text-align:center;">
+                                <input type="date" id="tutDataNasc" value="${dataNasc}" onchange="calcularIdadeTutorado(); salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;">
+                                <input type="text" id="tutIdade" value="${idade}" readonly placeholder="Idade" style="width:60px; padding:5px; background:#f6f8fb; color:#5f6b7f; border:1px solid #cdd5e1; border-radius:4px; text-align:center;">
                             </div>
                         </div>
                         <div>
                             <label style="font-size:12px; font-weight:bold; display:block;">Telefone do Aluno:</label>
-                            <input type="text" id="tutTelAluno" value="${t.telefone_aluno || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <input type="text" id="tutTelAluno" value="${t.telefone_aluno || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;">
                         </div>
                     </div>
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px;">
                         <div>
                             <label style="font-size:12px; font-weight:bold; display:block;">Nome do Responsável:</label>
-                            <input type="text" id="tutNomeResp" value="${t.nome_responsavel || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <input type="text" id="tutNomeResp" value="${t.nome_responsavel || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;">
                         </div>
                         <div>
                             <label style="font-size:12px; font-weight:bold; display:block;">Telefone do Responsável:</label>
-                            <input type="text" id="tutTelResp" value="${t.telefone_responsavel || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <input type="text" id="tutTelResp" value="${t.telefone_responsavel || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;">
                         </div>
                     </div>
                     <div style="margin-bottom:15px;">
                         <label style="font-size:12px; font-weight:bold; display:block;">Projeto de Vida:</label>
-                        <textarea id="tutProjetoVida" rows="2" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">${t.projeto_vida || ''}</textarea>
+                        <textarea id="tutProjetoVida" rows="2" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;">${t.projeto_vida || ''}</textarea>
                     </div>
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px;">
-                        <div><label style="font-size:12px; font-weight:bold; display:block;">Clube (1º Semestre):</label><input type="text" id="tutClube1" value="${t.clube_1 || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
-                        <div><label style="font-size:12px; font-weight:bold; display:block;">Clube (2º Semestre):</label><input type="text" id="tutClube2" value="${t.clube_2 || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Clube (1º Semestre):</label><input type="text" id="tutClube1" value="${t.clube_1 || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;"></div>
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Clube (2º Semestre):</label><input type="text" id="tutClube2" value="${t.clube_2 || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;"></div>
                     </div>
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
-                        <div><label style="font-size:12px; font-weight:bold; display:block;">Eletiva (1º Semestre):</label><input type="text" id="tutEletiva1" value="${t.eletiva_1 || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
-                        <div><label style="font-size:12px; font-weight:bold; display:block;">Eletiva (2º Semestre):</label><input type="text" id="tutEletiva2" value="${t.eletiva_2 || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Eletiva (1º Semestre):</label><input type="text" id="tutEletiva1" value="${t.eletiva_1 || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;"></div>
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Eletiva (2º Semestre):</label><input type="text" id="tutEletiva2" value="${t.eletiva_2 || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;"></div>
                     </div>
                 </div>
             `;
@@ -5957,20 +5975,20 @@ function abrirFichaTutorado(id) {
         const encontros = (data.encontros || []).filter(e => e.tutoradoId == id).sort((a,b) => b.data.localeCompare(a.data)); // Decrescente
 
         document.getElementById('tutoradoFichaAgendamentos').innerHTML = agendamentos.length > 0 
-            ? agendamentos.map(a => `<div class="card" style="padding:10px; margin-bottom:5px; border-left:4px solid #3182ce; background:#fff;"><strong>${formatDate(a.data)}</strong> às ${a.inicio}</div>`).join('')
+            ? agendamentos.map(a => `<div class="card" style="padding:10px; margin-bottom:5px; border-left:4px solid #2563c9; background:#fff;"><strong>${formatDate(a.data)}</strong> às ${a.inicio}</div>`).join('')
             : '<p class="empty-state">Nenhum agendamento futuro.</p>';
 
         document.getElementById('tutoradoFichaHistorico').innerHTML = encontros.length > 0
             ? encontros.map(e => `
-                <div class="card" style="padding:15px; margin-bottom:10px; background:#f7fafc; border:1px solid #e2e8f0; position:relative;">
+                <div class="card" style="padding:15px; margin-bottom:10px; background:#f6f8fb; border:1px solid #e3e8ef; position:relative;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
-                        <div style="font-weight:bold; color:#2d3748;">📅 ${formatDate(e.data)} - ${e.tema}${e.coletiva ? ' <span style="background:#ebf8ff; color:#2b6cb0; font-size:10px; padding:1px 6px; border-radius:4px; font-weight:bold;">COLETIVA</span>' : ''}</div>
+                        <div style="font-weight:bold; color:#1c2536;">📅 ${formatDate(e.data)} - ${e.tema}${e.coletiva ? ' <span style="background:#edf3fd; color:#1f55ad; font-size:10px; padding:1px 6px; border-radius:4px; font-weight:bold;">COLETIVA</span>' : ''}</div>
                         <div class="no-print">
                             <button class="btn btn-xs btn-secondary" onclick="editarEncontro(${e.id})" style="padding:2px 6px; font-size:10px;">✏️</button>
                             <button class="btn btn-xs btn-danger" onclick="removerEncontro(${e.id})" style="padding:2px 6px; font-size:10px;">🗑️</button>
                         </div>
                     </div>
-                    <p style="margin:0; font-size:13px; color:#4a5568; white-space:pre-wrap;">${e.resumo}</p>
+                    <p style="margin:0; font-size:13px; color:#3d4759; white-space:pre-wrap;">${e.resumo}</p>
                 </div>`).join('')
             : '<p class="empty-state">Nenhum encontro registrado.</p>';
 
@@ -6151,13 +6169,13 @@ async function carregarHistoricoTutoresAnteriores(tutorado) {
     if (historico.length === 0) return;
 
     container.innerHTML = `
-        <h3 style="margin-top:25px; border-top:1px solid #e2e8f0; padding-top:15px;">📚 Histórico de Tutores Anteriores</h3>
-        <p style="font-size:12px; color:#718096; margin-top:0;">Registros feitos por outros tutores deste estudante (somente leitura).</p>
+        <h3 style="margin-top:25px; border-top:1px solid #e3e8ef; padding-top:15px;">📚 Histórico de Tutores Anteriores</h3>
+        <p style="font-size:12px; color:#5f6b7f; margin-top:0;">Registros feitos por outros tutores deste estudante (somente leitura).</p>
         ${historico.map(h => `
             <div class="card" style="padding:15px; margin-bottom:10px; background:#fffaf0; border:1px solid #feebc8;">
-                <div style="font-weight:bold; color:#2d3748; margin-bottom:6px;">📅 ${formatDate(h.data)} - ${h.tema || ''}${h.coletiva ? ' <span style="background:#ebf8ff; color:#2b6cb0; font-size:10px; padding:1px 6px; border-radius:4px; font-weight:bold;">COLETIVA</span>' : ''}</div>
-                <p style="margin:0 0 8px 0; font-size:13px; color:#4a5568; white-space:pre-wrap;">${h.resumo || ''}</p>
-                <div style="font-size:11px; color:#a0aec0;">Tutor(a): ${h.autorNome || 'Não informado'}</div>
+                <div style="font-weight:bold; color:#1c2536; margin-bottom:6px;">📅 ${formatDate(h.data)} - ${h.tema || ''}${h.coletiva ? ' <span style="background:#edf3fd; color:#1f55ad; font-size:10px; padding:1px 6px; border-radius:4px; font-weight:bold;">COLETIVA</span>' : ''}</div>
+                <p style="margin:0 0 8px 0; font-size:13px; color:#3d4759; white-space:pre-wrap;">${h.resumo || ''}</p>
+                <div style="font-size:11px; color:#7a869a;">Tutor(a): ${h.autorNome || 'Não informado'}</div>
             </div>
         `).join('')}
     `;
@@ -6379,8 +6397,8 @@ function imprimirListaTutorados() {
         
         porTurma[turma].sort((a,b) => a.nome_estudante.localeCompare(b.nome_estudante)).forEach(t => {
             if (isAeeOrProjeto) {
-                const diag = t.aee_diagnostico ? ` / <span style="color:#2c5282;">${t.aee_diagnostico}</span>` : '';
-                const rel = t.aee_relatorio ? `<div style="margin-top: 5px; padding: 8px; background: #f9f9f9; border: 1px solid #eee; border-radius: 4px; white-space: pre-wrap; color: #444;">${t.aee_relatorio}</div>` : '<div style="margin-top:5px; color:#999; font-style:italic;">Sem relatório.</div>';
+                const diag = t.aee_diagnostico ? ` / <span style="color:#1b4488;">${t.aee_diagnostico}</span>` : '';
+                const rel = t.aee_relatorio ? `<div style="margin-top: 5px; padding: 8px; background: #f9f9f9; border: 1px solid #e3e8ef; border-radius: 4px; white-space: pre-wrap; color: #444;">${t.aee_relatorio}</div>` : '<div style="margin-top:5px; color:#999; font-style:italic;">Sem relatório.</div>';
                 
                 html += `
                     <li style="margin-bottom: 15px; border-bottom: 1px dashed #ccc; padding-bottom: 15px;">
@@ -6482,11 +6500,11 @@ function abrirModalFichaRapida() {
         div.innerHTML = `
             <div class="modal-content" style="max-width: 600px;">
                 <h3>📝 Ficha de Tutoria Rápida</h3>
-                <p style="font-size:13px; color:#666;">Selecione um estudante para editar seus dados cadastrais rapidamente.</p>
+                <p style="font-size:13px; color:#5f6b7f;">Selecione um estudante para editar seus dados cadastrais rapidamente.</p>
                 
-                <div style="margin-bottom: 15px; background:#f7fafc; padding:10px; border-radius:6px;">
+                <div style="margin-bottom: 15px; background:#f6f8fb; padding:10px; border-radius:6px;">
                     <label style="font-weight:bold;">Selecione o Tutorado:</label>
-                    <select id="selFichaRapidaTutorado" onchange="carregarDadosFichaRapida()" style="width:100%; padding:8px; margin-top:5px; border:1px solid #cbd5e0; border-radius:4px;">
+                    <select id="selFichaRapidaTutorado" onchange="carregarDadosFichaRapida()" style="width:100%; padding:8px; margin-top:5px; border:1px solid #cdd5e1; border-radius:4px;">
                         <option value="">Selecione...</option>
                     </select>
                 </div>
@@ -6496,39 +6514,39 @@ function abrirModalFichaRapida() {
                         <div>
                             <label style="font-size:12px; font-weight:bold; display:block;">Data de Nascimento:</label>
                             <div style="display:flex; gap:5px;">
-                                <input type="date" id="frDataNasc" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;" onchange="calcIdadeFichaRapida()">
-                                <input type="text" id="frIdade" readonly placeholder="Idade" style="width:60px; padding:5px; background:#f7fafc; color:#718096; border:1px solid #cbd5e0; border-radius:4px; text-align:center;">
+                                <input type="date" id="frDataNasc" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;" onchange="calcIdadeFichaRapida()">
+                                <input type="text" id="frIdade" readonly placeholder="Idade" style="width:60px; padding:5px; background:#f6f8fb; color:#5f6b7f; border:1px solid #cdd5e1; border-radius:4px; text-align:center;">
                             </div>
                         </div>
                         <div>
                             <label style="font-size:12px; font-weight:bold; display:block;">Telefone do Aluno:</label>
-                            <input type="text" id="frTelAluno" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <input type="text" id="frTelAluno" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;">
                         </div>
                     </div>
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px;">
                         <div>
                             <label style="font-size:12px; font-weight:bold; display:block;">Nome do Responsável:</label>
-                            <input type="text" id="frNomeResp" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <input type="text" id="frNomeResp" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;">
                         </div>
                         <div>
                             <label style="font-size:12px; font-weight:bold; display:block;">Telefone do Responsável:</label>
-                            <input type="text" id="frTelResp" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <input type="text" id="frTelResp" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;">
                         </div>
                     </div>
                     <div style="margin-bottom:15px;">
                         <label style="font-size:12px; font-weight:bold; display:block;">Projeto de Vida:</label>
-                        <textarea id="frProjetoVida" rows="2" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></textarea>
+                        <textarea id="frProjetoVida" rows="2" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;"></textarea>
                     </div>
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom:15px;">
-                        <div><label style="font-size:12px; font-weight:bold; display:block;">Clube (1º Semestre):</label><input type="text" id="frClube1" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
-                        <div><label style="font-size:12px; font-weight:bold; display:block;">Clube (2º Semestre):</label><input type="text" id="frClube2" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Clube (1º Semestre):</label><input type="text" id="frClube1" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;"></div>
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Clube (2º Semestre):</label><input type="text" id="frClube2" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;"></div>
                     </div>
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
-                        <div><label style="font-size:12px; font-weight:bold; display:block;">Eletiva (1º Semestre):</label><input type="text" id="frEletiva1" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
-                        <div><label style="font-size:12px; font-weight:bold; display:block;">Eletiva (2º Semestre):</label><input type="text" id="frEletiva2" style="width:100%; padding:5px; border:1px solid #cbd5e0; border-radius:4px;"></div>
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Eletiva (1º Semestre):</label><input type="text" id="frEletiva1" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;"></div>
+                        <div><label style="font-size:12px; font-weight:bold; display:block;">Eletiva (2º Semestre):</label><input type="text" id="frEletiva2" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;"></div>
                     </div>
                     
-                    <div style="margin-top:20px; text-align:right; border-top:1px solid #eee; padding-top:15px;">
+                    <div style="margin-top:20px; text-align:right; border-top:1px solid #e3e8ef; padding-top:15px;">
                         <button class="btn btn-success" onclick="salvarFichaRapida()">💾 Salvar Dados</button>
                     </div>
                 </div>
@@ -6715,17 +6733,17 @@ async function renderDocumentos(aba) {
         nav.innerHTML = `
             <style>
                 .doc-nav-btn {
-                    display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px;
+                    display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px;
                     background: transparent; border: none; cursor: pointer;
-                    color: #718096; border-bottom: 3px solid transparent;
-                    transition: all 0.2s; font-size: 16px;
+                    color: var(--text-3); font-size: 16px;
+                    transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
                 }
-                .doc-nav-btn.active { color: #3182ce; border-bottom: 3px solid #3182ce; background: #ebf8ff; border-radius: 4px 4px 0 0; }
-                .doc-nav-btn:hover { background: #f7fafc; }
+                .doc-nav-btn.active { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); background: transparent; }
+                .doc-nav-btn:hover { background: var(--surface-3); }
                 /* O nome da aba fica sempre visível - a regra geral de <nav> esconde rótulo de botão
                    que não está ativo, e aqui as quatro abas precisam se identificar de uma vez. */
                 #navDocumentos .doc-nav-btn .label {
-                    font-size: 14px; font-weight: bold;
+                    font-size: 14px; font-weight: 600;
                     max-width: none; opacity: 1; margin-left: 0;
                 }
                 /* Em tela estreita não cabem os quatro nomes: fica só o ícone, e o nome aparece na
@@ -6795,7 +6813,7 @@ function renderDocumentosPlanos() {
         container.innerHTML = `
             <div class="empty-state">
                 <p>Nenhum plano de aula gerado ainda.</p>
-                <p style="font-size:12px; color:#666;">Os planos que você imprimir pelo "✨ Estagiário" ficam guardados aqui, prontos para consultar, reimprimir e reaproveitar.</p>
+                <p style="font-size:12px; color:#5f6b7f;">Os planos que você imprimir pelo "✨ Estagiário" ficam guardados aqui, prontos para consultar, reimprimir e reaproveitar.</p>
             </div>`;
         return;
     }
@@ -6803,7 +6821,7 @@ function renderDocumentosPlanos() {
     const campos = (typeof PLANO_AULA_CAMPOS_IA !== 'undefined') ? PLANO_AULA_CAMPOS_IA : [];
 
     container.innerHTML = `
-        <p style="color:#718096; font-size:14px; margin-top:0;">${planos.length} plano(s) de aula guardado(s). Clique em um deles para ver o conteúdo.</p>
+        <p style="color:#5f6b7f; font-size:14px; margin-top:0;">${planos.length} plano(s) de aula guardado(s). Clique em um deles para ver o conteúdo.</p>
         ${planos.map(p => {
             const titulo = `${escapeHtmlEstagiario(p.disciplina || 'Sem disciplina')}${p.serie ? ' · ' + escapeHtmlEstagiario(p.serie) : ''}`;
             const detalhe = [p.tema ? `Tema: ${p.tema}` : '', p.semana ? `Semana ${p.semana}` : ''].filter(Boolean).join(' · ');
@@ -6812,18 +6830,18 @@ function renderDocumentosPlanos() {
             const corpo = temTexto
                 ? preenchidos.map(c => `
                     <div style="margin-bottom:10px;">
-                        <div style="font-size:12px; font-weight:bold; color:#2c5282;">${escapeHtmlEstagiario(c.label)}</div>
-                        <div style="font-size:13px; color:#4a5568;">${textoParaHtmlEstagiario(p.dados[c.key])}</div>
+                        <div style="font-size:12px; font-weight:bold; color:#1b4488;">${escapeHtmlEstagiario(c.label)}</div>
+                        <div style="font-size:13px; color:#3d4759;">${textoParaHtmlEstagiario(p.dados[c.key])}</div>
                     </div>`).join('')
-                : '<p style="font-size:13px; color:#718096;">O texto deste plano não está mais guardado (o sistema mantém o texto completo dos planos mais recentes). A ficha dele continua aqui no histórico.</p>';
+                : '<p style="font-size:13px; color:#5f6b7f;">O texto deste plano não está mais guardado (o sistema mantém o texto completo dos planos mais recentes). A ficha dele continua aqui no histórico.</p>';
 
             return `
-                <div style="border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:10px;">
+                <div style="border:1px solid #e3e8ef; border-radius:8px; padding:12px; margin-bottom:10px;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
                         <div>
-                            <div style="font-weight:bold; color:#2d3748;">📝 ${titulo}</div>
-                            <div style="font-size:13px; color:#718096;">${escapeHtmlEstagiario(detalhe) || '&nbsp;'}</div>
-                            <div style="font-size:12px; color:#a0aec0;">Gerado em ${formatarDataDocumentos(p.salvoEm)}</div>
+                            <div style="font-weight:bold; color:#1c2536;">📝 ${titulo}</div>
+                            <div style="font-size:13px; color:#5f6b7f;">${escapeHtmlEstagiario(detalhe) || '&nbsp;'}</div>
+                            <div style="font-size:12px; color:#7a869a;">Gerado em ${formatarDataDocumentos(p.salvoEm)}</div>
                         </div>
                         <div style="display:flex; gap:6px; flex-wrap:wrap;">
                             ${temTexto ? `<button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirPlanoAulaHistoricoEstagiario('${escapeAttrEstagiario(p.id || '')}')">🖨️ Reimprimir</button>` : ''}
@@ -6831,8 +6849,8 @@ function renderDocumentosPlanos() {
                         </div>
                     </div>
                     <details style="margin-top:8px;">
-                        <summary style="cursor:pointer; font-size:13px; color:#3182ce;">Ver conteúdo do plano</summary>
-                        <div style="margin-top:10px; background:#f7fafc; border-radius:6px; padding:12px;">${corpo}</div>
+                        <summary style="cursor:pointer; font-size:13px; color:#2563c9;">Ver conteúdo do plano</summary>
+                        <div style="margin-top:10px; background:#f6f8fb; border-radius:6px; padding:12px;">${corpo}</div>
                     </details>
                 </div>`;
         }).join('')}
@@ -6896,7 +6914,7 @@ async function renderDocumentosAnexosIV() {
 
     const cabecalho = `
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
-            <p style="color:#718096; font-size:14px; margin:0;">
+            <p style="color:#5f6b7f; font-size:14px; margin:0;">
                 ${documentosAnexoIVTodosProfessores
                     ? `Todos os Anexos IV - PEI da escola (${todos.length}).`
                     : `Seus Anexos IV - PEI (${meus.length} de ${todos.length} na escola).`}
@@ -6910,7 +6928,7 @@ async function renderDocumentosAnexosIV() {
         container.innerHTML = cabecalho + `
             <div class="empty-state">
                 <p>Nenhum Anexo IV - PEI ${documentosAnexoIVTodosProfessores ? 'gerado na escola' : 'gerado por você'} ainda.</p>
-                <p style="font-size:12px; color:#666;">Gere pelo "✨ Estagiário" — o documento fica guardado no perfil do estudante e aparece aqui para consulta e reimpressão.</p>
+                <p style="font-size:12px; color:#5f6b7f;">Gere pelo "✨ Estagiário" — o documento fica guardado no perfil do estudante e aparece aqui para consulta e reimpressão.</p>
             </div>`;
         return;
     }
@@ -6922,25 +6940,25 @@ async function renderDocumentosAnexosIV() {
             .filter(c => (d[c.key] || '').toString().trim())
             .map(c => `
                 <div style="margin-bottom:10px;">
-                    <div style="font-size:12px; font-weight:bold; color:#2c5282;">${escapeHtmlEstagiario(nomesCurtos[c.key] || c.label)}</div>
-                    <div style="font-size:13px; color:#4a5568;">${textoParaHtmlEstagiario(d[c.key])}</div>
-                </div>`).join('') || '<p style="font-size:13px; color:#718096;">Sem texto preenchido neste Anexo IV.</p>';
+                    <div style="font-size:12px; font-weight:bold; color:#1b4488;">${escapeHtmlEstagiario(nomesCurtos[c.key] || c.label)}</div>
+                    <div style="font-size:13px; color:#3d4759;">${textoParaHtmlEstagiario(d[c.key])}</div>
+                </div>`).join('') || '<p style="font-size:13px; color:#5f6b7f;">Sem texto preenchido neste Anexo IV.</p>';
 
         return `
-            <div style="border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:10px;">
+            <div style="border:1px solid #e3e8ef; border-radius:8px; padding:12px; margin-bottom:10px;">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
                     <div>
-                        <div style="font-weight:bold; color:#2d3748;">📘 ${escapeHtmlEstagiario(item.nomeEstudante || 'Estudante')}${item.turma ? ` <span style="font-weight:normal; color:#718096;">(${escapeHtmlEstagiario(item.turma)})</span>` : ''}</div>
-                        <div style="font-size:13px; color:#718096;">${escapeHtmlEstagiario(b.disciplina || 'Sem disciplina')}${b.bimestre ? ` · ${escapeHtmlEstagiario(b.bimestre)}º bimestre` : ''}</div>
-                        <div style="font-size:12px; color:#a0aec0;">Professor: ${escapeHtmlEstagiario(b.professorRegente || '—')} · Atualizado em ${formatarDataDocumentos(item.anexo.atualizadoEm)}</div>
+                        <div style="font-weight:bold; color:#1c2536;">📘 ${escapeHtmlEstagiario(item.nomeEstudante || 'Estudante')}${item.turma ? ` <span style="font-weight:normal; color:#5f6b7f;">(${escapeHtmlEstagiario(item.turma)})</span>` : ''}</div>
+                        <div style="font-size:13px; color:#5f6b7f;">${escapeHtmlEstagiario(b.disciplina || 'Sem disciplina')}${b.bimestre ? ` · ${escapeHtmlEstagiario(b.bimestre)}º bimestre` : ''}</div>
+                        <div style="font-size:12px; color:#7a869a;">Professor: ${escapeHtmlEstagiario(b.professorRegente || '—')} · Atualizado em ${formatarDataDocumentos(item.anexo.atualizadoEm)}</div>
                     </div>
                     <div style="display:flex; gap:6px; flex-wrap:wrap;">
                         <button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${item.tutoradoId}, ${item.anexo.id})">🖨️ Reimprimir</button>
                     </div>
                 </div>
                 <details style="margin-top:8px;">
-                    <summary style="cursor:pointer; font-size:13px; color:#3182ce;">Ver conteúdo do PEI</summary>
-                    <div style="margin-top:10px; background:#f7fafc; border-radius:6px; padding:12px;">${corpo}</div>
+                    <summary style="cursor:pointer; font-size:13px; color:#2563c9;">Ver conteúdo do PEI</summary>
+                    <div style="margin-top:10px; background:#f6f8fb; border-radius:6px; padding:12px;">${corpo}</div>
                 </details>
             </div>`;
     }).join('');
@@ -6964,7 +6982,7 @@ function renderDocumentosHistorico() {
         container.innerHTML = `
             <div class="empty-state">
                 <p>Nenhum documento gerado ainda.</p>
-                <p style="font-size:12px; color:#666;">Plano de Aula, Agenda Mensal, Anexo III - PAEE e Anexo IV - PEI ficam registrados aqui conforme você os gera pelo "✨ Estagiário".</p>
+                <p style="font-size:12px; color:#5f6b7f;">Plano de Aula, Agenda Mensal, Anexo III - PAEE e Anexo IV - PEI ficam registrados aqui conforme você os gera pelo "✨ Estagiário".</p>
             </div>`;
         return;
     }
@@ -6983,15 +7001,15 @@ function renderDocumentosHistorico() {
     });
 
     container.innerHTML = `
-        <p style="color:#718096; font-size:14px; margin-top:0;">${historico.length} documento(s) no seu histórico.</p>
+        <p style="color:#5f6b7f; font-size:14px; margin-top:0;">${historico.length} documento(s) no seu histórico.</p>
         ${Object.keys(porMes).map(mes => `
-            <h4 style="margin:15px 0 5px; color:#2c5282; border-bottom:1px solid #e2e8f0;">${escapeHtmlEstagiario(mes)}</h4>
+            <h4 style="margin:15px 0 5px; color:#1b4488; border-bottom:1px solid #e3e8ef;">${escapeHtmlEstagiario(mes)}</h4>
             ${porMes[mes].map(h => `
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; border-bottom:1px solid #edf2f7; padding:8px 0;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; border-bottom:1px solid #eef2f7; padding:8px 0;">
                     <div>
-                        <div style="color:#2d3748;">${icones[h.tipo] || '📄'} ${escapeHtmlEstagiario(h.titulo || nomesTipo[h.tipo] || 'Documento')}</div>
-                        ${h.subtitulo ? `<div style="font-size:13px; color:#718096;">${escapeHtmlEstagiario(h.subtitulo)}</div>` : ''}
-                        <div style="font-size:12px; color:#a0aec0;">${escapeHtmlEstagiario(nomesTipo[h.tipo] || h.tipo || '')} · ${formatarDataDocumentos(h.criadoEm)}</div>
+                        <div style="color:#1c2536;">${icones[h.tipo] || '📄'} ${escapeHtmlEstagiario(h.titulo || nomesTipo[h.tipo] || 'Documento')}</div>
+                        ${h.subtitulo ? `<div style="font-size:13px; color:#5f6b7f;">${escapeHtmlEstagiario(h.subtitulo)}</div>` : ''}
+                        <div style="font-size:12px; color:#7a869a;">${escapeHtmlEstagiario(nomesTipo[h.tipo] || h.tipo || '')} · ${formatarDataDocumentos(h.criadoEm)}</div>
                     </div>
                     <div style="display:flex; gap:6px; flex-wrap:wrap;">
                         ${h.tipo === 'plano_aula' && h.payload ? `<button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirPlanoAulaHistoricoEstagiario('${escapeAttrEstagiario(h.id)}')">🖨️ Reimprimir</button>` : ''}
@@ -7026,7 +7044,7 @@ async function previewHorariosAuto(e) {
 
         const dias = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'];
         const lista = document.getElementById('listaHorariosPreview');
-        lista.innerHTML = blocosTutoria.map(b => `<div style="padding:5px; border-bottom:1px solid #eee;">${dias[b.diaSemana]}: ${b.inicio} - ${b.fim}</div>`).join('');
+        lista.innerHTML = blocosTutoria.map(b => `<div style="padding:5px; border-bottom:1px solid #e3e8ef;">${dias[b.diaSemana]}: ${b.inicio} - ${b.fim}</div>`).join('');
         document.getElementById('qtdHorariosGerados').textContent = blocosTutoria.length + ' blocos/semana';
     } else {
         document.getElementById('listaHorariosPreview').innerHTML = '<p>Geração manual (sem grade).</p>';
@@ -7286,7 +7304,7 @@ function renderEstudanteGeral() {
         } else if (currentViewMode === 'projeto') {
             htmlNome = `${nome} <div style="font-size: 14px; color: #805ad5; font-weight: normal; margin-top: 4px;">🚀 Projeto</div>`;
         } else if (currentViewMode === 'professor') {
-            htmlNome = `${nome} <div style="font-size: 14px; color: #3182ce; font-weight: normal; margin-top: 4px;">🎓 Tutor: ${currentUser.nome}</div>`;
+            htmlNome = `${nome} <div style="font-size: 14px; color: #2563c9; font-weight: normal; margin-top: 4px;">🎓 Tutor: ${currentUser.nome}</div>`;
         }
         // Gestor não tem badge de tutoria direta, então não precisa de 'else'
     }
@@ -7308,8 +7326,8 @@ function renderEstudanteGeral() {
         .length;
     
     document.getElementById('estudanteGeralFrequencia').innerHTML = `
-        <div style="font-size: 24px; color: #e53e3e; font-weight: bold;">${faltas} <span style="font-size:14px; color:#718096; font-weight:normal;">faltas totais</span></div>
-        <p style="font-size:12px; color:#666;">(Soma de todos os registros deste nome)</p>
+        <div style="font-size: 24px; color: #e53e3e; font-weight: bold;">${faltas} <span style="font-size:14px; color:#5f6b7f; font-weight:normal;">faltas totais</span></div>
+        <p style="font-size:12px; color:#5f6b7f;">(Soma de todos os registros deste nome)</p>
     `;
 
     // 2. Atrasos
@@ -7318,7 +7336,7 @@ function renderEstudanteGeral() {
         .length;
     
     document.getElementById('estudanteGeralAtrasos').innerHTML = `
-        <div style="font-size: 24px; color: #d69e2e; font-weight: bold;">${atrasos} <span style="font-size:14px; color:#718096; font-weight:normal;">atrasos</span></div>
+        <div style="font-size: 24px; color: #d69e2e; font-weight: bold;">${atrasos} <span style="font-size:14px; color:#5f6b7f; font-weight:normal;">atrasos</span></div>
     `;
 
     // 3. Ocorrências
@@ -7350,10 +7368,10 @@ function renderEstudanteGeral() {
 
     const htmlAtestados = atestadosAluno.length > 0 ? `
         <p><strong>Histórico de Atestados:</strong></p>
-        <ul style="margin-bottom:15px; padding-left:20px; font-size:13px; color:#2c5282;">
+        <ul style="margin-bottom:15px; padding-left:20px; font-size:13px; color:#1b4488;">
             ${atestadosAluno.map(a => `<li><strong>${formatDate(a.data)}</strong> (${a.dias} dias): ${a.descricao || 'Sem observações'}</li>`).join('')}
         </ul>
-    ` : '<p style="font-size:13px; color:#718096; margin-bottom:15px;">Nenhum atestado registrado.</p>';
+    ` : '<p style="font-size:13px; color:#5f6b7f; margin-bottom:15px;">Nenhum atestado registrado.</p>';
 
     // Informações AEE (Diagnóstico e Relatório)
     // Procura em todos os registros do aluno se há alguma info de AEE preenchida
@@ -7365,7 +7383,7 @@ function renderEstudanteGeral() {
             ${registroAee.aee_diagnostico ? `<p style="margin-bottom:10px;"><strong>Diagnóstico/Voar:</strong> ${registroAee.aee_diagnostico}</p>` : ''}
             ${registroAee.aee_relatorio ? `
                 <p><strong>Relatório:</strong></p>
-                <div style="background:white; padding:10px; border:1px solid #c6f6d5; border-radius:5px; font-size:13px; white-space:pre-wrap; color:#2d3748;">${registroAee.aee_relatorio}</div>
+                <div style="background:white; padding:10px; border:1px solid #c6f6d5; border-radius:5px; font-size:13px; white-space:pre-wrap; color:#1c2536;">${registroAee.aee_relatorio}</div>
             ` : ''}
         </div>
     ` : '';
@@ -7387,8 +7405,8 @@ function renderEstudanteGeral() {
         };
         
         htmlTutoriaInfo = `
-            <div class="card" style="margin-bottom:20px; border-left:4px solid #3182ce; background:#ebf8ff;">
-                <h4 style="margin-top:0; color:#2c5282;">🎓 Ficha de Tutoria</h4>
+            <div class="card" style="margin-bottom:20px; border-left:4px solid #2563c9; background:#edf3fd;">
+                <h4 style="margin-top:0; color:#1b4488;">🎓 Ficha de Tutoria</h4>
                 <table style="width:100%; font-size:13px; margin-bottom:10px;">
                     <tr>
                         <td><strong>Data Nasc:</strong> ${formatDate(t.data_nascimento)} (${calcIdade(t.data_nascimento)} anos)</td>
@@ -7432,7 +7450,7 @@ function renderEstudanteGeral() {
                 <thead><tr><th>Data</th><th>Tipo</th><th>Relato</th><th>Autor</th></tr></thead>
                 <tbody>
                     ${ocorrenciasAluno.map(o => `
-                        <tr style="${o.tipo === 'rapida' ? 'background:#ebf8ff;' : 'background:#fff5f5;'}">
+                        <tr style="${o.tipo === 'rapida' ? 'background:#edf3fd;' : 'background:#fff5f5;'}">
                             <td>${formatDate(o.data)}</td>
                             <td>${o.tipo === 'rapida' ? '⚡ Rápida' : '⚠️ Disciplinar'}</td>
                             <td>
@@ -7558,9 +7576,9 @@ async function buscarFichaTutoriaGlobal(alunoId) {
             };
 
             const html = `
-                <div class="card" style="border-left:4px solid #3182ce; background:#ebf8ff;">
-                    <h4 style="margin-top:0; color:#2c5282;">🎓 Ficha de Tutoria (Encontrada)</h4>
-                    <p style="font-size:12px; color:#666; margin-bottom:10px;"><strong>Tutor:</strong> ${tutorName}</p>
+                <div class="card" style="border-left:4px solid #2563c9; background:#edf3fd;">
+                    <h4 style="margin-top:0; color:#1b4488;">🎓 Ficha de Tutoria (Encontrada)</h4>
+                    <p style="font-size:12px; color:#5f6b7f; margin-bottom:10px;"><strong>Tutor:</strong> ${tutorName}</p>
                     <table style="width:100%; font-size:13px; margin-bottom:10px;">
                         <tr>
                             <td><strong>Data Nasc:</strong> ${formatDate(t.data_nascimento)} (${calcIdade(t.data_nascimento)} anos)</td>
@@ -7595,7 +7613,7 @@ async function renderMapeamento() {
     const container = document.getElementById('tabMapeamento');
     if (!container) return;
     
-    container.innerHTML = '<div style="padding:40px; text-align:center; color:#718096;">🔄 Sincronizando mapa da sala...</div>';
+    container.innerHTML = '<div style="padding:40px; text-align:center; color:#5f6b7f;">🔄 Sincronizando mapa da sala...</div>';
 
     const turma = (data.turmas || []).find(t => t.id == turmaAtual);
     if (!turma) return;
@@ -7636,7 +7654,7 @@ async function renderMapeamento() {
             const estudante = estudantes.find(e => e.id == estudanteId);
             
             // Estilo dinâmico e Atributos de Drag & Drop
-            const cursorStyle = estudanteSelecionadoMap ? 'cursor: alias; border-color: #3182ce; background: #ebf8ff;' : (estudanteId ? 'cursor: grab;' : '');
+            const cursorStyle = estudanteSelecionadoMap ? 'cursor: alias; border-color: #2563c9; background: #edf3fd;' : (estudanteId ? 'cursor: grab;' : '');
             const dragAttr = estudanteId ? `draggable="true" ondragstart="dragStartMap(event, 'seat', ${estudanteId}, '${key}')" ondragend="dragEndMap(event)"` : '';
             const dropAttr = `ondragover="allowDropMap(event)" ondrop="dropMap(event, '${key}')"`;
             
@@ -7645,14 +7663,14 @@ async function renderMapeamento() {
             const faltaHtml = estudante && isEstudanteFalta(estudante.id, todayStr) ? '<span style="color:#e53e3e; font-weight:bold; margin-right:2px;" title="Faltou hoje">F</span> ' : '';
             
             gridHtml += `
-                <div class="card-assento" ${dragAttr} ${dropAttr} onclick="clicarAssentoMap('${key}', event)" style="background:white; border:1px solid #cbd5e0; padding:5px; border-radius:6px; text-align:center; min-height:60px; display:flex; flex-direction:column; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05); position:relative; ${cursorStyle}">
+                <div class="card-assento" ${dragAttr} ${dropAttr} onclick="clicarAssentoMap('${key}', event)" style="background:white; border:1px solid #cdd5e1; padding:5px; border-radius:6px; text-align:center; min-height:60px; display:flex; flex-direction:column; justify-content:center; box-shadow:0 1px 2px rgba(0,0,0,0.05); position:relative; ${cursorStyle}">
                     ${btnLimpar}
-                    <div style="font-size:11px; font-weight:${estudante ? 'bold' : 'normal'}; color:${estudante ? '#2d3748' : '#a0aec0'}; pointer-events:none; user-select:none; padding: 0 5px;">
-                        ${estudante ? faltaHtml + estudante.nome_completo : '<span style="color:#e2e8f0;">(Vazio)</span>'}
+                    <div style="font-size:11px; font-weight:${estudante ? 'bold' : 'normal'}; color:${estudante ? '#1c2536' : '#7a869a'}; pointer-events:none; user-select:none; padding: 0 5px;">
+                        ${estudante ? faltaHtml + estudante.nome_completo : '<span style="color:#e3e8ef;">(Vazio)</span>'}
                     </div>
                     <!-- Overlay para capturar clique quando houver seleção -->
                     ${estudanteSelecionadoMap ? `<div style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:5;"></div>` : ''}
-                    <div style="font-size:9px; color:#cbd5e0; margin-top:2px;">F${c+1}-C${r+1}</div>
+                    <div style="font-size:9px; color:#cdd5e1; margin-top:2px;">F${c+1}-C${r+1}</div>
                 </div>
             `;
         }
@@ -7669,22 +7687,22 @@ async function renderMapeamento() {
     const historicoExibicao = [...historico].sort((a, b) => b.timestamp - a.timestamp);
 
     const htmlHistorico = `
-        <div style="margin-top: 30px; border-top: 1px solid #e2e8f0; padding-top: 20px;">
-            <h4 style="color: #2d3748; margin-bottom: 10px;">🕒 Histórico de Alterações</h4>
-            <div style="max-height: 150px; overflow-y: auto; background: #f7fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0;">
+        <div style="margin-top: 30px; border-top: 1px solid #e3e8ef; padding-top: 20px;">
+            <h4 style="color: #1c2536; margin-bottom: 10px;">🕒 Histórico de Alterações</h4>
+            <div style="max-height: 150px; overflow-y: auto; background: #f6f8fb; padding: 10px; border-radius: 6px; border: 1px solid #e3e8ef;">
                 ${historicoExibicao.length > 0 ? historicoExibicao.map(h => {
                     const dataHora = new Date(h.timestamp).toLocaleString('pt-BR');
-                    return `<div style="font-size: 12px; color: #4a5568; margin-bottom: 5px; border-bottom: 1px solid #edf2f7; padding-bottom: 2px;">
-                        <strong>${h.autor}</strong> - ${dataHora} <span style="color: #718096;">(${h.qtd} ações)</span>
+                    return `<div style="font-size: 12px; color: #3d4759; margin-bottom: 5px; border-bottom: 1px solid #eef2f7; padding-bottom: 2px;">
+                        <strong>${h.autor}</strong> - ${dataHora} <span style="color: #5f6b7f;">(${h.qtd} ações)</span>
                     </div>`;
-                }).join('') : '<p style="font-size: 12px; color: #a0aec0;">Nenhuma alteração registrada.</p>'}
+                }).join('') : '<p style="font-size: 12px; color: #7a869a;">Nenhuma alteração registrada.</p>'}
             </div>
         </div>
     `;
 
     const html = `
         <style>@media print { .no-print { display: none !important; } }</style>
-        <style>.is-dragging select { pointer-events: none !important; opacity: 0.5; } .is-dragging .card-assento { border: 2px dashed #3182ce !important; background: #ebf8ff !important; }</style>
+        <style>.is-dragging select { pointer-events: none !important; opacity: 0.5; } .is-dragging .card-assento { border: 2px dashed #2563c9 !important; background: #edf3fd !important; }</style>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; flex-wrap:wrap; gap:10px;">
             <h3 style="margin:0;">🗺️ Mapeamento da Sala</h3>
             <div style="display:flex; gap:5px;">
@@ -7696,8 +7714,8 @@ async function renderMapeamento() {
             </div>
         </div>
         
-        <div class="card" style="background:#f7fafc; overflow-x:auto; border:1px solid #e2e8f0; padding: 20px;">
-            <div style="background:#2d3748; color:white; padding:5px; text-align:center; border-radius:4px; margin-bottom:15px; font-weight:bold; letter-spacing:1px;">📺 LOUSA (Frente)</div>
+        <div class="card" style="background:#f6f8fb; overflow-x:auto; border:1px solid #e3e8ef; padding: 20px;">
+            <div style="background:#1c2536; color:white; padding:5px; text-align:center; border-radius:4px; margin-bottom:15px; font-weight:bold; letter-spacing:1px;">📺 LOUSA (Frente)</div>
             ${gridHtml}
         </div>
         <div class="no-print" style="margin-top:10px; text-align:right;">
@@ -7710,13 +7728,13 @@ async function renderMapeamento() {
                 <div style="padding: 15px; background: #fff5f5; border: 1px solid #feb2b2; border-radius: 8px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                         <h4 style="margin:0; color: #c53030;">⚠️ Estudantes sem lugar definido (${estudantesNaoMapeados.length})</h4>
-                        ${estudanteSelecionadoMap ? '<span style="font-size:12px; color:#3182ce; font-weight:bold; animation: pulse 1s infinite;">👈 Clique em uma carteira acima para sentar o aluno</span>' : '<span style="font-size:11px; color:#718096;">Clique no nome para selecionar e depois clique na carteira</span>'}
+                        ${estudanteSelecionadoMap ? '<span style="font-size:12px; color:#2563c9; font-weight:bold; animation: pulse 1s infinite;">👈 Clique em uma carteira acima para sentar o aluno</span>' : '<span style="font-size:11px; color:#5f6b7f;">Clique no nome para selecionar e depois clique na carteira</span>'}
                     </div>
                     <div style="display:flex; flex-wrap:wrap; gap:8px;">
                         ${estudantesNaoMapeados.map(e => {
                             const isSelected = estudanteSelecionadoMap == e.id;
                             const style = isSelected 
-                                ? 'background:#3182ce; color:white; border:1px solid #2c5282; box-shadow: 0 0 5px rgba(66,153,225,0.5); transform: scale(1.05);' 
+                                ? 'background:#2563c9; color:white; border:1px solid #1b4488; box-shadow: 0 0 5px rgba(66,153,225,0.5); transform: scale(1.05);' 
                                 : 'background:white; color:#c53030; border:1px solid #fc8181; cursor:pointer;';
                             
                             return `<div draggable="true" ondragstart="dragStartMap(event, 'list', ${e.id})" ondragend="dragEndMap(event)" onclick="toggleSelecaoMap(${e.id})" style="padding:4px 12px; border-radius:15px; font-size:12px; transition:all 0.2s; display:flex; align-items:center; ${style}">
@@ -8102,7 +8120,7 @@ async function renderGradeHorariaProfessor() {
         container.innerHTML = `
             <div class="empty-state">
                 <p>A gestão ainda não configurou a grade de horários.</p>
-                <p style="font-size:12px; color:#666;">Verifique se sua conta está vinculada à escola correta (ID: ${currentUser ? currentUser.schoolId : 'N/A'}).</p>
+                <p style="font-size:12px; color:#5f6b7f;">Verifique se sua conta está vinculada à escola correta (ID: ${currentUser ? currentUser.schoolId : 'N/A'}).</p>
             </div>`;
         return;
     }
@@ -8115,7 +8133,7 @@ async function renderGradeHorariaProfessor() {
 
     let html = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-            <p style="color:#718096; font-size:14px; margin:0;">Configure sua disponibilidade semanal.</p>
+            <p style="color:#5f6b7f; font-size:14px; margin:0;">Configure sua disponibilidade semanal.</p>
         </div>
         <div class="grid" style="grid-template-columns: repeat(5, 1fr); gap: 15px; align-items: start;">
     `;
@@ -8123,8 +8141,8 @@ async function renderGradeHorariaProfessor() {
     for (let d = 1; d <= 5; d++) {
         const blocosDia = gradeEscola.filter(g => g.diaSemana == d).sort((a,b) => a.inicio.localeCompare(b.inicio));
         
-        html += `<div style="background:white; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05); border:1px solid #e2e8f0; overflow:hidden;">
-            <div style="background:#f7fafc; padding:8px 0; text-align:center; font-weight:bold; color:#2d3748; font-size:14px; border-bottom:1px solid #edf2f7;">${dias[d]}</div>
+        html += `<div style="background:white; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.05); border:1px solid #e3e8ef; overflow:hidden;">
+            <div style="background:#f6f8fb; padding:8px 0; text-align:center; font-weight:bold; color:#1c2536; font-size:14px; border-bottom:1px solid #eef2f7;">${dias[d]}</div>
             <div style="padding:10px;">
             ${blocosDia.map(bloco => {
                 const aulaSalva = minhasAulas.find(a => a.id_bloco == bloco.id);
@@ -8142,9 +8160,9 @@ async function renderGradeHorariaProfessor() {
                     }[bloco.tipo]) label = { 'tutoria': '🎓 Tutoria', 'almoco': '🍽️ Almoço', 'cafe': '☕ Café', 'atpca': '📚 ATPCA', 'apcg': '📝 APCG', 'reuniao': '🤝 Reunião' }[bloco.tipo];
                     
                     return `
-                        <div style="background:#edf2f7; padding:8px; margin-bottom:8px; border-radius:6px; border-left:3px solid #cbd5e0; opacity: 0.8;">
-                            <div style="font-size:10px; color:#718096; margin-bottom:2px;">${bloco.inicio} - ${bloco.fim}</div>
-                            <div style="font-size:12px; font-weight:bold; color:#4a5568;">🔒 ${label}</div>
+                        <div style="background:#eef2f7; padding:8px; margin-bottom:8px; border-radius:6px; border-left:3px solid #cdd5e1; opacity: 0.8;">
+                            <div style="font-size:10px; color:#5f6b7f; margin-bottom:2px;">${bloco.inicio} - ${bloco.fim}</div>
+                            <div style="font-size:12px; font-weight:bold; color:#3d4759;">🔒 ${label}</div>
                         </div>
                     `;
                 }
@@ -8170,7 +8188,7 @@ async function renderGradeHorariaProfessor() {
                         contentHtml += `</div>`;
                     }
 
-                    contentHtml += `<select style="width:100%; border:1px solid #e2e8f0; background:#fff; font-size:11px; color:#2d3748; border-radius:4px; padding:2px;" onchange="processarSelecaoAee('${bloco.id}', this.value); this.value='';">
+                    contentHtml += `<select style="width:100%; border:1px solid #e3e8ef; background:#fff; font-size:11px; color:#1c2536; border-radius:4px; padding:2px;" onchange="processarSelecaoAee('${bloco.id}', this.value); this.value='';">
                         <option value="">${isSpecial ? tipoAtual.toUpperCase() + ' (Alterar...)' : '+ Adicionar Estudante'}</option>
                         <optgroup label="Meus Alunos">
                             ${tutorados.map(t => `<option value="aluno_${t.id}">${t.nome_estudante}</option>`).join('')}
@@ -8187,11 +8205,11 @@ async function renderGradeHorariaProfessor() {
 
                     if (tipoAtual === 'estudo' || tipoAtual === 'reuniao') {
                         const descricao = aulaSalva.tema || '';
-                        contentHtml += `<input type="text" placeholder="Detalhes..." value="${descricao}" style="width:100%; margin-top:4px; font-size:11px; padding:2px 0; border:none; border-bottom:1px solid #e2e8f0; background:transparent; outline:none;" onblur="salvarDescricaoAula('${bloco.id}', this.value)">`;
+                        contentHtml += `<input type="text" placeholder="Detalhes..." value="${descricao}" style="width:100%; margin-top:4px; font-size:11px; padding:2px 0; border:none; border-bottom:1px solid #e3e8ef; background:transparent; outline:none;" onblur="salvarDescricaoAula('${bloco.id}', this.value)">`;
                     }
 
                     return `<div style="background: #fff; padding:8px; margin-bottom:8px; border-radius:6px; border-left: 3px solid ${selecionados.length > 0 ? '#38a169' : (isSpecial ? '#3182ce' : 'transparent')}; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;"><div style="font-size:10px; color:#a0aec0; font-weight:600;">${bloco.inicio} - ${bloco.fim}</div>${labelDisplay ? `<div style="font-size:10px; font-weight:bold; color:#4a5568; background:#edf2f7; padding:1px 4px; border-radius:3px;">${labelDisplay}</div>` : ''}</div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;"><div style="font-size:10px; color:#7a869a; font-weight:600;">${bloco.inicio} - ${bloco.fim}</div>${labelDisplay ? `<div style="font-size:10px; font-weight:bold; color:#3d4759; background:#eef2f7; padding:1px 4px; border-radius:3px;">${labelDisplay}</div>` : ''}</div>
                         ${contentHtml}
                     </div>`;
                 }
@@ -8208,21 +8226,21 @@ async function renderGradeHorariaProfessor() {
                 let borderLeftColor = 'transparent';
                 let bgStyle = 'background: #fff;';
                 if (valorSelecionado) {
-                    borderLeftColor = '#3182ce'; // Azul se tiver algo selecionado
+                    borderLeftColor = '#2563c9'; // Azul se tiver algo selecionado
                     bgStyle = 'background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.05);';
                 } else {
-                    bgStyle = 'background: #fff; border: 1px dashed #e2e8f0;';
+                    bgStyle = 'background: #fff; border: 1px dashed #e3e8ef;';
                 }
 
                 return `
                     <div style="${bgStyle} padding:8px; margin-bottom:8px; border-radius:6px; border-left: 3px solid ${borderLeftColor}; transition: all 0.2s;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
-                            <div style="font-size:10px; color:#a0aec0; font-weight:600;">${bloco.inicio} - ${bloco.fim}</div>
-                            ${labelDisplay ? `<div style="font-size:10px; font-weight:bold; color:#4a5568; background:#edf2f7; padding:1px 4px; border-radius:3px;">${labelDisplay}</div>` : ''}
+                            <div style="font-size:10px; color:#7a869a; font-weight:600;">${bloco.inicio} - ${bloco.fim}</div>
+                            ${labelDisplay ? `<div style="font-size:10px; font-weight:bold; color:#3d4759; background:#eef2f7; padding:1px 4px; border-radius:3px;">${labelDisplay}</div>` : ''}
                         </div>
                         
-                        <select style="width:100%; border:none; background:transparent; font-size:12px; color:#2d3748; font-weight:600; cursor:pointer; outline:none; padding:0;" onchange="salvarAulaGrade('${bloco.id}', this.value)">
-                            <option value="" style="color:#a0aec0;">-- Selecionar --</option>
+                        <select style="width:100%; border:none; background:transparent; font-size:12px; color:#1c2536; font-weight:600; cursor:pointer; outline:none; padding:0;" onchange="salvarAulaGrade('${bloco.id}', this.value)">
+                            <option value="" style="color:#7a869a;">-- Selecionar --</option>
                             <optgroup label="Turmas">
                                 ${turmas.map(t => `<option value="${t.id}" ${t.id == valorSelecionado ? 'selected' : ''}>${t.nome} - ${t.disciplina || ''}</option>`).join('')}
                             </optgroup>
@@ -8240,7 +8258,7 @@ async function renderGradeHorariaProfessor() {
                         </select>
                         ${(valorSelecionado === 'estudo' || valorSelecionado === 'reuniao') ? `
                             <input type="text" placeholder="${valorSelecionado === 'estudo' ? 'Tema do estudo...' : 'Descrição da reunião...'}" value="${descricao}" 
-                                style="width:100%; margin-top:4px; font-size:11px; padding:2px 0; border:none; border-bottom:1px solid #e2e8f0; background:transparent; outline:none;"
+                                style="width:100%; margin-top:4px; font-size:11px; padding:2px 0; border:none; border-bottom:1px solid #e3e8ef; background:transparent; outline:none;"
                                 onblur="salvarDescricaoAula('${bloco.id}', this.value)">
                         ` : ''}
                     </div>
@@ -8420,7 +8438,7 @@ async function renderRegistrosProfessor() {
             dataFim.setDate(dataFim.getDate() + (parseInt(r.dias) || 1) - 1);
             
             if (today > dataFim) return null; // Oculta vencidos
-            cor = '#3182ce'; // Azul
+            cor = '#2563c9'; // Azul
         } else if (r.tipo === 'Faltoso') {
             cor = '#ef4444'; // Vermelho
         }
@@ -8442,7 +8460,7 @@ async function renderRegistrosProfessor() {
             <div style="margin-top: 20px;">
                 ${lista.length > 0 ? `
                     ${turmasOrdenadas.map(turmaNome => `
-                        <h3 style="margin-top: 20px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; color: #2d3748;">${turmaNome}</h3>
+                        <h3 style="margin-top: 20px; border-bottom: 2px solid #e3e8ef; padding-bottom: 5px; color: #1c2536;">${turmaNome}</h3>
                         <table>
                             <thead>
                                 <tr>
@@ -8511,7 +8529,7 @@ async function renderAeeVisaoGeral() {
         if (turmasOrdenadas.length > 0) {
             turmasOrdenadas.forEach(turma => {
                 porTurma[turma].sort((a, b) => a.nome_estudante.localeCompare(b.nome_estudante));
-                htmlTutoradosList += `<h4 style="margin-top:15px; margin-bottom:5px; color:#2c5282; border-bottom:1px solid #e2e8f0;">${turma}</h4>`;
+                htmlTutoradosList += `<h4 style="margin-top:15px; margin-bottom:5px; color:#1b4488; border-bottom:1px solid #e3e8ef;">${turma}</h4>`;
                 htmlTutoradosList += `<table style="margin-top:0;"><tbody>`;
                 htmlTutoradosList += porTurma[turma].map(t => `
                         <tr>
@@ -8530,7 +8548,7 @@ async function renderAeeVisaoGeral() {
         const html = `
             <div class="card">
                 <h2>🌟 Painel AEE (Visualização)</h2>
-                <p style="color:#666; font-size:14px;">Visualização da lista de estudantes acompanhados pelo AEE.</p>
+                <p style="color:#5f6b7f; font-size:14px;">Visualização da lista de estudantes acompanhados pelo AEE.</p>
             </div>
             <div class="card" style="margin-top:20px;">
                 ${htmlTutoradosList}
@@ -8554,19 +8572,19 @@ function renderAnexosIVHtml(t, permitirExcluir) {
     if (anexosIV.length === 0) {
         return `
             <div style="margin-top:20px;">
-                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Anexo IV - PEI</label>
-                <p style="margin:0; font-size:13px; color:#718096; background:#f7fafc; padding:15px; border-radius:6px; border:1px solid #e2e8f0;">Nenhum Anexo IV - PEI gerado ainda para este estudante. Gere pelo "✨ Estagiário" (Modo Professor ou AEE).</p>
+                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#1b4488;">Anexo IV - PEI</label>
+                <p style="margin:0; font-size:13px; color:#5f6b7f; background:#f6f8fb; padding:15px; border-radius:6px; border:1px solid #e3e8ef;">Nenhum Anexo IV - PEI gerado ainda para este estudante. Gere pelo "✨ Estagiário" (Modo Professor ou AEE).</p>
             </div>
         `;
     }
     const itensHtml = anexosIV.map(a => `
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding:10px 0; border-bottom:1px dashed #cbd5e0;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding:10px 0; border-bottom:1px dashed #cdd5e1;">
             <div>
                 <strong>${a.dadosBasicos.disciplina}</strong>
-                <span style="font-size:12px; color:#718096;"> — ${a.dadosBasicos.bimestre ? a.dadosBasicos.bimestre + 'º Bimestre' : 'Bimestre não informado'} — Prof. AEE: ${a.dadosBasicos.nomeProfAee || 'não informado'}</span>
+                <span style="font-size:12px; color:#5f6b7f;"> — ${a.dadosBasicos.bimestre ? a.dadosBasicos.bimestre + 'º Bimestre' : 'Bimestre não informado'} — Prof. AEE: ${a.dadosBasicos.nomeProfAee || 'não informado'}</span>
             </div>
             <div style="display:flex; align-items:center; gap:10px;">
-                <span style="font-size:12px; color:#718096;">Atualizado em ${formatDate(a.atualizadoEm)}</span>
+                <span style="font-size:12px; color:#5f6b7f;">Atualizado em ${formatDate(a.atualizadoEm)}</span>
                 <button class="btn btn-sm btn-info" style="padding:2px 8px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${t.id}, ${a.id})">🖨️ Reimprimir</button>
                 ${permitirExcluir ? `<button class="btn btn-sm btn-danger" style="padding:2px 8px; font-size:12px;" onclick="excluirAnexoIVSalvo(${t.id}, ${a.id})">🗑️ Excluir</button>` : ''}
             </div>
@@ -8574,8 +8592,8 @@ function renderAnexosIVHtml(t, permitirExcluir) {
     `).join('');
     return `
         <div style="margin-top:20px;">
-            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Anexo IV - PEI</label>
-            <div style="background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
+            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#1b4488;">Anexo IV - PEI</label>
+            <div style="background: #f6f8fb; padding: 15px; border-radius: 6px; border: 1px solid #e3e8ef;">
                 ${itensHtml}
             </div>
         </div>
@@ -8657,16 +8675,16 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
         const camposIaHtml = (typeof ANEXO_PAEE_CAMPOS_IA !== 'undefined')
             ? ANEXO_PAEE_CAMPOS_IA.map(c => `
                 <div style="margin-top:12px;">
-                    <label style="font-weight:bold; display:block; margin-bottom:4px; font-size:12px; color:#2c5282;">${c.label}</label>
-                    <textarea readonly rows="3" style="width:100%; border:1px solid #cbd5e0; padding:8px; border-radius:4px; font-family:inherit; font-size:12px; background-color:white;">${(anexoPaee.dados || {})[c.key] || ''}</textarea>
+                    <label style="font-weight:bold; display:block; margin-bottom:4px; font-size:12px; color:#1b4488;">${c.label}</label>
+                    <textarea readonly rows="3" style="width:100%; border:1px solid #cdd5e1; padding:8px; border-radius:4px; font-family:inherit; font-size:12px; background-color:white;">${(anexoPaee.dados || {})[c.key] || ''}</textarea>
                 </div>
             `).join('')
             : '';
 
         return `
             <div style="margin-top:20px;">
-                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Anexo III - PAEE</label>
-                <div style="background:#f7fafc; padding:15px; border-radius:6px; border:1px solid #e2e8f0;">
+                <label style="font-weight:bold; display:block; margin-bottom:5px; color:#1b4488;">Anexo III - PAEE</label>
+                <div style="background:#f6f8fb; padding:15px; border-radius:6px; border:1px solid #e3e8ef;">
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
                         <button class="btn btn-sm btn-info" onclick="reimprimirAnexoPaeeSalvo(${t.id})">🖨️ Reimprimir</button>
                         <span style="font-size:12px; color:#2f855a;">✅ Salvo (atualizado em ${formatDate(anexoPaee.atualizadoEm)})</span>
@@ -8688,8 +8706,8 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
         `;
     })() : `
         <div style="margin-top:20px;">
-            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#2c5282;">Anexo III - PAEE</label>
-            <p style="margin:0; font-size:13px; color:#718096; background:#f7fafc; padding:15px; border-radius:6px; border:1px solid #e2e8f0;">Nenhum Anexo III-PAEE gerado ainda para este estudante.</p>
+            <label style="font-weight:bold; display:block; margin-bottom:5px; color:#1b4488;">Anexo III - PAEE</label>
+            <p style="margin:0; font-size:13px; color:#5f6b7f; background:#f6f8fb; padding:15px; border-radius:6px; border:1px solid #e3e8ef;">Nenhum Anexo III-PAEE gerado ainda para este estudante.</p>
         </div>
     `;
 
@@ -8861,7 +8879,7 @@ function abrirModalNovoAviso() {
         <label style="font-weight:bold; margin-bottom:5px; display:block;">
             <input type="checkbox" onchange="toggleTodasTurmasAviso(this)"> Selecionar Todas
         </label>
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; max-height:150px; overflow-y:auto; border:1px solid #eee; padding:5px;">
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; max-height:150px; overflow-y:auto; border:1px solid #e3e8ef; padding:5px;">
             ${turmas.map(t => `
                 <label style="font-size:12px;">
                     <input type="checkbox" class="chk-turma-aviso" value="${t.id}"> ${t.nome}
@@ -9257,13 +9275,13 @@ function exibirModalBackups(slots, userId) {
                         <h2>📋 Histórico de Backups na Nuvem</h2>
                         <button class="close-btn" onclick="this.closest('.modal').remove()">×</button>
                     </div>
-                    <p style="font-size:13px; color:#666; margin-bottom:15px;">Estes são os backups diários da sua conta (até ${BACKUP_MAX_DIAS} dias). Escolha um para restaurar.</p>
+                    <p style="font-size:13px; color:#5f6b7f; margin-bottom:15px;">Estes são os backups diários da sua conta (até ${BACKUP_MAX_DIAS} dias). Escolha um para restaurar.</p>
                     <div style="display:flex; flex-direction:column; gap:10px;">
                         ${backups.map(b => `
-                            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border:1px solid #e3e8ef; border-radius:8px; background:#f6f8fb;">
                                 <div>
-                                    <div style="font-weight:bold; color:#2d3748;">${new Date(b.timestamp).toLocaleString('pt-BR')}</div>
-                                    <div style="font-size:12px; color:#718096;">${b.label}</div>
+                                    <div style="font-weight:bold; color:#1c2536;">${new Date(b.timestamp).toLocaleString('pt-BR')}</div>
+                                    <div style="font-size:12px; color:#5f6b7f;">${b.label}</div>
                                 </div>
                                 <div style="display:flex; gap:5px;">
                                     <button class="btn btn-sm btn-info" onclick="mesclarBackupNuvem('${b.id}', '${new Date(b.timestamp).toLocaleString('pt-BR')}', '${userId}')" title="Recupera notas de domingo sem apagar as chamadas de hoje">🧩 Mesclar</button>

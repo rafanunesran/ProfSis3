@@ -545,18 +545,18 @@ function ampRender() {
     area.innerHTML = `
         <style>
             .amp-solta {
-                border: 2px dashed #cbd5e0; border-radius: 10px; padding: 28px 18px; text-align: center;
-                background: #f7fafc; transition: all .15s; cursor: pointer;
+                border: 2px dashed #cdd5e1; border-radius: 10px; padding: 28px 18px; text-align: center;
+                background: #f6f8fb; transition: all .15s; cursor: pointer;
             }
-            .amp-solta.amp-sobre { border-color: #3182ce; background: #ebf8ff; }
+            .amp-solta.amp-sobre { border-color: #2563c9; background: #edf3fd; }
             .amp-opcao {
-                border: 1px solid #e2e8f0; background: #fff; border-radius: 8px; padding: 7px 12px;
-                cursor: pointer; font-size: 13px; color: #4a5568; transition: all .15s;
+                border: 1px solid #e3e8ef; background: #fff; border-radius: 8px; padding: 7px 12px;
+                cursor: pointer; font-size: 13px; color: #3d4759; transition: all .15s;
             }
-            .amp-opcao:hover { border-color: #a0aec0; }
-            .amp-opcao.amp-ativa { border-color: #3182ce; background: #ebf8ff; color: #2b6cb0; font-weight: bold; }
+            .amp-opcao:hover { border-color: #7a869a; }
+            .amp-opcao.amp-ativa { border-color: #2563c9; background: #edf3fd; color: #1f55ad; font-weight: bold; }
             .amp-opcao[disabled] { opacity: .45; cursor: not-allowed; }
-            .amp-rotulo { font-size: 12px; font-weight: bold; color: #4a5568; text-transform: uppercase; letter-spacing: .03em; }
+            .amp-rotulo { font-size: 12px; font-weight: bold; color: #3d4759; text-transform: uppercase; letter-spacing: .03em; }
             .amp-comparar { position: relative; overflow: hidden; border-radius: 8px; background:
                 repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 18px 18px; line-height: 0; }
             .amp-comparar img { display: block; width: 100%; height: auto; }
@@ -566,7 +566,7 @@ function ampRender() {
 
         <div class="card" style="margin:20px 0;">
             <h2>🔍 Ampliar imagem ${ampSeloPro()}</h2>
-            <p style="color:#4a5568; font-size:14px; line-height:1.6; margin-bottom:6px;">
+            <p style="color:#3d4759; font-size:14px; line-height:1.6; margin-bottom:6px;">
                 Aumenta o tamanho de uma foto ou figura sem deixar ela quadriculada, limpa o granulado
                 de JPEG e realça as bordas. Serve para a foto do documento que chegou pequena demais,
                 para o print do diário, para a figura que vai para o mural.
@@ -590,7 +590,7 @@ function ampRender() {
 
             ${ampErro ? `<div style="background:#fff5f5; border:1px solid #fc8181; color:#742a2a; border-radius:8px; padding:12px 14px; margin:12px 0; font-size:13px; line-height:1.6;">
                 ⚠️ ${escAmp(ampErro)}</div>` : ''}
-            ${ampAviso ? `<div style="background:#ebf8ff; border:1px solid #90cdf4; color:#2c5282; border-radius:8px; padding:10px 14px; margin:12px 0; font-size:13px; line-height:1.6;">
+            ${ampAviso ? `<div style="background:#edf3fd; border:1px solid #a9c6f3; color:#1b4488; border-radius:8px; padding:10px 14px; margin:12px 0; font-size:13px; line-height:1.6;">
                 ${escAmp(ampAviso)}</div>` : ''}
 
             ${ampImagem ? ampHtmlComImagem() : ampHtmlSemImagem()}
@@ -605,8 +605,8 @@ function ampHtmlSemImagem() {
              ondragover="ampArrastando(event, true)" ondragleave="ampArrastando(event, false)"
              ondrop="ampSoltar(event)">
             <div style="font-size:38px; line-height:1;">🖼️</div>
-            <div style="font-weight:bold; color:#2d3748; margin-top:10px;">Escolha a imagem ou arraste ela para cá</div>
-            <div style="color:#718096; font-size:12px; margin-top:6px;">
+            <div style="font-weight:bold; color:#1c2536; margin-top:10px;">Escolha a imagem ou arraste ela para cá</div>
+            <div style="color:#5f6b7f; font-size:12px; margin-top:6px;">
                 PNG, JPG, WebP, GIF ou BMP — até ${AMP_MAX_MB} MB
             </div>
         </div>
@@ -622,12 +622,12 @@ function ampHtmlComImagem() {
     const megapixels = (saidaL * saidaA) / 1e6;
 
     return `
-        <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap; background:#f7fafc;
-                    border:1px solid #e2e8f0; border-radius:8px; padding:10px 12px; margin:12px 0;">
-            <img src="${escAmp(img.url)}" alt="" style="width:64px; height:64px; object-fit:contain; background:#fff; border:1px solid #e2e8f0; border-radius:6px;">
+        <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap; background:#f6f8fb;
+                    border:1px solid #e3e8ef; border-radius:8px; padding:10px 12px; margin:12px 0;">
+            <img src="${escAmp(img.url)}" alt="" style="width:64px; height:64px; object-fit:contain; background:#fff; border:1px solid #e3e8ef; border-radius:6px;">
             <div style="flex:1; min-width:180px;">
-                <div style="font-weight:bold; color:#2d3748; font-size:14px; word-break:break-all;">${escAmp(img.nome)}</div>
-                <div style="color:#718096; font-size:12px; margin-top:2px;">
+                <div style="font-weight:bold; color:#1c2536; font-size:14px; word-break:break-all;">${escAmp(img.nome)}</div>
+                <div style="color:#5f6b7f; font-size:12px; margin-top:2px;">
                     ${img.largura} × ${img.altura} px · ${ampTamanho(img.tamanho)}
                 </div>
             </div>
@@ -646,7 +646,7 @@ function ampHtmlComImagem() {
                                         onclick="ampDefinir('escala', ${e.v})">${e.rotulo}</button>`;
                     }).join('')}
                 </div>
-                <div style="color:#718096; font-size:12px; margin-top:6px;">
+                <div style="color:#5f6b7f; font-size:12px; margin-top:6px;">
                     Resultado: <strong>${saidaL} × ${saidaA} px</strong>${megapixels >= 1 ? ' (' + megapixels.toFixed(1) + ' megapixels)' : ''}
                 </div>
             </div>
@@ -658,7 +658,7 @@ function ampHtmlComImagem() {
                         <button class="amp-opcao ${ampOpcoes.ruido === i ? 'amp-ativa' : ''}" ${ampOcupado ? 'disabled' : ''}
                                 onclick="ampDefinir('ruido', ${i})">${t}</button>`).join('')}
                 </div>
-                <div style="color:#718096; font-size:12px; margin-top:6px;">
+                <div style="color:#5f6b7f; font-size:12px; margin-top:6px;">
                     Apaga o granulado e o quadriculado do JPEG sem comer a borda das letras.
                 </div>
             </div>
@@ -670,7 +670,7 @@ function ampHtmlComImagem() {
                         <button class="amp-opcao ${ampOpcoes.nitidez === i ? 'amp-ativa' : ''}" ${ampOcupado ? 'disabled' : ''}
                                 onclick="ampDefinir('nitidez', ${i})">${t}</button>`).join('')}
                 </div>
-                <div style="color:#718096; font-size:12px; margin-top:6px;">
+                <div style="color:#5f6b7f; font-size:12px; margin-top:6px;">
                     Para texto fotografado, "Médio" costuma ser o ponto.
                 </div>
             </div>
@@ -683,7 +683,7 @@ function ampHtmlComImagem() {
                     <button class="amp-opcao ${ampOpcoes.motor === 'ia' ? 'amp-ativa' : ''}" ${ampOcupado ? 'disabled' : ''}
                             onclick="ampDefinir('motor', 'ia')">🧠 IA</button>
                 </div>
-                <div style="color:#718096; font-size:12px; margin-top:6px;">
+                <div style="color:#5f6b7f; font-size:12px; margin-top:6px;">
                     ${ampOpcoes.motor === 'ia'
                         ? 'Rede neural rodando aqui dentro. Baixa o modelo (~2,5 MB) na primeira vez e é bem mais lenta — a <strong>imagem</strong> continua sem sair do aparelho.'
                         : 'Rápido, funciona sem internet e não baixa nada. Resolve a maior parte dos casos.'}
@@ -698,11 +698,11 @@ function ampHtmlComImagem() {
                                 onclick="ampDefinir('formato', '${v}')">${t}</button>`).join('')}
                 </div>
                 ${ampOpcoes.formato === 'image/png' ? `
-                    <div style="color:#718096; font-size:12px; margin-top:6px;">
+                    <div style="color:#5f6b7f; font-size:12px; margin-top:6px;">
                         PNG não perde nada e mantém transparência. O arquivo sai maior.
                     </div>` : `
                     <div style="margin-top:8px;">
-                        <label style="color:#718096; font-size:12px; display:block; margin-bottom:2px;">
+                        <label style="color:#5f6b7f; font-size:12px; display:block; margin-bottom:2px;">
                             Qualidade: <strong>${Math.round(ampOpcoes.qualidade * 100)}%</strong></label>
                         <input type="range" min="50" max="100" step="1" value="${Math.round(ampOpcoes.qualidade * 100)}"
                                ${ampOcupado ? 'disabled' : ''} style="width:100%;"
@@ -718,7 +718,7 @@ function ampHtmlComImagem() {
                 ${ampOcupado ? '⏳ Trabalhando...' : '🔍 Ampliar'}
             </button>
             ${ampOcupado ? '<button class="btn btn-secondary" onclick="ampCancelar()">Cancelar</button>' : ''}
-            ${escala === 1 && !ampOcupado ? '<span style="color:#718096; font-size:12px;">Em 1x a imagem só é limpa e realçada, sem aumentar.</span>' : ''}
+            ${escala === 1 && !ampOcupado ? '<span style="color:#5f6b7f; font-size:12px;">Em 1x a imagem só é limpa e realçada, sem aumentar.</span>' : ''}
         </div>
 
         <div id="ampProgresso" style="margin-top:14px;">${ampHtmlProgresso()}</div>
@@ -754,10 +754,10 @@ function ampHtmlProgresso() {
     if (!ampOcupado) return '';
     const pct = Math.max(2, Math.min(100, Math.round(ampProgresso.fracao * 100)));
     return `
-        <div style="background:#edf2f7; border-radius:999px; height:10px; overflow:hidden;">
-            <div style="width:${pct}%; height:100%; background:#3182ce; transition:width .2s;"></div>
+        <div style="background:#eef2f7; border-radius:999px; height:10px; overflow:hidden;">
+            <div style="width:${pct}%; height:100%; background:#2563c9; transition:width .2s;"></div>
         </div>
-        <div style="font-size:12px; color:#718096; margin-top:6px;">${escAmp(ampProgresso.texto || '')} ${pct}%</div>`;
+        <div style="font-size:12px; color:#5f6b7f; margin-top:6px;">${escAmp(ampProgresso.texto || '')} ${pct}%</div>`;
 }
 
 // O progresso e' redesenhado sozinho, sem refazer a tela inteira: reconstruir todo o
@@ -773,11 +773,11 @@ function ampHtmlResultado() {
     const ganho = ampImagem ? (r.largura / ampImagem.largura) : 1;
 
     return `
-        <div style="margin-top:18px; border-top:1px solid #e2e8f0; padding-top:16px;">
+        <div style="margin-top:18px; border-top:1px solid #e3e8ef; padding-top:16px;">
             <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
                 <div style="flex:1; min-width:200px;">
-                    <div style="font-weight:bold; color:#2d3748;">✅ Pronto — ${r.largura} × ${r.altura} px</div>
-                    <div style="color:#718096; font-size:12px; margin-top:2px;">
+                    <div style="font-weight:bold; color:#1c2536;">✅ Pronto — ${r.largura} × ${r.altura} px</div>
+                    <div style="color:#5f6b7f; font-size:12px; margin-top:2px;">
                         ${ampTamanho(r.blob.size)} · ${ganho === 1 ? 'mesmo tamanho, imagem limpa' : ganho.toFixed(0) + 'x maior de cada lado'}
                         · ${r.segundos.toFixed(1)}s · motor ${r.motor === 'ia' ? 'IA' : 'Nítido'}
                     </div>
@@ -794,7 +794,7 @@ function ampHtmlResultado() {
             </div>
             <input type="range" id="ampCortina" min="0" max="100" value="50" style="width:100%; margin-top:8px;"
                    aria-label="Arraste para comparar antes e depois">
-            <div style="display:flex; justify-content:space-between; color:#718096; font-size:12px;">
+            <div style="display:flex; justify-content:space-between; color:#5f6b7f; font-size:12px;">
                 <span>← antes (${ampImagem.largura} × ${ampImagem.altura})</span>
                 <span>depois (${r.largura} × ${r.altura}) →</span>
             </div>

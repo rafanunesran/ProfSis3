@@ -795,7 +795,7 @@ function pdfValor(campo) {
 }
 
 function pdfAjudaHtml(campo) {
-    return campo.ajuda ? `<div style="font-size:11px; color:#718096; margin-top:3px;">${escPdf(campo.ajuda)}</div>` : '';
+    return campo.ajuda ? `<div style="font-size:11px; color:#5f6b7f; margin-top:3px;">${escPdf(campo.ajuda)}</div>` : '';
 }
 
 function pdfCampoHtml(campo, ferramenta) {
@@ -804,8 +804,8 @@ function pdfCampoHtml(campo, ferramenta) {
     const controlador = pdfCamposControladores(ferramenta).has(campo.id);
     // O campo que manda em outro remonta a tela; os demais so' guardam o valor.
     const aoMudar = `onchange="pdfDefinir('${campo.id}', this, ${controlador})"`;
-    const comum = 'width:100%; padding:8px 10px; border:1px solid #cbd5e0; border-radius:6px; font-size:14px; box-sizing:border-box;';
-    const rotulo = `<label for="${id}" style="display:block; font-size:13px; font-weight:600; color:#4a5568; margin-bottom:4px;">${escPdf(campo.rotulo)}</label>`;
+    const comum = 'width:100%; padding:8px 10px; border:1px solid #cdd5e1; border-radius:6px; font-size:14px; box-sizing:border-box;';
+    const rotulo = `<label for="${id}" style="display:block; font-size:13px; font-weight:600; color:#3d4759; margin-bottom:4px;">${escPdf(campo.rotulo)}</label>`;
 
     if (campo.tipo === 'arquivo' || campo.tipo === 'arquivos' || campo.tipo === 'imagem' ||
         campo.tipo === 'imagens' || campo.tipo === 'qualquer') {
@@ -819,7 +819,7 @@ function pdfCampoHtml(campo, ferramenta) {
             ${rotulo}
             <input type="file" id="${id}" ${varios ? 'multiple' : ''} ${aceita ? `accept="${aceita}"` : ''}
                    onchange="pdfLerArquivos('${campo.id}', this, ${varios})"
-                   style="${comum} background:#f7fafc; cursor:pointer;">
+                   style="${comum} background:#f6f8fb; cursor:pointer;">
             ${pdfAjudaHtml(campo)}
             ${lista}
         </div>`;
@@ -844,7 +844,7 @@ function pdfCampoHtml(campo, ferramenta) {
 
     if (campo.tipo === 'checkbox') {
         return `<div style="margin-bottom:12px;">
-            <label style="display:flex; align-items:flex-start; gap:8px; font-size:13px; color:#4a5568; cursor:pointer;">
+            <label style="display:flex; align-items:flex-start; gap:8px; font-size:13px; color:#3d4759; cursor:pointer;">
                 <input type="checkbox" id="${id}" ${valor ? 'checked' : ''} ${aoMudar} style="margin-top:2px;">
                 <span>${escPdf(campo.rotulo)}${pdfAjudaHtml(campo)}</span>
             </label></div>`;
@@ -854,8 +854,8 @@ function pdfCampoHtml(campo, ferramenta) {
         return `<div style="margin-bottom:14px;">${rotulo}
             <div style="display:flex; gap:8px; align-items:center;">
                 <input type="color" id="${id}" value="${escPdf(valor)}" ${aoMudar}
-                       style="width:52px; height:36px; padding:2px; border:1px solid #cbd5e0; border-radius:6px; cursor:pointer;">
-                <code style="font-size:12px; color:#718096;">${escPdf(valor)}</code>
+                       style="width:52px; height:36px; padding:2px; border:1px solid #cdd5e1; border-radius:6px; cursor:pointer;">
+                <code style="font-size:12px; color:#5f6b7f;">${escPdf(valor)}</code>
             </div>${pdfAjudaHtml(campo)}</div>`;
     }
 
@@ -892,14 +892,14 @@ function pdfListaArquivosHtml(campo) {
     const arquivos = !lista ? [] : (Array.isArray(lista) ? lista : [lista]);
     if (!arquivos.length) return '';
     const itens = arquivos.map((a, i) => `
-        <li style="display:flex; align-items:center; gap:8px; padding:5px 8px; background:#f7fafc; border-radius:5px; margin-top:4px; font-size:12px;">
+        <li style="display:flex; align-items:center; gap:8px; padding:5px 8px; background:#f6f8fb; border-radius:5px; margin-top:4px; font-size:12px;">
             ${campo.ordenavel && arquivos.length > 1 ? `
                 <button type="button" title="Subir" onclick="pdfMoverArquivo('${campo.id}', ${i}, -1)"
                         ${i === 0 ? 'disabled' : ''} style="border:none; background:none; cursor:pointer; opacity:${i === 0 ? '.3' : '1'};">▲</button>
                 <button type="button" title="Descer" onclick="pdfMoverArquivo('${campo.id}', ${i}, 1)"
                         ${i === arquivos.length - 1 ? 'disabled' : ''} style="border:none; background:none; cursor:pointer; opacity:${i === arquivos.length - 1 ? '.3' : '1'};">▼</button>` : ''}
             <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escPdf(a.nome)}</span>
-            <span style="color:#718096;">${pdfTamanho(a.bytes.length)}</span>
+            <span style="color:#5f6b7f;">${pdfTamanho(a.bytes.length)}</span>
             <button type="button" title="Tirar da lista" onclick="pdfTirarArquivo('${campo.id}', ${i})"
                     style="border:none; background:none; cursor:pointer; color:#e53e3e;">×</button>
         </li>`).join('');
@@ -1136,11 +1136,11 @@ function pdfRenderResultado() {
 
     const itens = arquivos.map((a, i) => `
         <div style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:white;
-                    border:1px solid #e2e8f0; border-radius:8px; margin-bottom:8px;">
+                    border:1px solid #e3e8ef; border-radius:8px; margin-bottom:8px;">
             <span style="font-size:20px;">${a.tipo.indexOf('image') === 0 ? '🖼️' : a.tipo.indexOf('pdf') !== -1 ? '📕' : '📄'}</span>
             <div style="flex:1; min-width:0;">
                 <div style="font-weight:600; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escPdf(a.nome)}</div>
-                <div style="font-size:11px; color:#718096;">${pdfTamanho(a.blob.size)}</div>
+                <div style="font-size:11px; color:#5f6b7f;">${pdfTamanho(a.blob.size)}</div>
             </div>
             ${/(html|text)/.test(a.tipo) || a.tipo.indexOf('image') === 0 || a.tipo.indexOf('pdf') !== -1
                 ? `<button class="btn btn-sm btn-secondary" onclick="pdfAbrirEmNovaAba(${i})">Abrir</button>` : ''}
@@ -1160,7 +1160,7 @@ function pdfRenderResultado() {
                 📦 Baixar todos em .zip (${arquivos.length} arquivos)</button>` : ''}
             ${itens}
         </div>` : ''}
-        <div style="font-size:11px; color:#a0aec0; margin-top:12px;">
+        <div style="font-size:11px; color:#7a869a; margin-top:12px;">
             🔒 Nada disso foi enviado para a internet: o arquivo foi lido, transformado e devolvido dentro
             deste aparelho. Ao sair da pagina, o resultado se perde — baixe antes.
         </div>`;
@@ -1282,13 +1282,13 @@ const PDF_EXTRAS = {
         },
         render(div) {
             if (!pdfExtra.doc) {
-                div.innerHTML = '<p style="color:#718096; font-size:13px;">Escolha um PDF para vê-lo aqui.</p>';
+                div.innerHTML = '<p style="color:#5f6b7f; font-size:13px;">Escolha um PDF para vê-lo aqui.</p>';
                 return;
             }
             div.innerHTML = `
                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
                     <button class="btn btn-sm btn-secondary" onclick="pdfVisorIr(-1)">◀ Anterior</button>
-                    <span style="font-size:13px; color:#4a5568;">
+                    <span style="font-size:13px; color:#3d4759;">
                         Página <strong id="pdfVisorNumero">${pdfExtra.pagina}</strong> de ${pdfExtra.doc.numPages}
                     </span>
                     <button class="btn btn-sm btn-secondary" onclick="pdfVisorIr(1)">Próxima ▶</button>
@@ -1297,9 +1297,9 @@ const PDF_EXTRAS = {
                     <button class="btn btn-sm btn-secondary" onclick="pdfVisorZoom(0.25)">➕</button>
                     <input type="number" min="1" max="${pdfExtra.doc.numPages}" value="${pdfExtra.pagina}"
                            onchange="pdfVisorIrPara(this.value)"
-                           style="width:70px; padding:5px; border:1px solid #cbd5e0; border-radius:5px;">
+                           style="width:70px; padding:5px; border:1px solid #cdd5e1; border-radius:5px;">
                 </div>
-                <div id="pdfVisorArea" style="overflow:auto; max-height:70vh; background:#edf2f7; border-radius:8px; padding:12px; text-align:center;">
+                <div id="pdfVisorArea" style="overflow:auto; max-height:70vh; background:#eef2f7; border-radius:8px; padding:12px; text-align:center;">
                     <canvas id="pdfVisorCanvas" style="max-width:100%; box-shadow:0 2px 12px rgba(0,0,0,.15); background:white;"></canvas>
                 </div>`;
             pdfVisorRedesenhar();
@@ -1316,7 +1316,7 @@ const PDF_EXTRAS = {
         },
         render(div) {
             if (!pdfExtra.doc) {
-                div.innerHTML = '<p style="color:#718096; font-size:13px;">Escolha um PDF para ver as miniaturas.</p>';
+                div.innerHTML = '<p style="color:#5f6b7f; font-size:13px;">Escolha um PDF para ver as miniaturas.</p>';
                 return;
             }
             div.innerHTML = `
@@ -1345,7 +1345,7 @@ const PDF_EXTRAS = {
         },
         render(div) {
             if (!pdfExtra.doc) {
-                div.innerHTML = '<p style="color:#718096; font-size:13px;">Escolha um PDF para começar a anotar.</p>';
+                div.innerHTML = '<p style="color:#5f6b7f; font-size:13px;">Escolha um PDF para começar a anotar.</p>';
                 return;
             }
             const modos = [
@@ -1353,7 +1353,7 @@ const PDF_EXTRAS = {
                 { v: 'retangulo', t: '▭ Caixa' }, { v: 'linha', t: '／ Linha' }, { v: 'tarja', t: '⬛ Tarja preta' }
             ];
             div.innerHTML = `
-                <div style="background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:12px;">
+                <div style="background:#f6f8fb; border:1px solid #e3e8ef; border-radius:8px; padding:12px; margin-bottom:12px;">
                     <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">
                         ${modos.map(m => `<button class="btn btn-sm ${pdfExtra.modo === m.v ? 'btn-primary' : 'btn-secondary'}"
                             onclick="pdfAnotarModo('${m.v}')">${m.t}</button>`).join('')}
@@ -1361,13 +1361,13 @@ const PDF_EXTRAS = {
                     ${pdfExtra.modo === 'texto' ? `
                         <input type="text" id="pdfAnotarTexto" placeholder="Digite aqui e clique na página onde o texto deve entrar"
                                value="${escPdf(pdfExtra.texto)}" oninput="pdfExtra.texto = this.value"
-                               style="width:100%; padding:8px 10px; border:1px solid #cbd5e0; border-radius:6px; box-sizing:border-box; margin-bottom:8px;">` : ''}
-                    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; font-size:12px; color:#4a5568;">
+                               style="width:100%; padding:8px 10px; border:1px solid #cdd5e1; border-radius:6px; box-sizing:border-box; margin-bottom:8px;">` : ''}
+                    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; font-size:12px; color:#3d4759;">
                         <label>Cor <input type="color" value="${escPdf(pdfExtra.cor)}" onchange="pdfExtra.cor = this.value"
-                               style="vertical-align:middle; width:42px; height:28px; border:1px solid #cbd5e0; border-radius:5px;"></label>
+                               style="vertical-align:middle; width:42px; height:28px; border:1px solid #cdd5e1; border-radius:5px;"></label>
                         ${pdfExtra.modo === 'texto' ? `<label>Tamanho <input type="number" min="5" max="72" value="${pdfExtra.tamanho}"
-                               onchange="pdfExtra.tamanho = Number(this.value)" style="width:60px; padding:4px; border:1px solid #cbd5e0; border-radius:5px;"></label>` : ''}
-                        <span style="color:#718096;">${pdfExtra.modo === 'texto'
+                               onchange="pdfExtra.tamanho = Number(this.value)" style="width:60px; padding:4px; border:1px solid #cdd5e1; border-radius:5px;"></label>` : ''}
+                        <span style="color:#5f6b7f;">${pdfExtra.modo === 'texto'
                             ? 'Clique no ponto onde o texto começa.'
                             : pdfExtra.modo === 'linha' ? 'Arraste do início ao fim da linha.'
                             : 'Arraste para desenhar a área.'}</span>
@@ -1399,7 +1399,7 @@ const PDF_EXTRAS = {
         },
         render(div) {
             if (!pdfExtra.doc) {
-                div.innerHTML = '<p style="color:#718096; font-size:13px;">Escolha um PDF para marcar o que deve ser apagado. ' +
+                div.innerHTML = '<p style="color:#5f6b7f; font-size:13px;">Escolha um PDF para marcar o que deve ser apagado. ' +
                                 'Você também pode usar só o campo de palavras acima.</p>';
                 return;
             }
@@ -1430,13 +1430,13 @@ const PDF_EXTRAS = {
     assinar: {
         render(div) {
             div.innerHTML = `
-                <div style="background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px;">
-                    <div style="font-size:13px; font-weight:600; color:#4a5568; margin-bottom:6px;">Desenhe a assinatura</div>
-                    <div style="font-size:11px; color:#718096; margin-bottom:8px;">
+                <div style="background:#f6f8fb; border:1px solid #e3e8ef; border-radius:8px; padding:12px;">
+                    <div style="font-size:13px; font-weight:600; color:#3d4759; margin-bottom:6px;">Desenhe a assinatura</div>
+                    <div style="font-size:11px; color:#5f6b7f; margin-bottom:8px;">
                         Com o dedo (celular/tablet) ou com o mouse. Fica melhor no tablet.
                     </div>
                     <canvas id="pdfAssinaturaCanvas" width="900" height="300"
-                            style="width:100%; height:auto; background:white; border:2px dashed #cbd5e0;
+                            style="width:100%; height:auto; background:white; border:2px dashed #cdd5e1;
                                    border-radius:8px; touch-action:none; cursor:crosshair;"></canvas>
                     <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
                         <button class="btn btn-sm btn-secondary" onclick="pdfAssinaturaLimpar()">🧽 Limpar</button>
@@ -1444,7 +1444,7 @@ const PDF_EXTRAS = {
                             🖼️ Usar imagem
                             <input type="file" accept="image/*" onchange="pdfAssinaturaDeImagem(this)" style="display:none;">
                         </label>
-                        <span id="pdfAssinaturaEstado" style="font-size:12px; color:#718096; align-self:center;"></span>
+                        <span id="pdfAssinaturaEstado" style="font-size:12px; color:#5f6b7f; align-self:center;"></span>
                     </div>
                 </div>`;
             pdfAssinaturaLigar();
@@ -1480,11 +1480,11 @@ const PDF_EXTRAS = {
         },
         render(div) {
             if (!pdfExtra.doc) {
-                div.innerHTML = '<p style="color:#718096; font-size:13px;">Escolha a ficha em PDF para marcar onde ficam os campos.</p>';
+                div.innerHTML = '<p style="color:#5f6b7f; font-size:13px;">Escolha a ficha em PDF para marcar onde ficam os campos.</p>';
                 return;
             }
             div.innerHTML = `
-                <div style="background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px; margin-bottom:12px;">
+                <div style="background:#f6f8fb; border:1px solid #e3e8ef; border-radius:8px; padding:12px; margin-bottom:12px;">
                     <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">
                         <button class="btn btn-sm ${pdfExtra.modo === 'campo-texto' ? 'btn-primary' : 'btn-secondary'}"
                                 onclick="pdfAnotarModo('campo-texto')">🔤 Campo de texto</button>
@@ -1493,13 +1493,13 @@ const PDF_EXTRAS = {
                     </div>
                     <input type="text" id="pdfNomeCampo" placeholder="Nome deste campo (ex.: nome_do_estudante) — em branco numera sozinho"
                            oninput="pdfExtra.nomeCampo = this.value"
-                           style="width:100%; padding:8px 10px; border:1px solid #cbd5e0; border-radius:6px; box-sizing:border-box;">
+                           style="width:100%; padding:8px 10px; border:1px solid #cdd5e1; border-radius:6px; box-sizing:border-box;">
                     ${pdfExtra.modo === 'campo-texto' ? `
-                        <label style="display:block; font-size:12px; color:#4a5568; margin-top:8px; cursor:pointer;">
+                        <label style="display:block; font-size:12px; color:#3d4759; margin-top:8px; cursor:pointer;">
                             <input type="checkbox" ${pdfExtra.multilinha ? 'checked' : ''}
                                    onchange="pdfExtra.multilinha = this.checked"> aceitar várias linhas (campo de observações)
                         </label>` : ''}
-                    <div style="font-size:12px; color:#718096; margin-top:8px;">
+                    <div style="font-size:12px; color:#5f6b7f; margin-top:8px;">
                         Arraste sobre a linha da ficha onde a pessoa vai escrever.
                     </div>
                 </div>
@@ -1531,7 +1531,7 @@ const PDF_EXTRAS = {
         },
         render(div) {
             if (!pdfExtra.campos) {
-                div.innerHTML = '<p style="color:#718096; font-size:13px;">Escolha o PDF de formulário para ver os campos.</p>';
+                div.innerHTML = '<p style="color:#5f6b7f; font-size:13px;">Escolha o PDF de formulário para ver os campos.</p>';
                 return;
             }
             if (!pdfExtra.campos.length) {
@@ -1543,7 +1543,7 @@ const PDF_EXTRAS = {
             }
             const linhas = pdfExtra.campos.map((c, i) => {
                 const valor = pdfExtra.valores[c.nome];
-                const comum = 'width:100%; padding:7px 9px; border:1px solid #cbd5e0; border-radius:6px; font-size:13px; box-sizing:border-box;';
+                const comum = 'width:100%; padding:7px 9px; border:1px solid #cdd5e1; border-radius:6px; font-size:13px; box-sizing:border-box;';
                 let entrada;
                 if (c.tipo === 'marcacao') {
                     entrada = `<label style="font-size:13px; cursor:pointer;">
@@ -1554,19 +1554,19 @@ const PDF_EXTRAS = {
                         ${(c.opcoes || []).map(o => `<option value="${escPdf(o)}" ${o === valor ? 'selected' : ''}>${escPdf(o)}</option>`).join('')}
                     </select>`;
                 } else if (c.tipo === 'botao') {
-                    entrada = '<em style="font-size:12px; color:#a0aec0;">(botão — não recebe valor)</em>';
+                    entrada = '<em style="font-size:12px; color:#7a869a;">(botão — não recebe valor)</em>';
                 } else if (c.multilinha) {
                     entrada = `<textarea rows="3" oninput="pdfCampoForm(${i}, this.value)" style="${comum} font-family:inherit;">${escPdf(valor)}</textarea>`;
                 } else {
                     entrada = `<input type="text" value="${escPdf(valor)}" oninput="pdfCampoForm(${i}, this.value)" style="${comum}">`;
                 }
                 return `<div style="margin-bottom:12px;">
-                    <label style="display:block; font-size:12px; font-weight:600; color:#4a5568; margin-bottom:3px;">
+                    <label style="display:block; font-size:12px; font-weight:600; color:#3d4759; margin-bottom:3px;">
                         ${escPdf(c.nome)} ${c.somenteLeitura ? '<span class="badge badge-warning" style="font-size:9px;">só leitura</span>' : ''}
                     </label>${entrada}</div>`;
             }).join('');
-            div.innerHTML = `<div style="background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px;">
-                <div style="font-size:13px; font-weight:600; color:#2d3748; margin-bottom:10px;">
+            div.innerHTML = `<div style="background:#f6f8fb; border:1px solid #e3e8ef; border-radius:8px; padding:14px;">
+                <div style="font-size:13px; font-weight:600; color:#1c2536; margin-bottom:10px;">
                     ${pdfExtra.campos.length} campo(s) encontrado(s)
                 </div>${linhas}</div>`;
         },
@@ -1581,7 +1581,7 @@ const PDF_EXTRAS = {
         render(div) {
             const fotos = pdfExtra.fotos || [];
             div.innerHTML = `
-                <div style="background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px;">
+                <div style="background:#f6f8fb; border:1px solid #e3e8ef; border-radius:8px; padding:12px;">
                     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
                         <button class="btn btn-sm btn-primary" onclick="pdfCameraLigar()">📷 Ligar a câmera</button>
                         <button class="btn btn-sm btn-success" onclick="pdfCameraFotografar()" ${pdfExtra.stream ? '' : 'disabled'}>📸 Fotografar</button>
@@ -1594,20 +1594,20 @@ const PDF_EXTRAS = {
                     </div>
                     <video id="pdfCameraVideo" autoplay playsinline muted
                            style="width:100%; max-height:52vh; background:#1a202c; border-radius:8px; display:${pdfExtra.stream ? 'block' : 'none'};"></video>
-                    <div style="font-size:11px; color:#718096; margin-top:8px;">
+                    <div style="font-size:11px; color:#5f6b7f; margin-top:8px;">
                         🔒 A imagem fica no aparelho. O navegador vai pedir permissão de câmera — e ela não é
                         usada para mais nada.
                     </div>
                 </div>
                 <div style="margin-top:12px;">
-                    <div style="font-size:13px; font-weight:600; color:#4a5568; margin-bottom:6px;">
+                    <div style="font-size:13px; font-weight:600; color:#3d4759; margin-bottom:6px;">
                         ${fotos.length} página(s) capturada(s)
                     </div>
                     <div style="display:flex; gap:8px; flex-wrap:wrap;">
                         ${fotos.map((f, i) => `
                             <div style="position:relative; width:104px;">
-                                <img src="${f.url}" style="width:100%; border:1px solid #cbd5e0; border-radius:6px; display:block;">
-                                <div style="font-size:10px; text-align:center; color:#718096;">${i + 1}</div>
+                                <img src="${f.url}" style="width:100%; border:1px solid #cdd5e1; border-radius:6px; display:block;">
+                                <div style="font-size:10px; text-align:center; color:#5f6b7f;">${i + 1}</div>
                                 <button onclick="pdfCameraApagar(${i})" title="Apagar"
                                         style="position:absolute; top:2px; right:2px; background:#e53e3e; color:white; border:none;
                                                border-radius:50%; width:20px; height:20px; cursor:pointer; line-height:1;">×</button>
@@ -1638,17 +1638,17 @@ const PDF_EXTRAS = {
         render(div) {
             if (!pdfExtra.info) { div.innerHTML = ''; return; }
             const i = pdfExtra.info;
-            const linha = (r, v) => v ? `<tr><td style="padding:4px 10px 4px 0; color:#718096; white-space:nowrap;">${r}</td>
-                                         <td style="padding:4px 0; color:#2d3748;">${escPdf(v)}</td></tr>` : '';
-            div.innerHTML = `<div style="background:#f7fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; font-size:12px;">
-                <div style="font-weight:600; color:#2d3748; margin-bottom:6px;">O que está gravado neste arquivo hoje</div>
+            const linha = (r, v) => v ? `<tr><td style="padding:4px 10px 4px 0; color:#5f6b7f; white-space:nowrap;">${r}</td>
+                                         <td style="padding:4px 0; color:#1c2536;">${escPdf(v)}</td></tr>` : '';
+            div.innerHTML = `<div style="background:#f6f8fb; border:1px solid #e3e8ef; border-radius:8px; padding:12px 14px; font-size:12px;">
+                <div style="font-weight:600; color:#1c2536; margin-bottom:6px;">O que está gravado neste arquivo hoje</div>
                 <table style="border-collapse:collapse;">
                     ${linha('Páginas', String(i.paginas))}
                     ${linha('Título', i.titulo)}${linha('Autor', i.autor)}${linha('Assunto', i.assunto)}
                     ${linha('Palavras-chave', i.palavrasChave)}${linha('Criado por', i.criador)}
                     ${linha('Produzido por', i.produtor)}${linha('Criado em', i.criadoEm)}${linha('Alterado em', i.alteradoEm)}
                 </table>
-                ${!i.titulo && !i.autor ? '<div style="color:#718096; margin-top:6px;">Sem título nem autor declarados.</div>' : ''}
+                ${!i.titulo && !i.autor ? '<div style="color:#5f6b7f; margin-top:6px;">Sem título nem autor declarados.</div>' : ''}
             </div>`;
         }
     }
@@ -1699,12 +1699,12 @@ async function pdfRenderMiniaturas() {
     if (!area || !pdfExtra.doc) return;
     const ordem = pdfExtra.ordem || [];
     area.innerHTML = ordem.map((numero, i) => `
-        <div style="width:118px; border:1px solid #cbd5e0; border-radius:8px; overflow:hidden; background:white;">
-            <canvas data-pagina="${numero}" style="width:100%; display:block; background:#f7fafc;"></canvas>
-            <div style="display:flex; align-items:center; justify-content:space-between; padding:3px 4px; background:#edf2f7;">
+        <div style="width:118px; border:1px solid #cdd5e1; border-radius:8px; overflow:hidden; background:white;">
+            <canvas data-pagina="${numero}" style="width:100%; display:block; background:#f6f8fb;"></canvas>
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:3px 4px; background:#eef2f7;">
                 <button onclick="pdfOrdemMover(${i}, -1)" title="Para a esquerda" ${i === 0 ? 'disabled' : ''}
                         style="border:none; background:none; cursor:pointer; font-size:12px; opacity:${i === 0 ? '.3' : '1'};">◀</button>
-                <span style="font-size:11px; color:#4a5568;">pág. ${numero}</span>
+                <span style="font-size:11px; color:#3d4759;">pág. ${numero}</span>
                 <button onclick="pdfOrdemMover(${i}, 1)" title="Para a direita" ${i === ordem.length - 1 ? 'disabled' : ''}
                         style="border:none; background:none; cursor:pointer; font-size:12px; opacity:${i === ordem.length - 1 ? '.3' : '1'};">▶</button>
             </div>
@@ -1782,11 +1782,11 @@ function pdfBarraDePaginaHtml() {
     if (!pdfExtra.doc) return '';
     return `<div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
         <button class="btn btn-sm btn-secondary" onclick="pdfPalcoIr(-1)">◀</button>
-        <span style="font-size:13px; color:#4a5568;">Página <strong>${pdfExtra.pagina}</strong> de ${pdfExtra.doc.numPages}</span>
+        <span style="font-size:13px; color:#3d4759;">Página <strong>${pdfExtra.pagina}</strong> de ${pdfExtra.doc.numPages}</span>
         <button class="btn btn-sm btn-secondary" onclick="pdfPalcoIr(1)">▶</button>
         <input type="number" min="1" max="${pdfExtra.doc.numPages}" value="${pdfExtra.pagina}"
                onchange="pdfPalcoIrPara(this.value)"
-               style="width:70px; padding:5px; border:1px solid #cbd5e0; border-radius:5px;">
+               style="width:70px; padding:5px; border:1px solid #cdd5e1; border-radius:5px;">
     </div>`;
 }
 
@@ -1966,19 +1966,19 @@ function pdfRenderListaItens() {
     if (!area) return;
     const itens = pdfExtra.itens || [];
     if (!itens.length) {
-        area.innerHTML = '<p style="font-size:12px; color:#a0aec0;">Nada marcado ainda.</p>';
+        area.innerHTML = '<p style="font-size:12px; color:#7a869a;">Nada marcado ainda.</p>';
         return;
     }
     const nomes = { texto: 'Texto', destaque: 'Destaque', retangulo: 'Caixa', linha: 'Linha', tarja: 'Tarja',
                     'campo-texto': 'Campo de texto', 'campo-marcacao': 'Caixa de marcação' };
     area.innerHTML = `
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
-            <span style="font-size:13px; font-weight:600; color:#4a5568;">${itens.length} marcação(ões)</span>
+            <span style="font-size:13px; font-weight:600; color:#3d4759;">${itens.length} marcação(ões)</span>
             <button class="btn btn-sm btn-danger" onclick="pdfLimparItens()">Limpar todas</button>
         </div>
         ${itens.map((it, i) => `
             <div style="display:flex; align-items:center; gap:8px; font-size:12px; padding:5px 8px;
-                        background:#f7fafc; border-radius:5px; margin-bottom:4px;">
+                        background:#f6f8fb; border-radius:5px; margin-bottom:4px;">
                 <span style="width:10px; height:10px; border-radius:2px; background:${it.tipo === 'tarja' ? '#000' : escPdf(it.cor || '#e53e3e')};"></span>
                 <span style="flex:1;">${nomes[it.tipo] || it.tipo} — página ${it.pagina + 1}${it.nome ? ': ' + escPdf(it.nome) : ''}${it.texto ? ': "' + escPdf(it.texto.slice(0, 40)) + '"' : ''}</span>
                 <button onclick="pdfRemoverItem(${i})" style="border:none; background:none; cursor:pointer; color:#e53e3e;">×</button>
@@ -2260,7 +2260,7 @@ function pdfRenderCatalogo() {
     tela.innerHTML = `
         <div class="card" style="margin:20px 0;">
             <h2>📕 Ferramentas PDF ${pdfSeloPro()}</h2>
-            <p style="color:#4a5568; font-size:14px; line-height:1.6; margin-bottom:6px;">
+            <p style="color:#3d4759; font-size:14px; line-height:1.6; margin-bottom:6px;">
                 ${CATALOGO_PDF.length} ferramentas de PDF dentro do sistema: juntar, dividir, comprimir, assinar,
                 proteger com senha, OCR, converter de e para Word, Excel e imagem, censurar de verdade.
             </p>
@@ -2283,7 +2283,7 @@ function pdfRenderCatalogo() {
             <div style="display:flex; gap:8px; flex-wrap:wrap; margin:14px 0 10px;">
                 <input type="search" id="pdfBusca" value="${escPdf(pdfBusca)}" placeholder="🔍 Buscar ferramenta (ex.: senha, juntar, Word...)"
                        oninput="pdfBuscar(this.value)"
-                       style="flex:1; min-width:220px; padding:9px 12px; border:1px solid #cbd5e0; border-radius:6px; font-size:14px;">
+                       style="flex:1; min-width:220px; padding:9px 12px; border:1px solid #cdd5e1; border-radius:6px; font-size:14px;">
             </div>
             <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;">${chips}</div>
         </div>
@@ -2333,25 +2333,25 @@ function pdfRenderGrade() {
         if (!ferramentas.length) return '';
         return `
             <div class="card" style="margin-bottom:18px;">
-                <h3 style="margin-top:0; color:#2c5282;">${g.emoji} ${escPdf(g.nome)}
-                    <span style="font-weight:400; font-size:12px; color:#a0aec0;">(${ferramentas.length})</span></h3>
+                <h3 style="margin-top:0; color:#1b4488;">${g.emoji} ${escPdf(g.nome)}
+                    <span style="font-weight:400; font-size:12px; color:#7a869a;">(${ferramentas.length})</span></h3>
                 <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:10px;">
                     ${ferramentas.map(f => `
                         <button onclick="abrirFerramentaPdf('${f.id}')"
-                                style="text-align:left; background:white; border:1px solid #e2e8f0; border-radius:8px;
+                                style="text-align:left; background:white; border:1px solid #e3e8ef; border-radius:8px;
                                        padding:12px; cursor:pointer; transition:all .15s; font:inherit;"
-                                onmouseover="this.style.borderColor='#3182ce'; this.style.transform='translateY(-1px)'; this.style.boxShadow='0 4px 10px rgba(0,0,0,.07)';"
-                                onmouseout="this.style.borderColor='#e2e8f0'; this.style.transform=''; this.style.boxShadow='';">
+                                onmouseover="this.style.borderColor='#2563c9'; this.style.transform='translateY(-1px)'; this.style.boxShadow='0 4px 10px rgba(0,0,0,.07)';"
+                                onmouseout="this.style.borderColor='#e3e8ef'; this.style.transform=''; this.style.boxShadow='';">
                             <div style="font-size:20px; line-height:1.2;">${f.emoji}</div>
-                            <div style="font-weight:700; font-size:13px; color:#2d3748; margin:5px 0 3px;">${escPdf(f.nome)}</div>
-                            <div style="font-size:11.5px; color:#718096; line-height:1.45;">${escPdf(f.resumo)}</div>
+                            <div style="font-weight:700; font-size:13px; color:#1c2536; margin:5px 0 3px;">${escPdf(f.nome)}</div>
+                            <div style="font-size:11.5px; color:#5f6b7f; line-height:1.45;">${escPdf(f.resumo)}</div>
                         </button>`).join('')}
                 </div>
             </div>`;
     }).join('');
 
     area.innerHTML = grupos || `
-        <div class="card" style="text-align:center; color:#718096;">
+        <div class="card" style="text-align:center; color:#5f6b7f;">
             Nenhuma ferramenta com "<strong>${escPdf(pdfBusca)}</strong>".
             <div style="margin-top:8px;"><button class="btn btn-sm btn-secondary" onclick="pdfLimparBusca()">Limpar a busca</button></div>
         </div>`;
@@ -2405,11 +2405,11 @@ function pdfRenderPainel() {
                 <button class="btn btn-sm btn-secondary" onclick="fecharFerramentaPdf()">← Todas as ferramentas</button>
                 <div style="flex:1; min-width:200px;">
                     <h2 style="margin:0; border:none; padding:0;">${ferramenta.emoji} ${escPdf(ferramenta.nome)} ${pdfSeloPro()}</h2>
-                    <div style="font-size:12px; color:#a0aec0;">${grupo.emoji} ${escPdf(grupo.nome)}</div>
+                    <div style="font-size:12px; color:#7a869a;">${grupo.emoji} ${escPdf(grupo.nome)}</div>
                 </div>
             </div>
-            <p style="color:#4a5568; font-size:14px; margin:12px 0 0;">${escPdf(ferramenta.resumo)}</p>
-            ${ferramenta.detalhe ? `<p style="color:#718096; font-size:12.5px; line-height:1.6; margin:8px 0 0;">${escPdf(ferramenta.detalhe)}</p>` : ''}
+            <p style="color:#3d4759; font-size:14px; margin:12px 0 0;">${escPdf(ferramenta.resumo)}</p>
+            ${ferramenta.detalhe ? `<p style="color:#5f6b7f; font-size:12.5px; line-height:1.6; margin:8px 0 0;">${escPdf(ferramenta.detalhe)}</p>` : ''}
         </div>
 
         <div class="card">
@@ -2420,10 +2420,10 @@ function pdfRenderPainel() {
                 <button class="btn btn-primary" id="pdfBotaoExecutar" onclick="pdfExecutar()"
                         style="padding:11px 24px; font-size:15px;">▶️ ${escPdf(ferramenta.rotuloBotao || 'Executar')}</button>
                 <div id="pdfProgresso" style="display:none; margin-top:14px;">
-                    <div style="background:#e2e8f0; border-radius:99px; height:8px; overflow:hidden;">
-                        <div id="pdfBarraProgresso" style="background:#3182ce; height:100%; width:0; transition:width .25s;"></div>
+                    <div style="background:#e3e8ef; border-radius:99px; height:8px; overflow:hidden;">
+                        <div id="pdfBarraProgresso" style="background:#2563c9; height:100%; width:0; transition:width .25s;"></div>
                     </div>
-                    <div id="pdfTextoProgresso" style="font-size:12px; color:#718096; margin-top:6px;"></div>
+                    <div id="pdfTextoProgresso" style="font-size:12px; color:#5f6b7f; margin-top:6px;"></div>
                 </div>` : ''}
             <div id="pdfResultado"></div>
         </div>`;

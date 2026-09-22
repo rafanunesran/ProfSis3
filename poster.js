@@ -507,21 +507,21 @@ function posRender() {
     const premium = posEhPremium();
     area.innerHTML = `
         <style>
-            .pos-solta { border:2px dashed #cbd5e0; border-radius:10px; padding:28px 18px; text-align:center;
-                         background:#f7fafc; transition:all .15s; cursor:pointer; }
-            .pos-solta.pos-sobre { border-color:#3182ce; background:#ebf8ff; }
-            .pos-opcao { border:1px solid #e2e8f0; background:#fff; border-radius:8px; padding:7px 12px;
-                         cursor:pointer; font-size:13px; color:#4a5568; transition:all .15s; }
-            .pos-opcao:hover { border-color:#a0aec0; }
-            .pos-opcao.pos-ativa { border-color:#3182ce; background:#ebf8ff; color:#2b6cb0; font-weight:bold; }
-            .pos-rotulo { font-size:12px; font-weight:bold; color:#4a5568; text-transform:uppercase; letter-spacing:.03em; }
-            .pos-ajuda { color:#718096; font-size:12px; margin-top:6px; line-height:1.5; }
-            #posPrevia { border:1px solid #e2e8f0; border-radius:6px; background:#fff; max-width:100%; }
+            .pos-solta { border:2px dashed #cdd5e1; border-radius:10px; padding:28px 18px; text-align:center;
+                         background:#f6f8fb; transition:all .15s; cursor:pointer; }
+            .pos-solta.pos-sobre { border-color:#2563c9; background:#edf3fd; }
+            .pos-opcao { border:1px solid #e3e8ef; background:#fff; border-radius:8px; padding:7px 12px;
+                         cursor:pointer; font-size:13px; color:#3d4759; transition:all .15s; }
+            .pos-opcao:hover { border-color:#7a869a; }
+            .pos-opcao.pos-ativa { border-color:#2563c9; background:#edf3fd; color:#1f55ad; font-weight:bold; }
+            .pos-rotulo { font-size:12px; font-weight:bold; color:#3d4759; text-transform:uppercase; letter-spacing:.03em; }
+            .pos-ajuda { color:#5f6b7f; font-size:12px; margin-top:6px; line-height:1.5; }
+            #posPrevia { border:1px solid #e3e8ef; border-radius:6px; background:#fff; max-width:100%; }
         </style>
 
         <div class="card" style="margin:20px 0;">
             <h2>🧱 Pôster ${posSeloPro()}</h2>
-            <p style="color:#4a5568; font-size:14px; line-height:1.6; margin-bottom:6px;">
+            <p style="color:#3d4759; font-size:14px; line-height:1.6; margin-bottom:6px;">
                 Espalha uma imagem por várias folhas A4 para você imprimir, recortar e colar na parede —
                 o mapa da aula de Geografia, a tabela periódica, a linha do tempo, o cartaz da feira.
                 Sai em PDF, já com as marcas de corte e o nome de cada folha.
@@ -545,7 +545,7 @@ function posRender() {
 
             ${posErro ? `<div style="background:#fff5f5; border:1px solid #fc8181; color:#742a2a; border-radius:8px; padding:12px 14px; margin:12px 0; font-size:13px; line-height:1.6;">
                 ⚠️ ${escPos(posErro)}</div>` : ''}
-            ${posAviso ? `<div style="background:#ebf8ff; border:1px solid #90cdf4; color:#2c5282; border-radius:8px; padding:10px 14px; margin:12px 0; font-size:13px; line-height:1.6;">
+            ${posAviso ? `<div style="background:#edf3fd; border:1px solid #a9c6f3; color:#1b4488; border-radius:8px; padding:10px 14px; margin:12px 0; font-size:13px; line-height:1.6;">
                 ${escPos(posAviso)}</div>` : ''}
 
             ${posImagem ? posHtmlComImagem() : posHtmlSemImagem()}
@@ -560,8 +560,8 @@ function posHtmlSemImagem() {
              ondragover="posArrastando(event, true)" ondragleave="posArrastando(event, false)"
              ondrop="posSoltar(event)">
             <div style="font-size:38px; line-height:1;">🧱</div>
-            <div style="font-weight:bold; color:#2d3748; margin-top:10px;">Escolha a imagem ou arraste ela para cá</div>
-            <div style="color:#718096; font-size:12px; margin-top:6px;">
+            <div style="font-weight:bold; color:#1c2536; margin-top:10px;">Escolha a imagem ou arraste ela para cá</div>
+            <div style="color:#5f6b7f; font-size:12px; margin-top:6px;">
                 PNG, JPG, WebP, GIF ou BMP — até ${POSTER_MAX_MB} MB
             </div>
         </div>
@@ -574,12 +574,12 @@ function posHtmlComImagem() {
     const avisos = (plano && window.POSTEROPS) ? POSTEROPS.conferirPlano(plano, posReticulado) : [];
 
     return `
-        <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap; background:#f7fafc;
-                    border:1px solid #e2e8f0; border-radius:8px; padding:10px 12px; margin:12px 0;">
-            <img src="${escPos(img.url)}" alt="" style="width:64px; height:64px; object-fit:contain; background:#fff; border:1px solid #e2e8f0; border-radius:6px;">
+        <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap; background:#f6f8fb;
+                    border:1px solid #e3e8ef; border-radius:8px; padding:10px 12px; margin:12px 0;">
+            <img src="${escPos(img.url)}" alt="" style="width:64px; height:64px; object-fit:contain; background:#fff; border:1px solid #e3e8ef; border-radius:6px;">
             <div style="flex:1; min-width:180px;">
-                <div style="font-weight:bold; color:#2d3748; font-size:14px; word-break:break-all;">${escPos(img.nome)}</div>
-                <div style="color:#718096; font-size:12px; margin-top:2px;">
+                <div style="font-weight:bold; color:#1c2536; font-size:14px; word-break:break-all;">${escPos(img.nome)}</div>
+                <div style="color:#5f6b7f; font-size:12px; margin-top:2px;">
                     ${img.largura} × ${img.altura} px · ${posTamanho(img.tamanho)}
                 </div>
             </div>
@@ -606,23 +606,23 @@ function posHtmlComImagem() {
                 </div>
                 <div style="flex:0 0 200px; min-width:180px;">
                     <div class="pos-rotulo" style="margin-bottom:6px;">A conta</div>
-                    <div style="font-size:13px; color:#2d3748; line-height:1.9;">
+                    <div style="font-size:13px; color:#1c2536; line-height:1.9;">
                         <div><strong>${plano.total}</strong> folha${plano.total > 1 ? 's' : ''} de ${escPos(posOpcoes.papel)}</div>
-                        <div style="color:#718096;">${plano.colunas} na largura × ${plano.linhas} na altura</div>
+                        <div style="color:#5f6b7f;">${plano.colunas} na largura × ${plano.linhas} na altura</div>
                         <div style="margin-top:6px;"><strong>${plano.posterLarguraCm.toFixed(0)} × ${plano.posterAlturaCm.toFixed(0)} cm</strong></div>
-                        <div style="color:#718096;">≈ ${(plano.posterLarguraCm / 100).toFixed(2)} × ${(plano.posterAlturaCm / 100).toFixed(2)} m</div>
-                        ${posReticulado ? `<div style="margin-top:6px; color:#718096;">
+                        <div style="color:#5f6b7f;">≈ ${(plano.posterLarguraCm / 100).toFixed(2)} × ${(plano.posterAlturaCm / 100).toFixed(2)} m</div>
+                        ${posReticulado ? `<div style="margin-top:6px; color:#5f6b7f;">
                             ${posReticulado.pontos.length.toLocaleString('pt-BR')} pontos<br>
                             ~${Math.round(posReticulado.coberturaMedia * 100)}% de tinta no papel</div>` : `
-                            <div style="margin-top:6px; color:#718096;">${Math.round(plano.dpiEfetivo)} DPI na impressão</div>`}
+                            <div style="margin-top:6px; color:#5f6b7f;">${Math.round(plano.dpiEfetivo)} DPI na impressão</div>`}
                     </div>
                 </div>
             </div>` : ''}
 
         ${avisos.map(a => `
-            <div style="background:${a.grau === 'atencao' ? '#fffaf0' : '#ebf8ff'};
-                        border:1px solid ${a.grau === 'atencao' ? '#fbd38d' : '#90cdf4'};
-                        color:${a.grau === 'atencao' ? '#744210' : '#2c5282'};
+            <div style="background:${a.grau === 'atencao' ? '#fffaf0' : '#edf3fd'};
+                        border:1px solid ${a.grau === 'atencao' ? '#fbd38d' : '#a9c6f3'};
+                        color:${a.grau === 'atencao' ? '#744210' : '#1b4488'};
                         border-radius:8px; padding:10px 14px; margin:8px 0; font-size:13px; line-height:1.6;">
                 ${a.grau === 'atencao' ? '⚠️' : 'ℹ️'} ${escPos(a.texto)}
             </div>`).join('')}
@@ -653,10 +653,10 @@ function posHtmlTamanho() {
                 ${porFolhas ? `
                     <input type="number" min="1" max="20" step="1" value="${posOpcoes.folhas}" ${posOcupado ? 'disabled' : ''}
                            style="width:72px; padding:6px;" onchange="posDefinir('folhas', this.value)">
-                    <span style="font-size:13px; color:#4a5568;">folha(s) na</span>` : `
+                    <span style="font-size:13px; color:#3d4759;">folha(s) na</span>` : `
                     <input type="number" min="5" max="1000" step="1" value="${posOpcoes.medida}" ${posOcupado ? 'disabled' : ''}
                            style="width:82px; padding:6px;" onchange="posDefinir('medida', this.value)">
-                    <span style="font-size:13px; color:#4a5568;">cm de</span>`}
+                    <span style="font-size:13px; color:#3d4759;">cm de</span>`}
                 <select ${posOcupado ? 'disabled' : ''} style="padding:6px;" onchange="posDefinir('eixo', this.value)">
                     <option value="largura" ${posOpcoes.eixo === 'largura' ? 'selected' : ''}>largura</option>
                     <option value="altura" ${posOpcoes.eixo === 'altura' ? 'selected' : ''}>altura</option>
@@ -680,7 +680,7 @@ function posHtmlPapel() {
                     <button class="pos-opcao ${posOpcoes.orientacao === v ? 'pos-ativa' : ''}" ${posOcupado ? 'disabled' : ''}
                             onclick="posDefinir('orientacao', '${v}')">${t}</button>`).join('')}
             </div>
-            <div style="margin-top:8px; font-size:12px; color:#4a5568;">
+            <div style="margin-top:8px; font-size:12px; color:#3d4759;">
                 <label style="display:block; margin-bottom:4px;">
                     Margem da folha: <strong>${posOpcoes.margemCm.toFixed(1)} cm</strong>
                     <input type="range" min="0" max="3" step="0.1" value="${posOpcoes.margemCm}" ${posOcupado ? 'disabled' : ''}
@@ -721,7 +721,7 @@ function posHtmlPontos() {
     return `
         <div>
             <div class="pos-rotulo">Os pontos</div>
-            <div style="margin-top:6px; font-size:12px; color:#4a5568;">
+            <div style="margin-top:6px; font-size:12px; color:#3d4759;">
                 <label style="display:block; margin-bottom:4px;">
                     Distância entre pontos: <strong>${posOpcoes.passo} pt</strong>
                     <input type="range" min="3" max="40" step="1" value="${posOpcoes.passo}" ${posOcupado ? 'disabled' : ''}
@@ -747,7 +747,7 @@ function posHtmlPontos() {
                     <input type="color" value="${escPos(posOpcoes.corFixa)}" ${posOcupado ? 'disabled' : ''}
                            style="width:42px; height:32px; padding:2px;" onchange="posDefinir('corFixa', this.value)">` : ''}
             </div>
-            <label style="display:flex; gap:6px; align-items:center; margin-top:8px; font-size:13px; color:#4a5568;">
+            <label style="display:flex; gap:6px; align-items:center; margin-top:8px; font-size:13px; color:#3d4759;">
                 <input type="checkbox" ${posOpcoes.invertido ? 'checked' : ''} ${posOcupado ? 'disabled' : ''}
                        onchange="posDefinir('invertido', this.checked)">
                 Inverter (para imprimir claro sobre papel escuro)
@@ -759,12 +759,12 @@ function posHtmlMontagem() {
     return `
         <div>
             <div class="pos-rotulo">Ajuda para montar</div>
-            <label style="display:flex; gap:6px; align-items:center; margin-top:8px; font-size:13px; color:#4a5568;">
+            <label style="display:flex; gap:6px; align-items:center; margin-top:8px; font-size:13px; color:#3d4759;">
                 <input type="checkbox" ${posOpcoes.marcasDeCorte ? 'checked' : ''} ${posOcupado ? 'disabled' : ''}
                        onchange="posDefinir('marcasDeCorte', this.checked)">
                 Marcas de corte nos cantos
             </label>
-            <label style="display:flex; gap:6px; align-items:center; margin-top:6px; font-size:13px; color:#4a5568;">
+            <label style="display:flex; gap:6px; align-items:center; margin-top:6px; font-size:13px; color:#3d4759;">
                 <input type="checkbox" ${posOpcoes.numerarFolhas ? 'checked' : ''} ${posOcupado ? 'disabled' : ''}
                        onchange="posDefinir('numerarFolhas', this.checked)">
                 Nome em cada folha (L1-C2)
@@ -780,10 +780,10 @@ function posHtmlProgresso() {
     if (!posOcupado) return '';
     const pct = Math.max(2, Math.min(100, Math.round(posProgresso.fracao * 100)));
     return `
-        <div style="background:#edf2f7; border-radius:999px; height:10px; overflow:hidden;">
-            <div style="width:${pct}%; height:100%; background:#3182ce; transition:width .2s;"></div>
+        <div style="background:#eef2f7; border-radius:999px; height:10px; overflow:hidden;">
+            <div style="width:${pct}%; height:100%; background:#2563c9; transition:width .2s;"></div>
         </div>
-        <div style="font-size:12px; color:#718096; margin-top:6px;">${escPos(posProgresso.texto || '')} ${pct}%</div>`;
+        <div style="font-size:12px; color:#5f6b7f; margin-top:6px;">${escPos(posProgresso.texto || '')} ${pct}%</div>`;
 }
 
 function posDesenharProgresso() {
@@ -795,15 +795,15 @@ function posHtmlResultado() {
     if (!posResultado || posOcupado) return '';
     const r = posResultado;
     return `
-        <div style="margin-top:18px; border-top:1px solid #e2e8f0; padding-top:16px;
+        <div style="margin-top:18px; border-top:1px solid #e3e8ef; padding-top:16px;
                     display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
             <div style="flex:1; min-width:200px;">
-                <div style="font-weight:bold; color:#2d3748;">✅ Pronto — ${r.folhas} folha${r.folhas > 1 ? 's' : ''}</div>
-                <div style="color:#718096; font-size:12px; margin-top:2px;">
+                <div style="font-weight:bold; color:#1c2536;">✅ Pronto — ${r.folhas} folha${r.folhas > 1 ? 's' : ''}</div>
+                <div style="color:#5f6b7f; font-size:12px; margin-top:2px;">
                     ${r.colunas} × ${r.linhas} · ${r.larguraCm.toFixed(0)} × ${r.alturaCm.toFixed(0)} cm ·
                     ${posTamanho(r.blob.size)} · ${r.segundos.toFixed(1)}s
                 </div>
-                <div style="color:#718096; font-size:12px; margin-top:6px;">
+                <div style="color:#5f6b7f; font-size:12px; margin-top:6px;">
                     Na hora de imprimir, escolha <strong>"Tamanho real"</strong> (ou 100%) — se a impressora
                     "ajustar à página", as folhas não encaixam.
                 </div>

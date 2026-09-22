@@ -24,13 +24,13 @@ function getAeePrefix(e) {
 function getStatusColor(status) {
     const cores = {
         'pendente': '#ffc107',
-        'notificado': '#3182ce',
+        'notificado': '#2563c9',
         'entregue': '#22c55e',
         'entregue_atraso': '#f59e0b',
         'nao_entregue': '#ef4444',
-        'nao_fez_folha': '#718096'
+        'nao_fez_folha': '#5f6b7f'
     };
-    return cores[status] || '#718096';
+    return cores[status] || '#5f6b7f';
 }
 
 // Gerenciamento de Sessão

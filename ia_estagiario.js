@@ -738,7 +738,7 @@ async function abrirModalGerarDocumentoIA() {
         div.className = 'modal';
         div.innerHTML = `
             <div class="modal-content" style="max-width: 600px;">
-                <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:15px;">
+                <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e3e8ef; padding-bottom:10px; margin-bottom:15px;">
                     <h2 style="margin: 0;">🤖 Estagiário IA</h2>
                     <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalGerarDocumentoIA')">×</button>
                 </div>
@@ -746,24 +746,24 @@ async function abrirModalGerarDocumentoIA() {
                 <div style="display: flex; gap: 15px; margin-bottom: 15px;">
                     <div style="flex: 1;">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Tipo de Documento:</label>
-                        <select id="iaDocTipo" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;" onchange="toggleTipoDocumentoIA()">
+                        <select id="iaDocTipo" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;" onchange="toggleTipoDocumentoIA()">
                             ${opcoesTipoDocHtml}
                         </select>
                     </div>
                     <div style="flex: 1;" id="campoSemanaVigente">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Semana (clique num dia — pega Seg a Sex):</label>
-                        <input type="date" id="iaDocSemanaData" value="${semanaInicioISO}" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;" onchange="atualizarSemanaPorDataEstagiario(this.value)">
-                        <input type="text" id="iaDocSemana" value="${semanaSugerida}" readonly style="width:100%; padding:6px 8px; margin-top:6px; border:1px solid #e2e8f0; border-radius:4px; background:#f7fafc; color:#4a5568; font-size:13px;">
+                        <input type="date" id="iaDocSemanaData" value="${semanaInicioISO}" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;" onchange="atualizarSemanaPorDataEstagiario(this.value)">
+                        <input type="text" id="iaDocSemana" value="${semanaSugerida}" readonly style="width:100%; padding:6px 8px; margin-top:6px; border:1px solid #e3e8ef; border-radius:4px; background:#f6f8fb; color:#3d4759; font-size:13px;">
                         <input type="hidden" id="iaDocSemanaInicio" value="${semanaInicioISO}">
                         <input type="hidden" id="iaDocSemanaFim" value="${semanaFimISO}">
                     </div>
                     <div style="flex: 1; display:none;" id="campoMesAnoAgenda">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Mês / Ano da Agenda:</label>
                         <div style="display:flex; gap:8px;">
-                            <select id="iaAgendaMes" style="flex:1; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <select id="iaAgendaMes" style="flex:1; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                                 ${MESES_AGENDA.map((m, i) => `<option value="${i}" ${i === defaultMonth ? 'selected' : ''}>${m}</option>`).join('')}
                             </select>
-                            <input type="number" id="iaAgendaAno" value="${defaultYear}" style="width:90px; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <input type="number" id="iaAgendaAno" value="${defaultYear}" style="width:90px; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                         </div>
                     </div>
                 </div>
@@ -772,14 +772,14 @@ async function abrirModalGerarDocumentoIA() {
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom: 15px;">
                         <div>
                             <label style="font-weight:bold; display:block; margin-bottom:5px;">Série / Ano:</label>
-                            <select id="iaDocSerie" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;" onchange="atualizarProfessorParceiroPlanoAula()">
+                            <select id="iaDocSerie" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;" onchange="atualizarProfessorParceiroPlanoAula()">
                                 <option value="">Selecione...</option>
                                 ${seriesUnicas.map(s => `<option value="${s}">${s}</option>`).join('')}
                             </select>
                         </div>
                         <div>
                             <label style="font-weight:bold; display:block; margin-bottom:5px;">Disciplina:</label>
-                            <select id="iaDocDisciplina" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;" onchange="atualizarProfessorParceiroPlanoAula()">
+                            <select id="iaDocDisciplina" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;" onchange="atualizarProfessorParceiroPlanoAula()">
                                 <option value="">Selecione...</option>
                                 ${disciplinasUnicas.map(d => `<option value="${d}">${d}</option>`).join('')}
                             </select>
@@ -788,44 +788,44 @@ async function abrirModalGerarDocumentoIA() {
 
                     <div id="campoProfessorParceiroPlano" style="display:none; margin-bottom: 15px;">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">👥 Professor parceiro (eletiva):</label>
-                        <input type="text" id="iaDocProfessorParceiro" placeholder="Nome do professor que divide a eletiva" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
-                        <p style="font-size:11px; color:#718096; margin:4px 0 0 0;">Vem do cadastro da eletiva (Turmas) e sai no cabeçalho do Plano de Aula. Dá pra ajustar só para este plano.</p>
+                        <input type="text" id="iaDocProfessorParceiro" placeholder="Nome do professor que divide a eletiva" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
+                        <p style="font-size:11px; color:#5f6b7f; margin:4px 0 0 0;">Vem do cadastro da eletiva (Turmas) e sai no cabeçalho do Plano de Aula. Dá pra ajustar só para este plano.</p>
                     </div>
 
                     <div style="margin-bottom: 15px;">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Tema / Assunto:</label>
-                        <input type="text" id="iaDocTema" placeholder="Ex: Revolução Francesa" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                        <input type="text" id="iaDocTema" placeholder="Ex: Revolução Francesa" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                     </div>
 
-                    <div style="margin-bottom: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
+                    <div style="margin-bottom: 15px; border-top: 1px solid #e3e8ef; padding-top: 15px;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
                             <label style="font-weight:bold; margin:0;">Comando do Estagiário:</label>
                             <button class="btn btn-sm btn-secondary" style="font-size:10px; padding:2px 5px;" onclick="restaurarPromptPadraoIA()">Restaurar Padrão</button>
                         </div>
-                        <p style="font-size:11px; color:#718096; margin-bottom:5px;">Você pode modificar com seu prompt pessoal ou usar o nativo</p>
-                        <textarea id="iaDocPrompt" rows="6" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; font-family:monospace; font-size:11px; line-height:1.4;" onchange="localStorage.setItem('ia_prompt_template', this.value)"></textarea>
+                        <p style="font-size:11px; color:#5f6b7f; margin-bottom:5px;">Você pode modificar com seu prompt pessoal ou usar o nativo</p>
+                        <textarea id="iaDocPrompt" rows="6" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px; font-family:monospace; font-size:11px; line-height:1.4;" onchange="localStorage.setItem('ia_prompt_template', this.value)"></textarea>
                     </div>
                 </div>
 
                 <div id="camposAnexoPaee" style="display:none;">
                     <div style="margin-bottom: 15px;">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Estudante (AEE):</label>
-                        <select id="anexoPaeeAluno" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;" onchange="preencherDadosEstudanteAnexoPaee()">
+                        <select id="anexoPaeeAluno" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;" onchange="preencherDadosEstudanteAnexoPaee()">
                             ${alunosAeeOptionsHtml}
                         </select>
                     </div>
                     <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:15px; margin-bottom: 15px;">
                         <div>
                             <label style="font-weight:bold; display:block; margin-bottom:5px; font-size:12px;">Data de Nascimento:</label>
-                            <input type="text" id="anexoPaeeNascimento" placeholder="dd/mm/aaaa" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <input type="text" id="anexoPaeeNascimento" placeholder="dd/mm/aaaa" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                         </div>
                         <div>
                             <label style="font-weight:bold; display:block; margin-bottom:5px; font-size:12px;">Escolaridade / Série:</label>
-                            <input type="text" id="anexoPaeeEscolaridade" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <input type="text" id="anexoPaeeEscolaridade" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                         </div>
                         <div>
                             <label style="font-weight:bold; display:block; margin-bottom:5px; font-size:12px;">Turno:</label>
-                            <input type="text" id="anexoPaeeTurno" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <input type="text" id="anexoPaeeTurno" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                         </div>
                     </div>
                     <div style="display:flex; gap:20px; margin-bottom:15px; font-size:13px;">
@@ -852,35 +852,35 @@ async function abrirModalGerarDocumentoIA() {
                             ${ANEXO_PAEE_APOIOS.map(o => `<label><input type="checkbox" id="anexoApoio_${o.token}"> ${o.label}</label>`).join('')}
                         </div>
                     </div>
-                    <div style="margin-bottom: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
+                    <div style="margin-bottom: 15px; border-top: 1px solid #e3e8ef; padding-top: 15px;">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Notas do Estudo de Caso / Diagnóstico (contexto para a IA):</label>
-                        <p style="font-size:11px; color:#718096; margin-bottom:5px;">A IA vai usar essas notas (pré-preenchidas com o diagnóstico/relatório já salvos do aluno, se houver) pra rascunhar os campos descritivos do Anexo III. Você revisa e edita tudo antes de gerar o documento final.</p>
-                        <textarea id="anexoPaeeNotas" rows="6" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; font-size:12px; line-height:1.4;"></textarea>
+                        <p style="font-size:11px; color:#5f6b7f; margin-bottom:5px;">A IA vai usar essas notas (pré-preenchidas com o diagnóstico/relatório já salvos do aluno, se houver) pra rascunhar os campos descritivos do Anexo III. Você revisa e edita tudo antes de gerar o documento final.</p>
+                        <textarea id="anexoPaeeNotas" rows="6" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px; font-family:inherit; font-size:12px; line-height:1.4;"></textarea>
                     </div>
                 </div>
 
                 <div id="camposAnexoIV" style="display:none;">
                     <div style="margin-bottom: 15px;">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Estudante (Painel AEE):</label>
-                        <select id="anexoIVAluno" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                        <select id="anexoIVAluno" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                             ${alunosPeiOptionsHtml}
                         </select>
-                        <div id="anexoIVSerieInfo" style="display:none; font-size:12px; color:#4a5568; margin-top:6px;"></div>
+                        <div id="anexoIVSerieInfo" style="display:none; font-size:12px; color:#3d4759; margin-top:6px;"></div>
                     </div>
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom: 15px;">
                         <div>
                             <label style="font-weight:bold; display:block; margin-bottom:5px;">Disciplina que você leciona para o estudante:</label>
-                            <select id="anexoIVDisciplina" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <select id="anexoIVDisciplina" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                                 <option value="">Selecione...</option>
                                 ${disciplinasUnicas.map(d => `<option value="${d}">${d}</option>`).join('')}
                             </select>
                         </div>
                         <div>
                             <label style="font-weight:bold; display:block; margin-bottom:5px;">Professor Especializado (AEE):</label>
-                            <select id="anexoIVProfAee" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px;">
+                            <select id="anexoIVProfAee" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                                 ${professoresAeeOptionsHtml}
                             </select>
-                            <p style="font-size:10px; color:#a0aec0; margin-top:3px;">Lista de professores com o papel "AEE" definido pelo Super Admin nesta escola.</p>
+                            <p style="font-size:10px; color:#7a869a; margin-top:3px;">Lista de professores com o papel "AEE" definido pelo Super Admin nesta escola.</p>
                         </div>
                     </div>
                     <div style="margin-bottom:15px;">
@@ -891,17 +891,17 @@ async function abrirModalGerarDocumentoIA() {
                             <label><input type="radio" name="anexoIVBimestre" value="3" ${bimestreAtualNum === '3' ? 'checked' : ''}> 3º Bimestre</label>
                             <label><input type="radio" name="anexoIVBimestre" value="4" ${bimestreAtualNum === '4' ? 'checked' : ''}> 4º Bimestre</label>
                         </div>
-                        <p style="font-size:10px; color:#a0aec0; margin-top:3px;">Vem pré-selecionado conforme a data de hoje - troque se estiver gerando pra outro bimestre.</p>
+                        <p style="font-size:10px; color:#7a869a; margin-top:3px;">Vem pré-selecionado conforme a data de hoje - troque se estiver gerando pra outro bimestre.</p>
                     </div>
-                    <div style="margin-bottom: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
+                    <div style="margin-bottom: 15px; border-top: 1px solid #e3e8ef; padding-top: 15px;">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Breve descrição da atividade (contexto para a IA):</label>
-                        <p style="font-size:11px; color:#718096; margin-bottom:5px;">Descreva em poucas linhas a atividade/conteúdo planejado. A IA usa isso pra rascunhar os campos do PEI abaixo. Você revisa e edita tudo antes de gerar o documento final.</p>
-                        <textarea id="anexoIVDescricao" rows="4" style="width:100%; padding:8px; border:1px solid #cbd5e0; border-radius:4px; font-family:inherit; font-size:12px; line-height:1.4;"></textarea>
+                        <p style="font-size:11px; color:#5f6b7f; margin-bottom:5px;">Descreva em poucas linhas a atividade/conteúdo planejado. A IA usa isso pra rascunhar os campos do PEI abaixo. Você revisa e edita tudo antes de gerar o documento final.</p>
+                        <textarea id="anexoIVDescricao" rows="4" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px; font-family:inherit; font-size:12px; line-height:1.4;"></textarea>
                     </div>
-                    <div id="anexoIVRefBox" style="display:none; margin-bottom:15px; background:#ebf8ff; border:1px solid #90cdf4; border-radius:6px; padding:10px;">
-                        <p id="anexoIVRefTexto" style="margin:0 0 8px 0; font-size:12px; color:#2c5282;"></p>
+                    <div id="anexoIVRefBox" style="display:none; margin-bottom:15px; background:#edf3fd; border:1px solid #a9c6f3; border-radius:6px; padding:10px;">
+                        <p id="anexoIVRefTexto" style="margin:0 0 8px 0; font-size:12px; color:#1b4488;"></p>
                         <button type="button" class="btn btn-sm btn-info" id="btnCriarComRefAnexoIV" onclick="gerarAnexoIVEstagiario(true)" style="font-weight:bold;">📎 Criar com Ref</button>
-                        <span style="font-size:11px; color:#718096; margin-left:8px;">gera usando a mesma ação e estrutura do Anexo IV já existente</span>
+                        <span style="font-size:11px; color:#5f6b7f; margin-left:8px;">gera usando a mesma ação e estrutura do Anexo IV já existente</span>
                     </div>
                     <div id="anexoIVStatusPronto" style="display:none; margin-bottom:5px; font-size:12px;"></div>
                 </div>
@@ -2126,23 +2126,23 @@ function abrirModalOpcoesManualEstagiario(tipo, anterior) {
     // um botão que não faz nada.
     const ultimoHtml = anterior
         ? `<button type="button" class="btn btn-primary" style="width:100%; justify-content:center; margin:0;" onclick="escolherManualEstagiario('ultimo')">📥 Último</button>
-           <p style="font-size:12px; color:#4a5568; margin:6px 0 0;">Abre já com o texto de: ${escapeHtmlEstagiario(anterior.descricao)}. Você edita e complementa o que quiser.</p>`
+           <p style="font-size:12px; color:#3d4759; margin:6px 0 0;">Abre já com o texto de: ${escapeHtmlEstagiario(anterior.descricao)}. Você edita e complementa o que quiser.</p>`
         : `<button type="button" class="btn btn-secondary" style="width:100%; justify-content:center; margin:0;" disabled>📥 Último</button>
-           <p style="font-size:12px; color:#a0aec0; margin:6px 0 0;">Ainda não há um ${nomeDoc} anterior pra puxar. Depois de imprimir o primeiro, esta opção passa a valer.</p>`;
+           <p style="font-size:12px; color:#7a869a; margin:6px 0 0;">Ainda não há um ${nomeDoc} anterior pra puxar. Depois de imprimir o primeiro, esta opção passa a valer.</p>`;
 
     const modal = document.getElementById('modalOpcoesManualEstagiario');
     modal.innerHTML = `
         <div class="modal-content" style="max-width: 520px;">
-            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:12px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e3e8ef; padding-bottom:10px; margin-bottom:12px;">
                 <h2 style="margin:0; font-size:20px;">✍️ Manual — ${nomeDoc}</h2>
                 <button class="btn btn-sm btn-danger" style="padding:2px 8px;" onclick="closeModal('modalOpcoesManualEstagiario')">×</button>
             </div>
-            <p style="font-size:13px; color:#4a5568; margin:0 0 14px;">Os dois caminhos abrem o documento pra você escrever direto nele, sem passar pela IA.</p>
-            <div style="border:1px solid #e2e8f0; border-radius:6px; padding:12px; margin-bottom:10px;">
+            <p style="font-size:13px; color:#3d4759; margin:0 0 14px;">Os dois caminhos abrem o documento pra você escrever direto nele, sem passar pela IA.</p>
+            <div style="border:1px solid #e3e8ef; border-radius:6px; padding:12px; margin-bottom:10px;">
                 <button type="button" class="btn btn-primary" style="width:100%; justify-content:center; margin:0;" onclick="escolherManualEstagiario('branco')">📄 Branco</button>
-                <p style="font-size:12px; color:#4a5568; margin:6px 0 0;">Abre sem nenhuma informação nos campos - você escreve tudo.</p>
+                <p style="font-size:12px; color:#3d4759; margin:6px 0 0;">Abre sem nenhuma informação nos campos - você escreve tudo.</p>
             </div>
-            <div style="border:1px solid #e2e8f0; border-radius:6px; padding:12px;">
+            <div style="border:1px solid #e3e8ef; border-radius:6px; padding:12px;">
                 ${ultimoHtml}
             </div>
             <div style="margin-top:16px; display:flex; justify-content:flex-end;">
@@ -2249,7 +2249,7 @@ function montarHtmlPreviaEstagiario(htmlDocumento, opcoes) {
 
     const estilo = `
 <style id="estagiarioPreviaCss">
-    html { background: #edf2f7; }
+    html { background: #eef2f7; }
     body { background: #fff; ${o.forcarLargura ? `width: ${largura}px;` : ''} margin-left: auto; margin-right: auto; }
     .campo-editavel-estagiario {
         display: block;
@@ -2262,7 +2262,7 @@ function montarHtmlPreviaEstagiario(htmlDocumento, opcoes) {
     }
     .campo-editavel-estagiario:hover { background: #e6f2ff; box-shadow: inset 0 0 0 1px #7fb2e5; }
     .campo-editavel-estagiario:focus { outline: none; background: #fffdf0; box-shadow: inset 0 0 0 2px #d69e2e; }
-    .campo-editavel-estagiario:empty::before { content: attr(data-placeholder); color: #a0aec0; font-style: italic; }
+    .campo-editavel-estagiario:empty::before { content: attr(data-placeholder); color: #7a869a; font-style: italic; }
 </style>`;
 
     // O documento é desenhado pra folha A4; o script encolhe a página até caber na largura disponível
@@ -2428,9 +2428,9 @@ function puxarDocumentoAnteriorEstagiario(idModal, idIframe, campos) {
 // nome da constante global de campos do documento (ex.: 'PLANO_AULA_CAMPOS_IA'), lida no onclick.
 function blocoPuxarAnteriorEstagiario(anterior, idModal, idIframe, nomeConstanteCampos) {
     if (!anterior) return '';
-    return `<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:#ebf8ff; border:1px solid #90cdf4; border-radius:6px; padding:8px 10px; margin-bottom:12px;">
+    return `<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:#edf3fd; border:1px solid #a9c6f3; border-radius:6px; padding:8px 10px; margin-bottom:12px;">
                 <button type="button" class="btn btn-sm btn-secondary" style="margin:0;" onclick="puxarDocumentoAnteriorEstagiario('${idModal}', '${idIframe}', ${nomeConstanteCampos})">📥 Puxar anterior</button>
-                <span style="font-size:12px; color:#2c5282;">${escapeHtmlEstagiario(anterior.descricao)} — traz o texto pra cá; você escolhe entre substituir tudo ou só completar os campos vazios.</span>
+                <span style="font-size:12px; color:#1b4488;">${escapeHtmlEstagiario(anterior.descricao)} — traz o texto pra cá; você escolhe entre substituir tudo ou só completar os campos vazios.</span>
             </div>`;
 }
 
@@ -2527,14 +2527,14 @@ function blocoPreviaDocumentoEstagiario(idIframe, modoManual) {
         : (modoManual === 'ultimo' ? '(vieram do documento anterior) e edite' : '(os rascunhados pela IA) e edite');
     return `
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:6px; flex-wrap:wrap;">
-            <span style="font-size:12px; color:#718096;">✏️ Clique nos campos destacados em azul ${origem} o texto direto no documento.</span>
+            <span style="font-size:12px; color:#5f6b7f;">✏️ Clique nos campos destacados em azul ${origem} o texto direto no documento.</span>
             <span style="display:flex; gap:4px;">
                 <button type="button" class="btn btn-sm btn-secondary" style="padding:2px 10px;" title="Diminuir" onclick="zoomPreviaDocumentoEstagiario('${idIframe}', 0.8)">−</button>
                 <button type="button" class="btn btn-sm btn-secondary" style="padding:2px 10px;" title="Ajustar à largura" onclick="zoomPreviaDocumentoEstagiario('${idIframe}', 'ajustar')">⤢</button>
                 <button type="button" class="btn btn-sm btn-secondary" style="padding:2px 10px;" title="Aumentar" onclick="zoomPreviaDocumentoEstagiario('${idIframe}', 1.25)">+</button>
             </span>
         </div>
-        <div style="border:1px solid #cbd5e0; border-radius:6px; overflow:hidden; background:#edf2f7;">
+        <div style="border:1px solid #cdd5e1; border-radius:6px; overflow:hidden; background:#eef2f7;">
             <iframe id="${idIframe}" title="Prévia do documento" style="display:block; width:100%; height:62vh; border:0; background:#fff;"></iframe>
         </div>`;
 }
@@ -2570,11 +2570,11 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
     // embaixo da prévia pra não competir com ela.
     const seletorCards = renderizarSeletorCardsMaterialDigitalDeLista(cardsMaterialDigitalDisponiveis || [], [], 'revDocCardsMaterialDigital');
     const cardsMaterialDigitalHtml = seletorCards
-        ? `<details style="margin-top:12px; border:1px solid #e2e8f0; border-radius:6px; padding:8px 10px;">
-               <summary style="cursor:pointer; font-size:13px; color:#2d3748; font-weight:bold;">📚 Aula do Material Digital dada (não entra no documento)</summary>
+        ? `<details style="margin-top:12px; border:1px solid #e3e8ef; border-radius:6px; padding:8px 10px;">
+               <summary style="cursor:pointer; font-size:13px; color:#1c2536; font-weight:bold;">📚 Aula do Material Digital dada (não entra no documento)</summary>
                ${seletorCards}
            </details>`
-        : '<p style="font-size:11px; color:#a0aec0; margin:10px 0 0;">📚 Nenhuma aula do Material Digital cadastrada ainda para esta disciplina/série.</p>';
+        : '<p style="font-size:11px; color:#7a869a; margin:10px 0 0;">📚 Nenhuma aula do Material Digital cadastrada ainda para esta disciplina/série.</p>';
 
     // Modo manual (botão "✍️ Manual"): 'branco' ou 'ultimo'. Nos dois a IA não entrou, então não há
     // fundamentação a declarar - o aviso vira uma instrução de preenchimento.
@@ -2588,14 +2588,14 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
 
     // Aviso de fundamentação na base curricular oficial (planilha/PDFs) - ver montarContextoCurriculoOficial.
     const fundamentacaoHtml = modoManual
-        ? `<div style="background:#ebf8ff; border:1px solid #90cdf4; color:#2c5282; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✍️ Preenchimento manual — ${modoManual === 'ultimo' ? 'o plano abriu com o texto do seu último Plano de Aula desta disciplina; edite e complemente à vontade' : 'os campos do plano estão em branco pra você escrever'}. Nada foi gerado por IA.</div>`
+        ? `<div style="background:#edf3fd; border:1px solid #a9c6f3; color:#1b4488; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✍️ Preenchimento manual — ${modoManual === 'ultimo' ? 'o plano abriu com o texto do seu último Plano de Aula desta disciplina; edite e complemente à vontade' : 'os campos do plano estão em branco pra você escrever'}. Nada foi gerado por IA.</div>`
         : resumoFundamentacao && resumoFundamentacao.grounded
         ? `<div style="background:#f0fff4; border:1px solid #9ae6b4; color:#276749; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✅ Fundamentado no Currículo Paulista${resumoFundamentacao.fonte ? ` (${resumoFundamentacao.fonte})` : ''}${resumoFundamentacao.qtdTrechosTier2 ? ` + ${resumoFundamentacao.qtdTrechosTier2} trecho(s) de material oficial` : ''}.</div>`
         : `<div style="background:#fffaf0; border:1px solid #fbd38d; color:#975a16; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">⚠️ Gerado sem fundamentação na base curricular oficial — revise os códigos de habilidade com atenção.</div>`;
 
     modal.innerHTML = `
         <div class="modal-content" style="max-width: 1150px; width: 96%; padding: 20px;">
-            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:12px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e3e8ef; padding-bottom:10px; margin-bottom:12px;">
                 <h2 style="margin: 0;">📄 Plano de Aula — revisar e imprimir</h2>
                 <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalRevisaoDocumento')">×</button>
             </div>
@@ -2603,7 +2603,7 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
             ${blocoPuxarAnteriorEstagiario(anterior, 'modalRevisaoDocumento', ID_PREVIA_PLANO_AULA_ESTAGIARIO, 'PLANO_AULA_CAMPOS_IA')}
             ${blocoPreviaDocumentoEstagiario(ID_PREVIA_PLANO_AULA_ESTAGIARIO, modoManual)}
             ${cardsMaterialDigitalHtml}
-            <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
+            <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e3e8ef; padding-top:15px;">
                 <button class="btn btn-secondary" onclick="closeModal('modalRevisaoDocumento'); showModal('modalGerarDocumentoIA')">← Voltar</button>
                 <button class="btn btn-success" onclick="exportarDocumentoFinal('${tipo}')" id="btnExportarDoc">🖨️ Imprimir</button>
             </div>
@@ -2662,18 +2662,18 @@ function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId, pularImpressao
 
     modal.innerHTML = `
         <div class="modal-content" style="max-width: 1000px; width: 96%; padding: 20px;">
-            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:12px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e3e8ef; padding-bottom:10px; margin-bottom:12px;">
                 <h2 style="margin: 0;">📄 Anexo III - PAEE — revisar e ${pularImpressao ? 'salvar' : 'imprimir'}</h2>
                 <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalRevisaoAnexoPaee')">×</button>
             </div>
-            <p style="font-size:13px; color:#666; margin:0 0 12px;">${pularImpressao
+            <p style="font-size:13px; color:#5f6b7f; margin:0 0 12px;">${pularImpressao
                 ? 'Dados extraídos do Word enviado, montados no modelo oficial. Revise o texto antes de salvar no perfil do estudante.'
                 : (modoManual
                     ? `Documento montado com os dados do formulário anterior (volte pra corrigi-los). ${modoManual === 'ultimo' ? 'Os campos de texto vieram do último Anexo III deste estudante - edite e complemente' : 'Os campos de texto estão em branco pra você escrever'} - nada foi gerado por IA.`
                     : 'Documento montado com os dados do formulário anterior (volte pra corrigi-los) e o texto rascunhado pela IA.')}</p>
             ${blocoPuxarAnteriorEstagiario(anterior, 'modalRevisaoAnexoPaee', ID_PREVIA_ANEXO_PAEE_ESTAGIARIO, 'ANEXO_PAEE_CAMPOS_IA')}
             ${blocoPreviaDocumentoEstagiario(ID_PREVIA_ANEXO_PAEE_ESTAGIARIO, modoManual)}
-            <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
+            <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e3e8ef; padding-top:15px;">
                 <button class="btn btn-secondary" onclick="${pularImpressao ? "closeModal('modalRevisaoAnexoPaee')" : "closeModal('modalRevisaoAnexoPaee'); showModal('modalGerarDocumentoIA')"}">${pularImpressao ? 'Cancelar' : '← Voltar'}</button>
                 <button class="btn btn-success" onclick="exportarAnexoPaeeFinal()" id="btnExportarAnexoPaee">${pularImpressao ? '💾 Salvar no Perfil do Estudante' : '🖨️ Imprimir'}</button>
             </div>
@@ -2711,21 +2711,21 @@ function abrirModalRevisaoAnexoIV(dadosBasicos, dados, alunoId, modoManual) {
     modal.dataset.anterior = JSON.stringify(anterior ? { dados: anterior.dados, descricao: anterior.descricao } : {});
 
     const fichaAeeAvisoHtml = modoManual
-        ? `<div style="background:#ebf8ff; border:1px solid #90cdf4; color:#2c5282; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✍️ Preenchimento manual — ${modoManual === 'ultimo' ? 'o PEI abriu com o texto do último Anexo IV deste estudante; edite e complemente à vontade' : 'os campos do PEI estão em branco pra você escrever'}. Nada foi gerado por IA.</div>`
+        ? `<div style="background:#edf3fd; border:1px solid #a9c6f3; color:#1b4488; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✍️ Preenchimento manual — ${modoManual === 'ultimo' ? 'o PEI abriu com o texto do último Anexo IV deste estudante; edite e complemente à vontade' : 'os campos do PEI estão em branco pra você escrever'}. Nada foi gerado por IA.</div>`
         : dadosBasicos.fichaAeeVazia
         ? `<div style="background:#fffaf0; border:1px solid #fbd38d; color:#975a16; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">⚠️ Este estudante ainda não tem o Anexo III - PAEE preenchido/gerado - as adaptações abaixo foram geradas de forma geral. Gere o Anexo III - PAEE do aluno pra rascunhos mais precisos da próxima vez.</div>`
         : `<div style="background:#f0fff4; border:1px solid #9ae6b4; color:#276749; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✅ As adaptações abaixo consideraram o Anexo III - PAEE já preenchido do estudante.</div>`;
 
     modal.innerHTML = `
         <div class="modal-content" style="max-width: 1000px; width: 96%; padding: 20px;">
-            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:12px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e3e8ef; padding-bottom:10px; margin-bottom:12px;">
                 <h2 style="margin: 0;">📄 Anexo IV - PEI — revisar e imprimir</h2>
                 <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalRevisaoAnexoIV')">×</button>
             </div>
             ${fichaAeeAvisoHtml}
             ${blocoPuxarAnteriorEstagiario(anterior, 'modalRevisaoAnexoIV', ID_PREVIA_ANEXO_IV_ESTAGIARIO, 'ANEXO_PEI_CAMPOS_IA')}
             ${blocoPreviaDocumentoEstagiario(ID_PREVIA_ANEXO_IV_ESTAGIARIO, modoManual)}
-            <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e2e8f0; padding-top:15px;">
+            <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e3e8ef; padding-top:15px;">
                 <button class="btn btn-secondary" onclick="closeModal('modalRevisaoAnexoIV'); showModal('modalGerarDocumentoIA')">← Voltar</button>
                 <button class="btn btn-success" onclick="exportarAnexoIVFinal()" id="btnExportarAnexoIV">🖨️ Imprimir</button>
             </div>
