@@ -618,22 +618,29 @@ async function abrirModalAssinaturasAdmin() {
                         O Mercado Pago <strong>não faz cobrança recorrente no Pix</strong> — recorrência
                         automática lá é cartão. Então o Pix entra como pacote: o professor paga uma vez,
                         o apoio vale pelos meses escolhidos e vence sozinho. Um por linha, no formato
-                        <code>plano;meses;valor;link</code> — por exemplo:<br>
-                        <code>professor;3;60;https://mpago.la/xxxx</code>
+                        <code>plano;meses;valor</code> — por exemplo:<br>
+                        <code>professor;3;60</code> &nbsp;(3 meses de Professor por R$ 60,00 no total)
                         <br><br>
-                        ⚠️ O link aqui <strong>não é o do plano</strong> (aquele com
-                        <code>preapproval_plan_id</code>, que só aceita cartão). Crie um
-                        <strong>Link de pagamento</strong> em <em>Seu negócio → Link de pagamento</em>,
-                        com o <strong>valor total do pacote</strong> — R$ 60,00 para 3 meses, não R$ 20,00.
+                        <strong>Não precisa de link.</strong> Com o endereço do serviço preenchido acima,
+                        o <strong>QR Code é gerado na hora</strong>, dentro do próprio sistema, com o valor
+                        exato e já identificando quem está pagando. O dinheiro cai na conta do Mercado Pago
+                        do projeto — a chave Pix é a que está cadastrada lá, e nenhuma chave passa por
+                        este sistema.
+                        <br><br>
+                        Se quiser usar um link pronto em vez do QR, acrescente um quarto campo
+                        (<code>professor;3;60;https://mpago.la/xxxx</code>) — mas ele precisa ser um
+                        <strong>Link de pagamento</strong>, nunca o link do plano (aquele com
+                        <code>preapproval_plan_id</code>, que só aceita cartão).
                     </p>
                     <textarea id="pacotesPixAssinatura" rows="4" style="width:100%; padding:8px; font-family:monospace; font-size:12px;"
-                              placeholder="apoiase;3;30;https://mpago.la/aaaa&#10;professor;3;60;https://mpago.la/bbbb&#10;professor;12;240;https://mpago.la/cccc">${(Array.isArray(links.pacotesPix) ? links.pacotesPix : []).map(p => [p.plano, p.meses, p.valor, p.link].join(';')).join('\n')}</textarea>
+                              placeholder="apoiase;3;30&#10;professor;3;60&#10;professor;12;240">${(Array.isArray(links.pacotesPix) ? links.pacotesPix : []).map(p => [p.plano, p.meses, p.valor].concat(p.link ? [p.link] : []).join(';')).join('\n')}</textarea>
                     <p style="font-size:11px; color:#975a16; background:#fffaf0; border:1px solid #fbd38d; border-radius:6px; padding:8px; margin-top:6px;">
                         <strong>Importante:</strong> cadastre os mesmos pacotes na variável
                         <code>MP_PACOTES_PIX</code> do serviço (Vercel), no formato
-                        <code>plano:meses:valor</code> separado por vírgula. É por ela que o servidor
-                        reconhece o pagamento pelo valor recebido — o link de pagamento do Mercado Pago
-                        nem sempre devolve a referência de quem pagou.
+                        <code>plano:meses:valor</code> separado por vírgula. É <strong>ela</strong> que
+                        define quanto o QR Code vai cobrar — o valor nunca vem do navegador, senão
+                        daria para comprar 12 meses por um centavo. O que está aqui é só o que o
+                        professor vê na tela; se os dois discordarem, vale o do serviço.
                     </p>
                 </div>
 
@@ -728,7 +735,8 @@ async function salvarLinksAssinatura() {
             alert('Linha do Pix com meses ou valor inválido:\n\n' + linha);
             return;
         }
-        if (!valido(link)) {
+        // O link e' OPCIONAL: com o serviço configurado, o QR Code nasce nele.
+        if (link && !valido(link)) {
             alert('O link do Pix precisa ser um endereço https do Mercado Pago ' +
                   '(mercadopago.com.br ou mpago.la):\n\n' + linha);
             return;
@@ -738,14 +746,25 @@ async function salvarLinksAssinatura() {
         // nesse fluxo. Pior que não funcionar: o professor que clicasse em
         // "3 meses / R$ 60" cairia num checkout de R$ 10 por mês, no cartão,
         // recorrente. Valor errado e cobrança automática que ele não pediu.
-        if (ehAssinatura(link)) {
+        if (link && ehAssinatura(link)) {
             alert('Este link é de ASSINATURA no cartão, não serve como pacote de Pix:\n\n' + linha +
                   '\n\nAssinatura recorrente do Mercado Pago só aceita cartão. Para o Pix, crie um ' +
                   '"Link de pagamento" (Seu negócio → Link de pagamento), com o valor total do pacote. ' +
                   'Ele sai no formato https://mpago.la/... e aceita Pix.');
             return;
         }
-        pacotesPix.push({ plano: plano, meses: Number(meses), valor: Number(valor), link: link });
+        const pacote = { plano: plano, meses: Number(meses), valor: Number(valor) };
+        if (link) pacote.link = link;
+        pacotesPix.push(pacote);
+    }
+
+    // Pacote sem link e sem serviço nao tem como virar pagamento nenhum.
+    const semCaminho = pacotesPix.filter(p => !p.link).length > 0 && !servico;
+    if (semCaminho) {
+        alert('Há pacotes de Pix sem link, e o endereço do serviço está vazio.\n\n' +
+              'Sem um dos dois não há como gerar o pagamento. Preencha o endereço do serviço ' +
+              '(recomendado — o QR Code nasce nele) ou acrescente o link de pagamento em cada linha.');
+        return;
     }
 
     try {

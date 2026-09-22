@@ -568,6 +568,67 @@ const assinaturaMp = (extra) => Object.assign({
       && R.lerReferenciaPix('uid|professor|99') === null
       && R.lerReferenciaPix('uid|professor|3').meses === 3);
 
+  // ================= 11b. O QR CODE DO PIX NASCE NO SERVICO =================
+  // Antes o professor ia para um "link de pagamento" criado a mao. Agora o QR nasce
+  // aqui, com o valor do pacote e a referencia de quem pediu - o que tira o link do
+  // caminho e garante a identificacao (fomos nos que criamos o pagamento).
+  console.log('\n11b. O QR Code do Pix');
+
+  const DONO = { uid: 'uid-professor', email: 'ana@escola.com' };
+  let pedidoAoMp = null;
+  const mpQueGeraQr = {
+    criarPagamentoNoMp: async (corpo, chave) => {
+      pedidoAoMp = { corpo, chave };
+      return { id: 'PAY-QR-1', status: 'pending', date_of_expiration: corpo.date_of_expiration,
+        point_of_interaction: { transaction_data: {
+          qr_code: '00020126580014br.gov.bcb.pix...', qr_code_base64: 'iVBORw0KGgo=' } } };
+    }
+  };
+
+  let qr = await W.criarPixDoPacote({ plano: 'professor', meses: 3 }, DONO, ambientePix, mpQueGeraQr);
+  ok('o pacote vira um Pix com o valor certo',
+      qr.ok === true && qr.valor === 60 && pedidoAoMp.corpo.transaction_amount === 60);
+  ok('marcado como Pix, com descricao que a pessoa entende no extrato',
+      pedidoAoMp.corpo.payment_method_id === 'pix'
+      && /Professor/.test(pedidoAoMp.corpo.description) && /3 meses/.test(pedidoAoMp.corpo.description));
+  ok('levando quem pediu e quantos meses creditar',
+      pedidoAoMp.corpo.external_reference === 'uid-professor|professor|3');
+  ok('e a tela recebe o copia e cola e a imagem do QR',
+      qr.copiaECola.indexOf('br.gov.bcb.pix') !== -1 && qr.qrCodeBase64 === 'iVBORw0KGgo=');
+  ok('com chave de idempotencia (clicar duas vezes nao cria dois Pix)',
+      typeof pedidoAoMp.chave === 'string' && pedidoAoMp.chave.indexOf('uid-professor') === 0);
+  ok('e com prazo de validade', !!pedidoAoMp.corpo.date_of_expiration
+      && Date.parse(pedidoAoMp.corpo.date_of_expiration) > Date.now());
+
+  // O VALOR NUNCA VEM DO NAVEGADOR. Se viesse, dava para comprar 12 meses por um centavo.
+  pedidoAoMp = null;
+  qr = await W.criarPixDoPacote({ plano: 'professor', meses: 12, valor: 0.01 }, DONO, ambientePix, mpQueGeraQr);
+  ok('o valor mandado pelo navegador e IGNORADO: manda o pacote do servidor',
+      qr.ok === true && qr.valor === 240 && pedidoAoMp.corpo.transaction_amount === 240);
+
+  pedidoAoMp = null;
+  qr = await W.criarPixDoPacote({ plano: 'professor', meses: 99 }, DONO, ambientePix, mpQueGeraQr);
+  ok('pacote que nao existe e recusado sem criar pagamento nenhum',
+      qr.ok === false && pedidoAoMp === null);
+
+  pedidoAoMp = null;
+  qr = await W.criarPixDoPacote({ plano: 'super_admin', meses: 3 }, DONO, ambientePix, mpQueGeraQr);
+  ok('plano inventado tambem nao passa', qr.ok === false && pedidoAoMp === null);
+
+  qr = await W.criarPixDoPacote({ plano: 'professor', meses: 3 }, DONO, ambientePix, {
+    criarPagamentoNoMp: async () => ({ id: 'PAY-X', status: 'pending' }) });
+  ok('resposta do Mercado Pago sem o codigo do Pix vira erro explicado, nao tela em branco',
+      qr.ok === false && /nao devolveu o codigo/.test(qr.motivo));
+
+  const pixSemCracha = await W.tratarRequisicao(
+      new Request('https://w.dev/api/pix', { method: 'POST', body: '{}' }),
+      { FIREBASE_PROJECT_ID: 'profsis3' });
+  ok('pedir Pix sem cracha da sessao e recusado com 401', pixSemCracha.status === 401);
+
+  const pixGet = await W.tratarRequisicao(
+      new Request('https://w.dev/api/pix', { method: 'GET' }), { FIREBASE_PROJECT_ID: 'profsis3' });
+  ok('GET em /pix nao gera cobranca', pixGet.status === 405);
+
   // ================= 12. OS VALORES BATEM NOS DOIS LADOS =================
   console.log('\n12. Servidor e navegador falam do mesmo preco');
   const front = fs.readFileSync(path.join(RAIZ, 'assinatura.js'), 'utf8');

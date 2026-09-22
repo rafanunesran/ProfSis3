@@ -80,6 +80,7 @@ por assinatura, por mês.
 5. **Deploy**. Três endereços nascem daqui:
    - `https://<seu-projeto>.vercel.app/api/webhook` — o webhook do Mercado Pago
    - `https://<seu-projeto>.vercel.app/api/cancelar` — o cancelamento pedido pelo professor
+   - `https://<seu-projeto>.vercel.app/api/pix` — gera o QR Code do Pix
    - `https://<seu-projeto>.vercel.app/api/reconciliar` — a varredura diária (roda pelo
      Cron configurado no `vercel.json`, todo dia às 9h UTC; não fica aberta na internet)
 6. Abra esse endereço no navegador. Ele responde
@@ -216,27 +217,45 @@ cartão, e não há como mudar isso do nosso lado. Então o Pix entra por outro 
 **pacote de meses**. O professor paga uma vez, o apoio vale pelo período e vence
 sozinho. Nada fica sendo cobrado sem autorização, e não há o que cancelar.
 
-Como montar:
+### Onde fica a chave Pix
 
-1. No Mercado Pago, **Seu negócio → Link de pagamento**, crie um link para cada
-   pacote com o **valor total** (ex.: R$ 60,00 para 3 meses de Professor, não R$ 20,00).
-   Ele sai no formato `https://mpago.la/…` e aceita Pix.
+**Não fica aqui.** Quem recebe é a conta do Mercado Pago do projeto, com a chave Pix
+que está cadastrada *lá dentro* (Mercado Pago → Seu perfil → Pix → Minhas chaves).
+Nenhuma chave Pix passa por este código nem pelo Firestore: é um dado a menos para
+guardar e um a menos para vazar. O que o SisProf faz é pedir ao Mercado Pago "crie um
+Pix de R$ 60 para este professor" e mostrar o QR Code que ele devolve.
 
-   ⚠️ **Não use aqui o link do plano** — aquele com `preapproval_plan_id`, que você
-   criou em *Assinaturas*. Assinatura recorrente do Mercado Pago **só aceita cartão**:
-   Pix não existe nesse fluxo. E o estrago passa de "não funciona": quem clicasse em
-   "3 meses / R$ 60" cairia num checkout de R$ 10 **por mês, no cartão** — valor errado
-   e cobrança automática que a pessoa não pediu. O painel recusa salvar assim, e a tela
-   esconde o pacote se a configuração errada já estiver gravada.
-2. **Painel Super Admin → 💳 Assinaturas → Pacotes de apoio no Pix**, um por linha:
-   `professor;3;60;https://mpago.la/xxxx`
-3. **Cadastre os mesmos pacotes na variável `MP_PACOTES_PIX`** do serviço, no formato
-   `plano:meses:valor`. Isto não é redundância: o link de pagamento do Mercado Pago nem
-   sempre devolve a referência de quem pagou, e é pelo **valor recebido** que o servidor
-   reconhece qual pacote foi. Se os dois lugares discordarem, o professor paga e o
-   sistema não credita.
+### Como configurar
 
-Regras que o servidor aplica:
+1. **Painel Super Admin → 💳 Assinaturas → Pacotes de apoio no Pix**, um por linha,
+   sem link nenhum:
+   ```
+   apoiase;3;30
+   professor;3;60
+   professor;12;240
+   ```
+   (plano;meses;**valor total** — R$ 60,00 para 3 meses, não R$ 20,00)
+2. **Os mesmos pacotes na variável `MP_PACOTES_PIX`** do serviço, no formato
+   `plano:meses:valor`: `apoiase:3:30,professor:3:60,professor:12:240`.
+
+   Isto não é redundância por descuido: **é a variável que decide quanto o QR vai
+   cobrar**. O valor nunca vem do navegador — se viesse, daria para comprar 12 meses
+   por um centavo. O que está no painel é só o que o professor vê na tela.
+3. Pronto. Não há link de pagamento para criar no Mercado Pago.
+
+### O que acontece quando o professor escolhe um pacote
+
+1. A tela chama `POST /api/pix` com o crachá da sessão e o pacote escolhido;
+2. o serviço confere quem é, pega o **valor do pacote no servidor** e pede ao Mercado
+   Pago um pagamento Pix com `external_reference = uid|plano|meses` e validade de 24h;
+3. o QR Code e o "copia e cola" aparecem **dentro do próprio sistema** — sem outra aba;
+4. quando o Pix cai, o Mercado Pago avisa o webhook, que credita os meses. A referência
+   está garantida, porque fomos nós que criamos o pagamento.
+
+Um `X-Idempotency-Key` acompanha cada pedido: professor clicando duas vezes, ou rede
+oscilando, não gera dois Pix cobrando a mesma pessoa.
+
+### Regras que o servidor aplica ao crédito
 
 - só `status: approved` credita — Pix pendente não libera nada;
 - pagamento fora dos pacotes cadastrados **não vira plano por acidente** (a conta pode
@@ -244,6 +263,19 @@ Regras que o servidor aplica:
 - o mesmo Pix avisado duas vezes não credita o dobro (o id do pagamento é a defesa);
 - renovar **antes** de vencer soma a partir da data que a pessoa já tinha — ninguém
   perde os dias que faltavam por pagar adiantado.
+
+### Caminho antigo (link de pagamento)
+
+Se o endereço do serviço não estiver configurado, os pacotes ainda funcionam com um
+**Link de pagamento** criado à mão no Mercado Pago, como quarto campo da linha
+(`professor;3;60;https://mpago.la/xxxx`). Nesse caso o crédito depende de identificar
+o pagamento pelo valor e pelo e-mail do pagador, porque o link nem sempre devolve a
+referência — é justamente o trabalho que o QR gerado pelo serviço eliminou.
+
+⚠️ Nunca use aqui o link do **plano** (aquele com `preapproval_plan_id`). Assinatura
+recorrente só aceita cartão, e quem clicasse em "3 meses / R$ 60" cairia num checkout
+de R$ 10 **por mês, no cartão**. O painel recusa salvar assim e a tela esconde o
+pacote se a configuração errada já estiver gravada.
 
 ## Como o cancelamento funciona
 

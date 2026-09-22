@@ -353,6 +353,127 @@ export function idDaNotificacao(request, corpo) {
 }
 
 // ----------------------------------------------------------------------------
+// GERAR O QR CODE DO PIX (/pix)
+// ----------------------------------------------------------------------------
+// A primeira versao mandava o professor para um "link de pagamento" criado a mao no
+// painel do Mercado Pago. Dava trabalho (um link por pacote), quebrava calado quando
+// o link errado era colado, e o pior: o link nem sempre devolve a referencia de quem
+// pagou, entao o crédito dependia de adivinhar pelo valor e pelo e-mail.
+//
+// Agora o QR nasce aqui. O servidor pede ao Mercado Pago um pagamento Pix com o valor
+// do pacote e a referencia de quem pediu, e devolve o "copia e cola" para a tela
+// mostrar. Quando o Pix cai, o webhook de `payment` credita os meses — e a referencia
+// esta' garantida, porque fomos nos que criamos o pagamento.
+//
+// A CHAVE PIX NAO MORA AQUI. Quem recebe e' a conta do Mercado Pago do projeto, com a
+// chave que esta' cadastrada la'. Nenhuma chave Pix passa por este codigo nem pelo
+// Firestore — e' um dado a menos para guardar e um a menos para vazar.
+
+const VALIDADE_PIX_HORAS = 24;
+
+export async function criarPixDoPacote(pedido, dono, ambiente, ferramentas) {
+    const { criarPagamentoNoMp } = ferramentas;
+
+    const plano = String((pedido && pedido.plano) || '').toLowerCase();
+    const meses = Math.round(Number(pedido && pedido.meses));
+
+    // O VALOR VEM DAQUI, NUNCA DO NAVEGADOR. Aceitar o valor que a pagina manda seria
+    // deixar qualquer pessoa comprar 12 meses de Professor por um centavo.
+    const pacote = lerPacotesPix(ambiente).find(p =>
+        p.plano === plano && Number(p.meses) === meses);
+    if (!pacote) {
+        return { ok: false, motivo: 'pacote nao encontrado: ' + plano + '/' + meses + ' meses' };
+    }
+
+    const nomePlano = plano === 'professor' ? 'Professor' : 'Apoia-se';
+    const vencimento = new Date(Date.now() + VALIDADE_PIX_HORAS * 3600000);
+
+    const pagamento = await criarPagamentoNoMp({
+        transaction_amount: Number(pacote.valor),
+        payment_method_id: 'pix',
+        description: 'SisProf - apoio ' + nomePlano + ', ' + meses +
+                     (meses === 1 ? ' mes' : ' meses'),
+        external_reference: [dono.uid, plano, meses].join('|'),
+        date_of_expiration: vencimento.toISOString(),
+        payer: { email: dono.email || '' }
+    }, dono.uid + '-' + plano + '-' + meses + '-' + Date.now());
+
+    const dadosDoQr = (pagamento && pagamento.point_of_interaction
+                       && pagamento.point_of_interaction.transaction_data) || {};
+    if (!dadosDoQr.qr_code) {
+        return { ok: false, motivo: 'o Mercado Pago nao devolveu o codigo do Pix' };
+    }
+
+    return {
+        ok: true,
+        pagamentoId: String(pagamento.id || ''),
+        plano: plano,
+        meses: meses,
+        valor: Number(pacote.valor),
+        copiaECola: dadosDoQr.qr_code,
+        qrCodeBase64: dadosDoQr.qr_code_base64 || '',
+        ticketUrl: dadosDoQr.ticket_url || '',
+        expiraEm: pagamento.date_of_expiration || vencimento.toISOString()
+    };
+}
+
+async function criarPagamentoNoMercadoPago(corpo, chaveIdempotencia, token) {
+    const resposta = await fetch(MP_API + '/v1/payments', {
+        method: 'POST',
+        headers: {
+            authorization: 'Bearer ' + token,
+            'content-type': 'application/json',
+            // Sem isto, uma tentativa repetida (rede oscilando, professor clicando
+            // duas vezes) cria DOIS Pix cobrando a mesma pessoa.
+            'X-Idempotency-Key': String(chaveIdempotencia)
+        },
+        body: JSON.stringify(corpo)
+    });
+    if (!resposta.ok) {
+        throw new Error('o Mercado Pago recusou criar o Pix: ' + resposta.status +
+                        ' ' + (await resposta.text()).slice(0, 300));
+    }
+    return resposta.json();
+}
+
+function ehRotaDePix(request) {
+    try {
+        return /\/pix\/?$/.test(new URL(request.url).pathname);
+    } catch (e) { return false; }
+}
+
+async function tratarPedidoDePix(request, ambiente) {
+    const cors = cabecalhosCors(request, ambiente);
+
+    const autorizacao = request.headers.get('authorization') || '';
+    const token = autorizacao.toLowerCase().indexOf('bearer ') === 0 ? autorizacao.slice(7).trim() : '';
+    if (!token) return responder({ erro: 'falta o cracha da sessao' }, 401, cors);
+
+    let dono;
+    try {
+        dono = await verificarTokenFirebase(token, ambiente.FIREBASE_PROJECT_ID);
+    } catch (e) {
+        return responder({ erro: 'sessao invalida: ' + (e && e.message) }, 401, cors);
+    }
+
+    let pedido = {};
+    try { pedido = await request.json(); } catch (e) { /* corpo vazio vira pacote invalido */ }
+
+    try {
+        const resultado = await criarPixDoPacote(pedido, dono, ambiente, {
+            criarPagamentoNoMp: (corpo, chave) =>
+                criarPagamentoNoMercadoPago(corpo, chave, ambiente.MP_ACCESS_TOKEN)
+        });
+        if (!resultado.ok) return responder(resultado, 400, cors);
+        console.log('[assinatura] Pix criado para', dono.uid, resultado.plano, resultado.meses + 'm');
+        return responder(resultado, 200, cors);
+    } catch (e) {
+        console.error('[assinatura] falha ao criar Pix:', e && e.message);
+        return responder({ erro: 'nao consegui gerar o Pix: ' + (e && e.message) }, 500, cors);
+    }
+}
+
+// ----------------------------------------------------------------------------
 // A VARREDURA DIARIA (/reconciliar)
 // ----------------------------------------------------------------------------
 // O corte por vencimento acontece na tela, comparando data — e isso ja' garante que
@@ -567,6 +688,10 @@ export async function tratarRequisicao(request, ambiente) {
     }
     if (ehRotaDeReconciliacao(request)) {
         return tratarReconciliacao(request, ambiente);
+    }
+    if (ehRotaDePix(request)) {
+        if (request.method !== 'POST') return new Response('metodo nao suportado', { status: 405 });
+        return tratarPedidoDePix(request, ambiente);
     }
 
     if (request.method === 'GET') {

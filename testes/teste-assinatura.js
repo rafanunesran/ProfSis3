@@ -496,9 +496,15 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
   // ============ 9. PIX: APOIO SEM CARTAO ============
   console.log('\n9. Pix: apoio sem cartao');
 
-  const COM_PIX = Object.assign({}, LINKS, { pacotesPix: [
-    { plano: 'apoiase', meses: 3, valor: 30, link: 'https://mpago.la/pixA' },
-    { plano: 'professor', meses: 3, valor: 60, link: 'https://mpago.la/pixP3' },
+  // Com o servico configurado, os pacotes NAO tem link: o QR nasce no servidor.
+  const COM_PIX = Object.assign({}, LINKS, { servico: 'https://sisprof.vercel.app/api', pacotesPix: [
+    { plano: 'apoiase', meses: 3, valor: 30 },
+    { plano: 'professor', meses: 3, valor: 60 },
+    { plano: 'professor', meses: 12, valor: 240 }
+  ] });
+
+  // O caminho antigo (link de pagamento avulso), sem servico configurado.
+  const PIX_POR_LINK = Object.assign({}, LINKS, { pacotesPix: [
     { plano: 'professor', meses: 12, valor: 240, link: 'https://mpago.la/pixP12' }
   ] });
 
@@ -521,16 +527,78 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
   ok('explicando que Pix nao e cobranca automatica', r9.explicaSemRecorrencia);
   ok('com os pacotes de meses e seus valores', r9.temPacotes && r9.temValores);
 
+  // O QR nasce no servico e aparece AQUI - o professor nao vai para outra aba, e o
+  // administrador nao cadastra link nenhum.
   const r9b = await p.evaluate(async () => {
+    window.__abriu = [];
+    window.__pedidos = [];
+    window.fetch = async (url, opcoes) => {
+      window.__pedidos.push({ url: String(url), opcoes: opcoes || {} });
+      return { ok: true, json: async () => ({ ok: true, pagamentoId: 'PAY-QR-1',
+        plano: 'professor', meses: 12, valor: 240,
+        copiaECola: '00020126580014br.gov.bcb.pix0136abc...5204000053039865802BR',
+        qrCodeBase64: 'iVBORw0KGgo=',
+        expiraEm: new Date(Date.now() + 86400000).toISOString() }) };
+    };
+    await pagarComPix('professor', 12);
+    await new Promise(r => setTimeout(r, 400));
+
+    const pedido = window.__pedidos[0] || { url: '', opcoes: {} };
+    const area = document.getElementById('areaQrPix');
+    return {
+      chamou: pedido.url,
+      metodo: (pedido.opcoes.method || '').toUpperCase(),
+      levouCracha: String((pedido.opcoes.headers || {}).authorization || '').indexOf('Bearer ') === 0,
+      corpo: pedido.opcoes.body || '',
+      abriuOutraAba: window.__abriu.length,
+      mostrouQr: !!(area && area.querySelector('img')),
+      temCopiaECola: !!document.getElementById('pixCopiaECola'),
+      codigo: (document.getElementById('pixCopiaECola') || {}).value || '',
+      texto: area ? area.textContent : ''
+    };
+  });
+  ok('escolher um pacote pede o QR ao servico (nao abre link nem outra aba)',
+      r9b.chamou === 'https://sisprof.vercel.app/api/pix' && r9b.metodo === 'POST'
+      && r9b.abriuOutraAba === 0);
+  ok('levando o cracha da sessao e o pacote escolhido',
+      r9b.levouCracha && /"plano":"professor"/.test(r9b.corpo) && /"meses":12/.test(r9b.corpo));
+  ok('o valor NAO vai do navegador (quem decide o preco e o servidor)',
+      r9b.corpo.indexOf('valor') === -1);
+  ok('o QR Code aparece na propria tela, com copia e cola',
+      r9b.mostrouQr && r9b.temCopiaECola && r9b.codigo.indexOf('br.gov.bcb.pix') !== -1);
+  ok('com o valor, o pacote e o prazo de validade a vista',
+      /R\$ 240,00/.test(r9b.texto) && /12 meses/.test(r9b.texto) && /vale ate/i.test(r9b.texto));
+  ok('e explicando que o plano libera sozinho quando o Pix cair',
+      /liberado sozinho/i.test(r9b.texto));
+
+  // Servico fora do ar nao pode deixar a tela travada em "gerando".
+  const r9b2 = await p.evaluate(async () => {
+    document.getElementById('areaQrPix').innerHTML = '';
+    window.fetch = async () => { throw new Error('sem rede'); };
+    await pagarComPix('professor', 3);
+    await new Promise(r => setTimeout(r, 300));
+    const area = document.getElementById('areaQrPix');
+    return { escondeu: !area || area.style.display === 'none' };
+  });
+  ok('servico fora do ar esconde a area em vez de deixar "gerando..." para sempre',
+      r9b2.escondeu);
+
+  // Sem servico configurado, o caminho antigo (link) continua funcionando.
+  await entrar(ANA, null, PIX_POR_LINK);
+  const r9b3 = await p.evaluate(async () => {
+    const el = document.getElementById('modalApoie'); if (el) el.remove();
+    await abrirModalApoie();
+    await new Promise(r => setTimeout(r, 250));
     window.__abriu = [];
     await pagarComPix('professor', 12);
     await new Promise(r => setTimeout(r, 200));
     return { destino: window.__abriu[0] || '' };
   });
-  ok('escolher um pacote abre o link de Pix daquele pacote',
-      r9b.destino.indexOf('mpago.la/pixP12') !== -1);
-  ok('levando quem paga, o plano e os meses na referencia',
-      /external_reference=uid-ana%7Cprofessor%7C12/.test(r9b.destino));
+  ok('sem servico, o link de pagamento antigo ainda vale',
+      r9b3.destino.indexOf('mpago.la/pixP12') !== -1
+      && /external_reference=uid-ana%7Cprofessor%7C12/.test(r9b3.destino));
+
+  await entrar(ANA, null, COM_PIX);
 
   // O ERRO REAL QUE ISTO EVITA: cadastrar no Pix o link do PLANO (cartao). O checkout
   // recorrente do Mercado Pago nao aceita Pix, e quem clicasse em "3 meses / R$ 60"

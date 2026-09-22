@@ -406,9 +406,12 @@ async function carregarLinksAssinatura() {
         _politicaAssinatura.diasTolerancia = (cfg.diasTolerancia === undefined || cfg.diasTolerancia === null)
             ? DIAS_TOLERANCIA_PADRAO
             : Number(cfg.diasTolerancia);
+        // Pacote vale com OU sem link: quando o servico esta' configurado, o QR do Pix
+        // nasce nele (nao ha' link nenhum para cadastrar). O link so' continua
+        // existindo como caminho antigo, e nunca se for de assinatura.
         _pacotesPix = Array.isArray(cfg.pacotesPix) ? cfg.pacotesPix.filter(p =>
             p && PLANOS_SISPROF[p.plano] && Number(p.meses) > 0 && Number(p.valor) > 0
-            && p.link && !ehLinkDeAssinatura(p.link)) : [];
+            && (!p.link || !ehLinkDeAssinatura(p.link))) : [];
     }
     return links;
 }
@@ -720,6 +723,7 @@ function secaoPixHtml() {
                 basta fazer outro Pix (e pagar antes de vencer nao perde os dias que faltavam).
             </p>
             ${blocos}
+            <div id="areaQrPix" style="display:none; margin-top:14px;"></div>
             <p style="font-size:11px; color:#718096; margin-top:10px;">
                 O reconhecimento do Pix costuma levar poucos minutos. Assim que cair, o plano
                 aparece sozinho aqui — nao precisa recarregar nem avisar ninguem.
@@ -739,12 +743,24 @@ function ehLinkDeAssinatura(link) {
     return /preapproval_plan_id=|\/subscriptions\/checkout/i.test(String(link || ''));
 }
 
-// Abre o link de Pix do pacote, com a referencia de quem esta pagando.
+// Escolher um pacote de Pix: o QR code nasce no nosso servico e aparece AQUI, sem
+// mandar o professor para outra aba e sem link nenhum para o administrador cadastrar.
 async function pagarComPix(planoId, meses) {
     await carregarLinksAssinatura();
     const pacote = _pacotesPix.find(p => p.plano === planoId && Number(p.meses) === Number(meses));
-    if (!pacote || !pacote.link) {
+    if (!pacote) {
         alert('Este pacote de Pix ainda nao esta configurado. Tente outro, ou use o cartao.');
+        return;
+    }
+
+    const links = await carregarLinksAssinatura();
+    if (links.servico) {
+        return gerarQrCodePix(planoId, meses, pacote);
+    }
+
+    // CAMINHO ANTIGO: sem servico configurado, resta o link de pagamento avulso.
+    if (!pacote.link) {
+        alert('O Pix ainda nao esta pronto neste sistema. Use o cartao, ou avise a administracao.');
         return;
     }
     if (ehLinkDeAssinatura(pacote.link)) {
@@ -753,14 +769,106 @@ async function pagarComPix(planoId, meses) {
         return;
     }
     const uid = currentUser && (currentUser.uid || currentUser.id);
-    // A referencia diz ao servidor quem pagou e quantos meses creditar. Quando o
-    // Mercado Pago nao a repassa (acontece em link de pagamento), o servidor
-    // reconhece pelo VALOR recebido e pelo e-mail do pagador — por isso o pacote
-    // funciona mesmo sem isto chegar.
     const referencia = [uid || '', planoId, Number(meses)].join('|');
     const separador = pacote.link.indexOf('?') === -1 ? '?' : '&';
     window.open(pacote.link + separador + 'external_reference=' + encodeURIComponent(referencia), '_blank');
     marcarEsperandoConfirmacao(planoId);
+}
+
+// Pede o QR ao servico e mostra na tela. O valor NAO vai daqui: quem decide quanto
+// custa cada pacote e' o servidor. Se o navegador pudesse mandar o valor, daria para
+// comprar 12 meses de Professor por um centavo.
+async function gerarQrCodePix(planoId, meses, pacote) {
+    const area = document.getElementById('areaQrPix');
+    if (area) {
+        area.style.display = 'block';
+        area.innerHTML = '<p style="font-size:13px; color:#4a5568;">Gerando seu Pix...</p>';
+    }
+    try {
+        const cracha = await pegarCrachaDaSessao();
+        if (!cracha) {
+            alert('Sua sessao expirou. Saia e entre de novo para gerar o Pix.');
+            if (area) area.style.display = 'none';
+            return;
+        }
+        const links = await carregarLinksAssinatura();
+        const resposta = await fetch(links.servico.replace(/\/$/, '') + '/pix', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ' + cracha, 'content-type': 'application/json' },
+            body: JSON.stringify({ plano: planoId, meses: Number(meses) })
+        });
+        const dados = await resposta.json().catch(() => ({}));
+
+        if (!resposta.ok || !dados.ok) {
+            if (area) area.style.display = 'none';
+            alert('Nao consegui gerar o Pix agora: ' + (dados.motivo || dados.erro || 'tente de novo em instantes') +
+                  '\n\nVoce tambem pode apoiar pelo cartao.');
+            return;
+        }
+        mostrarQrCodePix(dados);
+        marcarEsperandoConfirmacao(planoId);
+    } catch (e) {
+        console.warn('[Assinatura] Falha ao gerar o Pix:', e);
+        if (area) area.style.display = 'none';
+        alert('Nao consegui falar com o servico do Pix. Verifique sua internet e tente de novo.');
+    }
+}
+
+function mostrarQrCodePix(dados) {
+    const area = document.getElementById('areaQrPix');
+    if (!area) return;
+    const plano = PLANOS_SISPROF[dados.plano] || PLANOS_SISPROF.apoiase;
+    const validade = dados.expiraEm
+        ? new Date(dados.expiraEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+        : '';
+
+    area.style.display = 'block';
+    area.innerHTML = `
+        <div style="border:2px solid #38a169; border-radius:10px; padding:16px; background:#fff; text-align:center;">
+            <div style="font-size:15px; font-weight:bold; color:#2d3748;">
+                📱 Pix de R$ ${Number(dados.valor).toFixed(2).replace('.', ',')} —
+                ${plano.emoji} ${plano.nome}, ${dados.meses} ${Number(dados.meses) === 1 ? 'mes' : 'meses'}
+            </div>
+            ${dados.qrCodeBase64 ? `
+                <img src="data:image/png;base64,${dados.qrCodeBase64}" alt="QR Code do Pix"
+                     style="width:220px; height:220px; margin:12px auto; display:block; border:1px solid #e2e8f0; border-radius:8px;">
+            ` : ''}
+            <p style="font-size:12px; color:#4a5568; margin:6px 0;">
+                Abra o aplicativo do seu banco, escolha <strong>Pix &gt; Pagar com QR Code</strong> e aponte a camera.
+                Ou use o codigo abaixo:
+            </p>
+            <textarea id="pixCopiaECola" readonly onclick="this.select()"
+                      style="width:100%; height:70px; font-family:monospace; font-size:11px; padding:8px;
+                             border:1px solid #e2e8f0; border-radius:6px; resize:none;">${dados.copiaECola}</textarea>
+            <button class="btn btn-success" style="margin-top:8px; padding:9px 18px;" onclick="copiarCodigoPix()">
+                📋 Copiar codigo Pix
+            </button>
+            ${validade ? `<p style="font-size:11px; color:#718096; margin-top:8px;">
+                Este codigo vale ate ${validade}. Depois disso, e' so gerar outro.
+            </p>` : ''}
+            <p style="font-size:11px; color:#2b6cb0; margin-top:8px;">
+                ⏳ Assim que o Pix cair, seu plano e liberado sozinho — pode deixar esta tela aberta
+                ou fechar, tanto faz.
+            </p>
+        </div>`;
+    area.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function copiarCodigoPix() {
+    const campo = document.getElementById('pixCopiaECola');
+    if (!campo) return;
+    campo.select();
+    const copiar = () => {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(campo.value);
+        }
+        // Navegador antigo (e a WebView do aplicativo Android) nao tem clipboard:
+        // execCommand ainda funciona e e' o que salva o professor la'.
+        document.execCommand('copy');
+        return Promise.resolve();
+    };
+    copiar().then(() => alert('Codigo Pix copiado! Cole no aplicativo do seu banco.'))
+            .catch(() => alert('Nao consegui copiar sozinho. Selecione o codigo e copie na mao.'));
 }
 
 function renderConteudoModalApoie(opcoes) {
@@ -963,6 +1071,8 @@ window.esperandoConfirmacao = esperandoConfirmacao;
 window.cancelarAssinatura = cancelarAssinatura;
 window.pagarComPix = pagarComPix;
 window.ehLinkDeAssinatura = ehLinkDeAssinatura;
+window.copiarCodigoPix = copiarCodigoPix;
+window.gerarQrCodePix = gerarQrCodePix;
 window.assinaturaVencida = assinaturaVencida;
 window.assinaturaEmAtraso = assinaturaEmAtraso;
 window.diasDeTolerancia = diasDeTolerancia;
