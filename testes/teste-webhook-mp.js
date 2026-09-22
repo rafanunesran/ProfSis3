@@ -678,6 +678,61 @@ const assinaturaMp = (extra) => Object.assign({
       new Request('https://w.dev/api/pix', { method: 'PUT' }), { FIREBASE_PROJECT_ID: 'profsis3' });
   ok('metodo que nao existe e recusado', pixPut.status === 405);
 
+  // ================= 11c. A CREDENCIAL DO FIREBASE =================
+  // A credencial mal cadastrada nao aparece em lugar nenhum ate' alguem pagar: o
+  // webhook so' a usa na hora de GRAVAR. Em producao ela estava torta e ninguem
+  // sabia - o diagnostico do /pix foi quem contou.
+  //
+  // E havia um segundo problema, pior: a mensagem do JSON.parse inclui um TRECHO DO
+  // CONTEUDO, e esse erro saia numa resposta HTTP publica. Ou seja, pedacos da chave
+  // privada do projeto iam para a internet dentro da mensagem de erro.
+  console.log('\n11c. A credencial do Firebase');
+
+  const F = await import('../assinatura/firestore-rest.mjs');
+  const contaBoa = JSON.stringify({
+    client_email: 'robo@profsis3.iam.gserviceaccount.com',
+    private_key: '-----BEGIN PRIVATE KEY-----\nSEGREDOSEGREDO\n-----END PRIVATE KEY-----' });
+
+  const aceita = (nome, valor) => {
+    try { F.lerContaServico(valor); ok('aceita ' + nome, true); }
+    catch (e) { ok('aceita ' + nome, false); }
+  };
+  aceita('o JSON inteiro', contaBoa);
+  aceita('o JSON com espacos em volta', '  ' + contaBoa + '\n');
+  aceita('o JSON entre aspas (como alguns paineis guardam)', '"' + contaBoa + '"');
+  aceita('o JSON em base64', Buffer.from(contaBoa).toString('base64'));
+  aceita('base64 quebrado em linhas (saida do comando base64)',
+         Buffer.from(contaBoa).toString('base64').replace(/(.{20})/g, '$1\n'));
+
+  const recusa = (nome, valor) => {
+    try {
+      F.lerContaServico(valor);
+      ok('recusa ' + nome, false);
+    } catch (e) {
+      const vazou = /SEGREDOSEGREDO|BEGIN PRIVATE|gserviceaccount/.test(e.message);
+      ok('recusa ' + nome + ' sem vazar conteudo', !vazou && e.message.length > 20);
+    }
+  };
+  recusa('variavel vazia', '');
+  recusa('texto que nao e credencial', 'coloquei-o-token-errado-aqui');
+  recusa('JSON valido sem as chaves necessarias', '{"projeto":"profsis3"}');
+  recusa('base64 de coisa que nao e JSON', Buffer.from('nao sou json').toString('base64'));
+
+  // E o servico, com a credencial torta, precisa RECUSAR o Pix: criar a cobranca
+  // seria cobrar sem poder creditar, porque o webhook nao conseguiria gravar.
+  const comCredencialTorta = { FIREBASE_PROJECT_ID: 'profsis3',
+    FIREBASE_SERVICE_ACCOUNT: 'credencial-quebrada', MP_PACOTES_PIX: 'professor:3:60' };
+
+  const diag = await W.tratarRequisicao(
+      new Request('https://w.dev/api/pix', { method: 'GET' }), comCredencialTorta);
+  const corpoDiag = await diag.json();
+  ok('o diagnostico avisa que a credencial esta torta, em vez de 500 mudo',
+      diag.status === 503 && corpoDiag.ok === false && /FIREBASE_SERVICE_ACCOUNT/.test(corpoDiag.credencial));
+  ok('e nao vaza o conteudo da credencial na resposta',
+      !/credencial-quebrada/.test(JSON.stringify(corpoDiag)));
+  ok('mas ainda diz quais pacotes conhece, para o diagnostico servir de algo',
+      corpoDiag.pacotes.length === 1 && corpoDiag.fonte === 'ambiente');
+
   // ================= 12. OS VALORES BATEM NOS DOIS LADOS =================
   console.log('\n12. Servidor e navegador falam do mesmo preco');
   const front = fs.readFileSync(path.join(RAIZ, 'assinatura.js'), 'utf8');

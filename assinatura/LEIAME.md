@@ -259,10 +259,35 @@ do Firestore dão escrita em `assinaturas_config` apenas a ele.
 GET https://<seu-projeto>.vercel.app/api/pix
 ```
 
-Responde com a lista de pacotes que o **servidor** enxerga e de onde ela veio
-(`painel` ou `ambiente`). Não cobra nada e não expõe nada — plano, meses e valor já
-aparecem na tela de quem vai pagar. Serve para o "configurei e não funciona" parar de
-custar horas.
+Responde com:
+
+```json
+{ "ok": true, "credencial": "ok", "projeto": "profsis3",
+  "fonte": "painel", "pacotes": [ { "plano": "professor", "meses": 3, "valor": 60 } ] }
+```
+
+- **`credencial`** — se a conta de serviço do Firebase está legível. Quando não está,
+  a resposta vem com **503** e o motivo. Isso importa muito: uma credencial torta não
+  aparece em lugar nenhum até alguém pagar, porque o webhook só a usa na hora de
+  **gravar** o crédito. Foi assim que a de produção passou despercebida.
+- **`fonte`** — `painel`, `ambiente` ou `nenhuma`.
+- **`pacotes`** — o que o servidor vai cobrar.
+
+Não cobra nada e não expõe nada: plano, meses e valor já aparecem na tela de quem vai
+pagar, e a mensagem de erro da credencial nunca carrega o conteúdo dela.
+
+> Uma versão anterior deixava o erro do `JSON.parse` sair na resposta — e a mensagem
+> dele inclui um trecho do conteúdo, ou seja, pedaços da chave privada do projeto iam
+> para a internet dentro do erro. Hoje o texto é fixo e diz o que fazer.
+
+### Se a credencial estiver torta
+
+Com `credencial` diferente de `ok`, **nada** funciona: webhook não grava, cancelamento
+responde 503 e o Pix é recusado de propósito — criar a cobrança seria cobrar sem poder
+creditar. Refaça a variável `FIREBASE_SERVICE_ACCOUNT` com o JSON inteiro da conta de
+serviço (Console do Firebase → Configurações do projeto → Contas de serviço → Gerar
+nova chave privada). O serviço aceita o JSON puro, entre aspas, ou em base64 — com ou
+sem quebras de linha.
 
 ### O que acontece quando o professor escolhe um pacote
 

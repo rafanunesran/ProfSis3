@@ -479,16 +479,31 @@ function ehRotaDePix(request) {
 
 async function tratarListaDePacotes(request, ambiente) {
     const cors = cabecalhosCors(request, ambiente);
+    const projeto = ambiente.FIREBASE_PROJECT_ID;
+
+    // A credencial e' checada em separado: se ela estiver torta, NADA funciona
+    // (webhook, cancelamento, credito de Pix), e dizer isso aqui e' mais util do que
+    // um 500 generico. A mensagem nunca carrega o conteudo da credencial.
+    let conta = null;
+    let estadoDaCredencial = 'ok';
     try {
-        const projeto = ambiente.FIREBASE_PROJECT_ID;
-        const conta = lerContaServico(ambiente.FIREBASE_SERVICE_ACCOUNT);
-        const { fonte, pacotes } = await pacotesDoServico(ambiente, {
-            ler: (caminho) => lerDoc(projeto, caminho, conta)
-        });
-        return responder({ ok: true, fonte: fonte, pacotes: pacotes }, 200, cors);
+        conta = lerContaServico(ambiente.FIREBASE_SERVICE_ACCOUNT);
     } catch (e) {
-        return responder({ ok: false, erro: String(e && e.message) }, 500, cors);
+        estadoDaCredencial = String((e && e.message) || 'credencial invalida');
     }
+
+    const { fonte, pacotes } = await pacotesDoServico(ambiente, {
+        ler: (caminho) => conta ? lerDoc(projeto, caminho, conta)
+                                : Promise.reject(new Error('sem credencial'))
+    });
+
+    return responder({
+        ok: estadoDaCredencial === 'ok',
+        credencial: estadoDaCredencial,
+        projeto: projeto || '(nao configurado)',
+        fonte: fonte,
+        pacotes: pacotes
+    }, estadoDaCredencial === 'ok' ? 200 : 503, cors);
 }
 
 async function tratarPedidoDePix(request, ambiente) {
@@ -508,8 +523,19 @@ async function tratarPedidoDePix(request, ambiente) {
     let pedido = {};
     try { pedido = await request.json(); } catch (e) { /* corpo vazio vira pacote invalido */ }
 
+    // Sem credencial valida, o pagamento ate' seria criado — mas o webhook nao
+    // conseguiria GRAVAR o credito, e o professor pagaria sem receber nada. Recusar
+    // e' a unica saida honesta.
+    let conta;
     try {
-        const conta = lerContaServico(ambiente.FIREBASE_SERVICE_ACCOUNT);
+        conta = lerContaServico(ambiente.FIREBASE_SERVICE_ACCOUNT);
+    } catch (e) {
+        console.error('[assinatura] credencial do Firebase invalida:', e && e.message);
+        return responder({ ok: false, motivo: 'o servico esta mal configurado e o pagamento nao ' +
+                          'seria creditado; avise a administracao' }, 503, cors);
+    }
+
+    try {
         const resultado = await criarPixDoPacote(pedido, dono, ambiente, {
             ler: (caminho) => lerDoc(ambiente.FIREBASE_PROJECT_ID, caminho, conta),
             criarPagamentoNoMp: (corpo, chave) =>
@@ -694,7 +720,14 @@ async function tratarCancelamento(request, ambiente) {
         return responder({ erro: 'sessao invalida: ' + (e && e.message) }, 401, cors);
     }
 
-    const conta = lerContaServico(ambiente.FIREBASE_SERVICE_ACCOUNT);
+    let conta;
+    try {
+        conta = lerContaServico(ambiente.FIREBASE_SERVICE_ACCOUNT);
+    } catch (e) {
+        console.error('[assinatura] credencial do Firebase invalida:', e && e.message);
+        return responder({ erro: 'o servico esta mal configurado; avise a administracao' }, 503, cors);
+    }
+
     try {
         const resultado = await cancelarAssinatura(dono.uid, ambiente, {
             ler: (caminho) => lerDoc(projeto, caminho, conta),

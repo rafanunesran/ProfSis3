@@ -231,12 +231,49 @@ export async function apagarDoc(projeto, caminho, contaServico) {
 // provedor). Aceita tanto o JSON cru quanto o mesmo JSON em base64, porque
 // alguns paineis estragam quebras de linha ao colar.
 export function lerContaServico(bruto) {
-    const texto = String(bruto || '').trim();
+    let texto = String(bruto || '').trim();
     if (!texto) throw new Error('Falta a variavel FIREBASE_SERVICE_ACCOUNT.');
-    const json = texto.charAt(0) === '{' ? texto : atob(texto);
-    const conta = JSON.parse(json);
+
+    // Alguns paineis guardam o valor com aspas em volta (e' o que acontece quando se
+    // cola um JSON num campo que espera texto). Tirar as aspas e' seguro: JSON de
+    // conta de servico sempre comeca com { e nunca com aspas.
+    if ((texto.charAt(0) === '"' && texto.charAt(texto.length - 1) === '"') ||
+        (texto.charAt(0) === "'" && texto.charAt(texto.length - 1) === "'")) {
+        texto = texto.slice(1, -1).trim();
+    }
+
+    let json;
+    if (texto.charAt(0) === '{') {
+        json = texto;
+    } else {
+        // Base64. `base64 arquivo.json` quebra a saida em linhas de 76 colunas, e
+        // copiar de um terminal traz essas quebras junto — tiramos antes de decodificar.
+        try {
+            json = atob(texto.replace(/\s+/g, ''));
+        } catch (e) {
+            throw new Error(ERRO_CREDENCIAL);
+        }
+    }
+
+    let conta;
+    try {
+        conta = JSON.parse(json);
+    } catch (e) {
+        // A mensagem do JSON.parse inclui um TRECHO DO CONTEUDO. Como este erro pode
+        // sair numa resposta HTTP publica, isso significaria publicar pedacos da chave
+        // privada do projeto. Trocamos por um texto que diz o que fazer e nada revela.
+        throw new Error(ERRO_CREDENCIAL);
+    }
+
     if (!conta.client_email || !conta.private_key) {
-        throw new Error('A conta de servico precisa ter client_email e private_key.');
+        throw new Error('A conta de servico precisa ter client_email e private_key. ' +
+                        'Baixe o JSON de novo no Console do Firebase.');
     }
     return conta;
 }
+
+const ERRO_CREDENCIAL =
+    'FIREBASE_SERVICE_ACCOUNT nao esta num formato que eu consiga ler. ' +
+    'Cole o JSON INTEIRO da conta de servico (comecando com { e terminando com }), ' +
+    'ou o mesmo JSON em base64. Console do Firebase > Configuracoes do projeto > ' +
+    'Contas de servico > Gerar nova chave privada.';
