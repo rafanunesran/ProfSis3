@@ -118,29 +118,33 @@ function ok(nome, condicao, extra) {
         [['professor', renderProfessorPanel], ['aee', renderAeePanel], ['projeto', renderProjetoPanel]].forEach(([modo, fn]) => {
             currentViewMode = modo;
             try { fn(); } catch (e) { /* o dashboard pode reclamar de dado que nao existe */ }
-            r[modo] = document.querySelector('nav').innerHTML.indexOf("showScreen('pdf'") !== -1;
+            r[modo] = document.querySelector('nav').innerHTML.indexOf("showScreen('ferramentas'") !== -1;
         });
         currentViewMode = 'gestor';
         try { renderGestorPanel(); } catch (e) { /* idem */ }
-        r.gestor = document.querySelector('nav').innerHTML.indexOf("showScreen('pdf'") !== -1;
+        r.gestor = document.querySelector('nav').innerHTML.indexOf("showScreen('ferramentas'") !== -1;
         currentViewMode = 'professor';
         try { renderProfessorPanel(); } catch (e) {}
         r.telaAntes = !!document.getElementById('pdf');
         return r;
     });
-    ok('botao no menu do professor', menus.professor);
-    ok('botao no menu do AEE', menus.aee);
-    ok('botao no menu do projeto', menus.projeto);
-    ok('botao no menu do gestor', menus.gestor);
+    ok('botao Ferramentas no menu do professor', menus.professor);
+    ok('botao Ferramentas no menu do AEE', menus.aee);
+    ok('botao Ferramentas no menu do projeto', menus.projeto);
+    ok('botao Ferramentas no menu do gestor', menus.gestor);
     ok('a tela nao existe antes de ser pedida', menus.telaAntes === false);
 
     console.log('\n2. O catalogo');
     const catalogo = await page.evaluate(() => {
+        // O atalho antigo tem de continuar caindo na aba de PDF.
         showScreen('pdf');
         const tela = document.getElementById('pdf');
+        const quadro = document.getElementById('ferramentas');
+        const abaPdf = document.getElementById('tabFerramentasPdf');
         return {
             criada: !!tela,
-            ativa: !!tela && tela.classList.contains('active'),
+            ativa: !!quadro && quadro.classList.contains('active'),
+            dentroDaAba: !!abaPdf && abaPdf.contains(tela) && abaPdf.style.display !== 'none',
             totalNoCatalogo: window.CATALOGO_PDF.length,
             grupos: window.PDF_GRUPOS.length,
             botoes: tela.querySelectorAll('#pdfGrade button').length,
@@ -158,6 +162,7 @@ function ok(nome, condicao, extra) {
         };
     });
     ok('a tela foi criada e ficou ativa', catalogo.criada && catalogo.ativa);
+    ok("showScreen('pdf') cai na aba de PDF de Ferramentas", catalogo.dentroDaAba);
     ok('49 ferramentas no catalogo', catalogo.totalNoCatalogo === 49, String(catalogo.totalNoCatalogo));
     ok('8 grupos', catalogo.grupos === 8);
     ok('todas as ferramentas aparecem na grade', catalogo.botoes === 49, catalogo.botoes + ' botoes');

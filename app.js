@@ -695,7 +695,7 @@ function renderProfessorPanel() {
         <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
         <button onclick="showScreen('biblioteca', event)"><span class="icon">📚</span><span class="label">Biblioteca</span></button>
-        <button onclick="showScreen('pdf', event)"><span class="icon">📕</span><span class="label">PDF</span></button>
+        <button onclick="showScreen('ferramentas', event)"><span class="icon">🧰</span><span class="label">Ferramentas</span></button>
     `;
     renderDashboard();
     showScreen('dashboard');
@@ -710,7 +710,7 @@ function renderAeePanel() {
         <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
         <button onclick="showScreen('biblioteca', event)"><span class="icon">📚</span><span class="label">Biblioteca</span></button>
-        <button onclick="showScreen('pdf', event)"><span class="icon">📕</span><span class="label">PDF</span></button>
+        <button onclick="showScreen('ferramentas', event)"><span class="icon">🧰</span><span class="label">Ferramentas</span></button>
     `;
     renderDashboard();
     showScreen('dashboard');
@@ -726,7 +726,7 @@ function renderProjetoPanel() {
         <button onclick="showScreen('registrosProfessor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
         <button onclick="showScreen('biblioteca', event)"><span class="icon">📚</span><span class="label">Biblioteca</span></button>
-        <button onclick="showScreen('pdf', event)"><span class="icon">📕</span><span class="label">PDF</span></button>
+        <button onclick="showScreen('ferramentas', event)"><span class="icon">🧰</span><span class="label">Ferramentas</span></button>
     `;
     renderDashboard();
     showScreen('dashboard');
@@ -736,6 +736,14 @@ function showScreen(screenId, evt) {
     // A antiga tela "Agenda" virou a tela "Documentos" (grade de horários + planos + anexos +
     // histórico, em abas). O nome antigo continua valendo pra não quebrar nenhum atalho guardado.
     if (screenId === 'agenda') screenId = 'documentos';
+
+    // Mesma história com a tela "PDF": ela virou a primeira aba da tela "Ferramentas", ao lado
+    // de "Ampliar" (ver ferramentas.js). Quem chamar showScreen('pdf') — um atalho guardado, um
+    // teste antigo — continua caindo exatamente onde caía.
+    if (screenId === 'pdf') {
+        if (typeof definirAbaFerramentas === 'function') definirAbaFerramentas('pdf');
+        screenId = 'ferramentas';
+    }
 
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     const screen = document.getElementById(screenId);
@@ -762,10 +770,10 @@ function showScreen(screenId, evt) {
     if (screenId === 'horariosGestor') renderHorariosGestor();
     if (screenId === 'escolaGestor') renderEscolaGestor();
     if (screenId === 'biblioteca') renderBiblioteca();
-    // Ferramentas PDF (premium). A tela e' criada sob demanda, como a Biblioteca — ver
-    // pdf_ferramentas.js. O portao do plano fica no clique de cada ferramenta, e nao
-    // aqui: o catalogo tem de ser visivel para quem ainda nao assina.
-    if (screenId === 'pdf' && typeof renderPdf === 'function') renderPdf();
+    // Ferramentas (premium): PDF e Ampliar imagem, em abas. A tela e' criada sob demanda,
+    // como a Biblioteca — ver ferramentas.js. O portao do plano fica no clique de cada
+    // ferramenta, e nao aqui: o catalogo tem de ser visivel para quem ainda nao assina.
+    if (screenId === 'ferramentas' && typeof renderFerramentas === 'function') renderFerramentas();
 }
 
 function showModal(modalId) {

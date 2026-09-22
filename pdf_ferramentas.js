@@ -2193,27 +2193,52 @@ function pdfCampoForm(indice, valor) {
 // A TELA
 // ---------------------------------------------------------------------------
 
+// O PDF deixou de ser uma tela do menu e virou a primeira ABA da tela "Ferramentas"
+// (ver ferramentas.js): ampliar imagem resolve o mesmo problema com outro arquivo, e
+// duas telas quase iguais no menu seriam duas. O catalogo aqui nao mudou nada — ele so'
+// passou a ser desenhado dentro do quadro da aba.
+//
+// O #pdf continua existindo com o mesmo id. E' o que mantem funcionando o atalho antigo
+// showScreen('pdf') e tudo o que ja' apontava para ele.
 function garantirTelaPdf() {
     if (document.getElementById('pdf')) return;
-    const container = document.getElementById('appContainer');
-    const interno = (container && container.querySelector('.container')) || container || document.body;
+
+    // O lugar natural e' dentro da aba. Se por algum motivo ferramentas.js nao carregou,
+    // a tela nasce solta no container, como nascia antes — melhor uma tela sem abas do
+    // que ferramenta de PDF nenhuma.
+    let destino = null;
+    if (typeof garantirTelaFerramentas === 'function') {
+        garantirTelaFerramentas();
+        destino = document.getElementById('tabFerramentasPdf');
+    }
     const tela = document.createElement('div');
     tela.id = 'pdf';
-    tela.className = 'screen';
-    interno.appendChild(tela);
+
+    if (destino) {
+        destino.appendChild(tela);
+    } else {
+        const container = document.getElementById('appContainer');
+        const interno = (container && container.querySelector('.container')) || container || document.body;
+        tela.className = 'screen';
+        interno.appendChild(tela);
+    }
 }
 
-// Chamada pelo showScreen('pdf') — ver app.js.
+// Chamada pela aba "PDF" de ferramentas.js — e, por tras dela, pelo showScreen('pdf')
+// de sempre.
 function renderPdf() {
     garantirTelaPdf();
     const tela = document.getElementById('pdf');
     if (!tela) return;
 
-    // A tela nasce sob demanda, entao o showScreen que disparou este render pode ter
-    // rodado antes de ela existir. Garante a exibicao aqui (mesmo caminho da Biblioteca).
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    tela.classList.add('active');
-    tela.style.display = '';
+    // Quando ferramentas.js nao carregou, o #pdf e' uma tela solta e precisa se mostrar
+    // sozinha (era o que esta funcao fazia sempre). Dentro da aba quem cuida disso e' o
+    // ferramentas.js, e mexer em .screen aqui apagaria a propria tela que nos contem.
+    if (tela.classList.contains('screen')) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        tela.classList.add('active');
+        tela.style.display = '';
+    }
 
     if (pdfFerramentaAberta) pdfRenderPainel();
     else pdfRenderCatalogo();

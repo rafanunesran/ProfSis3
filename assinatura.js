@@ -59,7 +59,8 @@ const PLANOS_SISPROF = {
         resumo: 'Apoia o projeto e libera as funcoes premium conforme forem saindo.',
         itens: [
             'Tudo do Apoia-se',
-            'Ferramentas PDF: 49 ferramentas sem enviar arquivo para site nenhum',
+            'Ferramentas: 49 ferramentas de PDF sem enviar arquivo para site nenhum',
+            'Ferramentas: ampliar e limpar imagem, tambem sem enviar nada',
             'Prioridade no suporte e nas novidades'
         ]
     }
