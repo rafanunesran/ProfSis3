@@ -31,12 +31,17 @@
 //   FIREBASE_SERVICE_ACCOUNT   - o JSON da conta de servico (cru ou em base64)
 //   MP_PLANO_APOIASE_ID        - id do plano de R$ 10,00 (opcional; o valor tambem identifica)
 //   MP_PLANO_PROFESSOR_ID      - id do plano de R$ 20,00 (opcional)
+//   MP_PACOTES_PIX             - pacotes de apoio no Pix: "apoiase:3:30,professor:3:60"
+//                                (plano:meses:valor). E' preco que vira acesso, por isso
+//                                mora aqui e nao no documento publico de configuracao.
+//   ASSINATURA_CRON_SECRET     - segredo do /reconciliar (a varredura diaria)
 
 import {
     interpretarNotificacao, montarAssinatura, identificarUsuario,
-    acharUidPorEmail, devoGravar, manifestoAssinatura, lerCabecalhoAssinatura
+    acharUidPorEmail, devoGravar, manifestoAssinatura, lerCabecalhoAssinatura,
+    lerReferenciaPix, pacotePorValor, montarApoioPix, planoValido, assinaturaVencida
 } from './regras.mjs';
-import { lerDoc, gravarDoc, apagarDoc, lerContaServico } from './firestore-rest.mjs';
+import { lerDoc, gravarDoc, apagarDoc, listarDocs, lerContaServico } from './firestore-rest.mjs';
 import { verificarTokenFirebase } from './auth-firebase.mjs';
 
 const MP_API = 'https://api.mercadopago.com';
@@ -112,6 +117,12 @@ async function buscarAssinatura(acao, token) {
     if (acao.acao === 'buscar-assinatura') {
         return buscarNoMp('/preapproval/' + encodeURIComponent(acao.id), token);
     }
+    if (acao.acao === 'buscar-pagamento') {
+        // Pagamento avulso (o caminho do Pix). Devolvemos marcado, porque o que se
+        // faz com ele e' completamente diferente de uma assinatura de cartao.
+        const pagamento = await buscarNoMp('/v1/payments/' + encodeURIComponent(acao.id), token);
+        return pagamento ? Object.assign({ _tipo: 'pagamento' }, pagamento) : null;
+    }
     const cobranca = await buscarNoMp(
         '/authorized_payments/' + encodeURIComponent(acao.id), token);
     const idAssinatura = cobranca && cobranca.preapproval_id;
@@ -132,6 +143,10 @@ export async function processarNotificacao(corpo, ambiente, ferramentas) {
 
     const assinatura = await buscar(acao);
     if (!assinatura) return { feito: false, motivo: 'assinatura nao encontrada no Mercado Pago' };
+
+    if (assinatura._tipo === 'pagamento') {
+        return processarApoioPix(assinatura, ambiente, ferramentas);
+    }
 
     const config = {
         planoApoiaseId: ambiente.MP_PLANO_APOIASE_ID || '',
@@ -163,6 +178,86 @@ export async function processarNotificacao(corpo, ambiente, ferramentas) {
     await gravar('assinaturas/' + uid, Object.assign({ uid: uid }, doc));
     await atualizarVitrineDeContribuintes(uid, doc, ferramentas);
     return { feito: true, uid: uid, plano: doc.plano, status: doc.status };
+}
+
+// APOIO PAGO NO PIX.
+//
+// O Mercado Pago nao faz recorrencia no Pix, entao aqui nao existe assinatura para
+// acompanhar: existe um pagamento que CREDITA MESES. O acesso vence sozinho no fim
+// do periodo (ver assinaturaVencida em regras.mjs) — nada para cancelar, e nada
+// sendo cobrado de ninguem sem autorizacao.
+export async function processarApoioPix(pagamento, ambiente, ferramentas) {
+    const { ler, gravar } = ferramentas;
+
+    // So' dinheiro que entrou de verdade credita alguma coisa. `pending`,
+    // `in_process` e `rejected` nao dao acesso: e' literalmente o pedido de
+    // "libera so' depois da confirmacao".
+    if (String(pagamento.status || '').toLowerCase() !== 'approved') {
+        return { feito: false, motivo: 'pagamento ainda nao aprovado: ' + pagamento.status };
+    }
+
+    const pacotes = lerPacotesPix(ambiente);
+    const referencia = lerReferenciaPix(pagamento.external_reference);
+    const credito = referencia || pacotePorValor(pagamento.transaction_amount, pacotes);
+
+    if (!credito) {
+        // Pagamento que nao corresponde a nenhum pacote de apoio. Nao e' erro: a
+        // conta do Mercado Pago pode receber outras coisas, e nada disso pode virar
+        // plano por acidente.
+        return { feito: false, motivo: 'pagamento fora dos pacotes de apoio (R$ ' +
+                 pagamento.transaction_amount + ')' };
+    }
+
+    // De quem e'?
+    let uid = credito.uid || '';
+    const emailPagador = String(((pagamento.payer && pagamento.payer.email) || '')).toLowerCase();
+    if (!uid && emailPagador) {
+        const lista = await ler('system/users_list');
+        uid = acharUidPorEmail((lista && lista.list) || [], emailPagador);
+    }
+    if (!uid) {
+        await gravar('assinaturas_sem_dono/pix-' + pagamento.id, {
+            origem: 'pix', email: emailPagador, valor: Number(pagamento.transaction_amount) || 0,
+            plano: credito.plano, meses: credito.meses,
+            ultimoPagamentoId: String(pagamento.id || ''),
+            atualizadoEm: new Date().toISOString()
+        });
+        return { feito: false, motivo: 'nao identifiquei o usuario', email: emailPagador };
+    }
+
+    const atual = await ler('assinaturas/' + uid);
+
+    // O mesmo Pix avisado duas vezes nao pode creditar o dobro de meses. O id do
+    // pagamento e' a defesa: ja' creditamos este? Entao nao credita de novo.
+    if (atual && atual.ultimoPagamentoId && String(atual.ultimoPagamentoId) === String(pagamento.id)) {
+        return { feito: false, motivo: 'este pagamento ja estava creditado', uid: uid };
+    }
+
+    const doc = montarApoioPix(pagamento, credito, atual, Date.now());
+    await gravar('assinaturas/' + uid, Object.assign({ uid: uid }, doc));
+    await atualizarVitrineDeContribuintes(uid, doc, ferramentas);
+    return { feito: true, uid: uid, plano: doc.plano, meses: credito.meses,
+             validoAte: doc.validoAte, origem: 'pix' };
+}
+
+// Os pacotes de Pix vem do ambiente, no formato "plano:meses:valor" separados por
+// virgula. Exemplo: "apoiase:3:30,professor:3:60,professor:12:240".
+// Ficam aqui (e nao no banco) porque e' VALOR que vira acesso: o documento de
+// configuracao e' publico, e a lista de precos que credita plano precisa morar onde
+// so' quem faz o deploy alcanca.
+export function lerPacotesPix(ambiente) {
+    return String((ambiente && ambiente.MP_PACOTES_PIX) || '')
+        .split(',')
+        .map(item => {
+            const partes = String(item).trim().split(':');
+            if (partes.length < 3) return null;
+            return {
+                plano: String(partes[0] || '').trim().toLowerCase(),
+                meses: Math.round(Number(partes[1])),
+                valor: Number(partes[2])
+            };
+        })
+        .filter(Boolean);
 }
 
 // A LISTA "OBRIGADO A QUEM E' PARCA".
@@ -255,6 +350,239 @@ export function idDaNotificacao(request, corpo) {
         if (daUrl) return String(daUrl);
     } catch (e) { /* URL estranha: seguimos pelo corpo */ }
     return String((corpo && corpo.data && corpo.data.id) || (corpo && corpo.id) || '');
+}
+
+// ----------------------------------------------------------------------------
+// GERAR O QR CODE DO PIX (/pix)
+// ----------------------------------------------------------------------------
+// A primeira versao mandava o professor para um "link de pagamento" criado a mao no
+// painel do Mercado Pago. Dava trabalho (um link por pacote), quebrava calado quando
+// o link errado era colado, e o pior: o link nem sempre devolve a referencia de quem
+// pagou, entao o crédito dependia de adivinhar pelo valor e pelo e-mail.
+//
+// Agora o QR nasce aqui. O servidor pede ao Mercado Pago um pagamento Pix com o valor
+// do pacote e a referencia de quem pediu, e devolve o "copia e cola" para a tela
+// mostrar. Quando o Pix cai, o webhook de `payment` credita os meses — e a referencia
+// esta' garantida, porque fomos nos que criamos o pagamento.
+//
+// A CHAVE PIX NAO MORA AQUI. Quem recebe e' a conta do Mercado Pago do projeto, com a
+// chave que esta' cadastrada la'. Nenhuma chave Pix passa por este codigo nem pelo
+// Firestore — e' um dado a menos para guardar e um a menos para vazar.
+
+const VALIDADE_PIX_HORAS = 24;
+
+export async function criarPixDoPacote(pedido, dono, ambiente, ferramentas) {
+    const { criarPagamentoNoMp } = ferramentas;
+
+    const plano = String((pedido && pedido.plano) || '').toLowerCase();
+    const meses = Math.round(Number(pedido && pedido.meses));
+
+    // O VALOR VEM DAQUI, NUNCA DO NAVEGADOR. Aceitar o valor que a pagina manda seria
+    // deixar qualquer pessoa comprar 12 meses de Professor por um centavo.
+    const pacote = lerPacotesPix(ambiente).find(p =>
+        p.plano === plano && Number(p.meses) === meses);
+    if (!pacote) {
+        return { ok: false, motivo: 'pacote nao encontrado: ' + plano + '/' + meses + ' meses' };
+    }
+
+    const nomePlano = plano === 'professor' ? 'Professor' : 'Apoia-se';
+    const vencimento = new Date(Date.now() + VALIDADE_PIX_HORAS * 3600000);
+
+    const pagamento = await criarPagamentoNoMp({
+        transaction_amount: Number(pacote.valor),
+        payment_method_id: 'pix',
+        description: 'SisProf - apoio ' + nomePlano + ', ' + meses +
+                     (meses === 1 ? ' mes' : ' meses'),
+        external_reference: [dono.uid, plano, meses].join('|'),
+        date_of_expiration: vencimento.toISOString(),
+        payer: { email: dono.email || '' }
+    }, dono.uid + '-' + plano + '-' + meses + '-' + Date.now());
+
+    const dadosDoQr = (pagamento && pagamento.point_of_interaction
+                       && pagamento.point_of_interaction.transaction_data) || {};
+    if (!dadosDoQr.qr_code) {
+        return { ok: false, motivo: 'o Mercado Pago nao devolveu o codigo do Pix' };
+    }
+
+    return {
+        ok: true,
+        pagamentoId: String(pagamento.id || ''),
+        plano: plano,
+        meses: meses,
+        valor: Number(pacote.valor),
+        copiaECola: dadosDoQr.qr_code,
+        qrCodeBase64: dadosDoQr.qr_code_base64 || '',
+        ticketUrl: dadosDoQr.ticket_url || '',
+        expiraEm: pagamento.date_of_expiration || vencimento.toISOString()
+    };
+}
+
+async function criarPagamentoNoMercadoPago(corpo, chaveIdempotencia, token) {
+    const resposta = await fetch(MP_API + '/v1/payments', {
+        method: 'POST',
+        headers: {
+            authorization: 'Bearer ' + token,
+            'content-type': 'application/json',
+            // Sem isto, uma tentativa repetida (rede oscilando, professor clicando
+            // duas vezes) cria DOIS Pix cobrando a mesma pessoa.
+            'X-Idempotency-Key': String(chaveIdempotencia)
+        },
+        body: JSON.stringify(corpo)
+    });
+    if (!resposta.ok) {
+        throw new Error('o Mercado Pago recusou criar o Pix: ' + resposta.status +
+                        ' ' + (await resposta.text()).slice(0, 300));
+    }
+    return resposta.json();
+}
+
+function ehRotaDePix(request) {
+    try {
+        return /\/pix\/?$/.test(new URL(request.url).pathname);
+    } catch (e) { return false; }
+}
+
+async function tratarPedidoDePix(request, ambiente) {
+    const cors = cabecalhosCors(request, ambiente);
+
+    const autorizacao = request.headers.get('authorization') || '';
+    const token = autorizacao.toLowerCase().indexOf('bearer ') === 0 ? autorizacao.slice(7).trim() : '';
+    if (!token) return responder({ erro: 'falta o cracha da sessao' }, 401, cors);
+
+    let dono;
+    try {
+        dono = await verificarTokenFirebase(token, ambiente.FIREBASE_PROJECT_ID);
+    } catch (e) {
+        return responder({ erro: 'sessao invalida: ' + (e && e.message) }, 401, cors);
+    }
+
+    let pedido = {};
+    try { pedido = await request.json(); } catch (e) { /* corpo vazio vira pacote invalido */ }
+
+    try {
+        const resultado = await criarPixDoPacote(pedido, dono, ambiente, {
+            criarPagamentoNoMp: (corpo, chave) =>
+                criarPagamentoNoMercadoPago(corpo, chave, ambiente.MP_ACCESS_TOKEN)
+        });
+        if (!resultado.ok) return responder(resultado, 400, cors);
+        console.log('[assinatura] Pix criado para', dono.uid, resultado.plano, resultado.meses + 'm');
+        return responder(resultado, 200, cors);
+    } catch (e) {
+        console.error('[assinatura] falha ao criar Pix:', e && e.message);
+        return responder({ erro: 'nao consegui gerar o Pix: ' + (e && e.message) }, 500, cors);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// A VARREDURA DIARIA (/reconciliar)
+// ----------------------------------------------------------------------------
+// O corte por vencimento acontece na tela, comparando data — e isso ja' garante que
+// silencio nao vire acesso de graca. Mas a tela nao CONSERTA o banco: o documento
+// continua dizendo `ativa`, e o nome continua na vitrine para quem olha de outro
+// aparelho.
+//
+// Esta varredura e' a faxina. Uma vez por dia ela pega cada assinatura vencida e:
+//   - se e' de cartao, PERGUNTA ao Mercado Pago como esta' de verdade (pode ter sido
+//     paga e o aviso ter se perdido — o caso injusto, que corrige para cima);
+//   - se continua sem pagamento, derruba para o gratuito e tira o nome da vitrine.
+//
+// Roda pelo Cron da Vercel (ou do Cloudflare), autenticada por um segredo proprio:
+// nao e' endereco para ficar aberto na internet.
+export async function reconciliarAssinaturas(ambiente, ferramentas) {
+    const { listar, ler, gravar, apagar, buscarNoMp } = ferramentas;
+    const config = { diasTolerancia: Number(ambiente.DIAS_TOLERANCIA) || undefined };
+    const agora = Date.now();
+
+    const relatorio = { olhadas: 0, cortadas: 0, reativadas: 0, intactas: 0, falhas: 0 };
+    let pagina = '';
+
+    do {
+        const lote = await listar('assinaturas', pagina);
+        pagina = lote.proximaPagina;
+
+        for (const doc of lote.documentos) {
+            relatorio.olhadas++;
+            const uid = doc.uid || doc._id;
+            if (!uid) continue;
+
+            // Quem nao esta' ativa nao tem o que reconciliar, e cortesia sem prazo
+            // e' decisao do super admin — nao e' atraso de pagamento.
+            if (doc.status !== 'ativa') { relatorio.intactas++; continue; }
+            if (!assinaturaVencida(doc, config, agora)) { relatorio.intactas++; continue; }
+
+            try {
+                // Cartao: a fonte da verdade e' o Mercado Pago, nao o nosso banco.
+                if (doc.origem === 'mercadopago' && doc.preapprovalId && buscarNoMp) {
+                    const remoto = await buscarNoMp('/preapproval/' + encodeURIComponent(doc.preapprovalId));
+                    const atualizado = montarAssinatura(remoto, {
+                        planoApoiaseId: ambiente.MP_PLANO_APOIASE_ID || '',
+                        planoProfessorId: ambiente.MP_PLANO_PROFESSOR_ID || ''
+                    });
+                    // Pagou e o aviso se perdeu: a data nova chega aqui e o acesso volta.
+                    const valeAgora = planoValido(atualizado, config, agora) !== 'free';
+                    await gravar('assinaturas/' + uid, Object.assign({ uid: uid }, atualizado));
+                    await atualizarVitrineDeContribuintes(uid,
+                        valeAgora ? atualizado : Object.assign({}, atualizado, { status: 'vencida', plano: 'free' }),
+                        ferramentas);
+                    if (valeAgora) relatorio.reativadas++; else relatorio.cortadas++;
+                    continue;
+                }
+
+                // Pix e cortesia com prazo: venceu, venceu. Nao ha' o que perguntar.
+                const cortado = Object.assign({}, doc, {
+                    plano: 'free',
+                    status: 'vencida',
+                    cortadoPorAtrasoEm: new Date(agora).toISOString(),
+                    atualizadoEm: new Date(agora).toISOString(),
+                    versaoMs: Math.max(Number(doc.versaoMs) || 0, agora)
+                });
+                delete cortado._id;
+                await gravar('assinaturas/' + uid, cortado);
+                if (apagar) await apagar('contribuintes/' + uid);
+                relatorio.cortadas++;
+            } catch (e) {
+                console.warn('[assinatura] reconciliacao falhou para', uid, e && e.message);
+                relatorio.falhas++;
+            }
+        }
+    } while (pagina);
+
+    return relatorio;
+}
+
+function ehRotaDeReconciliacao(request) {
+    try {
+        return /\/reconciliar\/?$/.test(new URL(request.url).pathname);
+    } catch (e) { return false; }
+}
+
+async function tratarReconciliacao(request, ambiente) {
+    // O Cron da Vercel chama com GET e manda `Authorization: Bearer <CRON_SECRET>`
+    // automaticamente — mas SO' se a variavel se chamar exatamente CRON_SECRET.
+    // Aceitamos os dois nomes para o segredo funcionar tanto pelo cron quanto numa
+    // chamada manual, e nunca liberamos sem segredo nenhum.
+    const segredo = ambiente.CRON_SECRET || ambiente.ASSINATURA_CRON_SECRET || '';
+    const enviado = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+    if (!segredo || enviado !== segredo) {
+        return new Response('nao autorizado', { status: 401 });
+    }
+
+    const projeto = ambiente.FIREBASE_PROJECT_ID;
+    const conta = lerContaServico(ambiente.FIREBASE_SERVICE_ACCOUNT);
+    try {
+        const relatorio = await reconciliarAssinaturas(ambiente, {
+            listar: (colecao, pagina) => listarDocs(projeto, colecao, conta, pagina),
+            ler: (caminho) => lerDoc(projeto, caminho, conta),
+            gravar: (caminho, dados) => gravarDoc(projeto, caminho, dados, conta),
+            apagar: (caminho) => apagarDoc(projeto, caminho, conta),
+            buscarNoMp: (caminho) => buscarNoMp(caminho, ambiente.MP_ACCESS_TOKEN)
+        });
+        console.log('[assinatura] reconciliacao:', JSON.stringify(relatorio));
+        return responder(relatorio, 200, {});
+    } catch (e) {
+        console.error('[assinatura] reconciliacao falhou:', e && e.message);
+        return responder({ erro: String(e && e.message) }, 500, {});
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -358,6 +686,13 @@ export async function tratarRequisicao(request, ambiente) {
         if (request.method !== 'POST') return new Response('metodo nao suportado', { status: 405 });
         return tratarCancelamento(request, ambiente);
     }
+    if (ehRotaDeReconciliacao(request)) {
+        return tratarReconciliacao(request, ambiente);
+    }
+    if (ehRotaDePix(request)) {
+        if (request.method !== 'POST') return new Response('metodo nao suportado', { status: 405 });
+        return tratarPedidoDePix(request, ambiente);
+    }
 
     if (request.method === 'GET') {
         // Serve para o painel do Mercado Pago testar o endereco e para a gente
@@ -409,7 +744,26 @@ export async function tratarRequisicao(request, ambiente) {
     }
 }
 
-// Cloudflare Workers
+// Cloudflare Workers.
+// `scheduled` e' como o Cron Trigger do Cloudflare chama o Worker — ele NAO faz uma
+// requisicao HTTP, entao sem este gancho a varredura diaria simplesmente nunca
+// rodaria por la'.
 export default {
-    fetch: (request, env) => tratarRequisicao(request, env)
+    fetch: (request, env) => tratarRequisicao(request, env),
+
+    scheduled: async (evento, env, contexto) => {
+        const projeto = env.FIREBASE_PROJECT_ID;
+        const conta = lerContaServico(env.FIREBASE_SERVICE_ACCOUNT);
+        const trabalho = reconciliarAssinaturas(env, {
+            listar: (colecao, pagina) => listarDocs(projeto, colecao, conta, pagina),
+            ler: (caminho) => lerDoc(projeto, caminho, conta),
+            gravar: (caminho, dados) => gravarDoc(projeto, caminho, dados, conta),
+            apagar: (caminho) => apagarDoc(projeto, caminho, conta),
+            buscarNoMp: (caminho) => buscarNoMp(caminho, env.MP_ACCESS_TOKEN)
+        }).then(r => console.log('[assinatura] reconciliacao:', JSON.stringify(r)))
+          .catch(e => console.error('[assinatura] reconciliacao falhou:', e && e.message));
+
+        if (contexto && contexto.waitUntil) contexto.waitUntil(trabalho);
+        else await trabalho;
+    }
 };

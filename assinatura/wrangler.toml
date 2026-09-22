@@ -7,3 +7,8 @@ compatibility_date = "2024-11-01"
 
 [vars]
 FIREBASE_PROJECT_ID = "profsis3"
+
+# A varredura diaria: derruba quem venceu e nao pagou, e devolve o acesso de quem
+# pagou e cujo aviso se perdeu. No Cloudflare ela chega pelo gancho `scheduled`.
+[triggers]
+crons = ["0 9 * * *"]

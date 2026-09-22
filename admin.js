@@ -599,6 +599,51 @@ async function abrirModalAssinaturasAdmin() {
                     Sem isto, o botão "Cancelar assinatura" manda o professor cancelar na mão,
                     no painel do Mercado Pago. Com isto, ele cancela pelo próprio sistema.
                 </p>
+                <div style="margin-top:16px; border-top:1px dashed #e2e8f0; padding-top:14px;">
+                    <label style="display:block; font-size:13px;">⏰ Dias de carência após o vencimento
+                        <input type="number" id="diasToleranciaAssinatura" min="0" max="60" step="1"
+                               style="width:90px; padding:8px;" value="${Number(links.diasTolerancia) >= 0 ? Number(links.diasTolerancia) : 5}">
+                    </label>
+                    <p style="font-size:11px; color:#718096; margin:4px 0 0 0;">
+                        Passado o vencimento + esta carência, o acesso premium e o selo de apoiador
+                        <strong>caem automaticamente</strong> — sem depender de o Mercado Pago avisar.
+                        A carência existe porque a cobrança recorrente não cai no minuto exato: o Mercado
+                        Pago tenta de novo por alguns dias. Padrão: 5 dias.
+                    </p>
+                </div>
+
+                <div style="margin-top:16px; border-top:1px dashed #e2e8f0; padding-top:14px;">
+                    <div style="font-size:13px; font-weight:bold;">📱 Pacotes de apoio no Pix</div>
+                    <p style="font-size:11px; color:#718096; margin:4px 0 8px 0;">
+                        O Mercado Pago <strong>não faz cobrança recorrente no Pix</strong> — recorrência
+                        automática lá é cartão. Então o Pix entra como pacote: o professor paga uma vez,
+                        o apoio vale pelos meses escolhidos e vence sozinho. Um por linha, no formato
+                        <code>plano;meses;valor</code> — por exemplo:<br>
+                        <code>professor;3;60</code> &nbsp;(3 meses de Professor por R$ 60,00 no total)
+                        <br><br>
+                        <strong>Não precisa de link.</strong> Com o endereço do serviço preenchido acima,
+                        o <strong>QR Code é gerado na hora</strong>, dentro do próprio sistema, com o valor
+                        exato e já identificando quem está pagando. O dinheiro cai na conta do Mercado Pago
+                        do projeto — a chave Pix é a que está cadastrada lá, e nenhuma chave passa por
+                        este sistema.
+                        <br><br>
+                        Se quiser usar um link pronto em vez do QR, acrescente um quarto campo
+                        (<code>professor;3;60;https://mpago.la/xxxx</code>) — mas ele precisa ser um
+                        <strong>Link de pagamento</strong>, nunca o link do plano (aquele com
+                        <code>preapproval_plan_id</code>, que só aceita cartão).
+                    </p>
+                    <textarea id="pacotesPixAssinatura" rows="4" style="width:100%; padding:8px; font-family:monospace; font-size:12px;"
+                              placeholder="apoiase;3;30&#10;professor;3;60&#10;professor;12;240">${(Array.isArray(links.pacotesPix) ? links.pacotesPix : []).map(p => [p.plano, p.meses, p.valor].concat(p.link ? [p.link] : []).join(';')).join('\n')}</textarea>
+                    <p style="font-size:11px; color:#975a16; background:#fffaf0; border:1px solid #fbd38d; border-radius:6px; padding:8px; margin-top:6px;">
+                        <strong>Importante:</strong> cadastre os mesmos pacotes na variável
+                        <code>MP_PACOTES_PIX</code> do serviço (Vercel), no formato
+                        <code>plano:meses:valor</code> separado por vírgula. É <strong>ela</strong> que
+                        define quanto o QR Code vai cobrar — o valor nunca vem do navegador, senão
+                        daria para comprar 12 meses por um centavo. O que está aqui é só o que o
+                        professor vê na tela; se os dois discordarem, vale o do serviço.
+                    </p>
+                </div>
+
                 <button class="btn btn-primary" style="margin-top:14px;" onclick="salvarLinksAssinatura()">Salvar</button>
 
                 <div style="margin-top:18px; border-top:1px dashed #e2e8f0; padding-top:14px; font-size:12px; color:#4a5568;">
@@ -637,10 +682,32 @@ async function salvarLinksAssinatura() {
 
     // Link de cobranca e' dinheiro dos professores: recusamos qualquer coisa que nao
     // seja um endereco https do proprio Mercado Pago.
-    const valido = (u) => !u || /^https:\/\/[a-z0-9.-]*mercadopago\.com(\.br)?\//i.test(u);
+    // Link de cobranca e' dinheiro dos professores: recusamos o que nao for endereco
+    // https do Mercado Pago. `mpago.la` entra na lista porque e' o encurtador OFICIAL
+    // deles — e' o formato em que sai todo link de pagamento, entao exigir
+    // "mercadopago.com" rejeitava justamente o link certo.
+    const valido = (u) => !u || /^https:\/\/([a-z0-9.-]*mercadopago\.com(\.br)?|mpago\.la)\//i.test(u);
     if (!valido(apoiase) || !valido(professor)) {
-        alert('O link precisa começar com https:// e apontar para o mercadopago.com.br.');
+        alert('O link precisa começar com https:// e apontar para o Mercado Pago ' +
+              '(mercadopago.com.br ou mpago.la).');
         return;
+    }
+
+    // Um link de ASSINATURA leva ao checkout recorrente, que so' aceita cartao.
+    const ehAssinatura = (u) => /preapproval_plan_id=|\/subscriptions\/checkout/i.test(String(u || ''));
+
+    // No campo do cartao esperamos justamente um link de assinatura. Aqui só avisamos,
+    // sem travar: o Mercado Pago tambem encurta link de plano, e um `mpago.la` de
+    // assinatura e' indistinguivel de um de pagamento avulso pela URL.
+    for (const [nome, link] of [['Apoia-se', apoiase], ['Professor', professor]]) {
+        if (link && !ehAssinatura(link) && link.indexOf('mpago.la') === -1) {
+            if (!confirm('O link do plano ' + nome + ' não parece ser de assinatura ' +
+                         '(o normal contém "preapproval_plan_id").\n\n' +
+                         'Se for um link de pagamento avulso, a cobrança NÃO vai se repetir todo mês ' +
+                         'e o professor vai perder o acesso no vencimento.\n\nSalvar assim mesmo?')) {
+                return;
+            }
+        }
     }
     // O endereco do servico recebe o cracha da sessao do professor: se apontar para
     // um lugar errado, esse cracha vai parar na mao de outra pessoa. Exigimos https.
@@ -648,12 +715,66 @@ async function salvarLinksAssinatura() {
         alert('O endereço do serviço precisa começar com https://');
         return;
     }
+    const dias = Number(document.getElementById('diasToleranciaAssinatura').value);
+    if (!isFinite(dias) || dias < 0 || dias > 60) {
+        alert('A carência precisa ser um número de 0 a 60 dias.');
+        return;
+    }
+
+    // Os pacotes de Pix, um por linha: plano;meses;valor;link
+    const pacotesPix = [];
+    const linhas = (document.getElementById('pacotesPixAssinatura').value || '')
+        .split('\n').map(l => l.trim()).filter(Boolean);
+    for (const linha of linhas) {
+        const [plano, meses, valor, link] = linha.split(';').map(x => (x || '').trim());
+        if (!PLANOS_ADMIN[plano] || plano === 'free') {
+            alert('Linha do Pix com plano inválido (use apoiase ou professor):\n\n' + linha);
+            return;
+        }
+        if (!(Number(meses) >= 1) || !(Number(valor) > 0)) {
+            alert('Linha do Pix com meses ou valor inválido:\n\n' + linha);
+            return;
+        }
+        // O link e' OPCIONAL: com o serviço configurado, o QR Code nasce nele.
+        if (link && !valido(link)) {
+            alert('O link do Pix precisa ser um endereço https do Mercado Pago ' +
+                  '(mercadopago.com.br ou mpago.la):\n\n' + linha);
+            return;
+        }
+        // O ERRO QUE ESTE BLOQUEIO EVITA: colar aqui o link do PLANO (cartão).
+        // Assinatura recorrente no Mercado Pago só aceita cartão — Pix não existe
+        // nesse fluxo. Pior que não funcionar: o professor que clicasse em
+        // "3 meses / R$ 60" cairia num checkout de R$ 10 por mês, no cartão,
+        // recorrente. Valor errado e cobrança automática que ele não pediu.
+        if (link && ehAssinatura(link)) {
+            alert('Este link é de ASSINATURA no cartão, não serve como pacote de Pix:\n\n' + linha +
+                  '\n\nAssinatura recorrente do Mercado Pago só aceita cartão. Para o Pix, crie um ' +
+                  '"Link de pagamento" (Seu negócio → Link de pagamento), com o valor total do pacote. ' +
+                  'Ele sai no formato https://mpago.la/... e aceita Pix.');
+            return;
+        }
+        const pacote = { plano: plano, meses: Number(meses), valor: Number(valor) };
+        if (link) pacote.link = link;
+        pacotesPix.push(pacote);
+    }
+
+    // Pacote sem link e sem serviço nao tem como virar pagamento nenhum.
+    const semCaminho = pacotesPix.filter(p => !p.link).length > 0 && !servico;
+    if (semCaminho) {
+        alert('Há pacotes de Pix sem link, e o endereço do serviço está vazio.\n\n' +
+              'Sem um dos dois não há como gerar o pagamento. Preencha o endereço do serviço ' +
+              '(recomendado — o QR Code nasce nele) ou acrescente o link de pagamento em cada linha.');
+        return;
+    }
+
     try {
         await saveData('assinaturas_config', 'publico', {
             apoiase: apoiase, professor: professor, servico: servico,
+            diasTolerancia: dias, pacotesPix: pacotesPix,
             atualizadoEm: new Date().toISOString()
         });
-        alert('Links salvos. Os professores já veem os planos novos ao abrir o pop-up de apoio.');
+        alert('Configuração salva. Os professores já veem os planos, o Pix e a carência nova ' +
+              'ao abrir o pop-up de apoio.');
         closeModal('modalAssinaturasAdmin');
     } catch (e) {
         alert('Não consegui salvar: ' + (e && e.message ? e.message : e));

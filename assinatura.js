@@ -80,6 +80,17 @@ const LINKS_ASSINATURA_PADRAO = {
     servico: ''
 };
 
+// Dias de carencia depois do vencimento. A cobranca recorrente nao cai no minuto
+// exato — o Mercado Pago tenta de novo por alguns dias — e cortar o professor no
+// primeiro segundo de atraso seria cortar por causa da fila do banco, nao por falta
+// de pagamento. O super admin ajusta no painel.
+const DIAS_TOLERANCIA_PADRAO = 5;
+let _politicaAssinatura = { diasTolerancia: DIAS_TOLERANCIA_PADRAO };
+
+// Pacotes de apoio no Pix, cadastrados no painel:
+//   [{ plano: 'professor', meses: 3, valor: 60, link: 'https://...' }, ...]
+let _pacotesPix = [];
+
 // Enquanto os planos novos nao estiverem criados no Mercado Pago, o botao explica
 // em vez de levar a lugar nenhum.
 let _linksAssinatura = null;
@@ -150,6 +161,9 @@ function planoDoUsuario() {
 
     const a = _assinaturaAtual;
     if (!a || a.status !== 'ativa') return 'free';
+    // Pagamento atrasado alem da carencia corta o acesso AQUI, sem depender de o
+    // Mercado Pago avisar e sem depender de a varredura diaria ter rodado.
+    if (assinaturaVencida(a)) return 'free';
     if (PLANOS_SISPROF[a.plano]) return a.plano;
     if (a.planoContratado && PLANOS_SISPROF[a.planoContratado]) return a.planoContratado;
     return 'free';
@@ -159,6 +173,60 @@ function planoDoUsuario() {
 // Serve so' para a tela explicar a espera — nao concede nada.
 function esperandoConfirmacao() {
     return !!(_assinaturaAtual && _assinaturaAtual.status === 'pendente');
+}
+
+// ----------------------------------------------------------------------------
+// O CORTE POR ATRASO
+// ----------------------------------------------------------------------------
+// O corte por cartao recusado ja' existia, mas depende de o Mercado Pago AVISAR. E
+// ha' um caso silencioso que aviso nenhum cobre: a notificacao que se perde. Webhook
+// fora do ar por umas horas, deploy no meio do caminho, evento que nao foi reenviado
+// — e o documento fica `ativa` para sempre, com a pessoa usando premium sem pagar,
+// sem ninguem descobrir, porque nao existe evento para descobrir.
+//
+// Por isso o acesso tem PRAZO. A data ja' esta' gravada (`proximaCobranca`, que o
+// Mercado Pago manda, ou `validoAte`, no caso do Pix) e a tela compara com hoje.
+// Silencio deixa de significar "tudo certo".
+//
+// Espelha assinatura/regras.mjs (venceEmMs / assinaturaVencida / planoValido), que e'
+// a mesma regra no servidor. Os dois lados sao testados.
+function venceEmMs(doc) {
+    if (!doc) return 0;
+    const ms = Date.parse(doc.validoAte || doc.proximaCobranca || '');
+    return isFinite(ms) ? ms : 0;
+}
+
+function diasDeTolerancia() {
+    const n = Number(_politicaAssinatura.diasTolerancia);
+    if (!isFinite(n) || n < 0) return DIAS_TOLERANCIA_PADRAO;
+    return Math.min(n, 60);
+}
+
+// Passou do vencimento + carencia: o acesso acabou.
+function assinaturaVencida(doc) {
+    const vence = venceEmMs(doc || _assinaturaAtual);
+    if (!vence) return false;   // cortesia sem prazo nao vence
+    return Date.now() > vence + diasDeTolerancia() * 86400000;
+}
+
+// Passou do vencimento, mas ainda na carencia: a tela AVISA em vez de cortar.
+// Quem esqueceu de renovar o Pix ou teve problema no cartao merece o aviso, nao a
+// surpresa de descobrir pelo botao que parou de funcionar.
+function assinaturaEmAtraso(doc) {
+    const vence = venceEmMs(doc || _assinaturaAtual);
+    if (!vence) return false;
+    return Date.now() > vence && !assinaturaVencida(doc);
+}
+
+function diasAtrasado(doc) {
+    const vence = venceEmMs(doc || _assinaturaAtual);
+    if (!vence) return 0;
+    return Math.floor((Date.now() - vence) / 86400000);
+}
+
+function dataBonita(iso) {
+    if (!iso) return '';
+    return String(iso).slice(0, 10).split('-').reverse().join('/');
 }
 
 function infoPlanoAtual() {
@@ -330,6 +398,20 @@ async function carregarLinksAssinatura() {
         links.professor = (typeof cfg.professor === 'string' ? cfg.professor : '') || LINKS_ASSINATURA_PADRAO.professor;
         links.servico = (typeof cfg.servico === 'string' ? cfg.servico : '') || LINKS_ASSINATURA_PADRAO.servico;
         _linksAssinatura = links;
+
+        // A politica de corte e os pacotes de Pix vem no mesmo documento.
+        // O documento e' a fonte da verdade: campo AUSENTE volta para o padrao, em vez
+        // de manter o valor da leitura anterior. Sem isso, apagar a carencia no painel
+        // deixaria a carencia antiga valendo em toda sessao que ja' estava aberta.
+        _politicaAssinatura.diasTolerancia = (cfg.diasTolerancia === undefined || cfg.diasTolerancia === null)
+            ? DIAS_TOLERANCIA_PADRAO
+            : Number(cfg.diasTolerancia);
+        // Pacote vale com OU sem link: quando o servico esta' configurado, o QR do Pix
+        // nasce nele (nao ha' link nenhum para cadastrar). O link so' continua
+        // existindo como caminho antigo, e nunca se for de assinatura.
+        _pacotesPix = Array.isArray(cfg.pacotesPix) ? cfg.pacotesPix.filter(p =>
+            p && PLANOS_SISPROF[p.plano] && Number(p.meses) > 0 && Number(p.valor) > 0
+            && (!p.link || !ehLinkDeAssinatura(p.link))) : [];
     }
     return links;
 }
@@ -556,11 +638,237 @@ function descreverAssinatura() {
     }
     if (a.status === 'pausada') {
         return '<p style="font-size:13px; color:#c53030;">⚠️ A cobranca deste mes nao passou no cartao. ' +
-               'O Mercado Pago vai tentar de novo; voce tambem pode atualizar o cartao por la.</p>';
+               'O Mercado Pago vai tentar de novo; voce tambem pode atualizar o cartao por la.<br>' +
+               '<span style="color:#742a2a;">Enquanto isso, o selo e as funcoes do plano ficam suspensos.</span></p>';
     }
-    const proxima = a.proximaCobranca ? String(a.proximaCobranca).slice(0, 10).split('-').reverse().join('/') : '';
+    if (a.status === 'vencida') {
+        return '<p style="font-size:13px; color:#c53030;">⏰ O apoio venceu em <strong>' +
+               dataBonita(a.validoAte || a.proximaCobranca) + '</strong> e o acesso voltou ao gratuito. ' +
+               'Assine de novo abaixo quando quiser — nada do seu trabalho foi perdido.</p>';
+    }
+
+    // ATRASADO, mas ainda na carencia: avisa em vez de cortar.
+    if (assinaturaEmAtraso(a)) {
+        const restam = diasDeTolerancia() - diasAtrasado(a);
+        return '<p style="font-size:13px; color:#b7791f;">⏳ O pagamento de <strong>' +
+               dataBonita(a.validoAte || a.proximaCobranca) + '</strong> ainda nao foi confirmado. ' +
+               'Seu acesso continua por <strong>' + Math.max(0, restam) + ' dia(s)</strong>' +
+               (a.origem === 'pix'
+                 ? ' — renove pelo Pix abaixo para nao ficar sem.'
+                 : ' — se o cartao mudou, atualize no Mercado Pago.') + '</p>';
+    }
+
+    // JA CORTADO pela data, mesmo com o documento dizendo ativa (o aviso do Mercado
+    // Pago pode ter se perdido; a varredura diaria conserta o banco depois).
+    if (assinaturaVencida(a)) {
+        return '<p style="font-size:13px; color:#c53030;">⏰ O pagamento venceu em <strong>' +
+               dataBonita(a.validoAte || a.proximaCobranca) + '</strong> e nao foi confirmado, ' +
+               'entao o acesso voltou ao gratuito. Se voce pagou, pode levar algumas horas para ' +
+               'ser reconhecido — o sistema libera sozinho.</p>';
+    }
+
+    const vence = a.validoAte
+        ? ', apoio garantido ate <strong>' + dataBonita(a.validoAte) + '</strong>'
+        : (a.proximaCobranca ? ', proxima cobranca em <strong>' + dataBonita(a.proximaCobranca) + '</strong>' : '');
     return `<p style="font-size:13px; color:#2f855a;">✅ Plano <strong>${plano.nome}</strong> ativo` +
-           (proxima ? `, proxima cobranca em <strong>${proxima}</strong>` : '') + '.</p>';
+           vence + '.</p>';
+}
+
+// ----------------------------------------------------------------------------
+// Pix: quem nao tem cartao tambem apoia
+// ----------------------------------------------------------------------------
+// O Mercado Pago NAO faz cobranca recorrente no Pix — recorrencia automatica la' e'
+// cartao. Como muito professor nao tem cartao de credito (ou nao quer deixar cobranca
+// automatica), o Pix entra como PACOTE DE MESES: paga uma vez, o apoio vale pelo
+// periodo e vence sozinho no fim. Nada ficando cobrado sem autorizacao.
+function secaoPixHtml() {
+    if (!_pacotesPix.length) return '';
+
+    const porPlano = {};
+    _pacotesPix.forEach(p => {
+        if (!porPlano[p.plano]) porPlano[p.plano] = [];
+        porPlano[p.plano].push(p);
+    });
+
+    const blocos = Object.keys(porPlano).map(planoId => {
+        const plano = PLANOS_SISPROF[planoId];
+        if (!plano) return '';
+        const botoes = porPlano[planoId]
+            .sort((a, b) => Number(a.meses) - Number(b.meses))
+            .map(p => {
+                const total = Number(p.valor);
+                const porMes = total / Number(p.meses);
+                const economia = porMes < plano.valor - 0.01
+                    ? `<span style="display:block; font-size:10px; color:#2f855a;">R$ ${porMes.toFixed(2).replace('.', ',')}/mes</span>`
+                    : '';
+                return `<button class="btn btn-secondary" style="padding:8px 12px;"
+                                onclick="pagarComPix('${planoId}', ${Number(p.meses)})">
+                            <strong>${Number(p.meses)} ${Number(p.meses) === 1 ? 'mes' : 'meses'}</strong>
+                            <span style="display:block; font-size:11px;">R$ ${total.toFixed(2).replace('.', ',')}</span>
+                            ${economia}
+                        </button>`;
+            }).join('');
+        return `<div style="margin-top:10px;">
+                    <div style="font-size:12px; font-weight:bold; color:#2d3748;">${plano.emoji} ${plano.nome}</div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">${botoes}</div>
+                </div>`;
+    }).join('');
+
+    return `
+        <div style="margin-top:18px; border:1px solid #e2e8f0; border-radius:10px; padding:14px; background:#f7fafc; text-align:left;">
+            <div style="font-size:14px; font-weight:bold; color:#2d3748;">📱 Prefere Pix? Sem cartao, sem cobranca automatica</div>
+            <p style="font-size:12px; color:#4a5568; margin:6px 0 0 0;">
+                Voce paga uma vez e o apoio vale pelo periodo escolhido. No fim do prazo ele
+                simplesmente acaba — <strong>nada e cobrado de voce sem autorizacao</strong>. Para continuar,
+                basta fazer outro Pix (e pagar antes de vencer nao perde os dias que faltavam).
+            </p>
+            ${blocos}
+            <div id="areaQrPix" style="display:none; margin-top:14px;"></div>
+            <p style="font-size:11px; color:#718096; margin-top:10px;">
+                O reconhecimento do Pix costuma levar poucos minutos. Assim que cair, o plano
+                aparece sozinho aqui — nao precisa recarregar nem avisar ninguem.
+            </p>
+        </div>`;
+}
+
+// Um link de ASSINATURA (checkout recorrente do Mercado Pago) nunca pode ser usado
+// como pacote de Pix. O checkout recorrente so' aceita cartao, e — pior que nao
+// funcionar — quem clicasse em "3 meses / R$ 60" cairia num plano de R$ 10 POR MES
+// no cartao: valor errado e cobranca automatica que a pessoa nao pediu.
+//
+// O painel ja' recusa cadastrar assim, mas a checagem vive aqui tambem porque
+// configuracao errada pode JA' estar gravada no banco, de antes da recusa existir.
+// Entre deixar alguem pagar errado e esconder o botao, escondemos o botao.
+function ehLinkDeAssinatura(link) {
+    return /preapproval_plan_id=|\/subscriptions\/checkout/i.test(String(link || ''));
+}
+
+// Escolher um pacote de Pix: o QR code nasce no nosso servico e aparece AQUI, sem
+// mandar o professor para outra aba e sem link nenhum para o administrador cadastrar.
+async function pagarComPix(planoId, meses) {
+    await carregarLinksAssinatura();
+    const pacote = _pacotesPix.find(p => p.plano === planoId && Number(p.meses) === Number(meses));
+    if (!pacote) {
+        alert('Este pacote de Pix ainda nao esta configurado. Tente outro, ou use o cartao.');
+        return;
+    }
+
+    const links = await carregarLinksAssinatura();
+    if (links.servico) {
+        return gerarQrCodePix(planoId, meses, pacote);
+    }
+
+    // CAMINHO ANTIGO: sem servico configurado, resta o link de pagamento avulso.
+    if (!pacote.link) {
+        alert('O Pix ainda nao esta pronto neste sistema. Use o cartao, ou avise a administracao.');
+        return;
+    }
+    if (ehLinkDeAssinatura(pacote.link)) {
+        alert('Este pacote esta configurado com um link de assinatura no cartao, que nao aceita Pix.\n\n' +
+              'Avise a administracao do sistema. Enquanto isso, voce pode apoiar pelo cartao aqui mesmo.');
+        return;
+    }
+    const uid = currentUser && (currentUser.uid || currentUser.id);
+    const referencia = [uid || '', planoId, Number(meses)].join('|');
+    const separador = pacote.link.indexOf('?') === -1 ? '?' : '&';
+    window.open(pacote.link + separador + 'external_reference=' + encodeURIComponent(referencia), '_blank');
+    marcarEsperandoConfirmacao(planoId);
+}
+
+// Pede o QR ao servico e mostra na tela. O valor NAO vai daqui: quem decide quanto
+// custa cada pacote e' o servidor. Se o navegador pudesse mandar o valor, daria para
+// comprar 12 meses de Professor por um centavo.
+async function gerarQrCodePix(planoId, meses, pacote) {
+    const area = document.getElementById('areaQrPix');
+    if (area) {
+        area.style.display = 'block';
+        area.innerHTML = '<p style="font-size:13px; color:#4a5568;">Gerando seu Pix...</p>';
+    }
+    try {
+        const cracha = await pegarCrachaDaSessao();
+        if (!cracha) {
+            alert('Sua sessao expirou. Saia e entre de novo para gerar o Pix.');
+            if (area) area.style.display = 'none';
+            return;
+        }
+        const links = await carregarLinksAssinatura();
+        const resposta = await fetch(links.servico.replace(/\/$/, '') + '/pix', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ' + cracha, 'content-type': 'application/json' },
+            body: JSON.stringify({ plano: planoId, meses: Number(meses) })
+        });
+        const dados = await resposta.json().catch(() => ({}));
+
+        if (!resposta.ok || !dados.ok) {
+            if (area) area.style.display = 'none';
+            alert('Nao consegui gerar o Pix agora: ' + (dados.motivo || dados.erro || 'tente de novo em instantes') +
+                  '\n\nVoce tambem pode apoiar pelo cartao.');
+            return;
+        }
+        mostrarQrCodePix(dados);
+        marcarEsperandoConfirmacao(planoId);
+    } catch (e) {
+        console.warn('[Assinatura] Falha ao gerar o Pix:', e);
+        if (area) area.style.display = 'none';
+        alert('Nao consegui falar com o servico do Pix. Verifique sua internet e tente de novo.');
+    }
+}
+
+function mostrarQrCodePix(dados) {
+    const area = document.getElementById('areaQrPix');
+    if (!area) return;
+    const plano = PLANOS_SISPROF[dados.plano] || PLANOS_SISPROF.apoiase;
+    const validade = dados.expiraEm
+        ? new Date(dados.expiraEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+        : '';
+
+    area.style.display = 'block';
+    area.innerHTML = `
+        <div style="border:2px solid #38a169; border-radius:10px; padding:16px; background:#fff; text-align:center;">
+            <div style="font-size:15px; font-weight:bold; color:#2d3748;">
+                📱 Pix de R$ ${Number(dados.valor).toFixed(2).replace('.', ',')} —
+                ${plano.emoji} ${plano.nome}, ${dados.meses} ${Number(dados.meses) === 1 ? 'mes' : 'meses'}
+            </div>
+            ${dados.qrCodeBase64 ? `
+                <img src="data:image/png;base64,${dados.qrCodeBase64}" alt="QR Code do Pix"
+                     style="width:220px; height:220px; margin:12px auto; display:block; border:1px solid #e2e8f0; border-radius:8px;">
+            ` : ''}
+            <p style="font-size:12px; color:#4a5568; margin:6px 0;">
+                Abra o aplicativo do seu banco, escolha <strong>Pix &gt; Pagar com QR Code</strong> e aponte a camera.
+                Ou use o codigo abaixo:
+            </p>
+            <textarea id="pixCopiaECola" readonly onclick="this.select()"
+                      style="width:100%; height:70px; font-family:monospace; font-size:11px; padding:8px;
+                             border:1px solid #e2e8f0; border-radius:6px; resize:none;">${dados.copiaECola}</textarea>
+            <button class="btn btn-success" style="margin-top:8px; padding:9px 18px;" onclick="copiarCodigoPix()">
+                📋 Copiar codigo Pix
+            </button>
+            ${validade ? `<p style="font-size:11px; color:#718096; margin-top:8px;">
+                Este codigo vale ate ${validade}. Depois disso, e' so gerar outro.
+            </p>` : ''}
+            <p style="font-size:11px; color:#2b6cb0; margin-top:8px;">
+                ⏳ Assim que o Pix cair, seu plano e liberado sozinho — pode deixar esta tela aberta
+                ou fechar, tanto faz.
+            </p>
+        </div>`;
+    area.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function copiarCodigoPix() {
+    const campo = document.getElementById('pixCopiaECola');
+    if (!campo) return;
+    campo.select();
+    const copiar = () => {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(campo.value);
+        }
+        // Navegador antigo (e a WebView do aplicativo Android) nao tem clipboard:
+        // execCommand ainda funciona e e' o que salva o professor la'.
+        document.execCommand('copy');
+        return Promise.resolve();
+    };
+    copiar().then(() => alert('Codigo Pix copiado! Cole no aplicativo do seu banco.'))
+            .catch(() => alert('Nao consegui copiar sozinho. Selecione o codigo e copie na mao.'));
 }
 
 function renderConteudoModalApoie(opcoes) {
@@ -592,6 +900,7 @@ function renderConteudoModalApoie(opcoes) {
             🔒 Cobranca mensal automatica no cartao, pelo Mercado Pago. O numero do cartao fica com eles —
             o SisProf nunca ve nem guarda esse dado. Cancele quando quiser, sem multa.
         </p>
+        ${secaoPixHtml()}
         ${temAssinaturaViva ? `
             <div style="margin-top:14px; border-top:1px dashed #e2e8f0; padding-top:14px;">
                 <button class="btn btn-danger" id="btnCancelarAssinatura" onclick="cancelarAssinatura()"
@@ -649,7 +958,10 @@ function injectApoieButton() {
     atualizarBotaoApoie();
     // A leitura da assinatura e' assincrona: o botao nasce com o que ja' se sabe e
     // se corrige sozinho quando o documento chega.
-    carregarAssinaturaAtual().then(async () => {
+    // A politica de carencia vem no mesmo documento dos links, e precisa estar
+    // carregada ANTES de julgar o plano de alguem: com a carencia padrao, quem tem
+    // tolerancia maior configurada apareceria cortado por um instante.
+    Promise.all([carregarAssinaturaAtual(), carregarLinksAssinatura()]).then(async () => {
         atualizarBotaoApoie();
         if (typeof atualizarBannerApoio === 'function') atualizarBannerApoio();
         if (precisaAvisarDaTransicao()) abrirAvisoTransicao();
@@ -757,6 +1069,13 @@ window.precisaAvisarDaTransicao = precisaAvisarDaTransicao;
 window.temAssinaturaAntiga = temAssinaturaAntiga;
 window.esperandoConfirmacao = esperandoConfirmacao;
 window.cancelarAssinatura = cancelarAssinatura;
+window.pagarComPix = pagarComPix;
+window.ehLinkDeAssinatura = ehLinkDeAssinatura;
+window.copiarCodigoPix = copiarCodigoPix;
+window.gerarQrCodePix = gerarQrCodePix;
+window.assinaturaVencida = assinaturaVencida;
+window.assinaturaEmAtraso = assinaturaEmAtraso;
+window.diasDeTolerancia = diasDeTolerancia;
 window.atualizarBannerApoio = atualizarBannerApoio;
 window.injectApoieButton = injectApoieButton;
 window.atualizarBotaoApoie = atualizarBotaoApoie;

@@ -215,15 +215,19 @@ const assinaturaMp = (extra) => Object.assign({
 
   // ================= 5. AVISO QUE NAO E' DE ASSINATURA =================
   console.log('\n5. Avisos fora do escopo');
-  ok('pagamento avulso e ignorado sem quebrar',
-      R.interpretarNotificacao({ type: 'payment', data: { id: '1' } }).acao === 'ignorar');
+  ok('merchant_order e ignorado sem quebrar',
+      R.interpretarNotificacao({ type: 'merchant_order', data: { id: '1' } }).acao === 'ignorar');
   ok('aviso sem id e ignorado',
       R.interpretarNotificacao({ type: 'subscription_preapproval', data: {} }).acao === 'ignorar');
+  ok('pagamento avulso NAO e mais ignorado: e o caminho do Pix',
+      R.interpretarNotificacao({ type: 'payment', data: { id: '1' } }).acao === 'buscar-pagamento');
+
   banco = bancoFalso();
-  r = await W.processarNotificacao({ type: 'payment', data: { id: '1' } }, ambiente,
+  r = await W.processarNotificacao({ type: 'merchant_order', data: { id: '1' } }, ambiente,
       { buscar: async () => { throw new Error('nao deveria buscar'); },
         ler: banco.ler, gravar: banco.gravar });
-  ok('e nao encosta no banco', r.feito === false && Object.keys(banco.docs).length === 0);
+  ok('e o que e ignorado nao encosta no banco',
+      r.feito === false && Object.keys(banco.docs).length === 0);
 
   // ================= 6. A CONFERENCIA DE ORIGEM =================
   console.log('\n6. So aceita aviso assinado pelo Mercado Pago');
@@ -384,8 +388,249 @@ const assinaturaMp = (extra) => Object.assign({
   ok('cracha com "alg: none" e recusado antes de qualquer outra checagem',
       /algoritmo nao aceito/.test(recusou));
 
-  // ================= 10. OS VALORES BATEM NOS DOIS LADOS =================
-  console.log('\n10. Servidor e navegador falam do mesmo preco');
+  // ================= 10. O CORTE POR ATRASO =================
+  // O corte por cartao recusado depende de o Mercado Pago avisar. Ha' um caso que
+  // aviso nenhum cobre: a notificacao que se perde. Sem prazo, o documento fica
+  // `ativa` para sempre e a pessoa usa premium sem pagar, sem ninguem descobrir.
+  console.log('\n10. Corte por atraso (o silencio deixa de valer acesso)');
+
+  const HOJE = Date.parse('2026-09-22T12:00:00Z');
+  const emDias = (n) => new Date(HOJE + n * 86400000).toISOString();
+  const noPlanoProfessor = (extra) => Object.assign({ status: 'ativa', plano: 'professor' }, extra || {});
+
+  ok('dentro do prazo, o plano vale',
+      R.planoValido(noPlanoProfessor({ proximaCobranca: emDias(8) }), {}, HOJE) === 'professor');
+  ok('venceu ontem: continua valendo (carencia de 5 dias)',
+      R.planoValido(noPlanoProfessor({ proximaCobranca: emDias(-1) }), {}, HOJE) === 'professor');
+  ok('e a tela sabe que esta em atraso, para avisar antes de cortar',
+      R.assinaturaEmAtraso(noPlanoProfessor({ proximaCobranca: emDias(-1) }), {}, HOJE) === true);
+  ok('passou a carencia: o acesso CAI, mesmo com o documento dizendo ativa',
+      R.planoValido(noPlanoProfessor({ proximaCobranca: emDias(-6) }), {}, HOJE) === 'free'
+      && R.assinaturaVencida(noPlanoProfessor({ proximaCobranca: emDias(-6) }), {}, HOJE) === true);
+  ok('a carencia e configuravel: 15 dias segura quem 5 cortaria',
+      R.planoValido(noPlanoProfessor({ proximaCobranca: emDias(-6) }), { diasTolerancia: 15 }, HOJE) === 'professor');
+  ok('carencia zero corta no dia seguinte ao vencimento',
+      R.planoValido(noPlanoProfessor({ proximaCobranca: emDias(-1) }), { diasTolerancia: 0 }, HOJE) === 'free');
+  ok('carencia absurda e' + ' limitada (60 dias nao e tolerancia, e presente)',
+      R.diasDeTolerancia({ diasTolerancia: 9999 }) === 60
+      && R.diasDeTolerancia({ diasTolerancia: -3 }) === R.DIAS_TOLERANCIA_PADRAO
+      && R.diasDeTolerancia({}) === R.DIAS_TOLERANCIA_PADRAO);
+  ok('cortesia SEM prazo nao vence por data (e decisao do super admin, nao atraso)',
+      R.assinaturaVencida({ status: 'ativa', plano: 'professor', origem: 'cortesia' }, {}, HOJE) === false);
+  ok('e nem a data de vencimento salva quem esta pausada ou cancelada',
+      R.planoValido({ status: 'pausada', plano: 'professor', proximaCobranca: emDias(30) }, {}, HOJE) === 'free'
+      && R.planoValido({ status: 'cancelada', plano: 'professor', proximaCobranca: emDias(30) }, {}, HOJE) === 'free');
+
+  // A VARREDURA DIARIA: e' ela que conserta o banco, nao so' a tela.
+  console.log('\n10b. A varredura diaria');
+
+  const bancoVarredura = (docs) => {
+    const guardados = Object.assign({}, docs);
+    const apagadosAqui = [];
+    return {
+      docs: guardados, apagados: apagadosAqui,
+      listar: async () => ({
+        documentos: Object.keys(guardados)
+          .filter(k => k.indexOf('assinaturas/') === 0)
+          .map(k => Object.assign({ _id: k.split('/')[1] }, guardados[k])),
+        proximaPagina: '' }),
+      ler: async (c) => (c in guardados ? JSON.parse(JSON.stringify(guardados[c])) : null),
+      gravar: async (c, d) => { guardados[c] = JSON.parse(JSON.stringify(d)); },
+      apagar: async (c) => { apagadosAqui.push(c); delete guardados[c]; }
+    };
+  };
+
+  // Pix vencido: nao ha o que perguntar a ninguem, so cortar.
+  let bv = bancoVarredura({
+    'assinaturas/uid-pix': { uid: 'uid-pix', plano: 'professor', status: 'ativa',
+      origem: 'pix', validoAte: emDias(-20), versaoMs: 1 },
+    'contribuintes/uid-pix': { uid: 'uid-pix', nome: 'Bia P.' },
+    'assinaturas/uid-emdia': { uid: 'uid-emdia', plano: 'apoiase', status: 'ativa',
+      origem: 'pix', validoAte: emDias(40), versaoMs: 1 },
+    'contribuintes/uid-emdia': { uid: 'uid-emdia', nome: 'Caio D.' }
+  });
+  let rel = await W.reconciliarAssinaturas({}, bv);
+  ok('a varredura corta o Pix vencido no banco',
+      bv.docs['assinaturas/uid-pix'].status === 'vencida'
+      && bv.docs['assinaturas/uid-pix'].plano === 'free'
+      && !!bv.docs['assinaturas/uid-pix'].cortadoPorAtrasoEm);
+  ok('e tira o nome dele da vitrine', bv.apagados.indexOf('contribuintes/uid-pix') !== -1);
+  ok('quem esta em dia nao e tocado',
+      bv.docs['assinaturas/uid-emdia'].status === 'ativa'
+      && !!bv.docs['contribuintes/uid-emdia'] && rel.intactas === 1);
+
+  // Cartao vencido: a varredura PERGUNTA ao Mercado Pago. O caso injusto - pagou e o
+  // aviso se perdeu - tem que voltar para cima, nao so cortar.
+  bv = bancoVarredura({
+    'assinaturas/uid-professor': { uid: 'uid-professor', plano: 'professor', status: 'ativa',
+      origem: 'mercadopago', preapprovalId: 'PRE-1', proximaCobranca: emDias(-30), versaoMs: 1 },
+    'system/users_list': { list: [{ uid: 'uid-professor', nome: 'Ana Souza', schoolId: '77',
+      email: 'professor@escola.com' }] }
+  });
+  rel = await W.reconciliarAssinaturas({}, Object.assign({
+    buscarNoMp: async () => assinaturaMp({ status: 'authorized', next_payment_date: emDias(9) })
+  }, bv));
+  ok('assinatura paga cujo aviso se perdeu e REATIVADA pela varredura',
+      rel.reativadas === 1 && bv.docs['assinaturas/uid-professor'].status === 'ativa'
+      && !!bv.docs['contribuintes/uid-professor']);
+
+  bv = bancoVarredura({
+    'assinaturas/uid-professor': { uid: 'uid-professor', plano: 'professor', status: 'ativa',
+      origem: 'mercadopago', preapprovalId: 'PRE-1', proximaCobranca: emDias(-30), versaoMs: 1 },
+    'contribuintes/uid-professor': { uid: 'uid-professor', nome: 'Ana S.' },
+    'system/users_list': { list: [] }
+  });
+  rel = await W.reconciliarAssinaturas({}, Object.assign({
+    buscarNoMp: async () => assinaturaMp({ status: 'cancelled', next_payment_date: '' })
+  }, bv));
+  ok('assinatura que o Mercado Pago diz cancelada e cortada e sai da vitrine',
+      rel.cortadas === 1 && bv.docs['assinaturas/uid-professor'].status === 'cancelada'
+      && bv.apagados.indexOf('contribuintes/uid-professor') !== -1);
+
+  const semSegredo = await W.tratarRequisicao(
+      new Request('https://w.dev/api/reconciliar', { method: 'GET' }), { FIREBASE_PROJECT_ID: 'profsis3' });
+  ok('a varredura nao fica aberta na internet (sem segredo, 401)', semSegredo.status === 401);
+
+  // ================= 11. PIX: APOIO EM PACOTE DE MESES =================
+  // O Mercado Pago nao faz recorrencia no Pix. Entao Pix e' pagamento avulso que
+  // credita meses, e o acesso vence sozinho no fim - nada cobrado sem autorizacao.
+  console.log('\n11. Pix: apoio em pacote de meses');
+
+  const ambientePix = { MP_PACOTES_PIX: 'apoiase:3:30,professor:3:60,professor:12:240' };
+  const pagamentoPix = (extra) => Object.assign({
+    _tipo: 'pagamento', id: 'PAY-100', status: 'approved', transaction_amount: 60,
+    payment_method_id: 'pix', external_reference: 'uid-professor|professor|3',
+    date_approved: '2026-09-22T12:00:00.000-03:00',
+    payer: { email: 'professor@escola.com' }
+  }, extra || {});
+
+  ok('os pacotes saem do ambiente (preco que vira acesso nao mora no banco publico)',
+      W.lerPacotesPix(ambientePix).length === 3
+      && W.lerPacotesPix(ambientePix)[1].plano === 'professor');
+
+  banco = bancoFalso(comLista);
+  r = await W.processarNotificacao({ type: 'payment', data: { id: 'PAY-100' } }, ambientePix,
+      Object.assign({ buscar: async () => pagamentoPix() }, comApagar()));
+  ok('Pix aprovado credita os meses do pacote',
+      r.feito === true && r.origem === 'pix' && r.meses === 3
+      && banco.docs['assinaturas/uid-professor'].plano === 'professor'
+      && banco.docs['assinaturas/uid-professor'].origem === 'pix');
+  ok('com data de validade no futuro, e nao cobranca recorrente',
+      Date.parse(banco.docs['assinaturas/uid-professor'].validoAte) > Date.now()
+      && !banco.docs['assinaturas/uid-professor'].preapprovalId);
+  ok('e o nome entra na vitrine', !!banco.docs['contribuintes/uid-professor']);
+
+  // Pix NAO aprovado nao libera nada. Era o pedido: so depois da confirmacao.
+  banco = bancoFalso(comLista);
+  r = await W.processarNotificacao({ type: 'payment', data: { id: 'PAY-101' } }, ambientePix,
+      Object.assign({ buscar: async () => pagamentoPix({ id: 'PAY-101', status: 'pending' }) }, comApagar()));
+  ok('Pix pendente NAO credita nada',
+      r.feito === false && !banco.docs['assinaturas/uid-professor']);
+
+  // Sem a referencia, o VALOR identifica o pacote (link de pagamento do Mercado Pago
+  // nem sempre devolve a referencia).
+  banco = bancoFalso(comLista);
+  r = await W.processarNotificacao({ type: 'payment', data: { id: 'PAY-102' } }, ambientePix,
+      Object.assign({ buscar: async () => pagamentoPix({ id: 'PAY-102', external_reference: '',
+        transaction_amount: 240 }) }, comApagar()));
+  ok('sem referencia, o valor recebido identifica o pacote (12 meses de Professor)',
+      r.feito === true && r.meses === 12 && r.plano === 'professor');
+
+  // Pagamento que nao e' de apoio nao pode virar plano por acidente.
+  banco = bancoFalso(comLista);
+  r = await W.processarNotificacao({ type: 'payment', data: { id: 'PAY-103' } }, ambientePix,
+      Object.assign({ buscar: async () => pagamentoPix({ id: 'PAY-103', external_reference: '',
+        transaction_amount: 17.5 }) }, comApagar()));
+  ok('pagamento fora dos pacotes NAO vira plano por acidente',
+      r.feito === false && !banco.docs['assinaturas/uid-professor']);
+
+  // O mesmo Pix avisado duas vezes nao pode creditar o dobro.
+  banco = bancoFalso(comLista);
+  await W.processarNotificacao({ type: 'payment', data: { id: 'PAY-100' } }, ambientePix,
+      Object.assign({ buscar: async () => pagamentoPix() }, comApagar()));
+  const validoDepoisDoPrimeiro = banco.docs['assinaturas/uid-professor'].validoAte;
+  r = await W.processarNotificacao({ type: 'payment', data: { id: 'PAY-100' } }, ambientePix,
+      Object.assign({ buscar: async () => pagamentoPix() }, comApagar()));
+  ok('o mesmo Pix avisado duas vezes nao credita o dobro de meses',
+      r.feito === false && banco.docs['assinaturas/uid-professor'].validoAte === validoDepoisDoPrimeiro);
+
+  // Renovar ANTES de vencer nao perde os dias que faltavam.
+  const daquiA10Dias = new Date(Date.now() + 10 * 86400000).toISOString();
+  const somado = R.somarMeses(daquiA10Dias, 3, Date.now());
+  ok('renovar antes de vencer soma a partir da data que ja tinha (nao perde dias)',
+      Date.parse(somado) > Date.parse(daquiA10Dias) + 80 * 86400000);
+  ok('e quem esta vencido soma a partir de hoje, nao do passado',
+      Date.parse(R.somarMeses(emDias(-90), 1, HOJE)) > HOJE);
+
+  ok('referencia torta e ignorada em vez de creditar coisa errada',
+      R.lerReferenciaPix('uid|professor') === null
+      && R.lerReferenciaPix('uid|inexistente|3') === null
+      && R.lerReferenciaPix('uid|professor|99') === null
+      && R.lerReferenciaPix('uid|professor|3').meses === 3);
+
+  // ================= 11b. O QR CODE DO PIX NASCE NO SERVICO =================
+  // Antes o professor ia para um "link de pagamento" criado a mao. Agora o QR nasce
+  // aqui, com o valor do pacote e a referencia de quem pediu - o que tira o link do
+  // caminho e garante a identificacao (fomos nos que criamos o pagamento).
+  console.log('\n11b. O QR Code do Pix');
+
+  const DONO = { uid: 'uid-professor', email: 'ana@escola.com' };
+  let pedidoAoMp = null;
+  const mpQueGeraQr = {
+    criarPagamentoNoMp: async (corpo, chave) => {
+      pedidoAoMp = { corpo, chave };
+      return { id: 'PAY-QR-1', status: 'pending', date_of_expiration: corpo.date_of_expiration,
+        point_of_interaction: { transaction_data: {
+          qr_code: '00020126580014br.gov.bcb.pix...', qr_code_base64: 'iVBORw0KGgo=' } } };
+    }
+  };
+
+  let qr = await W.criarPixDoPacote({ plano: 'professor', meses: 3 }, DONO, ambientePix, mpQueGeraQr);
+  ok('o pacote vira um Pix com o valor certo',
+      qr.ok === true && qr.valor === 60 && pedidoAoMp.corpo.transaction_amount === 60);
+  ok('marcado como Pix, com descricao que a pessoa entende no extrato',
+      pedidoAoMp.corpo.payment_method_id === 'pix'
+      && /Professor/.test(pedidoAoMp.corpo.description) && /3 meses/.test(pedidoAoMp.corpo.description));
+  ok('levando quem pediu e quantos meses creditar',
+      pedidoAoMp.corpo.external_reference === 'uid-professor|professor|3');
+  ok('e a tela recebe o copia e cola e a imagem do QR',
+      qr.copiaECola.indexOf('br.gov.bcb.pix') !== -1 && qr.qrCodeBase64 === 'iVBORw0KGgo=');
+  ok('com chave de idempotencia (clicar duas vezes nao cria dois Pix)',
+      typeof pedidoAoMp.chave === 'string' && pedidoAoMp.chave.indexOf('uid-professor') === 0);
+  ok('e com prazo de validade', !!pedidoAoMp.corpo.date_of_expiration
+      && Date.parse(pedidoAoMp.corpo.date_of_expiration) > Date.now());
+
+  // O VALOR NUNCA VEM DO NAVEGADOR. Se viesse, dava para comprar 12 meses por um centavo.
+  pedidoAoMp = null;
+  qr = await W.criarPixDoPacote({ plano: 'professor', meses: 12, valor: 0.01 }, DONO, ambientePix, mpQueGeraQr);
+  ok('o valor mandado pelo navegador e IGNORADO: manda o pacote do servidor',
+      qr.ok === true && qr.valor === 240 && pedidoAoMp.corpo.transaction_amount === 240);
+
+  pedidoAoMp = null;
+  qr = await W.criarPixDoPacote({ plano: 'professor', meses: 99 }, DONO, ambientePix, mpQueGeraQr);
+  ok('pacote que nao existe e recusado sem criar pagamento nenhum',
+      qr.ok === false && pedidoAoMp === null);
+
+  pedidoAoMp = null;
+  qr = await W.criarPixDoPacote({ plano: 'super_admin', meses: 3 }, DONO, ambientePix, mpQueGeraQr);
+  ok('plano inventado tambem nao passa', qr.ok === false && pedidoAoMp === null);
+
+  qr = await W.criarPixDoPacote({ plano: 'professor', meses: 3 }, DONO, ambientePix, {
+    criarPagamentoNoMp: async () => ({ id: 'PAY-X', status: 'pending' }) });
+  ok('resposta do Mercado Pago sem o codigo do Pix vira erro explicado, nao tela em branco',
+      qr.ok === false && /nao devolveu o codigo/.test(qr.motivo));
+
+  const pixSemCracha = await W.tratarRequisicao(
+      new Request('https://w.dev/api/pix', { method: 'POST', body: '{}' }),
+      { FIREBASE_PROJECT_ID: 'profsis3' });
+  ok('pedir Pix sem cracha da sessao e recusado com 401', pixSemCracha.status === 401);
+
+  const pixGet = await W.tratarRequisicao(
+      new Request('https://w.dev/api/pix', { method: 'GET' }), { FIREBASE_PROJECT_ID: 'profsis3' });
+  ok('GET em /pix nao gera cobranca', pixGet.status === 405);
+
+  // ================= 12. OS VALORES BATEM NOS DOIS LADOS =================
+  console.log('\n12. Servidor e navegador falam do mesmo preco');
   const front = fs.readFileSync(path.join(RAIZ, 'assinatura.js'), 'utf8');
   const valorNoFront = (id) => {
     const trecho = front.split("    " + id + ": {")[1] || '';
