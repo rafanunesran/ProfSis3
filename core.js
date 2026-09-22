@@ -56,6 +56,7 @@ if (USE_FIREBASE) {
 
 function mostrarIndicadorAmbiente(texto) {
     const div = document.createElement('div');
+    div.className = 'indicador-ambiente';
     div.style.position = 'fixed';
     div.style.bottom = '10px';
     div.style.right = '10px';

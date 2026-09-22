@@ -30,11 +30,15 @@
     --accent-ring: rgba(37, 99, 201, 0.22);
     --accent-ring: color-mix(in srgb, var(--accent) 24%, transparent);
     --on-accent: #ffffff;
+    --accent-text: var(--accent);
 
     /* Barra do topo */
     --appbar-bg: #13213a;
     --appbar-fg: #ffffff;
     --appbar-fg-2: rgba(255, 255, 255, 0.72);
+    --appbar-btn: rgba(255, 255, 255, 0.12);
+    --appbar-btn-hover: rgba(255, 255, 255, 0.22);
+    --appbar-btn-line: rgba(255, 255, 255, 0.16);
 
     /* Estados */
     --success: #15803d;
@@ -131,7 +135,7 @@ p {
 }
 
 a {
-    color: var(--accent);
+    color: var(--accent-text);
     text-underline-offset: 3px;
     text-decoration-thickness: 1px;
 }
@@ -263,11 +267,11 @@ header h1 img {
 
 /* Botões dentro da barra: vidro claro sobre a cor do tema (vale para todos os temas) */
 header .btn {
-    --btn-bg: rgba(255, 255, 255, 0.12);
-    --btn-bg-hover: rgba(255, 255, 255, 0.22);
+    --btn-bg: var(--appbar-btn);
+    --btn-bg-hover: var(--appbar-btn-hover);
     --btn-fg: var(--appbar-fg);
     margin: 0 !important;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+    box-shadow: inset 0 0 0 1px var(--appbar-btn-line);
     min-width: 0 !important;
 }
 
@@ -357,7 +361,7 @@ nav button.active {
 .turma-nav-btn.active,
 .doc-nav-btn.active {
     background: transparent;
-    color: var(--accent);
+    color: var(--accent-text);
     box-shadow: inset 0 -2px 0 var(--accent);
 }
 
@@ -365,7 +369,7 @@ nav button.active {
     .turma-nav-btn.active:hover,
     .doc-nav-btn.active:hover {
         background: var(--accent-soft);
-        color: var(--accent);
+        color: var(--accent-text);
     }
 }
 
@@ -1018,7 +1022,7 @@ label {
     font-size: 13px;
     font-weight: 650;
     letter-spacing: 0.02em;
-    color: var(--accent);
+    color: var(--accent-text);
     margin-bottom: 6px;
 }
 
@@ -1055,7 +1059,7 @@ label {
     display: block;
     text-align: center;
     margin-top: 16px;
-    color: var(--accent);
+    color: var(--accent-text);
     cursor: pointer;
     font-size: 14px;
     font-weight: 500;
@@ -1120,7 +1124,7 @@ label {
 .aceite-link {
     display: inline-block;
     margin-bottom: 18px;
-    color: var(--accent);
+    color: var(--accent-text);
     font-weight: 600;
     font-size: 14px;
     text-decoration: none;
@@ -1326,4 +1330,543 @@ label {
     #turmaDetalhe .turma-nav-btn .label {
         display: inline !important;
     }
+}
+
+/* ==========================================================================
+   Família âmbar: três temas (Perfil → Tema do Sistema)
+   --------------------------------------------------------------------------
+   O app.js (aplicarTemaSalvo) marca o <html> com data-estilo="ambar" e
+   data-tema="ambar-noturno" | "ambar-diurno" | "hibrido". Âmbar Noturno é o
+   tema inicial de quem ainda não escolheu nenhum.
+   ========================================================================== */
+
+/* ---- A · Âmbar Noturno: carvão, cartões um tom acima, âmbar só no que se toca ---- */
+html[data-tema="ambar-noturno"] {
+    color-scheme: dark;
+    --bg: #141417;
+    --surface: #1f1f24;
+    --surface-2: #26262c;
+    --surface-3: #2e2e35;
+    --border: #303037;
+    --border-strong: #3f3f47;
+    --text: #f4f2ec;
+    --text-2: #d2d0c9;
+    --text-3: #a9a7a0;
+    --text-4: #77767d;
+    --accent: #f5b301;
+    --accent-hover: #ffc53d;
+    --accent-ink: #ffd466;
+    --accent-soft: rgba(245, 179, 1, 0.14);
+    --accent-ring: rgba(245, 179, 1, 0.34);
+    --accent-text: #f5b301;
+    --on-accent: #1b1400;
+    --appbar-bg: #1b1b20;
+    --appbar-fg: #f4f2ec;
+    --appbar-fg-2: #a9a7a0;
+    --appbar-btn: #2a2a30;
+    --appbar-btn-hover: #34343b;
+    --appbar-btn-line: rgba(255, 255, 255, 0.06);
+    --success: #2f9e62;
+    --success-hover: #37b271;
+    --success-soft: rgba(95, 211, 148, 0.13);
+    --success-ink: #8be3b3;
+    --warning: #d98a0b;
+    --warning-hover: #eb9a17;
+    --warning-soft: rgba(245, 179, 1, 0.12);
+    --warning-ink: #ffd07a;
+    --danger: #e0574b;
+    --danger-hover: #ec6b60;
+    --danger-soft: rgba(255, 122, 110, 0.13);
+    --danger-ink: #ffaaa2;
+    --info: #3a8fb7;
+    --info-hover: #4aa2cb;
+    --info-soft: rgba(94, 178, 222, 0.13);
+    --info-ink: #9ed6f0;
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.22);
+    --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 12px 28px rgba(0, 0, 0, 0.38);
+    --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.35), 0 28px 60px rgba(0, 0, 0, 0.55);
+}
+
+/* ---- B · Âmbar Diurno: mesmos padrões, fundo claro para sala e projetor ---- */
+html[data-tema="ambar-diurno"] {
+    color-scheme: light;
+    --bg: #f1f1ee;
+    --surface: #ffffff;
+    --surface-2: #f6f6f3;
+    --surface-3: #ecebe6;
+    --border: #e3e2dc;
+    --border-strong: #cfcdc5;
+    --text: #16161a;
+    --text-2: #3f3e3a;
+    --text-3: #5c5b57;
+    --text-4: #8b8a85;
+    --accent: #f5b301;
+    --accent-hover: #e6a600;
+    --accent-ink: #6b4600;
+    --accent-soft: #fdf1cf;
+    --accent-ring: rgba(245, 179, 1, 0.38);
+    --accent-text: #8a5a00;
+    --on-accent: #1b1400;
+    --appbar-bg: #ffffff;
+    --appbar-fg: #16161a;
+    --appbar-fg-2: #5c5b57;
+    --appbar-btn: #f1f1ee;
+    --appbar-btn-hover: #e8e7e1;
+    --appbar-btn-line: #e3e2dc;
+    --shadow-xs: 0 1px 2px rgba(22, 22, 26, 0.05);
+    --shadow-sm: 0 1px 2px rgba(22, 22, 26, 0.04), 0 2px 8px rgba(22, 22, 26, 0.05);
+    --shadow-md: 0 2px 4px rgba(22, 22, 26, 0.04), 0 10px 26px rgba(22, 22, 26, 0.08);
+    --shadow-lg: 0 4px 8px rgba(22, 22, 26, 0.06), 0 26px 56px rgba(22, 22, 26, 0.18);
+}
+
+/* ---- C · Híbrido: moldura escura (topo e menu), área de trabalho clara ---- */
+html[data-tema="hibrido"] {
+    color-scheme: light;
+    --bg: #eceef1;
+    --surface: #ffffff;
+    --surface-2: #f5f6f8;
+    --surface-3: #eceef1;
+    --border: #dfe2e7;
+    --border-strong: #c9ced6;
+    --text: #15171c;
+    --text-2: #3b3f48;
+    --text-3: #565b66;
+    --text-4: #8a8f99;
+    --accent: #f5b301;
+    --accent-hover: #e6a600;
+    --accent-ink: #6b4600;
+    --accent-soft: #fdf1cf;
+    --accent-ring: rgba(245, 179, 1, 0.38);
+    --accent-text: #8a5a00;
+    --on-accent: #1b1400;
+    --appbar-bg: #16171b;
+    --appbar-fg: #f4f2ec;
+    --appbar-fg-2: #9a98a0;
+    --appbar-btn: #25262c;
+    --appbar-btn-hover: #2f3037;
+    --appbar-btn-line: rgba(255, 255, 255, 0.06);
+    --shell: #16171b;
+    --shell-2: #1f2026;
+    --shell-fg: #f4f2ec;
+    --shell-fg-2: #9a98a0;
+}
+
+/* ---- Forma comum aos três: cantos mais redondos, botões em pílula ---- */
+html[data-estilo="ambar"] {
+    --radius-xs: 7px;
+    --radius-sm: 10px;
+    --radius: 14px;
+    --radius-lg: 20px;
+    --radius-xl: 26px;
+    --dur: 240ms;
+}
+
+html[data-estilo="ambar"] body {
+    font-feature-settings: normal;
+}
+
+html[data-estilo="ambar"] header::before {
+    display: none;
+}
+
+html[data-estilo="ambar"] .btn {
+    border-radius: 999px;
+    padding-inline: 18px;
+    font-weight: 650;
+}
+
+html[data-estilo="ambar"] .btn-sm {
+    padding-inline: 14px;
+}
+
+html[data-estilo="ambar"] .btn-xs {
+    padding-inline: 9px;
+}
+
+/* Botão principal: âmbar com texto escuro e sombra da própria cor */
+html[data-estilo="ambar"] .btn-primary {
+    --btn-fg: var(--on-accent);
+    box-shadow: 0 8px 18px -10px rgba(245, 179, 1, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+html[data-estilo="ambar"] .btn-secondary {
+    box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+html[data-tema="ambar-noturno"] .btn-secondary {
+    --btn-bg: var(--surface-2);
+    --btn-bg-hover: var(--surface-3);
+    --btn-fg: var(--text);
+    box-shadow: none;
+}
+
+html[data-tema="ambar-noturno"] .btn-warning {
+    --btn-bg-hover: rgba(245, 179, 1, 0.22);
+    box-shadow: inset 0 0 0 1px rgba(245, 179, 1, 0.3);
+}
+
+/* Cartões: no escuro a separação vem do tom, sem borda */
+html[data-tema="ambar-noturno"] .card {
+    border-color: transparent;
+}
+
+html[data-estilo="ambar"] .card h2 {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+/* Topo */
+html[data-estilo="ambar"] header {
+    border: 1px solid var(--appbar-btn-line);
+}
+
+html[data-tema="ambar-diurno"] header {
+    box-shadow: var(--shadow-sm);
+    border-color: var(--border);
+}
+
+html[data-estilo="ambar"] header h1 img {
+    box-shadow: 0 0 0 1px var(--appbar-btn-line);
+}
+
+/* Menu principal: pílula âmbar no item atual */
+html[data-estilo="ambar"] .app-nav {
+    border-radius: 999px;
+    padding: 6px;
+}
+
+html[data-estilo="ambar"] nav button {
+    border-radius: 999px;
+    font-weight: 650;
+}
+
+html[data-estilo="ambar"] nav button.active {
+    color: var(--on-accent);
+    box-shadow: 0 6px 14px -8px rgba(245, 179, 1, 0.9);
+}
+
+html[data-estilo="ambar"] .turma-nav-btn,
+html[data-estilo="ambar"] .doc-nav-btn {
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+html[data-estilo="ambar"] .turma-nav-btn.active,
+html[data-estilo="ambar"] .doc-nav-btn.active {
+    color: var(--text) !important;
+    background: transparent;
+    box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* Linhas de lista e tabelas */
+html[data-estilo="ambar"] .student-item {
+    border-radius: var(--radius);
+}
+
+html[data-tema="ambar-noturno"] .student-item {
+    border-color: transparent;
+    background: var(--surface-2);
+}
+
+html[data-estilo="ambar"] th {
+    background: transparent;
+    color: var(--text-4);
+}
+
+html[data-estilo="ambar"] .badge {
+    border-radius: 999px;
+    padding-inline: 10px;
+}
+
+/* Estados vazios: círculo âmbar no lugar da caixa pontilhada */
+html[data-estilo="ambar"] .empty-state {
+    border: 0;
+    background: transparent;
+    padding: 28px 16px;
+}
+
+html[data-estilo="ambar"] .empty-state::before {
+    content: '';
+    display: block;
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 12px;
+    border-radius: 50%;
+    background:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24' fill='none' stroke='%23c98f00' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 13h5l1.5 3h5l1.5-3h5'/%3E%3Cpath d='M5.6 5h12.8L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5z'/%3E%3C/svg%3E") center / 28px no-repeat,
+        var(--accent-soft);
+}
+
+html[data-estilo="ambar"] p.empty-state::before {
+    width: 44px;
+    height: 44px;
+    background-size: 20px, auto;
+}
+
+html[data-estilo="ambar"] .empty-state svg {
+    display: none;
+}
+
+/* Chamada: a caixa de presença vira o círculo P (presente) / F (falta).
+   Continua sendo o mesmo <input type="checkbox" class="presenca-check">. */
+html[data-estilo="ambar"] input.presenca-check {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 38px;
+    height: 38px;
+    margin: 0;
+    border-radius: 50%;
+    border: 2px solid var(--danger);
+    background: var(--danger-soft);
+    display: inline-grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background-color var(--dur-fast) ease, border-color var(--dur-fast) ease, transform var(--dur-press) var(--ease-out);
+}
+
+html[data-estilo="ambar"] input.presenca-check::after {
+    content: 'F';
+    font: 800 14px/1 var(--font);
+    color: var(--danger);
+}
+
+html[data-estilo="ambar"] input.presenca-check:checked {
+    border-color: var(--success);
+    background: var(--success);
+}
+
+html[data-estilo="ambar"] input.presenca-check:checked::after {
+    content: 'P';
+    color: #fff;
+}
+
+html[data-estilo="ambar"] input.presenca-check:active {
+    transform: scale(0.92);
+}
+
+/* Caixas de marcar no geral: quadradas arredondadas, âmbar quando marcadas */
+html[data-estilo="ambar"] input[type="checkbox"]:not(.presenca-check) {
+    width: 18px;
+    height: 18px;
+}
+
+/* Janelas: folha mais arredondada e com "alça" no celular */
+html[data-estilo="ambar"] .modal-content {
+    border: 1px solid var(--border);
+}
+
+html[data-tema="ambar-noturno"] .modal-content {
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+html[data-estilo="ambar"] .modal {
+    background: rgba(8, 8, 10, 0.62);
+}
+
+/* Login */
+html[data-estilo="ambar"] .auth-screen {
+    background-color: #141417;
+    background-image:
+        radial-gradient(700px 480px at 85% -10%, rgba(245, 179, 1, 0.20), transparent 60%),
+        radial-gradient(600px 420px at -10% 110%, rgba(245, 179, 1, 0.08), transparent 60%),
+        radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1.5px);
+    background-size: auto, auto, 22px 22px;
+}
+
+html[data-tema="ambar-noturno"] .auth-box {
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+html[data-estilo="ambar"] .auth-box::before {
+    content: 'SisProf';
+    width: max-content;
+    margin: 0 auto 10px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--on-accent);
+}
+
+/* ---- Híbrido: moldura escura ---- */
+html[data-tema="hibrido"] .app-nav {
+    background: var(--shell);
+    border-color: var(--shell);
+    box-shadow: var(--shadow-md);
+}
+
+html[data-tema="hibrido"] .app-nav button {
+    color: var(--shell-fg-2);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    html[data-tema="hibrido"] .app-nav button:hover {
+        background: var(--shell-2);
+        color: var(--shell-fg);
+    }
+}
+
+html[data-tema="hibrido"] .app-nav button.active {
+    color: var(--on-accent);
+}
+
+/* No computador, o menu do Híbrido vira uma barra lateral */
+@media (min-width: 1024px) {
+    html[data-tema="hibrido"] #appContainer > .container {
+        display: grid;
+        grid-template-columns: 224px minmax(0, 1fr);
+        column-gap: 22px;
+        align-items: start;
+        max-width: 1400px;
+    }
+
+    html[data-tema="hibrido"] #appContainer > .container > * {
+        grid-column: 2;
+        min-width: 0;
+    }
+
+    html[data-tema="hibrido"] #appContainer > .container > header {
+        grid-column: 1 / -1;
+    }
+
+    html[data-tema="hibrido"] #appContainer > .container > .app-nav {
+        grid-column: 1;
+        grid-row: 2 / span 40;
+        position: sticky;
+        top: 16px;
+        flex-direction: column;
+        flex-wrap: nowrap;
+        align-items: stretch;
+        gap: 2px;
+        padding: 10px;
+        border-radius: var(--radius-lg);
+        margin-bottom: 0;
+    }
+
+    html[data-tema="hibrido"] .app-nav button {
+        justify-content: flex-start;
+        border-radius: var(--radius);
+        padding: 10px 12px;
+    }
+}
+
+/* ---- Celular: menu vira barra de abas presa embaixo (os três temas) ---- */
+@media (max-width: 760px) {
+    html[data-estilo="ambar"] body {
+        padding-bottom: calc(76px + env(safe-area-inset-bottom));
+    }
+
+    html[data-estilo="ambar"] .app-nav {
+        position: fixed;
+        top: auto;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 900;
+        margin: 0;
+        gap: 2px;
+        padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+        border-radius: 22px 22px 0 0;
+        border-width: 1px 0 0;
+        background: var(--surface);
+        box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    html[data-tema="ambar-noturno"] .app-nav {
+        background: #1b1b20;
+        border-color: rgba(255, 255, 255, 0.06);
+    }
+
+    html[data-tema="hibrido"] .app-nav {
+        background: var(--shell);
+    }
+
+    html[data-estilo="ambar"] .app-nav button {
+        flex-direction: column;
+        gap: 3px;
+        min-width: 70px;
+        padding: 6px 8px;
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 16px;
+        background: transparent;
+        box-shadow: none;
+    }
+
+    html[data-estilo="ambar"] .app-nav button .icon {
+        font-size: 18px;
+        width: 44px;
+        height: 28px;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        transition: background-color var(--dur-fast) ease;
+    }
+
+    html[data-estilo="ambar"] .app-nav button.active {
+        background: transparent;
+        color: var(--accent-text);
+        box-shadow: none;
+    }
+
+    html[data-tema="hibrido"] .app-nav button.active {
+        color: var(--accent);
+    }
+
+    html[data-estilo="ambar"] .app-nav button.active .icon {
+        background: var(--accent-soft);
+    }
+
+    /* Botão de salvar a chamada fica no alcance do polegar, acima da barra */
+    html[data-estilo="ambar"] #btnSalvarChamada {
+        position: sticky;
+        bottom: calc(84px + env(safe-area-inset-bottom));
+        z-index: 5;
+        min-height: 50px;
+        box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.5);
+    }
+
+    html[data-estilo="ambar"] .modal-content {
+        border-width: 1px 0 0;
+        border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+        padding-top: 26px;
+    }
+
+    /* Alça da folha */
+    html[data-estilo="ambar"] .modal-content::before {
+        content: '';
+        position: absolute;
+        top: 9px;
+        left: 50%;
+        width: 40px;
+        height: 4px;
+        margin-left: -20px;
+        border-radius: 4px;
+        background: var(--border-strong);
+    }
+}
+
+/* Selo "Online (Firebase)": no celular sobe para não cobrir a barra de abas */
+@media (max-width: 760px) {
+    html[data-estilo="ambar"] .indicador-ambiente {
+        bottom: calc(86px + env(safe-area-inset-bottom)) !important;
+        right: 8px !important;
+        font-size: 11px !important;
+        opacity: 0.85;
+    }
+}
+
+/* Âmbar Noturno: fundos claros escritos direto no JS que o Modo Escuro antigo não cobria */
+html[data-tema="ambar-noturno"] [style*="background:#e3e8ef"],
+html[data-tema="ambar-noturno"] [style*="background: #e3e8ef"],
+html[data-tema="ambar-noturno"] [style*="background:#eef2f7"],
+html[data-tema="ambar-noturno"] [style*="background: #eef2f7"],
+html[data-tema="ambar-noturno"] [style*="background:#f0fff4"],
+html[data-tema="ambar-noturno"] [style*="background: #f0fff4"],
+html[data-tema="ambar-noturno"] [style*="background:#fff5f5"],
+html[data-tema="ambar-noturno"] [style*="background: #fff5f5"],
+html[data-tema="ambar-noturno"] [style*="background:#f8f9fa"],
+html[data-tema="ambar-noturno"] [style*="background: #f8f9fa"] {
+    background-color: var(--surface-2) !important;
+    color: var(--text-2) !important;
+    border-color: var(--border) !important;
 }

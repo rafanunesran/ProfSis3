@@ -335,7 +335,13 @@ function injectProfileButton() {
 // junto com os planos (Apoia-se / Professor) e o portao das funcoes premium.
 
 // --- SISTEMA DE TEMAS ---
+// Os três primeiros (família "âmbar") têm o visual inteiro no styles.css, ligado pelos
+// atributos data-tema/data-estilo do <html>; os demais só trocam a cor de destaque.
+const TEMA_INICIAL = 'ambar_noturno';
 const TEMAS_APP = {
+    'ambar_noturno': { nome: 'Âmbar Noturno', cor: '#f5b301', bgHeader: 'linear-gradient(135deg, #26262c, #141417)', bgBody: '#141417', isDark: true, estilo: 'ambar-noturno' },
+    'ambar_diurno': { nome: 'Âmbar Diurno', cor: '#f5b301', bgHeader: 'linear-gradient(135deg, #ffd24d, #f5b301)', fg: '#1b1400', bgBody: '#f1f1ee', estilo: 'ambar-diurno' },
+    'hibrido': { nome: 'Híbrido', cor: '#f5b301', bgHeader: 'linear-gradient(135deg, #16171b 64%, #f5b301 64%)', bgBody: '#eceef1', estilo: 'hibrido' },
     'padrao': { nome: 'Padrão (Azul)', cor: '#2563c9', bgHeader: 'linear-gradient(135deg, #1c2d4d, #13213a)', bgBody: '#f3f5f9' },
     'natureza': { nome: 'Natureza (Verde)', cor: '#38a169', bgHeader: 'linear-gradient(135deg, #38a169, #276749)', bgBody: '#f0fff4' },
     'sunset': { nome: 'Pôr do Sol (Laranja)', cor: '#dd6b20', bgHeader: 'linear-gradient(135deg, #dd6b20, #c05621)', bgBody: '#fffaf0' },
@@ -383,12 +389,12 @@ async function abrirModalPerfil() {
     }
     
     const containerTemas = document.getElementById('listaTemas');
-    const temaAtual = (currentUser && currentUser.theme) ? currentUser.theme : (localStorage.getItem('app_theme') || 'padrao');
+    const temaAtual = (currentUser && currentUser.theme) ? currentUser.theme : (localStorage.getItem('app_theme') || TEMA_INICIAL);
 
     containerTemas.innerHTML = Object.entries(TEMAS_APP).map(([key, tema]) => `
         <button onclick="mudarTema('${key}')" style="
             background: ${tema.bgHeader}; 
-            color: white; 
+            color: ${tema.fg || 'white'}; 
             border: none;
             box-shadow: ${temaAtual === key ? '0 0 0 2px var(--surface), 0 0 0 4px var(--text)' : 'inset 0 0 0 1px rgba(255,255,255,0.18)'};
             padding: 11px 10px; 
@@ -570,9 +576,16 @@ function removerBackgroundPersonalizado() {
 }
 
 function aplicarTemaSalvo() {
-    let temaKey = (currentUser && currentUser.theme) ? currentUser.theme : (localStorage.getItem('app_theme') || 'padrao');
+    let temaKey = (currentUser && currentUser.theme) ? currentUser.theme : (localStorage.getItem('app_theme') || TEMA_INICIAL);
     const tema = TEMAS_APP[temaKey];
     if (!tema) return;
+
+    // Temas da família âmbar: o styles.css desenha tudo a partir destes dois atributos
+    const raiz = document.documentElement;
+    if (tema.estilo) { raiz.dataset.tema = tema.estilo; raiz.dataset.estilo = 'ambar'; }
+    else { delete raiz.dataset.tema; delete raiz.dataset.estilo; }
+    const metaCor = document.querySelector('meta[name="theme-color"]');
+    if (metaCor) metaCor.setAttribute('content', tema.estilo === 'ambar-diurno' ? '#ffffff' : (tema.estilo ? '#141417' : '#13213a'));
 
     // Remove estilo anterior se houver
     const oldStyle = document.getElementById('theme-style-override');
@@ -587,7 +600,14 @@ function aplicarTemaSalvo() {
     const style = document.createElement('style');
     style.id = 'theme-style-override';
     
-    let css = `
+    let css = tema.estilo ? `
+        /* Família âmbar: tokens e estrutura vêm do styles.css; aqui só as cores em linha do app.js */
+        [style*="color: #1b4488"], [style*="color:#1b4488"],
+        [style*="color: #2563c9"], [style*="color:#2563c9"],
+        [style*="color: #1f55ad"], [style*="color:#1f55ad"] {
+            color: var(--accent-text) !important;
+        }
+    ` : `
         /* O tema troca os tokens do styles.css: botões, abas, links e campos acompanham sozinhos */
         :root {
             --accent: ${tema.cor};
@@ -638,7 +658,7 @@ function aplicarTemaSalvo() {
     // --- REGRAS ESPECÍFICAS PARA MODO ESCURO ---
     if (tema.isDark) {
         // Se tiver imagem, usa fundo escuro transparente, senão usa sólido
-        const bgCard = customBg ? 'rgba(24, 33, 49, 0.86)' : '#182131';
+        const bgCard = customBg ? 'rgba(24, 33, 49, 0.86)' : 'var(--surface)';
         css += `
             :root {
                 color-scheme: dark;
@@ -2145,7 +2165,7 @@ async function abrirTurma(id) {
                 color: var(--text-3); font-size: 16px;
                 transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
             }
-            .turma-nav-btn.active { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); background: transparent; }
+            .turma-nav-btn.active { color: var(--accent-text); box-shadow: inset 0 -2px 0 var(--accent); background: transparent; }
             .turma-nav-btn .label { display: none; font-size: 14px; font-weight: 600; }
             .turma-nav-btn.active .label { display: inline; }
             .turma-nav-btn:hover { background: var(--surface-3); }
@@ -6738,7 +6758,7 @@ async function renderDocumentos(aba) {
                     color: var(--text-3); font-size: 16px;
                     transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
                 }
-                .doc-nav-btn.active { color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); background: transparent; }
+                .doc-nav-btn.active { color: var(--accent-text); box-shadow: inset 0 -2px 0 var(--accent); background: transparent; }
                 .doc-nav-btn:hover { background: var(--surface-3); }
                 /* O nome da aba fica sempre visível - a regra geral de <nav> esconde rótulo de botão
                    que não está ativo, e aqui as quatro abas precisam se identificar de uma vez. */
