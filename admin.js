@@ -638,13 +638,14 @@ async function abrirModalAssinaturasAdmin() {
                     </p>
                     <textarea id="pacotesPixAssinatura" rows="4" style="width:100%; padding:8px; font-family:monospace; font-size:12px;"
                               placeholder="apoiase;3;30&#10;professor;3;60&#10;professor;12;240">${(Array.isArray(links.pacotesPix) ? links.pacotesPix : []).map(p => [p.plano, p.meses, p.valor].concat(p.link ? [p.link] : []).join(';')).join('\n')}</textarea>
-                    <p style="font-size:11px; color:#975a16; background:#fffaf0; border:1px solid #fbd38d; border-radius:6px; padding:8px; margin-top:6px;">
-                        <strong>Importante:</strong> cadastre os mesmos pacotes na variável
-                        <code>MP_PACOTES_PIX</code> do serviço (Vercel), no formato
-                        <code>plano:meses:valor</code> separado por vírgula. É <strong>ela</strong> que
-                        define quanto o QR Code vai cobrar — o valor nunca vem do navegador, senão
-                        daria para comprar 12 meses por um centavo. O que está aqui é só o que o
-                        professor vê na tela; se os dois discordarem, vale o do serviço.
+                    <p style="font-size:11px; color:#718096; margin-top:6px;">
+                        O que estiver aqui é o que o QR Code vai cobrar — o serviço lê estes pacotes
+                        direto do banco. O valor nunca vem do navegador (senão daria para comprar
+                        12 meses por um centavo), e só o super admin escreve nesta configuração.
+                        <br>
+                        <em>Não é preciso cadastrar nada na Vercel.</em> A variável
+                        <code>MP_PACOTES_PIX</code> continua existindo como reserva, para o caso de
+                        o banco não responder.
                     </p>
                 </div>
 

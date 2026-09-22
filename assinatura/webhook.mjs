@@ -31,15 +31,17 @@
 //   FIREBASE_SERVICE_ACCOUNT   - o JSON da conta de servico (cru ou em base64)
 //   MP_PLANO_APOIASE_ID        - id do plano de R$ 10,00 (opcional; o valor tambem identifica)
 //   MP_PLANO_PROFESSOR_ID      - id do plano de R$ 20,00 (opcional)
-//   MP_PACOTES_PIX             - pacotes de apoio no Pix: "apoiase:3:30,professor:3:60"
-//                                (plano:meses:valor). E' preco que vira acesso, por isso
-//                                mora aqui e nao no documento publico de configuracao.
+//   MP_PACOTES_PIX             - OPCIONAL. Pacotes de apoio no Pix, "plano:meses:valor"
+//                                separados por virgula. So' e' usado quando o painel do
+//                                super admin nao tem pacote cadastrado — a fonte normal
+//                                e' o painel (ver pacotesDoServico).
 //   ASSINATURA_CRON_SECRET     - segredo do /reconciliar (a varredura diaria)
 
 import {
     interpretarNotificacao, montarAssinatura, identificarUsuario,
     acharUidPorEmail, devoGravar, manifestoAssinatura, lerCabecalhoAssinatura,
-    lerReferenciaPix, pacotePorValor, montarApoioPix, planoValido, assinaturaVencida
+    lerReferenciaPix, pacotePorValor, montarApoioPix, planoValido, assinaturaVencida,
+    PLANOS
 } from './regras.mjs';
 import { lerDoc, gravarDoc, apagarDoc, listarDocs, lerContaServico } from './firestore-rest.mjs';
 import { verificarTokenFirebase } from './auth-firebase.mjs';
@@ -196,7 +198,7 @@ export async function processarApoioPix(pagamento, ambiente, ferramentas) {
         return { feito: false, motivo: 'pagamento ainda nao aprovado: ' + pagamento.status };
     }
 
-    const pacotes = lerPacotesPix(ambiente);
+    const { pacotes } = await pacotesDoServico(ambiente, ferramentas);
     const referencia = lerReferenciaPix(pagamento.external_reference);
     const credito = referencia || pacotePorValor(pagamento.transaction_amount, pacotes);
 
@@ -240,11 +242,39 @@ export async function processarApoioPix(pagamento, ambiente, ferramentas) {
              validoAte: doc.validoAte, origem: 'pix' };
 }
 
-// Os pacotes de Pix vem do ambiente, no formato "plano:meses:valor" separados por
+// DE ONDE VEM O PRECO DE CADA PACOTE.
+//
+// Primeiro do painel (`assinaturas_config/publico`), e so' depois do ambiente.
+//
+// A primeira versao exigia a variavel de ambiente, com a justificativa de que "valor
+// que vira acesso nao pode morar num documento publico". A justificativa estava
+// errada: aquele documento e' publico para LEITURA, e as Regras so' deixam o SUPER
+// ADMIN escrever nele (ver firestore.rules). Ou seja, ele ja' tinha exatamente a
+// protecao que se queria — e a exigencia so' criou uma configuracao em dois lugares,
+// que discorda em silencio e faz o professor pagar sem receber o credito.
+//
+// O ambiente continua valendo como reserva: quem preferir trancar o preco no deploy
+// pode, e quem ainda nao cadastrou no painel nao fica sem Pix.
+export async function pacotesDoServico(ambiente, ferramentas) {
+    try {
+        const cfg = await ferramentas.ler('assinaturas_config/publico');
+        const doPainel = (cfg && Array.isArray(cfg.pacotesPix) ? cfg.pacotesPix : [])
+            .map(p => ({
+                plano: String((p && p.plano) || '').toLowerCase(),
+                meses: Math.round(Number(p && p.meses)),
+                valor: Number(p && p.valor)
+            }))
+            .filter(p => PLANOS[p.plano] && p.meses >= 1 && p.valor > 0);
+        if (doPainel.length) return { fonte: 'painel', pacotes: doPainel };
+    } catch (e) {
+        console.warn('[assinatura] nao consegui ler os pacotes do painel:', e && e.message);
+    }
+    const doAmbiente = lerPacotesPix(ambiente);
+    return { fonte: doAmbiente.length ? 'ambiente' : 'nenhuma', pacotes: doAmbiente };
+}
+
+// Os pacotes guardados no ambiente, no formato "plano:meses:valor" separados por
 // virgula. Exemplo: "apoiase:3:30,professor:3:60,professor:12:240".
-// Ficam aqui (e nao no banco) porque e' VALOR que vira acesso: o documento de
-// configuracao e' publico, e a lista de precos que credita plano precisa morar onde
-// so' quem faz o deploy alcanca.
 export function lerPacotesPix(ambiente) {
     return String((ambiente && ambiente.MP_PACOTES_PIX) || '')
         .split(',')
@@ -377,12 +407,17 @@ export async function criarPixDoPacote(pedido, dono, ambiente, ferramentas) {
     const plano = String((pedido && pedido.plano) || '').toLowerCase();
     const meses = Math.round(Number(pedido && pedido.meses));
 
-    // O VALOR VEM DAQUI, NUNCA DO NAVEGADOR. Aceitar o valor que a pagina manda seria
-    // deixar qualquer pessoa comprar 12 meses de Professor por um centavo.
-    const pacote = lerPacotesPix(ambiente).find(p =>
-        p.plano === plano && Number(p.meses) === meses);
+    // O VALOR VEM DO SERVIDOR, NUNCA DO NAVEGADOR. Aceitar o valor que a pagina manda
+    // seria deixar qualquer pessoa comprar 12 meses de Professor por um centavo.
+    const { fonte, pacotes } = await pacotesDoServico(ambiente, ferramentas);
+    const pacote = pacotes.find(p => p.plano === plano && Number(p.meses) === meses);
     if (!pacote) {
-        return { ok: false, motivo: 'pacote nao encontrado: ' + plano + '/' + meses + ' meses' };
+        return {
+            ok: false,
+            motivo: fonte === 'nenhuma'
+                ? 'nenhum pacote de Pix esta cadastrado (painel do super admin > Assinaturas)'
+                : 'pacote nao encontrado: ' + plano + '/' + meses + ' meses'
+        };
     }
 
     const nomePlano = plano === 'professor' ? 'Professor' : 'Apoia-se';
@@ -442,6 +477,20 @@ function ehRotaDePix(request) {
     } catch (e) { return false; }
 }
 
+async function tratarListaDePacotes(request, ambiente) {
+    const cors = cabecalhosCors(request, ambiente);
+    try {
+        const projeto = ambiente.FIREBASE_PROJECT_ID;
+        const conta = lerContaServico(ambiente.FIREBASE_SERVICE_ACCOUNT);
+        const { fonte, pacotes } = await pacotesDoServico(ambiente, {
+            ler: (caminho) => lerDoc(projeto, caminho, conta)
+        });
+        return responder({ ok: true, fonte: fonte, pacotes: pacotes }, 200, cors);
+    } catch (e) {
+        return responder({ ok: false, erro: String(e && e.message) }, 500, cors);
+    }
+}
+
 async function tratarPedidoDePix(request, ambiente) {
     const cors = cabecalhosCors(request, ambiente);
 
@@ -460,7 +509,9 @@ async function tratarPedidoDePix(request, ambiente) {
     try { pedido = await request.json(); } catch (e) { /* corpo vazio vira pacote invalido */ }
 
     try {
+        const conta = lerContaServico(ambiente.FIREBASE_SERVICE_ACCOUNT);
         const resultado = await criarPixDoPacote(pedido, dono, ambiente, {
+            ler: (caminho) => lerDoc(ambiente.FIREBASE_PROJECT_ID, caminho, conta),
             criarPagamentoNoMp: (corpo, chave) =>
                 criarPagamentoNoMercadoPago(corpo, chave, ambiente.MP_ACCESS_TOKEN)
         });
@@ -690,6 +741,10 @@ export async function tratarRequisicao(request, ambiente) {
         return tratarReconciliacao(request, ambiente);
     }
     if (ehRotaDePix(request)) {
+        // GET lista os pacotes que o SERVIDOR enxerga. E' diagnostico, e existe porque
+        // "configurei e nao funciona" sem jeito de ver o que o servidor leu custa horas.
+        // Nao expoe nada: plano, meses e valor ja' aparecem na tela de quem vai pagar.
+        if (request.method === 'GET') return tratarListaDePacotes(request, ambiente);
         if (request.method !== 'POST') return new Response('metodo nao suportado', { status: 405 });
         return tratarPedidoDePix(request, ambiente);
     }

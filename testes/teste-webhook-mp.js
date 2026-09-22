@@ -504,9 +504,43 @@ const assinaturaMp = (extra) => Object.assign({
     payer: { email: 'professor@escola.com' }
   }, extra || {});
 
-  ok('os pacotes saem do ambiente (preco que vira acesso nao mora no banco publico)',
+  ok('os pacotes do ambiente sao lidos corretamente',
       W.lerPacotesPix(ambientePix).length === 3
       && W.lerPacotesPix(ambientePix)[1].plano === 'professor');
+
+  // DE ONDE VEM O PRECO. A primeira versao exigia a variavel de ambiente, com a
+  // justificativa de que "valor que vira acesso nao pode morar em documento publico".
+  // Estava errada: aquele documento e' publico para LEITURA, e as Regras so' deixam o
+  // super admin escrever. A exigencia so' criou configuracao em dois lugares, que
+  // discorda em silencio e faz o professor pagar sem receber o credito.
+  const lerDoPainel = (pacotes) => ({ ler: async (c) =>
+    c === 'assinaturas_config/publico' ? { pacotesPix: pacotes } : null });
+
+  let fonte = await W.pacotesDoServico(ambientePix,
+      lerDoPainel([{ plano: 'professor', meses: 6, valor: 110 }]));
+  ok('o painel e a fonte do preco quando tem pacote cadastrado',
+      fonte.fonte === 'painel' && fonte.pacotes.length === 1 && fonte.pacotes[0].valor === 110);
+
+  fonte = await W.pacotesDoServico(ambientePix, lerDoPainel([]));
+  ok('sem pacote no painel, o ambiente vale como reserva',
+      fonte.fonte === 'ambiente' && fonte.pacotes.length === 3);
+
+  fonte = await W.pacotesDoServico({}, lerDoPainel([]));
+  ok('sem os dois, diz que nao ha fonte (em vez de fingir que ha)',
+      fonte.fonte === 'nenhuma' && fonte.pacotes.length === 0);
+
+  fonte = await W.pacotesDoServico(ambientePix,
+      lerDoPainel([{ plano: 'inventado', meses: 3, valor: 60 },
+                   { plano: 'professor', meses: 0, valor: 60 },
+                   { plano: 'apoiase', meses: 3, valor: 0 },
+                   { plano: 'apoiase', meses: 3, valor: 30 }]));
+  ok('linha torta no painel e descartada, nao vira pacote',
+      fonte.fonte === 'painel' && fonte.pacotes.length === 1 && fonte.pacotes[0].plano === 'apoiase');
+
+  fonte = await W.pacotesDoServico(ambientePix,
+      { ler: async () => { throw new Error('banco fora do ar'); } });
+  ok('banco fora do ar cai no ambiente em vez de derrubar o Pix',
+      fonte.fonte === 'ambiente' && fonte.pacotes.length === 3);
 
   banco = bancoFalso(comLista);
   r = await W.processarNotificacao({ type: 'payment', data: { id: 'PAY-100' } }, ambientePix,
@@ -577,6 +611,7 @@ const assinaturaMp = (extra) => Object.assign({
   const DONO = { uid: 'uid-professor', email: 'ana@escola.com' };
   let pedidoAoMp = null;
   const mpQueGeraQr = {
+    ler: async () => null,   // sem pacote no painel: usa o ambiente
     criarPagamentoNoMp: async (corpo, chave) => {
       pedidoAoMp = { corpo, chave };
       return { id: 'PAY-QR-1', status: 'pending', date_of_expiration: corpo.date_of_expiration,
@@ -616,18 +651,32 @@ const assinaturaMp = (extra) => Object.assign({
   ok('plano inventado tambem nao passa', qr.ok === false && pedidoAoMp === null);
 
   qr = await W.criarPixDoPacote({ plano: 'professor', meses: 3 }, DONO, ambientePix, {
+    ler: async () => null,
     criarPagamentoNoMp: async () => ({ id: 'PAY-X', status: 'pending' }) });
   ok('resposta do Mercado Pago sem o codigo do Pix vira erro explicado, nao tela em branco',
       qr.ok === false && /nao devolveu o codigo/.test(qr.motivo));
+
+  // E o preco do painel vale tambem na hora de gerar o QR.
+  pedidoAoMp = null;
+  qr = await W.criarPixDoPacote({ plano: 'professor', meses: 6 }, DONO, ambientePix,
+      Object.assign({}, mpQueGeraQr,
+        lerDoPainel([{ plano: 'professor', meses: 6, valor: 110 }])));
+  ok('o QR cobra o valor cadastrado no painel, sem passar pela Vercel',
+      qr.ok === true && qr.valor === 110 && pedidoAoMp.corpo.transaction_amount === 110);
 
   const pixSemCracha = await W.tratarRequisicao(
       new Request('https://w.dev/api/pix', { method: 'POST', body: '{}' }),
       { FIREBASE_PROJECT_ID: 'profsis3' });
   ok('pedir Pix sem cracha da sessao e recusado com 401', pixSemCracha.status === 401);
 
+  // GET em /pix nao cobra nada: lista o que o servidor enxerga, para "configurei e
+  // nao funciona" parar de custar horas.
   const pixGet = await W.tratarRequisicao(
       new Request('https://w.dev/api/pix', { method: 'GET' }), { FIREBASE_PROJECT_ID: 'profsis3' });
-  ok('GET em /pix nao gera cobranca', pixGet.status === 405);
+  ok('GET em /pix e diagnostico, nao metodo recusado', pixGet.status !== 405);
+  const pixPut = await W.tratarRequisicao(
+      new Request('https://w.dev/api/pix', { method: 'PUT' }), { FIREBASE_PROJECT_ID: 'profsis3' });
+  ok('metodo que nao existe e recusado', pixPut.status === 405);
 
   // ================= 12. OS VALORES BATEM NOS DOIS LADOS =================
   console.log('\n12. Servidor e navegador falam do mesmo preco');

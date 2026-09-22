@@ -238,13 +238,31 @@ Pix de R$ 60 para este professor" e mostrar o QR Code que ele devolve.
    professor;12;240
    ```
    (plano;meses;**valor total** — R$ 60,00 para 3 meses, não R$ 20,00)
-2. **Os mesmos pacotes na variável `MP_PACOTES_PIX`** do serviço, no formato
-   `plano:meses:valor`: `apoiase:3:30,professor:3:60,professor:12:240`.
+2. Pronto. Não há link de pagamento para criar no Mercado Pago, e **não é preciso
+   cadastrar nada na Vercel**: o serviço lê estes pacotes direto do banco.
 
-   Isto não é redundância por descuido: **é a variável que decide quanto o QR vai
-   cobrar**. O valor nunca vem do navegador — se viesse, daria para comprar 12 meses
-   por um centavo. O que está no painel é só o que o professor vê na tela.
-3. Pronto. Não há link de pagamento para criar no Mercado Pago.
+O valor nunca vem do navegador — se viesse, daria para comprar 12 meses por um
+centavo. Ele sai sempre do servidor, e só o super admin consegue alterá-lo: as Regras
+do Firestore dão escrita em `assinaturas_config` apenas a ele.
+
+> A variável `MP_PACOTES_PIX` (formato `plano:meses:valor`, separado por vírgula)
+> continua existindo como **reserva**, usada só quando o painel não tem pacote
+> cadastrado ou o banco não responde. Uma versão anterior a exigia, com a
+> justificativa de que "valor que vira acesso não pode morar em documento público" —
+> justificativa errada: aquele documento é público para *leitura*. A exigência só
+> criava configuração em dois lugares, que discorda em silêncio e faz o professor
+> pagar sem receber o crédito.
+
+### Conferir o que o serviço está lendo
+
+```
+GET https://<seu-projeto>.vercel.app/api/pix
+```
+
+Responde com a lista de pacotes que o **servidor** enxerga e de onde ela veio
+(`painel` ou `ambiente`). Não cobra nada e não expõe nada — plano, meses e valor já
+aparecem na tela de quem vai pagar. Serve para o "configurei e não funciona" parar de
+custar horas.
 
 ### O que acontece quando o professor escolhe um pacote
 
