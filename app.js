@@ -8423,6 +8423,10 @@ async function renderRegistrosProfessor() {
     }
 
     const screen = document.getElementById('registrosProfessor');
+    // A tela é criada sob demanda, então o showScreen que disparou este render pode ter rodado
+    // antes dela existir (não conseguindo marcá-la como ativa). Mesmo tratamento da Biblioteca.
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    screen.classList.add('active');
     screen.innerHTML = '<div class="card"><p>Carregando registros da gestão...</p></div>';
 
     let registros = [];
@@ -8519,6 +8523,10 @@ async function renderAeeVisaoGeral() {
         mainContainer.appendChild(div);
     }
     const container = document.getElementById('aeeVisaoGeral');
+    // A tela é criada sob demanda, então o showScreen que disparou este render pode ter rodado
+    // antes dela existir (não conseguindo marcá-la como ativa). Mesmo tratamento da Biblioteca.
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    container.classList.add('active');
     container.innerHTML = '<div class="card"><p>Carregando dados do perfil AEE...</p></div>';
 
     if (!currentUser.schoolId) {

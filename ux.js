@@ -1,0 +1,342 @@
+// ux.js — camada de experiência do SisProf (estrutura do tema Híbrido e atalhos).
+//
+// Nada aqui salva, apaga ou calcula dado. Toda ação passa pelo que já existe: clicar
+// no próprio botão do menu (que chama showScreen) ou chamar as funções de sempre
+// (abrirTurma, abrirModalPerfil...). O que este arquivo faz:
+//
+//   1. Agrupa o menu por assunto (Dia a dia, Registros, Escola, Recursos). Os botões
+//      são os mesmos, só mudam de ordem; os títulos dos grupos aparecem no menu
+//      lateral do Híbrido.
+//   2. No celular, a barra de baixo mostra os 4 primeiros itens e um "Mais" que abre
+//      uma folha com todos.
+//   3. Busca rápida (Ctrl+K ou o botão Buscar): ir para qualquer tela, turma ou ação
+//      digitando.
+//   4. Mostra no topo em que tela a pessoa está.
+//   5. Menu lateral recolhível no computador (a escolha fica guardada no aparelho).
+
+(function () {
+    const GRUPOS = [
+        { id: 'dia', nome: 'Dia a dia', telas: ['dashboard', 'turmas', 'tutoria', 'ocorrenciasGestor', 'tutoriasGestor'] },
+        { id: 'reg', nome: 'Registros', telas: ['documentos', 'registrosProfessor', 'registrosGestor', 'notasOficiaisGestor', 'aeeVisaoGeral'] },
+        { id: 'esc', nome: 'Escola', telas: ['horariosGestor', 'escolaGestor'] },
+        { id: 'rec', nome: 'Recursos', telas: ['biblioteca', 'ferramentas'] }
+    ];
+    const NOMES_TELA = {
+        turmaDetalhe: 'Turma', tutoradoDetalhe: 'Tutorado', estudanteDetalhe: 'Estudante',
+        relatorioImpressao: 'Relatório', pdf: 'Ferramentas'
+    };
+    const MOSTRA_NA_BARRA = 4;
+
+    const $ = (s, r) => (r || document).querySelector(s);
+    const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+    const ico = (n) => (typeof window.iconeSisProf === 'function' ? window.iconeSisProf(n) : '');
+    const semAcento = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const guardar = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+    const ler = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+
+    function navPrincipal() { return $('#appContainer nav.app-nav'); }
+    function telaDoBotao(b) {
+        const m = (b.getAttribute('onclick') || '').match(/showScreen\('([\w]+)'/);
+        return m ? m[1] : null;
+    }
+    function rotuloDoBotao(b) {
+        const l = b.querySelector('.label');
+        return (l ? l.textContent : b.textContent).trim();
+    }
+    function botoesDoMenu() {
+        const nav = navPrincipal();
+        return nav ? $$(':scope > button:not(.nav-mais)', nav) : [];
+    }
+
+    // ---------------------------------------------------------------- 1. grupos
+    let organizando = false;
+    function organizarMenu() {
+        const nav = navPrincipal();
+        if (!nav || organizando) return;
+        const botoes = botoesDoMenu();
+        if (!botoes.length) return;
+        organizando = true;
+
+        // Ordem: pelos grupos; o que não estiver em grupo nenhum fica no fim, na ordem de antes
+        const ordem = (b) => {
+            const t = telaDoBotao(b);
+            for (let g = 0; g < GRUPOS.length; g++) {
+                const i = GRUPOS[g].telas.indexOf(t);
+                if (i !== -1) return g * 100 + i;
+            }
+            return 1000 + botoes.indexOf(b);
+        };
+        const ordenados = botoes.slice().sort((x, y) => ordem(x) - ordem(y));
+
+        $$(':scope > .nav-grupo, :scope > .nav-mais, :scope > .nav-rodape', nav).forEach(e => e.remove());
+        let grupoAtual = null;
+        ordenados.forEach((b, i) => {
+            const t = telaDoBotao(b);
+            const g = GRUPOS.find(x => x.telas.indexOf(t) !== -1);
+            const gid = g ? g.id : 'outros';
+            if (gid !== grupoAtual) {
+                grupoAtual = gid;
+                const rot = document.createElement('div');
+                rot.className = 'nav-grupo';
+                rot.setAttribute('aria-hidden', 'true');
+                rot.textContent = g ? g.nome : 'Outros';
+                nav.appendChild(rot);
+            }
+            b.title = rotuloDoBotao(b);
+            b.classList.toggle('nav-extra', i >= MOSTRA_NA_BARRA);
+            nav.appendChild(b);
+        });
+
+        // "Mais" (só aparece no celular, pelo CSS)
+        if (ordenados.length > MOSTRA_NA_BARRA) {
+            const mais = document.createElement('button');
+            mais.type = 'button';
+            mais.className = 'nav-mais';
+            mais.innerHTML = '<span class="icon">' + ico('config') + '</span><span class="label">Mais</span>';
+            mais.addEventListener('click', abrirFolhaMais);
+            nav.appendChild(mais);
+        }
+
+        // Rodapé do menu lateral: busca e recolher
+        const rod = document.createElement('div');
+        rod.className = 'nav-rodape';
+        rod.innerHTML =
+            '<button type="button" class="nav-acao" data-acao="buscar" title="Buscar (Ctrl+K)">' + ico('busca') + '<span>Buscar</span><kbd>Ctrl K</kbd></button>' +
+            '<button type="button" class="nav-acao" data-acao="recolher" title="Recolher o menu">' + ico('historico') + '<span>Recolher menu</span></button>';
+        rod.querySelector('[data-acao="buscar"]').addEventListener('click', abrirPaleta);
+        rod.querySelector('[data-acao="recolher"]').addEventListener('click', alternarRecolhido);
+        nav.appendChild(rod);
+
+        marcarMais();
+        organizando = false;
+    }
+
+    function marcarMais() {
+        const nav = navPrincipal();
+        if (!nav) return;
+        const mais = $(':scope > .nav-mais', nav);
+        if (!mais) return;
+        const ativoExtra = botoesDoMenu().some(b => b.classList.contains('active') && b.classList.contains('nav-extra'));
+        mais.classList.toggle('mais-ativo', ativoExtra);
+    }
+
+    // --------------------------------------------------------- 2. folha "Mais"
+    function abrirFolhaMais() {
+        fecharFolhaMais();
+        const fundo = document.createElement('div');
+        fundo.className = 'ux-folha-fundo';
+        fundo.innerHTML = '<div class="ux-folha" role="dialog" aria-modal="true" aria-label="Todas as telas">' +
+            '<div class="ux-folha-alca"></div><h2>Todas as telas</h2><div class="ux-folha-grade"></div></div>';
+        const grade = $('.ux-folha-grade', fundo);
+        botoesDoMenu().forEach(b => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'ux-folha-item' + (b.classList.contains('active') ? ' ativo' : '');
+            const icone = b.querySelector('.icon');
+            item.innerHTML = '<span class="ux-folha-ico">' + (icone ? icone.innerHTML : '') + '</span><span>' + rotuloDoBotao(b) + '</span>';
+            item.addEventListener('click', () => { fecharFolhaMais(); b.click(); });
+            grade.appendChild(item);
+        });
+        fundo.addEventListener('click', (e) => { if (e.target === fundo) fecharFolhaMais(); });
+        document.body.appendChild(fundo);
+        const primeiro = $('.ux-folha-item', fundo);
+        if (primeiro) primeiro.focus({ preventScroll: true });
+    }
+    function fecharFolhaMais() { $$('.ux-folha-fundo').forEach(e => e.remove()); }
+
+    // ------------------------------------------------------ 3. busca rápida
+    let paleta = null, itensPaleta = [], selecionado = 0;
+
+    function coletarItens() {
+        const itens = [];
+        botoesDoMenu().forEach(b => {
+            const icone = b.querySelector('.icon');
+            itens.push({ grupo: 'Telas', rotulo: rotuloDoBotao(b), icone: icone ? icone.innerHTML : '', fazer: () => b.click() });
+        });
+        const modo = typeof currentViewMode !== 'undefined' ? currentViewMode : null;
+        if ((!modo || modo === 'professor') && typeof data !== 'undefined' && data && Array.isArray(data.turmas) && typeof abrirTurma === 'function') {
+            data.turmas.forEach(t => {
+                const nome = t.disciplina ? t.nome + ' · ' + t.disciplina : t.nome;
+                itens.push({ grupo: 'Turmas', rotulo: nome, extra: t.turno || '', icone: ico('turmas'), fazer: () => abrirTurma(t.id) });
+            });
+        }
+        const acao = (rotulo, icone, fn) => { if (typeof fn === 'function') itens.push({ grupo: 'Ações', rotulo, icone: ico(icone), fazer: fn }); };
+        if (!modo || modo === 'professor') acao('Nova turma', 'turmas', window.abrirModalNovaTurma);
+        acao('Estagiário (gerar documento)', 'estagiario', window.abrirModalGerarDocumentoIA);
+        acao('Meu perfil e tema', 'perfil', window.abrirModalPerfil);
+        acao('Baixar minha cópia de segurança', 'baixar', window.exportarArquivoProfsis);
+        return itens;
+    }
+
+    function abrirPaleta() {
+        const app = $('#appContainer');
+        if (!app || app.style.display === 'none') return;
+        fecharFolhaMais();
+        if (paleta) { $('input', paleta).focus(); return; }
+        itensPaleta = coletarItens();
+        paleta = document.createElement('div');
+        paleta.className = 'ux-paleta-fundo';
+        paleta.innerHTML =
+            '<div class="ux-paleta" role="dialog" aria-modal="true" aria-label="Busca rápida">' +
+            '<label class="ux-paleta-campo">' + ico('busca') +
+            '<input type="text" id="uxPaletaBusca" placeholder="Ir para uma tela, turma ou ação…" autocomplete="off" spellcheck="false">' +
+            '<kbd>Esc</kbd></label>' +
+            '<div class="ux-paleta-lista" role="listbox"></div>' +
+            '<div class="ux-paleta-dica"><span><kbd>↑</kbd><kbd>↓</kbd> escolher</span><span><kbd>Enter</kbd> abrir</span><span><kbd>Ctrl</kbd><kbd>K</kbd> de qualquer tela</span></div>' +
+            '</div>';
+        paleta.addEventListener('click', (e) => { if (e.target === paleta) fecharPaleta(); });
+        document.body.appendChild(paleta);
+        const campo = $('input', paleta);
+        campo.addEventListener('input', () => { selecionado = 0; desenharLista(campo.value); });
+        campo.addEventListener('keydown', teclaPaleta);
+        desenharLista('');
+        campo.focus();
+    }
+
+    function filtrar(q) {
+        const busca = semAcento(q).trim();
+        if (!busca) return itensPaleta;
+        const partes = busca.split(/\s+/);
+        return itensPaleta.filter(it => {
+            const alvo = semAcento(it.rotulo + ' ' + (it.extra || '') + ' ' + it.grupo);
+            return partes.every(p => alvo.indexOf(p) !== -1);
+        });
+    }
+
+    function desenharLista(q) {
+        const lista = $('.ux-paleta-lista', paleta);
+        const achados = filtrar(q);
+        if (!achados.length) {
+            lista.innerHTML = '<div class="ux-paleta-vazio">Nada encontrado para “' + q.replace(/[<>&]/g, '') + '”.</div>';
+            return;
+        }
+        let html = '', grupo = null;
+        achados.forEach((it, i) => {
+            if (it.grupo !== grupo) { grupo = it.grupo; html += '<div class="ux-paleta-grupo">' + grupo + '</div>'; }
+            html += '<button type="button" role="option" class="ux-paleta-item' + (i === selecionado ? ' sel' : '') + '" data-i="' + i + '">' +
+                '<span class="ux-paleta-ico">' + it.icone + '</span><span class="ux-paleta-rot"></span>' +
+                (it.extra ? '<span class="ux-paleta-extra"></span>' : '') + '</button>';
+        });
+        lista.innerHTML = html;
+        $$('.ux-paleta-item', lista).forEach(btn => {
+            const it = achados[+btn.dataset.i];
+            $('.ux-paleta-rot', btn).textContent = it.rotulo;
+            const ex = $('.ux-paleta-extra', btn);
+            if (ex) ex.textContent = it.extra;
+            btn.addEventListener('click', () => executar(it));
+            btn.addEventListener('mousemove', () => { if (selecionado !== +btn.dataset.i) { selecionado = +btn.dataset.i; marcarSelecionado(); } });
+        });
+        lista._achados = achados;
+    }
+
+    function marcarSelecionado() {
+        const lista = $('.ux-paleta-lista', paleta);
+        $$('.ux-paleta-item', lista).forEach(b => b.classList.toggle('sel', +b.dataset.i === selecionado));
+        const sel = $('.ux-paleta-item.sel', lista);
+        if (sel) sel.scrollIntoView({ block: 'nearest' });
+    }
+
+    function teclaPaleta(e) {
+        const lista = $('.ux-paleta-lista', paleta);
+        const achados = lista._achados || [];
+        if (e.key === 'ArrowDown') { e.preventDefault(); selecionado = Math.min(achados.length - 1, selecionado + 1); marcarSelecionado(); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); selecionado = Math.max(0, selecionado - 1); marcarSelecionado(); }
+        else if (e.key === 'Enter') { e.preventDefault(); if (achados[selecionado]) executar(achados[selecionado]); }
+        else if (e.key === 'Escape') { e.preventDefault(); fecharPaleta(); }
+    }
+
+    function executar(it) {
+        fecharPaleta();
+        try { it.fazer(); } catch (err) { console.warn('[SisProf] Busca rápida:', err); }
+    }
+
+    function fecharPaleta() {
+        if (paleta) { paleta.remove(); paleta = null; }
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'k' || e.key === 'K')) {
+            const app = $('#appContainer');
+            if (!app || app.style.display === 'none') return;
+            e.preventDefault();
+            paleta ? fecharPaleta() : abrirPaleta();
+        } else if (e.key === 'Escape') {
+            if ($('.ux-folha-fundo')) fecharFolhaMais();
+        }
+    });
+
+    // ------------------------------------------------ 4. tela atual no topo
+    function atualizarTitulo() {
+        const alvo = $('#uxTelaAtual');
+        if (!alvo) return;
+        const tela = $('#appContainer .screen.active');
+        if (!tela) { alvo.textContent = ''; return; }
+        let nome = null;
+        const b = botoesDoMenu().find(x => telaDoBotao(x) === tela.id);
+        if (b) nome = rotuloDoBotao(b);
+        if (tela.id === 'turmaDetalhe') {
+            const t = $('#turmaDetalheTitulo');
+            nome = 'Turmas › ' + (t ? t.textContent.trim() : 'Turma');
+        } else if (!nome) nome = NOMES_TELA[tela.id] || '';
+        alvo.textContent = nome;
+        marcarMais();
+    }
+
+    function montarTopo() {
+        const sub = $('#painelSubtitle');
+        if (!sub || $('#uxTelaAtual')) return;
+        const linha = document.createElement('div');
+        linha.className = 'ux-trilha';
+        linha.innerHTML = '<span id="uxTelaAtual"></span>';
+        sub.parentNode.insertBefore(linha, sub.nextSibling);
+
+        const area = $('#headerUserArea');
+        if (area && !$('#uxBotaoBuscar')) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.id = 'uxBotaoBuscar';
+            btn.className = 'btn btn-sm btn-secondary ux-buscar';
+            btn.title = 'Busca rápida (Ctrl+K)';
+            btn.innerHTML = ico('busca') + '<span>Buscar</span><kbd>Ctrl K</kbd>';
+            btn.addEventListener('click', abrirPaleta);
+            const dataHoje = $('#currentDate', area);
+            area.insertBefore(btn, dataHoje ? dataHoje.nextSibling : area.firstChild);
+        }
+    }
+
+    // ------------------------------------------------ 5. menu recolhido
+    function alternarRecolhido() {
+        const r = document.documentElement.classList.toggle('nav-recolhido');
+        guardar('sisprof_nav_recolhido', r ? '1' : '0');
+    }
+    if (ler('sisprof_nav_recolhido') === '1') document.documentElement.classList.add('nav-recolhido');
+
+    // ------------------------------------------------ observadores
+    function iniciar() {
+        montarTopo();
+        organizarMenu();
+        atualizarTitulo();
+        const nav = navPrincipal();
+        if (nav) {
+            // o menu é reescrito por renderProfessorPanel/renderGestorPanel: reorganiza quando isso acontece
+            new MutationObserver(() => {
+                if (organizando) return;
+                const precisa = botoesDoMenu().some(b => !b.hasAttribute('title')) || !$(':scope > .nav-rodape', nav);
+                if (precisa && botoesDoMenu().length) organizarMenu();
+                marcarMais();
+            }).observe(nav, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+        }
+        const container = $('#appContainer');
+        if (container) {
+            new MutationObserver(() => { requestAnimationFrame(atualizarTitulo); })
+                .observe(container, { subtree: true, attributes: true, attributeFilter: ['class'] });
+            const tit = $('#turmaDetalheTitulo');
+            if (tit) new MutationObserver(atualizarTitulo).observe(tit, { childList: true, characterData: true, subtree: true });
+        }
+    }
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciar);
+    else iniciar();
+
+    window.abrirBuscaRapida = abrirPaleta;
+})();
