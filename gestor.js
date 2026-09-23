@@ -1476,34 +1476,44 @@ async function carregarVistaCompartilhada(shareId) {
 
 // --- FERRAMENTA DE LIMPEZA DE DUPLICADOS ---
 
-function renderAbaLimpezaDados() {
-    const estudantes = data.estudantes || [];
-    const histograma = {};
-    
-    // Agrupa por nome normalizado (sem espaços extras e em caixa alta)
-    estudantes.forEach(e => {
-        const nomeNorm = e.nome_completo.trim().toUpperCase();
-        if (!histograma[nomeNorm]) histograma[nomeNorm] = [];
-        histograma[nomeNorm].push(e);
+// Duplicado é o MESMO nome repetido na MESMA turma - o que uma importação antiga criava quando o
+// nome vinha escrito um pouco diferente. A versão anterior juntava pelo nome na escola inteira:
+// o aluno remanejado, ainda ativo na turma antiga e já ativo na nova, era "unificado" no primeiro
+// registro encontrado, e o da turma nova sumia (era um dos remanejados que "não apareciam").
+// Mesmo nome ativo em turmas diferentes agora só é MOSTRADO: pode ser remanejamento pela metade
+// (a lista da turma de origem ainda não foi importada) ou dois estudantes com o mesmo nome.
+function agruparDuplicadosLimpeza() {
+    const porTurma = {};
+    const ativosPorNome = {};
+    (data.estudantes || []).forEach(e => {
+        const nome = normalizarNomeImportMassa(e.nome_completo);
+        if (!nome) return;
+        const k = String(e.id_turma) + '|' + nome;
+        (porTurma[k] = porTurma[k] || []).push(e);
+        if (!e.status || e.status === 'Ativo') (ativosPorNome[nome] = ativosPorNome[nome] || []).push(e);
     });
+    const duplicados = Object.values(porTurma).filter(l => l.length > 1).map(l => [l[0].nome_completo, l]);
+    const emDuasTurmas = Object.values(ativosPorNome)
+        .filter(l => new Set(l.map(e => String(e.id_turma))).size > 1)
+        .map(l => [l[0].nome_completo, l]);
+    return { duplicados, emDuasTurmas };
+}
 
-    // [MODIFICADO] Identifica duplicados apenas se houver mais de um registro 'Ativo' para o mesmo nome
-    const duplicados = Object.entries(histograma).filter(([nome, lista]) => {
-        const ativos = lista.filter(e => e.status === 'Ativo');
-        return ativos.length > 1;
-    });
+function renderAbaLimpezaDados() {
+    const { duplicados, emDuasTurmas } = agruparDuplicadosLimpeza();
+    const nomeTurma = (id) => { const t = (data.turmas || []).find(x => x.id == id); return t ? t.nome : '?'; };
 
     const html = `
         <div>
             <h2>🧹 Ferramenta de Limpeza de Duplicados</h2>
             <p style="color:#5f6b7f; font-size:14px; margin-bottom:20px;">
-                Esta ferramenta identifica estudantes com o mesmo nome completo que aparecem como <strong>Ativo</strong> em mais de um registro. 
-                Alunos que mudaram de turma (com status Remanejado ou Transferido) são preservados e não são considerados duplicados para unificação, garantindo a integridade do histórico de movimentação.
+                Esta ferramenta identifica o mesmo estudante registrado <strong>mais de uma vez na mesma turma</strong> e junta os registros num só,
+                levando faltas, notas e ocorrências para o registro que fica. Registros em turmas diferentes (remanejamento) nunca são juntados.
             </p>
 
             ${duplicados.length > 0 ? `
                 <div class="alert alert-warning" style="margin-bottom:20px; background:#fffaf0; padding:15px; border-radius:8px; border:1px solid #fbd38d;">
-                    <strong>⚠️ Atenção:</strong> Foram encontrados <strong>${duplicados.length}</strong> nomes com duplicidade de registro.
+                    <strong>⚠️ Atenção:</strong> Foram encontrados <strong>${duplicados.length}</strong> nome(s) repetido(s) dentro da mesma turma.
                 </div>
                 <table style="width:100%;">
                     <thead>
@@ -1536,6 +1546,16 @@ function renderAbaLimpezaDados() {
             ` : `
                 <p class="empty-state">✅ Nenhum estudante duplicado encontrado. Seu banco de dados está limpo!</p>
             `}
+
+            ${emDuasTurmas.length > 0 ? `
+                <div style="margin-top:25px; background:#edf3fd; padding:15px; border-radius:8px; border:1px solid #d3e2fa;">
+                    <strong>ℹ️ ${emDuasTurmas.length} nome(s) ativo(s) em mais de uma turma</strong>
+                    <p style="font-size:12px; color:#3d4759; margin:6px 0;">Não são juntados. Em geral é remanejamento pela metade: importe a lista da turma de origem e a situação dela se acerta. Se forem estudantes diferentes com o mesmo nome, não há nada a fazer.</p>
+                    <ul style="font-size:12px; margin:0 0 0 18px; padding:0;">
+                        ${emDuasTurmas.map(([nome, lista]) => `<li>${escaparHtmlImportMassa(nome)} — ${lista.map(e => escaparHtmlImportMassa(nomeTurma(e.id_turma))).join(', ')}</li>`).join('')}
+                    </ul>
+                </div>
+            ` : ''}
 
             <div id="containerDiagnosticoOrfaos" style="margin-top: 40px; border-top: 2px dashed #cdd5e1; padding-top: 20px;">
                 <h3 style="color: #c53030;">🔍 Busca por Dados Órfãos (Vestígios)</h3>
@@ -1607,45 +1627,23 @@ async function executarDiagnosticoOrfaos() {
 }
 
 async function executarLimpezaDuplicados() {
-    if (!confirm('Este processo irá fundir os registros de estudantes que possuem mais de um status "Ativo". O primeiro ID ativo encontrado para cada nome será o mestre. Registros históricos de remanejamento serão mantidos se não houver conflito de ativos. Deseja continuar?')) return;
+    if (!confirm('Juntar os registros repetidos dentro da mesma turma? Em cada nome fica o registro ativo, e faltas, notas e ocorrências dos outros passam para ele. Registros em turmas diferentes não são tocados.')) return;
 
-    const estudantes = data.estudantes || [];
-    const histograma = {};
-    
-    estudantes.forEach(e => {
-        const nomeNorm = e.nome_completo.trim().toUpperCase();
-        if (!histograma[nomeNorm]) histograma[nomeNorm] = [];
-        histograma[nomeNorm].push(e);
-    });
-
+    const { duplicados } = agruparDuplicadosLimpeza();
+    const sair = new Set();
     let totalUnificados = 0;
-    const novosEstudantes = [];
 
-    for (const [nome, lista] of Object.entries(histograma)) {
-        const ativos = lista.filter(e => e.status === 'Ativo');
-
-        // [MODIFICADO] Se não houver duplicidade de "Ativos", mantém os registros como estão (incluindo remanejados)
-        if (ativos.length <= 1) {
-            lista.forEach(e => novosEstudantes.push(e));
-            continue;
-        }
-
-        // Temos duplicados REAIS (Mais de um Ativo): Master é o primeiro Ativo da lista
-        const master = ativos[0];
+    duplicados.forEach(([, lista]) => {
+        const master = lista.find(e => !e.status || e.status === 'Ativo') || lista[0];
         const masterId = master.id;
-        
-        // Os IDs que serão fundidos no Master (outros Ativos e eventuais históricos deste mesmo nome)
-        const idsDuplicados = lista.filter(e => e.id !== masterId).map(e => e.id);
-        
-        // Função auxiliar para atualizar referências
+        const idsDuplicados = new Set(lista.filter(e => e !== master).map(e => String(e.id)));
+        const trocar = (id) => idsDuplicados.has(String(id)) ? masterId : id;
+
         const atualizarRef = (listaDados, campoId) => {
             if (listaDados && Array.isArray(listaDados)) {
-                listaDados.forEach(item => {
-                    if (idsDuplicados.includes(item[campoId])) item[campoId] = masterId;
-                });
+                listaDados.forEach(item => { if (item && item[campoId] != null) item[campoId] = trocar(item[campoId]); });
             }
         };
-
         atualizarRef(data.presencas, 'id_estudante');
         atualizarRef(data.atrasos, 'id_estudante');
         atualizarRef(data.registrosAdministrativos, 'estudanteId');
@@ -1653,21 +1651,18 @@ async function executarLimpezaDuplicados() {
         atualizarRef(data.notas, 'id_estudante');
         atualizarRef(data.caderno, 'id_estudante');
         atualizarRef(data.tutorados, 'id_estudante_origem');
+        (data.ocorrencias || []).forEach(o => {
+            if (o.ids_estudantes) o.ids_estudantes = [...new Set(o.ids_estudantes.map(trocar))];
+        });
+        (data.mapeamentos || []).forEach(m => {
+            Object.keys(m.assentos || {}).forEach(k => { m.assentos[k] = trocar(m.assentos[k]); });
+        });
 
-        // Ocorrências (ids_estudantes é um array de envolvidos)
-        if (data.ocorrencias) {
-            data.ocorrencias.forEach(o => {
-                if (o.ids_estudantes) {
-                    o.ids_estudantes = o.ids_estudantes.map(id => idsDuplicados.includes(id) ? masterId : id);
-                    o.ids_estudantes = [...new Set(o.ids_estudantes)]; // Remove duplicatas no array
-                }
-            });
-        }
+        lista.forEach(e => { if (e !== master) sair.add(e); });
+        totalUnificados += idsDuplicados.size;
+    });
 
-        novosEstudantes.push(master);
-        totalUnificados += idsDuplicados.length;
-    }
-
+    const novosEstudantes = (data.estudantes || []).filter(e => !sair.has(e));
     data.estudantes = novosEstudantes;
     
     // Deduplicação de Presenças (Evita múltiplas entradas para o mesmo dia após o merge)
@@ -2036,29 +2031,38 @@ const IMPORT_MASSA_LIMIAR_CASAMENTO = 0.5;
 // Diferença abaixo disto entre a melhor turma livre e a segunda é empate: a pessoa escolhe.
 const IMPORT_MASSA_EMPATE = 0.03;
 
-// A situação como costuma vir escrita nas listas -> status do ProfSis (enum de index.html:246).
-const IMPORT_MASSA_STATUS = {
-    'ativo': 'Ativo',
-    'ativa': 'Ativo',
-    'matriculado': 'Ativo',
-    'matriculada': 'Ativo',
-    'transferido': 'Transferido',
-    'transferida': 'Transferido',
-    'remanejamento': 'Remanejado',
-    'remanejado': 'Remanejado',
-    'remanejada': 'Remanejado',
-    'baixa-transferencia': 'Baixa-Transferencia',
-    'baixa transferencia': 'Baixa-Transferencia',
-    'ncom': 'NCOM',
-    'nao comparecimento': 'NCOM'
-};
+// A situação como vem escrita nas listas -> status do ProfSis (enum de index.html:297). Por
+// palavra-chave, e não por texto exato: "Baixa - Transferência", "BAIXA TRANSFERENCIA" e
+// "Baixa-Transferência" são a mesma coisa, e com a comparação exata a primeira caía como Ativo
+// (quem já tinha saído continuava na chamada). A ordem importa: "baixa" antes de "transfer".
+const IMPORT_MASSA_STATUS_PALAVRAS = [
+    { palavras: ['baixa'], status: 'Baixa-Transferencia' },
+    { palavras: ['reman'], status: 'Remanejado' },
+    { palavras: ['transfer'], status: 'Transferido' },
+    { palavras: ['ncom', 'nao comparec', 'comparecimento'], status: 'NCOM' },
+    // Saíram da turma por outro motivo: não podem continuar Ativos na chamada.
+    { palavras: ['abandon', 'evad', 'falec', 'obito', 'reclassif', 'cessa', 'encerr', 'desist', 'cancel', 'inativ'], status: 'Transferido' },
+    { palavras: ['ativ', 'matricul', 'cursando', 'frequente'], status: 'Ativo' }
+];
+
+// Devolve { status, reconhecido }. Situação vazia é Ativo (lista sem coluna de situação).
+function statusDaSituacaoImportMassa(situacaoBruta) {
+    const t = normalizarCabecalhoImportMassa(situacaoBruta).replace(/[^a-z0-9]+/g, ' ').trim();
+    if (!t) return { status: 'Ativo', reconhecido: true };
+    const achado = IMPORT_MASSA_STATUS_PALAVRAS.find(r => r.palavras.some(p => t.indexOf(p) !== -1));
+    return achado ? { status: achado.status, reconhecido: true } : { status: 'Ativo', reconhecido: false };
+}
 
 // Cabeçalhos reconhecidos sozinhos. Comparação normalizada (sem acento, minúsculo, espaço único).
 const IMPORT_MASSA_CABECALHOS_NOME = ['nome do aluno', 'nome do estudante', 'nome aluno', 'nome estudante',
     'aluno', 'aluno(a)', 'estudante', 'nome', 'nome completo', 'nome do aluno(a)'];
 
+// Chave de comparação de nome: sem acento, sem pontuação e sem espaço sobrando. "D'Ávila",
+// "D´AVILA" e "d avila " são a mesma pessoa; comparar o texto cru criava um aluno novo a cada
+// diferença de apóstrofo, hífen ou espaço (era uma das causas de estudante duplicado).
 function normalizarNomeImportMassa(nome) {
-    return String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase().replace(/\s+/g, ' ');
+    return String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
 }
 
 function normalizarCabecalhoImportMassa(texto) {
@@ -2105,7 +2109,11 @@ function detectarColunasImportMassa(linhas) {
         const cols = (linhas[i] || []).map(normalizarCabecalhoImportMassa);
         const idxNome = cols.findIndex(c => IMPORT_MASSA_CABECALHOS_NOME.indexOf(c) !== -1);
         if (idxNome === -1) continue;
-        const idxSituacao = cols.findIndex(c => c.indexOf('situacao') !== -1 || c.indexOf('status') !== -1);
+        // Mais de uma coluna pode falar em "situação" (do aluno, da matrícula...): a do aluno
+        // vem primeiro, depois qualquer "situação", depois "status".
+        let idxSituacao = cols.findIndex(c => c.indexOf('situacao') !== -1 && (c.indexOf('aluno') !== -1 || c.indexOf('estudante') !== -1));
+        if (idxSituacao === -1) idxSituacao = cols.findIndex(c => c.indexOf('situacao') !== -1);
+        if (idxSituacao === -1) idxSituacao = cols.findIndex(c => c.indexOf('status') !== -1);
         return { linhaHeader: i, idxNome, idxSituacao };
     }
     return null;
@@ -2137,31 +2145,38 @@ function rotulosColunasImportMassa(linhas, linhaHeader) {
     return rotulos;
 }
 
-// Só nome e situação saem daqui. Duplicata dentro do mesmo arquivo é ignorada (fica a 1ª ocorrência).
+// Só nome e situação saem daqui.
+//
+// O mesmo aluno pode aparecer mais de uma vez na lista: quem foi remanejado e voltou, ou saiu e
+// foi rematriculado, tem uma linha por passagem pela turma. Vale a linha ATIVA, se houver; se
+// nenhuma for, vale a última (a mais recente). Antes valia a primeira, e o aluno que voltou para
+// a turma entrava como "Remanejado" - era um dos remanejados que "não eram puxados".
 function extrairAlunosImportMassa(linhas, colunas) {
     const alunos = [];
-    const vistos = new Set();
+    const porChave = new Map();
 
     for (let i = colunas.linhaHeader + 1; i < linhas.length; i++) {
         const linha = linhas[i] || [];
-        const nome = String(linha[colunas.idxNome] || '').trim();
+        const nome = String(linha[colunas.idxNome] || '').replace(/\s+/g, ' ').trim();
         if (!nome) continue;
 
         const chave = normalizarNomeImportMassa(nome);
-        if (!chave || vistos.has(chave)) continue;
-        vistos.add(chave);
+        if (!chave) continue;
 
         const situacaoBruta = colunas.idxSituacao !== -1 ? String(linha[colunas.idxSituacao] || '').trim() : '';
-        const chaveStatus = normalizarCabecalhoImportMassa(situacaoBruta);
-        const conhecido = !situacaoBruta || Object.prototype.hasOwnProperty.call(IMPORT_MASSA_STATUS, chaveStatus);
+        const lido = statusDaSituacaoImportMassa(situacaoBruta);
+        const aluno = { nome: nome, chave: chave, status: lido.status, situacaoBruta: situacaoBruta,
+                        statusReconhecido: lido.reconhecido, repetido: false };
 
-        alunos.push({
-            nome: nome,
-            chave: chave,
-            status: IMPORT_MASSA_STATUS[chaveStatus] || 'Ativo',
-            situacaoBruta: situacaoBruta,
-            statusReconhecido: conhecido
-        });
+        const anterior = porChave.get(chave);
+        if (!anterior) {
+            porChave.set(chave, aluno);
+            alunos.push(aluno);
+            continue;
+        }
+        anterior.repetido = true;
+        if (anterior.status === 'Ativo' && aluno.status !== 'Ativo') continue;
+        Object.assign(anterior, { status: aluno.status, situacaoBruta: aluno.situacaoBruta, statusReconhecido: aluno.statusReconhecido });
     }
     return alunos;
 }
@@ -2285,38 +2300,69 @@ function distribuirTurmasImportMassa(itens, grupos) {
 //
 // O status vem do próprio arquivo ("Situação do Aluno"): quem o arquivo diz que saiu fica
 // Transferido/Remanejado, em vez de ser reativado como 'Ativo' só por aparecer na lista.
+//
 // `opcoes.marcarAusentes: false` (importação de uma turma só, pela tela da turma) só acrescenta e
 // atualiza: quem não veio no arquivo fica como está.
+//
+// Devolve também:
+//   duplicados       nomes que JÁ estavam repetidos na turma (a limpeza de duplicados resolve);
+//   ativosEmOutra    alunos ativos nesta lista que estão ativos também em OUTRA turma - quase
+//                    sempre remanejamento cuja lista de origem não veio neste lote.
 function aplicarArquivoImportMassa(estudantes, turmaId, alunos, novoId, opcoes) {
     const marcarAusentes = !(opcoes && opcoes.marcarAusentes === false);
     const criados = [];
     const alterados = [];
     const sumiram = [];
+    const duplicados = [];
+    const ativosEmOutra = [];
 
     const chavesArquivo = new Set(alunos.map(a => a.chave));
     const daTurma = estudantes.filter(e => e.id_turma == turmaId);
+
+    // Um registro por nome. Se a turma já tem o nome repetido (de uma importação antiga), o
+    // registro que recebe a atualização é o ATIVO - atualizar o inativo deixava o ativo
+    // duplicado para sempre, e ainda criava a sensação de que a importação "não pegou".
     const porChave = new Map();
     daTurma.forEach(e => {
         const chave = normalizarNomeImportMassa(e.nome_completo);
-        if (!porChave.has(chave)) porChave.set(chave, e);
+        const atual = porChave.get(chave);
+        if (!atual) { porChave.set(chave, e); return; }
+        if (duplicados.indexOf(e.nome_completo) === -1) duplicados.push(e.nome_completo);
+        const atualAtivo = !atual.status || atual.status === 'Ativo';
+        const esteAtivo = !e.status || e.status === 'Ativo';
+        if (!atualAtivo && esteAtivo) porChave.set(chave, e);
+    });
+
+    // Ativos das OUTRAS turmas, pelo nome (para o aviso de remanejamento).
+    const ativosFora = new Map();
+    estudantes.forEach(e => {
+        if (e.id_turma == turmaId || (e.status && e.status !== 'Ativo')) return;
+        ativosFora.set(normalizarNomeImportMassa(e.nome_completo), e);
     });
 
     alunos.forEach(aluno => {
         const existente = porChave.get(aluno.chave);
         if (!existente) {
-            estudantes.push({ id: novoId(), id_turma: turmaId, nome_completo: aluno.nome, status: aluno.status });
+            const novo = { id: novoId(), id_turma: turmaId, nome_completo: aluno.nome, status: aluno.status };
+            estudantes.push(novo);
+            porChave.set(aluno.chave, novo);
             criados.push({ nome: aluno.nome, status: aluno.status });
         } else if ((existente.status || 'Ativo') !== aluno.status) {
             alterados.push({ nome: existente.nome_completo, de: existente.status || 'Ativo', para: aluno.status, chave: aluno.chave });
             existente.status = aluno.status;
         }
+        if (aluno.status === 'Ativo' && ativosFora.has(aluno.chave)) {
+            ativosEmOutra.push({ nome: aluno.nome, turmaId: ativosFora.get(aluno.chave).id_turma });
+        }
     });
 
-    // Ativo na turma que não veio no arquivo. Deve ser raro agora (o export lista quem saiu também),
-    // então é mais provável ser lista truncada: mesma trava de app.js:2317 - se o arquivo tem menos
-    // da metade dos ativos, não desativa ninguém, pra não esvaziar a turma por engano.
+    // Ativo na turma que não veio no arquivo. Deve ser raro (a lista traz quem saiu também), então
+    // é mais provável lista truncada - ou lista de OUTRA turma escolhida por engano. Duas travas:
+    // o arquivo precisa ter pelo menos metade do tamanho dos ativos, e pelo menos metade dos ativos
+    // precisa estar no arquivo. Sem a segunda, a lista da turma errada desativava a turma inteira.
     const ativos = daTurma.filter(e => !e.status || e.status === 'Ativo');
-    if (marcarAusentes && alunos.length * 2 >= ativos.length) {
+    const ativosNoArquivo = ativos.filter(e => chavesArquivo.has(normalizarNomeImportMassa(e.nome_completo))).length;
+    if (marcarAusentes && alunos.length * 2 >= ativos.length && ativosNoArquivo * 2 >= ativos.length) {
         ativos.forEach(e => {
             const chave = normalizarNomeImportMassa(e.nome_completo);
             if (!chavesArquivo.has(chave)) {
@@ -2326,7 +2372,7 @@ function aplicarArquivoImportMassa(estudantes, turmaId, alunos, novoId, opcoes) 
         });
     }
 
-    return { criados, alterados, sumiram };
+    return { criados, alterados, sumiram, duplicados, ativosEmOutra };
 }
 
 // Gerador de id que não repete dentro do lote (Date.now() + random, como no resto do app, colide
@@ -2509,6 +2555,22 @@ function recalcularPreviasImportMassa() {
         if (!grupo) return;
         item.previa = aplicarArquivoImportMassa(copia, grupo.turmaId, item.alunos, novoId);
     });
+    importMassaItens.forEach(item => { if (item.previa) filtrarAtivosEmOutraImportMassa(item.previa, copia); });
+}
+
+// O aviso "ativo em outra turma" só vale DEPOIS do lote inteiro: se a lista da turma de origem
+// veio junto, ela já tirou o aluno de lá e não há o que avisar.
+function filtrarAtivosEmOutraImportMassa(resultado, estudantes) {
+    resultado.ativosEmOutra = (resultado.ativosEmOutra || []).filter(a => estudantes.some(e =>
+        e.id_turma == a.turmaId && (!e.status || e.status === 'Ativo')
+        && normalizarNomeImportMassa(e.nome_completo) === normalizarNomeImportMassa(a.nome)));
+    const rotuloDe = (turmaId) => {
+        const g = (importMassaGrupos || []).find(x => x.ids.some(id => id == turmaId));
+        const t = (data.turmas || []).find(x => x.id == turmaId);
+        return g ? g.rotulo : (t ? t.nome : 'outra turma');
+    };
+    resultado.ativosEmOutra.forEach(a => { a.turma = rotuloDe(a.turmaId); });
+    return resultado;
 }
 
 function renderPreviaImportMassa() {
@@ -2556,11 +2618,24 @@ function renderPreviaImportMassa() {
             ? '<div style="color:#c53030; font-size:11px;">⚠️ outro arquivo aponta pra esta mesma turma</div>' : '';
 
         const p = item.previa;
-        const resumo = p
+        let resumo = p
             ? `<span style="color:#276749;">+${p.criados.length} novos</span> · ` +
               `<span style="color:#b7791f;">${p.alterados.length} mudam de status</span> · ` +
               `<span style="color:#c53030;">${p.sumiram.length} sumiram da lista</span>`
             : '<span style="color:#7a869a;">—</span>';
+        if (p && item.motivo === 'manual') {
+            const g = importMassaGrupos.find(x => x.chave === item.grupoChave);
+            const pont = g ? pontuarTurmasImportMassa(item.alunos, [g])[0] : null;
+            if (pont && pont.score < IMPORT_MASSA_LIMIAR_CASAMENTO) {
+                resumo += `<div style="color:#c53030; margin-top:4px;">⚠️ Só ${pont.comuns} nome(s) em comum com esta turma: se a lista não for dela, ${p.criados.length} aluno(s) vão entrar duplicados. Confira.</div>`;
+            }
+        }
+        if (p && p.duplicados.length) {
+            resumo += `<div style="color:#b7791f; margin-top:4px;">⚠️ Esta turma já tem ${p.duplicados.length} nome(s) repetido(s) — use Registros › Limpeza de Duplicados.</div>`;
+        }
+        if (p && p.ativosEmOutra.length) {
+            resumo += `<div style="color:#1f55ad; margin-top:4px;">ℹ️ ${p.ativosEmOutra.length} aluno(s) desta lista seguem ativos em outra turma (${escaparHtmlImportMassa([...new Set(p.ativosEmOutra.map(a => a.turma))].join(', '))}) — importe a lista dela também para concluir o remanejamento.</div>`;
+        }
 
         return `
             <tr>
@@ -2620,6 +2695,18 @@ async function processarImportacaoMassa() {
     const totalSaidas = aplicaveis.reduce((soma, i) => soma + (i.previa ? i.previa.alterados.filter(a => a.para !== 'Ativo').length + i.previa.sumiram.length : 0), 0);
     if (!confirm(`Atualizar ${aplicaveis.length} turma(s)?\n\n${totalSaidas} aluno(s) deixarão de estar ativos.`)) return;
 
+    // Clique duplo aplicaria o lote duas vezes.
+    if (_importandoMassa) return;
+    _importandoMassa = true;
+    const botao = document.getElementById('btnConfirmarMassa');
+    if (botao) botao.disabled = true;
+    try { await aplicarLoteImportMassa(aplicaveis); }
+    finally { _importandoMassa = false; }
+}
+
+let _importandoMassa = false;
+
+async function aplicarLoteImportMassa(aplicaveis) {
     if (!data.estudantes) data.estudantes = [];
     const novoId = criarGeradorIdImportMassa(data.estudantes);
     const destinos = rastrearDestinosImportMassa();
@@ -2631,6 +2718,7 @@ async function processarImportacaoMassa() {
         const resultado = aplicarArquivoImportMassa(data.estudantes, grupo.turmaId, item.alunos, novoId);
         relatorio.push({ turma: grupo.rotulo, arquivo: item.nomeArquivo, resultado: resultado });
     });
+    relatorio.forEach(r => filtrarAtivosEmOutraImportMassa(r.resultado, data.estudantes));
 
     await persistirDados();
     mostrarRelatorioImportMassa(relatorio, destinos);
@@ -2683,6 +2771,15 @@ function mostrarRelatorioImportMassa(relatorio, destinos) {
                 <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#3d4759;">
                     ${r.resultado.sumiram.map(s => linha(`${s.nome}${paraOnde(s.chave)}`)).join('')}
                 </ul>`);
+        }
+        if (r.resultado.ativosEmOutra && r.resultado.ativosEmOutra.length) {
+            partes.push(`<div style="color:#1f55ad; margin-top:6px;">ℹ️ ${r.resultado.ativosEmOutra.length} seguem ativos também em outra turma (importe a lista dela)</div>
+                <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#3d4759;">
+                    ${r.resultado.ativosEmOutra.map(a => linha(`${a.nome} <em>(${a.turma})</em>`)).join('')}
+                </ul>`);
+        }
+        if (r.resultado.duplicados && r.resultado.duplicados.length) {
+            partes.push(`<div style="color:#b7791f; margin-top:6px; font-size:12px;">⚠️ A turma já tinha ${r.resultado.duplicados.length} nome(s) repetido(s): use Registros › Limpeza de Duplicados.</div>`);
         }
         if (partes.length === 0) partes.push('<div style="color:#5f6b7f; margin-top:6px; font-size:12px;">Nada mudou.</div>');
 

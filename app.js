@@ -7242,9 +7242,17 @@ async function importarEstudantes(e) {
     if (!data.estudantes) data.estudantes = [];
     const novoId = criarGeradorIdImportMassa(data.estudantes);
     const r = aplicarArquivoImportMassa(data.estudantes, destino.turmaId, alunos, novoId, { marcarAusentes: false });
+    filtrarAtivosEmOutraImportMassa(r, data.estudantes);
+    importarEstudantesArquivo = null; // clique duplo não aplica duas vezes
 
     await persistirDados();
-    alert(`Importação concluída${destino.rotulo ? ' em ' + destino.rotulo : ''}!\n\n${r.criados.length} aluno(s) adicionado(s)\n${r.alterados.length} com a situação atualizada`);
+    let aviso = '';
+    if (r.ativosEmOutra.length) {
+        aviso += `\n\n${r.ativosEmOutra.length} aluno(s) seguem ativos também em outra turma ` +
+                 `(${[...new Set(r.ativosEmOutra.map(a => a.turma))].join(', ')}): importe a lista dela para concluir o remanejamento.`;
+    }
+    if (r.duplicados.length) aviso += `\n\nA turma já tinha ${r.duplicados.length} nome(s) repetido(s): use Registros › Limpeza de Duplicados.`;
+    alert(`Importação concluída${destino.rotulo ? ' em ' + destino.rotulo : ''}!\n\n${r.criados.length} aluno(s) adicionado(s)\n${r.alterados.length} com a situação atualizada${aviso}`);
     closeModal('modalImportarEstudantes');
     document.getElementById('arquivoEstudantes').value = '';
     document.getElementById('mapeamentoImportarEstudantes').innerHTML = '';
