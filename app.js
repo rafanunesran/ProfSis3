@@ -2659,10 +2659,6 @@ async function renderChamada() {
     const registroExistente = (data.registrosAula || []).find(r => r.id_turma == turmaAtual && r.data == dataSelecionada);
     const conteudoRegistro = registroExistente ? registroExistente.conteudo : '';
 
-    // Catálogo de Material Digital compartilhado (por disciplina+série da turma atual)
-    const turmaChamada = (data.turmas || []).find(t => t.id == turmaAtual);
-    const cardsCatalogoChamada = turmaChamada ? await obterCardsCatalogoCompartilhado(turmaChamada.disciplina, turmaChamada.ano_serie || turmaChamada.nome) : [];
-    const seletorCardsMaterialDigitalHtml = renderizarSeletorCardsMaterialDigitalDeLista(cardsCatalogoChamada, registroExistente ? registroExistente.cardsMaterialDigital : [], 'chamadaCardsMaterialDigital');
 
     const html = `
         <div style="margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;">
@@ -2757,7 +2753,6 @@ async function renderChamada() {
         <div style="margin-top: 15px; margin-bottom: 15px;">
             <label style="font-weight: bold; display: block; margin-bottom: 5px; color: #1c2536;">📝 Registro da Aula (Diário de Classe):</label>
             <textarea id="chamadaRegistroAula" rows="3" style="width: 100%; border: 1px solid #cdd5e1; padding: 10px; border-radius: 5px; font-family: inherit;" placeholder="Descreva o conteúdo ou as atividades da aula de hoje...">${conteudoRegistro}</textarea>
-            ${seletorCardsMaterialDigitalHtml}
         </div>
 
         <button class="btn btn-success" id="btnSalvarChamada" onclick="salvarChamadaManual()" style="width:100%; margin-top:15px; padding: 12px; font-size: 16px;">💾 Confirmar e Salvar Chamada</button>
@@ -2843,18 +2838,15 @@ async function salvarChamadaManual() {
     // Salva o Registro da Aula
     if (registroAulaConteudo.trim() !== '') {
         if (!data.registrosAula) data.registrosAula = [];
-        const cardsMaterialDigital = lerCardsMaterialDigitalSelecionados('chamadaCardsMaterialDigital');
         const idxRegistro = data.registrosAula.findIndex(r => r.id_turma == turmaAtual && r.data == dataChamada);
         if (idxRegistro !== -1) {
             data.registrosAula[idxRegistro].conteudo = registroAulaConteudo;
-            data.registrosAula[idxRegistro].cardsMaterialDigital = cardsMaterialDigital;
         } else {
             data.registrosAula.push({
                 id: novoId(),
                 id_turma: turmaAtual,
                 data: dataChamada,
-                conteudo: registroAulaConteudo,
-                cardsMaterialDigital: cardsMaterialDigital
+                conteudo: registroAulaConteudo
             });
         }
     } else {
@@ -3713,7 +3705,7 @@ async function gerarOcorrenciaAtraso(estudanteId) {
 // --- SELETOR DE CARDS DO "MATERIAL DIGITAL" (qual aula do currículo foi dada) ---
 // Catálogo compartilhado entre turmas/professores da mesma escola com a mesma disciplina+série
 // (coleção Firestore shared_material_digital - ver processarAtualizacaoMaterialDigitalExtensao acima).
-// Reaproveitado na aba Chamada, no modal "Novo Registro de Aula" e no Estagiário IA.
+// Usado no Estagiário IA (revisão do Plano de Aula).
 const LIMITE_CARDS_MATERIAL_DIGITAL = 2;
 
 // Cache em memória (válido pela sessão) pra não bater no Firestore a cada re-render da aba Chamada -
@@ -3914,14 +3906,12 @@ function renderTurmaRegistros() {
 async function abrirModalNovoRegistroAula(id = null) {
     registroAulaEmEdicaoId = id;
     const h3 = document.querySelector('#modalNovoRegistroAula h3');
-    let cardsAtuais = [];
 
     if (id) {
         const r = (data.registrosAula || []).find(x => x.id == id);
         if (r) {
             document.getElementById('regAulaData').value = r.data;
             document.getElementById('regAulaConteudo').value = r.conteudo;
-            cardsAtuais = r.cardsMaterialDigital || [];
             if (h3) h3.textContent = '✏️ Editar Registro de Aula';
         }
     } else {
@@ -3929,11 +3919,6 @@ async function abrirModalNovoRegistroAula(id = null) {
         document.getElementById('regAulaConteudo').value = '';
         if (h3) h3.textContent = '+ Novo Registro de Aula';
     }
-    const turmaRegistro = (data.turmas || []).find(t => t.id == turmaAtual);
-    const cardsCatalogoRegistro = turmaRegistro ? await obterCardsCatalogoCompartilhado(turmaRegistro.disciplina, turmaRegistro.ano_serie || turmaRegistro.nome) : [];
-    document.getElementById('regAulaCardsMaterialDigitalWrap').innerHTML =
-        renderizarSeletorCardsMaterialDigitalDeLista(cardsCatalogoRegistro, cardsAtuais, 'regAulaCardsMaterialDigital')
-        || '<p style="font-size:11px; color:#7a869a; margin-top:10px;">📚 Nenhuma aula do Material Digital cadastrada ainda para esta disciplina/série.</p>';
     showModal('modalNovoRegistroAula');
 }
 
@@ -3945,22 +3930,19 @@ async function salvarRegistroAula(e) {
     if (!dataReg || !conteudo) return alert('Preencha todos os campos.');
 
     if (!data.registrosAula) data.registrosAula = [];
-    const cardsMaterialDigital = lerCardsMaterialDigitalSelecionados('regAulaCardsMaterialDigital');
 
     if (registroAulaEmEdicaoId) {
         const idx = data.registrosAula.findIndex(r => r.id == registroAulaEmEdicaoId);
         if (idx !== -1) {
             data.registrosAula[idx].data = dataReg;
             data.registrosAula[idx].conteudo = conteudo;
-            data.registrosAula[idx].cardsMaterialDigital = cardsMaterialDigital;
         }
     } else {
         data.registrosAula.push({
             id: Date.now(),
             id_turma: turmaAtual,
             data: dataReg,
-            conteudo: conteudo,
-            cardsMaterialDigital: cardsMaterialDigital
+            conteudo: conteudo
         });
     }
     
