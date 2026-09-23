@@ -1081,10 +1081,6 @@ label {
     text-decoration: underline;
 }
 
-.status-indicator {
-    display: none;
-}
-
 .manual-sort-item:active {
     opacity: 0.5;
     background: var(--accent-soft) !important;

@@ -1433,13 +1433,9 @@ function renderLogin() {
     const adminContainer = document.getElementById('adminContainer');
     if (adminContainer) adminContainer.style.display = 'none';
 
-    const statusClass = USE_FIREBASE ? 'online' : 'offline';
-    const statusText = USE_FIREBASE ? '🔥 Online (Firebase)' : '💻 Local (Offline)';
-
     container.innerHTML = `
         <div class="auth-box">
             <h2>🔐 Login</h2>
-            <div class="status-indicator ${statusClass}">${statusText}</div>
             <form onsubmit="fazerLogin(event)">
                 <label>Email: <input type="email" id="loginEmail" required></label>
                 <label>Senha: 
