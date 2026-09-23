@@ -1143,31 +1143,31 @@ function renderImg(ferramentaId) {
 const ESTILO = `
     <style>
         .img-grade { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:12px; margin-top:14px; }
-        .img-cartao { text-align:left; border:1px solid #e3e8ef; background:#fff; border-radius:10px; padding:14px;
+        .img-cartao { text-align:left; border:1px solid var(--border, #e3e8ef); background:var(--surface, #fff); border-radius:10px; padding:14px;
                       cursor:pointer; transition:all .15s; font:inherit; color:inherit; }
-        .img-cartao:hover { border-color:#2563c9; box-shadow:0 2px 10px rgba(37,99,201,.12); transform:translateY(-1px); }
+        .img-cartao:hover { border-color:var(--accent, #2563c9); box-shadow:0 2px 10px rgba(37,99,201,.12); transform:translateY(-1px); }
         .img-cartao .img-emoji { font-size:26px; line-height:1; }
-        .img-cartao .img-nome { font-weight:bold; color:#1c2536; margin-top:8px; font-size:14px; }
-        .img-cartao .img-resumo { color:#5f6b7f; font-size:12px; margin-top:4px; line-height:1.45; }
-        .img-solta { border:2px dashed #cdd5e1; border-radius:10px; padding:24px 18px; text-align:center;
-                     background:#f6f8fb; transition:all .15s; cursor:pointer; }
-        .img-solta.img-sobre { border-color:#2563c9; background:#edf3fd; }
-        .img-opcao { border:1px solid #e3e8ef; background:#fff; border-radius:8px; padding:6px 11px; cursor:pointer;
-                     font-size:13px; color:#3d4759; transition:all .15s; }
-        .img-opcao:hover { border-color:#7a869a; }
-        .img-opcao.img-ativa { border-color:#2563c9; background:#edf3fd; color:#1f55ad; font-weight:bold; }
+        .img-cartao .img-nome { font-weight:bold; color:var(--text, #1c2536); margin-top:8px; font-size:14px; }
+        .img-cartao .img-resumo { color:var(--text-3, #5f6b7f); font-size:12px; margin-top:4px; line-height:1.45; }
+        .img-solta { border:2px dashed var(--border-strong, #cdd5e1); border-radius:10px; padding:24px 18px; text-align:center;
+                     background:var(--surface-2, #f6f8fb); transition:all .15s; cursor:pointer; }
+        .img-solta.img-sobre { border-color:var(--accent, #2563c9); background:var(--accent-soft, #edf3fd); }
+        .img-opcao { border:1px solid var(--border, #e3e8ef); background:var(--surface, #fff); border-radius:8px; padding:6px 11px; cursor:pointer;
+                     font-size:13px; color:var(--text-2, #3d4759); transition:all .15s; }
+        .img-opcao:hover { border-color:var(--text-4, #7a869a); }
+        .img-opcao.img-ativa { border-color:var(--accent, #2563c9); background:var(--accent-soft, #edf3fd); color:var(--accent-ink, #1f55ad); font-weight:bold; }
         .img-opcao[disabled] { opacity:.45; cursor:not-allowed; }
-        .img-rotulo { font-size:12px; font-weight:bold; color:#3d4759; text-transform:uppercase; letter-spacing:.03em; }
-        .img-ajuda { color:#5f6b7f; font-size:12px; margin-top:5px; line-height:1.45; }
+        .img-rotulo { font-size:12px; font-weight:bold; color:var(--text-2, #3d4759); text-transform:uppercase; letter-spacing:.03em; }
+        .img-ajuda { color:var(--text-3, #5f6b7f); font-size:12px; margin-top:5px; line-height:1.45; }
         .img-campos { display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:16px 22px; margin:16px 0; }
         .img-xadrez { background:repeating-conic-gradient(#e8ecf1 0% 25%, #fff 0% 50%) 50% / 18px 18px; }
         .img-previa { max-width:100%; max-height:70vh; display:block; margin:0 auto; border-radius:6px; }
         .img-lista { display:flex; flex-direction:column; gap:6px; margin:12px 0; }
-        .img-item { display:flex; gap:10px; align-items:center; background:#f6f8fb; border:1px solid #e3e8ef;
+        .img-item { display:flex; gap:10px; align-items:center; background:var(--surface-2, #f6f8fb); border:1px solid var(--border, #e3e8ef);
                     border-radius:8px; padding:6px 10px; font-size:13px; }
-        .img-item img { width:42px; height:42px; object-fit:contain; background:#fff; border:1px solid #e3e8ef; border-radius:4px; }
+        .img-item img { width:42px; height:42px; object-fit:contain; background:var(--surface, #fff); border:1px solid var(--border, #e3e8ef); border-radius:4px; }
         #tabFerramentasImg input[type=text], #tabFerramentasImg input[type=number], #tabFerramentasImg textarea {
-            width:100%; box-sizing:border-box; border:1px solid #cdd5e1; border-radius:6px; padding:7px 9px; font:inherit; font-size:14px; }
+            width:100%; box-sizing:border-box; border:1px solid var(--border-strong, #cdd5e1); border-radius:6px; padding:7px 9px; font:inherit; font-size:14px; }
         #tabFerramentasImg textarea { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:12px; }
     </style>`;
 
@@ -1191,7 +1191,7 @@ function imgRender() {
 function barraVoltar(f) {
     return `<div style="display:flex; gap:10px; align-items:center; margin:16px 0 0; flex-wrap:wrap;">
         <button class="btn btn-sm btn-secondary" onclick="imgVoltar()" ${imgOcupado ? 'disabled' : ''}>← Todas as ferramentas de imagem</button>
-        <span style="color:#5f6b7f; font-size:13px;">${f.emoji} ${esc(f.nome)}</span>
+        <span style="color:var(--text-3, #5f6b7f); font-size:13px;">${f.emoji} ${esc(f.nome)}</span>
     </div>`;
 }
 
@@ -1199,7 +1199,7 @@ function avisos() {
     return `
         ${imgErro ? `<div style="background:#fff5f5; border:1px solid #fc8181; color:#742a2a; border-radius:8px; padding:12px 14px; margin:12px 0; font-size:13px; line-height:1.6;">
             ⚠️ ${esc(imgErro)}</div>` : ''}
-        ${imgAviso ? `<div style="background:#edf3fd; border:1px solid #a9c6f3; color:#1b4488; border-radius:8px; padding:10px 14px; margin:12px 0; font-size:13px; line-height:1.6;">
+        ${imgAviso ? `<div style="background:var(--accent-soft, #edf3fd); border:1px solid #a9c6f3; color:#1b4488; border-radius:8px; padding:10px 14px; margin:12px 0; font-size:13px; line-height:1.6;">
             ${esc(imgAviso)}</div>` : ''}`;
 }
 
@@ -1208,7 +1208,7 @@ function htmlCatalogo() {
     return `
         <div class="card" style="margin:20px 0;">
             <h2>🖼️ Ferramentas de imagem ${seloPro()}</h2>
-            <p style="color:#3d4759; font-size:14px; line-height:1.6; margin-bottom:6px;">
+            <p style="color:var(--text-2, #3d4759); font-size:14px; line-height:1.6; margin-bottom:6px;">
                 Comprimir, redimensionar, cortar, converter, editar, aumentar a resolução, tirar o fundo,
                 pôr marca d'água, girar e esconder rostos — o que se faria num site de imagem gratuito.
             </p>
@@ -1243,7 +1243,7 @@ function htmlFerramenta(f) {
         ${barraVoltar(f)}
         <div class="card" style="margin:12px 0 20px;">
             <h2>${f.emoji} ${esc(f.nome)} ${seloPro()}</h2>
-            <p style="color:#3d4759; font-size:14px; line-height:1.6; margin-bottom:6px;">${esc(f.detalhe || f.resumo)}</p>
+            <p style="color:var(--text-2, #3d4759); font-size:14px; line-height:1.6; margin-bottom:6px;">${esc(f.detalhe || f.resumo)}</p>
             ${avisos()}
             ${f.semArquivo ? '' : htmlArquivos(f)}
             ${(f.semArquivo || imgArquivos.length) ? `
@@ -1274,10 +1274,10 @@ function htmlArquivos(f) {
         <div class="img-solta" onclick="document.getElementById('imgArquivo').click()"
              ondragover="imgArrastando(event, true)" ondragleave="imgArrastando(event, false)" ondrop="imgSoltar(event)">
             <div style="font-size:32px; line-height:1;">🖼️</div>
-            <div style="font-weight:bold; color:#1c2536; margin-top:8px;">
+            <div style="font-weight:bold; color:var(--text, #1c2536); margin-top:8px;">
                 ${f.varios ? (imgArquivos.length ? 'Acrescentar mais imagens' : 'Escolha as imagens ou arraste para cá')
                            : (imgArquivos.length ? 'Trocar a imagem' : 'Escolha a imagem ou arraste ela para cá')}</div>
-            <div style="color:#5f6b7f; font-size:12px; margin-top:4px;">
+            <div style="color:var(--text-3, #5f6b7f); font-size:12px; margin-top:4px;">
                 JPG, PNG, WebP, GIF, BMP, SVG — até ${IMG_MAX_MB} MB${f.varios ? ' cada, até ' + IMG_MAX_ARQUIVOS + ' de uma vez' : ''}
             </div>
         </div>
@@ -1291,8 +1291,8 @@ function htmlArquivos(f) {
                 <div class="img-item">
                     <img src="${esc(a.url)}" alt="">
                     <div style="flex:1; min-width:0;">
-                        <div style="font-weight:bold; color:#1c2536; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(a.nome)}</div>
-                        <div style="color:#5f6b7f; font-size:12px;">${a.largura} × ${a.altura} px · ${tam(a.tamanho)}</div>
+                        <div style="font-weight:bold; color:var(--text, #1c2536); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(a.nome)}</div>
+                        <div style="color:var(--text-3, #5f6b7f); font-size:12px;">${a.largura} × ${a.altura} px · ${tam(a.tamanho)}</div>
                     </div>
                     <button class="btn btn-sm btn-secondary" onclick="imgTirar(${i})" ${imgOcupado ? 'disabled' : ''} title="Tirar da lista">✕</button>
                 </div>`).join('')}
@@ -1322,7 +1322,7 @@ function htmlPrevia(f) {
     return `
         <div style="margin:14px 0 4px;">
             <div class="img-rotulo" style="margin-bottom:6px;">Prévia</div>
-            <div class="img-xadrez" style="border:1px solid #e3e8ef; border-radius:8px; padding:8px;">
+            <div class="img-xadrez" style="border:1px solid var(--border, #e3e8ef); border-radius:8px; padding:8px;">
                 <canvas id="imgPreviaCanvas" class="img-previa"></canvas>
             </div>
             ${dica ? `<div class="img-ajuda">${dica}</div>` : ''}
@@ -1353,10 +1353,10 @@ function htmlCampo(f, c, op) {
     } else if (c.tipo === 'textarea') {
         corpo = `<textarea rows="${c.linhas || 2}" ${dis} style="margin-top:6px;" oninput="imgDefinir('${c.id}', this.value, 'textarea')">${esc(v)}</textarea>`;
     } else if (c.tipo === 'cor') {
-        corpo = `<input type="color" value="${esc(v)}" ${dis} style="margin-top:6px; width:60px; height:34px; border:1px solid #cdd5e1; border-radius:6px;"
+        corpo = `<input type="color" value="${esc(v)}" ${dis} style="margin-top:6px; width:60px; height:34px; border:1px solid var(--border-strong, #cdd5e1); border-radius:6px;"
                         onchange="imgDefinir('${c.id}', this.value)">`;
     } else if (c.tipo === 'check') {
-        return `<div><label style="display:flex; gap:8px; align-items:flex-start; font-size:13px; color:#1c2536; cursor:pointer;">
+        return `<div><label style="display:flex; gap:8px; align-items:flex-start; font-size:13px; color:var(--text, #1c2536); cursor:pointer;">
                     <input type="checkbox" ${v ? 'checked' : ''} ${dis} style="margin-top:2px;" onchange="imgDefinir('${c.id}', this.checked, 'check')">
                     <span>${esc(c.rotulo)}</span></label>
                     ${c.ajuda ? `<div class="img-ajuda">${esc(c.ajuda)}</div>` : ''}</div>`;
@@ -1369,7 +1369,7 @@ function htmlCampo(f, c, op) {
         </div>`;
     }
     const mostraValor = c.tipo === 'faixa'
-        ? ` <span id="imgValor_${c.id}" style="font-weight:normal; text-transform:none; color:#1f55ad;">${esc(v)}${esc(c.sufixo || '')}</span>` : '';
+        ? ` <span id="imgValor_${c.id}" style="font-weight:normal; text-transform:none; color:var(--accent-ink, #1f55ad);">${esc(v)}${esc(c.sufixo || '')}</span>` : '';
     return `<div>
         <div class="img-rotulo">${esc(c.rotulo)}${mostraValor}</div>
         ${corpo}
@@ -1391,10 +1391,10 @@ function htmlProgresso() {
     if (!imgOcupado) return '';
     const pct = Math.max(2, Math.min(100, Math.round((imgProgresso.fracao || 0) * 100)));
     return `
-        <div style="background:#eef2f7; border-radius:999px; height:10px; overflow:hidden;">
-            <div style="width:100%; height:100%; background:#2563c9; transform:scaleX(${pct / 100}); transform-origin:left; transition:transform .2s;"></div>
+        <div style="background:var(--surface-3, #eef2f7); border-radius:999px; height:10px; overflow:hidden;">
+            <div style="width:100%; height:100%; background:var(--accent, #2563c9); transform:scaleX(${pct / 100}); transform-origin:left; transition:transform .2s;"></div>
         </div>
-        <div style="font-size:12px; color:#5f6b7f; margin-top:6px;">${esc(imgProgresso.texto || '')}</div>`;
+        <div style="font-size:12px; color:var(--text-3, #5f6b7f); margin-top:6px;">${esc(imgProgresso.texto || '')}</div>`;
 }
 
 function htmlResultado(f) {
@@ -1404,11 +1404,11 @@ function htmlResultado(f) {
     const economia = totalAntes ? Math.round((1 - totalDepois / totalAntes) * 100) : 0;
     const um = imgResultados.length === 1 ? imgResultados[0] : null;
     return `
-        <div style="margin-top:18px; border-top:1px solid #e3e8ef; padding-top:16px;">
+        <div style="margin-top:18px; border-top:1px solid var(--border, #e3e8ef); padding-top:16px;">
             <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
                 <div style="flex:1; min-width:200px;">
-                    <div style="font-weight:bold; color:#1c2536;">✅ Pronto${um ? ' — ' + um.largura + ' × ' + um.altura + ' px' : ': ' + imgResultados.length + ' imagens'}</div>
-                    <div style="color:#5f6b7f; font-size:12px; margin-top:2px;">
+                    <div style="font-weight:bold; color:var(--text, #1c2536);">✅ Pronto${um ? ' — ' + um.largura + ' × ' + um.altura + ' px' : ': ' + imgResultados.length + ' imagens'}</div>
+                    <div style="color:var(--text-3, #5f6b7f); font-size:12px; margin-top:2px;">
                         ${totalAntes ? tam(totalAntes) + ' → ' : ''}<strong>${tam(totalDepois)}</strong>
                         ${totalAntes && economia > 0 ? ' · ' + economia + '% menor' : ''}
                         ${imgProgresso.fim ? ' · ' + imgProgresso.fim + 's' : ''}
@@ -1420,14 +1420,14 @@ function htmlResultado(f) {
             ${imgResultados.some(r => r.semGanho) ? `<div class="img-ajuda" style="margin-bottom:10px;">
                 Algumas imagens já estavam bem comprimidas: comprimir de novo deixaria o arquivo maior,
                 então elas foram mantidas como estavam.</div>` : ''}
-            ${um ? `<div class="img-xadrez" style="border:1px solid #e3e8ef; border-radius:8px; padding:8px; line-height:0;">
+            ${um ? `<div class="img-xadrez" style="border:1px solid var(--border, #e3e8ef); border-radius:8px; padding:8px; line-height:0;">
                         <img src="${esc(um.url)}" alt="Resultado" id="imgResultadoImagem" class="img-previa"></div>`
                  : `<div class="img-lista">${imgResultados.map((r, i) => `
                         <div class="img-item">
                             <img src="${esc(r.url)}" alt="">
                             <div style="flex:1; min-width:0;">
-                                <div style="font-weight:bold; color:#1c2536; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(r.nome)}</div>
-                                <div style="color:#5f6b7f; font-size:12px;">${r.largura} × ${r.altura} px ·
+                                <div style="font-weight:bold; color:var(--text, #1c2536); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(r.nome)}</div>
+                                <div style="color:var(--text-3, #5f6b7f); font-size:12px;">${r.largura} × ${r.altura} px ·
                                     ${r.antes ? tam(r.antes) + ' → ' : ''}${tam(r.blob.size)}${r.semGanho ? ' (mantida)' : ''}</div>
                             </div>
                             <button class="btn btn-sm btn-secondary" onclick="imgBaixar(${i})">⬇️</button>

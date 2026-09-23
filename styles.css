@@ -2630,6 +2630,15 @@ html[data-estilo="ambar"] #appContainer .ferr-nav-btn.active {
     box-shadow: inset 0 -2px 0 var(--accent);
 }
 
+/* A aba ativa fica sobre fundo transparente, e nao sobre cor: o icone continua colorido
+   (sem isto, a regra de "nav button.active" o pintava da cor do texto e a forma clara
+   dele sumia no fundo claro — sobrava so' um ponto preto). */
+#navFerramentas .ferr-nav-btn.active {
+    --ic-a: inherit;
+    --ic-b: inherit;
+    --ic-brilho: inherit;
+}
+
 @media (prefers-reduced-motion: reduce) {
     html[data-estilo="ambar"] #appContainer .turma-nav-btn .label,
     html[data-estilo="ambar"] #appContainer .doc-nav-btn .label,
