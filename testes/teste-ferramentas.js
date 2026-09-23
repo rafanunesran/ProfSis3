@@ -694,6 +694,6 @@ const DESENHAR_PNG = ({ largura, altura }) => {
 
     console.log('\n' + (falhas.length
         ? '❌ ' + falhas.length + ' FALHA(S):\n  - ' + falhas.join('\n  - ')
-        : '✅ TUDO CERTO: a tela Ferramentas e as tres abas se comportam.'));
+        : '✅ TUDO CERTO: a tela Ferramentas e as abas se comportam.'));
     process.exit(falhas.length ? 1 : 0);
 })().catch(e => { console.error('ERRO NO TESTE:', e); process.exit(1); });

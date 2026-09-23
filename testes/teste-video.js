@@ -113,7 +113,9 @@ const GRAVAR_VIDEO = async ({ segundos, largura, altura, comSom }) => {
         status: 200, contentType: 'video/webm', body: bytesDoVideo,
         headers: { 'Access-Control-Allow-Origin': '*' }
     }));
-    await ctx.route('https://bloqueado.teste/**', r => r.fulfill({ status: 200, contentType: 'video/mp4', body: 'x' }));
+    // Servidor sem CORS: para o fetch da pagina isso e' um TypeError de rede. O route do
+    // Playwright nao aplica CORS a resposta simulada, entao a recusa e' simulada assim.
+    await ctx.route('https://bloqueado.teste/**', r => r.abort('failed'));
     const pedidosAoServidor = [];
     await ctx.route('https://servidor.teste/**', async r => {
         const req = r.request();
