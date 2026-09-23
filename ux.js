@@ -68,7 +68,18 @@
         };
         const ordenados = botoes.slice().sort((x, y) => ordem(x) - ordem(y));
 
-        $$(':scope > .nav-grupo, :scope > .nav-mais, :scope > .nav-rodape', nav).forEach(e => e.remove());
+        $$(':scope > .nav-grupo, :scope > .nav-mais, :scope > .nav-rodape, :scope > .nav-marca', nav).forEach(e => e.remove());
+
+        // Topo do menu lateral: marca e o botão de recolher/abrir
+        const marca = document.createElement('div');
+        marca.className = 'nav-marca';
+        marca.innerHTML = '<span class="nav-marca-selo" aria-hidden="true">S</span><span class="nav-marca-nome">SisProf</span>' +
+            '<button type="button" class="nav-recolher" aria-label="Recolher o menu" title="Recolher o menu">' +
+            '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+            '<rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="M9.5 4v16"/><path d="m15.5 10-2 2 2 2"/></svg></button>';
+        marca.querySelector('.nav-recolher').addEventListener('click', alternarRecolhido);
+        nav.appendChild(marca);
+
         let grupoAtual = null;
         ordenados.forEach((b, i) => {
             const t = telaDoBotao(b);
@@ -101,13 +112,12 @@
         const rod = document.createElement('div');
         rod.className = 'nav-rodape';
         rod.innerHTML =
-            '<button type="button" class="nav-acao" data-acao="buscar" title="Buscar (Ctrl+K)">' + ico('busca') + '<span>Buscar</span><kbd>Ctrl K</kbd></button>' +
-            '<button type="button" class="nav-acao" data-acao="recolher" title="Recolher o menu">' + ico('historico') + '<span>Recolher menu</span></button>';
+            '<button type="button" class="nav-acao" data-acao="buscar" title="Buscar (Ctrl+K)">' + ico('busca') + '<span>Buscar</span><kbd>Ctrl K</kbd></button>';
         rod.querySelector('[data-acao="buscar"]').addEventListener('click', abrirPaleta);
-        rod.querySelector('[data-acao="recolher"]').addEventListener('click', alternarRecolhido);
         nav.appendChild(rod);
 
         marcarMais();
+        atualizarBotaoRecolher();
         organizando = false;
     }
 
@@ -280,6 +290,23 @@
         } else if (!nome) nome = NOMES_TELA[tela.id] || '';
         alvo.textContent = nome;
         marcarMais();
+        marcarAbaDaTurma();
+    }
+
+    // O showScreen desmarca todos os botões de <nav>, inclusive a aba da turma que acabou de
+    // ser marcada. Quando nenhuma aba está marcada, marca a que está visível (só aparência).
+    function marcarAbaDaTurma() {
+        const barra = $('#turmaDetalhe nav');
+        if (!barra) return;
+        const abas = $$('.turma-nav-btn', barra);
+        if (!abas.length || abas.some(b => b.classList.contains('active'))) return;
+        const visivel = abas.find(b => {
+            const m = (b.getAttribute('onclick') || '').match(/showTurmaTab\('(\w+)'/);
+            if (!m) return false;
+            const el = document.getElementById('tab' + m[1].charAt(0).toUpperCase() + m[1].slice(1));
+            return el && el.style.display !== 'none';
+        });
+        if (visivel) visivel.classList.add('active');
     }
 
     function montarTopo() {
@@ -308,7 +335,50 @@
     function alternarRecolhido() {
         const r = document.documentElement.classList.toggle('nav-recolhido');
         guardar('sisprof_nav_recolhido', r ? '1' : '0');
+        esconderDica();
+        atualizarBotaoRecolher();
     }
+
+    function atualizarBotaoRecolher() {
+        const b = $('#appContainer .nav-recolher');
+        if (!b) return;
+        const r = document.documentElement.classList.contains('nav-recolhido');
+        const txt = r ? 'Abrir o menu' : 'Recolher o menu';
+        b.setAttribute('aria-label', txt);
+        b.title = txt;
+        b.setAttribute('aria-expanded', r ? 'false' : 'true');
+    }
+
+    // Menu recolhido: o nome aparece ao lado do ícone ao passar o mouse (ou ao focar pelo teclado)
+    let dica = null;
+    function mostrarDica(b) {
+        if (!document.documentElement.classList.contains('nav-recolhido')) return;
+        if (!window.matchMedia('(min-width: 1024px)').matches) return;
+        const texto = b.classList.contains('nav-acao') ? (b.querySelector('span') || b).textContent.trim() : rotuloDoBotao(b);
+        if (!texto) return;
+        if (!dica) {
+            dica = document.createElement('div');
+            dica.className = 'ux-dica';
+            dica.setAttribute('role', 'tooltip');
+            document.body.appendChild(dica);
+        }
+        dica.textContent = texto;
+        const r = b.getBoundingClientRect();
+        dica.style.top = (r.top + r.height / 2) + 'px';
+        dica.style.left = (r.right + 12) + 'px';
+        dica.classList.add('visivel');
+    }
+    function esconderDica() { if (dica) dica.classList.remove('visivel'); }
+
+    document.addEventListener('mouseover', (e) => {
+        const b = e.target.closest && e.target.closest('#appContainer .app-nav > button, #appContainer .app-nav .nav-acao');
+        if (b) mostrarDica(b); else esconderDica();
+    });
+    document.addEventListener('focusin', (e) => {
+        const b = e.target.closest && e.target.closest('#appContainer .app-nav > button, #appContainer .app-nav .nav-acao');
+        if (b && b.matches(':focus-visible')) mostrarDica(b); else esconderDica();
+    });
+    window.addEventListener('scroll', esconderDica, true);
     if (ler('sisprof_nav_recolhido') === '1') document.documentElement.classList.add('nav-recolhido');
 
     // ------------------------------------------------ observadores
