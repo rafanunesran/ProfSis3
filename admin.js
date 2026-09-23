@@ -1399,7 +1399,7 @@ async function migrarDadosAEECompartilhado() {
 // por uma tela de gerenciamento: nomeia, mascara e permite excluir/adicionar chaves isoladamente.
 // Guarda em system/config_ia.chaves (array de {id, nome, chave}) - e mantém config_ia.apiKey (a
 // mesma lista, achatada em string separada por vírgula) sempre sincronizado, porque gestor.js
-// (chamarIAExtracaoNotas) e a extensão do Chrome ainda leem só esse campo legado.
+// e a extensão do Chrome ainda leem só esse campo legado.
 
 function rotularProvedorChave(chave) {
     if (chave.startsWith('sk-or-')) return 'OpenRouter';

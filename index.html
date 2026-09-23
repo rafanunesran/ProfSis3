@@ -16,11 +16,11 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="SisProf">
     <link rel="apple-touch-icon" href="resources/app-icon.svg">
-    <script src="shared.js?v=3.19"></script>
+    <script src="shared.js?v=3.20"></script>
     <!-- Galeria de ícones: troca os emojis do menu, abas, títulos e botões pelo desenho -->
     <script src="icones.js?v=1.1" defer></script>
     <!-- Experiência: menu agrupado, "Mais" no celular, busca rápida (Ctrl+K), tela atual no topo -->
-    <script src="ux.js?v=1.2" defer></script>
+    <script src="ux.js?v=1.3" defer></script>
     <!-- Armazenamento local (IndexedDB): onde o dado pessoal do estudante passa a viver -->
     <script src="localdb.js?v=1.0"></script>
     <!-- Backup cifrado (WebCrypto): o Firestore so guarda bloco ilegivel -->
@@ -29,7 +29,7 @@
     <script src="espacos.js?v=1.3"></script>
 
     <!-- O ambiente compartilhado da escola: a lista que a gestão publica para todos -->
-    <script src="listaescola.js?v=1.0" defer></script>
+    <script src="listaescola.js?v=1.1" defer></script>
     <!-- Limite de telas por conta (Fase 7) -->
     <script src="terminais.js?v=1.0" defer></script>
     <!-- Google Identity Services (OAuth para o Google Agenda) -->
@@ -44,10 +44,10 @@
     <!-- Assinatura: planos, cobranca mensal no cartao (Mercado Pago) e o portao premium -->
     <script src="assinatura.js?v=1.5.2" defer></script>
     <!-- App Scripts -->
-    <script src="core.js?v=3.40" defer></script>
+    <script src="core.js?v=3.41" defer></script>
     <script src="admin.js?v=3.43.0" defer></script>
-    <script src="gestor.js?v=3.30.1" defer></script>
-    <script src="app.js?v=3.66" defer></script>
+    <script src="gestor.js?v=3.33" defer></script>
+    <script src="app.js?v=3.69" defer></script>
     <!-- Transicao para a versao local + aviso da data de corte -->
     <script src="migracao.js?v=1.4.1" defer></script>
 
@@ -299,7 +299,7 @@
     
     <div id="modalNovoEstudante" class="modal"><div class="modal-content"><div class="modal-header"><h2>Novo Estudante</h2><button class="close-btn" onclick="closeModal('modalNovoEstudante')">×</button></div><form onsubmit="salvarEstudante(event)"><label>Nome Completo:<input type="text" id="estudanteNome" required></label><label>Status:<select id="estudanteStatus"><option value="Ativo">Ativo</option><option value="Transferido">Transferido</option><option value="Baixa-Transferencia">Baixa-Transferencia</option><option value="Remanejado">Remanejado</option><option value="NCOM">NCOM</option></select></label><button type="submit" class="btn btn-primary">Salvar</button></form></div></div>
     
-    <div id="modalImportarEstudantes" class="modal"><div class="modal-content"><div class="modal-header"><h2>Importar CSV</h2><button class="close-btn" onclick="closeModal('modalImportarEstudantes')">×</button></div><form onsubmit="importarEstudantes(event)"><label>Arquivo CSV:<input type="file" id="arquivoEstudantes" accept=".csv" required></label><p style="font-size:12px; color:#5f6b7f;">Formato: Nome Completo;Status</p><button type="submit" class="btn btn-success">Importar</button></form></div></div>
+    <div id="modalImportarEstudantes" class="modal"><div class="modal-content" style="max-width:640px;"><div class="modal-header"><h2>Importar lista de alunos</h2><button class="close-btn" onclick="closeModal('modalImportarEstudantes')">×</button></div><form onsubmit="importarEstudantes(event)"><label>Arquivo:<input type="file" id="arquivoEstudantes" accept=".csv,.txt,.xlsx,.xls,.htm,.html" required onchange="lerArquivoImportarEstudantes()"></label><p style="font-size:12px; color:#5f6b7f;">CSV separado por ponto e vírgula, vírgula ou tabulação (também .xlsx e .htm). As colunas de nome e situação são reconhecidas pelo cabeçalho; se não forem, escolha abaixo. Só nome e situação são lidos.</p><div id="mapeamentoImportarEstudantes"></div><button type="submit" id="btnImportarEstudantes" class="btn btn-success" disabled>Importar</button></form></div></div>
 
     <div id="modalImportarDeTurma" class="modal"><div class="modal-content"><div class="modal-header"><h2>👥 Importar aluno de outra turma</h2><button class="close-btn" onclick="closeModal('modalImportarDeTurma')">×</button></div><p style="font-size:12px; color:#5f6b7f; margin-bottom:8px;">Escolha a turma e marque os alunos. Eles serão exibidos nesta eletiva sem duplicar o cadastro original.</p><label>Turma de origem:<select id="importTurmaOrigemSelect" onchange="renderAlunosImportarDeTurma()"></select></label><div id="importAlunosDeTurmaLista" style="max-height:45vh; overflow-y:auto; margin-top:10px; border:1px solid #eef2f7; border-radius:6px; padding:6px;"></div></div></div>
 

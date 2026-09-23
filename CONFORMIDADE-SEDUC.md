@@ -395,6 +395,44 @@ por isso.
 
 Coberto por `testes/teste-lista-escola.js`.
 
+### Setembro/2026 — o caminho de volta: ocorrências e faltas do professor para a escola
+
+A seção anterior devolveu ao professor o que a gestão publica. O caminho contrário tinha
+parado do mesmo jeito, e em silêncio:
+
+- **Ocorrências.** O professor registrava e a ocorrência era copiada para
+  `app_data_school_<escola>_gestor`. Essa cópia levava relato e ids de estudante em
+  claro, então passou a rodar só antes do corte — depois dele, **o gestor não via mais
+  nenhuma ocorrência** e a devolutiva não tinha o que responder.
+- **Faltas.** A Busca Ativa do gestor lia `presencas` direto do documento de cada
+  professor. Com `presencas` na camada pessoal cifrada com a chave de cada conta, ela
+  passou a achar **zero falta na escola inteira**. A chamada entre colegas ainda usava
+  `shared_attendance`, que guardava a frequência por estudante **em claro** — justamente
+  o que a transição do modo local apagava.
+
+**O conserto segue o mesmo desenho da lista: a escola é um ambiente compartilhado.** Cada
+professor publica o SEU recorte em `app_data/lista_school_<escola>_prof_<id>`, cifrado
+com a chave da escola (`listaescola.js`, `publicarContribuicaoProfessor`). É a mesma
+família de documento que a Regra do Firestore já só entrega a quem declara a mesma escola
+no próprio `access/<uid>` — **nenhuma Regra nova e nenhuma afrouxada**.
+
+- **O que sobe é curto e escrito à mão** (`recorteDoProfessor`): as ocorrências das
+  turmas vinculadas à gestão, com a turma trocada pela da gestão; as faltas por dia, como
+  ids de estudante da lista da escola, sem nome; e os dias em que houve chamada em cada
+  turma, que é o que a Busca Ativa usa para a porcentagem. Turma sem vínculo com a gestão
+  não sai, e falta com mais de 400 dias também não.
+- **A gestão recebe** as ocorrências no painel (`trazerOcorrenciasDosProfessores`),
+  juntando por id: o que é do professor (relato, envolvidos, data) vem do recorte; o que é
+  da gestão (status, devolutiva) nunca é sobrescrito por ele. A devolutiva volta ao
+  professor pela lista que a gestão já publica.
+- **Os colegas e a Busca Ativa** leem as faltas de todos os recortes da escola.
+- **`shared_attendance` deixou de ser gravado.** Continua lido, só para os dias
+  registrados antes desta mudança; a Regra dele não mudou.
+- **A trava de sempre:** um aparelho que abriu sem a camada pessoal não publica recorte
+  vazio por cima de um cheio.
+
+Coberto por `testes/teste-ocorrencias-faltas.js`.
+
 ### Setembro/2026 — as Ferramentas PDF: fechar uma porta que estava aberta
 
 Havia um vazamento que nenhuma Regra do Firestore alcançava, porque acontecia **fora** do

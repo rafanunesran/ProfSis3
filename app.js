@@ -822,7 +822,6 @@ function showScreen(screenId, evt) {
     if (screenId === 'aeeVisaoGeral') renderAeeVisaoGeral();
     if (screenId === 'ocorrenciasGestor') renderOcorrenciasGestor();
     if (screenId === 'tutoriasGestor') renderTutoriasGestor();
-    if (screenId === 'notasOficiaisGestor') renderNotasOficiaisGestor();
     if (screenId === 'horariosGestor') renderHorariosGestor();
     if (screenId === 'escolaGestor') renderEscolaGestor();
     if (screenId === 'biblioteca') renderBiblioteca();
@@ -1300,6 +1299,14 @@ async function renderDashboard() {
     
     // 1. VISÃO DO GESTOR
     if (currentViewMode === 'gestor') {
+        // As ocorrências registradas pelos professores chegam pelo recorte de cada um
+        // (listaescola.js); se chegou alguma nova, o painel é redesenhado com a contagem certa.
+        if (typeof atualizarOcorrenciasDosProfessores === 'function') {
+            atualizarOcorrenciasDosProfessores(() => {
+                const dash = document.getElementById('dashboard');
+                if (dash && dash.classList.contains('active')) renderDashboard();
+            });
+        }
         // Filtra ocorrências pendentes que NÃO sejam do tipo 'rapida'
         const ocorrencias = (data.ocorrencias || []).filter(o => (o.status || 'pendente') === 'pendente' && o.tipo !== 'rapida');
         const registros = (data.registrosAdministrativos || []);
@@ -1706,7 +1713,7 @@ function renderTurmas() {
     
     const btnMassa = (currentViewMode === 'gestor') 
         ? `<div style="margin-bottom: 15px; padding: 10px; background: #edf3fd; border: 1px solid #d3e2fa; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-             <span>📂 Atualização de Estudantes em Massa (Vários CSVs)</span>
+             <span>📂 Atualização de Estudantes em Massa (várias listas CSV)</span>
              <button class="btn btn-primary" onclick="abrirModalImportacaoMassa()">Importar Arquivos</button>
            </div>` 
         : '';
@@ -2403,8 +2410,14 @@ async function renderEstudantes() {
         ${isGestor ? `
             <div style="display:flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
                 <button class="btn btn-primary btn-sm" onclick="abrirModalNovoEstudante()">+ Novo Estudante</button>
-                <button class="btn btn-secondary btn-sm" onclick="showModal('modalImportarEstudantes')">📂 Importar CSV</button>
+                <button class="btn btn-secondary btn-sm" onclick="showModal('modalImportarEstudantes')">📂 Importar lista (CSV)</button>
                 ${estudantes.some(e => e.status && e.status !== 'Ativo') ? `<button class="btn btn-success btn-sm" onclick="reativarTodosTransferidosTurma()">🔄 Reativar todos os Transferidos desta turma</button>` : ''}
+            </div>
+        ` : ''}
+        ${(!isGestor && !ehEletiva && turmaEletivaObj && !turmaEletivaObj.masterId) ? `
+            <div style="display:flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
+                <button class="btn btn-primary btn-sm" onclick="abrirModalNovoEstudante()">+ Novo Estudante</button>
+                <button class="btn btn-secondary btn-sm" onclick="showModal('modalImportarEstudantes')">📂 Importar lista (CSV)</button>
             </div>
         ` : ''}
         ${(ehEletiva && !isGestor) ? `
@@ -2785,8 +2798,6 @@ async function salvarChamadaManual() {
     
     if (!data.presencas) data.presencas = [];
 
-    const mapSync = {}; // Mapa para sincronização na nuvem { id: isAbsent }
-
     // Faltosos vigentes (gestão): um faltoso PRESENTE precisa gravar um registro 'presente' explícito,
     // senão a regra de falta padrão (quem não tem registro no dia conta como ausente) volta a
     // considerá-lo ausente nos relatórios.
@@ -2806,8 +2817,6 @@ async function salvarChamadaManual() {
     checks.forEach(chk => {
         const estId = parseInt(chk.getAttribute('data-id'));
         const presente = chk.checked;
-
-        mapSync[estId] = !presente; // Se não presente, é falta (true)
 
         // Remove anterior se houver
         data.presencas = data.presencas.filter(p => !(p.id_estudante == estId && p.data == dataChamada));
@@ -2855,11 +2864,22 @@ async function salvarChamadaManual() {
         }
     }
 
-    // Sincroniza com o banco compartilhado (se online)
-    await sincronizarFaltasCompartilhadas(dataChamada, mapSync);
-
     await persistirDados();
-    alert('Chamada salva e sincronizada com a gestão!');
+
+    // As faltas chegam aos colegas e à Busca Ativa da gestão pelo recorte cifrado do
+    // professor no ambiente da escola (listaescola.js). O antigo `shared_attendance`
+    // guardava a frequência em claro e deixou de ser gravado; ainda é LIDO, para os
+    // dias registrados antes desta mudança.
+    let compartilhou = null;
+    if (typeof publicarContribuicaoProfessor === 'function') {
+        try { compartilhou = await publicarContribuicaoProfessor(data); }
+        catch (e) { compartilhou = { estado: 'erro' }; }
+    }
+    const chegou = !compartilhou || ['ok', 'igual', 'sem-vinculo', 'nao-e-professor', 'sem-escola'].indexOf(compartilhou.estado) !== -1;
+    alert(chegou
+        ? 'Chamada salva e compartilhada com a escola!'
+        : 'Chamada salva. O compartilhamento com a escola não foi feito agora (' + compartilhou.estado + ') e será tentado de novo no próximo salvamento.');
+    if (typeof limparCacheContribuicoes === 'function') limparCacheContribuicoes();
     renderChamada(); // Atualiza para refletir contagens
 }
 
@@ -3447,11 +3467,19 @@ async function registrarOcorrenciaNoBanco({ ids, texto, tipo, idToUpdate = null 
     }
 
     await persistirDados();
-    
-    // Sincroniza com a Gestão (se for professor vinculado).
-    // [ADEQUAÇÃO SEDUC] Este espelho leva relato e ids de estudante para um documento
-    // compartilhado da escola. Depois do corte ele para: a visão nominal do gestor
-    // volta pela camada cifrada do espaço, e não em texto claro no Firestore.
+
+    // Chega à gestão pelo recorte cifrado do professor no ambiente da escola
+    // (listaescola.js). Publica agora, sem esperar o intervalo de persistirDados:
+    // quem registra uma ocorrência espera que a gestão já a veja.
+    if (currentViewMode !== 'gestor' && typeof publicarContribuicaoProfessor === 'function') {
+        publicarContribuicaoProfessor(data).then(r => {
+            if (['ok', 'igual', 'sem-vinculo', 'nao-e-professor', 'sem-escola'].indexOf(r.estado) === -1) {
+                console.warn('[Ocorrência] Não chegou à gestão agora (' + r.estado + '); vai no próximo salvamento.');
+            }
+        }).catch(e => console.warn('[Ocorrência] Publicação para a gestão falhou:', e));
+    }
+
+    // Conta isenta / antes do corte: o espelho antigo, em claro, no documento da gestão.
     if (currentViewMode !== 'gestor' && currentUser.schoolId
         && (typeof podeEnviarDadoPessoal !== 'function' || podeEnviarDadoPessoal())) {
         try {
@@ -4480,7 +4508,7 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
                     <option value="compensacao" ${t?.tipo === 'compensacao' ? 'selected' : ''}>Compensação de Faltas</option>
                     <option value="caderno_auto" ${t?.tipo === 'caderno_auto' ? 'selected' : ''}>Caderno (Automático)</option>
                     <option value="participacao" ${t?.tipo === 'participacao' ? 'selected' : ''}>Participação (Automático)</option>
-                    <option value="avaliacao_gestor" ${t?.tipo === 'avaliacao_gestor' ? 'selected' : ''}>Avaliação do Gestor (Automático)</option>
+                    ${t?.tipo === 'avaliacao_gestor' ? `<option value="avaliacao_gestor" selected>Avaliação do Gestor (Automático)</option>` : ''}
                 </select>
             </label>
 
@@ -7105,75 +7133,132 @@ function toggleAgendamentoRecorrenciaUI() {
     // Placeholder
 }
 
-function importarEstudantes(e) {
-    e.preventDefault();
-    const fileInput = document.getElementById('arquivoEstudantes');
-    const file = fileInput.files[0];
-    
-    if (!file) {
-        alert('Selecione um arquivo CSV.');
-        return;
+// Importação de UMA turma, pela tela da turma. Usa o mesmo leitor e o mesmo reconhecimento de
+// colunas da importação em massa (gestor.js): CSV com qualquer separador, .xlsx ou .htm, e só as
+// colunas de nome e situação são lidas. Diferente da importação em massa, quem não veio no arquivo
+// NÃO é desativado: aqui o arquivo acrescenta e atualiza, não substitui a turma.
+let importarEstudantesArquivo = null; // { linhas, colunas, rotulos }
+
+async function lerArquivoImportarEstudantes() {
+    const input = document.getElementById('arquivoEstudantes');
+    const area = document.getElementById('mapeamentoImportarEstudantes');
+    const btn = document.getElementById('btnImportarEstudantes');
+    importarEstudantesArquivo = null;
+    btn.disabled = true;
+    area.innerHTML = '';
+    const file = input.files && input.files[0];
+    if (!file) return;
+
+    try {
+        const linhas = await lerMatrizArquivoImportMassa(file);
+        if (!linhas.length) throw new Error('O arquivo está vazio.');
+        const colunas = detectarColunasImportMassa(linhas) || colunasManuaisImportMassa(linhas);
+        importarEstudantesArquivo = { linhas, colunas, rotulos: rotulosColunasImportMassa(linhas, colunas.linhaHeader) };
+        renderMapeamentoImportarEstudantes();
+    } catch (e) {
+        area.innerHTML = `<p style="color:#c53030; font-size:12px;">❌ ${e.message}</p>`;
+    }
+}
+
+function alterarColunaImportarEstudantes(campo, valor) {
+    if (!importarEstudantesArquivo) return;
+    const n = parseInt(valor, 10);
+    if (campo === 'nome') importarEstudantesArquivo.colunas.idxNome = isNaN(n) ? -1 : n;
+    if (campo === 'situacao') importarEstudantesArquivo.colunas.idxSituacao = isNaN(n) ? -1 : n;
+    renderMapeamentoImportarEstudantes();
+}
+
+function renderMapeamentoImportarEstudantes() {
+    const area = document.getElementById('mapeamentoImportarEstudantes');
+    const btn = document.getElementById('btnImportarEstudantes');
+    const arq = importarEstudantesArquivo;
+    if (!arq) return;
+
+    const opcoes = (atual, vazio) => [`<option value="">${vazio}</option>`].concat(
+        arq.rotulos.map((r, i) => `<option value="${i}" ${i === atual ? 'selected' : ''}>${escaparHtmlImportMassa(r)}</option>`)
+    ).join('');
+
+    const alunos = arq.colunas.idxNome === -1 ? [] : extrairAlunosImportMassa(arq.linhas, arq.colunas);
+    let resumo;
+    if (arq.colunas.idxNome === -1) {
+        resumo = '<span style="color:#c53030;">Não reconheci a coluna do nome — escolha qual é.</span>';
+    } else if (!alunos.length) {
+        resumo = '<span style="color:#c53030;">Nenhum nome nessa coluna.</span>';
+    } else {
+        const exemplos = alunos.slice(0, 3).map(a => escaparHtmlImportMassa(a.nome)).join(', ');
+        resumo = `<span style="color:#276749;">${alunos.length} aluno(s) encontrados</span> — ${exemplos}${alunos.length > 3 ? '…' : ''}`;
+        const grupos = agruparTurmasFisicasImportMassa();
+        const grupoAtual = grupos.find(g => g.ids.some(id => id == turmaAtual));
+        const cas = casarTurmaImportMassa(alunos, grupos);
+        if (cas.grupo && grupoAtual && cas.grupo.chave !== grupoAtual.chave) {
+            resumo += `<br><span style="color:#b7791f;">⚠️ Pelos nomes, esta lista parece ser da turma <strong>${escaparHtmlImportMassa(cas.grupo.rotulo)}</strong>. Ao importar, você escolhe onde.</span>`;
+        }
     }
 
-    const reader = new FileReader();
-    reader.onload = function(event) {
-        const text = event.target.result;
-        const lines = text.split('\n');
-        
-        let headerIndex = -1;
-        let idxNome = -1;
-        let idxStatus = -1;
-        
-        // 1. Encontrar o cabeçalho dinamicamente
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            if (line.includes('Nome do Aluno')) {
-                const cols = line.split(';').map(c => c.trim());
-                idxNome = cols.indexOf('Nome do Aluno');
-                idxStatus = cols.indexOf('Situação do Aluno');
-                
-                if (idxNome !== -1) {
-                    headerIndex = i;
-                    break;
-                }
-            }
-        }
+    area.innerHTML = `
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; font-size:12px;">
+            <label style="flex:1; min-width:180px;">Coluna do nome
+                <select onchange="alterarColunaImportarEstudantes('nome', this.value)">${opcoes(arq.colunas.idxNome, '— escolher —')}</select>
+            </label>
+            <label style="flex:1; min-width:180px;">Coluna da situação
+                <select onchange="alterarColunaImportarEstudantes('situacao', this.value)">${opcoes(arq.colunas.idxSituacao, '(nenhuma — todos Ativos)')}</select>
+            </label>
+        </div>
+        <p style="font-size:12px; margin:0 0 10px;">${resumo}</p>`;
+    btn.disabled = alunos.length === 0;
+}
 
-        if (headerIndex === -1) {
-            alert('Erro: Cabeçalho "Nome do Aluno" não encontrado no arquivo CSV.');
-            return;
-        }
+// Devolve { turmaId, rotulo } onde importar, ou null se a pessoa desistiu.
+function escolherTurmaDestinoImportacao(alunos) {
+    const grupos = agruparTurmasFisicasImportMassa();
+    const grupoAtual = grupos.find(g => g.ids.some(id => id == turmaAtual));
+    const casamento = casarTurmaImportMassa(alunos, grupos);
+    if (!casamento.grupo || !grupoAtual || casamento.grupo.chave === grupoAtual.chave) {
+        return { turmaId: turmaAtual, rotulo: '' };
+    }
 
-        if (!data.estudantes) data.estudantes = [];
-        let nextId = data.estudantes.length > 0 ? Math.max(...data.estudantes.map(e => e.id)) + 1 : 1;
-        let count = 0;
+    const pct = (g) => Math.round((((casamento.placar || []).find(p => p.grupo.chave === g.chave) || {}).score || 0) * 100);
+    const irPara = confirm(`Esta lista parece ser da turma "${casamento.grupo.rotulo}" (${pct(casamento.grupo)}% de semelhança nos nomes), ` +
+        `e não desta (${pct(grupoAtual)}%).\n\nOK = importar em "${casamento.grupo.rotulo}"\nCancelar = decidir de novo`);
+    if (irPara) return { turmaId: casamento.grupo.turmaId, rotulo: '"' + casamento.grupo.rotulo + '"' };
+    if (confirm(`Importar nesta turma mesmo ("${grupoAtual.rotulo}")?`)) return { turmaId: turmaAtual, rotulo: '' };
+    return null;
+}
 
-        for (let i = headerIndex + 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
+async function importarEstudantes(e) {
+    e.preventDefault();
+    const arq = importarEstudantesArquivo;
+    if (!arq || arq.colunas.idxNome === -1) return alert('Selecione o arquivo e a coluna do nome.');
 
-            const parts = line.split(';');
-            
-            // Verifica se a linha tem colunas suficientes
-            if (parts.length <= idxNome) continue;
+    const alunos = extrairAlunosImportMassa(arq.linhas, arq.colunas);
+    if (!alunos.length) return alert('Nenhum aluno encontrado na coluna escolhida.');
 
-            const nome = parts[idxNome].trim();
-            const status = (idxStatus !== -1 && parts.length > idxStatus) ? parts[idxStatus].trim() : 'Ativo';
-            
-            // Verifica se tem nome e se já não existe na turma
-            if (nome && !data.estudantes.find(e => e.id_turma == turmaAtual && e.nome_completo === nome)) {
-                data.estudantes.push({ id: nextId++, id_turma: turmaAtual, nome_completo: nome, status: status });
-                count++;
-            }
-        }
+    // A turma também é conferida pelos nomes: uma lista aberta na turma errada (os arquivos
+    // costumam ter todos o mesmo nome) iria parar aqui. Se ela combina claramente com outra
+    // turma, pergunta antes.
+    const destino = escolherTurmaDestinoImportacao(alunos);
+    if (destino === null) return;
 
-        persistirDados();
-        alert(`Importação concluída! ${count} estudantes adicionados.`);
-        closeModal('modalImportarEstudantes');
-        renderEstudantes();
-        fileInput.value = ''; // Limpa o input
-    };
-    reader.readAsText(file);
+    if (!data.estudantes) data.estudantes = [];
+    const novoId = criarGeradorIdImportMassa(data.estudantes);
+    const r = aplicarArquivoImportMassa(data.estudantes, destino.turmaId, alunos, novoId, { marcarAusentes: false });
+    filtrarAtivosEmOutraImportMassa(r, data.estudantes);
+    importarEstudantesArquivo = null; // clique duplo não aplica duas vezes
+
+    await persistirDados();
+    let aviso = '';
+    if (r.ativosEmOutra.length) {
+        aviso += `\n\n${r.ativosEmOutra.length} aluno(s) seguem ativos também em outra turma ` +
+                 `(${[...new Set(r.ativosEmOutra.map(a => a.turma))].join(', ')}): importe a lista dela para concluir o remanejamento.`;
+    }
+    if (r.duplicados.length) aviso += `\n\nA turma já tinha ${r.duplicados.length} nome(s) repetido(s): use Registros › Limpeza de Duplicados.`;
+    alert(`Importação concluída${destino.rotulo ? ' em ' + destino.rotulo : ''}!\n\n${r.criados.length} aluno(s) adicionado(s)\n${r.alterados.length} com a situação atualizada${aviso}`);
+    closeModal('modalImportarEstudantes');
+    document.getElementById('arquivoEstudantes').value = '';
+    document.getElementById('mapeamentoImportarEstudantes').innerHTML = '';
+    document.getElementById('btnImportarEstudantes').disabled = true;
+    importarEstudantesArquivo = null;
+    renderEstudantes();
 }
 
 async function salvarEncontro(e) {
@@ -9049,6 +9134,11 @@ async function persistirDados() {
             // cifrada com a chave DELE. Debounced: persistirDados roda a cada clique.
             if (typeof agendarPublicacaoListaEscola === 'function') {
                 agendarPublicacaoListaEscola(data);
+            }
+            // E o caminho de volta: as ocorrências e as faltas do professor chegam à
+            // gestão e aos colegas da escola pelo recorte cifrado dele (listaescola.js).
+            if (typeof agendarPublicacaoContribuicao === 'function') {
+                agendarPublicacaoContribuicao(data);
             }
 
             // [NOVO] Espelha as mudanças do professor no Google Agenda (se conectado). Debounced.
