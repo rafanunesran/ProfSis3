@@ -528,7 +528,7 @@ function ampDefinir(chave, valor) {
 // A TELA
 // ---------------------------------------------------------------------------
 
-// Chamada pela aba "Ampliar" — ver ferramentas.js.
+// Chamada pela ferramenta "Aumentar resolucao" da aba IMG — ver img.js e ferramentas.js.
 function renderAmpliar() {
     ampRender();
 }

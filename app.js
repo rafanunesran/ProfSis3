@@ -794,7 +794,7 @@ function showScreen(screenId, evt) {
     if (screenId === 'agenda') screenId = 'documentos';
 
     // Mesma história com a tela "PDF": ela virou a primeira aba da tela "Ferramentas", ao lado
-    // de "Ampliar" (ver ferramentas.js). Quem chamar showScreen('pdf') — um atalho guardado, um
+    // de "IMG" (ver ferramentas.js). Quem chamar showScreen('pdf') — um atalho guardado, um
     // teste antigo — continua caindo exatamente onde caía.
     if (screenId === 'pdf') {
         if (typeof definirAbaFerramentas === 'function') definirAbaFerramentas('pdf');
@@ -825,7 +825,7 @@ function showScreen(screenId, evt) {
     if (screenId === 'horariosGestor') renderHorariosGestor();
     if (screenId === 'escolaGestor') renderEscolaGestor();
     if (screenId === 'biblioteca') renderBiblioteca();
-    // Ferramentas (premium): PDF e Ampliar imagem, em abas. A tela e' criada sob demanda,
+    // Ferramentas (premium): PDF, IMG, Poster e Video, em abas. A tela e' criada sob demanda,
     // como a Biblioteca — ver ferramentas.js. O portao do plano fica no clique de cada
     // ferramenta, e nao aqui: o catalogo tem de ser visivel para quem ainda nao assina.
     if (screenId === 'ferramentas' && typeof renderFerramentas === 'function') renderFerramentas();

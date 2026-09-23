@@ -1,4 +1,4 @@
-// A tela FERRAMENTAS e a aba AMPLIAR.
+// A tela FERRAMENTAS, a aba IMG e a ferramenta AMPLIAR (Aumentar resolucao).
 //
 // A tela de PDF deixou de ser um botao do menu e virou a primeira ABA de "Ferramentas",
 // ao lado de "Ampliar". Duas coisas podem quebrar nessa mudanca, e as duas sao caras:
@@ -7,7 +7,9 @@
 //
 // O que este teste cobre:
 //   1. o botao do menu virou "Ferramentas" nos quatro perfis, e a tela nasce sob demanda;
-//   2. as tres abas existem, so' uma aparece por vez, e trocar de aba funciona;
+//   2. as quatro abas existem (PDF, IMG, Poster, Video), so' uma aparece por vez, trocar
+//      de aba funciona, e o nome antigo showFerramentasTab('ampliar') cai na aba IMG,
+//      direto na ferramenta "Aumentar resolucao";
 //   3. o atalho antigo showScreen('pdf') continua caindo na aba de PDF, com o catalogo
 //      inteiro montado dentro dela;
 //   4. a aba Ampliar monta os controles, le uma imagem de verdade e diz o tamanho certo;
@@ -22,7 +24,10 @@
 //  10. a aba Poster: a conta aparece na tela (folhas, centimetros, pontos) e a previa e'
 //      desenhada de verdade — nao uma tela branca;
 //  11. o portao barra a conta gratuita, e o PDF sai com UMA PAGINA POR FOLHA, conferido
-//      lendo o arquivo de volta com o pdf-lib (nos dois estilos, pontos e foto).
+//      lendo o arquivo de volta com o pdf-lib (nos dois estilos, pontos e foto);
+//  IMG. a aba IMG: o catalogo com as ferramentas do "iLoveIMG", e cada uma delas rodando
+//      de verdade — o arquivo que sai e' lido de volta pelo proprio navegador e medido
+//      (tamanho, cor, transparencia, quadros do GIF) — sem nenhum pedido de rede.
 //
 // Como rodar (ver testes/LEIAME.md):
 //   npm i playwright
@@ -174,6 +179,9 @@ const DESENHAR_PNG = ({ largura, altura }) => {
         r.depoisDeTrocar = visiveis();
         r.marcadaDepois = (Array.from(document.querySelectorAll('#navFerramentas .ferr-nav-btn'))
             .find(b => b.classList.contains('active')) || {}).dataset.aba;
+        const dentro = document.getElementById('tabFerramentasAmpliar');
+        r.ampliarDentroDaImg = !!dentro && document.getElementById('tabFerramentasImg').contains(dentro) &&
+                               dentro.innerHTML.indexOf('Ampliar imagem') !== -1;
         showFerramentasTab('poster');
         r.naAbaPoster = visiveis();
         showFerramentasTab('pdf');
@@ -181,12 +189,14 @@ const DESENHAR_PNG = ({ largura, altura }) => {
         return r;
     });
     ok('a tela de Ferramentas nasceu e ficou ativa', abas.criada && abas.ativa);
-    ok('tem as quatro abas: PDF, Ampliar, Poster e Video',
-       JSON.stringify(abas.abas) === '["pdf","ampliar","poster","video"]', abas.rotulos.join(' | '));
+    ok('tem as quatro abas: PDF, IMG, Poster e Video',
+       JSON.stringify(abas.abas) === '["pdf","img","poster","video"]', abas.rotulos.join(' | '));
+    ok('a aba de imagem se chama IMG', /IMG/.test(abas.rotulos[1] || ''), abas.rotulos[1]);
     ok('so uma aba aparece por vez', abas.umaVisivelNoInicio.length === 1 && abas.depoisDeTrocar.length === 1);
     ok('abre na aba de PDF', abas.umaVisivelNoInicio[0] === 'tabFerramentasPdf');
-    ok('trocar para Ampliar troca o conteudo', abas.depoisDeTrocar[0] === 'tabFerramentasAmpliar');
-    ok('e marca a aba certa no menu', abas.marcadaDepois === 'ampliar');
+    ok('o nome antigo "ampliar" cai na aba IMG', abas.depoisDeTrocar[0] === 'tabFerramentasImg');
+    ok('e marca a aba certa no menu', abas.marcadaDepois === 'img');
+    ok('direto na ferramenta Aumentar resolucao', abas.ampliarDentroDaImg);
     ok('a terceira aba tambem abre sozinha', abas.naAbaPoster.length === 1 &&
        abas.naAbaPoster[0] === 'tabFerramentasPoster', abas.naAbaPoster.join(', '));
     ok('e da para voltar para PDF', abas.voltouParaPdf[0] === 'tabFerramentasPdf');
@@ -217,7 +227,7 @@ const DESENHAR_PNG = ({ largura, altura }) => {
     ok('o aviso de privacidade continua na tela de PDF', atalho.avisoDePrivacidade);
 
     // -----------------------------------------------------------------------
-    console.log('\n4. A aba Ampliar: abrir a imagem');
+    console.log('\n4. IMG > Aumentar resolucao (a antiga aba Ampliar): abrir a imagem');
     // -----------------------------------------------------------------------
     const png = await page.evaluate(DESENHAR_PNG, { largura: 120, altura: 90 });
     const bytes = Buffer.from(png.split(',')[1], 'base64');
@@ -416,6 +426,247 @@ const DESENHAR_PNG = ({ largura, altura }) => {
        paraFora.slice(0, 5).join(', '));
     const envios = await page.evaluate(() => window.__enviosDeSaida || []);
     ok('nenhum POST/PUT/beacon partiu da pagina', envios.length === 0, envios.slice(0, 5).join(' | '));
+
+    // -----------------------------------------------------------------------
+    console.log('\nIMG. A aba IMG: as ferramentas de imagem');
+    // -----------------------------------------------------------------------
+    const antesDaImg = pedidos.length;
+
+    // Uma "foto" JPG de verdade (degrade + ruido, que e' o que pesa num JPG) e o desenho
+    // PNG de fundo branco das secoes anteriores.
+    const fotoJpg = await page.evaluate(() => {
+        const c = document.createElement('canvas');
+        c.width = 1600; c.height = 1200;
+        const x = c.getContext('2d');
+        const g = x.createLinearGradient(0, 0, 1600, 1200);
+        g.addColorStop(0, '#2b6cb0'); g.addColorStop(1, '#f6ad55');
+        x.fillStyle = g; x.fillRect(0, 0, 1600, 1200);
+        const d = x.getImageData(0, 0, 1600, 1200);
+        let s = 1;
+        for (let i = 0; i < d.data.length; i += 4) {
+            s = (s * 16807) % 2147483647;
+            const r = (s % 60) - 30;
+            d.data[i] += r; d.data[i + 1] += r; d.data[i + 2] += r;
+        }
+        x.putImageData(d, 0, 0);
+        return c.toDataURL('image/jpeg', 0.98);
+    });
+    const bufJpg = Buffer.from(fotoJpg.split(',')[1], 'base64');
+    const bufPng = Buffer.from((await page.evaluate(DESENHAR_PNG, { largura: 400, altura: 300 })).split(',')[1], 'base64');
+
+    const catalogo = await page.evaluate(() => {
+        showFerramentasTab('img');
+        imgVoltar();
+        const aba = document.getElementById('tabFerramentasImg');
+        return {
+            ids: Array.from(aba.querySelectorAll('#imgGrade [data-ferramenta]')).map(b => b.dataset.ferramenta),
+            privacidade: aba.innerHTML.indexOf('não sai deste aparelho') !== -1
+        };
+    });
+    const esperadas = ['comprimir', 'redimensionar', 'cortar', 'paraJpg', 'deJpg', 'editor', 'ampliar',
+                       'removerFundo', 'marcaDagua', 'meme', 'girar', 'htmlImagem', 'desfocarRosto'];
+    ok('o catalogo tem as 13 ferramentas do iLoveIMG', JSON.stringify(catalogo.ids) === JSON.stringify(esperadas),
+       catalogo.ids.join(', '));
+    ok('com o aviso de privacidade', catalogo.privacidade);
+
+    // Le o resultado de volta pelo proprio navegador: tipo, tamanho e alguns pixels.
+    await page.evaluate(() => {
+        window.__lerResultado = async (i) => {
+            const r = imgEstado().resultados[i || 0];
+            if (!r) return { erro: imgEstado().erro || 'sem resultado' };
+            const bmp = await createImageBitmap(r.blob);
+            const c = document.createElement('canvas');
+            c.width = bmp.width; c.height = bmp.height;
+            const x = c.getContext('2d');
+            x.drawImage(bmp, 0, 0);
+            const px = (u, v) => Array.from(x.getImageData(Math.floor(u * (c.width - 1)), Math.floor(v * (c.height - 1)), 1, 1).data);
+            return { tipo: r.blob.type, bytes: r.blob.size, nome: r.nome, largura: bmp.width, altura: bmp.height,
+                     canto: px(0, 0), meio: px(0.5, 0.5), px: [[0.1, 0.1], [0.5, 0.05], [0.95, 0.95], [0.75, 0.7], [0.5, 0.95]].map(p => px(p[0], p[1])) };
+        };
+        window.__rodar = async (id, opcoes) => {
+            imgAbrir(id);
+            Object.keys(opcoes || {}).forEach(k => {
+                const v = opcoes[k];
+                imgDefinir(k, v, typeof v === 'boolean' ? 'check' : typeof v === 'number' ? 'faixa' : undefined);
+            });
+            await imgExecutar();
+            return await window.__lerResultado(0);
+        };
+    });
+
+    // O arquivo e' escolhido pelo campo de verdade, como o professor faria.
+    await page.evaluate(() => imgAbrir('comprimir'));
+    await page.setInputFiles('#imgArquivo', { name: 'foto.jpg', mimeType: 'image/jpeg', buffer: bufJpg });
+    await page.waitForTimeout(500);
+
+    // O portao, primeiro.
+    const portaoImg = await page.evaluate(async () => {
+        const papel = currentUser.role;
+        currentUser.role = 'professor';
+        await imgExecutar();
+        const r = { semResultado: imgEstado().resultados.length === 0,
+                    convite: !!document.getElementById('modalApoie') && document.getElementById('modalApoie').innerHTML.indexOf('plano Professor') !== -1 };
+        closeModal('modalApoie');
+        currentUser.role = papel;
+        return r;
+    });
+    ok('IMG: conta gratuita recebe o convite e nada e processado', portaoImg.convite && portaoImg.semResultado);
+
+    const comp = await page.evaluate(() => __rodar('comprimir', { nivel: 'recomendada', saida: 'auto', maxLado: '0', alvoKB: '' }));
+    ok('comprimir: o JPG sai menor, do mesmo tamanho em pixels',
+       !comp.erro && comp.tipo === 'image/jpeg' && comp.bytes < bufJpg.length * 0.7 && comp.largura === 1600,
+       comp.erro || (bufJpg.length + ' -> ' + comp.bytes + ' bytes, ' + comp.nome));
+    const alvo = await page.evaluate(() => __rodar('comprimir', { alvoKB: '60' }));
+    ok('comprimir com tamanho maximo: cabe em 60 KB', !alvo.erro && alvo.bytes <= 60 * 1024,
+       alvo.erro || (alvo.bytes + ' bytes, ' + alvo.largura + 'x' + alvo.altura));
+
+    const red = await page.evaluate(() => __rodar('redimensionar', { modo: 'pixels', largura: '400', altura: '' }));
+    ok('redimensionar: 1600x1200 -> 400x300, proporcao mantida', red.largura === 400 && red.altura === 300,
+       red.erro || red.largura + 'x' + red.altura);
+    const texto = await page.evaluate(() => document.getElementById('imgResumoTamanho').textContent);
+    ok('e a tela avisa o tamanho novo antes', /400 × 300 px/.test(texto), texto.trim().slice(0, 80));
+
+    // Cortar arrastando o mouse na previa, do ponto (25%, 25%) ao (75%, 75%).
+    // Aqui o mouse de verdade arrasta na previa, entao ela precisa estar NA TELA. Sem
+    // login, o app inteiro fica escondido atras da tela de entrada: o teste o mostra.
+    await page.evaluate(() => {
+        imgAbrir('cortar');
+        for (let el = document.getElementById('imgPreviaCanvas'); el && el !== document.body; el = el.parentElement) {
+            if (getComputedStyle(el).display === 'none') el.style.display = 'block';
+        }
+    });
+    await page.locator('#imgPreviaCanvas').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(200);
+    const caixa = await page.locator('#imgPreviaCanvas').boundingBox();
+    await page.mouse.move(caixa.x + caixa.width * 0.25, caixa.y + caixa.height * 0.25);
+    await page.mouse.down();
+    await page.mouse.move(caixa.x + caixa.width * 0.5, caixa.y + caixa.height * 0.5, { steps: 4 });
+    await page.mouse.move(caixa.x + caixa.width * 0.75, caixa.y + caixa.height * 0.75, { steps: 4 });
+    await page.mouse.up();
+    const corte = await page.evaluate(async () => { await imgExecutar(); return await __lerResultado(0); });
+    ok('cortar arrastando: sai a metade do meio (~800x600)',
+       Math.abs(corte.largura - 800) < 30 && Math.abs(corte.altura - 600) < 30, corte.erro || corte.largura + 'x' + corte.altura);
+    const quadrado = await page.evaluate(async () => {
+        imgDefinir('proporcao', '1');
+        await imgExecutar();
+        return await __lerResultado(0);
+    });
+    ok('cortar com proporcao 1:1 sai quadrado', quadrado.largura === quadrado.altura && quadrado.largura > 100,
+       quadrado.largura + 'x' + quadrado.altura);
+
+    const girada = await page.evaluate(() => __rodar('girar', { angulo: '90' }));
+    ok('girar 90: largura e altura trocam', girada.largura === 1200 && girada.altura === 1600, girada.largura + 'x' + girada.altura);
+
+    const cinza = await page.evaluate(() => __rodar('editor', { filtro: 'cinza' }));
+    ok('editor, preto e branco: R = G = B', !cinza.erro && cinza.px.every(p => Math.abs(p[0] - p[1]) <= 2 && Math.abs(p[1] - p[2]) <= 2),
+       cinza.erro || cinza.meio.join(','));
+
+    const meme = await page.evaluate(() => __rodar('meme', { cima: 'TESTE', baixo: 'DE MEME', tamanho: 12 }));
+    ok('meme: texto branco no alto da imagem', !meme.erro && meme.largura === 1600, meme.erro);
+    const memeTemBranco = await page.evaluate(async () => {
+        const bmp = await createImageBitmap(imgEstado().resultados[0].blob);
+        const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+        const x = c.getContext('2d'); x.drawImage(bmp, 0, 0);
+        const d = x.getImageData(0, 0, c.width, Math.round(c.height * 0.2)).data;
+        let brancos = 0, pretos = 0;
+        for (let i = 0; i < d.length; i += 4) {
+            if (d[i] > 240 && d[i + 1] > 240 && d[i + 2] > 240) brancos++;
+            if (d[i] < 20 && d[i + 1] < 20 && d[i + 2] < 20) pretos++;
+        }
+        return { brancos, pretos };
+    });
+    ok('e com contorno preto', memeTemBranco.brancos > 1000 && memeTemBranco.pretos > 500, JSON.stringify(memeTemBranco));
+
+    const marca = await page.evaluate(() => __rodar('marcaDagua', { tipo: 'texto', texto: 'USO INTERNO', posicao: 'mosaico', opacidade: 60, tamanho: 10 }));
+    ok("marca d'agua: a imagem sai marcada", !marca.erro && marca.largura === 1600, marca.erro);
+
+    // GIF animado com duas imagens: o proprio navegador conta os quadros.
+    await page.evaluate(() => imgAbrir('deJpg'));
+    await page.setInputFiles('#imgArquivo', [{ name: 'foto2.jpg', mimeType: 'image/jpeg', buffer: bufJpg }]);
+    await page.waitForTimeout(400);
+    const gif = await page.evaluate(async () => {
+        imgDefinir('destino', 'image/gif');
+        imgDefinir('animado', true, 'check');
+        await imgExecutar();
+        const r = imgEstado().resultados;
+        if (r.length !== 1) return { erro: 'resultados: ' + r.length + ' ' + imgEstado().erro };
+        const r0 = await __lerResultado(0);
+        let quadros = null;
+        if (window.ImageDecoder) {
+            const dec = new ImageDecoder({ data: await r[0].blob.arrayBuffer(), type: 'image/gif' });
+            await dec.tracks.ready;
+            quadros = dec.tracks.selectedTrack.frameCount;
+        }
+        return Object.assign(r0, { quadros: quadros });
+    });
+    ok('de JPG para GIF animado: um GIF que o navegador le, com 2 quadros',
+       !gif.erro && gif.tipo === 'image/gif' && gif.largura === 800 && (gif.quadros === null || gif.quadros === 2),
+       gif.erro || (gif.largura + 'x' + gif.altura + ', quadros: ' + gif.quadros));
+    ok('e as cores do GIF batem com a foto', !gif.erro && Math.abs(gif.meio[2] - 150) < 70, gif.meio && gif.meio.join(','));
+    const paraPng = await page.evaluate(async () => {
+        imgDefinir('destino', 'image/png');
+        await imgExecutar();
+        return { n: imgEstado().resultados.length, r: await __lerResultado(0) };
+    });
+    ok('de JPG para PNG: uma PNG por foto', paraPng.n === 2 && paraPng.r.tipo === 'image/png', paraPng.n + ' ' + paraPng.r.tipo);
+    const bmp = await page.evaluate(async () => {
+        imgDefinir('destino', 'image/bmp');
+        await imgExecutar();
+        return await __lerResultado(0);
+    });
+    ok('de JPG para BMP: o navegador le o BMP', bmp.tipo === 'image/bmp' && bmp.largura === 1600, bmp.erro || bmp.largura + 'x' + bmp.altura);
+
+    // Remover fundo e converter para JPG, com o desenho PNG de fundo branco.
+    await page.evaluate(() => { imgLimparArquivos(); imgAbrir('removerFundo'); });
+    await page.setInputFiles('#imgArquivo', { name: 'desenho.png', mimeType: 'image/png', buffer: bufPng });
+    await page.waitForTimeout(400);
+    const semFundo = await page.evaluate(() => __rodar('removerFundo', { tolerancia: 30, novoFundo: 'transparente' }));
+    ok('remover fundo: o branco da borda vira transparente', semFundo.tipo === 'image/png' && semFundo.canto[3] === 0,
+       semFundo.erro || 'canto ' + semFundo.canto.join(','));
+    ok('e o desenho fica (o circulo vermelho)', semFundo.px[3][0] > 200 && semFundo.px[3][3] === 255, semFundo.px[3].join(','));
+    const jpg = await page.evaluate(() => __rodar('paraJpg', { qualidade: 90 }));
+    ok('PNG para JPG', jpg.tipo === 'image/jpeg' && /desenho\.jpg$/.test(jpg.nome), jpg.tipo + ' ' + jpg.nome);
+
+    // Desfocar rosto: sem marcar nada, a ferramenta explica em vez de "processar" nada.
+    const semMarca = await page.evaluate(async () => { imgAbrir('desfocarRosto'); await imgExecutar(); return imgEstado(); });
+    ok('desfocar sem marcar nada: pede para marcar', semMarca.resultados.length === 0 && /Marque/.test(semMarca.erro), semMarca.erro);
+    await page.waitForTimeout(200);
+    await page.locator('#imgPreviaCanvas').scrollIntoViewIfNeeded();
+    const caixa2 = await page.locator('#imgPreviaCanvas').boundingBox();
+    await page.mouse.move(caixa2.x + 2, caixa2.y + 2);
+    await page.mouse.down();
+    await page.mouse.move(caixa2.x + caixa2.width * 0.5, caixa2.y + caixa2.height * 0.5, { steps: 5 });
+    await page.mouse.up();
+    const tarja = await page.evaluate(async () => {
+        imgDefinir('efeito', 'tarja');
+        await imgExecutar();
+        return { r: await __lerResultado(0), marcas: imgEstado().marcas };
+    });
+    ok('desfocar arrastando: a area marcada vira tarja preta', (tarja.marcas.areas || []).length === 1 &&
+       tarja.r.px[0][0] < 10 && tarja.r.px[0][1] < 10, tarja.r.erro || tarja.r.px[0].join(','));
+    ok('e fora dela nada muda', tarja.r.px[2][0] > 200, tarja.r.px[2].join(','));
+
+    const html = await page.evaluate(() => __rodar('htmlImagem', { largura: '600', escala: '2' }));
+    ok('HTML para imagem: sai no tamanho pedido (x2) e desenhado', !html.erro && html.largura === 1200 &&
+       // O fundo do aviso de exemplo e' #edf3fd (237,243,253): se a imagem fosse so' o
+       // branco do papel, o HTML nao teria sido desenhado.
+       html.px.some(p => Math.abs(p[0] - 237) < 4 && Math.abs(p[1] - 243) < 4 && Math.abs(p[2] - 253) < 4),
+       html.erro || (html.largura + 'x' + html.altura + ' ' + html.px.map(p => p.join(',')).join(' | ')));
+
+    const ampliarDentro = await page.evaluate(() => {
+        imgAbrir('ampliar');
+        const a = document.getElementById('tabFerramentasAmpliar');
+        return !!a && a.innerHTML.indexOf('Ampliar imagem') !== -1;
+    });
+    ok('"Aumentar resolucao" abre a ferramenta Ampliar dentro da aba IMG', ampliarDentro);
+
+    const foraImg = pedidos.slice(antesDaImg).filter(u => {
+        if (/^(blob|data|filesystem):/.test(u)) return false;
+        try { return new URL(u).hostname !== new URL(base).hostname; } catch (_) { return false; }
+    });
+    ok('nenhuma ferramenta da aba IMG fez pedido de rede', foraImg.length === 0, foraImg.slice(0, 5).join(', '));
+    const enviosImg = await page.evaluate(() => window.__enviosDeSaida || []);
+    ok('nenhum POST/PUT/beacon partiu da pagina', enviosImg.length === 0, enviosImg.slice(0, 5).join(' | '));
 
     // -----------------------------------------------------------------------
     console.log('\n10. A aba Pôster: a conta na tela');

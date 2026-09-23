@@ -16,7 +16,9 @@
 //   abas e entrega um <div> vazio para quem sabe:
 //
 //     aba "PDF"      -> pdf_ferramentas.js    desenha dentro de #tabFerramentasPdf
-//     aba "Ampliar"  -> ampliar.js            desenha dentro de #tabFerramentasAmpliar
+//     aba "IMG"      -> img.js                desenha dentro de #tabFerramentasImg
+//                                             ("Aumentar resolucao", la' dentro, e' o
+//                                             ampliar.js, em #tabFerramentasAmpliar)
 //     aba "Poster"   -> poster.js             desenha dentro de #tabFerramentasPoster
 //     aba "Video"    -> video.js              desenha dentro de #tabFerramentasVideo
 //
@@ -35,8 +37,8 @@ const ABAS_FERRAMENTAS = [
         render: () => { if (typeof renderPdf === 'function') renderPdf(); }
     },
     {
-        id: 'ampliar', container: 'tabFerramentasAmpliar', icone: '🔍', label: 'Ampliar',
-        render: () => { if (typeof renderAmpliar === 'function') renderAmpliar(); }
+        id: 'img', container: 'tabFerramentasImg', icone: '🖼️', label: 'IMG',
+        render: (ferramenta) => { if (typeof renderImg === 'function') renderImg(ferramenta); }
     },
     {
         id: 'poster', container: 'tabFerramentasPoster', icone: '🧱', label: 'Pôster',
@@ -47,6 +49,13 @@ const ABAS_FERRAMENTAS = [
         render: () => { if (typeof renderVideo === 'function') renderVideo(); }
     }
 ];
+
+// Nomes antigos de aba que continuam valendo. A aba "Ampliar" virou a aba "IMG", e
+// ampliar e' uma das ferramentas dela: quem pedir showFerramentasTab('ampliar') — um
+// atalho guardado, um teste antigo — cai direto em "Aumentar resolucao".
+const ATALHOS_FERRAMENTAS = {
+    ampliar: { aba: 'img', ferramenta: 'ampliar' }
+};
 
 let abaFerramentasAtual = 'pdf';
 
@@ -110,6 +119,8 @@ function renderFerramentas(aba) {
 
 function showFerramentasTab(aba) {
     garantirTelaFerramentas();
+    const atalho = ATALHOS_FERRAMENTAS[aba];
+    if (atalho) aba = atalho.aba;
     const def = ABAS_FERRAMENTAS.find(a => a.id === aba) || ABAS_FERRAMENTAS[0];
     abaFerramentasAtual = def.id;
 
@@ -124,7 +135,7 @@ function showFerramentasTab(aba) {
     });
 
     try {
-        if (def.render) def.render();
+        if (def.render) def.render(atalho ? atalho.ferramenta : undefined);
     } catch (erro) {
         console.error('[Ferramentas] aba ' + def.id, erro);
         if (el) {
