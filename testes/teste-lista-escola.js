@@ -173,6 +173,38 @@ async function novaAba(browser) {
   });
   console.log('5. painel vazio tenta publicar -> ' + r6.estado + ' | lista publicada intacta? ' + r6.intacto);
 
+  // ==== 6. REGISTROS E NOTAS OFICIAIS DA GESTAO CHEGAM AO PROFESSOR ======
+  // A tela "Registros da Gestao" do professor lia o documento em claro, que depois
+  // da adequacao nao traz mais `registrosAdministrativos` nem `estudantes`: ela
+  // mostrava "Nenhum registro vigente" para sempre. As notas oficiais, idem.
+  const r7g = await pg.evaluate(async () => {
+    data.registrosAdministrativos = [
+      { id:900, tipo:'Faltoso', estudanteId:3, turmaId:20, data:'2026-09-01', descricao:'Busca ativa' } ];
+    data.notasBimestraisOficiais = [ { nome_estudante_norm:'CARLA DIAS', bimestre:1, nota:8 } ];
+    data.notasAvaliacoesGestor = [ { nome_estudante_norm:'CARLA DIAS', id_avaliacao:1, nota:7 } ];
+    await salvarDadosUsuario('app_data_school_77_gestor', data);
+    const pub = await publicarListaEscola(data, 'gestor', { forcar:true });
+    const claro = JSON.stringify(window.__docs['app_data/app_data_school_77_gestor'] || {});
+    return { publicou: pub.estado, claroTemRegistro: claro.indexOf('Busca ativa') !== -1 };
+  });
+  const docs3 = await pg.evaluate(() => JSON.stringify(window.__docs));
+  const r7 = await pp.evaluate(async (docs) => {
+    window.__docs = JSON.parse(docs);
+    limparCacheListaEscola();
+    data.registrosAdministrativos = [];
+    await renderRegistrosProfessor();
+    const tela = document.getElementById('registrosProfessor').innerText;
+    const g = await obterDadosGestor({ forcar:true });
+    return { telaTemAluno: tela.indexOf('Carla Dias') !== -1,
+             telaTemTipo: tela.indexOf('Faltoso') !== -1,
+             copiaLocal: (data.registrosAdministrativos || []).length,
+             notasMapao: (g.notasBimestraisOficiais || []).length,
+             notasAvaliacoes: (g.notasAvaliacoesGestor || []).length };
+  }, docs3);
+  console.log('6. gestao registra faltoso (' + r7g.publicou + ', em claro? ' + r7g.claroTemRegistro
+    + ') -> tela do professor mostra o aluno: ' + r7.telaTemAluno + ' / o tipo: ' + r7.telaTemTipo
+    + ' | copia local: ' + r7.copiaLocal + ' | notas oficiais: ' + r7.notasMapao + '+' + r7.notasAvaliacoes);
+
   const ok = r1.publicou === 'ok' && !r1.claroTemNome && r1.existePublicado && !r1.publicadoTemNome
           && r1.criouChaveDaEscola
           && String(r2.t500) === 'Ana Paula,Bruno Silva' && String(r2.t600) === 'Carla Dias'
@@ -180,7 +212,10 @@ async function novaAba(browser) {
           && String(r4.t500) === 'Diego Novo' && String(r4.t600) === 'Bruno Silva,Carla Dias'
           && r5.parada.estado === 'erro' && r5.parada.sobrou === 2
           && String(r5.depois) === 'Diego Novo'
-          && r6.estado === 'recusado' && r6.intacto;
+          && r6.estado === 'recusado' && r6.intacto
+          && r7g.publicou === 'ok' && !r7g.claroTemRegistro
+          && r7.telaTemAluno && r7.telaTemTipo && r7.copiaLocal === 1
+          && r7.notasMapao === 1 && r7.notasAvaliacoes === 1;
 
   console.log('\n' + (ok ? 'OK: o que a gestao muda na lista chega a escola inteira, sem ninguem configurar nada'
                          : '*** FALHOU ***'));

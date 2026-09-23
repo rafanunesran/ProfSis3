@@ -137,6 +137,12 @@ function recorteDaEscola(painel, dados) {
         recorte.estudantes = d.estudantes || [];
         recorte.registrosAdministrativos = d.registrosAdministrativos || [];
         recorte.ocorrencias = d.ocorrencias || [];
+        // As notas oficiais (Mapão e avaliações da gestão) aparecem na ficha do
+        // estudante e na tutoria do professor, e contam no trabalho "Avaliação do
+        // Gestor". São campo pessoal (CAMPOS_PESSOAIS) e sumiram do documento em
+        // claro junto com a lista: sem subir aqui, o professor via a ficha vazia.
+        recorte.notasBimestraisOficiais = d.notasBimestraisOficiais || [];
+        recorte.notasAvaliacoesGestor = d.notasAvaliacoesGestor || [];
     } else {
         // AEE e Projeto: o que o professor usa é a marcação do tutorado (o alerta
         // 🧩 na lista da turma). Os Anexos III/IV NÃO saem do painel que os escreveu.
@@ -157,7 +163,9 @@ function _recorteVazio(r) {
     return !(r.estudantes || []).length
         && !(r.tutorados || []).length
         && !(r.ocorrencias || []).length
-        && !(r.registrosAdministrativos || []).length;
+        && !(r.registrosAdministrativos || []).length
+        && !(r.notasBimestraisOficiais || []).length
+        && !(r.notasAvaliacoesGestor || []).length;
 }
 
 // --- Publicar (gestor / AEE / projeto) ---------------------------------------

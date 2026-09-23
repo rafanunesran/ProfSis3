@@ -1850,6 +1850,8 @@ async function obterDadosGestor(opcoes) {
             estudantes: lista.dados.estudantes || [],
             registrosAdministrativos: lista.dados.registrosAdministrativos || base.registrosAdministrativos || [],
             ocorrencias: lista.dados.ocorrencias || base.ocorrencias || [],
+            notasBimestraisOficiais: lista.dados.notasBimestraisOficiais || base.notasBimestraisOficiais || [],
+            notasAvaliacoesGestor: lista.dados.notasAvaliacoesGestor || base.notasAvaliacoesGestor || [],
             _listaEscolaGeradoEm: lista.dados.geradoEm || null
         });
     }
@@ -4245,8 +4247,8 @@ async function carregarCacheAvaliacoesGestor() {
         cacheAvaliacoesGestorEscola = { avaliacoesGestor: [], notasAvaliacoesGestor: [] };
         return;
     }
-    const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
-    const gestorData = await getData('app_data', key);
+    // As notas são campo pessoal: chegam pela lista publicada da escola (obterDadosGestor).
+    const gestorData = await obterDadosGestor();
     cacheAvaliacoesGestorEscola = {
         avaliacoesGestor: (gestorData && gestorData.avaliacoesGestor) ? gestorData.avaliacoesGestor : [],
         notasAvaliacoesGestor: (gestorData && gestorData.notasAvaliacoesGestor) ? gestorData.notasAvaliacoesGestor : []
@@ -5682,8 +5684,8 @@ async function abrirModalNovoTutorado() {
     let estudantesEscola = [];
     
     if (currentUser && currentUser.schoolId) {
-        const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
-        const gestorData = await getData('app_data', key);
+        // `estudantes` chega pela lista publicada da escola (ver obterDadosGestor).
+        const gestorData = await obterDadosGestor();
         if (gestorData) {
             turmasEscola = gestorData.turmas || [];
             estudantesEscola = gestorData.estudantes || [];
@@ -7617,8 +7619,8 @@ function renderEstudanteGeral() {
 // não impede o resto de renderEstudanteGeral(), só preenche a seção quando a busca terminar.
 async function preencherNotasOficiaisEstudante(nomeNorm) {
     if (!currentUser || !currentUser.schoolId) return;
-    const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
-    const gestorData = await getData('app_data', key);
+    // As notas são campo pessoal: chegam pela lista publicada da escola (obterDadosGestor).
+    const gestorData = await obterDadosGestor();
     if (!gestorData) return;
 
     // Evita sobrescrever se o usuário já navegou para outro estudante enquanto a busca rodava
@@ -8518,16 +8520,30 @@ async function renderRegistrosProfessor() {
     let estudantes = [];
     let turmas = [];
 
-    // Busca dados da escola (Gestor)
+    // Busca dados da escola (Gestor). Os registros e os estudantes são campo pessoal
+    // e não estão mais no documento em claro da gestão: chegam pela lista publicada
+    // da escola (ver obterDadosGestor). Ler o documento direto, como antes, devolvia
+    // sempre "Nenhum registro vigente" para o professor.
+    let leuDaGestao = false;
     if (currentUser && currentUser.schoolId) {
-        const key = 'app_data_school_' + currentUser.schoolId + '_gestor';
-        const gestorData = await getData('app_data', key);
+        const gestorData = await obterDadosGestor({ forcar: true });
         if (gestorData) {
-            registros = gestorData.registrosAdministrativos || [];
-            estudantes = gestorData.estudantes || [];
             turmas = gestorData.turmas || [];
+            if (Array.isArray(gestorData.registrosAdministrativos) && Array.isArray(gestorData.estudantes)) {
+                registros = gestorData.registrosAdministrativos;
+                estudantes = gestorData.estudantes;
+                leuDaGestao = true;
+                // Mesma cópia que o Início e a turma fazem: é ela que as telas de chamada leem.
+                const enriquecidos = enriquecerRegistrosComNome(registros, estudantes);
+                if (JSON.stringify(data.registrosAdministrativos || []) !== JSON.stringify(enriquecidos)) {
+                    data.registrosAdministrativos = enriquecidos;
+                    persistirDados();
+                }
+            }
         }
     }
+    // Sem rede ou sem a lista da escola: mostra a última cópia que chegou ao aparelho.
+    if (!leuDaGestao) registros = data.registrosAdministrativos || [];
 
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -8535,7 +8551,7 @@ async function renderRegistrosProfessor() {
     // Filtra e processa
     let lista = registros.map(r => {
         if (r.arquivado) return null; // Arquivados pela gestão não aparecem aqui (só no Arquivo Histórico do gestor)
-        const est = estudantes.find(e => e.id == r.estudanteId) || { nome_completo: 'Desconhecido' };
+        const est = estudantes.find(e => e.id == r.estudanteId) || { nome_completo: r.nomeEstudante || 'Desconhecido' };
         const turma = turmas.find(t => t.id == r.turmaId) || { nome: '?' };
 
         let cor = '#22c55e'; // Verde (Observação/Outros)
