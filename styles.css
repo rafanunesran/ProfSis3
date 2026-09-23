@@ -1830,16 +1830,6 @@ html[data-estilo="ambar"] .app-nav button.active {
     }
 }
 
-/* Selo "Online (Firebase)": no celular sobe para não cobrir a barra de abas */
-@media (max-width: 760px) {
-    html[data-estilo="ambar"] .indicador-ambiente {
-        bottom: calc(86px + env(safe-area-inset-bottom)) !important;
-        right: 8px !important;
-        font-size: 11px !important;
-        opacity: 0.85;
-    }
-}
-
 /* Temas escuros: fundos claros escritos direto no JS que o Modo Escuro antigo não cobria */
 html[data-tema="dark"] [style*="background:#e3e8ef"],
 html[data-tema="dark"] [style*="background: #e3e8ef"],

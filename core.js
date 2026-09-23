@@ -42,7 +42,6 @@ if (USE_FIREBASE) {
             firebase.auth(); // Inicializa o serviço de Autenticação
             firebase.analytics();
             console.log("🔥 Modo Produção: Firebase Ativado");
-            mostrarIndicadorAmbiente('🔥 Online (Firebase)');
         } else {
             console.error("⚠️ SDK do Firebase não carregado. Verifique sua conexão.");
         }
@@ -51,23 +50,6 @@ if (USE_FIREBASE) {
     }
 } else {
     console.log("💻 Modo Desenvolvimento: LocalStorage Ativado");
-    mostrarIndicadorAmbiente('💻 Local (Offline)');
-}
-
-function mostrarIndicadorAmbiente(texto) {
-    const div = document.createElement('div');
-    div.className = 'indicador-ambiente';
-    div.style.position = 'fixed';
-    div.style.bottom = '10px';
-    div.style.right = '10px';
-    div.style.background = 'rgba(0,0,0,0.7)';
-    div.style.color = 'white';
-    div.style.padding = '5px 10px';
-    div.style.borderRadius = '5px';
-    div.style.fontSize = '12px';
-    div.style.zIndex = '9999';
-    div.textContent = texto;
-    document.body.appendChild(div);
 }
 
 // ============================================================================
