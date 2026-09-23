@@ -181,8 +181,8 @@ const DESENHAR_PNG = ({ largura, altura }) => {
         return r;
     });
     ok('a tela de Ferramentas nasceu e ficou ativa', abas.criada && abas.ativa);
-    ok('tem as tres abas: PDF, Ampliar e Poster',
-       JSON.stringify(abas.abas) === '["pdf","ampliar","poster"]', abas.rotulos.join(' | '));
+    ok('tem as quatro abas: PDF, Ampliar, Poster e Video',
+       JSON.stringify(abas.abas) === '["pdf","ampliar","poster","video"]', abas.rotulos.join(' | '));
     ok('so uma aba aparece por vez', abas.umaVisivelNoInicio.length === 1 && abas.depoisDeTrocar.length === 1);
     ok('abre na aba de PDF', abas.umaVisivelNoInicio[0] === 'tabFerramentasPdf');
     ok('trocar para Ampliar troca o conteudo', abas.depoisDeTrocar[0] === 'tabFerramentasAmpliar');
@@ -694,6 +694,6 @@ const DESENHAR_PNG = ({ largura, altura }) => {
 
     console.log('\n' + (falhas.length
         ? '❌ ' + falhas.length + ' FALHA(S):\n  - ' + falhas.join('\n  - ')
-        : '✅ TUDO CERTO: a tela Ferramentas e as tres abas se comportam.'));
+        : '✅ TUDO CERTO: a tela Ferramentas e as abas se comportam.'));
     process.exit(falhas.length ? 1 : 0);
 })().catch(e => { console.error('ERRO NO TESTE:', e); process.exit(1); });

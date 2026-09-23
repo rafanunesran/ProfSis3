@@ -62,6 +62,7 @@ const PLANOS_SISPROF = {
             'Ferramentas: 49 ferramentas de PDF sem enviar arquivo para site nenhum',
             'Ferramentas: ampliar e limpar imagem, tambem sem enviar nada',
             'Ferramentas: poster de parede em varias folhas A4, sem enviar nada',
+            'Ferramentas: editar video (cortar, juntar, comprimir, GIF) sem enviar o video',
             'Prioridade no suporte e nas novidades'
         ]
     }
