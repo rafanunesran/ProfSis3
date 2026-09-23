@@ -38,7 +38,14 @@ const ABAS_FERRAMENTAS = [
     },
     {
         id: 'img', container: 'tabFerramentasImg', icone: '🖼️', label: 'IMG',
-        render: (ferramenta) => { if (typeof renderImg === 'function') renderImg(ferramenta); }
+        render: (ferramenta) => {
+            if (typeof renderImg === 'function') { renderImg(ferramenta); return; }
+            // img.js nao chegou (arquivo fora da publicacao, rede caiu): a aba nao pode
+            // ficar em branco sem explicacao.
+            const el = document.getElementById('tabFerramentasImg');
+            if (el) el.innerHTML = '<div class="card" style="margin:20px 0;">As ferramentas de imagem nao carregaram. ' +
+                'Recarregue a pagina; se continuar assim, avise o suporte.</div>';
+        }
     },
     {
         id: 'poster', container: 'tabFerramentasPoster', icone: '🧱', label: 'Pôster',

@@ -105,6 +105,7 @@ jobs:
           cp listaescola.js assinatura.js icones.js ux.js _site/
           cp ferramentas.js pdf_operacoes.js pdf_ferramentas.js _site/
           cp ampliar_operacoes.js ampliar.js _site/
+          cp img_operacoes.js img.js _site/
           cp poster_operacoes.js poster.js _site/
           cp video_operacoes.js video.js _site/
           # A PASTA assinatura/ (webhook do Mercado Pago) NAO vai para o site:
