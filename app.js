@@ -2251,6 +2251,16 @@ function showTurmaTab(tab, evt) {
     if (tab === 'mapeamento') renderMapeamento();
 }
 
+// Dentro da sala, toda lista de estudantes mostra só os ATIVOS (sem status conta como
+// ativo: é o aluno cadastrado antes de o campo existir). A exceção é a aba Estudantes,
+// a lista da turma: ela mostra todos, com o status, porque é lá que se reativa alguém.
+function estudanteAtivo(e) {
+    return !!e && (!e.status || e.status === 'Ativo');
+}
+function estudanteAtivoPorId(id) {
+    return estudanteAtivo((data.estudantes || []).find(e => e.id == id));
+}
+
 async function renderEstudantes() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual).sort((a, b) => (a.nome_completo || '').localeCompare(b.nome_completo || ''));
     const isGestor = currentViewMode === 'gestor';
@@ -3068,7 +3078,7 @@ async function renderOcorrencias() {
     const todosEstudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
     
     const estudantesAtivos = todosEstudantes
-        .filter(e => e.status === 'Ativo')
+        .filter(estudanteAtivo)
         .sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     
     // Buscar opções de ocorrência rápida
@@ -3559,7 +3569,7 @@ function imprimirOcorrencia(id) {
 function renderAtrasos() {
     const todosEstudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
     const estudantesAtivos = todosEstudantes
-        .filter(e => e.status === 'Ativo')
+        .filter(estudanteAtivo)
         .sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     
     // Filtro de Meses
@@ -3567,7 +3577,7 @@ function renderAtrasos() {
     const mesInicio = document.getElementById('filtroAtrasoMesInicio') ? parseInt(document.getElementById('filtroAtrasoMesInicio').value) : 0;
     const mesFim = document.getElementById('filtroAtrasoMesFim') ? parseInt(document.getElementById('filtroAtrasoMesFim').value) : 11;
 
-    let atrasos = (data.atrasos || []).filter(a => a.id_turma == turmaAtual);
+    let atrasos = (data.atrasos || []).filter(a => a.id_turma == turmaAtual && estudanteAtivoPorId(a.id_estudante));
     atrasos = atrasos.filter(a => {
         const d = new Date(a.data + 'T12:00:00');
         return d.getMonth() >= mesInicio && d.getMonth() <= mesFim && d.getFullYear() === currentYear;
@@ -4787,7 +4797,7 @@ function renderCompensacoes() {
     const todayStr = getTodayString();
 
     // 1. Buscar Compensações Já Criadas para esta turma
-    let compensacoes = (data.compensacoes || []).filter(c => c.id_turma == turmaAtual);
+    let compensacoes = (data.compensacoes || []).filter(c => c.id_turma == turmaAtual && estudanteAtivoPorId(c.id_estudante));
     
     // Aplica Filtro na Tabela
     if (selMesFiltro !== -1) {
@@ -4914,7 +4924,7 @@ function gerarCompensacoesAutomatico() {
 
     // Filtra estudantes da turma atual que têm faltas
     const estudantesComFalta = (data.estudantes || [])
-        .filter(e => e.id_turma == turmaAtual && mapaFaltas[e.id])
+        .filter(e => e.id_turma == turmaAtual && estudanteAtivo(e) && mapaFaltas[e.id])
         .map(e => ({ ...e, faltas: mapaFaltas[e.id].qtd, peso: mapaFaltas[e.id].peso }))
         .sort((a,b) => b.peso - a.peso);
 
