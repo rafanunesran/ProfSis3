@@ -1,0 +1,55 @@
+# Servidor do "Baixar video por link" (Ferramentas -> Video) numa VPS com Docker.
+# Ver LEIAME.md. Troque video.seudominio.com.br pelo seu subdominio (DNS apontando
+# para esta maquina) nos DOIS lugares abaixo e rode:  docker compose up -d
+services:
+    cobalt:
+        image: ghcr.io/imputnet/cobalt:11
+        init: true
+        read_only: true
+        restart: unless-stopped
+        container_name: cobalt
+        environment:
+            API_URL: "https://video.seudominio.com.br/"
+            # So' o site do SisProf pode chamar este servidor pelo navegador.
+            CORS_WILDCARD: "0"
+            CORS_URL: "https://rafanunesran.github.io"
+            # Protecao contra abuso: pedidos por minuto por IP.
+            RATELIMIT_WINDOW: "60"
+            RATELIMIT_MAX: "20"
+            # Videos de no maximo 1 hora.
+            DURATION_LIMIT: "3600"
+            # Ajuda com videos que o site de origem so' entrega a "navegador de verdade".
+            YOUTUBE_SESSION_SERVER: "http://yt-session-generator:8080/"
+        labels:
+            - com.centurylinklabs.watchtower.scope=cobalt
+
+    # Gera os tokens que alguns sites exigem antes de liberar o video.
+    yt-session-generator:
+        image: ghcr.io/imputnet/yt-session-generator:webserver
+        init: true
+        restart: unless-stopped
+        container_name: yt-session-generator
+        labels:
+            - com.centurylinklabs.watchtower.scope=cobalt
+
+    # HTTPS automatico (Let's Encrypt). O site e' https e o navegador recusa servidor http.
+    caddy:
+        image: caddy:2
+        restart: unless-stopped
+        ports:
+            - "80:80"
+            - "443:443"
+        command: caddy reverse-proxy --from video.seudominio.com.br --to cobalt:9000
+        volumes:
+            - caddy_data:/data
+
+    # Atualiza o cobalt sozinho (os sites de video mudam e ele acompanha).
+    watchtower:
+        image: ghcr.io/containrrr/watchtower
+        restart: unless-stopped
+        command: --cleanup --scope cobalt --interval 900 --include-restarting
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+    caddy_data:

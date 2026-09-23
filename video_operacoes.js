@@ -120,26 +120,44 @@ function carregarScript(src) {
 // Baixa e devolve uma URL de blob, contando o progresso (o nucleo tem ~32 MB; sem
 // barra, o professor acha que travou).
 async function blobUrlDe(url, tipo, aoAvancar) {
-    const resposta = await fetch(url);
-    if (!resposta.ok) throw new Error('HTTP ' + resposta.status + ' em ' + url);
-    const total = Number(resposta.headers.get('content-length')) || 0;
-    let blob;
-    if (resposta.body && resposta.body.getReader && aoAvancar) {
-        const leitor = resposta.body.getReader();
-        const pedacos = [];
-        let recebido = 0;
-        for (;;) {
-            const { done, value } = await leitor.read();
-            if (done) break;
-            pedacos.push(value);
-            recebido += value.length;
-            aoAvancar(recebido, total);
+    // Conexao que PARA no meio (sem erro, sem dado) deixaria o professor olhando uma
+    // barra congelada para sempre. 30 s sem chegar nada = desiste desta tentativa, e o
+    // comTentativas() tenta de novo.
+    const controle = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    let relogio = null;
+    const vigiar = () => {
+        if (!controle) return;
+        clearTimeout(relogio);
+        relogio = setTimeout(() => controle.abort(), 30000);
+    };
+    try {
+        vigiar();
+        const resposta = await fetch(url, controle ? { signal: controle.signal } : undefined);
+        if (!resposta.ok) throw new Error('HTTP ' + resposta.status + ' em ' + url);
+        let blob;
+        if (resposta.body && resposta.body.getReader) {
+            const leitor = resposta.body.getReader();
+            const pedacos = [];
+            let recebido = 0;
+            for (;;) {
+                vigiar();
+                const { done, value } = await leitor.read();
+                if (done) break;
+                pedacos.push(value);
+                recebido += value.length;
+                if (aoAvancar) aoAvancar(recebido);
+            }
+            blob = new Blob(pedacos, { type: tipo });
+        } else {
+            blob = new Blob([await resposta.arrayBuffer()], { type: tipo });
         }
-        blob = new Blob(pedacos, { type: tipo });
-    } else {
-        blob = new Blob([await resposta.arrayBuffer()], { type: tipo });
+        return URL.createObjectURL(blob);
+    } catch (erro) {
+        if (erro && erro.name === 'AbortError') throw new Error('a conexao parou de responder');
+        throw erro;
+    } finally {
+        clearTimeout(relogio);
     }
-    return URL.createObjectURL(blob);
 }
 
 async function comTentativas(fn, rotulo) {
@@ -737,12 +755,38 @@ ops.imagensParaGif = async (e, progresso) => {
 //      devolvem o endereco do arquivo.
 // Aqui NAO passa arquivo do professor: o que sai e' o endereco publico colado.
 
-function servidoresDownload() {
-    let lista = SERVIDORES_DOWNLOAD_PADRAO.slice();
-    if (raiz.PROFSIS_VIDEO_SERVIDORES && Array.isArray(raiz.PROFSIS_VIDEO_SERVIDORES)) {
-        lista = raiz.PROFSIS_VIDEO_SERVIDORES.concat(lista);
+// A lista vem de tres lugares, nesta ordem: window.PROFSIS_VIDEO_SERVIDORES (testes),
+// o documento assinaturas_config/video (o super admin cola o endereco no painel — so'
+// ele escreve ali, ver firestore.rules) e SERVIDORES_DOWNLOAD_PADRAO (codigo).
+let _servidoresDoBanco = null;   // null = ainda nao lido
+
+async function lerServidoresDoBanco() {
+    if (_servidoresDoBanco) return _servidoresDoBanco;
+    let lista = [];
+    try {
+        if (typeof db !== 'undefined' && db) {
+            const doc = await db.collection('assinaturas_config').doc('video').get();
+            const dados = doc.exists ? doc.data() : null;
+            if (dados && Array.isArray(dados.servidores)) lista = dados.servidores;
+        }
+    } catch (e) {
+        console.warn('[Video] Nao consegui ler a configuracao do download:', e && e.message);
+        return [];   // nao guarda: a proxima tentativa le de novo
     }
-    return lista.map(s => (typeof s === 'string' ? { url: s, chave: '' } : s)).filter(s => s && /^https:\/\//i.test(s.url));
+    _servidoresDoBanco = lista;
+    return lista;
+}
+
+function servidoresDownload(doBanco) {
+    let lista = [];
+    if (raiz.PROFSIS_VIDEO_SERVIDORES && Array.isArray(raiz.PROFSIS_VIDEO_SERVIDORES)) {
+        lista = lista.concat(raiz.PROFSIS_VIDEO_SERVIDORES);
+    }
+    lista = lista.concat(doBanco || _servidoresDoBanco || [], SERVIDORES_DOWNLOAD_PADRAO);
+    const vistos = {};
+    return lista.map(s => (typeof s === 'string' ? { url: s, chave: '' } : s))
+        .filter(s => s && /^https:\/\//i.test(s.url || ''))
+        .filter(s => { const k = s.url.replace(/\/+$/, ''); if (vistos[k]) return false; vistos[k] = true; return true; });
 }
 
 function ehLinkDeArquivo(url) {
@@ -812,6 +856,25 @@ async function perguntarAoServidor(servidor, link, qualidade, soAudio) {
         return { url: json.url, nome: json.filename || '' };
     }
     throw new Error('resposta inesperada: ' + (json.status || '?'));
+}
+
+// Para o botao "Testar" do painel: um pedido sem link. Servidor vivo responde
+// { status: 'error', error: { code: 'error.api.link.missing' } } (ou parecido).
+async function testarServidor(servidor) {
+    const cabecalhos = { 'Accept': 'application/json', 'Content-Type': 'application/json' };
+    if (servidor.chave) cabecalhos['Authorization'] = 'Api-Key ' + servidor.chave;
+    let resposta;
+    try {
+        resposta = await fetch(String(servidor.url).replace(/\/$/, '') + '/', { method: 'POST', headers: cabecalhos, body: '{}' });
+    } catch (e) {
+        return { ok: false, motivo: 'Nao respondeu (endereco errado, servidor dormindo, ou CORS bloqueando este site).' };
+    }
+    let json = null;
+    try { json = await resposta.json(); } catch (_) { json = null; }
+    const codigo = json && json.error && json.error.code || '';
+    if (/auth|jwt|api\.key/i.test(codigo)) return { ok: false, motivo: 'O servidor pediu autenticacao: confira a chave (' + codigo + ').' };
+    if (json && json.status === 'error') return { ok: true, motivo: 'Servidor respondendo.' };
+    return { ok: false, motivo: 'Respondeu algo que nao parece o servidor de download (HTTP ' + resposta.status + ').' };
 }
 
 // Traducao dos codigos de erro do cobalt para o professor. Nenhum deles cita
@@ -917,6 +980,8 @@ const VIDEOOPS = {
     lerTempo,
     cadeiaAtempo,
     servidoresDownload,
+    testarServidor,
+    esquecerServidores: () => { _servidoresDoBanco = null; },
     ehLinkDeArquivo,
     validarLink,
     VIDEO_MAX_MB,

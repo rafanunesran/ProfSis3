@@ -126,7 +126,8 @@ const GRAVAR_VIDEO = async ({ segundos, largura, altura, comSom }) => {
         }
         const corpo = JSON.parse(req.postData() || '{}');
         pedidosAoServidor.push({ corpo, auth: req.headers()['authorization'] || '' });
-        const resposta = /privado/.test(corpo.url)
+        const resposta = !corpo.url ? { status: 'error', error: { code: 'error.api.link.missing' } }
+            : /privado/.test(corpo.url)
             ? { status: 'error', error: { code: 'error.api.content.video.private' } }
             : { status: 'tunnel', url: 'https://arquivos.teste/tunel?id=1', filename: 'aula_gravada.webm' };
         return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(resposta),
@@ -321,6 +322,13 @@ const GRAVAR_VIDEO = async ({ segundos, largura, altura, comSom }) => {
     // -----------------------------------------------------------------------
     console.log('\n6. Baixar por link');
     // -----------------------------------------------------------------------
+    await page.evaluate(() => {
+        // O que o botao Salvar do painel faz, sem a janela.
+        window.salvarServidoresVideoAdminDireto = async (lista) => {
+            await saveData('assinaturas_config', 'video', { servidores: lista, atualizadoEm: new Date().toISOString() });
+            VIDEOOPS.esquecerServidores();
+        };
+    });
     const link = await page.evaluate(async () => {
         const V = VIDEOOPS;
         const r = {};
@@ -336,6 +344,13 @@ const GRAVAR_VIDEO = async ({ segundos, largura, altura, comSom }) => {
         r.pelaApi = await tentar({ link: 'https://site.teste/watch?v=abc', qualidade: '480' });
         r.privado = await tentar({ link: 'https://site.teste/privado/1' });
         delete window.PROFSIS_VIDEO_SERVIDORES;
+
+        // O caminho de verdade: o super admin salva o endereco pelo painel e o
+        // professor so' cola o link.
+        await salvarServidoresVideoAdminDireto([{ url: 'https://servidor.teste', chave: '' }]);
+        r.doBanco = await tentar({ link: 'https://outro.teste/v/123' });
+        r.teste = await V.testarServidor({ url: 'https://servidor.teste', chave: '' });
+        r.testeMorto = await V.testarServidor({ url: 'https://bloqueado.teste', chave: '' });
         return r;
     });
     ok('link direto de arquivo baixa', !link.direto.erro && link.direto.nome === 'festa.webm' && link.direto.bytes === video.length,
@@ -351,6 +366,28 @@ const GRAVAR_VIDEO = async ({ segundos, largura, altura, comSom }) => {
        pedidosAoServidor[0].corpo.url === 'https://site.teste/watch?v=abc' && pedidosAoServidor[0].corpo.videoQuality === '480' &&
        pedidosAoServidor[0].auth === 'Api-Key segredo', JSON.stringify(pedidosAoServidor[0] || {}));
     ok('video privado: mensagem clara', /privado/.test(link.privado.erro || ''), link.privado.erro);
+    ok('servidor salvo no painel: o link de pagina baixa', !link.doBanco.erro && link.doBanco.nome === 'aula_gravada.webm',
+       JSON.stringify(link.doBanco));
+    ok('o servidor recebeu o link colado', pedidosAoServidor.some(p => p.corpo.url === 'https://outro.teste/v/123'));
+    ok('botao Testar: servidor vivo', link.teste.ok === true, link.teste.motivo);
+    ok('botao Testar: servidor fora do ar', link.testeMorto.ok === false, link.testeMorto.motivo);
+
+    // A janela do painel abre, testa e salva.
+    const painel = await page.evaluate(async () => {
+        await abrirModalDownloadVideoAdmin();
+        const r = { abriu: !!document.getElementById('videoServidorUrl0'),
+                    preenchido: document.getElementById('videoServidorUrl0').value };
+        document.getElementById('videoServidorUrl1').value = 'https://servidor.teste/';
+        await testarServidoresVideoAdmin();
+        r.teste = document.getElementById('videoServidorTeste').textContent;
+        await salvarServidoresVideoAdmin();
+        r.salvo = window.__docs['assinaturas_config/video'];
+        return r;
+    });
+    ok('o painel abre com o servidor ja salvo', painel.abriu && painel.preenchido === 'https://servidor.teste', painel.preenchido);
+    ok('o Testar do painel mostra o resultado', /✅/.test(painel.teste), painel.teste);
+    ok('salvar nao duplica barra no fim e guarda os dois', !!painel.salvo && painel.salvo.servidores.length === 2 &&
+       painel.salvo.servidores[1].url === 'https://servidor.teste', JSON.stringify(painel.salvo && painel.salvo.servidores));
 
     await browser.close();
     console.log('\n' + (falhas.length ? falhas.length + ' FALHA(S):\n  - ' + falhas.join('\n  - ') : 'Tudo certo.'));
