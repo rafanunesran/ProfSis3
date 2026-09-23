@@ -1555,7 +1555,7 @@ async function renderDashboard() {
             if (aula.tipo === 'aula' && aula.id_turma) {
                 const turma = (data.turmas || []).find(t => t.id == aula.id_turma);
                 return `<button class="btn btn-primary" style="width:100%; margin-bottom:5px; text-align:left; display:flex; justify-content:space-between;" onclick="abrirTurma(${aula.id_turma})">
-                    <span><strong>${bloco.inicio}</strong> - ${turma ? turma.nome : 'Turma Removida'}</span>
+                    <span><strong>${bloco.inicio}</strong> - ${turma ? turma.nome + (turma.disciplina ? ' · ' + turma.disciplina : '') : 'Turma Removida'}</span>
                     <span>Ir para Turma →</span>
                 </button>`;
             } else if (aula.tipo === 'tutoria') {
