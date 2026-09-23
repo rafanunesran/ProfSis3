@@ -581,10 +581,11 @@ function aplicarTemaSalvo() {
     const tema = TEMAS_APP[temaKey];
     if (!tema) return;
 
-    // Temas da família âmbar: o styles.css desenha tudo a partir destes dois atributos
+    // A estrutura (menu lateral, barra de baixo, botões, abas) é a mesma em todos os temas:
+    // data-estilo liga essa estrutura sempre, e data-tema escolhe só as cores.
     const raiz = document.documentElement;
-    if (tema.estilo) { raiz.dataset.tema = tema.estilo; raiz.dataset.estilo = 'ambar'; }
-    else { delete raiz.dataset.tema; delete raiz.dataset.estilo; }
+    raiz.dataset.estilo = 'ambar';
+    raiz.dataset.tema = tema.estilo || temaKey;
     const metaCor = document.querySelector('meta[name="theme-color"]');
     if (metaCor) metaCor.setAttribute('content', tema.estilo === 'ambar-diurno' ? '#ffffff' : (tema.estilo === 'hibrido' ? '#16171b' : (tema.estilo ? '#141417' : '#13213a')));
 
@@ -618,6 +619,16 @@ function aplicarTemaSalvo() {
             --accent-soft: color-mix(in srgb, ${tema.cor} 10%, #fff);
             --accent-ring: color-mix(in srgb, ${tema.cor} 26%, transparent);
             --bg: ${tema.bgBody};
+            /* Moldura (menu lateral e barra de baixo) no degradê do tema */
+            --shell: ${tema.bgHeader};
+            --shell-2: rgba(255, 255, 255, 0.14);
+            --shell-fg: #ffffff;
+            --shell-fg-2: rgba(255, 255, 255, 0.78);
+            --shell-line: rgba(255, 255, 255, 0.14);
+            --shell-ativo-bg: rgba(255, 255, 255, 0.24);
+            --shell-ativo-fg: #ffffff;
+            --shell-acento: #ffffff;
+            --shell-ic: #ffffff;
         }
 
         /* Barra do topo */

@@ -40,6 +40,17 @@
     --appbar-btn-hover: rgba(255, 255, 255, 0.22);
     --appbar-btn-line: rgba(255, 255, 255, 0.16);
 
+    /* Moldura: menu lateral (computador) e barra de baixo (celular). Cada tema troca só estas cores. */
+    --shell: #13213a;
+    --shell-2: rgba(255, 255, 255, 0.1);
+    --shell-fg: #ffffff;
+    --shell-fg-2: rgba(255, 255, 255, 0.72);
+    --shell-line: rgba(255, 255, 255, 0.08);
+    --shell-ativo-bg: var(--accent);
+    --shell-ativo-fg: #ffffff;
+    --shell-acento: #9dbcf5;
+    --shell-ic: #8fb4f5;
+
     /* Estados */
     --success: #15803d;
     --success-hover: #116a33;
@@ -1366,6 +1377,15 @@ html[data-tema="ambar-noturno"] {
     --appbar-btn: #2a2a30;
     --appbar-btn-hover: #34343b;
     --appbar-btn-line: rgba(255, 255, 255, 0.06);
+    --shell: #1b1b20;
+    --shell-2: #26262c;
+    --shell-fg: #f4f2ec;
+    --shell-fg-2: #a9a7a0;
+    --shell-line: rgba(255, 255, 255, 0.06);
+    --shell-ativo-bg: #f5b301;
+    --shell-ativo-fg: #1b1400;
+    --shell-acento: #f5b301;
+    --shell-ic: #f5b301;
     --success: #2f9e62;
     --success-hover: #37b271;
     --success-soft: rgba(95, 211, 148, 0.13);
@@ -1414,6 +1434,15 @@ html[data-tema="ambar-diurno"] {
     --appbar-btn: #f1f1ee;
     --appbar-btn-hover: #e8e7e1;
     --appbar-btn-line: #e3e2dc;
+    --shell: #ffffff;
+    --shell-2: #f1f1ee;
+    --shell-fg: #16161a;
+    --shell-fg-2: #5c5b57;
+    --shell-line: #e3e2dc;
+    --shell-ativo-bg: #f5b301;
+    --shell-ativo-fg: #1b1400;
+    --shell-acento: #8a5a00;
+    --shell-ic: #f5b301;
     --shadow-xs: 0 1px 2px rgba(22, 22, 26, 0.05);
     --shadow-sm: 0 1px 2px rgba(22, 22, 26, 0.04), 0 2px 8px rgba(22, 22, 26, 0.05);
     --shadow-md: 0 2px 4px rgba(22, 22, 26, 0.04), 0 10px 26px rgba(22, 22, 26, 0.08);
@@ -1450,6 +1479,11 @@ html[data-tema="hibrido"] {
     --shell-2: #1f2026;
     --shell-fg: #f4f2ec;
     --shell-fg-2: #9a98a0;
+    --shell-line: rgba(255, 255, 255, 0.07);
+    --shell-ativo-bg: #f5b301;
+    --shell-ativo-fg: #1b1400;
+    --shell-acento: #f5b301;
+    --shell-ic: #f5b301;
 }
 
 /* ---- Forma comum aos três: cantos mais redondos, botões em pílula ---- */
@@ -1487,7 +1521,7 @@ html[data-estilo="ambar"] .btn-xs {
 /* Botão principal: âmbar com texto escuro e sombra da própria cor */
 html[data-estilo="ambar"] .btn-primary {
     --btn-fg: var(--on-accent);
-    box-shadow: 0 8px 18px -10px rgba(245, 179, 1, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    box-shadow: 0 8px 18px -10px color-mix(in srgb, var(--accent) 85%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 html[data-estilo="ambar"] .btn-secondary {
@@ -1543,7 +1577,7 @@ html[data-estilo="ambar"] nav button {
 
 html[data-estilo="ambar"] nav button.active {
     color: var(--on-accent);
-    box-shadow: 0 6px 14px -8px rgba(245, 179, 1, 0.9);
+    box-shadow: 0 6px 14px -8px color-mix(in srgb, var(--accent) 90%, transparent);
 }
 
 html[data-estilo="ambar"] .turma-nav-btn,
@@ -1593,7 +1627,7 @@ html[data-estilo="ambar"] .empty-state::before {
     margin: 0 auto 12px;
     border-radius: 50%;
     background:
-        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24' fill='none' stroke='%23c98f00' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 13h5l1.5 3h5l1.5-3h5'/%3E%3Cpath d='M5.6 5h12.8L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5z'/%3E%3C/svg%3E") center / 28px no-repeat,
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 24 24' fill='none' stroke='%238a8f99' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 13h5l1.5 3h5l1.5-3h5'/%3E%3Cpath d='M5.6 5h12.8L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5z'/%3E%3C/svg%3E") center / 28px no-repeat,
         var(--accent-soft);
 }
 
@@ -1665,10 +1699,10 @@ html[data-estilo="ambar"] .modal {
 
 /* Login */
 html[data-estilo="ambar"] .auth-screen {
-    background-color: #141417;
+    background-color: var(--shell);
     background-image:
-        radial-gradient(700px 480px at 85% -10%, rgba(245, 179, 1, 0.20), transparent 60%),
-        radial-gradient(600px 420px at -10% 110%, rgba(245, 179, 1, 0.08), transparent 60%),
+        radial-gradient(700px 480px at 85% -10%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 60%),
+        radial-gradient(600px 420px at -10% 110%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%),
         radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1.5px);
     background-size: auto, auto, 22px 22px;
 }
@@ -1687,26 +1721,37 @@ html[data-estilo="ambar"] .auth-box::before {
     color: var(--on-accent);
 }
 
-/* ---- Híbrido: moldura escura ---- */
-html[data-tema="hibrido"] .app-nav {
+/* ---- Moldura (menu): a mesma em todos os temas, só as cores mudam ---- */
+html[data-estilo="ambar"] .app-nav {
     background: var(--shell);
-    border-color: var(--shell);
+    border-color: var(--shell-line);
     box-shadow: var(--shadow-md);
 }
 
-html[data-tema="hibrido"] .app-nav button {
+html[data-estilo="ambar"] .app-nav button {
     color: var(--shell-fg-2);
 }
 
+/* Ícones do menu na cor da moldura (no menu verde, laranja etc. eles ficam claros) */
+html[data-estilo="ambar"] .app-nav button:not(.active) {
+    --ic-a: var(--shell-ic);
+}
+
 @media (hover: hover) and (pointer: fine) {
-    html[data-tema="hibrido"] .app-nav button:hover {
+    html[data-estilo="ambar"] .app-nav button:hover {
         background: var(--shell-2);
         color: var(--shell-fg);
     }
+
+    html[data-estilo="ambar"] .app-nav button.active:hover {
+        background: var(--shell-ativo-bg);
+        color: var(--shell-ativo-fg);
+    }
 }
 
-html[data-tema="hibrido"] .app-nav button.active {
-    color: var(--on-accent);
+html[data-estilo="ambar"] .app-nav button.active {
+    background: var(--shell-ativo-bg);
+    color: var(--shell-ativo-fg);
 }
 
 /* ---- Celular: menu vira barra de abas presa embaixo (os três temas) ---- */
@@ -1727,17 +1772,8 @@ html[data-tema="hibrido"] .app-nav button.active {
         padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
         border-radius: 22px 22px 0 0;
         border-width: 1px 0 0;
-        background: var(--surface);
-        box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.12);
-    }
-
-    html[data-tema="ambar-noturno"] .app-nav {
-        background: #1b1b20;
-        border-color: rgba(255, 255, 255, 0.06);
-    }
-
-    html[data-tema="hibrido"] .app-nav {
         background: var(--shell);
+        box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.12);
     }
 
     html[data-estilo="ambar"] .app-nav button {
@@ -1764,16 +1800,12 @@ html[data-tema="hibrido"] .app-nav button.active {
 
     html[data-estilo="ambar"] .app-nav button.active {
         background: transparent;
-        color: var(--accent-text);
+        color: var(--shell-acento);
         box-shadow: none;
     }
 
-    html[data-tema="hibrido"] .app-nav button.active {
-        color: var(--accent);
-    }
-
     html[data-estilo="ambar"] .app-nav button.active .icon {
-        background: var(--accent-soft);
+        background: var(--shell-2);
     }
 
     /* Botão de salvar a chamada fica no alcance do polegar, acima da barra */
@@ -1815,7 +1847,15 @@ html[data-tema="hibrido"] .app-nav button.active {
     }
 }
 
-/* Âmbar Noturno: fundos claros escritos direto no JS que o Modo Escuro antigo não cobria */
+/* Temas escuros: fundos claros escritos direto no JS que o Modo Escuro antigo não cobria */
+html[data-tema="dark"] [style*="background:#e3e8ef"],
+html[data-tema="dark"] [style*="background: #e3e8ef"],
+html[data-tema="dark"] [style*="background:#eef2f7"],
+html[data-tema="dark"] [style*="background: #eef2f7"],
+html[data-tema="dark"] [style*="background:#f0fff4"],
+html[data-tema="dark"] [style*="background: #f0fff4"],
+html[data-tema="dark"] [style*="background:#fff5f5"],
+html[data-tema="dark"] [style*="background: #fff5f5"],
 html[data-tema="ambar-noturno"] [style*="background:#e3e8ef"],
 html[data-tema="ambar-noturno"] [style*="background: #e3e8ef"],
 html[data-tema="ambar-noturno"] [style*="background:#eef2f7"],
@@ -1986,7 +2026,7 @@ html[data-estilo="ambar"] .btn-primary {
 
 /* ---- Híbrido no computador: menu lateral de verdade ---- */
 @media (min-width: 1024px) {
-    html[data-tema="hibrido"] #appContainer > .container {
+    html[data-estilo="ambar"] #appContainer > .container {
         display: grid;
         grid-template-columns: 240px minmax(0, 1fr);
         column-gap: 24px;
@@ -1996,12 +2036,12 @@ html[data-estilo="ambar"] .btn-primary {
         transition: grid-template-columns var(--dur) var(--ease-out);
     }
 
-    html[data-tema="hibrido"] #appContainer > .container > * {
+    html[data-estilo="ambar"] #appContainer > .container > * {
         grid-column: 2;
         min-width: 0;
     }
 
-    html[data-tema="hibrido"] #appContainer > .container > .app-nav {
+    html[data-estilo="ambar"] #appContainer > .container > .app-nav {
         grid-column: 1;
         grid-row: 1 / span 60;
         position: sticky;
@@ -2020,24 +2060,44 @@ html[data-estilo="ambar"] .btn-primary {
     }
 
     /* Marca no alto do menu */
-    html[data-tema="hibrido"] #appContainer .app-nav::before {
+    html[data-estilo="ambar"] #appContainer .app-nav::before {
         content: 'SisProf';
         display: flex;
         align-items: center;
         gap: 10px;
         padding: 2px 10px 14px;
         margin-bottom: 4px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+        border-bottom: 1px solid var(--shell-line);
         font-size: 17px;
         font-weight: 750;
         letter-spacing: -0.02em;
         color: var(--shell-fg);
-        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='14' fill='%23f5b301'/%3E%3Cpath d='M24 11.5 39 19l-15 7.5L9 19z' fill='%231b1400'/%3E%3Cpath d='M15 23v7c0 3 4 6 9 6s9-3 9-6v-7l-9 4.5z' fill='%231b1400' opacity='.55'/%3E%3C/svg%3E") 10px 2px / 28px 28px no-repeat;
         padding-left: 48px;
         min-height: 30px;
     }
 
-    html[data-tema="hibrido"] .app-nav .nav-grupo {
+    html[data-estilo="ambar"] #appContainer > .container > .app-nav::after {
+        content: 'S';
+        position: absolute;
+        top: 16px;
+        left: 22px;
+        width: 28px;
+        height: 28px;
+        border-radius: 9px;
+        display: grid;
+        place-items: center;
+        background: var(--shell-ativo-bg);
+        color: var(--shell-ativo-fg);
+        font: 800 15px/1 var(--font);
+        pointer-events: none;
+    }
+
+    html.nav-recolhido[data-estilo="ambar"] #appContainer > .container > .app-nav::after {
+        left: 50%;
+        margin-left: -14px;
+    }
+
+    html[data-estilo="ambar"] .app-nav .nav-grupo {
         display: block;
         font-size: 11px;
         font-weight: 700;
@@ -2048,82 +2108,82 @@ html[data-estilo="ambar"] .btn-primary {
         padding: 14px 12px 6px;
     }
 
-    html[data-tema="hibrido"] .app-nav button {
+    html[data-estilo="ambar"] .app-nav button {
         justify-content: flex-start;
         border-radius: var(--radius);
         padding: 10px 12px;
         font-size: 14px;
     }
 
-    html[data-tema="hibrido"] .app-nav .nav-rodape {
+    html[data-estilo="ambar"] .app-nav .nav-rodape {
         display: grid;
         gap: 2px;
         margin-top: auto;
         padding-top: 12px;
-        border-top: 1px solid rgba(255, 255, 255, 0.07);
+        border-top: 1px solid var(--shell-line);
     }
 
-    html[data-tema="hibrido"] .app-nav .nav-acao {
+    html[data-estilo="ambar"] .app-nav .nav-acao {
         font-weight: 600;
         font-size: 13px;
         color: var(--shell-fg-2);
     }
 
-    html[data-tema="hibrido"] .app-nav .nav-acao span {
+    html[data-estilo="ambar"] .app-nav .nav-acao span {
         flex: 1;
         text-align: left;
     }
 
-    html[data-tema="hibrido"] .app-nav .nav-acao .ico {
+    html[data-estilo="ambar"] .app-nav .nav-acao .ico {
         width: 18px;
         height: 18px;
     }
 
     /* Topo do Híbrido: vira a barra do título da página, ao lado do menu */
-    html[data-tema="hibrido"] #appContainer > .container > header {
+    html[data-estilo="ambar"] #appContainer > .container > header {
         margin-bottom: 20px;
     }
 
     /* ---- Menu recolhido ---- */
-    html.nav-recolhido[data-tema="hibrido"] #appContainer > .container {
+    html.nav-recolhido[data-estilo="ambar"] #appContainer > .container {
         grid-template-columns: 76px minmax(0, 1fr);
     }
 
-    html.nav-recolhido[data-tema="hibrido"] .app-nav {
+    html.nav-recolhido[data-estilo="ambar"] .app-nav {
         padding-inline: 10px;
     }
 
-    html.nav-recolhido[data-tema="hibrido"] #appContainer .app-nav::before {
+    html.nav-recolhido[data-estilo="ambar"] #appContainer .app-nav::before {
         font-size: 0;
         padding-left: 0;
         background-position: center 2px;
     }
 
-    html.nav-recolhido[data-tema="hibrido"] .app-nav .nav-grupo {
+    html.nav-recolhido[data-estilo="ambar"] .app-nav .nav-grupo {
         font-size: 0;
         padding: 8px 0 4px;
-        border-top: 1px solid rgba(255, 255, 255, 0.07);
+        border-top: 1px solid var(--shell-line);
         margin-top: 6px;
     }
 
-    html.nav-recolhido[data-tema="hibrido"] .app-nav button {
+    html.nav-recolhido[data-estilo="ambar"] .app-nav button {
         justify-content: center;
         padding: 10px 0;
     }
 
-    html.nav-recolhido[data-tema="hibrido"] .app-nav button .label,
-    html.nav-recolhido[data-tema="hibrido"] .app-nav .nav-acao span,
-    html.nav-recolhido[data-tema="hibrido"] .app-nav .nav-acao kbd {
+    html.nav-recolhido[data-estilo="ambar"] .app-nav button .label,
+    html.nav-recolhido[data-estilo="ambar"] .app-nav .nav-acao span,
+    html.nav-recolhido[data-estilo="ambar"] .app-nav .nav-acao kbd {
         display: none;
     }
 
-    html.nav-recolhido[data-tema="hibrido"] .app-nav .nav-acao[data-acao="recolher"] .ico {
+    html.nav-recolhido[data-estilo="ambar"] .app-nav .nav-acao[data-acao="recolher"] .ico {
         transform: rotate(180deg);
     }
 }
 
 /* ---- Híbrido: abas da turma e de documentos ficam presas no topo ao rolar ---- */
-html[data-tema="hibrido"] #appContainer .tab-nav {
+html[data-estilo="ambar"] #appContainer .tab-nav {
     position: sticky;
     top: 0;
     z-index: 20;
@@ -2160,18 +2220,14 @@ html[data-tema="hibrido"] #appContainer .tab-nav {
     }
 
     html[data-estilo="ambar"] .app-nav .nav-mais.mais-ativo {
-        color: var(--accent-text);
-    }
-
-    html[data-tema="hibrido"] .app-nav .nav-mais.mais-ativo {
-        color: var(--accent);
+        color: var(--shell-acento);
     }
 
     html[data-estilo="ambar"] .app-nav .nav-mais.mais-ativo .icon {
-        background: var(--accent-soft);
+        background: var(--shell-2);
     }
 
-    html[data-tema="hibrido"] #appContainer .tab-nav {
+    html[data-estilo="ambar"] #appContainer .tab-nav {
         margin-inline: -16px;
         padding-inline: 16px;
     }
@@ -2445,4 +2501,17 @@ html[data-tema="hibrido"] #appContainer .tab-nav {
     html[data-estilo="ambar"] .ux-trilha {
         margin-top: 6px;
     }
+}
+
+/* Login no Âmbar Diurno: fundo claro do próprio tema */
+html[data-tema="ambar-diurno"] .auth-screen {
+    background-color: var(--bg);
+    background-image:
+        radial-gradient(700px 480px at 85% -10%, rgba(245, 179, 1, 0.22), transparent 60%),
+        radial-gradient(rgba(22, 22, 26, 0.06) 1px, transparent 1.5px);
+    background-size: auto, 22px 22px;
+}
+
+html[data-tema="ambar-diurno"] .auth-box {
+    box-shadow: var(--shadow-lg), 0 0 0 1px var(--border);
 }
