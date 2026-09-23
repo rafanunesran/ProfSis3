@@ -1336,13 +1336,6 @@ label {
     flex: none;
 }
 
-/* Abas da turma: no computador cabem todos os nomes, então todos aparecem */
-@media (min-width: 761px) {
-    #turmaDetalhe .turma-nav-btn .label {
-        display: inline !important;
-    }
-}
-
 /* ==========================================================================
    Família âmbar: três temas (Perfil → Tema do Sistema)
    --------------------------------------------------------------------------
@@ -2059,44 +2052,6 @@ html[data-estilo="ambar"] .btn-primary {
         border-radius: var(--radius-xl);
     }
 
-    /* Marca no alto do menu */
-    html[data-estilo="ambar"] #appContainer .app-nav::before {
-        content: 'SisProf';
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 2px 10px 14px;
-        margin-bottom: 4px;
-        border-bottom: 1px solid var(--shell-line);
-        font-size: 17px;
-        font-weight: 750;
-        letter-spacing: -0.02em;
-        color: var(--shell-fg);
-        padding-left: 48px;
-        min-height: 30px;
-    }
-
-    html[data-estilo="ambar"] #appContainer > .container > .app-nav::after {
-        content: 'S';
-        position: absolute;
-        top: 16px;
-        left: 22px;
-        width: 28px;
-        height: 28px;
-        border-radius: 9px;
-        display: grid;
-        place-items: center;
-        background: var(--shell-ativo-bg);
-        color: var(--shell-ativo-fg);
-        font: 800 15px/1 var(--font);
-        pointer-events: none;
-    }
-
-    html.nav-recolhido[data-estilo="ambar"] #appContainer > .container > .app-nav::after {
-        left: 50%;
-        margin-left: -14px;
-    }
-
     html[data-estilo="ambar"] .app-nav .nav-grupo {
         display: block;
         font-size: 11px;
@@ -2153,12 +2108,6 @@ html[data-estilo="ambar"] .btn-primary {
         padding-inline: 10px;
     }
 
-    html.nav-recolhido[data-estilo="ambar"] #appContainer .app-nav::before {
-        font-size: 0;
-        padding-left: 0;
-        background-position: center 2px;
-    }
-
     html.nav-recolhido[data-estilo="ambar"] .app-nav .nav-grupo {
         font-size: 0;
         padding: 8px 0 4px;
@@ -2166,7 +2115,7 @@ html[data-estilo="ambar"] .btn-primary {
         margin-top: 6px;
     }
 
-    html.nav-recolhido[data-estilo="ambar"] .app-nav button {
+    html.nav-recolhido[data-estilo="ambar"] .app-nav > button {
         justify-content: center;
         padding: 10px 0;
     }
@@ -2177,9 +2126,6 @@ html[data-estilo="ambar"] .btn-primary {
         display: none;
     }
 
-    html.nav-recolhido[data-estilo="ambar"] .app-nav .nav-acao[data-acao="recolher"] .ico {
-        transform: rotate(180deg);
-    }
 }
 
 /* ---- Híbrido: abas da turma e de documentos ficam presas no topo ao rolar ---- */
@@ -2514,4 +2460,194 @@ html[data-tema="ambar-diurno"] .auth-screen {
 
 html[data-tema="ambar-diurno"] .auth-box {
     box-shadow: var(--shadow-lg), 0 0 0 1px var(--border);
+}
+
+/* ==========================================================================
+   Menu lateral: marca e botão de recolher; nome ao passar o mouse
+   ========================================================================== */
+.nav-marca {
+    display: none;
+}
+
+@media (min-width: 1024px) {
+    html[data-estilo="ambar"] .app-nav .nav-marca {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 4px 14px 8px;
+        margin-bottom: 4px;
+        border-bottom: 1px solid var(--shell-line);
+    }
+
+    .nav-marca-selo {
+        flex: none;
+        width: 30px;
+        height: 30px;
+        border-radius: 9px;
+        display: grid;
+        place-items: center;
+        background: var(--shell-ativo-bg);
+        color: var(--shell-ativo-fg);
+        font: 800 15px/1 var(--font);
+    }
+
+    .nav-marca-nome {
+        flex: 1;
+        min-width: 0;
+        font-size: 17px;
+        font-weight: 750;
+        letter-spacing: -0.02em;
+        color: var(--shell-fg);
+        white-space: nowrap;
+    }
+
+    html[data-estilo="ambar"] .app-nav .nav-marca .nav-recolher {
+        padding: 0;
+        min-height: 0;
+        min-width: 0;
+        justify-content: center;
+        flex: none;
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--shell-fg-2);
+        cursor: pointer;
+        transition: background-color var(--dur-fast) ease, color var(--dur-fast) ease, transform var(--dur-press) var(--ease-out);
+    }
+
+    html[data-estilo="ambar"] .app-nav .nav-marca .nav-recolher:hover {
+        background: var(--shell-2);
+        color: var(--shell-fg);
+    }
+
+    html[data-estilo="ambar"] .app-nav .nav-marca .nav-recolher:active {
+        transform: scale(0.94);
+    }
+
+    html[data-estilo="ambar"] .app-nav .nav-marca .nav-recolher svg {
+        transition: transform var(--dur) var(--ease-out);
+    }
+
+    /* Recolhido: selo em cima, botão de abrir embaixo, tudo centrado */
+    html.nav-recolhido[data-estilo="ambar"] .app-nav .nav-marca {
+        flex-direction: column;
+        gap: 8px;
+        padding: 0 0 12px;
+    }
+
+    html.nav-recolhido[data-estilo="ambar"] .nav-marca-nome {
+        display: none;
+    }
+
+    html.nav-recolhido[data-estilo="ambar"] .app-nav .nav-marca .nav-recolher svg {
+        transform: scaleX(-1);
+    }
+}
+
+/* Nome flutuante ao lado do ícone (menu recolhido) */
+.ux-dica {
+    position: fixed;
+    z-index: 10030;
+    transform: translate(-4px, -50%);
+    opacity: 0;
+    pointer-events: none;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--text);
+    color: var(--bg);
+    font: 600 13px/1.2 var(--font);
+    white-space: nowrap;
+    box-shadow: var(--shadow-md);
+    transition: opacity 120ms ease, transform 160ms var(--ease-out);
+}
+
+.ux-dica.visivel {
+    opacity: 1;
+    transform: translate(0, -50%);
+}
+
+/* ==========================================================================
+   Abas da turma, de Documentos e de Ferramentas: só o ícone; o nome aparece
+   ao passar o mouse, ao focar pelo teclado ou na aba selecionada.
+   ========================================================================== */
+html[data-estilo="ambar"] #appContainer .turma-nav-btn,
+html[data-estilo="ambar"] #appContainer .doc-nav-btn,
+html[data-estilo="ambar"] #appContainer .ferr-nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    padding: 9px 12px;
+    min-height: 42px;
+}
+
+html[data-estilo="ambar"] #appContainer .turma-nav-btn .label,
+html[data-estilo="ambar"] #appContainer .doc-nav-btn .label,
+html[data-estilo="ambar"] #appContainer .ferr-nav-btn .label {
+    display: inline-block;
+    max-width: 0;
+    opacity: 0;
+    margin-left: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    vertical-align: middle;
+    font-size: 14px;
+    font-weight: 600;
+    transition: max-width 220ms var(--ease-out), opacity 160ms ease, margin-left 220ms var(--ease-out);
+}
+
+html[data-estilo="ambar"] #appContainer .turma-nav-btn:hover .label,
+html[data-estilo="ambar"] #appContainer .turma-nav-btn:focus-visible .label,
+html[data-estilo="ambar"] #appContainer .turma-nav-btn.active .label,
+html[data-estilo="ambar"] #appContainer .doc-nav-btn:hover .label,
+html[data-estilo="ambar"] #appContainer .doc-nav-btn:focus-visible .label,
+html[data-estilo="ambar"] #appContainer .doc-nav-btn.active .label,
+html[data-estilo="ambar"] #appContainer .ferr-nav-btn:hover .label,
+html[data-estilo="ambar"] #appContainer .ferr-nav-btn:focus-visible .label,
+html[data-estilo="ambar"] #appContainer .ferr-nav-btn.active .label {
+    max-width: 180px;
+    opacity: 1;
+    margin-left: 8px;
+}
+
+/* Abas de Ferramentas no mesmo desenho das abas da turma */
+html[data-estilo="ambar"] #appContainer #navFerramentas {
+    gap: 2px;
+    margin: 18px 0 16px !important;
+    padding-bottom: 0 !important;
+    border-bottom: 1px solid var(--border) !important;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+html[data-estilo="ambar"] #appContainer .ferr-nav-btn {
+    background: transparent;
+    border: 0;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    color: var(--text-3);
+    font-size: 16px;
+    box-shadow: inset 0 -2px 0 transparent;
+    transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+html[data-estilo="ambar"] #appContainer .ferr-nav-btn:hover {
+    background: var(--surface-3);
+}
+
+html[data-estilo="ambar"] #appContainer .ferr-nav-btn.active {
+    background: transparent;
+    color: var(--text);
+    box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html[data-estilo="ambar"] #appContainer .turma-nav-btn .label,
+    html[data-estilo="ambar"] #appContainer .doc-nav-btn .label,
+    html[data-estilo="ambar"] #appContainer .ferr-nav-btn .label {
+        transition: none;
+    }
 }
