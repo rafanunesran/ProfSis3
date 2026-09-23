@@ -822,7 +822,6 @@ function showScreen(screenId, evt) {
     if (screenId === 'aeeVisaoGeral') renderAeeVisaoGeral();
     if (screenId === 'ocorrenciasGestor') renderOcorrenciasGestor();
     if (screenId === 'tutoriasGestor') renderTutoriasGestor();
-    if (screenId === 'notasOficiaisGestor') renderNotasOficiaisGestor();
     if (screenId === 'horariosGestor') renderHorariosGestor();
     if (screenId === 'escolaGestor') renderEscolaGestor();
     if (screenId === 'biblioteca') renderBiblioteca();
@@ -4509,7 +4508,7 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
                     <option value="compensacao" ${t?.tipo === 'compensacao' ? 'selected' : ''}>Compensação de Faltas</option>
                     <option value="caderno_auto" ${t?.tipo === 'caderno_auto' ? 'selected' : ''}>Caderno (Automático)</option>
                     <option value="participacao" ${t?.tipo === 'participacao' ? 'selected' : ''}>Participação (Automático)</option>
-                    <option value="avaliacao_gestor" ${t?.tipo === 'avaliacao_gestor' ? 'selected' : ''}>Avaliação do Gestor (Automático)</option>
+                    ${t?.tipo === 'avaliacao_gestor' ? `<option value="avaliacao_gestor" selected>Avaliação do Gestor (Automático)</option>` : ''}
                 </select>
             </label>
 
@@ -7188,6 +7187,12 @@ function renderMapeamentoImportarEstudantes() {
     } else {
         const exemplos = alunos.slice(0, 3).map(a => escaparHtmlImportMassa(a.nome)).join(', ');
         resumo = `<span style="color:#276749;">${alunos.length} aluno(s) encontrados</span> — ${exemplos}${alunos.length > 3 ? '…' : ''}`;
+        const grupos = agruparTurmasFisicasImportMassa();
+        const grupoAtual = grupos.find(g => g.ids.some(id => id == turmaAtual));
+        const cas = casarTurmaImportMassa(alunos, grupos);
+        if (cas.grupo && grupoAtual && cas.grupo.chave !== grupoAtual.chave) {
+            resumo += `<br><span style="color:#b7791f;">⚠️ Pelos nomes, esta lista parece ser da turma <strong>${escaparHtmlImportMassa(cas.grupo.rotulo)}</strong>. Ao importar, você escolhe onde.</span>`;
+        }
     }
 
     area.innerHTML = `
@@ -7203,6 +7208,23 @@ function renderMapeamentoImportarEstudantes() {
     btn.disabled = alunos.length === 0;
 }
 
+// Devolve { turmaId, rotulo } onde importar, ou null se a pessoa desistiu.
+function escolherTurmaDestinoImportacao(alunos) {
+    const grupos = agruparTurmasFisicasImportMassa();
+    const grupoAtual = grupos.find(g => g.ids.some(id => id == turmaAtual));
+    const casamento = casarTurmaImportMassa(alunos, grupos);
+    if (!casamento.grupo || !grupoAtual || casamento.grupo.chave === grupoAtual.chave) {
+        return { turmaId: turmaAtual, rotulo: '' };
+    }
+
+    const pct = (g) => Math.round((((casamento.placar || []).find(p => p.grupo.chave === g.chave) || {}).score || 0) * 100);
+    const irPara = confirm(`Esta lista parece ser da turma "${casamento.grupo.rotulo}" (${pct(casamento.grupo)}% de semelhança nos nomes), ` +
+        `e não desta (${pct(grupoAtual)}%).\n\nOK = importar em "${casamento.grupo.rotulo}"\nCancelar = decidir de novo`);
+    if (irPara) return { turmaId: casamento.grupo.turmaId, rotulo: '"' + casamento.grupo.rotulo + '"' };
+    if (confirm(`Importar nesta turma mesmo ("${grupoAtual.rotulo}")?`)) return { turmaId: turmaAtual, rotulo: '' };
+    return null;
+}
+
 async function importarEstudantes(e) {
     e.preventDefault();
     const arq = importarEstudantesArquivo;
@@ -7211,12 +7233,18 @@ async function importarEstudantes(e) {
     const alunos = extrairAlunosImportMassa(arq.linhas, arq.colunas);
     if (!alunos.length) return alert('Nenhum aluno encontrado na coluna escolhida.');
 
+    // A turma também é conferida pelos nomes: uma lista aberta na turma errada (os arquivos
+    // costumam ter todos o mesmo nome) iria parar aqui. Se ela combina claramente com outra
+    // turma, pergunta antes.
+    const destino = escolherTurmaDestinoImportacao(alunos);
+    if (destino === null) return;
+
     if (!data.estudantes) data.estudantes = [];
     const novoId = criarGeradorIdImportMassa(data.estudantes);
-    const r = aplicarArquivoImportMassa(data.estudantes, turmaAtual, alunos, novoId, { marcarAusentes: false });
+    const r = aplicarArquivoImportMassa(data.estudantes, destino.turmaId, alunos, novoId, { marcarAusentes: false });
 
     await persistirDados();
-    alert(`Importação concluída!\n\n${r.criados.length} aluno(s) adicionado(s)\n${r.alterados.length} com a situação atualizada`);
+    alert(`Importação concluída${destino.rotulo ? ' em ' + destino.rotulo : ''}!\n\n${r.criados.length} aluno(s) adicionado(s)\n${r.alterados.length} com a situação atualizada`);
     closeModal('modalImportarEstudantes');
     document.getElementById('arquivoEstudantes').value = '';
     document.getElementById('mapeamentoImportarEstudantes').innerHTML = '';
