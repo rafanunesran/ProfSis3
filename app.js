@@ -89,6 +89,12 @@ async function iniciarApp() {
         else if (carregouOk === false || window.bloquearEscritaNuvem) mostrarBannerLeituraFalhou();
         else if (precisaRestaurarNesteAparelho()) mostrarBannerSemDadosLocais();
 
+        // Este aparelho tem registros que a nuvem perdeu (outro aparelho, com cópia
+        // velha, gravou por cima). Sobe já a união, para os outros aparelhos recebê-los.
+        if (window.dadosCarregados && window.pessoalFaltaNaNuvem && !window.bloquearEscritaNuvem) {
+            try { await persistirDados(); } catch (e) { console.warn('[SisProf] Reenvio da união:', e); }
+        }
+
         // [ADEQUAÇÃO SEDUC] Antes do corte, lembra o professor duas vezes por dia.
         // Depois do corte, leva o dado pessoal para o aparelho antes de qualquer coisa.
         if (typeof aplicarRegraDoCorte === 'function') {

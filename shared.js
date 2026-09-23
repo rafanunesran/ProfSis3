@@ -265,6 +265,50 @@ function completarComLocal(nuvem, local) {
     return base;
 }
 
+// Junta a camada pessoal de OUTRO aparelho (a que veio cifrada da nuvem) na de agora,
+// registro a registro. Muda `alvo` no lugar e devolve o que entrou.
+//
+// Antes a regra era "o aparelho manda quando tem algo": a nuvem só entrava com o
+// aparelho vazio. Um aparelho com cópia velha abria sem ver o que fora lançado em
+// outro, e o salvamento seguinte subia a cópia velha por cima do pacote — as
+// ocorrências e os trabalhos do outro aparelho sumiam da nuvem. Com a união, cada
+// aparelho acrescenta o que falta em vez de apagar.
+//
+// Mesma identidade de registro do resgate (mesmoRegistro): id igual e mesma pessoa é
+// o mesmo registro, e o daqui manda. O preço conhecido: algo apagado num aparelho pode
+// voltar vindo de outro que ainda o tinha. Reaparecer é melhor do que sumir.
+function unirCamadaPessoal(alvo, vindo) {
+    const por = {};
+    let total = 0;
+    if (!alvo || !vindo) return { por: por, total: total };
+    Object.keys(vindo).forEach(chave => {
+        if (!campoEhPessoal(chave)) return;
+        const lista = vindo[chave];
+        if (Array.isArray(lista)) {
+            if (!Array.isArray(alvo[chave])) alvo[chave] = [];
+            const aqui = alvo[chave];
+            const porId = {};
+            const k = (it) => (it && it.id != null) ? String(it.id) : 'js:' + JSON.stringify(it);
+            aqui.forEach(it => { (porId[k(it)] = porId[k(it)] || []).push(it); });
+            let entraram = 0;
+            lista.forEach(it => {
+                const candidatos = porId[k(it)] || [];
+                if (candidatos.some(j => mesmoRegistro(j, it))) return;
+                (porId[k(it)] = candidatos).push(it);
+                aqui.push(it);
+                entraram++;
+            });
+            if (entraram) { por[chave] = entraram; total += entraram; }
+            return;
+        }
+        // Campo solto (objeto, configuração): só preenche o que aqui está vazio.
+        if (_semConteudo(alvo[chave]) && !_semConteudo(lista)) {
+            alvo[chave] = lista; por[chave] = 1; total++;
+        }
+    });
+    return { por: por, total: total };
+}
+
 // Quanto dado pessoal existe aqui dentro. Depois da transição a camada local é a
 // ÚNICA cópia do que identifica estudante — chamada, nota, ocorrência, tutoria — e
 // "carregou vazio" e "está vazio" deixam de ser a mesma coisa: o primeiro é uma
