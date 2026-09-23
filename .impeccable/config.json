@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "arial",
+        "createdAt": "2026-09-23T14:38:54.383Z",
+        "reason": "Claude: Arial sits only in the sample HTML that the HTML-to-image tool renders on the device; a font every device already has keeps the rendered image predictable"
+      }
+    ]
+  }
+}

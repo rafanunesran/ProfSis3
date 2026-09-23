@@ -398,7 +398,7 @@ const CATALOGO_IMG = [
                  'com razão, não deixa uma página ler outra. Imagens de outros sites dentro do HTML também não aparecem.',
         campos: [
             { id: 'html', tipo: 'textarea', rotulo: 'HTML', linhas: 10,
-              padrao: '<div style="font-family:Arial,sans-serif;padding:32px;background:#edf3fd;border-left:8px solid #2563c9">\n' +
+              padrao: '<div style="font-family:Arial,sans-serif;padding:32px;background:#edf3fd;border:2px solid #a9c6f3;border-radius:12px">\n' +
                       '  <h1 style="margin:0 0 8px;color:#1b4488">Reunião de pais</h1>\n' +
                       '  <p style="font-size:20px;margin:0">Sexta-feira, 19h, no pátio da escola.</p>\n</div>' },
             { id: 'largura', tipo: 'numero', rotulo: 'Largura (px)', padrao: 800, min: 100, max: 4000 },
@@ -1392,7 +1392,7 @@ function htmlProgresso() {
     const pct = Math.max(2, Math.min(100, Math.round((imgProgresso.fracao || 0) * 100)));
     return `
         <div style="background:#eef2f7; border-radius:999px; height:10px; overflow:hidden;">
-            <div style="width:${pct}%; height:100%; background:#2563c9; transition:width .2s;"></div>
+            <div style="width:100%; height:100%; background:#2563c9; transform:scaleX(${pct / 100}); transform-origin:left; transition:transform .2s;"></div>
         </div>
         <div style="font-size:12px; color:#5f6b7f; margin-top:6px;">${esc(imgProgresso.texto || '')}</div>`;
 }
