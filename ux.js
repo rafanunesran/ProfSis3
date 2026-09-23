@@ -9,8 +9,8 @@
 //      lateral do Híbrido.
 //   2. No celular, a barra de baixo mostra os 4 primeiros itens e um "Mais" que abre
 //      uma folha com todos.
-//   3. Busca rápida (Ctrl+K ou o botão Buscar): ir para qualquer tela, turma ou ação
-//      digitando.
+//   3. Busca rápida (Ctrl+K ou o botão Buscar): telas, funções, turmas, estudantes,
+//      trabalhos e tutorados, só com o que já está carregado no aparelho.
 //   4. Mostra no topo em que tela a pessoa está.
 //   5. Menu lateral recolhível no computador (a escolha fica guardada no aparelho).
 
@@ -157,24 +157,94 @@
     // ------------------------------------------------------ 3. busca rápida
     let paleta = null, itensPaleta = [], selecionado = 0;
 
+    // Índice da busca. Tudo vem do que já está carregado neste aparelho (nada vai para a
+    // rede) e toda ação é uma função que já existe. Grupos com muitos itens (estudantes,
+    // trabalhos, tutorados) só aparecem depois que a pessoa começa a digitar.
+    const LIMITE_POR_GRUPO = { 'Estudantes': 8, 'Trabalhos': 8, 'Tutorados': 6 };
+
+    function temDados() { return typeof data !== 'undefined' && data; }
+    function listaDe(chave) { return temDados() && Array.isArray(data[chave]) ? data[chave] : []; }
+    function nomeDaTurma(t) { return t ? (t.disciplina ? t.nome + ' · ' + t.disciplina : t.nome) : ''; }
+    function clicarMenu(tela) {
+        const b = botoesDoMenu().find(x => telaDoBotao(x) === tela);
+        if (b) { b.click(); return true; }
+        if (typeof showScreen === 'function') { showScreen(tela); return true; }
+        return false;
+    }
+
     function coletarItens() {
         const itens = [];
+        const turmas = listaDe('turmas');
+        const turmaPorId = {};
+        turmas.forEach(t => { turmaPorId[String(t.id)] = t; });
+        const estudantes = listaDe('estudantes');
+        const podeAbrirTurma = typeof abrirTurma === 'function';
+
+        // Telas do menu
         botoesDoMenu().forEach(b => {
             const icone = b.querySelector('.icon');
             itens.push({ grupo: 'Telas', rotulo: rotuloDoBotao(b), icone: icone ? icone.innerHTML : '', fazer: () => b.click() });
         });
-        const modo = typeof currentViewMode !== 'undefined' ? currentViewMode : null;
-        if ((!modo || modo === 'professor') && typeof data !== 'undefined' && data && Array.isArray(data.turmas) && typeof abrirTurma === 'function') {
-            data.turmas.forEach(t => {
-                const nome = t.disciplina ? t.nome + ' · ' + t.disciplina : t.nome;
-                itens.push({ grupo: 'Turmas', rotulo: nome, extra: t.turno || '', icone: ico('turmas'), fazer: () => abrirTurma(t.id) });
+
+        // Funções dentro das telas: abas de Documentos e de Ferramentas
+        if (typeof ABAS_DOCUMENTOS !== 'undefined' && Array.isArray(ABAS_DOCUMENTOS) && typeof showDocumentosTab === 'function') {
+            ABAS_DOCUMENTOS.forEach(a => itens.push({ grupo: 'Funções', rotulo: a.label, extra: 'Documentos', icone: ico('documentos'),
+                fazer: () => { clicarMenu('documentos'); setTimeout(() => showDocumentosTab(a.id), 60); } }));
+        }
+        if (typeof ABAS_FERRAMENTAS !== 'undefined' && Array.isArray(ABAS_FERRAMENTAS) && typeof showFerramentasTab === 'function') {
+            ABAS_FERRAMENTAS.forEach(a => itens.push({ grupo: 'Funções', rotulo: a.label, extra: 'Ferramentas', icone: ico('ferramentas'),
+                fazer: () => { if (typeof definirAbaFerramentas === 'function') definirAbaFerramentas(a.id); clicarMenu('ferramentas'); } }));
+        }
+
+        // Turmas: acha também pelo nome de um estudante da turma
+        if (podeAbrirTurma) {
+            const nomesPorTurma = {};
+            estudantes.forEach(e => { const k = String(e.id_turma); (nomesPorTurma[k] = nomesPorTurma[k] || []).push(e.nome_completo || ''); });
+            turmas.forEach(t => itens.push({ grupo: 'Turmas', rotulo: nomeDaTurma(t), extra: t.turno || '', icone: ico('turmas'),
+                busca: (nomesPorTurma[String(t.id)] || []).join(' '), fazer: () => abrirTurma(t.id) }));
+        }
+
+        // Estudantes: abre a turma e a ficha do estudante (frequência, notas e trabalhos)
+        if (podeAbrirTurma && typeof abrirEstudanteDetalhe === 'function') {
+            estudantes.forEach(e => {
+                const t = turmaPorId[String(e.id_turma)];
+                if (!t || !e.nome_completo) return;
+                const situacao = e.status && e.status !== 'Ativo' ? ' · ' + e.status : '';
+                itens.push({ grupo: 'Estudantes', soComBusca: true, rotulo: e.nome_completo, extra: nomeDaTurma(t) + situacao, icone: ico('estudante'),
+                    fazer: async () => { await abrirTurma(t.id); abrirEstudanteDetalhe(e.id); } });
             });
         }
+
+        // Trabalhos: abre a turma na aba Trabalhos
+        if (podeAbrirTurma && typeof showTurmaTab === 'function') {
+            listaDe('trabalhos').forEach(tr => {
+                const t = turmaPorId[String(tr.id_turma)];
+                if (!t || !tr.titulo) return;
+                itens.push({ grupo: 'Trabalhos', soComBusca: true, rotulo: tr.titulo,
+                    extra: nomeDaTurma(t) + (tr.bimestre ? ' · ' + tr.bimestre + 'º bim.' : ''), icone: ico('trabalhos'),
+                    fazer: async () => { await abrirTurma(t.id); showTurmaTab('trabalhos'); } });
+            });
+        }
+
+        // Tutorados: abre a ficha de tutoria
+        if (typeof abrirFichaTutorado === 'function') {
+            listaDe('tutorados').forEach(tu => {
+                if (!tu.nome_estudante) return;
+                itens.push({ grupo: 'Tutorados', soComBusca: true, rotulo: tu.nome_estudante, extra: tu.turma || '', icone: ico('tutoria'),
+                    fazer: () => abrirFichaTutorado(tu.id) });
+            });
+        }
+
+        // Ações
+        const modo = typeof currentViewMode !== 'undefined' ? currentViewMode : null;
         const acao = (rotulo, icone, fn) => { if (typeof fn === 'function') itens.push({ grupo: 'Ações', rotulo, icone: ico(icone), fazer: fn }); };
         if (!modo || modo === 'professor') acao('Nova turma', 'turmas', window.abrirModalNovaTurma);
         acao('Estagiário (gerar documento)', 'estagiario', window.abrirModalGerarDocumentoIA);
         acao('Meu perfil e tema', 'perfil', window.abrirModalPerfil);
         acao('Baixar minha cópia de segurança', 'baixar', window.exportarArquivoProfsis);
+        acao('Importar dados do arquivo', 'importar', window.abrirSeletorArquivoProfsis);
+        acao('Histórico de backups na nuvem', 'nuvem', window.listarBackupsNuvem);
+        acao('Central de Resgate (perdi dados)', 'seguranca', window.abrirCentralResgate);
         return itens;
     }
 
@@ -189,7 +259,7 @@
         paleta.innerHTML =
             '<div class="ux-paleta" role="dialog" aria-modal="true" aria-label="Busca rápida">' +
             '<label class="ux-paleta-campo">' + ico('busca') +
-            '<input type="text" id="uxPaletaBusca" placeholder="Ir para uma tela, turma ou ação…" autocomplete="off" spellcheck="false">' +
+            '<input type="text" id="uxPaletaBusca" placeholder="Buscar estudante, turma, trabalho, tela ou função…" autocomplete="off" spellcheck="false">' +
             '<kbd>Esc</kbd></label>' +
             '<div class="ux-paleta-lista" role="listbox"></div>' +
             '<div class="ux-paleta-dica"><span><kbd>↑</kbd><kbd>↓</kbd> escolher</span><span><kbd>Enter</kbd> abrir</span><span><kbd>Ctrl</kbd><kbd>K</kbd> de qualquer tela</span></div>' +
@@ -205,12 +275,28 @@
 
     function filtrar(q) {
         const busca = semAcento(q).trim();
-        if (!busca) return itensPaleta;
+        if (!busca) return itensPaleta.filter(it => !it.soComBusca);
         const partes = busca.split(/\s+/);
-        return itensPaleta.filter(it => {
-            const alvo = semAcento(it.rotulo + ' ' + (it.extra || '') + ' ' + it.grupo);
+        const achados = itensPaleta.filter(it => {
+            const alvo = semAcento(it.rotulo + ' ' + (it.extra || '') + ' ' + it.grupo + ' ' + (it.busca || ''));
             return partes.every(p => alvo.indexOf(p) !== -1);
         });
+        // Grupos grandes mostram só os primeiros; o resto aparece refinando a busca
+        const contagem = {};
+        const saida = [];
+        achados.forEach(it => {
+            const lim = LIMITE_POR_GRUPO[it.grupo];
+            contagem[it.grupo] = (contagem[it.grupo] || 0) + 1;
+            if (!lim || contagem[it.grupo] <= lim) saida.push(it);
+        });
+        Object.keys(LIMITE_POR_GRUPO).forEach(g => {
+            const sobra = (contagem[g] || 0) - LIMITE_POR_GRUPO[g];
+            if (sobra > 0) {
+                const ult = saida.map(x => x.grupo).lastIndexOf(g);
+                saida.splice(ult + 1, 0, { grupo: g, rotulo: 'e mais ' + sobra + ' — continue digitando para refinar', aviso: true, icone: '', fazer: () => {} });
+            }
+        });
+        return saida;
     }
 
     function desenharLista(q) {
@@ -223,11 +309,13 @@
         let html = '', grupo = null;
         achados.forEach((it, i) => {
             if (it.grupo !== grupo) { grupo = it.grupo; html += '<div class="ux-paleta-grupo">' + grupo + '</div>'; }
+            if (it.aviso) { html += '<div class="ux-paleta-mais" data-i="' + i + '"></div>'; return; }
             html += '<button type="button" role="option" class="ux-paleta-item' + (i === selecionado ? ' sel' : '') + '" data-i="' + i + '">' +
                 '<span class="ux-paleta-ico">' + it.icone + '</span><span class="ux-paleta-rot"></span>' +
                 (it.extra ? '<span class="ux-paleta-extra"></span>' : '') + '</button>';
         });
         lista.innerHTML = html;
+        $$('.ux-paleta-mais', lista).forEach(d => { d.textContent = achados[+d.dataset.i].rotulo; });
         $$('.ux-paleta-item', lista).forEach(btn => {
             const it = achados[+btn.dataset.i];
             $('.ux-paleta-rot', btn).textContent = it.rotulo;
@@ -249,15 +337,24 @@
     function teclaPaleta(e) {
         const lista = $('.ux-paleta-lista', paleta);
         const achados = lista._achados || [];
-        if (e.key === 'ArrowDown') { e.preventDefault(); selecionado = Math.min(achados.length - 1, selecionado + 1); marcarSelecionado(); }
-        else if (e.key === 'ArrowUp') { e.preventDefault(); selecionado = Math.max(0, selecionado - 1); marcarSelecionado(); }
+        const passo = (d) => {
+            let i = selecionado + d;
+            while (i >= 0 && i < achados.length && achados[i].aviso) i += d;
+            if (i >= 0 && i < achados.length) selecionado = i;
+            marcarSelecionado();
+        };
+        if (e.key === 'ArrowDown') { e.preventDefault(); passo(1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); passo(-1); }
         else if (e.key === 'Enter') { e.preventDefault(); if (achados[selecionado]) executar(achados[selecionado]); }
         else if (e.key === 'Escape') { e.preventDefault(); fecharPaleta(); }
     }
 
     function executar(it) {
+        if (it.aviso) return;
         fecharPaleta();
-        try { it.fazer(); } catch (err) { console.warn('[SisProf] Busca rápida:', err); }
+        try {
+            Promise.resolve(it.fazer()).catch(err => console.warn('[SisProf] Busca rápida:', err));
+        } catch (err) { console.warn('[SisProf] Busca rápida:', err); }
     }
 
     function fecharPaleta() {
