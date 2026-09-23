@@ -357,7 +357,7 @@ const GRAVAR_VIDEO = async ({ segundos, largura, altura, comSom }) => {
        JSON.stringify(link.direto));
     ok('arquivo que o servidor nao libera: explica e oferece abrir o link', /nao permite/.test(link.bloqueado.erro || '') &&
        link.bloqueado.abrir === 'https://bloqueado.teste/filme.mp4', link.bloqueado.erro);
-    ok('sem servidor configurado: explica, sem citar plataforma', /ainda nao esta/.test(link.semServidor.erro || '') &&
+    ok('sem servidor configurado: explica, sem citar plataforma', /ainda n[aã]o est/.test(link.semServidor.erro || '') &&
        !/youtube|facebook|instagram/i.test(link.semServidor.erro || ''), link.semServidor.erro);
     ok('texto que nao e link e recusado', /nao parece um link/.test(link.naoELink.erro || ''), link.naoELink.erro);
     ok('pelo servidor: resolve e baixa com o nome certo', !link.pelaApi.erro && link.pelaApi.nome === 'aula_gravada.webm' &&

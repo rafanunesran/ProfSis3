@@ -355,7 +355,7 @@ function arquivoUnico(entradas) {
     const a = entradas.arquivo;
     if (!a) throw new Error('Escolha o video primeiro.');
     if (a.size > VIDEO_MAX_MB * 1024 * 1024) {
-        throw new Error('Este video tem ' + formatarTamanho(a.size) + '. O editor no navegador aguenta até cerca de ' +
+        throw new Error('Este video tem ' + formatarTamanho(a.size) + '. O editor no navegador aguenta até cerca de ' +
                         VIDEO_MAX_MB + ' MB — corte-o em partes menores num computador, ou use um arquivo menor.');
     }
     return a;
@@ -556,7 +556,7 @@ ops.juntar = async (e, progresso) => {
     if (lista.length < 2) throw new Error('Escolha pelo menos dois videos.');
     const total = lista.reduce((s, a) => s + (a.size || 0), 0);
     if (total > VIDEO_MAX_MB * 1024 * 1024) {
-        throw new Error('Os videos somam ' + formatarTamanho(total) + '. O editor no navegador aguenta até cerca de ' + VIDEO_MAX_MB + ' MB no total.');
+        throw new Error('Os videos somam ' + formatarTamanho(total) + '. O editor no navegador aguenta até cerca de ' + VIDEO_MAX_MB + ' MB no total.');
     }
     const r = await rodar({
         entradas: lista.map(a => ({ arquivo: a, ext: extensao(a.name, 'mp4') })), sondar: true,
@@ -773,7 +773,9 @@ async function lerServidoresDoBanco() {
         console.warn('[Video] Nao consegui ler a configuracao do download:', e && e.message);
         return [];   // nao guarda: a proxima tentativa le de novo
     }
-    _servidoresDoBanco = lista;
+    // Lista vazia nao fica guardada: se o super admin cadastrar o servidor com a
+    // pagina do professor aberta, o proximo clique ja' acha.
+    if (lista.length) _servidoresDoBanco = lista;
     return lista;
 }
 
@@ -923,10 +925,12 @@ ops.baixarLink = async (e, progresso) => {
     }
 
     // 2. Pergunta aos servidores.
-    const servidores = servidoresDownload();
+    const servidores = servidoresDownload(raiz.PROFSIS_VIDEO_SERVIDORES ? [] : await lerServidoresDoBanco());
     if (!servidores.length) {
-        throw new Error('O download por link ainda nao está disponivel. Por enquanto, funciona com link direto ' +
-                        'para o arquivo (terminado em .mp4, .webm...).');
+        const admin = typeof currentUser !== 'undefined' && currentUser && currentUser.role === 'super_admin';
+        throw new Error('O download por link ainda não está disponível. Por enquanto, funciona com link direto ' +
+                        'para o arquivo (terminado em .mp4, .webm...).' +
+                        (admin ? ' [Super admin: cadastre o servidor em Painel Super Admin → 🎬 Download de vídeo.]' : ''));
     }
     avisar(4, 'Procurando o vídeo no link...');
     let ultimaFalha = null;
