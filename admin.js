@@ -143,6 +143,7 @@ async function renderAdminEscolas() {
             <button class="btn btn-secondary" onclick="migrarEscolasParaEspacos()" title="Cria um espaço com código de convite para cada escola desta lista, sem mover nenhum dado">🔑 Gerar espaços e códigos</button>
             <button class="btn btn-info" onclick="abrirModalConfigGerais()">⚙️ Config. Globais (Estado/Região)</button>
             <button class="btn btn-success" onclick="abrirModalAssinaturasAdmin()" title="Links de cobrança dos planos e endereço do webhook">💳 Assinaturas</button>
+            <button class="btn btn-info" onclick="abrirModalDownloadVideoAdmin()" title="Servidor usado por Ferramentas → Vídeo → Baixar vídeo por link">🎬 Download de vídeo</button>
         </div>
     `;
 
@@ -786,6 +787,96 @@ async function salvarLinksAssinatura() {
     }
 }
 
+// SERVIDOR DO "BAIXAR VIDEO POR LINK" (Ferramentas -> Video).
+//
+// O navegador sozinho nao consegue tirar o arquivo de uma pagina de video: quem faz
+// isso e' um servidor cobalt (ver servidor-video/LEIAME.md). O endereco mora em
+// assinaturas_config/video — mesma colecao dos links de cobranca, que so' o super
+// admin escreve. A chave, se houver, fica legivel para quem abre o site (ela vai no
+// pedido do navegador de qualquer jeito); o que protege o servidor e' o CORS dele.
+async function abrirModalDownloadVideoAdmin() {
+    let div = document.getElementById('modalDownloadVideoAdmin');
+    if (!div) {
+        div = document.createElement('div');
+        div.id = 'modalDownloadVideoAdmin';
+        div.className = 'modal';
+        document.body.appendChild(div);
+    }
+    let cfg = null;
+    try { cfg = await getData('assinaturas_config', 'video'); } catch (e) {}
+    const servidores = (cfg && Array.isArray(cfg.servidores)) ? cfg.servidores : [];
+    const esc = (v) => String(v || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    const linha = (i) => `
+        <div style="display:grid; grid-template-columns:1fr 160px; gap:8px; margin-top:8px;">
+            <input type="text" id="videoServidorUrl${i}" placeholder="https://seu-servidor.onrender.com" style="padding:8px;"
+                   value="${esc(servidores[i] && servidores[i].url)}">
+            <input type="text" id="videoServidorChave${i}" placeholder="chave (opcional)" style="padding:8px;"
+                   value="${esc(servidores[i] && servidores[i].chave)}">
+        </div>`;
+    div.innerHTML = `
+        <div class="modal-content" style="max-width:640px;">
+            <div class="modal-header">
+                <h2>🎬 Download de vídeo</h2>
+                <button class="close-btn" onclick="closeModal('modalDownloadVideoAdmin')">×</button>
+            </div>
+            <div style="padding:20px 25px;">
+                <p style="font-size:13px; color:#3d4759; line-height:1.5;">
+                    Endereço do servidor que resolve os links em <strong>Ferramentas → Vídeo → Baixar vídeo por link</strong>.
+                    Sem ele, só funcionam links diretos para o arquivo (.mp4, .webm). Como publicar o servidor:
+                    <code>servidor-video/LEIAME.md</code> no repositório.
+                </p>
+                <label style="display:block; margin-top:12px; font-size:13px;">Servidores (o primeiro que responder é usado; o segundo é reserva)</label>
+                ${linha(0)}${linha(1)}
+                <div id="videoServidorTeste" style="font-size:12px; margin-top:10px; line-height:1.5;"></div>
+                <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px;">
+                    <button class="btn btn-secondary" onclick="testarServidoresVideoAdmin()">Testar</button>
+                    <button class="btn btn-primary" onclick="salvarServidoresVideoAdmin()">Salvar</button>
+                </div>
+            </div>
+        </div>`;
+    showModal('modalDownloadVideoAdmin');
+}
+
+function _servidoresVideoDoFormulario() {
+    const lista = [];
+    for (let i = 0; i < 2; i++) {
+        const url = (document.getElementById('videoServidorUrl' + i).value || '').trim().replace(/\/+$/, '');
+        const chave = (document.getElementById('videoServidorChave' + i).value || '').trim();
+        if (url) lista.push({ url: url, chave: chave });
+    }
+    return lista;
+}
+
+async function testarServidoresVideoAdmin() {
+    const caixa = document.getElementById('videoServidorTeste');
+    const lista = _servidoresVideoDoFormulario();
+    if (!lista.length) { caixa.textContent = 'Preencha pelo menos um endereço.'; return; }
+    if (!window.VIDEOOPS) { caixa.textContent = 'O motor de vídeo não carregou; recarregue a página.'; return; }
+    caixa.textContent = 'Testando...';
+    const linhas = [];
+    for (const s of lista) {
+        const r = await VIDEOOPS.testarServidor(s);
+        linhas.push((r.ok ? '✅ ' : '❌ ') + s.url + ' — ' + r.motivo);
+    }
+    caixa.innerHTML = linhas.map(l => '<div>' + l.replace(/</g, '&lt;') + '</div>').join('');
+}
+
+async function salvarServidoresVideoAdmin() {
+    const lista = _servidoresVideoDoFormulario();
+    if (lista.some(s => !/^https:\/\/[a-z0-9.-]+(:\d+)?(\/|$)/i.test(s.url))) {
+        alert('O endereço precisa começar com https:// (o site é https e o navegador recusa servidor http).');
+        return;
+    }
+    try {
+        await saveData('assinaturas_config', 'video', { servidores: lista, atualizadoEm: new Date().toISOString() });
+        if (window.VIDEOOPS && VIDEOOPS.esquecerServidores) VIDEOOPS.esquecerServidores();
+        alert(lista.length ? 'Salvo. O "Baixar vídeo por link" já usa este servidor.' : 'Salvo sem servidor: só links diretos funcionam.');
+        closeModal('modalDownloadVideoAdmin');
+    } catch (e) {
+        alert('Não consegui salvar: ' + (e && e.message ? e.message : e));
+    }
+}
+
 // MIGRACAO DOS APOIADORES MARCADOS A MAO.
 //
 // O selo de apoiador passou a sair SO' de `assinaturas/<uid>` — documento que
@@ -1308,7 +1399,7 @@ async function migrarDadosAEECompartilhado() {
 // por uma tela de gerenciamento: nomeia, mascara e permite excluir/adicionar chaves isoladamente.
 // Guarda em system/config_ia.chaves (array de {id, nome, chave}) - e mantém config_ia.apiKey (a
 // mesma lista, achatada em string separada por vírgula) sempre sincronizado, porque gestor.js
-// (chamarIAExtracaoNotas) e a extensão do Chrome ainda leem só esse campo legado.
+// e a extensão do Chrome ainda leem só esse campo legado.
 
 function rotularProvedorChave(chave) {
     if (chave.startsWith('sk-or-')) return 'OpenRouter';

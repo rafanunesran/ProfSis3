@@ -121,6 +121,7 @@ function limparCacheListaEscola() {
     _chaveEscolaCache = null;
     _cacheLista = {};
     _ultimoPublicado = {};
+    if (typeof _cacheContribuicoes !== 'undefined') _cacheContribuicoes = null;
 }
 
 // --- O que cada painel publica ----------------------------------------------
@@ -204,28 +205,36 @@ async function publicarListaEscola(dados, painel, opcoes) {
     }
 
     try {
-        const chave = await obterChaveEscola(true);
-        if (!chave) return { estado: 'sem-chave' };
-
-        const pacote = await cifrarPacote(recorte, chave);
-        await saveData('app_data', id, pacote.principal);
-        for (const cont of pacote.continuacoes) {
-            await saveData('app_data', id + '_p' + cont.parte, cont);
-        }
-        // Sobras de uma versão anterior com MAIS partes confundiriam a remontagem.
-        const antes = _partesPublicadas[id] || 1;
-        for (let i = pacote.principal.partes + 1; i <= antes; i++) {
-            try { await db.collection('app_data').doc(id + '_p' + i).delete(); }
-            catch (e) { console.warn('[Lista da escola] Sobra não removida:', e); }
-        }
-        _partesPublicadas[id] = pacote.principal.partes;
+        const r = await _gravarCifradoNaEscola(id, recorte);
+        if (r.estado !== 'ok') return r;
         _ultimoPublicado[id] = assinatura;
-        delete _cacheLista[id];
-        return { estado: 'ok', geradoEm: recorte.geradoEm, partes: pacote.principal.partes };
+        return r;
     } catch (e) {
         console.error('[Lista da escola] Falha ao publicar:', e);
         return { estado: 'erro', erro: e && e.message };
     }
+}
+
+// Cifra com a chave da escola e grava em `id` (+ _p2, _p3...). É o único jeito de algo
+// pessoal chegar ao ambiente da escola: `saveData` recusaria o recorte em claro.
+async function _gravarCifradoNaEscola(id, recorte) {
+    const chave = await obterChaveEscola(true);
+    if (!chave) return { estado: 'sem-chave' };
+
+    const pacote = await cifrarPacote(recorte, chave);
+    await saveData('app_data', id, pacote.principal);
+    for (const cont of pacote.continuacoes) {
+        await saveData('app_data', id + '_p' + cont.parte, cont);
+    }
+    // Sobras de uma versão anterior com MAIS partes confundiriam a remontagem.
+    const antes = _partesPublicadas[id] || 1;
+    for (let i = pacote.principal.partes + 1; i <= antes; i++) {
+        try { await db.collection('app_data').doc(id + '_p' + i).delete(); }
+        catch (e) { console.warn('[Lista da escola] Sobra não removida:', e); }
+    }
+    _partesPublicadas[id] = pacote.principal.partes;
+    delete _cacheLista[id];
+    return { estado: 'ok', geradoEm: recorte.geradoEm, partes: pacote.principal.partes };
 }
 
 // persistirDados() roda a cada digitação do gestor. Publicar em cima de cada uma
@@ -263,6 +272,13 @@ async function lerListaEscola(painel, opcoes) {
         return cache.resultado;
     }
 
+    const r = await _lerCifradoDaEscola(id);
+    // Erro de rede/chave não entra no cache: a próxima abertura tenta de novo.
+    if (r.estado === 'erro' && r.naoGuardar) return r;
+    return _guardarCache(id, r);
+}
+
+async function _lerCifradoDaEscola(id) {
     const antes = window.falhaLeituraFirestore;
     window.falhaLeituraFirestore = false;
     const doc = await getData('app_data', id);
@@ -271,23 +287,291 @@ async function lerListaEscola(painel, opcoes) {
 
     // Leitura que FALHOU não é "não existe": devolver 'vazio' aqui faria o professor
     // achar que a gestão não publicou nada, e — pior — daria por boa uma lista vazia.
-    if (falhou) return { estado: 'erro', erro: 'leitura da nuvem falhou' };
-    if (!doc) return _guardarCache(id, { estado: 'vazio' });
-    if (!doc.cifrado) return _guardarCache(id, { estado: 'erro', erro: 'documento não está no formato cifrado' });
+    if (falhou) return { estado: 'erro', erro: 'leitura da nuvem falhou', naoGuardar: true };
+    if (!doc) return { estado: 'vazio' };
+    if (!doc.cifrado) return { estado: 'erro', erro: 'documento não está no formato cifrado' };
 
     const chave = await obterChaveEscola(false);
-    if (!chave) return { estado: 'erro', erro: 'a chave desta escola não foi encontrada' };
+    if (!chave) return { estado: 'erro', erro: 'a chave desta escola não foi encontrada', naoGuardar: true };
 
     try {
         const dados = await decifrarPacote(doc, chave, (n) => getData('app_data', id + '_p' + n));
-        return _guardarCache(id, { estado: 'ok', dados: dados });
+        return { estado: 'ok', dados: dados };
     } catch (e) {
         console.error('[Lista da escola] Não consegui decifrar:', e);
-        return { estado: 'erro', erro: 'a chave da escola não abre a lista publicada' };
+        return { estado: 'erro', erro: 'a chave da escola não abre a lista publicada', naoGuardar: true };
     }
 }
 
 function _guardarCache(id, resultado) {
     _cacheLista[id] = { quando: Date.now(), resultado: resultado };
     return resultado;
+}
+
+// ============================================================================
+//  O QUE O PROFESSOR DEVOLVE PARA A ESCOLA: OCORRÊNCIAS E FALTAS
+// ----------------------------------------------------------------------------
+//  Antes da adequação, duas coisas saíam da conta do professor para a escola:
+//    - a ocorrência era copiada para `app_data_school_<escola>_gestor`, e o gestor a
+//      via na hora, com a devolutiva voltando para o professor;
+//    - a Busca Ativa do gestor lia `presencas` direto do documento de cada professor,
+//      e era isso que mapeava o aluno faltoso na escola inteira.
+//  Com `ocorrencias` e `presencas` fora do documento em claro (CAMPOS_PESSOAIS) e a
+//  camada pessoal cifrada com a chave de CADA conta, as duas pararam em silêncio: a
+//  cópia da ocorrência só rodava antes do corte, e a Busca Ativa passou a achar zero
+//  falta em todo mundo.
+//
+//  O conserto segue o mesmo desenho da lista: a escola é um ambiente compartilhado.
+//  Cada professor publica o SEU recorte, cifrado com a chave da escola, em
+//  `lista_school_<escola>_prof_<id>` — a mesma família de documento que a Regra do
+//  Firestore já só entrega a quem é da escola, sem nenhuma Regra nova.
+//
+//  O recorte é curto e escrito à mão, como `recorteDaEscola`:
+//    - ocorrências das turmas vinculadas à gestão, com a turma trocada pela da gestão;
+//    - faltas por dia (ids de estudante da lista da escola, sem nome);
+//    - os dias em que houve chamada/registro em cada turma da gestão — é o que a Busca
+//      Ativa usa para calcular a porcentagem de presença.
+//  Turma sem vínculo com a gestão não sai daqui: os ids dela não são os da escola.
+// ============================================================================
+
+// Quanto tempo o conjunto dos recortes dos colegas vale nesta sessão. A chamada abre
+// uma vez por turma e o relatório mensal consulta 31 dias seguidos: sem isto, cada dia
+// custaria uma leitura por professor da escola.
+const CONTRIBUICOES_CACHE_MS = 60000;
+// Faltas mais antigas que isto não sobem: nenhum relatório olha para trás mais de um ano.
+const CONTRIBUICAO_JANELA_DIAS = 400;
+
+let _cacheContribuicoes = null;   // { schoolId, quando, lista }
+let _timerContribuicao = null;
+
+function _idSeguro(v) {
+    return String(v == null ? '' : v).replace(/[^A-Za-z0-9_-]/g, '_');
+}
+
+function docContribuicaoProfessor(schoolId, autorId) {
+    return docListaEscola(schoolId, 'prof_' + _idSeguro(autorId));
+}
+
+// Painel pessoal = tudo que não é painel da escola. Só ele tem turmas com `masterId`
+// e `presencas` do próprio professor.
+function _ehPainelDoProfessor() {
+    const modo = (typeof currentViewMode !== 'undefined') ? currentViewMode : null;
+    return LISTA_ESCOLA_PAINEIS.indexOf(modo) === -1;
+}
+
+function recorteDoProfessor(dados, autor) {
+    const d = dados || {};
+    const masterDe = {};
+    (d.turmas || []).forEach(t => { if (t && t.masterId != null && t.masterId !== '') masterDe[String(t.id)] = t.masterId; });
+
+    // abrirTurma clona o aluno da gestão MANTENDO o id: é o que permite dizer, pelo id,
+    // de qual turma da escola é a falta.
+    const turmaMasterDoAluno = {};
+    (d.estudantes || []).forEach(e => {
+        const m = masterDe[String(e.id_turma)];
+        if (m != null) turmaMasterDoAluno[String(e.id)] = m;
+    });
+
+    const limite = new Date(Date.now() - CONTRIBUICAO_JANELA_DIAS * 86400000).toISOString().slice(0, 10);
+    const faltas = {};     // 'AAAA-MM-DD' -> [idEstudante]
+    const chamadas = {};   // masterId -> ['AAAA-MM-DD']
+    const marcarDia = (m, dia) => {
+        const k = String(m);
+        if (!chamadas[k]) chamadas[k] = [];
+        if (chamadas[k].indexOf(dia) === -1) chamadas[k].push(dia);
+    };
+
+    (d.presencas || []).forEach(p => {
+        if (!p || !p.data || p.data < limite) return;
+        const m = turmaMasterDoAluno[String(p.id_estudante)];
+        if (m == null) return;
+        marcarDia(m, p.data);
+        if (p.status === 'falta') {
+            if (!faltas[p.data]) faltas[p.data] = [];
+            if (faltas[p.data].indexOf(p.id_estudante) === -1) faltas[p.data].push(p.id_estudante);
+        }
+    });
+    (d.registrosAula || []).forEach(r => {
+        if (!r || !r.data || r.data < limite) return;
+        const m = masterDe[String(r.id_turma)];
+        if (m != null) marcarDia(m, r.data);
+    });
+
+    // Só a ocorrência que nasceu numa turma do professor: as que o coordenador importou
+    // da escola já estão com a turma da gestão e não são dele para republicar.
+    const ocorrencias = (d.ocorrencias || [])
+        .filter(o => o && masterDe[String(o.id_turma)] != null)
+        .map(o => Object.assign({}, o, { id_turma: masterDe[String(o.id_turma)], id_turma_professor: o.id_turma }));
+
+    const a = autor || {};
+    return {
+        v: 1, painel: 'prof',
+        autorId: a.id != null ? a.id : null,
+        autorNome: a.nome || '',
+        geradoEm: new Date().toISOString(),
+        ocorrencias: ocorrencias,
+        faltas: faltas,
+        chamadas: chamadas
+    };
+}
+
+function _contribuicaoVazia(r) {
+    return !r || (!(r.ocorrencias || []).length && !Object.keys(r.faltas || {}).length && !Object.keys(r.chamadas || {}).length);
+}
+
+// Devolve { estado } como publicarListaEscola: 'ok', 'igual', 'recusado', 'erro',
+// 'nao-e-professor', 'sem-escola', 'bloqueado', 'sem-vinculo'.
+async function publicarContribuicaoProfessor(dados, opcoes) {
+    if (!_ehPainelDoProfessor()) return { estado: 'nao-e-professor' };
+    const u = (typeof currentUser !== 'undefined') ? currentUser : null;
+    if (!u || u.id == null) return { estado: 'sem-escola' };
+    const schoolId = _escolaAtualId();
+    if (!schoolId) return { estado: 'sem-escola' };
+    if (window.bloquearEscritaLocal || window.bloquearEscritaNuvem) return { estado: 'bloqueado' };
+
+    const d = dados || {};
+    // Professor sem nenhuma turma da gestão não tem o que devolver para a escola.
+    if (!(d.turmas || []).some(t => t && t.masterId != null && t.masterId !== '')) return { estado: 'sem-vinculo' };
+
+    const id = docContribuicaoProfessor(schoolId, u.id);
+    const recorte = recorteDoProfessor(d, u);
+    const assinatura = JSON.stringify(Object.assign({}, recorte, { geradoEm: null }));
+    if (!(opcoes && opcoes.forcar) && _ultimoPublicado[id] === assinatura) return { estado: 'igual' };
+
+    // Mesma trava da lista: um aparelho que abriu sem a camada pessoal publicaria um
+    // recorte vazio e apagaria da escola as faltas e ocorrências deste professor.
+    if (_contribuicaoVazia(recorte) && !(opcoes && opcoes.mesmoVazio)) {
+        const atual = await _lerCifradoDaEscola(id);
+        if (atual.estado === 'ok' && !_contribuicaoVazia(atual.dados)) {
+            console.warn('[Escola] Recorte do professor recusado: viria vazio por cima de um com conteúdo.');
+            return { estado: 'recusado' };
+        }
+    }
+
+    try {
+        const r = await _gravarCifradoNaEscola(id, recorte);
+        if (r.estado === 'ok') {
+            _ultimoPublicado[id] = assinatura;
+            _cacheContribuicoes = null;
+        }
+        return r;
+    } catch (e) {
+        console.error('[Escola] Falha ao publicar o recorte do professor:', e);
+        return { estado: 'erro', erro: e && e.message };
+    }
+}
+
+function agendarPublicacaoContribuicao(dados) {
+    if (!_ehPainelDoProfessor()) return;
+    if (_timerContribuicao) clearTimeout(_timerContribuicao);
+    _timerContribuicao = setTimeout(() => {
+        _timerContribuicao = null;
+        const agora = (typeof data !== 'undefined' && data) ? data : dados;
+        publicarContribuicaoProfessor(agora).then(r => {
+            if (['ok', 'igual', 'nao-e-professor', 'sem-vinculo', 'sem-escola'].indexOf(r.estado) === -1) {
+                console.warn('[Escola] Recorte do professor não publicado:', r.estado);
+            }
+        }).catch(e => console.warn('[Escola] Publicação do recorte falhou:', e));
+    }, 4000);
+}
+
+// Quem é da escola, pela users_list (é onde o sistema inteiro já procura os professores
+// da escola — Busca Ativa, tutoria, relatório mensal).
+async function _professoresDaEscola(schoolId) {
+    const usersData = await getData('system', 'users_list');
+    const users = (usersData && Array.isArray(usersData.list)) ? usersData.list : [];
+    return users.filter(u => u && u.id != null && u.role !== 'super_admin'
+        && (String(u.schoolId) === String(schoolId) || String(u.legacySchoolId) === String(schoolId)));
+}
+
+// Todos os recortes publicados pelos professores da escola.
+// Devolve [{ autorId, autorNome, dados }]. Recorte ilegível é pulado e contado em
+// `falhas`, para a tela poder dizer que a conta pode estar incompleta.
+async function lerContribuicoesDaEscola(opcoes) {
+    const schoolId = _escolaAtualId();
+    if (!schoolId) return { estado: 'sem-escola', lista: [], falhas: 0 };
+
+    const c = _cacheContribuicoes;
+    if (!(opcoes && opcoes.forcar) && c && c.schoolId === schoolId && (Date.now() - c.quando) < CONTRIBUICOES_CACHE_MS) {
+        return c.resultado;
+    }
+
+    const profs = await _professoresDaEscola(schoolId);
+    let falhas = 0;
+    const lidos = await Promise.all(profs.map(async p => {
+        const r = await _lerCifradoDaEscola(docContribuicaoProfessor(schoolId, p.id));
+        if (r.estado === 'ok') {
+            return { autorId: p.id, autorNome: p.nome || (r.dados && r.dados.autorNome) || '', dados: r.dados };
+        }
+        if (r.estado === 'erro') falhas++;
+        return null;
+    }));
+
+    const resultado = { estado: 'ok', lista: lidos.filter(Boolean), falhas: falhas };
+    _cacheContribuicoes = { schoolId: schoolId, quando: Date.now(), resultado: resultado };
+    return resultado;
+}
+
+// { idEstudante: [autorId, ...] } das faltas do dia, no formato que a chamada já usava
+// com o antigo `shared_attendance`.
+function faltasDoDiaNasContribuicoes(contribuicoes, dataStr) {
+    const mapa = {};
+    ((contribuicoes && contribuicoes.lista) || []).forEach(c => {
+        const ids = ((c.dados && c.dados.faltas) || {})[dataStr] || [];
+        ids.forEach(idEst => {
+            const k = String(idEst);
+            if (!mapa[k]) mapa[k] = [];
+            if (mapa[k].indexOf(c.autorId) === -1) mapa[k].push(c.autorId);
+        });
+    });
+    return mapa;
+}
+
+// --- Gestor: trazer as ocorrências dos professores para o painel -------------
+//
+// Junta por id. O que é do PROFESSOR (relato, envolvidos, data, turma) vem do recorte
+// dele; o que é da GESTÃO (status, devolutiva) nunca é sobrescrito pelo recorte — é o
+// gestor quem confirma e responde, e a resposta volta ao professor pela lista publicada.
+// Devolve quantas ocorrências entraram ou mudaram.
+async function trazerOcorrenciasDosProfessores(opcoes) {
+    if (typeof currentViewMode === 'undefined' || currentViewMode !== 'gestor') return 0;
+    if (typeof data === 'undefined' || !data) return 0;
+
+    const contrib = await lerContribuicoesDaEscola(opcoes);
+    if (!contrib.lista.length) return 0;
+
+    if (!data.ocorrencias) data.ocorrencias = [];
+    const doProfessor = ['relato', 'ids_estudantes', 'data', 'tipo', 'turma_snapshot', 'disciplina', 'autor', 'id_turma'];
+    let mudou = 0;
+
+    contrib.lista.forEach(c => {
+        ((c.dados && c.dados.ocorrencias) || []).forEach(o => {
+            if (!o || o.id == null) return;
+            const existente = data.ocorrencias.find(x => x.id == o.id);
+            if (!existente) {
+                const nova = Object.assign({}, o, { autorId: c.autorId });
+                delete nova.id_turma_professor;
+                if (!nova.status) nova.status = nova.tipo === 'rapida' ? 'registrada' : 'pendente';
+                data.ocorrencias.push(nova);
+                mudou++;
+                return;
+            }
+            let alterou = false;
+            doProfessor.forEach(campo => {
+                if (o[campo] === undefined) return;
+                if (JSON.stringify(existente[campo]) !== JSON.stringify(o[campo])) {
+                    existente[campo] = o[campo];
+                    alterou = true;
+                }
+            });
+            if (existente.autorId == null) { existente.autorId = c.autorId; alterou = true; }
+            if (alterou) mudou++;
+        });
+    });
+
+    return mudou;
+}
+
+function limparCacheContribuicoes() {
+    _cacheContribuicoes = null;
 }

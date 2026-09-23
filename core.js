@@ -513,47 +513,36 @@ async function saveData(collectionName, docId, dataObj) {
 
 // --- FUNÇÕES DE COMPARTILHAMENTO DE CHAMADA (SYNC) ---
 
+// { idEstudante: [idProfessor, ...] } das faltas do dia na escola.
+//
+// Duas origens, somadas: o recorte cifrado que cada professor publica no ambiente da
+// escola (listaescola.js, o caminho de hoje) e o antigo `shared_attendance`, que
+// guardava a frequência em claro e deixou de ser gravado — continua lido para os dias
+// registrados antes da mudança.
 async function getFaltasCompartilhadas(dataStr) {
     // Verifica se está online e configurado
     if (typeof db === 'undefined' || !db || !currentUser || !currentUser.schoolId) return {};
-    
+
+    const mapa = {};
+    const somar = (origem) => Object.keys(origem || {}).forEach(idEst => {
+        const k = String(idEst);
+        if (!mapa[k]) mapa[k] = [];
+        (origem[idEst] || []).forEach(p => { if (!mapa[k].some(x => String(x) === String(p))) mapa[k].push(p); });
+    });
+
+    if (typeof lerContribuicoesDaEscola === 'function') {
+        try { somar(faltasDoDiaNasContribuicoes(await lerContribuicoesDaEscola(), dataStr)); }
+        catch (e) { console.error("Erro ao buscar faltas da escola:", e); }
+    }
+
     try {
         const docId = `school_${currentUser.schoolId}_${dataStr}`;
         const doc = await db.collection('shared_attendance').doc(docId).get();
-        if (doc.exists) {
-            return doc.data().absences || {};
-        }
+        if (doc.exists) somar(doc.data().absences || {});
     } catch (e) {
         console.error("Erro ao buscar faltas compartilhadas:", e);
     }
-    return {};
-}
-
-async function sincronizarFaltasCompartilhadas(dataStr, mapEstadoFaltas) {
-    if (typeof db === 'undefined' || !db || !currentUser || !currentUser.schoolId) return;
-
-    const docId = `school_${currentUser.schoolId}_${dataStr}`;
-    const docRef = db.collection('shared_attendance').doc(docId);
-
-    try {
-        // Garante que o documento existe (sem sobrescrever se já existir)
-        await docRef.set({ created: true }, { merge: true });
-
-        // Prepara atualizações em lote (usando update com dot notation para chaves dinâmicas)
-        const updates = {};
-        
-        for (const [studentId, isAbsent] of Object.entries(mapEstadoFaltas)) {
-            const fieldPath = `absences.${studentId}`;
-            // Se falta: Adiciona ID do professor. Se presença: Remove ID do professor.
-            updates[fieldPath] = isAbsent 
-                ? firebase.firestore.FieldValue.arrayUnion(currentUser.id)
-                : firebase.firestore.FieldValue.arrayRemove(currentUser.id);
-        }
-        
-        await docRef.update(updates);
-    } catch (e) {
-        console.error("Erro ao sincronizar faltas compartilhadas:", e);
-    }
+    return mapa;
 }
 
 // --- FIM CONFIGURAÇÃO ---
@@ -1715,7 +1704,26 @@ async function carregarDadosUsuario() {
             data = juntarDados(remoto.dados, nuvem);
             try { if (typeof localSet === 'function') await localSet(key, data); } catch (e) {}
             console.log('[SisProf] Camada pessoal recuperada da nuvem (cifrada).');
+        } else {
+            // O aparelho tem cópia própria: JUNTA com a da nuvem, registro a registro,
+            // em vez de ignorá-la. Era aqui que um aparelho desatualizado apagava o que
+            // outro tinha lançado (ver unirCamadaPessoal, em shared.js).
+            const entrou = unirCamadaPessoal(data, remoto.dados);
+            if (entrou.total) {
+                try { if (typeof localSet === 'function') await localSet(key, data); } catch (e) {}
+                window.pessoalRecuperadoDaNuvem = entrou.por;
+                console.log('[SisProf] Registros de outro aparelho juntados a este:', entrou.por);
+            }
+            // O caminho inverso é o que devolve a perda: o que só este aparelho tem
+            // volta para a nuvem já na abertura, sem esperar o professor clicar em algo.
+            const faltaNaNuvem = unirCamadaPessoal(
+                JSON.parse(JSON.stringify(dividirDados(remoto.dados).local)), dividirDados(data).local);
+            if (faltaNaNuvem.total) {
+                window.pessoalFaltaNaNuvem = faltaNaNuvem.por;
+                console.log('[SisProf] Registros deste aparelho que a nuvem perdeu:', faltaNaNuvem.por);
+            }
         }
+        window._ivPessoalConhecido = remoto.iv;
     } else if (remoto.estado === 'sem-chave') {
         window.pessoalSemChave = true;
         console.warn('[SisProf] Há dados cifrados na nuvem, mas a chave não está neste aparelho.');
@@ -1834,10 +1842,37 @@ async function lerCamadaPessoalCifrada(chave) {
 
     try {
         const dados = await decifrarPacote(doc, dek, (n) => getData('app_data', id + '_p' + n));
-        return { estado: 'ok', dados: dados };
+        return { estado: 'ok', dados: dados, iv: doc.iv || null };
     } catch (e) {
         console.error('[SisProf] Não consegui decifrar a camada pessoal:', e);
         return { estado: 'erro', erro: e.message };
+    }
+}
+
+// Duas sessões abertas ao mesmo tempo (celular e computador) gravam o mesmo pacote.
+// Cada gravação troca o `iv`; se o da nuvem não é o que esta sessão leu ou gravou por
+// último, alguém gravou no meio, e o que ele lançou entra aqui antes de subirmos.
+// Leitura que falha não trava nada: segue como antes (a gravação também vai falhar).
+async function _juntarPacoteDeOutroAparelho(chave, dados, dek) {
+    if (!window._ivPessoalConhecido || typeof db === 'undefined' || !db) return;
+    const id = chavePessoalCifrada(chave);
+    try {
+        const snap = await db.collection('app_data').doc(id).get();
+        if (!snap.exists) return;
+        const doc = snap.data();
+        if (!doc || !doc.iv || doc.iv === window._ivPessoalConhecido) return;
+        const deLa = await decifrarPacote(doc, dek, async (n) => {
+            const c = await db.collection('app_data').doc(id + '_p' + n).get();
+            return c.exists ? c.data() : null;
+        });
+        const entrou = unirCamadaPessoal(dados, deLa);
+        window._ivPessoalConhecido = doc.iv;
+        if (entrou.total) {
+            try { if (typeof localSet === 'function') await localSet(chave, dados); } catch (e) {}
+            console.log('[SisProf] Outro aparelho gravou no meio; registros juntados:', entrou.por);
+        }
+    } catch (e) {
+        console.warn('[SisProf] Não consegui conferir o pacote de outro aparelho:', e);
     }
 }
 
@@ -1856,6 +1891,9 @@ async function enviarCamadaPessoalCifrada(chave, dados) {
     if (!dek) { window.pessoalSemChave = true; return false; }
 
     const id = chavePessoalCifrada(chave);
+    // Outro aparelho gravou desde que esta sessão leu? Então o pacote de lá tem coisa
+    // que este aqui não tem, e gravar direto a apagaria. Junta antes de gravar.
+    await _juntarPacoteDeOutroAparelho(chave, dados, dek);
     const pessoal = dividirDados(dados).local;
     try {
         const pacote = await cifrarPacote(pessoal, dek);
@@ -1870,6 +1908,8 @@ async function enviarCamadaPessoalCifrada(chave, dados) {
             catch (e) { console.warn('[SisProf] Sobra da camada pessoal não removida:', e); }
         }
         window._partesPessoal = pacote.principal.partes;
+        window._ivPessoalConhecido = pacote.principal.iv;
+        window.pessoalFaltaNaNuvem = null;
 
         // Uma vez por sessão, reler e decifrar o que acabou de subir. Gravar e nunca
         // conferir é como o backup que ninguém testou: parece existir até o dia em que

@@ -16,7 +16,6 @@ function renderGestorPanel() {
         <button onclick="showScreen('registrosGestor', event)"><span class="icon">📂</span><span class="label">Registros</span></button>
         <button onclick="showScreen('ocorrenciasGestor', event)"><span class="icon">⚠️</span><span class="label">Ocorrências</span></button>
         <button onclick="showScreen('tutoriasGestor', event)"><span class="icon">🎓</span><span class="label">Tutorias</span></button>
-        <button onclick="showScreen('notasOficiaisGestor', event)"><span class="icon">🧮</span><span class="label">Notas Oficiais</span></button>
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
         <button onclick="showScreen('horariosGestor', event)"><span class="icon">⏰</span><span class="label">Horários</span></button>
         <button onclick="showScreen('escolaGestor', event)"><span class="icon">🏫</span><span class="label">Escola</span></button>
@@ -47,13 +46,6 @@ function renderGestorPanel() {
         tut.id = 'tutoriasGestor';
         tut.className = 'screen';
         innerContainer.appendChild(tut);
-    }
-
-    if (!document.getElementById('notasOficiaisGestor')) {
-        const not = document.createElement('div');
-        not.id = 'notasOficiaisGestor';
-        not.className = 'screen';
-        innerContainer.appendChild(not);
     }
 
     if (!document.getElementById('horariosGestor')) {
@@ -463,10 +455,36 @@ async function renderAbaAlertasBuscaAtiva(forceRefresh = false) {
         const daysByTurma = {}; 
         
         try {
+            const marcarDia = (masterId, dia) => {
+                if (!daysByTurma[masterId]) daysByTurma[masterId] = new Set();
+                daysByTurma[masterId].add(dia);
+            };
+            const marcarFalta = (dia, idEst, profId) => {
+                if (!attendanceData[dia]) attendanceData[dia] = {};
+                if (!attendanceData[dia][idEst]) attendanceData[dia][idEst] = [];
+                if (!attendanceData[dia][idEst].some(x => String(x) === String(profId))) attendanceData[dia][idEst].push(profId);
+            };
+
+            // 1. O caminho de hoje: o recorte cifrado que cada professor publica no
+            //    ambiente da escola (listaescola.js). Desde a adequação, `presencas` não
+            //    está mais no documento em claro do professor, e ler só dele dava zero
+            //    falta para a escola inteira.
+            const comRecorte = new Set();
+            if (typeof lerContribuicoesDaEscola === 'function') {
+                const contrib = await lerContribuicoesDaEscola({ forcar: true });
+                contrib.lista.forEach(c => {
+                    comRecorte.add(String(c.autorId));
+                    const d = c.dados || {};
+                    Object.keys(d.chamadas || {}).forEach(masterId => (d.chamadas[masterId] || []).forEach(dia => marcarDia(masterId, dia)));
+                    Object.keys(d.faltas || {}).forEach(dia => (d.faltas[dia] || []).forEach(idEst => marcarFalta(dia, idEst, c.autorId)));
+                });
+            }
+
+            // 2. Conta isenta / antes do corte: o documento em claro ainda traz `presencas`.
             const usersData = await getData('system', 'users_list');
             const users = (usersData && usersData.list) ? usersData.list : [];
-            const teachers = users.filter(u => u.schoolId === schoolId && u.role !== 'super_admin');
-            
+            const teachers = users.filter(u => u.schoolId === schoolId && u.role !== 'super_admin' && !comRecorte.has(String(u.id)));
+
             const promises = teachers.map(async (t) => {
                 const storageKey = (t.uid) ? 'app_data_' + t.uid : 'app_data_' + t.id;
                 const profData = await getData('app_data', storageKey);
@@ -482,10 +500,7 @@ async function renderAbaAlertasBuscaAtiva(forceRefresh = false) {
                     res.data.registrosAula.forEach(r => {
                         const tProf = (res.data.turmas || []).find(t => t.id == r.id_turma);
                         const masterId = tProf ? tProf.masterId : null;
-                        if (masterId) {
-                            if (!daysByTurma[masterId]) daysByTurma[masterId] = new Set();
-                            daysByTurma[masterId].add(r.data);
-                        }
+                        if (masterId) marcarDia(masterId, r.data);
                     });
                 }
 
@@ -493,20 +508,8 @@ async function renderAbaAlertasBuscaAtiva(forceRefresh = false) {
                     res.data.presencas.forEach(p => {
                         const studentMaster = allStudents.find(s => s.id == p.id_estudante);
                         const masterId = studentMaster ? studentMaster.id_turma : null;
-                        
-                        if (masterId) {
-                            if (!daysByTurma[masterId]) daysByTurma[masterId] = new Set();
-                            daysByTurma[masterId].add(p.data);
-                        }
-
-                        if (p.status === 'falta') {
-                            if (!attendanceData[p.data]) attendanceData[p.data] = {};
-                            if (!attendanceData[p.data][p.id_estudante]) attendanceData[p.data][p.id_estudante] = [];
-                            
-                            if (!attendanceData[p.data][p.id_estudante].includes(res.teacherId)) {
-                                attendanceData[p.data][p.id_estudante].push(res.teacherId);
-                            }
-                        }
+                        if (masterId) marcarDia(masterId, p.data);
+                        if (p.status === 'falta') marcarFalta(p.data, p.id_estudante, res.teacherId);
                     });
                 }
             });
@@ -999,7 +1002,35 @@ function desarquivarRegistroGestao(id) {
 
 let currentOcorrenciaTab = 'disciplinares'; // disciplinares, rapidas, config
 
+// Traz para o painel as ocorrências que os professores publicaram (listaescola.js) e, se
+// chegou alguma coisa, grava e redesenha. Roda em segundo plano: a tela abre na hora com o
+// que já está no painel, e a busca nos professores não atrasa o clique.
+let _buscandoOcorrenciasProfessores = false;
+async function atualizarOcorrenciasDosProfessores(redesenhar) {
+    if (_buscandoOcorrenciasProfessores || typeof trazerOcorrenciasDosProfessores !== 'function') return;
+    _buscandoOcorrenciasProfessores = true;
+    try {
+        const mudou = await trazerOcorrenciasDosProfessores();
+        if (mudou > 0) {
+            await persistirDados();
+            if (typeof redesenhar === 'function') redesenhar();
+        }
+    } catch (e) {
+        console.warn('[Ocorrências] Não consegui trazer as ocorrências dos professores:', e);
+    } finally {
+        _buscandoOcorrenciasProfessores = false;
+    }
+}
+
 function renderOcorrenciasGestor() {
+    atualizarOcorrenciasDosProfessores(() => {
+        const tela = document.getElementById('ocorrenciasGestor');
+        if (tela && tela.innerHTML) renderOcorrenciasGestorTela();
+    });
+    renderOcorrenciasGestorTela();
+}
+
+function renderOcorrenciasGestorTela() {
     const todasOcorrencias = (data.ocorrencias || []).sort((a, b) => new Date(b.data) - new Date(a.data));
     
     // Filtra por tipo
@@ -1445,34 +1476,44 @@ async function carregarVistaCompartilhada(shareId) {
 
 // --- FERRAMENTA DE LIMPEZA DE DUPLICADOS ---
 
-function renderAbaLimpezaDados() {
-    const estudantes = data.estudantes || [];
-    const histograma = {};
-    
-    // Agrupa por nome normalizado (sem espaços extras e em caixa alta)
-    estudantes.forEach(e => {
-        const nomeNorm = e.nome_completo.trim().toUpperCase();
-        if (!histograma[nomeNorm]) histograma[nomeNorm] = [];
-        histograma[nomeNorm].push(e);
+// Duplicado é o MESMO nome repetido na MESMA turma - o que uma importação antiga criava quando o
+// nome vinha escrito um pouco diferente. A versão anterior juntava pelo nome na escola inteira:
+// o aluno remanejado, ainda ativo na turma antiga e já ativo na nova, era "unificado" no primeiro
+// registro encontrado, e o da turma nova sumia (era um dos remanejados que "não apareciam").
+// Mesmo nome ativo em turmas diferentes agora só é MOSTRADO: pode ser remanejamento pela metade
+// (a lista da turma de origem ainda não foi importada) ou dois estudantes com o mesmo nome.
+function agruparDuplicadosLimpeza() {
+    const porTurma = {};
+    const ativosPorNome = {};
+    (data.estudantes || []).forEach(e => {
+        const nome = normalizarNomeImportMassa(e.nome_completo);
+        if (!nome) return;
+        const k = String(e.id_turma) + '|' + nome;
+        (porTurma[k] = porTurma[k] || []).push(e);
+        if (!e.status || e.status === 'Ativo') (ativosPorNome[nome] = ativosPorNome[nome] || []).push(e);
     });
+    const duplicados = Object.values(porTurma).filter(l => l.length > 1).map(l => [l[0].nome_completo, l]);
+    const emDuasTurmas = Object.values(ativosPorNome)
+        .filter(l => new Set(l.map(e => String(e.id_turma))).size > 1)
+        .map(l => [l[0].nome_completo, l]);
+    return { duplicados, emDuasTurmas };
+}
 
-    // [MODIFICADO] Identifica duplicados apenas se houver mais de um registro 'Ativo' para o mesmo nome
-    const duplicados = Object.entries(histograma).filter(([nome, lista]) => {
-        const ativos = lista.filter(e => e.status === 'Ativo');
-        return ativos.length > 1;
-    });
+function renderAbaLimpezaDados() {
+    const { duplicados, emDuasTurmas } = agruparDuplicadosLimpeza();
+    const nomeTurma = (id) => { const t = (data.turmas || []).find(x => x.id == id); return t ? t.nome : '?'; };
 
     const html = `
         <div>
             <h2>🧹 Ferramenta de Limpeza de Duplicados</h2>
             <p style="color:#5f6b7f; font-size:14px; margin-bottom:20px;">
-                Esta ferramenta identifica estudantes com o mesmo nome completo que aparecem como <strong>Ativo</strong> em mais de um registro. 
-                Alunos que mudaram de turma (com status Remanejado ou Transferido) são preservados e não são considerados duplicados para unificação, garantindo a integridade do histórico de movimentação.
+                Esta ferramenta identifica o mesmo estudante registrado <strong>mais de uma vez na mesma turma</strong> e junta os registros num só,
+                levando faltas, notas e ocorrências para o registro que fica. Registros em turmas diferentes (remanejamento) nunca são juntados.
             </p>
 
             ${duplicados.length > 0 ? `
                 <div class="alert alert-warning" style="margin-bottom:20px; background:#fffaf0; padding:15px; border-radius:8px; border:1px solid #fbd38d;">
-                    <strong>⚠️ Atenção:</strong> Foram encontrados <strong>${duplicados.length}</strong> nomes com duplicidade de registro.
+                    <strong>⚠️ Atenção:</strong> Foram encontrados <strong>${duplicados.length}</strong> nome(s) repetido(s) dentro da mesma turma.
                 </div>
                 <table style="width:100%;">
                     <thead>
@@ -1505,6 +1546,16 @@ function renderAbaLimpezaDados() {
             ` : `
                 <p class="empty-state">✅ Nenhum estudante duplicado encontrado. Seu banco de dados está limpo!</p>
             `}
+
+            ${emDuasTurmas.length > 0 ? `
+                <div style="margin-top:25px; background:#edf3fd; padding:15px; border-radius:8px; border:1px solid #d3e2fa;">
+                    <strong>ℹ️ ${emDuasTurmas.length} nome(s) ativo(s) em mais de uma turma</strong>
+                    <p style="font-size:12px; color:#3d4759; margin:6px 0;">Não são juntados. Em geral é remanejamento pela metade: importe a lista da turma de origem e a situação dela se acerta. Se forem estudantes diferentes com o mesmo nome, não há nada a fazer.</p>
+                    <ul style="font-size:12px; margin:0 0 0 18px; padding:0;">
+                        ${emDuasTurmas.map(([nome, lista]) => `<li>${escaparHtmlImportMassa(nome)} — ${lista.map(e => escaparHtmlImportMassa(nomeTurma(e.id_turma))).join(', ')}</li>`).join('')}
+                    </ul>
+                </div>
+            ` : ''}
 
             <div id="containerDiagnosticoOrfaos" style="margin-top: 40px; border-top: 2px dashed #cdd5e1; padding-top: 20px;">
                 <h3 style="color: #c53030;">🔍 Busca por Dados Órfãos (Vestígios)</h3>
@@ -1576,45 +1627,23 @@ async function executarDiagnosticoOrfaos() {
 }
 
 async function executarLimpezaDuplicados() {
-    if (!confirm('Este processo irá fundir os registros de estudantes que possuem mais de um status "Ativo". O primeiro ID ativo encontrado para cada nome será o mestre. Registros históricos de remanejamento serão mantidos se não houver conflito de ativos. Deseja continuar?')) return;
+    if (!confirm('Juntar os registros repetidos dentro da mesma turma? Em cada nome fica o registro ativo, e faltas, notas e ocorrências dos outros passam para ele. Registros em turmas diferentes não são tocados.')) return;
 
-    const estudantes = data.estudantes || [];
-    const histograma = {};
-    
-    estudantes.forEach(e => {
-        const nomeNorm = e.nome_completo.trim().toUpperCase();
-        if (!histograma[nomeNorm]) histograma[nomeNorm] = [];
-        histograma[nomeNorm].push(e);
-    });
-
+    const { duplicados } = agruparDuplicadosLimpeza();
+    const sair = new Set();
     let totalUnificados = 0;
-    const novosEstudantes = [];
 
-    for (const [nome, lista] of Object.entries(histograma)) {
-        const ativos = lista.filter(e => e.status === 'Ativo');
-
-        // [MODIFICADO] Se não houver duplicidade de "Ativos", mantém os registros como estão (incluindo remanejados)
-        if (ativos.length <= 1) {
-            lista.forEach(e => novosEstudantes.push(e));
-            continue;
-        }
-
-        // Temos duplicados REAIS (Mais de um Ativo): Master é o primeiro Ativo da lista
-        const master = ativos[0];
+    duplicados.forEach(([, lista]) => {
+        const master = lista.find(e => !e.status || e.status === 'Ativo') || lista[0];
         const masterId = master.id;
-        
-        // Os IDs que serão fundidos no Master (outros Ativos e eventuais históricos deste mesmo nome)
-        const idsDuplicados = lista.filter(e => e.id !== masterId).map(e => e.id);
-        
-        // Função auxiliar para atualizar referências
+        const idsDuplicados = new Set(lista.filter(e => e !== master).map(e => String(e.id)));
+        const trocar = (id) => idsDuplicados.has(String(id)) ? masterId : id;
+
         const atualizarRef = (listaDados, campoId) => {
             if (listaDados && Array.isArray(listaDados)) {
-                listaDados.forEach(item => {
-                    if (idsDuplicados.includes(item[campoId])) item[campoId] = masterId;
-                });
+                listaDados.forEach(item => { if (item && item[campoId] != null) item[campoId] = trocar(item[campoId]); });
             }
         };
-
         atualizarRef(data.presencas, 'id_estudante');
         atualizarRef(data.atrasos, 'id_estudante');
         atualizarRef(data.registrosAdministrativos, 'estudanteId');
@@ -1622,21 +1651,18 @@ async function executarLimpezaDuplicados() {
         atualizarRef(data.notas, 'id_estudante');
         atualizarRef(data.caderno, 'id_estudante');
         atualizarRef(data.tutorados, 'id_estudante_origem');
+        (data.ocorrencias || []).forEach(o => {
+            if (o.ids_estudantes) o.ids_estudantes = [...new Set(o.ids_estudantes.map(trocar))];
+        });
+        (data.mapeamentos || []).forEach(m => {
+            Object.keys(m.assentos || {}).forEach(k => { m.assentos[k] = trocar(m.assentos[k]); });
+        });
 
-        // Ocorrências (ids_estudantes é um array de envolvidos)
-        if (data.ocorrencias) {
-            data.ocorrencias.forEach(o => {
-                if (o.ids_estudantes) {
-                    o.ids_estudantes = o.ids_estudantes.map(id => idsDuplicados.includes(id) ? masterId : id);
-                    o.ids_estudantes = [...new Set(o.ids_estudantes)]; // Remove duplicatas no array
-                }
-            });
-        }
+        lista.forEach(e => { if (e !== master) sair.add(e); });
+        totalUnificados += idsDuplicados.size;
+    });
 
-        novosEstudantes.push(master);
-        totalUnificados += idsDuplicados.length;
-    }
-
+    const novosEstudantes = (data.estudantes || []).filter(e => !sair.has(e));
     data.estudantes = novosEstudantes;
     
     // Deduplicação de Presenças (Evita múltiplas entradas para o mesmo dia após o merge)
@@ -1977,55 +2003,74 @@ function removerBlocoHorario(id) {
 
 // --- IMPORTAÇÃO EM MASSA (ESTUDANTES) ---
 //
-// Entrada: os arquivos que a SED exporta ("Alunos.csv", "Alunos.htm", ou um .xlsx montado à mão).
-// Todos saem com o MESMO nome genérico, então a turma não pode vir do nome do arquivo (era o que a
-// versão anterior fazia) - e também não está DENTRO do arquivo: o export só imprime o filtro
-// "Ano Letivo", sem turma, série ou disciplina em lugar nenhum.
+// Entrada: listas de alunos em CSV (qualquer separador), .htm ou .xlsx. Várias listas costumam
+// sair com o MESMO nome de arquivo, então a turma não pode vir do nome do arquivo (era o que a
+// versão anterior fazia) - e nem sempre está DENTRO do arquivo.
 //
 // Por isso a turma é identificada pela própria lista de alunos: 50 nomes coincidindo com os de uma
-// turma cadastrada é uma impressão digital tão decisiva quanto uma matrícula. O RA seria a chave
-// ideal, mas não pode ser armazenado (restrição legal das plataformas do estado), então só as
-// colunas "Nome do Aluno" e "Situação do Aluno" são lidas - RA, Dig. RA, data de nascimento e os
-// dois e-mails institucionais são descartados na leitura e nunca chegam ao Firestore.
+// turma cadastrada é uma impressão digital tão decisiva quanto uma matrícula. Só duas colunas são
+// lidas - o nome do aluno e a situação dele. Qualquer outra coluna (documentos, datas, e-mails) é
+// descartada na leitura e nunca chega ao banco.
+//
+// As duas colunas são reconhecidas pelo cabeçalho; quando o cabeçalho não é reconhecido, ou quando
+// o reconhecimento errou, a prévia deixa escolher qual coluna é o nome e qual é a situação.
 //
 // Roda só no modo gestor, onde `data` JÁ É o documento da escola (getStorageKey, shared.js:81):
 // `persistirDados()` grava no lugar certo e `turma.id` já é o masterId que os professores enxergam.
 
-// Sobreposição mínima de nomes pra casar a turma sozinho, e folga mínima sobre a 2ª colocada. Na
-// prática a turma certa dá 90-100% e as outras dão perto de zero; os limiares só existem pra que
-// turma nova (sem ninguém cadastrado) e empate caiam no dropdown em vez de chutar.
+// Como a turma é reconhecida: as mudanças de um ano (transferência, matrícula nova) nunca atingem
+// a maioria dos estudantes, então a lista certa sempre divide mais da metade dos nomes com a turma
+// que já está cadastrada. A semelhança é o coeficiente de Dice sobre os nomes normalizados -
+// 2·comuns / (nomes no arquivo + nomes na turma) -, que não dá 100% a uma turma pequena só porque
+// os poucos alunos dela aparecem numa lista grande (era o defeito de dividir pelo menor dos dois).
+//
+// Todas as listas são comparadas com todas as turmas DE UMA VEZ e distribuídas pela maior
+// semelhança primeiro, uma turma por lista. Assim listas com o mesmo nome de arquivo - o caso
+// comum - vão cada uma para a sua turma, e duas listas nunca caem na mesma sem aviso.
 const IMPORT_MASSA_LIMIAR_CASAMENTO = 0.5;
-const IMPORT_MASSA_FOLGA_2O_LUGAR = 0.15;
+// Diferença abaixo disto entre a melhor turma livre e a segunda é empate: a pessoa escolhe.
+const IMPORT_MASSA_EMPATE = 0.03;
 
-// "Situação do Aluno" como a SED escreve -> status do ProfSis (enum de index.html:246).
-const IMPORT_MASSA_STATUS_SED = {
-    'ativo': 'Ativo',
-    'transferido': 'Transferido',
-    'remanejamento': 'Remanejado',
-    'remanejado': 'Remanejado',
-    'baixa-transferencia': 'Baixa-Transferencia',
-    'ncom': 'NCOM'
-};
+// A situação como vem escrita nas listas -> status do ProfSis (enum de index.html:297). Por
+// palavra-chave, e não por texto exato: "Baixa - Transferência", "BAIXA TRANSFERENCIA" e
+// "Baixa-Transferência" são a mesma coisa, e com a comparação exata a primeira caía como Ativo
+// (quem já tinha saído continuava na chamada). A ordem importa: "baixa" antes de "transfer".
+const IMPORT_MASSA_STATUS_PALAVRAS = [
+    { palavras: ['baixa'], status: 'Baixa-Transferencia' },
+    { palavras: ['reman'], status: 'Remanejado' },
+    { palavras: ['transfer'], status: 'Transferido' },
+    { palavras: ['ncom', 'nao comparec', 'comparecimento'], status: 'NCOM' },
+    // Saíram da turma por outro motivo: não podem continuar Ativos na chamada.
+    { palavras: ['abandon', 'evad', 'falec', 'obito', 'reclassif', 'cessa', 'encerr', 'desist', 'cancel', 'inativ'], status: 'Transferido' },
+    { palavras: ['ativ', 'matricul', 'cursando', 'frequente'], status: 'Ativo' }
+];
 
+// Devolve { status, reconhecido }. Situação vazia é Ativo (lista sem coluna de situação).
+function statusDaSituacaoImportMassa(situacaoBruta) {
+    const t = normalizarCabecalhoImportMassa(situacaoBruta).replace(/[^a-z0-9]+/g, ' ').trim();
+    if (!t) return { status: 'Ativo', reconhecido: true };
+    const achado = IMPORT_MASSA_STATUS_PALAVRAS.find(r => r.palavras.some(p => t.indexOf(p) !== -1));
+    return achado ? { status: achado.status, reconhecido: true } : { status: 'Ativo', reconhecido: false };
+}
+
+// Cabeçalhos reconhecidos sozinhos. Comparação normalizada (sem acento, minúsculo, espaço único).
+const IMPORT_MASSA_CABECALHOS_NOME = ['nome do aluno', 'nome do estudante', 'nome aluno', 'nome estudante',
+    'aluno', 'aluno(a)', 'estudante', 'nome', 'nome completo', 'nome do aluno(a)'];
+
+// Chave de comparação de nome: sem acento, sem pontuação e sem espaço sobrando. "D'Ávila",
+// "D´AVILA" e "d avila " são a mesma pessoa; comparar o texto cru criava um aluno novo a cada
+// diferença de apóstrofo, hífen ou espaço (era uma das causas de estudante duplicado).
 function normalizarNomeImportMassa(nome) {
-    return String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase().replace(/\s+/g, ' ');
+    return String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
 }
 
 function normalizarCabecalhoImportMassa(texto) {
     return String(texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 }
 
-// Lê o arquivo como texto. O CSV da SED vem em UTF-8 com BOM; exports antigos às vezes vêm em
-// latin-1, e aí o replacement char denuncia a decodificação errada (antes disso os acentos entravam
-// corrompidos em silêncio).
 async function lerTextoArquivoImportMassa(file) {
-    const buffer = await file.arrayBuffer();
-    let texto = new TextDecoder('utf-8').decode(buffer);
-    if (texto.indexOf("\uFFFD") !== -1) {
-        try { texto = new TextDecoder('windows-1252').decode(buffer); } catch (e) { /* mantém o utf-8 */ }
-    }
-    if (texto.charCodeAt(0) === 0xFEFF) texto = texto.slice(1);
-    return texto;
+    return decodificarTextoArquivo(await file.arrayBuffer());
 }
 
 // Devolve uma matriz de células (linhas x colunas) - o mesmo formato que
@@ -2044,14 +2089,15 @@ async function lerMatrizArquivoImportMassa(file) {
     const texto = await lerTextoArquivoImportMassa(file);
 
     if (nome.endsWith('.htm') || nome.endsWith('.html')) {
-        // Export "Publicar como Página da Web" do Excel: uma <table> limpa. Ler pelo DOM elimina de
+        // Planilha "Publicar como Página da Web": uma <table> limpa. Ler pelo DOM elimina de
         // uma vez delimitador, aspas e encoding (o charset vem declarado no próprio HTML).
         const doc = new DOMParser().parseFromString(texto, 'text/html');
         return Array.from(doc.querySelectorAll('table tr'))
             .map(tr => Array.from(tr.querySelectorAll('td, th')).map(c => c.textContent.trim()));
     }
 
-    return texto.split(/\r?\n/).map(linha => linha.split(';').map(c => c.trim()));
+    // CSV (ou .txt): separador detectado, aspas respeitadas (shared.js).
+    return lerCsvMatriz(texto);
 }
 
 // Acha a linha de cabeçalho e as duas únicas colunas que interessam. Comparação normalizada: a
@@ -2061,39 +2107,76 @@ function detectarColunasImportMassa(linhas) {
     const limite = Math.min(linhas.length, 15);
     for (let i = 0; i < limite; i++) {
         const cols = (linhas[i] || []).map(normalizarCabecalhoImportMassa);
-        const idxNome = cols.findIndex(c => c === 'nome do aluno' || c === 'aluno' || c === 'nome' || c === 'nome completo');
+        const idxNome = cols.findIndex(c => IMPORT_MASSA_CABECALHOS_NOME.indexOf(c) !== -1);
         if (idxNome === -1) continue;
-        const idxSituacao = cols.findIndex(c => c.indexOf('situacao') !== -1 || c.indexOf('status') !== -1);
+        // Mais de uma coluna pode falar em "situação" (do aluno, da matrícula...): a do aluno
+        // vem primeiro, depois qualquer "situação", depois "status".
+        let idxSituacao = cols.findIndex(c => c.indexOf('situacao') !== -1 && (c.indexOf('aluno') !== -1 || c.indexOf('estudante') !== -1));
+        if (idxSituacao === -1) idxSituacao = cols.findIndex(c => c.indexOf('situacao') !== -1);
+        if (idxSituacao === -1) idxSituacao = cols.findIndex(c => c.indexOf('status') !== -1);
         return { linhaHeader: i, idxNome, idxSituacao };
     }
     return null;
 }
 
-// Só nome e situação saem daqui. Duplicata dentro do mesmo arquivo é ignorada (fica a 1ª ocorrência).
+// Quando nenhum cabeçalho é reconhecido: a primeira linha com mais de uma célula preenchida vira
+// o cabeçalho e a coluna do nome fica EM BRANCO, para quem importa escolher. Chutar a coluna
+// importaria a coluna errada inteira sem ninguém perceber.
+function colunasManuaisImportMassa(linhas) {
+    const limite = Math.min(linhas.length, 15);
+    let linhaHeader = 0;
+    for (let i = 0; i < limite; i++) {
+        if ((linhas[i] || []).filter(c => String(c || '').trim()).length > 1) { linhaHeader = i; break; }
+    }
+    return { linhaHeader, idxNome: -1, idxSituacao: -1, manual: true };
+}
+
+// Rótulos das colunas para os seletores de mapeamento: "A · Nome do Aluno".
+function rotulosColunasImportMassa(linhas, linhaHeader) {
+    const cab = linhas[linhaHeader] || [];
+    const largura = Math.max(cab.length, ...linhas.slice(linhaHeader, linhaHeader + 20).map(l => (l || []).length));
+    const letra = (n) => { let s = ''; n++; while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; };
+    const rotulos = [];
+    for (let i = 0; i < largura; i++) {
+        const titulo = String(cab[i] || '').trim();
+        const exemplo = String(((linhas[linhaHeader + 1] || [])[i]) || '').trim();
+        rotulos.push(letra(i) + ' · ' + (titulo || '(sem título)') + (exemplo ? ' — ex.: ' + exemplo.slice(0, 30) : ''));
+    }
+    return rotulos;
+}
+
+// Só nome e situação saem daqui.
+//
+// O mesmo aluno pode aparecer mais de uma vez na lista: quem foi remanejado e voltou, ou saiu e
+// foi rematriculado, tem uma linha por passagem pela turma. Vale a linha ATIVA, se houver; se
+// nenhuma for, vale a última (a mais recente). Antes valia a primeira, e o aluno que voltou para
+// a turma entrava como "Remanejado" - era um dos remanejados que "não eram puxados".
 function extrairAlunosImportMassa(linhas, colunas) {
     const alunos = [];
-    const vistos = new Set();
+    const porChave = new Map();
 
     for (let i = colunas.linhaHeader + 1; i < linhas.length; i++) {
         const linha = linhas[i] || [];
-        const nome = String(linha[colunas.idxNome] || '').trim();
+        const nome = String(linha[colunas.idxNome] || '').replace(/\s+/g, ' ').trim();
         if (!nome) continue;
 
         const chave = normalizarNomeImportMassa(nome);
-        if (!chave || vistos.has(chave)) continue;
-        vistos.add(chave);
+        if (!chave) continue;
 
         const situacaoBruta = colunas.idxSituacao !== -1 ? String(linha[colunas.idxSituacao] || '').trim() : '';
-        const chaveStatus = normalizarCabecalhoImportMassa(situacaoBruta);
-        const conhecido = !situacaoBruta || Object.prototype.hasOwnProperty.call(IMPORT_MASSA_STATUS_SED, chaveStatus);
+        const lido = statusDaSituacaoImportMassa(situacaoBruta);
+        const aluno = { nome: nome, chave: chave, status: lido.status, situacaoBruta: situacaoBruta,
+                        statusReconhecido: lido.reconhecido, repetido: false };
 
-        alunos.push({
-            nome: nome,
-            chave: chave,
-            status: IMPORT_MASSA_STATUS_SED[chaveStatus] || 'Ativo',
-            situacaoBruta: situacaoBruta,
-            statusReconhecido: conhecido
-        });
+        const anterior = porChave.get(chave);
+        if (!anterior) {
+            porChave.set(chave, aluno);
+            alunos.push(aluno);
+            continue;
+        }
+        anterior.repetido = true;
+        if (anterior.status === 'Ativo' && aluno.status !== 'Ativo') continue;
+        Object.assign(anterior, { status: aluno.status, situacaoBruta: aluno.situacaoBruta, statusReconhecido: aluno.statusReconhecido });
     }
     return alunos;
 }
@@ -2131,28 +2214,84 @@ function agruparTurmasFisicasImportMassa() {
 }
 
 // Pontua o arquivo contra cada turma física. Compara com o roster INTEIRO (não só os ativos): quem
-// saiu continua listado no arquivo da SED, e ignorá-los baixaria a nota da turma certa.
-function casarTurmaImportMassa(alunos, grupos) {
+// saiu continua listado na lista exportada, e ignorá-los baixaria a nota da turma certa.
+// Semelhança da lista com cada turma física, da maior para a menor.
+function pontuarTurmasImportMassa(alunos, grupos) {
     const chavesArquivo = new Set(alunos.map(a => a.chave));
-
-    const placar = grupos.map(grupo => {
+    return grupos.map(grupo => {
         let comuns = 0;
         chavesArquivo.forEach(c => { if (grupo.rosterTodos.has(c)) comuns++; });
-        const base = Math.min(chavesArquivo.size, grupo.rosterTodos.size);
-        return { grupo: grupo, comuns: comuns, score: base ? comuns / base : 0 };
-    }).sort((a, b) => b.score - a.score);
+        const total = chavesArquivo.size + grupo.rosterTodos.size;
+        return { grupo: grupo, comuns: comuns, score: total ? (2 * comuns) / total : 0 };
+    }).sort((a, b) => b.score - a.score || b.comuns - a.comuns);
+}
 
+// A melhor turma para UMA lista, sem olhar as outras listas (importação pela tela da turma).
+function casarTurmaImportMassa(alunos, grupos) {
+    const placar = pontuarTurmasImportMassa(alunos, grupos);
     const melhor = placar[0];
     if (!melhor || melhor.score < IMPORT_MASSA_LIMIAR_CASAMENTO) {
-        return { grupo: null, score: melhor ? melhor.score : 0, motivo: 'sem_correspondencia' };
+        return { grupo: null, score: melhor ? melhor.score : 0, motivo: 'sem_correspondencia', placar };
     }
-
     const segundo = placar[1];
-    if (segundo && (melhor.score - segundo.score) < IMPORT_MASSA_FOLGA_2O_LUGAR) {
-        return { grupo: null, score: melhor.score, motivo: 'ambiguo', rival: segundo.grupo.rotulo };
+    if (segundo && (melhor.score - segundo.score) < IMPORT_MASSA_EMPATE) {
+        return { grupo: null, score: melhor.score, motivo: 'ambiguo', rival: segundo.grupo.rotulo, placar };
     }
+    return { grupo: melhor.grupo, score: melhor.score, placar };
+}
 
-    return { grupo: melhor.grupo, score: melhor.score };
+// Distribui as listas entre as turmas: todos os pares (lista, turma) acima do limiar, do mais
+// parecido para o menos, e cada lista e cada turma usadas uma vez só. Lista cuja turma foi
+// escolhida à mão não entra na disputa, e a turma dela sai do jogo.
+function distribuirTurmasImportMassa(itens, grupos) {
+    const ocupadas = new Set();
+    const disputando = [];
+    itens.forEach(item => {
+        if (item.erro || item.pendente || !item.alunos || !item.alunos.length) return;
+        if (item.motivo === 'manual') { if (item.grupoChave) ocupadas.add(item.grupoChave); return; }
+        if (item.motivo === 'manual_vazio') return;
+        item.placar = pontuarTurmasImportMassa(item.alunos, grupos);
+        item.grupoChave = '';
+        item.score = item.placar[0] ? item.placar[0].score : 0;
+        item.motivo = 'sem_correspondencia';
+        item.rival = null;
+        disputando.push(item);
+    });
+
+    const pares = [];
+    disputando.forEach(item => item.placar.forEach(p => {
+        if (p.score >= IMPORT_MASSA_LIMIAR_CASAMENTO) pares.push({ item, p });
+    }));
+    pares.sort((a, b) => b.p.score - a.p.score || b.p.comuns - a.p.comuns);
+
+    const resolvidos = new Set();
+    pares.forEach(({ item, p }) => {
+        if (resolvidos.has(item) || ocupadas.has(p.grupo.chave)) return;
+        // Empate com outra turma ainda livre: não chuta.
+        const rival = item.placar.find(q => q.grupo.chave !== p.grupo.chave && !ocupadas.has(q.grupo.chave));
+        resolvidos.add(item);
+        if (rival && (p.score - rival.score) < IMPORT_MASSA_EMPATE) {
+            item.motivo = 'ambiguo';
+            item.rival = rival.grupo.rotulo;
+            item.score = p.score;
+            return;
+        }
+        item.grupoChave = p.grupo.chave;
+        item.score = p.score;
+        item.comuns = p.comuns;
+        item.motivo = 'automatico';
+        ocupadas.add(p.grupo.chave);
+    });
+
+    // Quem ficou sem turma porque a sua melhor já foi para uma lista mais parecida.
+    disputando.forEach(item => {
+        if (item.grupoChave || item.motivo === 'ambiguo') return;
+        const melhor = item.placar[0];
+        if (melhor && melhor.score >= IMPORT_MASSA_LIMIAR_CASAMENTO && ocupadas.has(melhor.grupo.chave)) {
+            item.motivo = 'ocupada';
+            item.rival = melhor.grupo.rotulo;
+        }
+    });
 }
 
 // Aplica um arquivo já casado com uma turma. Recebe o array `estudantes` por parâmetro pra poder
@@ -2161,35 +2300,69 @@ function casarTurmaImportMassa(alunos, grupos) {
 //
 // O status vem do próprio arquivo ("Situação do Aluno"): quem o arquivo diz que saiu fica
 // Transferido/Remanejado, em vez de ser reativado como 'Ativo' só por aparecer na lista.
-function aplicarArquivoImportMassa(estudantes, turmaId, alunos, novoId) {
+//
+// `opcoes.marcarAusentes: false` (importação de uma turma só, pela tela da turma) só acrescenta e
+// atualiza: quem não veio no arquivo fica como está.
+//
+// Devolve também:
+//   duplicados       nomes que JÁ estavam repetidos na turma (a limpeza de duplicados resolve);
+//   ativosEmOutra    alunos ativos nesta lista que estão ativos também em OUTRA turma - quase
+//                    sempre remanejamento cuja lista de origem não veio neste lote.
+function aplicarArquivoImportMassa(estudantes, turmaId, alunos, novoId, opcoes) {
+    const marcarAusentes = !(opcoes && opcoes.marcarAusentes === false);
     const criados = [];
     const alterados = [];
     const sumiram = [];
+    const duplicados = [];
+    const ativosEmOutra = [];
 
     const chavesArquivo = new Set(alunos.map(a => a.chave));
     const daTurma = estudantes.filter(e => e.id_turma == turmaId);
+
+    // Um registro por nome. Se a turma já tem o nome repetido (de uma importação antiga), o
+    // registro que recebe a atualização é o ATIVO - atualizar o inativo deixava o ativo
+    // duplicado para sempre, e ainda criava a sensação de que a importação "não pegou".
     const porChave = new Map();
     daTurma.forEach(e => {
         const chave = normalizarNomeImportMassa(e.nome_completo);
-        if (!porChave.has(chave)) porChave.set(chave, e);
+        const atual = porChave.get(chave);
+        if (!atual) { porChave.set(chave, e); return; }
+        if (duplicados.indexOf(e.nome_completo) === -1) duplicados.push(e.nome_completo);
+        const atualAtivo = !atual.status || atual.status === 'Ativo';
+        const esteAtivo = !e.status || e.status === 'Ativo';
+        if (!atualAtivo && esteAtivo) porChave.set(chave, e);
+    });
+
+    // Ativos das OUTRAS turmas, pelo nome (para o aviso de remanejamento).
+    const ativosFora = new Map();
+    estudantes.forEach(e => {
+        if (e.id_turma == turmaId || (e.status && e.status !== 'Ativo')) return;
+        ativosFora.set(normalizarNomeImportMassa(e.nome_completo), e);
     });
 
     alunos.forEach(aluno => {
         const existente = porChave.get(aluno.chave);
         if (!existente) {
-            estudantes.push({ id: novoId(), id_turma: turmaId, nome_completo: aluno.nome, status: aluno.status });
+            const novo = { id: novoId(), id_turma: turmaId, nome_completo: aluno.nome, status: aluno.status };
+            estudantes.push(novo);
+            porChave.set(aluno.chave, novo);
             criados.push({ nome: aluno.nome, status: aluno.status });
         } else if ((existente.status || 'Ativo') !== aluno.status) {
             alterados.push({ nome: existente.nome_completo, de: existente.status || 'Ativo', para: aluno.status, chave: aluno.chave });
             existente.status = aluno.status;
         }
+        if (aluno.status === 'Ativo' && ativosFora.has(aluno.chave)) {
+            ativosEmOutra.push({ nome: aluno.nome, turmaId: ativosFora.get(aluno.chave).id_turma });
+        }
     });
 
-    // Ativo na turma que não veio no arquivo. Deve ser raro agora (o export lista quem saiu também),
-    // então é mais provável ser lista truncada: mesma trava de app.js:2317 - se o arquivo tem menos
-    // da metade dos ativos, não desativa ninguém, pra não esvaziar a turma por engano.
+    // Ativo na turma que não veio no arquivo. Deve ser raro (a lista traz quem saiu também), então
+    // é mais provável lista truncada - ou lista de OUTRA turma escolhida por engano. Duas travas:
+    // o arquivo precisa ter pelo menos metade do tamanho dos ativos, e pelo menos metade dos ativos
+    // precisa estar no arquivo. Sem a segunda, a lista da turma errada desativava a turma inteira.
     const ativos = daTurma.filter(e => !e.status || e.status === 'Ativo');
-    if (alunos.length * 2 >= ativos.length) {
+    const ativosNoArquivo = ativos.filter(e => chavesArquivo.has(normalizarNomeImportMassa(e.nome_completo))).length;
+    if (marcarAusentes && alunos.length * 2 >= ativos.length && ativosNoArquivo * 2 >= ativos.length) {
         ativos.forEach(e => {
             const chave = normalizarNomeImportMassa(e.nome_completo);
             if (!chavesArquivo.has(chave)) {
@@ -2199,7 +2372,7 @@ function aplicarArquivoImportMassa(estudantes, turmaId, alunos, novoId) {
         });
     }
 
-    return { criados, alterados, sumiram };
+    return { criados, alterados, sumiram, duplicados, ativosEmOutra };
 }
 
 // Gerador de id que não repete dentro do lote (Date.now() + random, como no resto do app, colide
@@ -2225,13 +2398,14 @@ function abrirModalImportacaoMassa() {
                     <button class="close-btn" onclick="closeModal('modalImportacaoMassa')">×</button>
                 </div>
                 <p style="font-size:13px; color:#3d4759; margin-top:0;">
-                    Selecione os arquivos exportados da SED. O nome do arquivo não importa: a turma é
-                    reconhecida pela própria lista de alunos.
+                    Selecione as listas de alunos (uma por turma). O nome do arquivo não importa: a turma é
+                    reconhecida pela própria lista de alunos. As colunas de nome e situação são
+                    reconhecidas pelo cabeçalho e podem ser trocadas na prévia.
                 </p>
 
                 <div style="margin: 16px 0; padding: 15px; background: #f6f8fb; border: 2px dashed #cdd5e1; border-radius: 8px; text-align: center;">
-                    <input type="file" id="filesMassa" multiple accept=".csv,.htm,.html,.xlsx,.xls" onchange="analisarArquivosMassa()">
-                    <p style="margin:10px 0 0; font-size:12px; color:#5f6b7f;">Formatos aceitos: .csv, .htm e .xlsx</p>
+                    <input type="file" id="filesMassa" multiple accept=".csv,.txt,.htm,.html,.xlsx,.xls" onchange="analisarArquivosMassa()">
+                    <p style="margin:10px 0 0; font-size:12px; color:#5f6b7f;">Formatos aceitos: .csv (separado por ponto e vírgula, vírgula ou tabulação), .xlsx e .htm</p>
                 </div>
 
                 <div id="previewMassa" style="margin-bottom: 16px; display:none;"></div>
@@ -2270,37 +2444,100 @@ async function analisarArquivosMassa() {
         const item = { nomeArquivo: file.name, alunos: [], grupoChave: '', score: 0, erro: null, aviso: null };
         try {
             const linhas = await lerMatrizArquivoImportMassa(file);
-            const colunas = detectarColunasImportMassa(linhas);
-            if (!colunas) throw new Error('Não achei a coluna "Nome do Aluno" neste arquivo.');
-
-            item.alunos = extrairAlunosImportMassa(linhas, colunas);
-            if (item.alunos.length === 0) throw new Error('O arquivo tem o cabeçalho, mas nenhuma linha de aluno.');
-
-            if (colunas.idxSituacao === -1) {
-                item.aviso = 'Sem coluna "Situação do Aluno" — todos entram como Ativo.';
-            } else {
-                const desconhecidos = [...new Set(item.alunos.filter(a => !a.statusReconhecido).map(a => a.situacaoBruta))];
-                if (desconhecidos.length) item.aviso = 'Situação não reconhecida (entra como Ativo): ' + desconhecidos.join(', ');
-            }
-
-            const casamento = casarTurmaImportMassa(item.alunos, importMassaGrupos);
-            item.score = casamento.score;
-            item.grupoChave = casamento.grupo ? casamento.grupo.chave : '';
-            item.motivo = casamento.motivo;
-            item.rival = casamento.rival;
+            if (!linhas.length) throw new Error('O arquivo está vazio.');
+            item.linhas = linhas;
+            item.colunas = detectarColunasImportMassa(linhas) || colunasManuaisImportMassa(linhas);
+            item.rotulosColunas = rotulosColunasImportMassa(linhas, item.colunas.linhaHeader);
+            aplicarColunasItemImportMassa(item);
         } catch (e) {
             item.erro = e.message;
         }
         importMassaItens.push(item);
     }
 
+    // Listas com o mesmo nome de arquivo são o caso comum: numera para dar para distinguir.
+    const repetidos = {};
+    importMassaItens.forEach(i => { repetidos[i.nomeArquivo] = (repetidos[i.nomeArquivo] || 0) + 1; });
+    const vistos = {};
+    importMassaItens.forEach(i => {
+        if (repetidos[i.nomeArquivo] < 2) return;
+        vistos[i.nomeArquivo] = (vistos[i.nomeArquivo] || 0) + 1;
+        i.nomeArquivo += ' (' + vistos[i.nomeArquivo] + ')';
+    });
+
     renderPreviaImportMassa();
+}
+
+// Relê os alunos do arquivo com as colunas escolhidas e casa a turma de novo. Usado na leitura e
+// toda vez que alguém troca a coluna do nome ou da situação na prévia.
+function aplicarColunasItemImportMassa(item) {
+    item.alunos = [];
+    item.aviso = null;
+    item.pendente = null;
+    item.grupoChave = '';
+    item.score = 0;
+    item.motivo = null;
+
+    if (item.colunas.idxNome === -1) {
+        item.pendente = 'Não reconheci a coluna do nome. Escolha abaixo qual coluna é o nome do aluno.';
+        return;
+    }
+
+    item.alunos = extrairAlunosImportMassa(item.linhas, item.colunas);
+    if (item.alunos.length === 0) {
+        item.pendente = 'Nenhum nome encontrado nessa coluna. Confira a coluna do nome.';
+        return;
+    }
+
+    if (item.colunas.idxSituacao === -1) {
+        item.aviso = 'Sem coluna de situação — todos entram como Ativo.';
+    } else {
+        const desconhecidos = [...new Set(item.alunos.filter(a => !a.statusReconhecido).map(a => a.situacaoBruta))];
+        if (desconhecidos.length) item.aviso = 'Situação não reconhecida (entra como Ativo): ' + desconhecidos.join(', ');
+    }
+
+    // A turma é decidida por distribuirTurmasImportMassa, olhando todas as listas juntas.
+}
+
+function alterarColunaImportMassa(indice, campo, valor) {
+    const item = importMassaItens[indice];
+    if (!item || !item.colunas) return;
+    const n = parseInt(valor, 10);
+    if (campo === 'nome') item.colunas.idxNome = isNaN(n) ? -1 : n;
+    if (campo === 'situacao') item.colunas.idxSituacao = isNaN(n) ? -1 : n;
+    const turmaEscolhida = item.motivo === 'manual' ? item.grupoChave : '';
+    aplicarColunasItemImportMassa(item);
+    // Quem já escolheu a turma na mão não perde a escolha por ter trocado a coluna.
+    if (turmaEscolhida && item.alunos.length) { item.grupoChave = turmaEscolhida; item.motivo = 'manual'; }
+    renderPreviaImportMassa();
+}
+
+// Os dois seletores "qual coluna é o quê", mostrados em cada arquivo da prévia.
+function htmlMapeamentoColunasImportMassa(item, indice) {
+    if (!item.rotulosColunas) return '';
+    const opcoes = (atual, vazio) => [`<option value="">${vazio}</option>`].concat(
+        item.rotulosColunas.map((r, i) => `<option value="${i}" ${i === atual ? 'selected' : ''}>${escaparHtmlImportMassa(r)}</option>`)
+    ).join('');
+    return `
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; font-size:11px; color:#3d4759;">
+            <label style="flex:1; min-width:140px;">Coluna do nome
+                <select style="width:100%; padding:3px; font-size:11px;" onchange="alterarColunaImportMassa(${indice}, 'nome', this.value)">${opcoes(item.colunas.idxNome, '— escolher —')}</select>
+            </label>
+            <label style="flex:1; min-width:140px;">Coluna da situação
+                <select style="width:100%; padding:3px; font-size:11px;" onchange="alterarColunaImportMassa(${indice}, 'situacao', this.value)">${opcoes(item.colunas.idxSituacao, '(nenhuma — todos Ativos)')}</select>
+            </label>
+        </div>`;
+}
+
+function escaparHtmlImportMassa(texto) {
+    return String(texto || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function alterarTurmaImportMassa(indice, valor) {
     if (!importMassaItens[indice]) return;
     importMassaItens[indice].grupoChave = valor;
-    importMassaItens[indice].motivo = valor ? 'manual' : 'sem_correspondencia';
+    // "— escolher turma —" escolhido de propósito também é escolha: a distribuição não refaz.
+    importMassaItens[indice].motivo = valor ? 'manual' : 'manual_vazio';
     renderPreviaImportMassa();
 }
 
@@ -2313,14 +2550,31 @@ function recalcularPreviasImportMassa() {
 
     importMassaItens.forEach(item => {
         item.previa = null;
-        if (item.erro || !item.grupoChave) return;
+        if (item.erro || item.pendente || !item.grupoChave) return;
         const grupo = importMassaGrupos.find(g => g.chave === item.grupoChave);
         if (!grupo) return;
         item.previa = aplicarArquivoImportMassa(copia, grupo.turmaId, item.alunos, novoId);
     });
+    importMassaItens.forEach(item => { if (item.previa) filtrarAtivosEmOutraImportMassa(item.previa, copia); });
+}
+
+// O aviso "ativo em outra turma" só vale DEPOIS do lote inteiro: se a lista da turma de origem
+// veio junto, ela já tirou o aluno de lá e não há o que avisar.
+function filtrarAtivosEmOutraImportMassa(resultado, estudantes) {
+    resultado.ativosEmOutra = (resultado.ativosEmOutra || []).filter(a => estudantes.some(e =>
+        e.id_turma == a.turmaId && (!e.status || e.status === 'Ativo')
+        && normalizarNomeImportMassa(e.nome_completo) === normalizarNomeImportMassa(a.nome)));
+    const rotuloDe = (turmaId) => {
+        const g = (importMassaGrupos || []).find(x => x.ids.some(id => id == turmaId));
+        const t = (data.turmas || []).find(x => x.id == turmaId);
+        return g ? g.rotulo : (t ? t.nome : 'outra turma');
+    };
+    resultado.ativosEmOutra.forEach(a => { a.turma = rotuloDe(a.turmaId); });
+    return resultado;
 }
 
 function renderPreviaImportMassa() {
+    distribuirTurmasImportMassa(importMassaItens, importMassaGrupos);
     recalcularPreviasImportMassa();
 
     const preview = document.getElementById('previewMassa');
@@ -2349,7 +2603,11 @@ function renderPreviaImportMassa() {
         if (item.motivo === 'manual') {
             selo = '<span style="color:#1f55ad; font-size:11px;">escolhida por você</span>';
         } else if (item.grupoChave) {
-            selo = `<span style="color:#276749; font-size:11px;">✅ ${Math.round(item.score * 100)}% dos nomes batem</span>`;
+            selo = `<span style="color:#276749; font-size:11px;">✅ reconhecida pelos nomes: ${item.comuns} em comum (${Math.round(item.score * 100)}% de semelhança)</span>`;
+        } else if (item.motivo === 'ocupada') {
+            selo = `<span style="color:#b7791f; font-size:11px;">⚠️ parece "${escaparHtmlImportMassa(item.rival)}", mas outra lista combina mais com ela — escolha</span>`;
+        } else if (item.pendente) {
+            selo = '<span style="color:#7a869a; font-size:11px;">escolha a coluna do nome primeiro</span>';
         } else if (item.motivo === 'ambiguo') {
             selo = `<span style="color:#b7791f; font-size:11px;">⚠️ empate com "${item.rival}" — escolha</span>`;
         } else {
@@ -2360,17 +2618,32 @@ function renderPreviaImportMassa() {
             ? '<div style="color:#c53030; font-size:11px;">⚠️ outro arquivo aponta pra esta mesma turma</div>' : '';
 
         const p = item.previa;
-        const resumo = p
+        let resumo = p
             ? `<span style="color:#276749;">+${p.criados.length} novos</span> · ` +
               `<span style="color:#b7791f;">${p.alterados.length} mudam de status</span> · ` +
               `<span style="color:#c53030;">${p.sumiram.length} sumiram da lista</span>`
             : '<span style="color:#7a869a;">—</span>';
+        if (p && item.motivo === 'manual') {
+            const g = importMassaGrupos.find(x => x.chave === item.grupoChave);
+            const pont = g ? pontuarTurmasImportMassa(item.alunos, [g])[0] : null;
+            if (pont && pont.score < IMPORT_MASSA_LIMIAR_CASAMENTO) {
+                resumo += `<div style="color:#c53030; margin-top:4px;">⚠️ Só ${pont.comuns} nome(s) em comum com esta turma: se a lista não for dela, ${p.criados.length} aluno(s) vão entrar duplicados. Confira.</div>`;
+            }
+        }
+        if (p && p.duplicados.length) {
+            resumo += `<div style="color:#b7791f; margin-top:4px;">⚠️ Esta turma já tem ${p.duplicados.length} nome(s) repetido(s) — use Registros › Limpeza de Duplicados.</div>`;
+        }
+        if (p && p.ativosEmOutra.length) {
+            resumo += `<div style="color:#1f55ad; margin-top:4px;">ℹ️ ${p.ativosEmOutra.length} aluno(s) desta lista seguem ativos em outra turma (${escaparHtmlImportMassa([...new Set(p.ativosEmOutra.map(a => a.turma))].join(', '))}) — importe a lista dela também para concluir o remanejamento.</div>`;
+        }
 
         return `
             <tr>
                 <td style="padding:8px; border:1px solid #e3e8ef; font-size:12px;">
-                    ${item.nomeArquivo}
-                    ${item.aviso ? `<div style="color:#b7791f; font-size:11px;">⚠️ ${item.aviso}</div>` : ''}
+                    ${escaparHtmlImportMassa(item.nomeArquivo)}
+                    ${item.pendente ? `<div style="color:#c53030; font-size:11px;">⚠️ ${item.pendente}</div>` : ''}
+                    ${item.aviso ? `<div style="color:#b7791f; font-size:11px;">⚠️ ${escaparHtmlImportMassa(item.aviso)}</div>` : ''}
+                    ${htmlMapeamentoColunasImportMassa(item, indice)}
                 </td>
                 <td style="padding:8px; border:1px solid #e3e8ef;">
                     <select style="width:100%; padding:5px; font-size:12px;" onchange="alterarTurmaImportMassa(${indice}, this.value)">${opcoes}</select>
@@ -2397,7 +2670,7 @@ function renderPreviaImportMassa() {
     `;
     preview.style.display = 'block';
 
-    document.getElementById('btnConfirmarMassa').disabled = !importMassaItens.some(i => !i.erro && i.grupoChave);
+    document.getElementById('btnConfirmarMassa').disabled = !importMassaItens.some(i => !i.erro && !i.pendente && i.grupoChave);
 }
 
 // Cruza quem saiu de uma turma com quem entrou em outra DENTRO DO MESMO LOTE, pra o relatório poder
@@ -2405,7 +2678,7 @@ function renderPreviaImportMassa() {
 function rastrearDestinosImportMassa() {
     const destinos = new Map();
     importMassaItens.forEach(item => {
-        if (item.erro || !item.grupoChave) return;
+        if (item.erro || item.pendente || !item.grupoChave) return;
         const grupo = importMassaGrupos.find(g => g.chave === item.grupoChave);
         if (!grupo) return;
         item.alunos.forEach(a => {
@@ -2416,12 +2689,24 @@ function rastrearDestinosImportMassa() {
 }
 
 async function processarImportacaoMassa() {
-    const aplicaveis = importMassaItens.filter(i => !i.erro && i.grupoChave);
+    const aplicaveis = importMassaItens.filter(i => !i.erro && !i.pendente && i.grupoChave);
     if (aplicaveis.length === 0) return alert('Nenhum arquivo pronto para importar.');
 
     const totalSaidas = aplicaveis.reduce((soma, i) => soma + (i.previa ? i.previa.alterados.filter(a => a.para !== 'Ativo').length + i.previa.sumiram.length : 0), 0);
     if (!confirm(`Atualizar ${aplicaveis.length} turma(s)?\n\n${totalSaidas} aluno(s) deixarão de estar ativos.`)) return;
 
+    // Clique duplo aplicaria o lote duas vezes.
+    if (_importandoMassa) return;
+    _importandoMassa = true;
+    const botao = document.getElementById('btnConfirmarMassa');
+    if (botao) botao.disabled = true;
+    try { await aplicarLoteImportMassa(aplicaveis); }
+    finally { _importandoMassa = false; }
+}
+
+let _importandoMassa = false;
+
+async function aplicarLoteImportMassa(aplicaveis) {
     if (!data.estudantes) data.estudantes = [];
     const novoId = criarGeradorIdImportMassa(data.estudantes);
     const destinos = rastrearDestinosImportMassa();
@@ -2433,6 +2718,7 @@ async function processarImportacaoMassa() {
         const resultado = aplicarArquivoImportMassa(data.estudantes, grupo.turmaId, item.alunos, novoId);
         relatorio.push({ turma: grupo.rotulo, arquivo: item.nomeArquivo, resultado: resultado });
     });
+    relatorio.forEach(r => filtrarAtivosEmOutraImportMassa(r.resultado, data.estudantes));
 
     await persistirDados();
     mostrarRelatorioImportMassa(relatorio, destinos);
@@ -2485,6 +2771,15 @@ function mostrarRelatorioImportMassa(relatorio, destinos) {
                 <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#3d4759;">
                     ${r.resultado.sumiram.map(s => linha(`${s.nome}${paraOnde(s.chave)}`)).join('')}
                 </ul>`);
+        }
+        if (r.resultado.ativosEmOutra && r.resultado.ativosEmOutra.length) {
+            partes.push(`<div style="color:#1f55ad; margin-top:6px;">ℹ️ ${r.resultado.ativosEmOutra.length} seguem ativos também em outra turma (importe a lista dela)</div>
+                <ul style="margin:4px 0 0 18px; padding:0; font-size:11px; color:#3d4759;">
+                    ${r.resultado.ativosEmOutra.map(a => linha(`${a.nome} <em>(${a.turma})</em>`)).join('')}
+                </ul>`);
+        }
+        if (r.resultado.duplicados && r.resultado.duplicados.length) {
+            partes.push(`<div style="color:#b7791f; margin-top:6px; font-size:12px;">⚠️ A turma já tinha ${r.resultado.duplicados.length} nome(s) repetido(s): use Registros › Limpeza de Duplicados.</div>`);
         }
         if (partes.length === 0) partes.push('<div style="color:#5f6b7f; margin-top:6px; font-size:12px;">Nada mudou.</div>');
 
@@ -3041,941 +3336,15 @@ async function imprimirTodosRelatoriosTutoriaGestor(profId, profNome) {
     win.document.close();
 }
 
-// --- NOTAS OFICIAIS (GESTOR) — Upload de Avaliações e Mapão Bimestral via IA ---
-
-let notasOficiaisModo = 'avaliacao'; // 'avaliacao' | 'mapao'
-let notasOficiaisRegistrosPendentes = []; // linhas extraídas pela IA, editáveis antes de confirmar
+// --- NOTAS OFICIAIS: só a EXIBIÇÃO do que já foi importado ---
+//
+// A página "Notas Oficiais" do gestor (importação de Mapão e de avaliações por planilha/PDF/IA)
+// foi retirada por não ter tido uso prático. O que já foi gravado continua aparecendo na ficha
+// do estudante e na de tutoria, por isso ficam só as duas funções de exibição abaixo.
 
 function normNomeNotasOficiais(s) {
     // Mesma convenção de normalização de nome usada no resto do app (gestor.js:1938, app.js:6460)
     return (s || '').trim().toUpperCase();
-}
-
-function renderNotasOficiaisGestor() {
-    const container = document.getElementById('notasOficiaisGestor');
-    if (!container) return;
-
-    const turmas = data.turmas || [];
-    const avaliacoes = (data.avaliacoesGestor || []).slice().sort((a, b) => b.criadoEm - a.criadoEm);
-    const lotesMapao = (data.lotesMapaoGestor || []).slice().sort((a, b) => b.dataImportacao - a.dataImportacao);
-
-    container.innerHTML = `
-        <div class="card">
-            <h2>🧮 Notas Oficiais</h2>
-            <p style="color:#5f6b7f; margin-bottom:20px; font-size:13px;">
-                Envie a planilha/PDF de uma <strong>avaliação</strong> (ex: Prova Paulista) ou do <strong>mapão bimestral</strong>.
-                Uma IA extrai as notas por aluno/disciplina/bimestre; você revisa antes de salvar.
-            </p>
-
-            <div style="margin-bottom: 15px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:8px;">
-                    <label style="font-size:12px; font-weight:bold;">Turmas <span id="contadorTurmasNotasOficiais" style="font-weight:normal; color:#2563c9;"></span></label>
-                    ${turmas.length > 0 ? `
-                        <div style="display:flex; gap:8px;">
-                            <button type="button" class="btn btn-xs btn-secondary" onclick="marcarTodasTurmasVisiveisNotasOficiais()">Marcar todas</button>
-                            <button type="button" class="btn btn-xs btn-secondary" onclick="limparSelecaoTurmasNotasOficiais()">Limpar</button>
-                        </div>
-                    ` : ''}
-                </div>
-                ${turmas.length > 0 ? `<input type="text" placeholder="🔍 Buscar turma..." oninput="filtrarListaTurmasNotasOficiais(this.value)" style="width:100%; padding:8px; margin-bottom:6px; border:1px solid #cdd5e1; border-radius:6px; box-sizing:border-box; font-size:13px;">` : ''}
-                <div id="listaTurmasNotasOficiaisContainer" style="max-height:260px; overflow-y:auto; border:1px solid #e3e8ef; border-radius:6px; background:#fff;">
-                    ${turmas.length === 0 ? '<p class="empty-state" style="margin:0; padding:10px;">Nenhuma turma cadastrada.</p>' : turmas.map(t => `
-                        <label class="linha-turma-notas-oficiais" data-nome="${normalizarTextoComparacaoMaterialDigital(t.nome)}" style="display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid #f1f5f9; cursor:pointer; font-size:13px;">
-                            <input type="checkbox" class="chk-turma-notas-oficiais" value="${t.id}" onchange="atualizarEstadoLinhaTurmaNotasOficiais(this)">
-                            <span>${t.nome}</span>
-                        </label>
-                    `).join('')}
-                </div>
-            </div>
-
-            <div style="margin-bottom: 15px; display:flex; gap: 15px;">
-                <label><input type="radio" name="notasOficiaisModoRadio" value="avaliacao" checked onchange="toggleModoNotasOficiais('avaliacao')"> Avaliação (ex: Prova Paulista, Simulado)</label>
-                <label><input type="radio" name="notasOficiaisModoRadio" value="mapao" onchange="toggleModoNotasOficiais('mapao')"> Mapão Bimestral (notas oficiais)</label>
-            </div>
-
-            <div id="camposAvaliacaoNotasOficiais" style="margin-bottom: 15px; background:#f6f8fb; padding:12px; border-radius:8px; border:1px solid #e3e8ef;">
-                <div class="form-row">
-                    <label style="flex:2;">Nome da Avaliação:
-                        <input type="text" id="notasOficiaisNomeAvaliacao" placeholder="Ex: Prova Paulista - 2º Bimestre">
-                    </label>
-                    <label style="flex:1;">Bimestre:
-                        <select id="notasOficiaisBimestre">
-                            <option value="1">1º Bimestre</option>
-                            <option value="2">2º Bimestre</option>
-                            <option value="3">3º Bimestre</option>
-                            <option value="4">4º Bimestre</option>
-                        </select>
-                    </label>
-                </div>
-            </div>
-
-            <div id="infoMapaoNotasOficiais" style="display:none; margin-bottom: 15px; background:#edf3fd; padding:12px; border-radius:8px; border:1px solid #d3e2fa; font-size:12px; color:#1b4488;">
-                O mapão normalmente já traz todas as notas bimestrais lançadas até agora. Não é preciso escolher o bimestre — a IA identifica cada coluna/bimestre presente no arquivo. Reenviar um mapão mais atualizado apenas corrige as notas já registradas, sem duplicar.
-            </div>
-
-            <div class="form-row" style="margin-bottom: 10px;">
-                <label style="flex:1;">Arquivo (.xlsx ou .pdf):
-                    <input type="file" id="notasOficiaisArquivo" accept=".xlsx,.pdf">
-                </label>
-            </div>
-
-            <button class="btn btn-primary" id="btnProcessarNotasOficiais" onclick="processarArquivoNotasOficiais()">Processar</button>
-
-            <div id="progressoNotasOficiais" style="display:none; margin-top:15px;">
-                <div style="background:#e3e8ef; border-radius:6px; overflow:hidden; height:18px;">
-                    <div id="barraProgressoNotasOficiais" style="background:#4299e1; height:100%; width:30%; transition:width .2s;"></div>
-                </div>
-                <p id="textoProgressoNotasOficiais" style="font-size:12px; color:#5f6b7f; margin-top:4px;"></p>
-            </div>
-
-            <div id="revisaoNotasOficiais" style="margin-top:20px;"></div>
-
-            <h3 style="margin-top:30px; border-top:1px solid #e3e8ef; padding-top:15px;">Avaliações Cadastradas</h3>
-            <div id="listaAvaliacoesGestor">
-                ${avaliacoes.length === 0 ? '<p class="empty-state">Nenhuma avaliação cadastrada ainda.</p>' : `
-                    <table style="font-size:13px;">
-                        <thead><tr><th>Nome</th><th>Turmas</th><th>Bimestre</th><th>Disciplinas</th><th>Ações</th></tr></thead>
-                        <tbody>
-                            ${avaliacoes.map(a => {
-                                const nomesTurmas = (a.id_turmas || []).map(id => turmas.find(x => x.id == id)).filter(Boolean).map(t => t.nome);
-                                return `<tr>
-                                    <td>${a.nome}</td>
-                                    <td>${nomesTurmas.join(', ') || 'Turma removida'}</td>
-                                    <td>${a.bimestre}º</td>
-                                    <td>${(a.disciplinas || []).join(', ') || '-'}</td>
-                                    <td><button class="btn btn-sm btn-danger" onclick="removerAvaliacaoGestor(${a.id})">🗑️</button></td>
-                                </tr>`;
-                            }).join('')}
-                        </tbody>
-                    </table>
-                `}
-            </div>
-
-            <h3 style="margin-top:30px; border-top:1px solid #e3e8ef; padding-top:15px;">Histórico de Mapões Enviados</h3>
-            <div id="listaLotesMapaoGestor">
-                ${lotesMapao.length === 0 ? '<p class="empty-state">Nenhum mapão enviado ainda.</p>' : `
-                    <table style="font-size:13px;">
-                        <thead><tr><th>Arquivo</th><th>Turmas</th><th>Enviado em</th><th>Registros</th><th>Ações</th></tr></thead>
-                        <tbody>
-                            ${lotesMapao.map(l => `<tr>
-                                <td>${l.nomeArquivo || '-'}</td>
-                                <td>${(l.turmas || []).join(', ') || '-'}</td>
-                                <td>${new Date(l.dataImportacao).toLocaleString('pt-BR')}</td>
-                                <td>${l.totalRegistros}</td>
-                                <td><button class="btn btn-sm btn-danger" onclick="removerLoteMapaoGestor(${l.id})">🗑️ Excluir</button></td>
-                            </tr>`).join('')}
-                        </tbody>
-                    </table>
-                `}
-            </div>
-        </div>
-    `;
-}
-
-function toggleModoNotasOficiais(modo) {
-    notasOficiaisModo = modo;
-    document.getElementById('camposAvaliacaoNotasOficiais').style.display = modo === 'avaliacao' ? 'block' : 'none';
-    document.getElementById('infoMapaoNotasOficiais').style.display = modo === 'mapao' ? 'block' : 'none';
-}
-
-// Destaca a linha marcada/desmarcada e atualiza o contador - dá feedback visual claro de quais
-// turmas estão selecionadas (a versão anterior, uma grade de checkboxes sem destaque, não deixava
-// isso claro e cortava nomes de turma longos).
-function atualizarEstadoLinhaTurmaNotasOficiais(checkbox) {
-    const linha = checkbox.closest('.linha-turma-notas-oficiais');
-    if (linha) linha.style.background = checkbox.checked ? '#edf3fd' : '';
-    const total = document.querySelectorAll('.chk-turma-notas-oficiais:checked').length;
-    const contador = document.getElementById('contadorTurmasNotasOficiais');
-    if (contador) contador.textContent = total > 0 ? `(${total} selecionada${total > 1 ? 's' : ''})` : '';
-}
-
-function filtrarListaTurmasNotasOficiais(termo) {
-    const termoNorm = normalizarTextoComparacaoMaterialDigital(termo);
-    document.querySelectorAll('.linha-turma-notas-oficiais').forEach(linha => {
-        linha.style.display = (linha.dataset.nome || '').includes(termoNorm) ? 'flex' : 'none';
-    });
-}
-
-function marcarTodasTurmasVisiveisNotasOficiais() {
-    document.querySelectorAll('.linha-turma-notas-oficiais').forEach(linha => {
-        if (linha.style.display === 'none') return;
-        const chk = linha.querySelector('.chk-turma-notas-oficiais');
-        chk.checked = true;
-        atualizarEstadoLinhaTurmaNotasOficiais(chk);
-    });
-}
-
-function limparSelecaoTurmasNotasOficiais() {
-    document.querySelectorAll('.chk-turma-notas-oficiais').forEach(chk => {
-        chk.checked = false;
-        atualizarEstadoLinhaTurmaNotasOficiais(chk);
-    });
-}
-
-function removerAvaliacaoGestor(id) {
-    if (!confirm('Excluir esta avaliação e todas as notas vinculadas a ela?')) return;
-    data.avaliacoesGestor = (data.avaliacoesGestor || []).filter(a => a.id != id);
-    data.notasAvaliacoesGestor = (data.notasAvaliacoesGestor || []).filter(n => n.id_avaliacao != id);
-    persistirDados();
-    renderNotasOficiaisGestor();
-}
-
-// Remove só os registros de data.notasBimestraisOficiais que ainda pertencem a este lote (ou seja,
-// que não foram sobrescritos por um mapão mais novo desde então - reenviar um mapão mais atualizado
-// por cima já atualiza o loteId do registro, então excluir um lote antigo nunca apaga um valor que
-// já foi corrigido por um envio posterior).
-function removerLoteMapaoGestor(id) {
-    if (!confirm('Excluir este mapão enviado? Isso remove as notas oficiais lançadas por ele (as que não foram atualizadas por um envio mais recente).')) return;
-    data.notasBimestraisOficiais = (data.notasBimestraisOficiais || []).filter(n => !(n.origem && n.origem.loteId == id));
-    data.lotesMapaoGestor = (data.lotesMapaoGestor || []).filter(l => l.id != id);
-    persistirDados();
-    renderNotasOficiaisGestor();
-}
-
-function definirProgressoNotasOficiais(texto, percentual) {
-    const container = document.getElementById('progressoNotasOficiais');
-    const barra = document.getElementById('barraProgressoNotasOficiais');
-    const label = document.getElementById('textoProgressoNotasOficiais');
-    if (!container) return;
-    container.style.display = 'block';
-    if (barra && typeof percentual === 'number') barra.style.width = Math.round(percentual) + '%';
-    if (label) label.textContent = texto || '';
-}
-
-// Retorna tanto a estrutura por aba (usada pelo parser determinístico) quanto o texto achatado
-// (usado como fallback pra IA), a partir de uma única leitura do workbook.
-function extrairAbasXlsxNotasOficiais(arrayBuffer) {
-    const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
-    const abas = workbook.SheetNames.map(nomeAba => ({
-        nome: nomeAba,
-        linhas: XLSX.utils.sheet_to_json(workbook.Sheets[nomeAba], { header: 1, raw: false, blankrows: false })
-    }));
-    let texto = '';
-    abas.forEach(aba => {
-        texto += `\n--- Aba: ${aba.nome} ---\n`;
-        aba.linhas.forEach(linha => { texto += linha.join(' | ') + '\n'; });
-    });
-    return { abas, texto };
-}
-
-// --- Parser específico do formato oficial SED ("Registro e Controle do Rendimento Escolar") ---
-// Esse export tem um bloco de metadados (rótulo na coluna A / valor na coluna B, incluindo "Turma:"
-// e "Tipo Fechamento:" - é daqui que sai o bimestre, não de uma coluna) e um cabeçalho em DUAS linhas:
-// nome da disciplina em célula mesclada (só a 1ª coluna do trio vem preenchida - "forward-fill" pega
-// as próximas duas) e, na linha seguinte, os sub-cabeçalhos M/F/AC (Média/Faltas/Atividade
-// Complementar) repetidos por disciplina. Só a coluna M interessa pra nota.
-
-const MESES_FECHAMENTO_BIMESTRE = {
-    primeiro: 1, primeira: 1,
-    segundo: 2, segunda: 2,
-    terceiro: 3, terceira: 3,
-    quarto: 4, quarta: 4
-};
-
-function detectarMetadadosSed(linhas) {
-    let turma = null;
-    let bimestre = null;
-    for (let i = 0; i < Math.min(linhas.length, 15); i++) {
-        const linha = linhas[i] || [];
-        const rotulo = normalizarTextoComparacaoMaterialDigital(String(linha[0] || ''));
-        if (!turma && /\bturma\b/.test(rotulo)) {
-            turma = String(linha[1] || '').trim() || null;
-        }
-        if (!bimestre && /fechamento/.test(rotulo)) {
-            const valorNorm = normalizarTextoComparacaoMaterialDigital(String(linha[1] || ''));
-            const chave = Object.keys(MESES_FECHAMENTO_BIMESTRE).find(k => valorNorm.includes(k));
-            if (chave) bimestre = MESES_FECHAMENTO_BIMESTRE[chave];
-        }
-    }
-    return { turma, bimestre };
-}
-
-function detectarCabecalhoSed(linhas) {
-    for (let i = 0; i < Math.min(linhas.length, 20) - 1; i++) {
-        const linhaDisciplinas = linhas[i] || [];
-        const normalizados = linhaDisciplinas.map(c => normalizarTextoComparacaoMaterialDigital(String(c || '')));
-        const idxNome = normalizados.findIndex(c => /\baluno\b/.test(c));
-        if (idxNome === -1) continue;
-
-        const linhaSubHeader = linhas[i + 1] || [];
-        const subNormalizados = linhaSubHeader.map(c => normalizarTextoComparacaoMaterialDigital(String(c || '')).trim());
-        if (!subNormalizados.some(c => c === 'm')) continue; // confirma que é o par de linhas certo (disciplina + M/F/AC)
-
-        // Forward-fill: célula mesclada só preenche a 1ª coluna do trio da disciplina.
-        let disciplinaAtual = null;
-        const colunasM = [];
-        linhaDisciplinas.forEach((celula, idx) => {
-            if (idx === idxNome) return;
-            const texto = String(celula || '').trim();
-            if (texto) disciplinaAtual = texto;
-            if (subNormalizados[idx] === 'm' && disciplinaAtual) {
-                colunasM.push({ idx, disciplina: disciplinaAtual });
-            }
-        });
-        if (colunasM.length === 0) continue;
-
-        return { linhaHeader: i + 1, idxNome, idxSituacao: idxNome + 1, colunasM };
-    }
-    return null;
-}
-
-function extrairRegistrosSed(linhas, cabecalho, bimestreDoArquivo) {
-    const registros = [];
-    for (let i = cabecalho.linhaHeader + 1; i < linhas.length; i++) {
-        const linha = linhas[i];
-        if (!linha || !linha[cabecalho.idxNome]) continue;
-        const nome = String(linha[cabecalho.idxNome] || '').trim();
-        if (!nome) continue;
-
-        const situacao = normalizarTextoComparacaoMaterialDigital(String(linha[cabecalho.idxSituacao] || ''));
-        if (situacao && !situacao.includes('ativo')) continue;
-
-        cabecalho.colunasM.forEach(cm => {
-            const valorBruto = linha[cm.idx];
-            if (valorBruto === undefined || valorBruto === null || String(valorBruto).trim() === '') return;
-            registros.push({ nome_estudante: nome, disciplina: cm.disciplina, bimestre: bimestreDoArquivo, valor: String(valorBruto).trim() });
-        });
-    }
-    return registros;
-}
-
-// Filtra pra correspondência plausível contra o roster desta turma - evita ruído de outras
-// turmas/abas quando o workbook compila a escola inteira num arquivo só.
-function filtrarRegistrosPorRoster(registros, roster) {
-    return registros.filter(r => {
-        const nomeNorm = normNomeNotasOficiais(r.nome_estudante);
-        if (roster.some(e => normNomeNotasOficiais(e.nome_completo) === nomeNorm)) return true;
-        const normA = normalizarTextoComparacaoMaterialDigital(r.nome_estudante);
-        return roster.some(e => {
-            const normB = normalizarTextoComparacaoMaterialDigital(e.nome_completo);
-            const dist = distanciaLevenshteinMaterialDigital(normA, normB);
-            const sim = 1 - (dist / Math.max(normA.length, normB.length, 1));
-            return sim >= 0.6;
-        });
-    });
-}
-
-function tentarExtracaoSed(abas, roster) {
-    let registros = [];
-    abas.forEach(aba => {
-        const cabecalho = detectarCabecalhoSed(aba.linhas);
-        if (!cabecalho) return;
-        const metadados = detectarMetadadosSed(aba.linhas);
-        if (!metadados.bimestre) return; // sem "Tipo Fechamento" reconhecível, não dá pra saber o bimestre
-        registros = registros.concat(extrairRegistrosSed(aba.linhas, cabecalho, metadados.bimestre));
-    });
-    return filtrarRegistrosPorRoster(registros, roster);
-}
-
-// --- Extração determinística de planilha (sem IA) ---
-// Planilhas de nota costumam ter colunas estruturadas (Nome, Disciplina, notas por bimestre) -
-// detectar e ler essas colunas direto é instantâneo, gratuito e não tem risco de a IA inventar um
-// valor. A IA fica reservada só pra quando esse formato não é reconhecido, ou pra PDF (sem colunas).
-
-function detectarCabecalhoPlanilhaNotasOficiais(linhas) {
-    for (let i = 0; i < Math.min(linhas.length, 15); i++) {
-        const linhaOriginal = linhas[i] || [];
-        const normalizados = linhaOriginal.map(c => normalizarTextoComparacaoMaterialDigital(String(c || '')));
-        const idxNome = normalizados.findIndex(c => /\b(nome|aluno|estudante)\b/.test(c));
-        if (idxNome === -1) continue;
-
-        const idxDisciplina = normalizados.findIndex(c => /\b(disciplina|materia|componente)\b/.test(c));
-
-        const colunasBimestre = [];
-        let idxNotaUnica = -1;
-        linhaOriginal.forEach((celulaOriginal, idx) => {
-            if (idx === idxNome || idx === idxDisciplina) return;
-            const texto = String(celulaOriginal || '');
-            const m = texto.match(/([1-4])\s*[ºoa°]?\s*bim/i) || texto.match(/bim\s*([1-4])/i);
-            if (m) {
-                const bimestre = parseInt(m[1]);
-                const prefixo = texto.slice(0, m.index).replace(/[-–_]+$/, '').trim();
-                colunasBimestre.push({ idx, bimestre, disciplinaEmbutida: prefixo.length >= 2 ? prefixo : null });
-            } else if (idxNotaUnica === -1 && /\b(nota|valor|resultado|media|média)\b/i.test(texto)) {
-                idxNotaUnica = idx;
-            }
-        });
-
-        if (colunasBimestre.length > 0 || idxNotaUnica !== -1) {
-            return { linhaHeader: i, idxNome, idxDisciplina, idxNotaUnica, colunasBimestre };
-        }
-    }
-    return null;
-}
-
-function extrairRegistrosDeterministicos(linhas, header, modo, nomeAba, bimestreSelecionado) {
-    const registros = [];
-    for (let i = header.linhaHeader + 1; i < linhas.length; i++) {
-        const linha = linhas[i];
-        if (!linha || linha[header.idxNome] === undefined) continue;
-        const nome = String(linha[header.idxNome] || '').trim();
-        if (!nome) continue;
-
-        const disciplinaColuna = header.idxDisciplina !== -1 ? String(linha[header.idxDisciplina] || '').trim() : '';
-
-        if (header.colunasBimestre.length > 0 && (modo === 'mapao' || header.idxNotaUnica === -1)) {
-            header.colunasBimestre.forEach(cb => {
-                const valorBruto = linha[cb.idx];
-                if (valorBruto === undefined || valorBruto === null || String(valorBruto).trim() === '') return;
-                const disciplina = disciplinaColuna || cb.disciplinaEmbutida || nomeAba;
-                registros.push({ nome_estudante: nome, disciplina, bimestre: cb.bimestre, valor: String(valorBruto).trim() });
-            });
-        } else if (header.idxNotaUnica !== -1) {
-            const valorBruto = linha[header.idxNotaUnica];
-            if (valorBruto === undefined || valorBruto === null || String(valorBruto).trim() === '') continue;
-            const disciplina = disciplinaColuna || nomeAba;
-            registros.push({ nome_estudante: nome, disciplina, bimestre: bimestreSelecionado, valor: String(valorBruto).trim() });
-        }
-    }
-    return registros;
-}
-
-function tentarExtracaoDeterministicaXlsx(abas, modo, roster, bimestreSelecionado) {
-    let registros = [];
-    abas.forEach(aba => {
-        const header = detectarCabecalhoPlanilhaNotasOficiais(aba.linhas);
-        if (!header) return;
-        registros = registros.concat(extrairRegistrosDeterministicos(aba.linhas, header, modo, aba.nome, bimestreSelecionado));
-    });
-    return filtrarRegistrosPorRoster(registros, roster);
-}
-
-async function extrairTextoPdfNotasOficiais(arrayBuffer) {
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let texto = '';
-    for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        texto += content.items.map(it => it.str).join(' ') + '\n';
-    }
-    return texto;
-}
-
-const LIMITE_CONTEUDO_NOTAS_OFICIAIS = 50000;
-
-function montarPromptNotasOficiais(modo, nomeAvaliacao, bimestreSelecionado, conteudo, nomesAlunos) {
-    const listaNomes = nomesAlunos.join(', ');
-    let conteudoTruncado = conteudo;
-    if (conteudoTruncado.length > LIMITE_CONTEUDO_NOTAS_OFICIAIS) {
-        conteudoTruncado = conteudoTruncado.slice(0, LIMITE_CONTEUDO_NOTAS_OFICIAIS) + '\n[...conteúdo truncado...]';
-    }
-
-    const instrucao = modo === 'mapao'
-        ? `Este é o "mapão bimestral": um mapa oficial de notas por aluno, por disciplina, por bimestre. O arquivo pode conter colunas de mais de um bimestre (ex: 1ºBim, 2ºBim, 3ºBim) e pode conter alunos de outras turmas além da lista abaixo. Extraia UMA linha para cada combinação existente de aluno + disciplina + bimestre.`
-        : `Esta é a avaliação nomeada "${nomeAvaliacao}", referente ao ${bimestreSelecionado}º bimestre. O arquivo pode conter alunos de outras turmas além da lista abaixo. Nem toda disciplina é necessariamente testada - extraia apenas as disciplinas que realmente aparecem no arquivo para cada aluno, não invente notas para disciplinas ausentes. Use bimestre=${bimestreSelecionado} em todas as linhas.`;
-
-    return `Você é um assistente extremamente preciso que extrai notas escolares de planilhas/PDFs para um sistema de gestão escolar. Precisão é mais importante que completude: é melhor omitir uma linha duvidosa do que inventar ou arredondar um valor.
-
-${instrucao}
-
-Lista de alunos desta turma (só extraia linhas para alunos desta lista; ignore qualquer nome que não esteja aqui, mesmo que apareça no arquivo — pode ser aluno de outra turma. Use estes nomes exatos ao identificar o aluno no arquivo, mesmo que o arquivo tenha nomes abreviados, com erro de digitação ou fora de ordem):
-${listaNomes}
-
-Conteúdo extraído do arquivo:
-"""
-${conteudoTruncado}
-"""
-
-Retorne APENAS um JSON válido, sem marcação markdown, no formato exato:
-{"registros": [{"nome_estudante": "...", "disciplina": "...", "bimestre": 1, "valor": "..."}]}
-
-Regras estritas:
-- Copie o valor da nota EXATAMENTE como está escrito na fonte, sem arredondar e sem converter formato (ex: se está "7,5" retorne "7,5", não "7.5" nem "8").
-- Se a célula indicar ausência/dispensa (ex: "-", "FALTOU", "AUSENTE", "ISENTO", "NC"), copie esse texto literal em "valor" — não invente um número.
-- Se uma célula estiver ilegível, vazia, ou você não tiver certeza do valor, OMITA a linha inteira — não adivinhe.
-- Não invente notas para aluno/disciplina/bimestre que não estão claramente no arquivo.
-- "disciplina" deve ser o nome da matéria como aparece no arquivo (ex: "Matemática", "Língua Portuguesa").`;
-}
-
-async function chamarIAExtracaoNotas(promptText) {
-    let apiKeys = [];
-    const configData = await getData('system', 'config_ia');
-    if (configData && configData.apiKey) {
-        apiKeys = configData.apiKey.split(',').map(k => k.trim()).filter(k => k);
-    }
-    if (apiKeys.length === 0) {
-        throw new Error('A chave da API não foi configurada. Peça ao Administrador para entrar no painel Super Admin e adicioná-la na aba Migração.');
-    }
-
-    let success = false;
-    let lastError = '';
-    let respostaTexto = '';
-
-    const tentativas = 3;
-    // Modelos do Gemini em ordem de preferência (core.js: listarModelosGemini) - configuráveis pelo
-    // Super Admin. `modeloForcado` recebe o substituto que a própria API indicar quando um modelo é
-    // aposentado, pra tentativa seguinte não insistir num modelo que não existe mais.
-    const modelosFallback = listarModelosGemini(configData);
-    let modeloForcado = '';
-
-    for (let i = 0; i < tentativas && !success; i++) {
-        const modeloAtual = modeloForcado || modelosFallback[i % modelosFallback.length];
-
-        for (const currentKey of apiKeys) {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 20000);
-
-                if (currentKey.startsWith('sk-') && !currentKey.startsWith('sk-ant-')) {
-                    const response = await fetch(`https://api.openai.com/v1/chat/completions`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentKey}` },
-                        body: JSON.stringify({
-                            model: 'gpt-4o-mini',
-                            messages: [
-                                { role: 'system', content: 'Você deve retornar APENAS um JSON válido. Nenhuma formatação markdown.' },
-                                { role: 'user', content: promptText }
-                            ],
-                            temperature: 0.1,
-                            response_format: { type: "json_object" }
-                        }),
-                        signal: controller.signal
-                    });
-                    clearTimeout(timeoutId);
-                    if (!response.ok) throw new Error(`OpenAI Erro: ${response.statusText}`);
-                    const apiDataObj = await response.json();
-                    respostaTexto = apiDataObj.choices[0].message.content;
-
-                } else if (currentKey.startsWith('gsk_')) {
-                    const response = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentKey}` },
-                        body: JSON.stringify({
-                            model: 'llama-3.3-70b-versatile',
-                            messages: [
-                                { role: 'system', content: 'Você deve retornar APENAS um JSON válido. Nenhuma formatação markdown.' },
-                                { role: 'user', content: promptText }
-                            ],
-                            temperature: 0.1,
-                            response_format: { type: "json_object" }
-                        }),
-                        signal: controller.signal
-                    });
-                    clearTimeout(timeoutId);
-                    if (!response.ok) throw new Error(`Groq Erro: ${response.statusText}`);
-                    const apiDataObj = await response.json();
-                    respostaTexto = apiDataObj.choices[0].message.content;
-
-                } else {
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modeloAtual}:generateContent?key=${currentKey}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: promptText }] }],
-                            generationConfig: { temperature: 0.1, response_mime_type: "application/json" }
-                        }),
-                        signal: controller.signal
-                    });
-                    clearTimeout(timeoutId);
-                    if (!response.ok) {
-                        const errorObj = await response.json();
-                        throw new Error(errorObj.error ? errorObj.error.message : response.statusText);
-                    }
-                    const apiDataObj = await response.json();
-                    if (!apiDataObj.candidates || apiDataObj.candidates.length === 0 || !apiDataObj.candidates[0].content) {
-                        throw new Error('A IA não retornou um conteúdo válido.');
-                    }
-                    respostaTexto = apiDataObj.candidates[0].content.parts[0].text;
-                }
-
-                success = true;
-                break;
-            } catch (err) {
-                lastError = err.name === 'AbortError' ? 'Tempo de resposta esgotado.' : err.message;
-                console.warn(`⚠️ Falha na API de extração de notas (Tentativa ${i + 1}):`, lastError);
-
-                // Modelo aposentado pelo Google: a mensagem de erro traz o substituto (ver core.js).
-                const substituto = modeloGeminiSubstituto(lastError);
-                if (substituto && substituto !== modeloAtual) {
-                    console.warn(`ℹ️ Modelo ${modeloAtual} foi aposentado - tentando ${substituto}. Peça ao Administrador para atualizar o modelo no painel Super Admin.`);
-                    modeloForcado = substituto;
-                    break; // sai do loop de chaves
-                }
-            }
-        }
-        if (!success && i < tentativas - 1) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-    }
-
-    if (!success) {
-        throw new Error(`A Inteligência Artificial falhou ou rejeitou o pedido.\nMotivo: ${lastError}`);
-    }
-
-    let jsonLimpo = respostaTexto.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').trim();
-    const jsonMatch = jsonLimpo.match(/\{[\s\S]*\}/);
-    if (jsonMatch) jsonLimpo = jsonMatch[0];
-
-    return JSON.parse(jsonLimpo);
-}
-
-async function processarArquivoNotasOficiais() {
-    const turmasSelecionadas = Array.from(document.querySelectorAll('.chk-turma-notas-oficiais:checked')).map(chk => chk.value);
-    const arquivoInput = document.getElementById('notasOficiaisArquivo');
-    const arquivo = arquivoInput.files[0];
-
-    if (turmasSelecionadas.length === 0) return alert('Selecione ao menos uma turma.');
-    if (!arquivo) return alert('Selecione um arquivo (.xlsx ou .pdf).');
-
-    const modo = notasOficiaisModo;
-    const nomeAvaliacao = document.getElementById('notasOficiaisNomeAvaliacao').value.trim();
-    const bimestreSelecionado = parseInt(document.getElementById('notasOficiaisBimestre').value);
-
-    if (modo === 'avaliacao' && !nomeAvaliacao) return alert('Informe o nome da avaliação.');
-
-    const btn = document.getElementById('btnProcessarNotasOficiais');
-    btn.disabled = true;
-    document.getElementById('revisaoNotasOficiais').innerHTML = '';
-
-    try {
-        const ext = arquivo.name.split('.').pop().toLowerCase();
-        const arrayBuffer = await arquivo.arrayBuffer();
-
-        let abas = null; // só existe pra xlsx - permite tentar o parser determinístico
-        let conteudoTexto = '';
-
-        if (ext === 'pdf') {
-            definirProgressoNotasOficiais('Carregando leitor de PDF...', 5);
-            await carregarBibliotecaBaseCurricular('pdf');
-            definirProgressoNotasOficiais('Lendo arquivo...', 15);
-            conteudoTexto = await extrairTextoPdfNotasOficiais(arrayBuffer);
-        } else {
-            definirProgressoNotasOficiais('Carregando leitor de planilha...', 5);
-            await carregarBibliotecaBaseCurricular('xlsx');
-            definirProgressoNotasOficiais('Lendo arquivo...', 15);
-            const extraido = extrairAbasXlsxNotasOficiais(arrayBuffer);
-            abas = extraido.abas;
-            conteudoTexto = extraido.texto;
-        }
-
-        if (conteudoTexto.length > LIMITE_CONTEUDO_NOTAS_OFICIAIS) {
-            document.getElementById('revisaoNotasOficiais').innerHTML = `
-                <div style="background:#fffaf0; border:1px solid #fbd38d; color:#7b341e; padding:10px; border-radius:6px; font-size:12px; margin-bottom:10px;">
-                    ⚠️ Este arquivo é grande (${conteudoTexto.length.toLocaleString('pt-BR')} caracteres). Se alguma turma cair no processamento por IA, parte do conteúdo pode ter sido cortada — confira com atenção se todas as linhas esperadas aparecem na revisão abaixo.
-                </div>
-            `;
-        }
-
-        // Uma turma por vez, em cadeia: (1) parser do formato oficial SED ("Registro e Controle do
-        // Rendimento Escolar"), (2) parser genérico de colunas (v3), (3) IA - só avança pro próximo
-        // se o anterior não achar NADA pra essa turma (sem gate de confiança: o que for achado é
-        // aceito, e quem não aparecer em nenhuma linha fica visível no resumo de cobertura abaixo,
-        // sem chamar IA pra completar - decisão do usuário, pra manter controle total com o gestor).
-        // PDF não tem coluna estruturada, então vai direto pra IA. Cada chamada de IA usa o roster
-        // restrito àquela turma, o que permite distinguir turmas dentro de um arquivo só sem precisar
-        // cortar/filtrar o conteúdo (arriscaria perder linhas legítimas).
-        let todosRegistros = [];
-        const resumosCobertura = [];
-
-        for (let i = 0; i < turmasSelecionadas.length; i++) {
-            const idTurma = turmasSelecionadas[i];
-            const turmaObj = (data.turmas || []).find(t => t.id == idTurma);
-            const roster = (data.estudantes || []).filter(e => e.id_turma == idTurma && (!e.status || e.status === 'Ativo'));
-
-            if (roster.length === 0) continue;
-
-            const progressoBase = 20 + Math.round((i / turmasSelecionadas.length) * 70);
-            const labelTurma = turmaObj ? turmaObj.nome : `turma ${i + 1}`;
-            let registrosTurma = [];
-            let metodoUsado = null;
-
-            if (abas) {
-                definirProgressoNotasOficiais(`Lendo planilha (formato SED)... turma ${i + 1} de ${turmasSelecionadas.length} (${labelTurma})`, progressoBase);
-                const registrosSed = tentarExtracaoSed(abas, roster);
-                if (registrosSed.length > 0) {
-                    registrosTurma = registrosSed;
-                    metodoUsado = 'planilha';
-                } else {
-                    definirProgressoNotasOficiais(`Lendo planilha (formato genérico)... turma ${i + 1} de ${turmasSelecionadas.length} (${labelTurma})`, progressoBase);
-                    const registrosGenericos = tentarExtracaoDeterministicaXlsx(abas, modo, roster, bimestreSelecionado);
-                    if (registrosGenericos.length > 0) {
-                        registrosTurma = registrosGenericos;
-                        metodoUsado = 'planilha';
-                    }
-                }
-            }
-
-            if (registrosTurma.length === 0) {
-                definirProgressoNotasOficiais(`Processando com IA... turma ${i + 1} de ${turmasSelecionadas.length} (${labelTurma})`, progressoBase);
-                const prompt = montarPromptNotasOficiais(modo, nomeAvaliacao, bimestreSelecionado, conteudoTexto, roster.map(e => e.nome_completo));
-                const resultado = await chamarIAExtracaoNotas(prompt);
-                registrosTurma = Array.isArray(resultado.registros) ? resultado.registros : [];
-                metodoUsado = 'ia';
-            }
-
-            registrosTurma = registrosTurma.map(r => ({ ...r, _id_turma_origem: idTurma, _metodo: metodoUsado }));
-
-            const nomesEncontrados = new Set(registrosTurma.map(r => normNomeNotasOficiais(r.nome_estudante)));
-            const faltantes = roster.filter(e => !nomesEncontrados.has(normNomeNotasOficiais(e.nome_completo)));
-            resumosCobertura.push({
-                turmaNome: labelTurma,
-                total: roster.length,
-                encontrados: roster.length - faltantes.length,
-                faltantes: faltantes.map(e => e.nome_completo)
-            });
-
-            todosRegistros = todosRegistros.concat(registrosTurma);
-        }
-
-        if (todosRegistros.length === 0) {
-            alert('Não foi possível extrair nenhum registro deste arquivo. Verifique se o arquivo contém as notas esperadas.');
-            return;
-        }
-
-        definirProgressoNotasOficiais(`${todosRegistros.length} registros extraídos. Revise antes de salvar.`, 100);
-        montarRevisaoNotasOficiais(todosRegistros, bimestreSelecionado, resumosCobertura);
-    } catch (err) {
-        console.error(err);
-        alert('Erro ao processar o arquivo: ' + err.message);
-    } finally {
-        btn.disabled = false;
-    }
-}
-
-const TEXTOS_AUSENCIA_NOTA_OFICIAL = ['-', 'FALTOU', 'AUSENTE', 'ISENTO', 'NC', 'N/A', 'DISPENSADO'];
-
-function valorNotaOficialPareceValido(valor) {
-    const v = String(valor || '').trim().toUpperCase();
-    if (v === '') return false;
-    if (TEXTOS_AUSENCIA_NOTA_OFICIAL.includes(v)) return true;
-    const num = parseFloat(v.replace(',', '.'));
-    return !isNaN(num) && num >= 0 && num <= 10;
-}
-
-function montarRevisaoNotasOficiais(registros, bimestreSelecionado, resumosCobertura) {
-    // Cada linha guarda a turma de origem (definida na chamada de IA que a gerou) e resolve seu
-    // candidato de aluno só dentro do roster daquela turma — evita colisão de nomes entre turmas
-    // diferentes selecionadas na mesma leva de upload.
-    notasOficiaisRegistrosPendentes = registros.map((r, idx) => {
-        const idTurmaOrigem = r._id_turma_origem;
-        const rosterTurma = (data.estudantes || []).filter(e => e.id_turma == idTurmaOrigem && (!e.status || e.status === 'Ativo'));
-        const nomeNorm = normNomeNotasOficiais(r.nome_estudante);
-        let candidato = rosterTurma.find(e => normNomeNotasOficiais(e.nome_completo) === nomeNorm);
-
-        if (!candidato) {
-            // Sugestão por similaridade (nome com acento/abreviação diferente)
-            const normA = normalizarTextoComparacaoMaterialDigital(r.nome_estudante);
-            let melhor = null, melhorSimilaridade = 0;
-            rosterTurma.forEach(e => {
-                const normB = normalizarTextoComparacaoMaterialDigital(e.nome_completo);
-                const dist = distanciaLevenshteinMaterialDigital(normA, normB);
-                const sim = 1 - (dist / Math.max(normA.length, normB.length, 1));
-                if (sim > melhorSimilaridade) { melhorSimilaridade = sim; melhor = e; }
-            });
-            if (melhor && melhorSimilaridade >= 0.6) candidato = melhor;
-        }
-
-        return {
-            _idx: idx,
-            id_turma_origem: idTurmaOrigem,
-            metodo: r._metodo || 'ia',
-            nome_original: r.nome_estudante || '',
-            estudanteId: candidato ? candidato.id : '',
-            disciplina: r.disciplina || '',
-            bimestre: parseInt(r.bimestre) || bimestreSelecionado || 1,
-            valor: r.valor != null ? String(r.valor) : '',
-            ignorar: !candidato
-        };
-    });
-
-    const turmas = data.turmas || [];
-    const container = document.getElementById('revisaoNotasOficiais');
-    const htmlAviso = container.innerHTML; // preserva o aviso de truncamento, se houver
-
-    // Resumo de cobertura por turma: não tenta completar via IA (decisão do usuário) - só deixa
-    // visível quem ficou sem nenhuma linha extraída, pra o gestor decidir o que fazer.
-    const htmlCobertura = (resumosCobertura || []).map(r => {
-        const cor = r.faltantes.length === 0 ? '#276749' : '#7b341e';
-        const fundo = r.faltantes.length === 0 ? '#f0fff4' : '#fffaf0';
-        return `
-            <div style="background:${fundo}; border:1px solid #e3e8ef; color:${cor}; padding:8px 12px; border-radius:6px; font-size:12px; margin-bottom:6px;">
-                <strong>${r.turmaNome}:</strong> ${r.encontrados} de ${r.total} alunos com nota lançada nesta leitura.
-                ${r.faltantes.length > 0 ? `<br>Sem nenhuma linha: ${r.faltantes.join(', ')}` : ''}
-            </div>
-        `;
-    }).join('');
-
-    container.innerHTML = htmlAviso + htmlCobertura + `
-        <h3>Revisão antes de salvar (${notasOficiaisRegistrosPendentes.length} linhas)</h3>
-        <p style="font-size:12px; color:#5f6b7f;">Confira o aluno de cada linha (a extração pode errar o casamento de nomes). Linhas em laranja têm um valor de nota que não parece válido — confira antes de salvar. Linhas marcadas "Ignorar" não serão salvas.</p>
-        <div style="overflow-x:auto;">
-            <table style="font-size:13px;">
-                <thead><tr><th>Turma</th><th>Origem</th><th>Nome no Arquivo</th><th>Aluno</th><th>Disciplina</th><th>Bimestre</th><th>Nota</th><th>Ignorar</th></tr></thead>
-                <tbody id="tbodyRevisaoNotasOficiais">
-                    ${notasOficiaisRegistrosPendentes.map(r => {
-                        const rosterTurma = (data.estudantes || []).filter(e => e.id_turma == r.id_turma_origem && (!e.status || e.status === 'Ativo'));
-                        const turmaObj = turmas.find(t => t.id == r.id_turma_origem);
-                        const valorSuspeito = !valorNotaOficialPareceValido(r.valor);
-                        const corFundo = r.ignorar ? 'background:#fff5f5;' : (valorSuspeito ? 'background:#fffaf0;' : '');
-                        const badgeMetodo = r.metodo === 'planilha'
-                            ? '<span style="background:#e6fffa; color:#234e52; border:1px solid #b2f5ea; font-size:10px; padding:2px 6px; border-radius:4px;" title="Lido direto da planilha, sem IA">📊 Planilha</span>'
-                            : '<span style="background:#faf5ff; color:#553c9a; border:1px solid #e9d8fd; font-size:10px; padding:2px 6px; border-radius:4px;" title="Extraído por IA">🤖 IA</span>';
-                        return `
-                        <tr style="${corFundo}">
-                            <td>${turmaObj ? turmaObj.nome : '-'}</td>
-                            <td>${badgeMetodo}</td>
-                            <td>${r.nome_original}</td>
-                            <td>
-                                <select onchange="atualizarCampoRevisaoNotas(${r._idx}, 'estudanteId', this.value)">
-                                    <option value="">Não encontrado</option>
-                                    ${rosterTurma.map(e => `<option value="${e.id}" ${e.id == r.estudanteId ? 'selected' : ''}>${e.nome_completo}</option>`).join('')}
-                                </select>
-                            </td>
-                            <td><input type="text" value="${r.disciplina}" style="width:120px;" onchange="atualizarCampoRevisaoNotas(${r._idx}, 'disciplina', this.value)"></td>
-                            <td><input type="number" min="1" max="4" value="${r.bimestre}" style="width:50px;" onchange="atualizarCampoRevisaoNotas(${r._idx}, 'bimestre', this.value)"></td>
-                            <td><input type="text" value="${r.valor}" style="width:60px; ${valorSuspeito ? 'border-color:#dd6b20;' : ''}" title="${valorSuspeito ? 'Valor não parece uma nota válida (0-10 ou texto de ausência)' : ''}" onchange="atualizarCampoRevisaoNotas(${r._idx}, 'valor', this.value)"></td>
-                            <td><input type="checkbox" ${r.ignorar ? 'checked' : ''} onchange="atualizarCampoRevisaoNotas(${r._idx}, 'ignorar', this.checked)"></td>
-                        </tr>
-                    `;
-                    }).join('')}
-                </tbody>
-            </table>
-        </div>
-        <div style="margin-top:15px; display:flex; gap:10px;">
-            <button class="btn btn-success" onclick="confirmarGravacaoNotasOficiais()">✅ Confirmar e Salvar</button>
-            <button class="btn btn-secondary" onclick="renderNotasOficiaisGestor()">Cancelar</button>
-        </div>
-    `;
-
-    // Trava modo/bimestre/nome enquanto a revisão está aberta: como confirmarGravacaoNotasOficiais()
-    // relê esses campos do formulário (para não interpolar texto livre do gestor num onclick), eles não
-    // podem mudar entre "Processar com IA" e "Confirmar e Salvar". A turma de cada linha já ficou fixada
-    // em `id_turma_origem` no momento da extração, então as turmas não precisam ficar travadas.
-    document.getElementById('notasOficiaisNomeAvaliacao').disabled = true;
-    document.getElementById('notasOficiaisBimestre').disabled = true;
-    document.querySelectorAll('input[name="notasOficiaisModoRadio"]').forEach(r => r.disabled = true);
-}
-
-function atualizarCampoRevisaoNotas(idx, campo, valor) {
-    const registro = notasOficiaisRegistrosPendentes.find(r => r._idx === idx);
-    if (!registro) return;
-    if (campo === 'ignorar') {
-        registro.ignorar = valor;
-    } else if (campo === 'bimestre') {
-        registro.bimestre = parseInt(valor) || 1;
-    } else {
-        registro[campo] = valor;
-    }
-    if (campo === 'estudanteId') {
-        registro.ignorar = !valor;
-    }
-}
-
-async function confirmarGravacaoNotasOficiais() {
-    const modo = notasOficiaisModo;
-    const nomeAvaliacao = document.getElementById('notasOficiaisNomeAvaliacao').value.trim();
-    const bimestreSelecionado = parseInt(document.getElementById('notasOficiaisBimestre').value);
-
-    const validos = notasOficiaisRegistrosPendentes.filter(r => !r.ignorar && r.estudanteId && r.valor !== '');
-    if (validos.length === 0) return alert('Nenhuma linha válida para salvar (verifique o casamento de alunos).');
-
-    const agora = Date.now();
-    const nomeArquivoInput = document.getElementById('notasOficiaisArquivo');
-    const nomeArquivo = nomeArquivoInput.files[0] ? nomeArquivoInput.files[0].name : '';
-
-    if (modo === 'mapao') {
-        if (!data.notasBimestraisOficiais) data.notasBimestraisOficiais = [];
-        if (!data.lotesMapaoGestor) data.lotesMapaoGestor = [];
-
-        const loteId = agora;
-        const turmasDoLote = new Set();
-
-        validos.forEach(r => {
-            const estudante = (data.estudantes || []).find(e => e.id == r.estudanteId);
-            if (!estudante) return;
-            const nomeNorm = normNomeNotasOficiais(estudante.nome_completo);
-            const disciplinaNorm = normalizarTextoComparacaoMaterialDigital(r.disciplina);
-
-            let existente = data.notasBimestraisOficiais.find(n =>
-                n.id_turma == estudante.id_turma &&
-                n.bimestre == r.bimestre &&
-                normNomeNotasOficiais(n.nome_estudante_norm) === nomeNorm &&
-                normalizarTextoComparacaoMaterialDigital(n.disciplina) === disciplinaNorm
-            );
-
-            if (existente) {
-                existente.valor = r.valor;
-                existente.origem = { tipo: 'mapao', nomeArquivo, dataImportacao: agora, loteId };
-            } else {
-                data.notasBimestraisOficiais.push({
-                    id: agora + Math.random(),
-                    nome_estudante_norm: nomeNorm,
-                    nome_estudante_display: estudante.nome_completo,
-                    disciplina: r.disciplina,
-                    bimestre: r.bimestre,
-                    valor: r.valor,
-                    id_turma: estudante.id_turma,
-                    origem: { tipo: 'mapao', nomeArquivo, dataImportacao: agora, loteId }
-                });
-            }
-            turmasDoLote.add(estudante.id_turma);
-        });
-
-        const nomesTurmasDoLote = [...turmasDoLote].map(id => {
-            const t = (data.turmas || []).find(x => x.id == id);
-            return t ? t.nome : 'Turma removida';
-        });
-        data.lotesMapaoGestor.push({
-            id: loteId,
-            nomeArquivo,
-            turmas: nomesTurmasDoLote,
-            dataImportacao: agora,
-            totalRegistros: validos.length
-        });
-    } else {
-        if (!data.avaliacoesGestor) data.avaliacoesGestor = [];
-        if (!data.notasAvaliacoesGestor) data.notasAvaliacoesGestor = [];
-
-        const disciplinasEnvolvidas = [...new Set(validos.map(r => r.disciplina).filter(Boolean))];
-        const turmasEnvolvidas = [...new Set(validos.map(r => r.id_turma_origem).filter(Boolean))];
-
-        let avaliacao = data.avaliacoesGestor.find(a =>
-            a.bimestre == bimestreSelecionado && a.nome.trim().toLowerCase() === nomeAvaliacao.trim().toLowerCase()
-        );
-
-        if (!avaliacao) {
-            avaliacao = { id: agora, nome: nomeAvaliacao, bimestre: bimestreSelecionado, id_turmas: turmasEnvolvidas, disciplinas: disciplinasEnvolvidas, criadoEm: agora };
-            data.avaliacoesGestor.push(avaliacao);
-        } else {
-            avaliacao.disciplinas = [...new Set([...(avaliacao.disciplinas || []), ...disciplinasEnvolvidas])];
-            avaliacao.id_turmas = [...new Set([...(avaliacao.id_turmas || []), ...turmasEnvolvidas])];
-        }
-
-        validos.forEach(r => {
-            const estudante = (data.estudantes || []).find(e => e.id == r.estudanteId);
-            if (!estudante) return;
-            const nomeNorm = normNomeNotasOficiais(estudante.nome_completo);
-            const disciplinaNorm = normalizarTextoComparacaoMaterialDigital(r.disciplina);
-
-            let existente = data.notasAvaliacoesGestor.find(n =>
-                n.id_avaliacao == avaliacao.id &&
-                normNomeNotasOficiais(n.nome_estudante_norm) === nomeNorm &&
-                normalizarTextoComparacaoMaterialDigital(n.disciplina) === disciplinaNorm
-            );
-
-            if (existente) {
-                existente.valor = r.valor;
-                existente.atualizadoEm = agora;
-            } else {
-                data.notasAvaliacoesGestor.push({
-                    id: agora + Math.random(),
-                    id_avaliacao: avaliacao.id,
-                    nome_estudante_norm: nomeNorm,
-                    nome_estudante_display: estudante.nome_completo,
-                    disciplina: r.disciplina,
-                    valor: r.valor,
-                    atualizadoEm: agora
-                });
-            }
-        });
-    }
-
-    await persistirDados();
-    alert(`Notas salvas com sucesso! (${validos.length} registros)`);
-    notasOficiaisRegistrosPendentes = [];
-    document.getElementById('notasOficiaisArquivo').value = '';
-    document.getElementById('progressoNotasOficiais').style.display = 'none';
-    renderNotasOficiaisGestor();
 }
 
 // Monta o HTML de notas oficiais (mapão + avaliações da gestão) de um único aluno, reaproveitado

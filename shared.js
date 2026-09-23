@@ -265,6 +265,50 @@ function completarComLocal(nuvem, local) {
     return base;
 }
 
+// Junta a camada pessoal de OUTRO aparelho (a que veio cifrada da nuvem) na de agora,
+// registro a registro. Muda `alvo` no lugar e devolve o que entrou.
+//
+// Antes a regra era "o aparelho manda quando tem algo": a nuvem só entrava com o
+// aparelho vazio. Um aparelho com cópia velha abria sem ver o que fora lançado em
+// outro, e o salvamento seguinte subia a cópia velha por cima do pacote — as
+// ocorrências e os trabalhos do outro aparelho sumiam da nuvem. Com a união, cada
+// aparelho acrescenta o que falta em vez de apagar.
+//
+// Mesma identidade de registro do resgate (mesmoRegistro): id igual e mesma pessoa é
+// o mesmo registro, e o daqui manda. O preço conhecido: algo apagado num aparelho pode
+// voltar vindo de outro que ainda o tinha. Reaparecer é melhor do que sumir.
+function unirCamadaPessoal(alvo, vindo) {
+    const por = {};
+    let total = 0;
+    if (!alvo || !vindo) return { por: por, total: total };
+    Object.keys(vindo).forEach(chave => {
+        if (!campoEhPessoal(chave)) return;
+        const lista = vindo[chave];
+        if (Array.isArray(lista)) {
+            if (!Array.isArray(alvo[chave])) alvo[chave] = [];
+            const aqui = alvo[chave];
+            const porId = {};
+            const k = (it) => (it && it.id != null) ? String(it.id) : 'js:' + JSON.stringify(it);
+            aqui.forEach(it => { (porId[k(it)] = porId[k(it)] || []).push(it); });
+            let entraram = 0;
+            lista.forEach(it => {
+                const candidatos = porId[k(it)] || [];
+                if (candidatos.some(j => mesmoRegistro(j, it))) return;
+                (porId[k(it)] = candidatos).push(it);
+                aqui.push(it);
+                entraram++;
+            });
+            if (entraram) { por[chave] = entraram; total += entraram; }
+            return;
+        }
+        // Campo solto (objeto, configuração): só preenche o que aqui está vazio.
+        if (_semConteudo(alvo[chave]) && !_semConteudo(lista)) {
+            alvo[chave] = lista; por[chave] = 1; total++;
+        }
+    });
+    return { por: por, total: total };
+}
+
 // Quanto dado pessoal existe aqui dentro. Depois da transição a camada local é a
 // ÚNICA cópia do que identifica estudante — chamada, nota, ocorrência, tutoria — e
 // "carregou vazio" e "está vazio" deixam de ser a mesma coisa: o primeiro é uma
@@ -314,4 +358,86 @@ function abreviarNome(nomeCompleto) {
     if (partes.length === 1) return partes[0];
     const ultimo = partes[partes.length - 1];
     return partes[0] + ' ' + ultimo.charAt(0).toUpperCase() + '.';
+}
+
+// ==================== LEITURA DE CSV ====================
+//
+// Aceita o CSV que a planilha de cada um produzir: separado por ponto e vírgula,
+// vírgula, tabulação ou barra vertical, com ou sem aspas, com ou sem BOM, em UTF-8
+// ou no Windows-1252 dos exportadores mais antigos. A leitura anterior só separava
+// por ";" e não conhecia aspas: um nome com vírgula entre aspas, ou um arquivo
+// separado por vírgula, virava uma coluna só e a importação dizia "cabeçalho não
+// encontrado" sem explicar por quê.
+
+// Decodifica os bytes do arquivo. UTF-8 primeiro; o caractere de substituição
+// denuncia um arquivo em Windows-1252, e aí os acentos são lidos de novo do jeito
+// certo em vez de entrarem corrompidos em silêncio.
+function decodificarTextoArquivo(buffer) {
+    let texto = new TextDecoder('utf-8').decode(buffer);
+    if (texto.indexOf('�') !== -1) {
+        try { texto = new TextDecoder('windows-1252').decode(buffer); } catch (e) { /* mantém o utf-8 */ }
+    }
+    if (texto.charCodeAt(0) === 0xFEFF) texto = texto.slice(1);
+    return texto;
+}
+
+// Conta quantas vezes o separador aparece FORA de aspas numa linha.
+function _contarSeparadorCsv(linha, sep) {
+    let n = 0, emAspas = false;
+    for (let i = 0; i < linha.length; i++) {
+        const c = linha[i];
+        if (c === '"') emAspas = !emAspas;
+        else if (c === sep && !emAspas) n++;
+    }
+    return n;
+}
+
+// O separador é o que aparece o MESMO número de vezes (e mais de zero) no maior
+// número de linhas. Olhar só a primeira linha não basta: muitos arquivos começam
+// com um título ou um filtro antes do cabeçalho de verdade.
+function detectarSeparadorCsv(texto) {
+    const linhas = String(texto || '').split(/\r?\n/).filter(l => l.trim()).slice(0, 30);
+    let melhor = ';', melhorPlacar = -1;
+    [';', ',', '\t', '|'].forEach(sep => {
+        const freq = {};
+        linhas.forEach(l => {
+            const n = _contarSeparadorCsv(l, sep);
+            if (n > 0) freq[n] = (freq[n] || 0) + 1;
+        });
+        const placar = Math.max(0, ...Object.values(freq));
+        if (placar > melhorPlacar) { melhor = sep; melhorPlacar = placar; }
+    });
+    return melhor;
+}
+
+// Texto CSV -> matriz de células (linhas x colunas), com aspas à moda RFC 4180:
+// "a;b" é uma célula só, "" dentro de aspas é uma aspa, e quebra de linha dentro
+// de aspas não quebra o registro. Linhas totalmente vazias saem.
+function lerCsvMatriz(texto, separador) {
+    const t = String(texto || '');
+    const sep = separador || detectarSeparadorCsv(t);
+    const linhas = [];
+    let linha = [], celula = '', emAspas = false;
+
+    for (let i = 0; i < t.length; i++) {
+        const c = t[i];
+        if (emAspas) {
+            if (c === '"') {
+                if (t[i + 1] === '"') { celula += '"'; i++; }
+                else emAspas = false;
+            } else celula += c;
+        } else if (c === '"') {
+            emAspas = true;
+        } else if (c === sep) {
+            linha.push(celula.trim()); celula = '';
+        } else if (c === '\n' || c === '\r') {
+            if (c === '\r' && t[i + 1] === '\n') i++;
+            linha.push(celula.trim()); celula = '';
+            if (linha.some(x => x !== '')) linhas.push(linha);
+            linha = [];
+        } else celula += c;
+    }
+    linha.push(celula.trim());
+    if (linha.some(x => x !== '')) linhas.push(linha);
+    return linhas;
 }

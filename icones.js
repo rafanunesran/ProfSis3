@@ -56,6 +56,7 @@ const ICONES_SISPROF = {
     pdf:          { rotulo: 'PDF',           a: '<path d="M10 4h17l13 13v23a4 4 0 0 1-4 4H10a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4z"/>', b: '<rect x="2" y="21" width="30" height="14" rx="4"/>' },
     ampliar:      { rotulo: 'Ampliar',       a: '<rect x="27" y="31" width="20" height="8" rx="4" transform="rotate(45 27 35)"/>', b: '<circle cx="20" cy="20" r="15"/>' },
     poster:       { rotulo: 'Pôster',        a: '<circle cx="33" cy="14" r="9"/>', b: '<path d="M16.3 11.6a2 2 0 0 1 3.4 0L29 27.4l3.3-4.8a2 2 0 0 1 3.3 0l8 12.3a2 2 0 0 1-1.7 3.1H6.1a2 2 0 0 1-1.7-3z"/>' },
+    video:        { rotulo: 'Vídeo',         a: '<rect x="4" y="9" width="40" height="30" rx="7"/>', b: '<path d="M19 16.6a2 2 0 0 1 3-1.7l12.5 7.4a2 2 0 0 1 0 3.4L22 33.1a2 2 0 0 1-3-1.7z"/>' },
     imagem:       { rotulo: 'Imagem',        a: '<circle cx="33" cy="14" r="9"/>', b: '<path d="M16.3 11.6a2 2 0 0 1 3.4 0L29 27.4l3.3-4.8a2 2 0 0 1 3.3 0l8 12.3a2 2 0 0 1-1.7 3.1H6.1a2 2 0 0 1-1.7-3z"/>' },
 
     // ---- Dados e cópia de segurança ----
@@ -81,7 +82,7 @@ const EMOJI_ICONE = {
     '📅': 'agenda', '📆': 'agenda', '🗓️': 'agenda', '🤝': 'reuniao', '📢': 'aviso', '📣': 'aviso',
     '🔔': 'alerta', '⚙️': 'config', '⚙': 'config', '👤': 'perfil', '❤️': 'apoie', '❤': 'apoie',
     '💛': 'apoie', '✨': 'estagiario', '📕': 'pdf', '📘': 'anexo', '🔍': 'ampliar', '🔎': 'busca',
-    '🧱': 'poster', '🖼️': 'imagem', '🗂️': 'historico', '🗂': 'historico', '💾': 'salvar',
+    '🧱': 'poster', '🎬': 'video', '🖼️': 'imagem', '🗂️': 'historico', '🗂': 'historico', '💾': 'salvar',
     '☁️': 'nuvem', '☁': 'nuvem', '⬇️': 'baixar', '⬆️': 'importar', '📤': 'importar', '📥': 'baixar',
     '🖨️': 'imprimir', '🖨': 'imprimir', '🗑️': 'lixeira', '🗑': 'lixeira', '✏️': 'editar', '✏': 'editar',
     '🎨': 'tema', '📱': 'celular', '🔒': 'seguranca', '🔐': 'seguranca', '🛟': 'seguranca',
