@@ -2651,3 +2651,336 @@ html[data-estilo="ambar"] #appContainer .ferr-nav-btn.active {
         transition: none;
     }
 }
+
+/* ==========================================================================
+   Cabeçalho de página: o nome da tela é o título; escola e painel embaixo
+   ========================================================================== */
+html[data-estilo="ambar"] #appContainer header {
+    padding: 16px 20px;
+}
+
+html[data-estilo="ambar"] #appContainer .app-header {
+    flex-wrap: nowrap;
+    align-items: center;
+}
+
+html[data-estilo="ambar"] #appContainer .app-brand {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+
+/* Título grande = tela atual */
+html[data-estilo="ambar"] #appContainer .ux-trilha {
+    order: -1;
+    margin: 0;
+    min-width: 0;
+}
+
+html[data-estilo="ambar"] #appContainer #uxTelaAtual {
+    display: block;
+    background: none;
+    box-shadow: none;
+    padding: 0;
+    border-radius: 0;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    color: var(--appbar-fg);
+}
+
+/* Escola e painel: uma linha pequena, abaixo do título */
+html[data-estilo="ambar"] #appContainer header h1 {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0;
+    color: var(--appbar-fg-2);
+    display: inline-flex;
+    gap: 8px;
+}
+
+html[data-estilo="ambar"] #appContainer header h1 img {
+    height: 20px !important;
+    border-radius: 5px !important;
+}
+
+html[data-estilo="ambar"] #appContainer .app-brand > h1,
+html[data-estilo="ambar"] #appContainer #painelSubtitle {
+    display: inline;
+}
+
+html[data-estilo="ambar"] #appContainer #painelSubtitle {
+    margin: 0;
+    font-size: 13px;
+    color: var(--appbar-fg-2);
+}
+
+html[data-estilo="ambar"] #appContainer .app-brand {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: baseline;
+    column-gap: 8px;
+    row-gap: 3px;
+}
+
+html[data-estilo="ambar"] #appContainer .ux-trilha {
+    grid-column: 1 / -1;
+}
+
+html[data-estilo="ambar"] #appContainer #painelSubtitle::before {
+    content: '·';
+    margin-right: 8px;
+    opacity: 0.6;
+}
+
+/* Ações numa fileira; a data vai para o Início */
+html[data-estilo="ambar"] #appContainer #headerUserArea {
+    flex-wrap: nowrap;
+    flex: none;
+}
+
+html[data-estilo="ambar"] #appContainer #headerUserArea .date-info {
+    display: none;
+}
+
+@media (max-width: 760px) {
+    html[data-estilo="ambar"] #appContainer .app-header {
+        flex-wrap: wrap;
+    }
+
+    html[data-estilo="ambar"] #appContainer #uxTelaAtual {
+        font-size: 18px;
+        white-space: normal;
+    }
+
+    html[data-estilo="ambar"] #appContainer #headerUserArea {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+    }
+}
+
+/* ==========================================================================
+   Início: boas-vindas, turmas e atalhos
+   ========================================================================== */
+.ux-inicio {
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+    gap: 16px 32px;
+    align-items: center;
+    padding: 22px 24px;
+    margin-bottom: 20px;
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+}
+
+.ux-inicio-ola {
+    grid-row: span 2;
+    padding-right: 24px;
+    border-right: 1px solid var(--border);
+}
+
+.ux-inicio-ola h2 {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    color: var(--text);
+}
+
+.ux-inicio-ola p {
+    margin-top: 4px;
+    font-size: 14px;
+    color: var(--text-3);
+}
+
+.ux-inicio-bloco {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+
+.ux-inicio-rotulo {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-4);
+}
+
+.ux-inicio-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.ux-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--text);
+    font: 600 13.5px/1.2 var(--font);
+    cursor: pointer;
+    transition: background-color var(--dur-fast) ease, border-color var(--dur-fast) ease, transform var(--dur-press) var(--ease-out);
+}
+
+.ux-chip small {
+    font-weight: 500;
+    color: var(--text-3);
+}
+
+.ux-chip .ico {
+    width: 18px;
+    height: 18px;
+}
+
+.ux-chip kbd {
+    font: 600 10.5px/1 var(--font);
+    padding: 3px 5px;
+    border-radius: 5px;
+    background: rgba(127, 127, 127, 0.14);
+    color: var(--text-3);
+}
+
+.ux-chip:active {
+    transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .ux-chip:hover {
+        background: var(--accent-soft);
+        border-color: var(--accent-ring);
+    }
+}
+
+@media (max-width: 760px) {
+    .ux-inicio {
+        grid-template-columns: 1fr;
+        padding: 18px 16px;
+        gap: 14px;
+        margin-bottom: 14px;
+    }
+
+    .ux-inicio-ola {
+        grid-row: auto;
+        padding-right: 0;
+        border-right: 0;
+    }
+
+    .ux-inicio-ola h2 {
+        font-size: 21px;
+    }
+
+    .ux-chip kbd {
+        display: none;
+    }
+}
+
+/* ==========================================================================
+   Minhas turmas: grade de cartões; o cartão inteiro abre a turma
+   ========================================================================== */
+html[data-estilo="ambar"] #listaTurmas {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+    gap: 14px;
+    margin-top: 18px !important;
+}
+
+html[data-estilo="ambar"] #listaTurmas > :not(.card) {
+    grid-column: 1 / -1;
+}
+
+html[data-estilo="ambar"] #listaTurmas > .card {
+    margin: 0 !important;
+    border: 1px solid var(--border) !important;
+    background: var(--surface-2);
+    box-shadow: none;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease, transform var(--dur-press) var(--ease-out);
+}
+
+html[data-estilo="ambar"] #listaTurmas > .card h3 {
+    margin: 0 0 6px !important;
+    font-size: 16px;
+    color: var(--text) !important;
+}
+
+html[data-estilo="ambar"] #listaTurmas > .card > div:first-child {
+    align-items: flex-start;
+    gap: 8px;
+}
+
+html[data-estilo="ambar"] #listaTurmas > .card > div:first-child > div {
+    display: flex;
+    flex: none;
+}
+
+html[data-estilo="ambar"] #listaTurmas > .card .btn {
+    margin: 0 0 0 4px;
+    min-height: 30px;
+    padding: 4px 9px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    html[data-estilo="ambar"] #listaTurmas > .card:hover {
+        border-color: var(--accent) !important;
+        box-shadow: var(--shadow-md);
+    }
+}
+
+html[data-estilo="ambar"] #listaTurmas > .card:active {
+    transform: scale(0.99);
+}
+
+/* ==========================================================================
+   Janelas: cabeçalho e botão de salvar sempre à vista em formulários longos
+   ========================================================================== */
+html[data-estilo="ambar"] .modal-header {
+    position: sticky;
+    top: -26px;
+    z-index: 3;
+    margin: -26px -28px 18px;
+    padding: 20px 28px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+
+html[data-estilo="ambar"] .modal-content form > button[type="submit"]:last-child {
+    position: sticky;
+    bottom: -26px;
+    z-index: 3;
+    width: 100%;
+    justify-content: center;
+    min-height: 46px;
+    margin: 12px 0 0;
+    box-shadow: 0 -12px 20px -6px var(--surface), 0 8px 18px -10px color-mix(in srgb, var(--accent) 85%, transparent);
+}
+
+@media (max-width: 760px) {
+    html[data-estilo="ambar"] .modal-header {
+        top: -26px;
+        margin: -26px -18px 16px;
+        padding: 24px 18px 12px;
+    }
+
+    html[data-estilo="ambar"] .modal-content form > button[type="submit"]:last-child {
+        bottom: calc(-20px - env(safe-area-inset-bottom));
+    }
+}
+
+@media (max-width: 760px) {
+    html[data-estilo="ambar"] .modal-content::before {
+        z-index: 4;
+    }
+}

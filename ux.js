@@ -331,6 +331,63 @@
         }
     }
 
+    // ------------------------------------------------ 6. Início: boas-vindas e atalhos
+    // Só lê o que já está carregado (nome, turmas) e chama funções que já existem.
+    function saudacao() {
+        const h = new Date().getHours();
+        return h < 12 ? 'Bom dia' : (h < 18 ? 'Boa tarde' : 'Boa noite');
+    }
+    function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+    function montarInicio() {
+        const dash = $('#dashboard');
+        if (!dash || !dash.children.length || $(':scope > .ux-inicio', dash)) return;
+        const usuario = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : null;
+        const modo = typeof currentViewMode !== 'undefined' ? currentViewMode : null;
+        const primeiroNome = usuario && usuario.nome ? String(usuario.nome).trim().split(/\s+/)[0] : '';
+        const hoje = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+
+        const secao = document.createElement('section');
+        secao.className = 'ux-inicio';
+        let atalhos = '';
+        if ((!modo || modo === 'professor') && typeof data !== 'undefined' && data && Array.isArray(data.turmas) && data.turmas.length && typeof abrirTurma === 'function') {
+            atalhos = '<div class="ux-inicio-bloco"><span class="ux-inicio-rotulo">Abrir turma</span><div class="ux-inicio-chips">' +
+                data.turmas.slice(0, 12).map(t => '<button type="button" class="ux-chip" data-turma="' + esc(t.id) + '">' + ico('turmas') +
+                    '<span>' + esc(t.nome) + (t.disciplina ? ' <small>' + esc(t.disciplina) + '</small>' : '') + '</span></button>').join('') +
+                '</div></div>';
+        }
+        const acoes = [];
+        acoes.push('<button type="button" class="ux-chip ux-chip-acao" data-acao="buscar">' + ico('busca') + '<span>Buscar</span><kbd>Ctrl K</kbd></button>');
+        if (typeof window.abrirModalGerarDocumentoIA === 'function') acoes.push('<button type="button" class="ux-chip ux-chip-acao" data-acao="estagiario">' + ico('estagiario') + '<span>Estagiário</span></button>');
+        if ((!modo || modo === 'professor') && typeof window.abrirModalNovaTurma === 'function') acoes.push('<button type="button" class="ux-chip ux-chip-acao" data-acao="novaTurma">' + ico('turmas') + '<span>Nova turma</span></button>');
+
+        secao.innerHTML =
+            '<div class="ux-inicio-ola"><h2>' + saudacao() + (primeiroNome ? ', ' + esc(primeiroNome) : '') + '</h2>' +
+            '<p>' + esc(hoje.charAt(0).toUpperCase() + hoje.slice(1)) + '</p></div>' +
+            atalhos +
+            '<div class="ux-inicio-bloco"><span class="ux-inicio-rotulo">Atalhos</span><div class="ux-inicio-chips">' + acoes.join('') + '</div></div>';
+
+        secao.addEventListener('click', (e) => {
+            const b = e.target.closest('button');
+            if (!b) return;
+            try {
+                if (b.dataset.turma) abrirTurma(isNaN(+b.dataset.turma) ? b.dataset.turma : +b.dataset.turma);
+                else if (b.dataset.acao === 'buscar') abrirPaleta();
+                else if (b.dataset.acao === 'estagiario') window.abrirModalGerarDocumentoIA();
+                else if (b.dataset.acao === 'novaTurma') window.abrirModalNovaTurma();
+            } catch (err) { console.warn('[SisProf] Atalho do início:', err); }
+        });
+        dash.insertBefore(secao, dash.firstChild);
+    }
+
+    // ------------------------------------------------ 7. Minhas turmas: o cartão inteiro abre a turma
+    document.addEventListener('click', (e) => {
+        const card = e.target.closest && e.target.closest('#listaTurmas > .card');
+        if (!card || e.target.closest('button, a, input, select, textarea, h3[onclick]')) return;
+        const titulo = card.querySelector('h3[onclick]');
+        if (titulo) titulo.click();
+    });
+
     // ------------------------------------------------ 5. menu recolhido
     function alternarRecolhido() {
         const r = document.documentElement.classList.toggle('nav-recolhido');
@@ -396,6 +453,8 @@
                 marcarMais();
             }).observe(nav, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
         }
+        const dash = $('#dashboard');
+        if (dash) new MutationObserver(() => requestAnimationFrame(montarInicio)).observe(dash, { childList: true });
         const container = $('#appContainer');
         if (container) {
             new MutationObserver(() => { requestAnimationFrame(atualizarTitulo); })
