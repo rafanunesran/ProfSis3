@@ -173,6 +173,29 @@ O que esses arquivos **não** trazem são os documentos `pessoal_*`: são cifrad
 senha do professor, e nem o suporte abre. Esses voltam sozinhos quando a pessoa entra
 no sistema com e-mail e senha, no próprio aparelho dela.
 
+## Causa C — um aparelho com cópia velha gravou por cima do outro
+
+É o caso de "lancei ocorrências e trabalhos e depois sumiram", sobretudo logo depois de
+uma atualização do site (é quando se abre o sistema em outro aparelho para ver a novidade).
+Até a versão `core.js?v=3.40`, o aparelho que já tinha estudantes **ignorava** o pacote
+cifrado da nuvem (`pessoal_*`) e, no primeiro salvamento, subia a própria cópia por cima
+dele: o que tinha sido lançado em outro aparelho sumia da nuvem.
+
+O que foi lançado **continua no aparelho onde foi lançado** — ele também nunca puxou a
+cópia velha. A partir da `v=3.40` a abertura junta as duas cópias registro a registro, e
+o aparelho que tem o que a nuvem perdeu **devolve sozinho ao abrir**. Então:
+
+1. Publique a versão nova.
+2. Cada professor abre o sistema, com e-mail e senha, **no aparelho onde lançou** as
+   ocorrências e os trabalhos. Mais nada: a união sobe na abertura.
+3. Depois disso, os outros aparelhos recebem tudo na próxima abertura.
+
+Se o aparelho onde os dados foram lançados foi formatado ou teve o navegador limpo, o
+caminho é o `.profsis` baixado ou o PITR (itens 2 e 5 da Causa B).
+
+Efeito colateral conhecido: algo **apagado** num aparelho pode voltar a aparecer vindo de
+outro aparelho que ainda o tinha. Basta apagar de novo. Reaparecer é melhor do que sumir.
+
 ## Para isto não se repetir
 
 1. **Ligue o PITR** (7 dias de rede de proteção, e ele não é retroativo — ligar depois
