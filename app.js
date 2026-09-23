@@ -337,7 +337,8 @@ function injectProfileButton() {
 // --- SISTEMA DE TEMAS ---
 // Os três primeiros (família "âmbar") têm o visual inteiro no styles.css, ligado pelos
 // atributos data-tema/data-estilo do <html>; os demais só trocam a cor de destaque.
-const TEMA_INICIAL = 'ambar_noturno';
+// Híbrido é o tema de quem ainda não escolheu nenhum.
+const TEMA_INICIAL = 'hibrido';
 const TEMAS_APP = {
     'ambar_noturno': { nome: 'Âmbar Noturno', cor: '#f5b301', bgHeader: 'linear-gradient(135deg, #26262c, #141417)', bgBody: '#141417', isDark: true, estilo: 'ambar-noturno' },
     'ambar_diurno': { nome: 'Âmbar Diurno', cor: '#f5b301', bgHeader: 'linear-gradient(135deg, #ffd24d, #f5b301)', fg: '#1b1400', bgBody: '#f1f1ee', estilo: 'ambar-diurno' },
@@ -585,7 +586,7 @@ function aplicarTemaSalvo() {
     if (tema.estilo) { raiz.dataset.tema = tema.estilo; raiz.dataset.estilo = 'ambar'; }
     else { delete raiz.dataset.tema; delete raiz.dataset.estilo; }
     const metaCor = document.querySelector('meta[name="theme-color"]');
-    if (metaCor) metaCor.setAttribute('content', tema.estilo === 'ambar-diurno' ? '#ffffff' : (tema.estilo ? '#141417' : '#13213a'));
+    if (metaCor) metaCor.setAttribute('content', tema.estilo === 'ambar-diurno' ? '#ffffff' : (tema.estilo === 'hibrido' ? '#16171b' : (tema.estilo ? '#141417' : '#13213a')));
 
     // Remove estilo anterior se houver
     const oldStyle = document.getElementById('theme-style-override');
