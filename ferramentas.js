@@ -18,6 +18,7 @@
 //     aba "PDF"      -> pdf_ferramentas.js    desenha dentro de #tabFerramentasPdf
 //     aba "Ampliar"  -> ampliar.js            desenha dentro de #tabFerramentasAmpliar
 //     aba "Poster"   -> poster.js             desenha dentro de #tabFerramentasPoster
+//     aba "Video"    -> video.js              desenha dentro de #tabFerramentasVideo
 //
 //   Acrescentar uma aba e' acrescentar uma linha em ABAS_FERRAMENTAS e um arquivo que
 //   saiba desenhar no container dela.
@@ -40,6 +41,10 @@ const ABAS_FERRAMENTAS = [
     {
         id: 'poster', container: 'tabFerramentasPoster', icone: '🧱', label: 'Pôster',
         render: () => { if (typeof renderPoster === 'function') renderPoster(); }
+    },
+    {
+        id: 'video', container: 'tabFerramentasVideo', icone: '🎬', label: 'Vídeo',
+        render: () => { if (typeof renderVideo === 'function') renderVideo(); }
     }
 ];
 
