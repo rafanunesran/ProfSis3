@@ -513,47 +513,36 @@ async function saveData(collectionName, docId, dataObj) {
 
 // --- FUNÇÕES DE COMPARTILHAMENTO DE CHAMADA (SYNC) ---
 
+// { idEstudante: [idProfessor, ...] } das faltas do dia na escola.
+//
+// Duas origens, somadas: o recorte cifrado que cada professor publica no ambiente da
+// escola (listaescola.js, o caminho de hoje) e o antigo `shared_attendance`, que
+// guardava a frequência em claro e deixou de ser gravado — continua lido para os dias
+// registrados antes da mudança.
 async function getFaltasCompartilhadas(dataStr) {
     // Verifica se está online e configurado
     if (typeof db === 'undefined' || !db || !currentUser || !currentUser.schoolId) return {};
-    
+
+    const mapa = {};
+    const somar = (origem) => Object.keys(origem || {}).forEach(idEst => {
+        const k = String(idEst);
+        if (!mapa[k]) mapa[k] = [];
+        (origem[idEst] || []).forEach(p => { if (!mapa[k].some(x => String(x) === String(p))) mapa[k].push(p); });
+    });
+
+    if (typeof lerContribuicoesDaEscola === 'function') {
+        try { somar(faltasDoDiaNasContribuicoes(await lerContribuicoesDaEscola(), dataStr)); }
+        catch (e) { console.error("Erro ao buscar faltas da escola:", e); }
+    }
+
     try {
         const docId = `school_${currentUser.schoolId}_${dataStr}`;
         const doc = await db.collection('shared_attendance').doc(docId).get();
-        if (doc.exists) {
-            return doc.data().absences || {};
-        }
+        if (doc.exists) somar(doc.data().absences || {});
     } catch (e) {
         console.error("Erro ao buscar faltas compartilhadas:", e);
     }
-    return {};
-}
-
-async function sincronizarFaltasCompartilhadas(dataStr, mapEstadoFaltas) {
-    if (typeof db === 'undefined' || !db || !currentUser || !currentUser.schoolId) return;
-
-    const docId = `school_${currentUser.schoolId}_${dataStr}`;
-    const docRef = db.collection('shared_attendance').doc(docId);
-
-    try {
-        // Garante que o documento existe (sem sobrescrever se já existir)
-        await docRef.set({ created: true }, { merge: true });
-
-        // Prepara atualizações em lote (usando update com dot notation para chaves dinâmicas)
-        const updates = {};
-        
-        for (const [studentId, isAbsent] of Object.entries(mapEstadoFaltas)) {
-            const fieldPath = `absences.${studentId}`;
-            // Se falta: Adiciona ID do professor. Se presença: Remove ID do professor.
-            updates[fieldPath] = isAbsent 
-                ? firebase.firestore.FieldValue.arrayUnion(currentUser.id)
-                : firebase.firestore.FieldValue.arrayRemove(currentUser.id);
-        }
-        
-        await docRef.update(updates);
-    } catch (e) {
-        console.error("Erro ao sincronizar faltas compartilhadas:", e);
-    }
+    return mapa;
 }
 
 // --- FIM CONFIGURAÇÃO ---
