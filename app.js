@@ -2254,8 +2254,18 @@ function showTurmaTab(tab, evt) {
 // Dentro da sala, toda lista de estudantes mostra só os ATIVOS (sem status conta como
 // ativo: é o aluno cadastrado antes de o campo existir). A exceção é a aba Estudantes,
 // a lista da turma: ela mostra todos, com o status, porque é lá que se reativa alguém.
+// Na eletiva, o aluno é um vínculo que nasce 'Ativo' e aponta para o cadastro de origem: quem
+// manda é o status da origem (transferido na turma dele sai também da eletiva).
+function statusEhAtivo(status) {
+    return !status || String(status).trim().toLowerCase() === 'ativo';
+}
 function estudanteAtivo(e) {
-    return !!e && (!e.status || e.status === 'Ativo');
+    if (!e || !statusEhAtivo(e.status)) return false;
+    if (e.id_estudante_origem != null) {
+        const origem = (data.estudantes || []).find(o => o.id == e.id_estudante_origem);
+        if (origem && !statusEhAtivo(origem.status)) return false;
+    }
+    return true;
 }
 function estudanteAtivoPorId(id) {
     return estudanteAtivo((data.estudantes || []).find(e => e.id == id));
@@ -2472,8 +2482,8 @@ async function renderEstudantes() {
                             ${diagBadge}
                             ${badgeBimestre}
                         </td>
-                        <td><span style="font-size:12px; padding:2px 6px; border-radius:4px; background:#eef2f7;">${e.status || 'Ativo'}</span></td>
-                        <td>${isGestor ? `${e.status && e.status !== 'Ativo' ? `<button class="btn btn-success btn-sm" onclick="reativarEstudante(${e.id})" title="Marcar como Ativo de novo">🔄 Reativar</button> ` : ''}<button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})">🗑️</button>` : (ehEletiva ? `<button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})" title="Remover desta eletiva (não afeta a turma de origem)">🗑️</button>` : '<span style="color:#ccc;">-</span>')}</td>
+                        <td>${isGestor ? htmlSeletorStatusEstudante(e) : `<span style="font-size:12px; padding:2px 6px; border-radius:4px; background:#eef2f7;">${e.status || 'Ativo'}</span>`}</td>
+                        <td>${isGestor ? `<button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})">🗑️</button>` : (ehEletiva ? `<button class="btn btn-danger btn-sm" onclick="removerEstudante(${e.id})" title="Remover desta eletiva (não afeta a turma de origem)">🗑️</button>` : '<span style="color:#ccc;">-</span>')}</td>
                     </tr>
                 `}).join('')}
             </tbody>
@@ -2616,12 +2626,24 @@ function confirmarImportarDeTurma(origemId) {
     alert(adicionados > 0 ? `${adicionados} aluno(s) importado(s) para a eletiva.` : 'Nenhum aluno novo — os selecionados já estavam na eletiva.');
 }
 
-// Reverte um estudante marcado como Transferido/etc. de volta para Ativo.
-// Útil para corrigir transferências em massa feitas por engano (ex: importação com lista incompleta).
-function reativarEstudante(id) {
+// Os status possíveis (mesmos do modal Novo Estudante, index.html). Na lista da turma, o gestor
+// troca o status de um aluno por aqui, para correções pontuais sem reimportar a lista.
+const STATUS_ESTUDANTE = ['Ativo', 'Transferido', 'Baixa-Transferencia', 'Remanejado', 'NCOM'];
+
+function htmlSeletorStatusEstudante(e) {
+    const atual = e.status || 'Ativo';
+    const opcoes = STATUS_ESTUDANTE.includes(atual) ? STATUS_ESTUDANTE : [atual, ...STATUS_ESTUDANTE];
+    const cor = atual === 'Ativo' ? '#eef2f7' : '#fff5f5';
+    return `<select onchange="alterarStatusEstudante(${e.id}, this.value)" title="Alterar o status do estudante"
+                style="font-size:12px; padding:2px 6px; border-radius:4px; background:${cor}; width:auto; margin:0;">
+        ${opcoes.map(s => `<option value="${s}" ${s === atual ? 'selected' : ''}>${s}</option>`).join('')}
+    </select>`;
+}
+
+function alterarStatusEstudante(id, novoStatus) {
     const est = (data.estudantes || []).find(e => e.id == id);
-    if (!est) return;
-    est.status = 'Ativo';
+    if (!est || (est.status || 'Ativo') === novoStatus) return;
+    est.status = novoStatus;
     persistirDados();
     renderEstudantes();
 }
@@ -2640,7 +2662,7 @@ function reativarTodosTransferidosTurma() {
 
 // --- CHAMADA ---
 async function renderChamada() {
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e)).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     
     // Preserva a data selecionada se já estiver na tela, senão usa hoje
     const dataSelecionada = document.getElementById('chamadaData') ? document.getElementById('chamadaData').value : getTodayString();
@@ -2921,7 +2943,7 @@ async function renderRelatorioMensalFaltas() {
         }
     }
 
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e)).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     const presencas = data.presencas || [];
 
     // const daysInMonth = new Date(anoAtual, mesAtual + 1, 0).getDate();
@@ -3013,7 +3035,7 @@ function verFaltasDoDia(dia, mes, ano) {
     const dataFormatada = `${String(dia).padStart(2, '0')}/${String(mes+1).padStart(2, '0')}/${ano}`;
     
     // Filtra estudantes da turma atual
-    const estudantesTurma = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
+    const estudantesTurma = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e));
     
     // Busca quem faltou neste dia
     const faltosos = estudantesTurma.filter(e => {
@@ -4297,7 +4319,7 @@ function getNotaAvaliacaoGestor(estudanteId, idAvaliacaoGestor, disciplinaDaTurm
 }
 
 function renderTrabalhos() {
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e)).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
     const trabalhos = (data.trabalhos || []).filter(t => t.id_turma == turmaAtual && (t.bimestre == currentBimestreTrabalhos || (!t.bimestre && currentBimestreTrabalhos == 1)));
     const notas = data.notas || [];
 
@@ -4611,7 +4633,7 @@ async function salvarTrabalho(e) {
     const idEdit = document.getElementById('trabalhoIdEdit').value;
     const titulo = document.getElementById('trabalhoTitulo').value;
     const tipo = document.getElementById('trabalhoTipo').value;
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e));
     
     let pesoTotal = 0;
     let rubricas = [];
@@ -5000,7 +5022,7 @@ function renderCaderno() {
     const container = document.getElementById('tabCaderno');
     if (!container) return; // Proteção contra erro de container ausente
 
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e)).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     const dataSelecionada = container.querySelector('#cadernoData') ? container.querySelector('#cadernoData').value : getTodayString();
 
     const html = `
@@ -5096,7 +5118,7 @@ async function renderRelatorioMensalCaderno() {
     const container = document.getElementById('tabCaderno');
     if (!container) return;
 
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e)).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     const registros = data.caderno || [];
 
     const daysInMonth = new Date(anoAtual, mesAtual + 1, 0).getDate();
@@ -5161,7 +5183,7 @@ async function renderRelatorioMensalParticipacao() {
     const container = document.getElementById('tabCaderno');
     if (!container) return;
 
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e)).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     const registros = data.caderno || [];
 
     const daysInMonth = new Date(anoAtual, mesAtual + 1, 0).getDate();
@@ -7757,7 +7779,7 @@ async function renderMapeamento() {
         else { data.mapeamentos = mapeamentos; persistirDados(); }
     }
 
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo')).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e)).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
     const todayStr = getTodayString();
 
     // Grid de Carteiras
@@ -7997,7 +8019,7 @@ async function imprimirMapeamentoSala() {
     const mapeamento = mapeamentos.find(m => m.id_turma == sharedTurmaId);
     if (!mapeamento) return alert('Nenhum mapeamento encontrado para esta turma.');
 
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && (!e.status || e.status === 'Ativo'));
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e));
 
     // 2. Build HTML for printing
     let gridHtml = `<div style="display:grid; grid-template-columns: repeat(${mapeamento.colunas}, 1fr); gap:10px;">`;
