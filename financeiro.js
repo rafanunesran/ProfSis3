@@ -119,6 +119,49 @@ function resumoAssinantes(assinaturas, agoraMs, diasTolerancia) {
     return r;
 }
 
+// QUEM DO SISPROF FEZ ESTE PAGAMENTO. Na ordem de confianca:
+//   1. o super admin marcou a mao;
+//   2. o Pix gerado pelo sistema traz o uid na referencia;
+//   3. a cobranca do cartao e' de uma assinatura que ja' esta' em `assinaturas/<uid>`;
+//   4. o e-mail do pagador e' o e-mail de uma conta do SisProf (ou o gravado na
+//      assinatura dela).
+// Sem nada disso, volta null — e a tela oferece "Marcar usuario".
+function identificarUsuarioDaEntrada(entrada, dados) {
+    const d = dados || {};
+    const usuarios = d.usuarios || [];
+    const porUid = (uid) => usuarios.find(u => String(u.uid) === String(uid));
+    const comNome = (uid, como, extra) => {
+        const u = porUid(uid) || {};
+        return Object.assign({ uid: String(uid), nome: u.nome || '', email: u.email || '', como: como }, extra || {});
+    };
+
+    const marcado = d.marcacoes && d.marcacoes[String(entrada.id || entrada._id)];
+    if (marcado && marcado.uid) return comNome(marcado.uid, 'marcado', { nome: marcado.nome || (porUid(marcado.uid) || {}).nome || '', email: marcado.email || (porUid(marcado.uid) || {}).email || '' });
+
+    if (entrada.uid) return comNome(entrada.uid, 'referencia');
+
+    const assinaturas = d.assinaturas || [];
+    if (entrada.assinaturaId) {
+        const a = assinaturas.find(x => x && x.uid && String(x.preapprovalId || '') === String(entrada.assinaturaId));
+        if (a) return comNome(a.uid, 'assinatura');
+    }
+
+    const email = String(entrada.email || '').trim().toLowerCase();
+    if (email) {
+        const u = usuarios.find(x => x.email === email);
+        if (u) return comNome(u.uid, 'email');
+        const a = assinaturas.find(x => x && x.uid && String(x.email || '').toLowerCase() === email);
+        if (a) return comNome(a.uid, 'email');
+    }
+    return null;
+}
+
+// As entradas que contam: tira as que o super admin ocultou ("nao interessa").
+function entradasConsideradas(entradas, ocultos) {
+    const o = ocultos || {};
+    return (entradas || []).filter(e => !o[String(e.id || e._id)]);
+}
+
 function dinheiroFin(n) {
     const v = Number(n) || 0;
     return (v < 0 ? '-' : '') + 'R$ ' + Math.abs(v).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -147,6 +190,11 @@ const _fin = {
     config: { cotacaoDolar: 5.5 },
     diasTolerancia: 5,
     editandoCustoId: '',
+    usuarios: [],
+    marcacoes: {},
+    ocultos: {},
+    marcandoId: '',
+    mostrarOcultas: false,
     carregado: false
 };
 
@@ -157,13 +205,22 @@ async function carregarDadosFinanceiros() {
     const inicio = somarMesesFin(mesAtualFin(), -(MESES_NO_HISTORICO_FIN - 1));
     const desde = _fin.mes && _fin.mes < inicio ? _fin.mes : inicio;
 
-    const [entradas, custos, config, assinaturas, publico] = await Promise.all([
+    const [entradas, custos, config, assinaturas, publico, marcacoes, usuarios] = await Promise.all([
         db.collection('financeiro_entradas').where('mes', '>=', desde).get(),
         db.collection('financeiro_custos').get(),
         db.collection('financeiro_config').doc('geral').get(),
         db.collection('assinaturas').get().catch(() => null),
-        db.collection('assinaturas_config').doc('publico').get().catch(() => null)
+        db.collection('assinaturas_config').doc('publico').get().catch(() => null),
+        db.collection('financeiro_config').doc('marcacoes').get().catch(() => null),
+        db.collection('system').doc('users_list').get().catch(() => null)
     ]);
+    const m = marcacoes && marcacoes.exists ? marcacoes.data() : {};
+    _fin.marcacoes = m.pagamentos || {};
+    _fin.ocultos = {};
+    Object.keys(m.ocultos || {}).forEach(id => { if (m.ocultos[id]) _fin.ocultos[id] = true; });
+    _fin.usuarios = ((usuarios && usuarios.exists && usuarios.data().list) || [])
+        .filter(u => u && (u.uid || u.id) && u.email)
+        .map(u => ({ uid: String(u.uid || u.id), email: String(u.email).trim().toLowerCase(), nome: String(u.nome || '') }));
     _fin.entradas = [];
     entradas.forEach(d => _fin.entradas.push(Object.assign({ _id: d.id }, d.data())));
     _fin.custos = [];
@@ -240,7 +297,7 @@ function renderTelaFinanceira() {
     const tela = document.getElementById('adminFinanceiroScreen');
     if (!tela) return;
     const cot = Number(_fin.config.cotacaoDolar) || 0;
-    const r = resumoDoMes(_fin.mes, _fin.entradas, _fin.custos, cot);
+    const r = resumoDoMes(_fin.mes, entradasConsideradas(_fin.entradas, _fin.ocultos), _fin.custos, cot);
     const ass = resumoAssinantes(_fin.assinaturas, Date.now(), _fin.diasTolerancia);
     const custoMensalFixo = _fin.custos.filter(c => c.ativo !== false)
         .reduce((t, c) => t + custoMensalEquivalente(c, cot), 0);
@@ -302,7 +359,7 @@ function renderTelaFinanceira() {
 function historicoFinHtml(cot) {
     const linhas = [];
     for (let i = MESES_NO_HISTORICO_FIN - 1; i >= 0; i--) {
-        linhas.push(resumoDoMes(somarMesesFin(mesAtualFin(), -i), _fin.entradas, _fin.custos, cot));
+        linhas.push(resumoDoMes(somarMesesFin(mesAtualFin(), -i), entradasConsideradas(_fin.entradas, _fin.ocultos), _fin.custos, cot));
     }
     const maior = Math.max(1, ...linhas.map(l => Math.max(l.liquido, l.custos)));
     const barra = (v, cor) => `<div style="height:7px; border-radius:4px; background:${cor}; width:${Math.max(0, Math.round((v / maior) * 100))}%; min-width:${v > 0 ? 2 : 0}px;"></div>`;
@@ -339,29 +396,79 @@ const ROTULO_CATEGORIA_FIN = { assinatura: '💳 Cartão', pix: '📱 Pix', outr
 const ROTULO_STATUS_FIN = { approved: '', refunded: 'estornado', charged_back: 'contestado' };
 
 function entradasFinHtml(r) {
-    const lista = _fin.entradas.filter(e => e.mes === _fin.mes)
+    const doMes = _fin.entradas.filter(e => e.mes === _fin.mes)
         .sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')));
+    const ocultasNoMes = doMes.filter(e => _fin.ocultos[String(e.id || e._id)]).length;
+    const lista = _fin.mostrarOcultas ? doMes : doMes.filter(e => !_fin.ocultos[String(e.id || e._id)]);
+    const dados = { usuarios: _fin.usuarios, marcacoes: _fin.marcacoes, assinaturas: _fin.assinaturas };
+    const semUsuario = lista.filter(e => !_fin.ocultos[String(e.id || e._id)] && !identificarUsuarioDaEntrada(e, dados)).length;
     const nomePlano = (p) => p === 'professor' ? '🎓 Professor' : (p === 'apoiase' ? '🤝 Apoia-se' : '—');
+    const campo = 'padding:7px; border:1px solid #cdd5e1; border-radius:4px;';
+
     const corpo = lista.length ? lista.map(e => {
+        const id = String(e.id || e._id).replace(/[^0-9A-Za-z_-]/g, '');
+        const oculta = !!_fin.ocultos[id];
         const estornado = e.status !== 'approved';
         const quando = String(e.data || '').slice(0, 10).split('-').reverse().join('/');
-        return `<tr style="${estornado ? 'opacity:0.55; text-decoration:line-through;' : ''}">
-            <td>${quando}</td>
-            <td>${ROTULO_CATEGORIA_FIN[e.categoria] || escaparFin(e.categoria)}${ROTULO_STATUS_FIN[e.status] ? ' <span class="badge badge-danger" style="text-decoration:none;">' + ROTULO_STATUS_FIN[e.status] + '</span>' : ''}</td>
+        const quem = identificarUsuarioDaEntrada(e, dados);
+        const marcando = _fin.marcandoId === id;
+
+        let usuarioHtml;
+        if (quem) {
+            usuarioHtml = `<strong>${escaparFin(quem.nome || quem.email || quem.uid)}</strong>` +
+                (quem.email && quem.nome ? `<br><span style="font-size:11px; color:#5f6b7f;">${escaparFin(quem.email)}</span>` : '') +
+                (quem.como === 'marcado'
+                    ? ` <span class="badge" title="Marcado à mão">✋ marcado</span> <a href="#" style="font-size:11px;" onclick="abrirMarcacaoUsuarioFinanceiro('${id}'); return false;">trocar</a>`
+                    : '');
+        } else {
+            usuarioHtml = `<span style="color:#b7791f; font-weight:bold;">⚠️ Não identificado</span>` +
+                (e.email ? `<br><span style="font-size:11px; color:#5f6b7f;" title="E-mail usado no Mercado Pago">pagou com ${escaparFin(e.email)}</span>` : '');
+        }
+
+        const acoes = oculta
+            ? `<button class="btn btn-sm btn-secondary" onclick="ocultarEntradaFinanceiro('${id}', false)">Mostrar</button>`
+            : `${quem ? '' : `<button class="btn btn-sm btn-primary" onclick="abrirMarcacaoUsuarioFinanceiro('${id}')">Marcar usuário</button>`}
+               <button class="btn btn-sm btn-secondary" title="Não interessa: sai da lista e dos totais" onclick="ocultarEntradaFinanceiro('${id}', true)">Ocultar</button>`;
+
+        const formulario = marcando ? `<tr><td colspan="8" style="white-space:normal; background:#f7fafc;">
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; padding:6px 0;">
+                <div style="flex:1; min-width:260px;">
+                    <label style="display:block; font-size:12px; font-weight:bold; margin-bottom:4px;" for="finMarcarEmail">Quem do SisProf fez este pagamento? (e-mail da conta)</label>
+                    <input type="email" id="finMarcarEmail" list="finUsuariosLista" placeholder="comece a digitar o nome ou e-mail"
+                           value="${escaparFin((_fin.marcacoes[id] && _fin.marcacoes[id].email) || '')}" style="${campo} width:100%;">
+                    <datalist id="finUsuariosLista">
+                        ${_fin.usuarios.map(u => `<option value="${escaparFin(u.email)}">${escaparFin(u.nome)}</option>`).join('')}
+                    </datalist>
+                </div>
+                <button class="btn btn-primary" onclick="salvarMarcacaoUsuarioFinanceiro('${id}')">Salvar</button>
+                ${_fin.marcacoes[id] ? `<button class="btn btn-secondary" onclick="removerMarcacaoUsuarioFinanceiro('${id}')">Tirar marcação</button>` : ''}
+                <button class="btn btn-secondary" onclick="abrirMarcacaoUsuarioFinanceiro('')">Cancelar</button>
+            </div>
+        </td></tr>` : '';
+
+        return `<tr style="${oculta ? 'opacity:0.45;' : ''}">
+            <td style="${estornado ? 'text-decoration:line-through;' : ''}">${quando}</td>
+            <td>${ROTULO_CATEGORIA_FIN[e.categoria] || escaparFin(e.categoria)}${ROTULO_STATUS_FIN[e.status] ? ' <span class="badge badge-danger">' + ROTULO_STATUS_FIN[e.status] + '</span>' : ''}</td>
             <td>${nomePlano(e.plano)}${e.categoria === 'pix' && e.meses ? ' · ' + e.meses + ' mês(es)' : ''}</td>
-            <td style="font-size:12px;">${escaparFin(e.email || '—')}</td>
+            <td style="white-space:normal; min-width:180px;">${usuarioHtml}</td>
             <td style="text-align:right;">${dinheiroFin(e.valor)}</td>
             <td style="text-align:right; color:#c05621;">${dinheiroFin(-(Number(e.taxa) || 0))}</td>
             <td style="text-align:right; font-weight:bold;">${dinheiroFin(e.liquido)}</td>
-        </tr>`;
-    }).join('') : `<tr><td colspan="7" style="text-align:center; color:#5f6b7f; padding:16px;">
+            <td>${acoes}</td>
+        </tr>${formulario}`;
+    }).join('') : `<tr><td colspan="8" style="text-align:center; color:#5f6b7f; padding:16px;">
         Nenhuma entrada registrada em ${nomeDoMesFin(_fin.mes)}. Se houve pagamento, use "Buscar no Mercado Pago".</td></tr>`;
 
     return `<div class="card" style="margin-top:16px;">
-        <h3 style="margin:0 0 10px; font-size:16px;">Entradas de ${nomeDoMesFin(_fin.mes)}</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+            <h3 style="margin:0; font-size:16px;">Entradas de ${nomeDoMesFin(_fin.mes)}
+                ${semUsuario ? `<span class="badge badge-danger" title="Pagamentos sem usuário do SisProf">${semUsuario} sem usuário</span>` : ''}</h3>
+            ${ocultasNoMes ? `<button class="btn btn-sm btn-secondary" onclick="alternarOcultasFinanceiro()">
+                ${_fin.mostrarOcultas ? 'Esconder' : 'Mostrar'} ocultas (${ocultasNoMes})</button>` : ''}
+        </div>
         <div style="overflow-x:auto;">
         <table style="width:100%; font-variant-numeric:tabular-nums;">
-            <thead><tr><th>Data</th><th>Meio</th><th>Plano</th><th>Pagador</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Taxa</th><th style="text-align:right;">Líquido</th></tr></thead>
+            <thead><tr><th>Data</th><th>Meio</th><th>Plano</th><th>Usuário do SisProf</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Taxa</th><th style="text-align:right;">Líquido</th><th></th></tr></thead>
             <tbody>${corpo}</tbody>
         </table>
         </div>
@@ -518,6 +625,67 @@ async function buscarEntradasNoMercadoPago() {
     }
 }
 
+// As marcacoes ficam em financeiro_config/marcacoes (so' o super admin le e escreve):
+//   pagamentos.<id> = { uid, email, nome }  — quem fez o pagamento
+//   ocultos.<id>    = true                   — "nao interessa", fora da lista e dos totais
+// Marcar o usuario NAO mexe em plano nenhum: e' so' a identificacao no financeiro.
+function refMarcacoesFin() {
+    return db.collection('financeiro_config').doc('marcacoes');
+}
+
+function abrirMarcacaoUsuarioFinanceiro(id) {
+    _fin.marcandoId = id;
+    renderTelaFinanceira();
+    const campo = document.getElementById('finMarcarEmail');
+    if (campo) { campo.scrollIntoView({ behavior: 'smooth', block: 'center' }); campo.focus(); }
+}
+
+async function salvarMarcacaoUsuarioFinanceiro(id) {
+    const email = String((document.getElementById('finMarcarEmail') || {}).value || '').trim().toLowerCase();
+    const usuario = _fin.usuarios.find(u => u.email === email);
+    if (!usuario) { alert('Escolha uma conta da lista (e-mail de quem usa o SisProf).'); return; }
+    const marcacao = {
+        uid: usuario.uid, email: usuario.email, nome: usuario.nome,
+        marcadoPor: (typeof currentUser !== 'undefined' && currentUser && currentUser.email) || 'super_admin',
+        marcadoEm: new Date().toISOString()
+    };
+    try {
+        await refMarcacoesFin().set({ pagamentos: { [id]: marcacao } }, { merge: true });
+        _fin.marcacoes[id] = marcacao;
+        _fin.marcandoId = '';
+        renderTelaFinanceira();
+    } catch (e) {
+        alert('Não consegui salvar: ' + (e && e.message ? e.message : e));
+    }
+}
+
+async function removerMarcacaoUsuarioFinanceiro(id) {
+    try {
+        await refMarcacoesFin().set({ pagamentos: { [id]: firebase.firestore.FieldValue.delete() } }, { merge: true });
+        delete _fin.marcacoes[id];
+        _fin.marcandoId = '';
+        renderTelaFinanceira();
+    } catch (e) {
+        alert('Não consegui tirar a marcação: ' + (e && e.message ? e.message : e));
+    }
+}
+
+async function ocultarEntradaFinanceiro(id, ocultar) {
+    try {
+        await refMarcacoesFin().set({ ocultos: { [id]: !!ocultar } }, { merge: true });
+        if (ocultar) _fin.ocultos[id] = true; else delete _fin.ocultos[id];
+        if (_fin.marcandoId === id) _fin.marcandoId = '';
+        renderTelaFinanceira();
+    } catch (e) {
+        alert('Não consegui alterar: ' + (e && e.message ? e.message : e));
+    }
+}
+
+function alternarOcultasFinanceiro() {
+    _fin.mostrarOcultas = !_fin.mostrarOcultas;
+    renderTelaFinanceira();
+}
+
 function lerFormularioCustoFin() {
     const val = (id) => String((document.getElementById(id) || {}).value || '').trim();
     return {
@@ -632,7 +800,7 @@ function linhasCsvFinanceiro(mes, entradas, custos, cotacaoDolar) {
 }
 
 function exportarFinanceiroCsv() {
-    const linhas = linhasCsvFinanceiro(_fin.mes, _fin.entradas, _fin.custos, Number(_fin.config.cotacaoDolar) || 0);
+    const linhas = linhasCsvFinanceiro(_fin.mes, entradasConsideradas(_fin.entradas, _fin.ocultos), _fin.custos, Number(_fin.config.cotacaoDolar) || 0);
     const blob = new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -655,4 +823,9 @@ if (typeof window !== 'undefined') {
     window.alternarCustoFinanceiro = alternarCustoFinanceiro;
     window.excluirCustoFinanceiro = excluirCustoFinanceiro;
     window.salvarCotacaoFinanceiro = salvarCotacaoFinanceiro;
+    window.abrirMarcacaoUsuarioFinanceiro = abrirMarcacaoUsuarioFinanceiro;
+    window.salvarMarcacaoUsuarioFinanceiro = salvarMarcacaoUsuarioFinanceiro;
+    window.removerMarcacaoUsuarioFinanceiro = removerMarcacaoUsuarioFinanceiro;
+    window.ocultarEntradaFinanceiro = ocultarEntradaFinanceiro;
+    window.alternarOcultasFinanceiro = alternarOcultasFinanceiro;
 }

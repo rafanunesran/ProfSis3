@@ -191,6 +191,8 @@ export function montarEntradaFinanceira(pagamento, pacotes) {
         uid: uid,
         email: String(((pagamento.payer && pagamento.payer.email) || '')).toLowerCase(),
         descricao: String(pagamento.description || '').slice(0, 140),
+        // Para a tela achar o usuario de uma cobranca de cartao pela assinatura dele.
+        assinaturaId: idDaAssinaturaDoPagamento(pagamento),
         atualizadoEm: new Date().toISOString()
     };
 }

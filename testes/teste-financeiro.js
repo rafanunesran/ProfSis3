@@ -231,6 +231,29 @@ const bancoFalso = (inicial) => {
       csv.length === 1 + 3 + 2 && csv[1].indexOf('29,70') !== -1 && csv.some(l => /^custo;.*-500,00/.test(l)));
   ok('estorno sai com liquido zero no CSV', csv.some(l => /refunded;60,00;0,60;0,00$/.test(l)));
 
+  // ================= 5b. QUEM DO SISPROF FEZ O PAGAMENTO =================
+  console.log('\n5b. Quem do SisProf fez cada pagamento');
+  const quem = T('identificarUsuarioDaEntrada');
+  const dadosQ = {
+    usuarios: [{ uid: 'u1', email: 'ana@escola.com', nome: 'Ana Souza' }, { uid: 'u2', email: 'beto@escola.com', nome: 'Beto' }],
+    assinaturas: [{ uid: 'u2', preapprovalId: 'PRE-B', email: 'beto.pessoal@gmail.com' }],
+    marcacoes: { 'P9': { uid: 'u1', email: 'ana@escola.com', nome: 'Ana Souza' } }
+  };
+  ok('Pix do sistema: o uid da referencia diz quem foi', quem({ id: 'P1', uid: 'u1' }, dadosQ).nome === 'Ana Souza'
+      && quem({ id: 'P1', uid: 'u1' }, dadosQ).como === 'referencia');
+  ok('cartao: a assinatura gravada diz quem foi', quem({ id: 'P2', assinaturaId: 'PRE-B' }, dadosQ).uid === 'u2');
+  ok('e-mail do pagador igual ao da conta identifica', quem({ id: 'P3', email: 'Ana@Escola.com' }, dadosQ).uid === 'u1');
+  ok('e-mail que o pagador usou na assinatura tambem identifica', quem({ id: 'P4', email: 'beto.pessoal@gmail.com' }, dadosQ).uid === 'u2');
+  ok('sem nenhuma pista: nao identificado (a tela oferece marcar)', quem({ id: 'P5', email: 'outro@x.com' }, dadosQ) === null);
+  ok('a marcacao manual vale mais que qualquer pista', quem({ id: 'P9', uid: 'u2', email: 'beto@escola.com' }, dadosQ).uid === 'u1'
+      && quem({ id: 'P9' }, dadosQ).como === 'marcado');
+  const consideradas = T('entradasConsideradas')([{ id: 'A', mes: '2026-10' }, { id: 'B', mes: '2026-10' }], { B: true });
+  ok('entrada oculta sai da conta', consideradas.length === 1 && consideradas[0].id === 'A');
+  ok('o servidor grava a assinatura da cobranca para a tela achar o usuario',
+      F.montarEntradaFinanceira({ id: 5, status: 'approved', transaction_amount: 20, operation_type: 'recurring_payment',
+        point_of_interaction: { transaction_data: { subscription_id: 'PRE-B' } }, date_approved: '2026-10-01T10:00:00Z' }, pacotes)
+        .assinaturaId === 'PRE-B');
+
   // ================= 6. AS REGRAS FECHAM O FINANCEIRO =================
   console.log('\n6. As Regras do Firestore');
   const regras = fs.readFileSync(path.join(RAIZ, 'firestore.rules'), 'utf8');
