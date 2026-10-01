@@ -8,6 +8,15 @@
         "value": "arial",
         "createdAt": "2026-09-23T14:38:54.383Z",
         "reason": "Claude: Arial sits only in the sample HTML that the HTML-to-image tool renders on the device; a font every device already has keeps the rendered image predictable"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "financeiro.js"
+        ],
+        "createdAt": "2026-10-01T20:02:19.129Z",
+        "reason": "Claude decided: matches the existing Super Admin card convention (admin.js Chaves de IA/Backup cards use border-left:5px accents); changing it here alone would break consistency"
       }
     ]
   }
