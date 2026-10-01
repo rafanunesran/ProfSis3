@@ -84,6 +84,7 @@ por assinatura, por mês.
    - `https://<seu-projeto>.vercel.app/api/webhook` — o webhook do Mercado Pago
    - `https://<seu-projeto>.vercel.app/api/cancelar` — o cancelamento pedido pelo professor
    - `https://<seu-projeto>.vercel.app/api/pix` — gera o QR Code do Pix
+   - `https://<seu-projeto>.vercel.app/api/sincronizar` — o "Já paguei" do professor
    - `https://<seu-projeto>.vercel.app/api/reconciliar` — a varredura diária (roda pelo
      Cron configurado no `vercel.json`, todo dia às 9h UTC; não fica aberta na internet)
 6. Abra esse endereço no navegador. Ele responde
@@ -118,8 +119,13 @@ wrangler secret put MP_ACCESS_TOKEN          # e os demais segredos da tabela ac
 Mercado Pago → **Suas integrações → sua aplicação → Webhooks/Notificações**:
 
 - URL: o endereço publicado no passo 2 (ex.: `https://sisprof.vercel.app/api/webhook`)
-- Eventos: **Assinaturas** (`subscription_preapproval`) e **Pagamentos recorrentes**
-  (`subscription_authorized_payment`)
+- Eventos: **Assinaturas** (`subscription_preapproval`), **Pagamentos recorrentes**
+  (`subscription_authorized_payment`) e **Pagamentos** (`payment`, o Pix)
+
+> Versões anteriores deste passo pediam só os dois primeiros eventos. Sem
+> **Pagamentos**, o aviso do Pix nunca era enviado: o dinheiro caía e o plano não
+> saía. Hoje o Pix criado pelo `/pix` já pede o aviso direto no webhook
+> (`notification_url`), mas marque o evento mesmo assim.
 - Copie a **chave secreta** que a tela mostra, guarde como `MP_WEBHOOK_SECRET` e **refaça o
   deploy** (variável de ambiente nova só entra em vigor no deploy seguinte)
 
@@ -322,6 +328,28 @@ referência — é justamente o trabalho que o QR gerado pelo serviço eliminou.
 recorrente só aceita cartão, e quem clicasse em "3 meses / R$ 60" cairia num checkout
 de R$ 10 **por mês, no cartão**. O painel recusa salvar assim e a tela esconde o
 pacote se a configuração errada já estiver gravada.
+
+## Quando o aviso do Mercado Pago não chega
+
+O plano **não depende só do aviso**. Evento não marcado no painel, segredo trocado,
+serviço fora do ar na hora — qualquer tropeço fazia o dinheiro entrar sem o plano sair.
+Hoje há três caminhos que perguntam direto ao Mercado Pago, todos passando pelas
+mesmas funções do webhook (nada é creditado duas vezes):
+
+1. **"Já paguei — conferir agora"**, no pop-up de apoio, e a espera automática depois
+   do checkout/QR: chamam `POST /sincronizar` com o crachá do Firebase. O serviço
+   procura os Pix aprovados com o uid na referência (ou pagos com o e-mail da conta) e
+   as assinaturas com o uid/e-mail da conta, e credita.
+2. **Varredura diária** (`/reconciliar`): antes de cortar quem venceu, passa pelos Pix
+   aprovados dos últimos 35 dias e pelas assinaturas autorizadas, e credita o que faltou.
+3. **Pagamentos sem dono** (Painel Super Admin → 💳 Assinaturas): o que não deu para
+   ligar a ninguém — em geral, quem pagou com um e-mail do Mercado Pago diferente do
+   SisProf. "Vincular a uma conta" libera o plano na hora, e o vínculo fica guardado:
+   as próximas cobranças da mesma assinatura já acham o dono sozinhas.
+
+Para conferir por que um aviso falhou, veja os logs da função na Vercel: `aviso recusado`
+(segredo/assinatura), `nao identifiquei o usuario` (foi para "sem dono") ou
+`pagamento fora dos pacotes`.
 
 ## Como o cancelamento funciona
 

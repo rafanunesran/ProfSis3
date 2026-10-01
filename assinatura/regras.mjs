@@ -75,6 +75,17 @@ export function mapearPlano(preapproval, config) {
     return planoPorValor(recorrencia.transaction_amount);
 }
 
+// A ordem dos planos, para quando dois pagamentos dizem coisas diferentes (um Pix de
+// Apoia-se comprado por quem ja' tem o Professor no cartao, por exemplo): vale o
+// maior. Ninguem pode PERDER plano por ter pago mais uma vez.
+const ORDEM_DOS_PLANOS = { free: 0, apoiase: 1, professor: 2 };
+
+export function maiorPlano(a, b) {
+    const x = ORDEM_DOS_PLANOS[a] !== undefined ? a : 'free';
+    const y = ORDEM_DOS_PLANOS[b] !== undefined ? b : 'free';
+    return ORDEM_DOS_PLANOS[y] > ORDEM_DOS_PLANOS[x] ? y : x;
+}
+
 // ----------------------------------------------------------------------------
 // Situacao
 // ----------------------------------------------------------------------------
@@ -128,11 +139,16 @@ export function diasDeTolerancia(config) {
 }
 
 // Quando este acesso vence, em ms. Zero = nao vence por data (cortesia sem prazo).
+// Vale a data MAIS DISTANTE entre as duas. Antes era `validoAte || proximaCobranca`,
+// e isso cortava quem tinha as duas coisas: um Pix antigo ja' vencido deixava o
+// `validoAte` no passado, e o cartao em dia (com `proximaCobranca` no futuro) era
+// ignorado — o professor pagava o mes e perdia o acesso.
 export function venceEmMs(doc) {
     if (!doc) return 0;
-    const bruto = doc.validoAte || doc.proximaCobranca || '';
-    const ms = Date.parse(bruto);
-    return isFinite(ms) ? ms : 0;
+    const a = Date.parse(doc.validoAte || '');
+    const b = Date.parse(doc.proximaCobranca || '');
+    const ms = Math.max(isFinite(a) ? a : 0, isFinite(b) ? b : 0);
+    return ms > 0 ? ms : 0;
 }
 
 export function assinaturaVencida(doc, config, agoraMs) {
@@ -222,12 +238,45 @@ export function somarMeses(validoAteAtual, meses, agoraMs) {
     return fim.toISOString();
 }
 
+// Este Pix ja' foi creditado nesta conta?
+//
+// Guardar so' o ULTIMO id (como era) nao basta desde que a varredura passou a
+// reprocessar os pagamentos recentes: quem pagou dois Pix (A e depois B) teria o A
+// creditado de novo, porque o documento so' lembrava do B. Agora a conta guarda a
+// lista. Para documentos de antes da lista, um pagamento aprovado ate' a data do
+// ultimo credito conta como ja' creditado.
+export function pixJaCreditado(docAtual, pagamento) {
+    if (!docAtual || !pagamento) return false;
+    const id = String(pagamento.id || '');
+    if (!id) return false;
+    if (String(docAtual.ultimoPagamentoId || '') === id) return true;
+    if (Array.isArray(docAtual.pagamentosCreditados)) {
+        return docAtual.pagamentosCreditados.map(String).indexOf(id) !== -1;
+    }
+    if (docAtual.origem === 'pix' && docAtual.ultimoPagamento) {
+        const ultimo = Date.parse(docAtual.ultimoPagamento);
+        const este = Date.parse(pagamento.date_approved || '');
+        if (isFinite(ultimo) && isFinite(este) && este <= ultimo) return true;
+    }
+    return false;
+}
+
 // O documento de um apoio pago no Pix.
 export function montarApoioPix(pagamento, credito, docAtual, agoraMs) {
     const validoAte = somarMeses(docAtual && docAtual.validoAte, credito.meses, agoraMs);
+    // Quem ja' tem um plano maior valendo (Professor no cartao, por exemplo) nao cai
+    // para o menor por ter comprado mais um pacote.
+    const planoAtual = docAtual ? planoValido(docAtual, {}, agoraMs) : 'free';
+    const plano = maiorPlano(credito.plano, planoAtual);
+    const anteriores = Array.isArray(docAtual && docAtual.pagamentosCreditados)
+        ? docAtual.pagamentosCreditados.map(String)
+        : (docAtual && docAtual.ultimoPagamentoId ? [String(docAtual.ultimoPagamentoId)] : []);
+    const creditados = anteriores.concat([String((pagamento && pagamento.id) || '')])
+        .filter((id, i, lista) => id && lista.indexOf(id) === i)
+        .slice(-50);
     return {
-        plano: credito.plano,
-        planoContratado: credito.plano,
+        plano: plano,
+        planoContratado: plano,
         status: 'ativa',
         valor: Number((pagamento && pagamento.transaction_amount) || 0),
         meses: credito.meses,
@@ -238,6 +287,7 @@ export function montarApoioPix(pagamento, credito, docAtual, agoraMs) {
         preapprovalId: (docAtual && docAtual.preapprovalId) || '',
         ultimoPagamento: (pagamento && pagamento.date_approved) || new Date(agoraMs || Date.now()).toISOString(),
         ultimoPagamentoId: String((pagamento && pagamento.id) || ''),
+        pagamentosCreditados: creditados,
         origem: 'pix',
         versaoMs: (agoraMs || Date.now()),
         atualizadoEm: new Date(agoraMs || Date.now()).toISOString()

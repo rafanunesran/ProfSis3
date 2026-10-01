@@ -41,7 +41,7 @@ import {
     interpretarNotificacao, montarAssinatura, identificarUsuario,
     acharUidPorEmail, devoGravar, manifestoAssinatura, lerCabecalhoAssinatura,
     lerReferenciaPix, pacotePorValor, montarApoioPix, planoValido, assinaturaVencida,
-    PLANOS
+    pixJaCreditado, maiorPlano, PLANOS
 } from './regras.mjs';
 import { lerDoc, gravarDoc, apagarDoc, listarDocs, lerContaServico } from './firestore-rest.mjs';
 import { verificarTokenFirebase } from './auth-firebase.mjs';
@@ -139,7 +139,7 @@ async function buscarAssinatura(acao, token) {
 // Separado do `fetch` para poder ser testado com dependencias de mentira
 // (ver testes/teste-webhook-mp.js): nada aqui conhece Request nem Response.
 export async function processarNotificacao(corpo, ambiente, ferramentas) {
-    const { buscar, ler, gravar } = ferramentas;
+    const { buscar } = ferramentas;
     const acao = interpretarNotificacao(corpo);
     if (acao.acao === 'ignorar') return { feito: false, motivo: acao.motivo };
 
@@ -150,6 +150,17 @@ export async function processarNotificacao(corpo, ambiente, ferramentas) {
         return processarApoioPix(assinatura, ambiente, ferramentas);
     }
 
+    return processarAssinaturaMp(assinatura, ambiente, ferramentas);
+}
+
+// Uma assinatura de cartao (`preapproval`) ja' buscada no Mercado Pago vira
+// `assinaturas/<uid>`. Serve ao webhook, a' varredura diaria e ao "ja' paguei" do
+// professor — o mesmo caminho para os tres, para nenhum decidir diferente.
+//
+// `uidConhecido` vem do /sincronizar, onde a pessoa ja' provou quem e' pelo cracha do
+// Firebase e a assinatura bateu com o uid ou o e-mail dela.
+export async function processarAssinaturaMp(assinatura, ambiente, ferramentas, uidConhecido) {
+    const { ler, gravar } = ferramentas;
     const config = {
         planoApoiaseId: ambiente.MP_PLANO_APOIASE_ID || '',
         planoProfessorId: ambiente.MP_PLANO_PROFESSOR_ID || ''
@@ -158,12 +169,20 @@ export async function processarNotificacao(corpo, ambiente, ferramentas) {
 
     // De quem e' isto?
     const quem = identificarUsuario(assinatura);
-    let uid = quem.uid;
+    let uid = uidConhecido || quem.uid;
     if (!uid && (quem.email || quem.emailAlternativo)) {
         const lista = await ler('system/users_list');
         const usuarios = (lista && lista.list) || [];
         uid = acharUidPorEmail(usuarios, quem.email)
               || acharUidPorEmail(usuarios, quem.emailAlternativo);
+    }
+    // O link de plano do Mercado Pago NAO devolve o external_reference que o app
+    // gruda nele, e o e-mail do pagador costuma ser o da conta do Mercado Pago (outro).
+    // Quando o super admin ja' disse de quem e' esta assinatura (painel > Assinaturas
+    // > Pagamentos sem dono), o aviso seguinte ja' sabe para onde ir.
+    if (!uid && doc.preapprovalId) {
+        const parado = await ler('assinaturas_sem_dono/' + doc.preapprovalId);
+        if (parado && parado.uidAtribuido) uid = String(parado.uidAtribuido);
     }
     if (!uid) {
         // Nao da' para adivinhar. Guardamos o caso para o painel do super admin
@@ -173,13 +192,41 @@ export async function processarNotificacao(corpo, ambiente, ferramentas) {
     }
 
     const atual = await ler('assinaturas/' + uid);
-    if (!devoGravar(atual, doc)) {
+
+    // O carimbo de versao so' compara versoes DO MESMO recurso. Antes ele comparava
+    // qualquer coisa: o Pix grava o relogio do servidor, a assinatura grava o
+    // `last_modified` do Mercado Pago, e quem tinha comprado um Pix via o cartao novo
+    // ser recusado como "documento ja estava atualizado".
+    const mesmoRecurso = !!(atual && atual.origem === 'mercadopago'
+                            && String(atual.preapprovalId || '') === doc.preapprovalId);
+    if (mesmoRecurso && !devoGravar(atual, doc)) {
         return { feito: false, motivo: 'documento ja estava atualizado', uid: uid };
     }
 
-    await gravar('assinaturas/' + uid, Object.assign({ uid: uid }, doc));
-    await atualizarVitrineDeContribuintes(uid, doc, ferramentas);
-    return { feito: true, uid: uid, plano: doc.plano, status: doc.status };
+    // O que o Pix ja' creditou nesta conta continua valendo: o documento do cartao nao
+    // traz esses campos, e perder a lista faria a varredura creditar o mesmo Pix de novo.
+    const herdado = {};
+    ['validoAte', 'pagamentosCreditados', 'ultimoPagamentoId'].forEach(campo => {
+        if (atual && atual[campo] !== undefined && atual[campo] !== null) herdado[campo] = atual[campo];
+    });
+    let gravar_ = Object.assign(herdado, doc);
+    if (!mesmoRecurso && atual) {
+        const planoQueJaVale = planoValido(atual, {}, Date.now());
+        if (doc.status !== 'ativa' && planoQueJaVale !== 'free') {
+            // Uma assinatura pendente, pausada ou cancelada nao derruba um acesso que
+            // veio de outro lugar (Pix pago, cortesia, outra assinatura).
+            return { feito: false, motivo: 'outro acesso valendo; nada a mudar', uid: uid };
+        }
+        if (doc.status === 'ativa') {
+            gravar_ = Object.assign(gravar_, { plano: maiorPlano(doc.plano, planoQueJaVale) });
+        }
+    }
+
+    await gravar('assinaturas/' + uid, Object.assign({ uid: uid }, gravar_));
+    // O registro "sem dono" ja' vinculado FICA: e' ele que diz de quem e' a proxima
+    // cobranca desta mesma assinatura, que vai chegar igualmente sem referencia.
+    await atualizarVitrineDeContribuintes(uid, gravar_, ferramentas);
+    return { feito: true, uid: uid, plano: gravar_.plano, status: gravar_.status };
 }
 
 // APOIO PAGO NO PIX.
@@ -188,7 +235,7 @@ export async function processarNotificacao(corpo, ambiente, ferramentas) {
 // acompanhar: existe um pagamento que CREDITA MESES. O acesso vence sozinho no fim
 // do periodo (ver assinaturaVencida em regras.mjs) — nada para cancelar, e nada
 // sendo cobrado de ninguem sem autorizacao.
-export async function processarApoioPix(pagamento, ambiente, ferramentas) {
+export async function processarApoioPix(pagamento, ambiente, ferramentas, uidConhecido) {
     const { ler, gravar } = ferramentas;
 
     // So' dinheiro que entrou de verdade credita alguma coisa. `pending`,
@@ -211,11 +258,15 @@ export async function processarApoioPix(pagamento, ambiente, ferramentas) {
     }
 
     // De quem e'?
-    let uid = credito.uid || '';
+    let uid = credito.uid || uidConhecido || '';
     const emailPagador = String(((pagamento.payer && pagamento.payer.email) || '')).toLowerCase();
     if (!uid && emailPagador) {
         const lista = await ler('system/users_list');
         uid = acharUidPorEmail((lista && lista.list) || [], emailPagador);
+    }
+    if (!uid) {
+        const parado = await ler('assinaturas_sem_dono/pix-' + pagamento.id);
+        if (parado && parado.uidAtribuido) uid = String(parado.uidAtribuido);
     }
     if (!uid) {
         await gravar('assinaturas_sem_dono/pix-' + pagamento.id, {
@@ -229,9 +280,9 @@ export async function processarApoioPix(pagamento, ambiente, ferramentas) {
 
     const atual = await ler('assinaturas/' + uid);
 
-    // O mesmo Pix avisado duas vezes nao pode creditar o dobro de meses. O id do
-    // pagamento e' a defesa: ja' creditamos este? Entao nao credita de novo.
-    if (atual && atual.ultimoPagamentoId && String(atual.ultimoPagamentoId) === String(pagamento.id)) {
+    // O mesmo Pix avisado duas vezes (ou visto de novo pela varredura) nao pode
+    // creditar o dobro de meses. O id do pagamento e' a defesa.
+    if (pixJaCreditado(atual, pagamento)) {
         return { feito: false, motivo: 'este pagamento ja estava creditado', uid: uid };
     }
 
@@ -423,7 +474,11 @@ export async function criarPixDoPacote(pedido, dono, ambiente, ferramentas) {
     const nomePlano = plano === 'professor' ? 'Professor' : 'Apoia-se';
     const vencimento = new Date(Date.now() + VALIDADE_PIX_HORAS * 3600000);
 
-    const pagamento = await criarPagamentoNoMp({
+    // `notification_url` manda o aviso DESTE pagamento direto para o nosso webhook. Sem
+    // ele, o aviso so' chegava se o evento "Pagamentos" estivesse marcado no painel do
+    // Mercado Pago — e o passo a passo mandava marcar so' "Assinaturas" e "Pagamentos
+    // recorrentes". Resultado: o Pix caia, ninguem avisava, e o plano nao saia.
+    const pagamento = await criarPagamentoNoMp(Object.assign({
         transaction_amount: Number(pacote.valor),
         payment_method_id: 'pix',
         description: 'SisProf - apoio ' + nomePlano + ', ' + meses +
@@ -431,7 +486,8 @@ export async function criarPixDoPacote(pedido, dono, ambiente, ferramentas) {
         external_reference: [dono.uid, plano, meses].join('|'),
         date_of_expiration: vencimento.toISOString(),
         payer: { email: dono.email || '' }
-    }, dono.uid + '-' + plano + '-' + meses + '-' + Date.now());
+    }, pedido && pedido.urlNotificacao ? { notification_url: pedido.urlNotificacao } : {}),
+    dono.uid + '-' + plano + '-' + meses + '-' + Date.now());
 
     const dadosDoQr = (pagamento && pagamento.point_of_interaction
                        && pagamento.point_of_interaction.transaction_data) || {};
@@ -469,6 +525,19 @@ async function criarPagamentoNoMercadoPago(corpo, chaveIdempotencia, token) {
                         ' ' + (await resposta.text()).slice(0, 300));
     }
     return resposta.json();
+}
+
+// O endereco do proprio webhook, montado a partir de quem esta' sendo chamado (o
+// /pix mora no mesmo servico). `source_news=webhooks` pede ao Mercado Pago so' o
+// aviso novo, assinado — sem ele vem tambem o IPN antigo, sem assinatura, que seria
+// recusado e reenviado para sempre.
+export function urlDoWebhook(request) {
+    try {
+        const url = new URL(request.url);
+        if (url.protocol !== 'https:') return '';   // o Mercado Pago so' aceita https
+        const comApi = /\/api\//.test(url.pathname);
+        return url.origin + (comApi ? '/api/webhook' : '/webhook') + '?source_news=webhooks';
+    } catch (e) { return ''; }
 }
 
 function ehRotaDePix(request) {
@@ -535,6 +604,8 @@ async function tratarPedidoDePix(request, ambiente) {
                           'seria creditado; avise a administracao' }, 503, cors);
     }
 
+    pedido = Object.assign({}, pedido, { urlNotificacao: urlDoWebhook(request) });
+
     try {
         const resultado = await criarPixDoPacote(pedido, dono, ambiente, {
             ler: (caminho) => lerDoc(ambiente.FIREBASE_PROJECT_ID, caminho, conta),
@@ -547,6 +618,199 @@ async function tratarPedidoDePix(request, ambiente) {
     } catch (e) {
         console.error('[assinatura] falha ao criar Pix:', e && e.message);
         return responder({ erro: 'nao consegui gerar o Pix: ' + (e && e.message) }, 500, cors);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// PERGUNTAR AO MERCADO PAGO EM VEZ DE ESPERAR O AVISO
+// ----------------------------------------------------------------------------
+// O plano so' saia quando o aviso do Mercado Pago chegava E era aceito. Qualquer
+// tropeço no caminho — evento nao marcado no painel deles, segredo trocado, aviso
+// fora da janela de tempo, servico fora do ar na hora — e o dinheiro entrava sem o
+// plano sair, sem ninguem saber. Foi o que aconteceu.
+//
+// Agora existem dois caminhos que nao dependem do aviso:
+//   - /sincronizar: o professor (provando quem e' pelo cracha do Firebase) pede
+//     "confere meu pagamento", e o servico vai ao Mercado Pago procurar;
+//   - a varredura diaria passa por todos os Pix aprovados e assinaturas autorizadas
+//     recentes e credita o que faltou.
+// Os dois passam pelas MESMAS funcoes do webhook (processarApoioPix e
+// processarAssinaturaMp), que ja' sabem nao creditar duas vezes.
+
+const DIAS_DE_PIX_A_CONFERIR = 35;
+
+// Os pagamentos aprovados recentes que podem ser apoio: os que nos criamos (a
+// referencia "uid|plano|meses" esta' la') e os Pix avulsos. Cobranca mensal do cartao
+// tambem aparece nesta busca e NAO pode virar meses de Pix — por isso o filtro.
+export async function listarPixAprovados(buscarNoMp, maxPaginas) {
+    const achados = [];
+    for (let pagina = 0; pagina < maxPaginas; pagina++) {
+        const parametros = new URLSearchParams({
+            sort: 'date_created', criteria: 'desc', range: 'date_created',
+            begin_date: 'NOW-' + DIAS_DE_PIX_A_CONFERIR + 'DAYS', end_date: 'NOW',
+            status: 'approved', limit: '100', offset: String(pagina * 100)
+        });
+        const resposta = await buscarNoMp('/v1/payments/search?' + parametros.toString());
+        const lista = (resposta && Array.isArray(resposta.results)) ? resposta.results : [];
+        achados.push(...lista);
+        if (lista.length < 100) break;
+    }
+    return achados
+        .filter(p => p && (lerReferenciaPix(p.external_reference)
+                           || String(p.payment_method_id || '').toLowerCase() === 'pix'))
+        .map(p => Object.assign({ _tipo: 'pagamento' }, p))
+        // Do mais antigo para o mais novo: os meses somam na ordem em que foram pagos.
+        .sort((a, b) => (Date.parse(a.date_approved || '') || 0) - (Date.parse(b.date_approved || '') || 0));
+}
+
+export async function listarAssinaturasNoMp(buscarNoMp, filtros, maxPaginas) {
+    const achadas = [];
+    for (let pagina = 0; pagina < maxPaginas; pagina++) {
+        const parametros = new URLSearchParams(Object.assign({}, filtros || {}, {
+            limit: '100', offset: String(pagina * 100)
+        }));
+        const resposta = await buscarNoMp('/preapproval/search?' + parametros.toString());
+        const lista = (resposta && Array.isArray(resposta.results)) ? resposta.results : [];
+        achadas.push(...lista);
+        if (lista.length < 100) break;
+    }
+    return achadas.filter(a => a && a.id);
+}
+
+const ordemDeModificacao = (a, b) =>
+    (Date.parse(a.last_modified || a.date_created || '') || 0) -
+    (Date.parse(b.last_modified || b.date_created || '') || 0);
+
+// "Ja' paguei": procura no Mercado Pago o que e' DESTA pessoa e credita.
+export async function sincronizarUsuario(dono, ambiente, ferramentas) {
+    const { ler, buscarNoMp } = ferramentas;
+    const uid = String((dono && dono.uid) || '');
+    const email = String((dono && dono.email) || '').trim().toLowerCase();
+    if (!uid) return { ok: false, motivo: 'sem uid' };
+    const relatorio = { ok: true, pix: 0, cartao: 0 };
+
+    // Pix: os nossos (referencia com o uid) e, sem referencia, os pagos com o e-mail
+    // da conta.
+    const pagamentos = await listarPixAprovados(buscarNoMp, 2);
+    for (const p of pagamentos) {
+        const ref = lerReferenciaPix(p.external_reference);
+        const meu = ref ? ref.uid === uid
+            : !!email && String((p.payer && p.payer.email) || '').toLowerCase() === email;
+        if (!meu) continue;
+        const r = await processarApoioPix(p, ambiente, ferramentas, uid);
+        if (r.feito) relatorio.pix++;
+    }
+
+    // Cartao: a assinatura que traz o uid (ou o e-mail da conta) como referencia, ou
+    // cujo pagador usa o mesmo e-mail.
+    const vistas = {};
+    let assinaturas = [];
+    if (email) assinaturas = assinaturas.concat(
+        await listarAssinaturasNoMp(buscarNoMp, { payer_email: email }, 1));
+    assinaturas = assinaturas.concat(await listarAssinaturasNoMp(buscarNoMp, {}, 3));
+    const minhas = assinaturas.filter(a => {
+        if (vistas[a.id]) return false;
+        vistas[a.id] = true;
+        const ref = String(a.external_reference || '').trim();
+        // Referencia com o uid de OUTRA conta: e' dela, mesmo que o e-mail coincida.
+        if (ref && ref.indexOf('@') === -1 && ref !== uid) return false;
+        return ref === uid
+            || (!!email && ref.toLowerCase() === email)
+            || (!!email && String(a.payer_email || '').trim().toLowerCase() === email);
+    }).sort(ordemDeModificacao);
+    for (const a of minhas) {
+        const r = await processarAssinaturaMp(a, ambiente, ferramentas, uid);
+        if (r.feito) relatorio.cartao++;
+    }
+
+    const doc = await ler('assinaturas/' + uid);
+    relatorio.plano = planoValido(doc, { diasTolerancia: Number(ambiente.DIAS_TOLERANCIA) || undefined });
+    relatorio.status = (doc && doc.status) || '';
+    return relatorio;
+}
+
+// A parte da varredura diaria que credita o que o aviso deixou para tras.
+export async function varrerPagamentosPerdidos(ambiente, ferramentas) {
+    const { buscarNoMp } = ferramentas;
+    const relatorio = { pixCreditados: 0, assinaturasGravadas: 0, semDono: 0, falhasNaBusca: 0 };
+
+    try {
+        for (const p of await listarPixAprovados(buscarNoMp, 10)) {
+            try {
+                const r = await processarApoioPix(p, ambiente, ferramentas);
+                if (r.feito) relatorio.pixCreditados++;
+                else if (r.motivo === 'nao identifiquei o usuario') relatorio.semDono++;
+            } catch (e) {
+                console.warn('[assinatura] varredura: Pix', p.id, 'falhou:', e && e.message);
+                relatorio.falhasNaBusca++;
+            }
+        }
+    } catch (e) {
+        console.warn('[assinatura] varredura: nao consegui listar os Pix:', e && e.message);
+        relatorio.falhasNaBusca++;
+    }
+
+    try {
+        const autorizadas = (await listarAssinaturasNoMp(buscarNoMp, { status: 'authorized' }, 10))
+            .sort(ordemDeModificacao);
+        for (const a of autorizadas) {
+            try {
+                const r = await processarAssinaturaMp(a, ambiente, ferramentas);
+                if (r.feito) relatorio.assinaturasGravadas++;
+                else if (r.motivo === 'nao identifiquei o usuario') relatorio.semDono++;
+            } catch (e) {
+                console.warn('[assinatura] varredura: assinatura', a.id, 'falhou:', e && e.message);
+                relatorio.falhasNaBusca++;
+            }
+        }
+    } catch (e) {
+        console.warn('[assinatura] varredura: nao consegui listar as assinaturas:', e && e.message);
+        relatorio.falhasNaBusca++;
+    }
+    return relatorio;
+}
+
+function ehRotaDeSincronizar(request) {
+    try {
+        return /\/sincronizar\/?$/.test(new URL(request.url).pathname);
+    } catch (e) { return false; }
+}
+
+async function tratarSincronizar(request, ambiente) {
+    const cors = cabecalhosCors(request, ambiente);
+
+    const autorizacao = request.headers.get('authorization') || '';
+    const token = autorizacao.toLowerCase().indexOf('bearer ') === 0 ? autorizacao.slice(7).trim() : '';
+    if (!token) return responder({ erro: 'falta o cracha da sessao' }, 401, cors);
+
+    const projeto = ambiente.FIREBASE_PROJECT_ID;
+    let dono;
+    try {
+        dono = await verificarTokenFirebase(token, projeto);
+    } catch (e) {
+        return responder({ erro: 'sessao invalida: ' + (e && e.message) }, 401, cors);
+    }
+
+    let conta;
+    try {
+        conta = lerContaServico(ambiente.FIREBASE_SERVICE_ACCOUNT);
+    } catch (e) {
+        console.error('[assinatura] credencial do Firebase invalida:', e && e.message);
+        return responder({ erro: 'o servico esta mal configurado; avise a administracao' }, 503, cors);
+    }
+
+    try {
+        const resultado = await sincronizarUsuario(dono, ambiente, {
+            ler: (caminho) => lerDoc(projeto, caminho, conta),
+            gravar: (caminho, dados) => gravarDoc(projeto, caminho, dados, conta),
+            apagar: (caminho) => apagarDoc(projeto, caminho, conta),
+            buscarNoMp: (caminho) => buscarNoMp(caminho, ambiente.MP_ACCESS_TOKEN)
+        });
+        console.log('[assinatura] sincronizar:', dono.uid, JSON.stringify(resultado));
+        return responder(resultado, 200, cors);
+    } catch (e) {
+        console.error('[assinatura] sincronizar falhou:', e && e.message);
+        return responder({ erro: 'nao consegui conferir agora: ' + (e && e.message) }, 500, cors);
     }
 }
 
@@ -571,6 +835,13 @@ export async function reconciliarAssinaturas(ambiente, ferramentas) {
     const agora = Date.now();
 
     const relatorio = { olhadas: 0, cortadas: 0, reativadas: 0, intactas: 0, falhas: 0 };
+
+    // Primeiro credita o que o aviso deixou para tras — senao quem pagou e nao foi
+    // avisado ainda seria cortado logo abaixo.
+    if (buscarNoMp) {
+        relatorio.recuperados = await varrerPagamentosPerdidos(ambiente, ferramentas);
+    }
+
     let pagina = '';
 
     do {
@@ -769,6 +1040,10 @@ export async function tratarRequisicao(request, ambiente) {
     if (ehRotaDeCancelamento(request)) {
         if (request.method !== 'POST') return new Response('metodo nao suportado', { status: 405 });
         return tratarCancelamento(request, ambiente);
+    }
+    if (ehRotaDeSincronizar(request)) {
+        if (request.method !== 'POST') return new Response('metodo nao suportado', { status: 405 });
+        return tratarSincronizar(request, ambiente);
     }
     if (ehRotaDeReconciliacao(request)) {
         return tratarReconciliacao(request, ambiente);

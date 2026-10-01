@@ -656,8 +656,20 @@ async function abrirModalAssinaturasAdmin() {
                     <strong>Webhook</strong> (Mercado Pago &gt; Suas integrações &gt; Notificações):
                     aponte para o endereço publicado a partir da pasta <code>assinatura/</code>
                     (na Vercel, <code>https://&lt;projeto&gt;.vercel.app/api/webhook</code>) e marque os
-                    eventos <em>Assinaturas</em> e <em>Pagamentos recorrentes</em>.
+                    eventos <em>Assinaturas</em>, <em>Pagamentos recorrentes</em> e <em>Pagamentos</em>.
                     O passo a passo está em <code>assinatura/LEIAME.md</code>.
+                    <br>Se um aviso se perder, o plano sai do mesmo jeito: a varredura diária e o botão
+                    "Já paguei" do professor perguntam direto ao Mercado Pago.
+                </div>
+
+                <div style="margin-top:14px; border-top:1px dashed #e3e8ef; padding-top:14px;">
+                    <strong style="font-size:13px;">Pagamentos sem dono</strong>
+                    <p style="font-size:11px; color:#5f6b7f; margin:4px 0 8px 0;">
+                        Dinheiro que entrou sem dar para saber de quem é — quase sempre porque a pessoa pagou
+                        com um e-mail do Mercado Pago diferente do que usa no SisProf. Vincule à conta certa e o
+                        plano sai na hora; as próximas cobranças da mesma assinatura já vão direto para ela.
+                    </p>
+                    <div id="listaSemDonoAdmin" style="font-size:12px; color:#5f6b7f;">Carregando...</div>
                 </div>
                 <div style="margin-top:12px; font-size:12px; color:#975a16; background:#fffaf0; border:1px solid #fbd38d; border-radius:6px; padding:10px;">
                     <strong>Plano antigo de R$ 7,00:</strong> cancele as assinaturas no painel do Mercado Pago.
@@ -679,6 +691,139 @@ async function abrirModalAssinaturasAdmin() {
             </div>
         </div>`;
     showModal('modalAssinaturasAdmin');
+    carregarPagamentosSemDonoAdmin();
+}
+
+// ----------------------------------------------------------------------------
+// Pagamentos sem dono
+// ----------------------------------------------------------------------------
+// O webhook guarda em `assinaturas_sem_dono/` o pagamento que ele nao consegue ligar
+// a ninguem. Antes isso ficava so' no banco, sem tela nenhuma: o dinheiro entrava, o
+// plano nao saia, e nao havia por onde descobrir. Aqui o super admin ve e resolve.
+async function carregarPagamentosSemDonoAdmin() {
+    const alvo = document.getElementById('listaSemDonoAdmin');
+    if (!alvo) return;
+    if (typeof db === 'undefined' || !db) { alvo.textContent = 'Banco não conectado.'; return; }
+    try {
+        const snap = await db.collection('assinaturas_sem_dono').get();
+        const itens = [];
+        snap.forEach(d => itens.push(Object.assign({ _id: d.id }, d.data())));
+        const abertos = itens.filter(i => !i.uidAtribuido);
+        if (!abertos.length) {
+            alvo.innerHTML = '✅ Nenhum pagamento esperando dono.' +
+                (itens.length ? ' <span style="color:#a0aec0;">(' + itens.length + ' já vinculado(s))</span>' : '');
+            return;
+        }
+        alvo.innerHTML = abertos.map(i => {
+            const plano = (PLANOS_ADMIN[i.planoContratado || i.plano] || {}).nome || (i.planoContratado || i.plano || '?');
+            const tipo = i.origem === 'pix'
+                ? 'Pix, ' + (i.meses || '?') + ' mes(es)'
+                : 'Cartão, ' + (i.status || '?');
+            const quando = String(i.atualizadoEm || '').slice(0, 10).split('-').reverse().join('/');
+            return `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;
+                                border:1px solid #e3e8ef; border-radius:6px; padding:8px; margin-bottom:6px;">
+                        <div style="text-align:left;">
+                            <strong>${escaparAdminTexto(plano)}</strong> — R$ ${Number(i.valor || 0).toFixed(2).replace('.', ',')}
+                            (${escaparAdminTexto(tipo)})<br>
+                            <span style="color:#5f6b7f;">pagador: ${escaparAdminTexto(i.email || '(sem e-mail)')} · ${quando}</span>
+                        </div>
+                        <button class="btn btn-sm btn-primary" onclick="vincularPagamentoSemDonoAdmin('${String(i._id).replace(/[^A-Za-z0-9_-]/g, '')}')">
+                            Vincular a uma conta
+                        </button>
+                    </div>`;
+        }).join('');
+    } catch (e) {
+        alvo.textContent = 'Não consegui ler: ' + (e && e.message ? e.message : e);
+    }
+}
+
+function escaparAdminTexto(t) {
+    return String(t == null ? '' : t).replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+async function vincularPagamentoSemDonoAdmin(docId) {
+    const refParado = db.collection('assinaturas_sem_dono').doc(String(docId));
+    const parado = (await refParado.get()).data();
+    if (!parado) { alert('Este registro não existe mais.'); return; }
+
+    const email = (prompt('E-mail da conta no SisProf que fez este pagamento' +
+        (parado.email ? ' (o pagador usou ' + parado.email + ')' : '') + ':') || '').trim().toLowerCase();
+    if (!email) return;
+
+    const lista = await getData('system', 'users_list');
+    const pessoa = ((lista && lista.list) || []).find(u => String(u.email || '').trim().toLowerCase() === email);
+    const uid = pessoa && String(pessoa.uid || pessoa.id || '');
+    if (!uid) {
+        alert('Não achei conta com o e-mail ' + email + ' (ou ela ainda não tem uid — rode "Sincronizar UIDs").');
+        return;
+    }
+    if (!confirm('Vincular este pagamento a ' + (pessoa.nome || email) + '?')) return;
+
+    try {
+        const refAssinatura = db.collection('assinaturas').doc(uid);
+        const atual = (await refAssinatura.get()).data() || null;
+        const agora = Date.now();
+        let novo;
+
+        if (parado.origem === 'pix') {
+            // Mesma conta do servidor (regras.mjs: montarApoioPix): os meses somam a
+            // partir do que a pessoa ja' tinha, e o mesmo Pix nao credita duas vezes.
+            const creditados = (atual && Array.isArray(atual.pagamentosCreditados)) ? atual.pagamentosCreditados.map(String) : [];
+            if (parado.ultimoPagamentoId && creditados.indexOf(String(parado.ultimoPagamentoId)) !== -1) {
+                alert('Este Pix já foi creditado nesta conta.');
+            } else {
+                const jaTinha = Date.parse((atual && atual.validoAte) || '');
+                const fim = new Date(isFinite(jaTinha) && jaTinha > agora ? jaTinha : agora);
+                fim.setMonth(fim.getMonth() + (Math.round(Number(parado.meses)) || 0));
+                const ordem = { free: 0, apoiase: 1, professor: 2 };
+                const planoAtual = (atual && atual.status === 'ativa') ? (atual.plano || 'free') : 'free';
+                const plano = (ordem[planoAtual] || 0) > (ordem[parado.plano] || 0) ? planoAtual : parado.plano;
+                novo = {
+                    uid: uid, plano: plano, planoContratado: plano, status: 'ativa',
+                    valor: Number(parado.valor) || 0, meses: Number(parado.meses) || 0,
+                    validoAte: fim.toISOString(), legado: false, email: parado.email || '',
+                    ultimoPagamento: new Date(agora).toISOString(),
+                    ultimoPagamentoId: String(parado.ultimoPagamentoId || ''),
+                    pagamentosCreditados: creditados.concat([String(parado.ultimoPagamentoId || '')]).filter(Boolean).slice(-50),
+                    origem: 'pix', versaoMs: agora, atualizadoEm: new Date(agora).toISOString(),
+                    vinculadoPor: (currentUser && currentUser.email) || 'super_admin'
+                };
+            }
+        } else {
+            // Cartao: o registro ja' e' o retrato da assinatura que o servidor montou.
+            novo = Object.assign({}, parado, {
+                uid: uid,
+                vinculadoPor: (currentUser && currentUser.email) || 'super_admin'
+            });
+            delete novo._id;
+            delete novo.uidAtribuido;
+        }
+
+        if (novo) {
+            await refAssinatura.set(novo, { merge: true });
+            if (novo.status === 'ativa' && novo.plano !== 'free') {
+                await db.collection('contribuintes').doc(uid).set({
+                    uid: uid,
+                    nome: abreviarNomeApoiador(pessoa.nome || ''),
+                    schoolId: String(pessoa.schoolId || ''),
+                    desde: new Date(agora).toISOString()
+                });
+            }
+        }
+        // O vinculo FICA guardado: e' por ele que a proxima cobranca desta assinatura
+        // (que vai chegar tao sem referencia quanto esta) acha o dono sozinha.
+        await refParado.set({
+            uidAtribuido: uid,
+            vinculadoEm: new Date(agora).toISOString(),
+            vinculadoPor: (currentUser && currentUser.email) || 'super_admin'
+        }, { merge: true });
+
+        if (novo) alert('Pronto: pagamento vinculado a ' + (pessoa.nome || email) + '. O plano já vale.');
+        carregarPagamentosSemDonoAdmin();
+    } catch (e) {
+        alert('Não consegui vincular: ' + (e && e.message ? e.message : e));
+    }
 }
 
 async function salvarLinksAssinatura() {

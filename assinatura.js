@@ -193,10 +193,14 @@ function esperandoConfirmacao() {
 //
 // Espelha assinatura/regras.mjs (venceEmMs / assinaturaVencida / planoValido), que e'
 // a mesma regra no servidor. Os dois lados sao testados.
+// Vale a data mais distante: um Pix antigo ja' vencido nao pode cortar quem tem o
+// cartao em dia (era `validoAte || proximaCobranca`, e o Pix vencido ganhava).
 function venceEmMs(doc) {
     if (!doc) return 0;
-    const ms = Date.parse(doc.validoAte || doc.proximaCobranca || '');
-    return isFinite(ms) ? ms : 0;
+    const a = Date.parse(doc.validoAte || '');
+    const b = Date.parse(doc.proximaCobranca || '');
+    const ms = Math.max(isFinite(a) ? a : 0, isFinite(b) ? b : 0);
+    return ms > 0 ? ms : 0;
 }
 
 function diasDeTolerancia() {
@@ -450,8 +454,63 @@ async function assinarPlano(planoId) {
     marcarEsperandoConfirmacao(planoId);
 }
 
-// Depois de mandar a pessoa para o Mercado Pago, o aplicativo fica de olho: quando
-// o webhook gravar a assinatura, a tela se atualiza sozinha — sem pedir F5.
+// "JA' PAGUEI": pede ao servico que confira no Mercado Pago e credite o que for desta
+// conta. Existe porque o plano dependia SO' do aviso do Mercado Pago chegar — e
+// quando ele nao chegava, o dinheiro entrava e o plano nao saia. Devolve true se a
+// conferencia rodou (mesmo sem achar nada).
+async function sincronizarComMercadoPago() {
+    try {
+        const links = await carregarLinksAssinatura();
+        if (!links || !links.servico) return false;
+        const cracha = await pegarCrachaDaSessao();
+        if (!cracha) return false;
+        const resposta = await fetch(links.servico.replace(/\/$/, '') + '/sincronizar', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ' + cracha, 'content-type': 'application/json' },
+            body: '{}'
+        });
+        if (!resposta.ok) {
+            console.warn('[Assinatura] Conferencia no Mercado Pago recusada:', resposta.status);
+            return false;
+        }
+        return true;
+    } catch (e) {
+        console.warn('[Assinatura] Nao consegui conferir no Mercado Pago:', e);
+        return false;
+    } finally {
+        await carregarAssinaturaAtual(true);
+    }
+}
+
+// O botao "Ja' paguei — conferir agora" do pop-up.
+async function conferirPagamentoAgora() {
+    const botao = document.getElementById('btnConferirPagamento');
+    if (botao) { botao.disabled = true; botao.textContent = 'Conferindo no Mercado Pago...'; }
+    const antes = planoDoUsuario();
+    const rodou = await sincronizarComMercadoPago();
+    atualizarBotaoApoie();
+    if (typeof atualizarBannerApoio === 'function') atualizarBannerApoio();
+    if (document.getElementById('modalApoie')) renderConteudoModalApoie();
+    const depois = planoDoUsuario();
+    if (depois !== 'free' && depois !== antes) {
+        alert('Pagamento encontrado! Plano ' + infoPlanoAtual().nome + ' liberado. Obrigado por apoiar o SisProf 💛');
+    } else if (depois !== 'free') {
+        alert('Seu plano ' + infoPlanoAtual().nome + ' ja esta ativo. Obrigado! 💛');
+    } else if (!rodou) {
+        alert('Nao consegui conferir agora. Tente de novo em alguns minutos — ' +
+              'se o problema continuar, avise a administracao.');
+    } else {
+        alert('Ainda nao encontrei um pagamento aprovado nesta conta.\n\n' +
+              'O Pix costuma cair em segundos; o cartao pode levar alguns minutos. ' +
+              'Se voce pagou com um e-mail diferente do que usa no SisProf, avise a administracao ' +
+              'para vincular o pagamento a sua conta.');
+    }
+}
+
+// Depois de mandar a pessoa para o Mercado Pago, o aplicativo fica de olho: a cada
+// meio minuto pergunta ao servico (que pergunta ao Mercado Pago), e a tela se
+// atualiza sozinha quando o pagamento aparece — sem pedir F5 e sem depender de o
+// aviso do Mercado Pago ter chegado.
 function marcarEsperandoConfirmacao(planoId) {
     const alvo = document.getElementById('assinaturaEstado');
     if (alvo) {
@@ -462,7 +521,7 @@ function marcarEsperandoConfirmacao(planoId) {
     const relogio = setInterval(async () => {
         tentativas++;
         const antes = _assinaturaAtual && _assinaturaAtual.status;
-        await carregarAssinaturaAtual(true);
+        await sincronizarComMercadoPago();
         const agora = _assinaturaAtual && _assinaturaAtual.status;
         if (agora === 'ativa' && agora !== antes) {
             clearInterval(relogio);
@@ -486,7 +545,7 @@ function voltandoDoCheckout() {
 }
 
 async function conferirAssinaturaAposCheckout() {
-    await carregarAssinaturaAtual(true);
+    await sincronizarComMercadoPago();
     atualizarBotaoApoie();
     if (typeof atualizarBannerApoio === 'function') atualizarBannerApoio();
     if (_assinaturaAtual && _assinaturaAtual.status === 'ativa') {
@@ -910,6 +969,12 @@ function renderConteudoModalApoie(opcoes) {
             e IA sao pagos por quem assina — escolha como voce quer participar.
         </p>
         <div id="assinaturaEstado" style="margin:12px 0;">${descreverAssinatura()}</div>
+        ${atual === 'free' && !(currentUser && currentUser.role === 'super_admin') ? `
+            <p style="font-size:12px; margin:-4px 0 10px 0;">
+                <button class="btn btn-sm btn-secondary" id="btnConferirPagamento" onclick="conferirPagamentoAgora()">
+                    🔄 Ja paguei — conferir agora
+                </button>
+            </p>` : ''}
         <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:10px; text-align:left;">
             ${cartaoDePlano(PLANOS_SISPROF.free, atual, false)}
             ${cartaoDePlano(PLANOS_SISPROF.apoiase, atual, opts.destaque === 'apoiase')}
@@ -985,6 +1050,14 @@ function injectApoieButton() {
         if (typeof atualizarBannerApoio === 'function') atualizarBannerApoio();
         if (precisaAvisarDaTransicao()) abrirAvisoTransicao();
         else if (voltandoDoCheckout()) conferirAssinaturaAposCheckout();
+        else if (esperandoConfirmacao()) {
+            // Cartao iniciado e ainda sem confirmacao: confere uma vez ao entrar, em vez
+            // de depender de o aviso do Mercado Pago ter chegado.
+            sincronizarComMercadoPago().then(() => {
+                atualizarBotaoApoie();
+                if (typeof atualizarBannerApoio === 'function') atualizarBannerApoio();
+            });
+        }
     });
 }
 
@@ -1087,6 +1160,8 @@ window.escolherNaTransicao = escolherNaTransicao;
 window.precisaAvisarDaTransicao = precisaAvisarDaTransicao;
 window.temAssinaturaAntiga = temAssinaturaAntiga;
 window.esperandoConfirmacao = esperandoConfirmacao;
+window.sincronizarComMercadoPago = sincronizarComMercadoPago;
+window.conferirPagamentoAgora = conferirPagamentoAgora;
 window.cancelarAssinatura = cancelarAssinatura;
 window.pagarComPix = pagarComPix;
 window.ehLinkDeAssinatura = ehLinkDeAssinatura;

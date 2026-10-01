@@ -733,6 +733,159 @@ const assinaturaMp = (extra) => Object.assign({
   ok('mas ainda diz quais pacotes conhece, para o diagnostico servir de algo',
       corpoDiag.pacotes.length === 1 && corpoDiag.fonte === 'ambiente');
 
+  // ================= 13. O PLANO SAI MESMO SEM O AVISO =================
+  // O caso que motivou isto: um Professor no cartao e um Apoia-se de 3 meses no Pix
+  // entraram na conta do Mercado Pago e o plano nao saiu. O aviso do Pix nem era
+  // pedido (o painel so' marcava eventos de assinatura), e o do cartao nao achava o
+  // dono. Agora o servico pergunta ao Mercado Pago em vez de so' esperar.
+  console.log('\n13. O plano sai mesmo quando o aviso nao chega');
+  const daqui = (n) => new Date(Date.now() + n * 86400000).toISOString();
+  const listaAna = { list: [{ uid: 'uid-ana', email: 'ana@escola.com', nome: 'Ana Souza', schoolId: '9' }] };
+  const ambiente13 = { MP_PACOTES_PIX: 'apoiase:3:30,professor:3:60' };
+
+  ok('o vencimento vale a data MAIS distante (Pix velho nao corta cartao em dia)',
+      R.venceEmMs({ validoAte: daqui(-30), proximaCobranca: daqui(20) }) === Date.parse(daqui(20))
+      && R.planoValido({ status: 'ativa', plano: 'professor', validoAte: daqui(-30),
+                         proximaCobranca: daqui(20) }) === 'professor');
+
+  ok('o maior plano vence a comparacao', R.maiorPlano('apoiase', 'professor') === 'professor'
+      && R.maiorPlano('professor', 'free') === 'professor' && R.maiorPlano('x', 'apoiase') === 'apoiase');
+
+  ok('Pix ja creditado e reconhecido pela lista',
+      R.pixJaCreditado({ pagamentosCreditados: ['A', 'B'], ultimoPagamentoId: 'B' }, { id: 'A' })
+      && !R.pixJaCreditado({ pagamentosCreditados: ['B'] }, { id: 'A' }));
+  ok('documento antigo (sem lista): Pix aprovado antes do ultimo credito conta como creditado',
+      R.pixJaCreditado({ origem: 'pix', ultimoPagamentoId: 'B', ultimoPagamento: daqui(-1) },
+                       { id: 'A', date_approved: daqui(-5) })
+      && !R.pixJaCreditado({ origem: 'pix', ultimoPagamentoId: 'B', ultimoPagamento: daqui(-5) },
+                           { id: 'C', date_approved: daqui(-1) }));
+
+  // Cartao chegando para quem ja' tem Pix gravado: o carimbo do Pix (relogio do
+  // servidor) era comparado com o do cartao (last_modified do Mercado Pago), e o
+  // cartao era recusado como "documento ja estava atualizado".
+  let b13 = bancoVarredura({
+    'system/users_list': listaAna,
+    'assinaturas/uid-ana': { uid: 'uid-ana', plano: 'apoiase', status: 'ativa', origem: 'pix',
+      validoAte: daqui(80), versaoMs: Date.now(), ultimoPagamentoId: 'PIX-1' }
+  });
+  r = await W.processarAssinaturaMp(assinaturaMp({ id: 'PRE-ANA', external_reference: 'uid-ana',
+      last_modified: daqui(-1) }), config, b13);
+  ok('cartao Professor NAO e recusado por causa do carimbo de um Pix anterior',
+      r.feito === true && b13.docs['assinaturas/uid-ana'].plano === 'professor'
+      && b13.docs['assinaturas/uid-ana'].preapprovalId === 'PRE-ANA');
+
+  b13 = bancoVarredura({
+    'system/users_list': listaAna,
+    'assinaturas/uid-ana': { uid: 'uid-ana', plano: 'apoiase', status: 'ativa', origem: 'pix',
+      validoAte: daqui(80), versaoMs: Date.now() }
+  });
+  r = await W.processarAssinaturaMp(assinaturaMp({ id: 'PRE-ANA', external_reference: 'uid-ana',
+      status: 'pending' }), config, b13);
+  ok('cartao ainda pendente NAO derruba o Pix que esta valendo',
+      r.feito === false && b13.docs['assinaturas/uid-ana'].plano === 'apoiase'
+      && b13.docs['assinaturas/uid-ana'].status === 'ativa');
+
+  // Pix de Apoia-se comprado por quem ja' e' Professor no cartao.
+  b13 = bancoVarredura({
+    'system/users_list': listaAna,
+    'assinaturas/uid-ana': { uid: 'uid-ana', plano: 'professor', status: 'ativa', origem: 'mercadopago',
+      preapprovalId: 'PRE-ANA', proximaCobranca: daqui(20), versaoMs: 5 }
+  });
+  r = await W.processarApoioPix({ id: 'PIX-9', status: 'approved', transaction_amount: 30,
+      payment_method_id: 'pix', external_reference: 'uid-ana|apoiase|3', date_approved: daqui(0),
+      payer: { email: 'ana@escola.com' } }, ambiente13, b13);
+  ok('Pix de Apoia-se nao rebaixa quem ja e Professor',
+      r.feito === true && b13.docs['assinaturas/uid-ana'].plano === 'professor');
+
+  // Assinatura sem dono que o super admin ja' atribuiu: o proximo aviso vai direto.
+  b13 = bancoVarredura({
+    'system/users_list': listaAna,
+    'assinaturas_sem_dono/PRE-X': { preapprovalId: 'PRE-X', uidAtribuido: 'uid-ana' }
+  });
+  r = await W.processarAssinaturaMp(assinaturaMp({ id: 'PRE-X', external_reference: '',
+      payer_email: 'outro-email@mp.com' }), config, b13);
+  ok('assinatura sem dono atribuida pelo admin passa a ir para a conta certa (e o vinculo fica)',
+      r.feito === true && r.uid === 'uid-ana' && b13.docs['assinaturas/uid-ana'].plano === 'professor'
+      && !!b13.docs['assinaturas_sem_dono/PRE-X'].uidAtribuido);
+
+  // "Ja' paguei": o servico procura no Mercado Pago o que e' desta pessoa.
+  const mpFalso = (pagamentos, assinaturas) => {
+    const chamadas = [];
+    return { chamadas, buscarNoMp: async (caminho) => {
+      chamadas.push(caminho);
+      if (caminho.indexOf('/v1/payments/search') === 0) return { results: pagamentos };
+      if (caminho.indexOf('/preapproval/search') === 0) {
+        const filtro = new URLSearchParams(caminho.split('?')[1] || '');
+        const quem = filtro.get('payer_email');
+        const st = filtro.get('status');
+        return { results: assinaturas.filter(a => (!quem || a.payer_email === quem)
+                                               && (!st || a.status === st)) };
+      }
+      return null;
+    } };
+  };
+  const pixAna = { id: 'PIX-ANA', status: 'approved', transaction_amount: 30, payment_method_id: 'pix',
+    external_reference: 'uid-ana|apoiase|3', date_approved: daqui(-2), payer: { email: 'ana@escola.com' } };
+  const pixOutro = Object.assign({}, pixAna, { id: 'PIX-OUTRO', external_reference: 'uid-outro|professor|3',
+    transaction_amount: 60 });
+  const cobrancaCartao = { id: 'PAY-CARTAO', status: 'approved', transaction_amount: 30,
+    payment_method_id: 'credit_card', external_reference: '', date_approved: daqui(-1),
+    payer: { email: 'ana@escola.com' } };
+  const cartaoAna = assinaturaMp({ id: 'PRE-ANA', external_reference: '', payer_email: 'ana@escola.com' });
+
+  b13 = bancoVarredura({ 'system/users_list': listaAna });
+  let mp = mpFalso([pixAna, pixOutro, cobrancaCartao], [cartaoAna]);
+  r = await W.sincronizarUsuario({ uid: 'uid-ana', email: 'ana@escola.com' }, Object.assign({}, ambiente13, config),
+      Object.assign({ buscarNoMp: mp.buscarNoMp }, b13));
+  ok('"ja paguei" encontra o Pix e o cartao da pessoa e libera o plano',
+      r.ok === true && r.pix === 1 && r.cartao === 1 && r.plano === 'professor'
+      && b13.docs['assinaturas/uid-ana'].status === 'ativa');
+  ok('e nao credita o Pix de outra pessoa', !b13.docs['assinaturas/uid-outro']);
+
+  const b13b = bancoVarredura({ 'system/users_list': listaAna });
+  r = await W.sincronizarUsuario({ uid: 'uid-ana', email: 'ana@escola.com' }, config,
+      Object.assign({ buscarNoMp: mpFalso([], [assinaturaMp({ id: 'PRE-BETO',
+        external_reference: 'uid-beto', payer_email: 'ana@escola.com' })]).buscarNoMp }, b13b));
+  ok('assinatura com o uid de OUTRA conta nao e tomada pelo e-mail',
+      r.cartao === 0 && !b13b.docs['assinaturas/uid-ana']);
+  ok('cobranca mensal do cartao NAO vira meses de Pix',
+      (b13.docs['assinaturas/uid-ana'].pagamentosCreditados || []).indexOf('PAY-CARTAO') === -1);
+
+  const validoAntes = b13.docs['assinaturas/uid-ana'].validoAte;
+  r = await W.sincronizarUsuario({ uid: 'uid-ana', email: 'ana@escola.com' }, Object.assign({}, ambiente13, config),
+      Object.assign({ buscarNoMp: mp.buscarNoMp }, b13));
+  ok('apertar "ja paguei" de novo nao credita o dobro',
+      r.pix === 0 && b13.docs['assinaturas/uid-ana'].validoAte === validoAntes);
+
+  // A varredura diaria credita o Pix cujo aviso nunca chegou.
+  b13 = bancoVarredura({ 'system/users_list': listaAna });
+  mp = mpFalso([pixAna], []);
+  rel = await W.reconciliarAssinaturas(ambiente13, Object.assign({ buscarNoMp: mp.buscarNoMp }, b13));
+  ok('a varredura diaria credita o Pix que ficou sem aviso',
+      rel.recuperados.pixCreditados === 1 && b13.docs['assinaturas/uid-ana'].plano === 'apoiase'
+      && b13.docs['assinaturas/uid-ana'].status === 'ativa');
+  rel = await W.reconciliarAssinaturas(ambiente13, Object.assign({ buscarNoMp: mp.buscarNoMp }, b13));
+  ok('e rodar de novo nao credita outra vez', rel.recuperados.pixCreditados === 0);
+
+  // O Pix novo ja' nasce pedindo o aviso para o nosso webhook.
+  ok('o endereco do webhook sai do proprio servico (com e sem /api)',
+      W.urlDoWebhook(new Request('https://sisprof.vercel.app/api/pix'))
+        === 'https://sisprof.vercel.app/api/webhook?source_news=webhooks'
+      && W.urlDoWebhook(new Request('https://w.dev/pix')) === 'https://w.dev/webhook?source_news=webhooks'
+      && W.urlDoWebhook(new Request('http://localhost:8787/pix')) === '');
+  let corpoCriado = null;
+  await W.criarPixDoPacote({ plano: 'apoiase', meses: 3, urlNotificacao: 'https://w.dev/webhook?source_news=webhooks' },
+      { uid: 'uid-ana', email: 'ana@escola.com' }, ambiente13,
+      { ler: async () => null, criarPagamentoNoMp: async (c) => { corpoCriado = c;
+          return { id: 1, point_of_interaction: { transaction_data: { qr_code: 'x' } } }; } });
+  ok('o Pix criado pede o aviso no nosso webhook (notification_url)',
+      corpoCriado && corpoCriado.notification_url === 'https://w.dev/webhook?source_news=webhooks'
+      && corpoCriado.external_reference === 'uid-ana|apoiase|3');
+
+  const sincronizarSemCracha = await W.tratarRequisicao(
+      new Request('https://w.dev/api/sincronizar', { method: 'POST' }), { FIREBASE_PROJECT_ID: 'profsis3' });
+  ok('"ja paguei" exige o cracha da sessao', sincronizarSemCracha.status === 401);
+
   // ================= 12. OS VALORES BATEM NOS DOIS LADOS =================
   console.log('\n12. Servidor e navegador falam do mesmo preco');
   const front = fs.readFileSync(path.join(RAIZ, 'assinatura.js'), 'utf8');
