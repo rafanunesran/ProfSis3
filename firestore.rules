@@ -263,6 +263,26 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
+    // ------------------------------ financeiro ---------------------------------
+    // [FINANCEIRO] A tela de gestao financeira do super admin.
+    //
+    // financeiro_entradas: o livro-caixa, um documento por pagamento do Mercado Pago.
+    // Quem escreve e' SO' o servico da pasta assinatura/ (conta de servico, passa por
+    // cima destas Regras), a partir do que o Mercado Pago devolve. Nem o super admin
+    // escreve pelo navegador: entrada digitada a mao nao e' dinheiro que entrou.
+    match /financeiro_entradas/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    // financeiro_custos: o que a operacao gasta (assinatura de IA, dominio, servidor...),
+    // cadastrado a mao. financeiro_config: cotacao do dolar e afins.
+    match /financeiro_custos/{docId} {
+      allow read, write: if isSuperAdmin();
+    }
+    match /financeiro_config/{docId} {
+      allow read, write: if isSuperAdmin();
+    }
+
     // Os links de checkout dos planos. Leitura publica (sao links de pagamento,
     // abertos por definicao); escrita SO' do super admin. Nao podem morar em
     // system/*, onde qualquer conta logada escreve: link trocado manda o dinheiro

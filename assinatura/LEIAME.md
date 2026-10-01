@@ -85,6 +85,7 @@ por assinatura, por mês.
    - `https://<seu-projeto>.vercel.app/api/cancelar` — o cancelamento pedido pelo professor
    - `https://<seu-projeto>.vercel.app/api/pix` — gera o QR Code do Pix
    - `https://<seu-projeto>.vercel.app/api/sincronizar` — o "Já paguei" do professor
+   - `https://<seu-projeto>.vercel.app/api/financeiro` — o livro-caixa (só super admin)
    - `https://<seu-projeto>.vercel.app/api/reconciliar` — a varredura diária (roda pelo
      Cron configurado no `vercel.json`, todo dia às 9h UTC; não fica aberta na internet)
 6. Abra esse endereço no navegador. Ele responde
@@ -350,6 +351,20 @@ mesmas funções do webhook (nada é creditado duas vezes):
 Para conferir por que um aviso falhou, veja os logs da função na Vercel: `aviso recusado`
 (segredo/assinatura), `nao identifiquei o usuario` (foi para "sem dono") ou
 `pagamento fora dos pacotes`.
+
+## Gestão financeira (Painel Super Admin → 💰 Financeiro)
+
+- **Entradas**: cada pagamento do Mercado Pago vira um documento em
+  `financeiro_entradas/<id do pagamento>` — bruto, taxa do Mercado Pago, líquido, meio
+  (Pix ou cartão), plano e mês (horário de Brasília). Quem grava é só este serviço: o
+  webhook quando o aviso chega, a varredura diária (últimos 35 dias) e o botão
+  **"Buscar no Mercado Pago"** da tela, que chama `POST /financeiro` (só super admin)
+  para o período escolhido. O id do pagamento é a chave, então buscar de novo não duplica.
+- **Custos**: cadastrados na tela (`financeiro_custos/`), com recorrência mensal, anual
+  ou única, em real ou dólar (cotação em `financeiro_config/geral`).
+- A visão é de **caixa**: custo anual pesa no mês em que é cobrado.
+- As Regras deixam só o super admin ler; ninguém escreve entrada pelo navegador.
+  **Publique a versão nova de `firestore.rules`** para a tela funcionar.
 
 ## Como o cancelamento funciona
 

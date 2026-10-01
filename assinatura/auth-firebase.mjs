@@ -87,5 +87,9 @@ export async function verificarTokenFirebase(idToken, projetoId) {
     if (Number(corpo.exp) <= agora) throw new Error('cracha vencido');
     if (Number(corpo.iat) > agora + 300) throw new Error('cracha emitido no futuro');
 
-    return { uid: String(corpo.sub), email: String(corpo.email || '').toLowerCase() };
+    return {
+        uid: String(corpo.sub),
+        email: String(corpo.email || '').toLowerCase(),
+        emailVerificado: corpo.email_verified === true
+    };
 }

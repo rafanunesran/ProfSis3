@@ -14,6 +14,7 @@ function iniciarAdmin() {
     renderAdminEscolas();
     renderBackupOptions(); // Nova função
     renderChavesIANav();
+    if (typeof renderFinanceiroNav === 'function') renderFinanceiroNav();
 }
 
 async function fetchEscolas() {
@@ -137,6 +138,7 @@ async function renderAdminEscolas() {
     document.getElementById('adminEscolaDetalheScreen').style.display = 'none';
     document.getElementById('adminBackupScreen').style.display = 'none';
     if (document.getElementById('adminChavesIAScreen')) document.getElementById('adminChavesIAScreen').style.display = 'none';
+    if (document.getElementById('adminFinanceiroScreen')) document.getElementById('adminFinanceiroScreen').style.display = 'none';
 
     let html = `
         <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom: 15px;">
@@ -345,6 +347,7 @@ async function verUsuariosEscola(escolaId) {
     document.getElementById('adminEscolaDetalheScreen').style.display = 'block';
     document.getElementById('adminBackupScreen').style.display = 'none';
     if (document.getElementById('adminChavesIAScreen')) document.getElementById('adminChavesIAScreen').style.display = 'none';
+    if (document.getElementById('adminFinanceiroScreen')) document.getElementById('adminFinanceiroScreen').style.display = 'none';
 
     const container = document.getElementById('adminEscolaDetalheScreen');
     container.innerHTML = `
@@ -1432,6 +1435,7 @@ function renderBackupOptions() {
             document.getElementById('adminEscolaDetalheScreen').style.display = 'none';
             document.getElementById('adminBackupScreen').style.display = 'block';
             if (document.getElementById('adminChavesIAScreen')) document.getElementById('adminChavesIAScreen').style.display = 'none';
+            if (document.getElementById('adminFinanceiroScreen')) document.getElementById('adminFinanceiroScreen').style.display = 'none';
         };
         header.insertBefore(btn, header.lastElementChild); // Antes do Sair
     }
@@ -1660,6 +1664,7 @@ async function renderChavesIAScreen() {
     document.getElementById('adminEscolasScreen').style.display = 'none';
     document.getElementById('adminEscolaDetalheScreen').style.display = 'none';
     document.getElementById('adminBackupScreen').style.display = 'none';
+    if (document.getElementById('adminFinanceiroScreen')) document.getElementById('adminFinanceiroScreen').style.display = 'none';
 
     if (!document.getElementById('adminChavesIAScreen')) {
         const div = document.createElement('div');

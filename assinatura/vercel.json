@@ -10,6 +10,7 @@
   "rewrites": [
     { "source": "/pix", "destination": "/api/pix" },
     { "source": "/sincronizar", "destination": "/api/sincronizar" },
+    { "source": "/financeiro", "destination": "/api/financeiro" },
     { "source": "/cancelar", "destination": "/api/cancelar" },
     { "source": "/reconciliar", "destination": "/api/reconciliar" },
     { "source": "/webhook", "destination": "/api/webhook" }

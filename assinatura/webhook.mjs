@@ -45,6 +45,7 @@ import {
 } from './regras.mjs';
 import { lerDoc, gravarDoc, apagarDoc, listarDocs, lerContaServico } from './firestore-rest.mjs';
 import { verificarTokenFirebase } from './auth-firebase.mjs';
+import { registrarEntrada, sincronizarLivroCaixa, ehSuperAdmin } from './financeiro.mjs';
 
 const MP_API = 'https://api.mercadopago.com';
 
@@ -147,6 +148,10 @@ export async function processarNotificacao(corpo, ambiente, ferramentas) {
     if (!assinatura) return { feito: false, motivo: 'assinatura nao encontrada no Mercado Pago' };
 
     if (assinatura._tipo === 'pagamento') {
+        // Todo pagamento que mexeu em dinheiro entra no livro-caixa — Pix de apoio,
+        // cobranca mensal do cartao, estorno. Antes de decidir se vira plano.
+        const { pacotes } = await pacotesDoServico(ambiente, ferramentas);
+        await registrarEntrada(assinatura, pacotes, ferramentas);
         return processarApoioPix(assinatura, ambiente, ferramentas);
     }
 
@@ -770,6 +775,61 @@ export async function varrerPagamentosPerdidos(ambiente, ferramentas) {
     return relatorio;
 }
 
+// ----------------------------------------------------------------------------
+// O LIVRO-CAIXA SOB DEMANDA (/financeiro) — so' o super admin
+// ----------------------------------------------------------------------------
+// A tela financeira pede "busca os ultimos N dias no Mercado Pago". O cracha do
+// Firebase prova quem pede, e so' as contas de super admin passam: a resposta nao
+// devolve dado nenhum (os numeros ficam no Firestore, que as Regras ja' fecham), mas
+// cada chamada gasta cota do Mercado Pago, e nao e' botao para ficar aberto.
+function ehRotaDeFinanceiro(request) {
+    try {
+        return /\/financeiro\/?$/.test(new URL(request.url).pathname);
+    } catch (e) { return false; }
+}
+
+async function tratarFinanceiro(request, ambiente) {
+    const cors = cabecalhosCors(request, ambiente);
+
+    const autorizacao = request.headers.get('authorization') || '';
+    const token = autorizacao.toLowerCase().indexOf('bearer ') === 0 ? autorizacao.slice(7).trim() : '';
+    if (!token) return responder({ erro: 'falta o cracha da sessao' }, 401, cors);
+
+    const projeto = ambiente.FIREBASE_PROJECT_ID;
+    let dono;
+    try {
+        dono = await verificarTokenFirebase(token, projeto);
+    } catch (e) {
+        return responder({ erro: 'sessao invalida: ' + (e && e.message) }, 401, cors);
+    }
+    if (!ehSuperAdmin(dono)) return responder({ erro: 'so o super admin' }, 403, cors);
+
+    let conta;
+    try {
+        conta = lerContaServico(ambiente.FIREBASE_SERVICE_ACCOUNT);
+    } catch (e) {
+        return responder({ erro: 'o servico esta mal configurado (credencial do Firebase)' }, 503, cors);
+    }
+
+    let pedido = {};
+    try { pedido = await request.json(); } catch (e) { /* sem corpo: periodo padrao */ }
+
+    const ferramentas = {
+        ler: (caminho) => lerDoc(projeto, caminho, conta),
+        gravar: (caminho, dados) => gravarDoc(projeto, caminho, dados, conta),
+        buscarNoMp: (caminho) => buscarNoMp(caminho, ambiente.MP_ACCESS_TOKEN)
+    };
+    try {
+        const { pacotes } = await pacotesDoServico(ambiente, ferramentas);
+        const relatorio = await sincronizarLivroCaixa(pedido && pedido.dias, pacotes, ferramentas);
+        console.log('[financeiro] livro-caixa:', JSON.stringify(relatorio));
+        return responder(Object.assign({ ok: true }, relatorio), 200, cors);
+    } catch (e) {
+        console.error('[financeiro] falhou:', e && e.message);
+        return responder({ erro: 'nao consegui buscar no Mercado Pago: ' + (e && e.message) }, 500, cors);
+    }
+}
+
 function ehRotaDeSincronizar(request) {
     try {
         return /\/sincronizar\/?$/.test(new URL(request.url).pathname);
@@ -840,6 +900,12 @@ export async function reconciliarAssinaturas(ambiente, ferramentas) {
     // avisado ainda seria cortado logo abaixo.
     if (buscarNoMp) {
         relatorio.recuperados = await varrerPagamentosPerdidos(ambiente, ferramentas);
+        try {
+            const { pacotes } = await pacotesDoServico(ambiente, ferramentas);
+            relatorio.livroCaixa = await sincronizarLivroCaixa(35, pacotes, ferramentas);
+        } catch (e) {
+            console.warn('[financeiro] varredura do livro-caixa falhou:', e && e.message);
+        }
     }
 
     let pagina = '';
@@ -1040,6 +1106,10 @@ export async function tratarRequisicao(request, ambiente) {
     if (ehRotaDeCancelamento(request)) {
         if (request.method !== 'POST') return new Response('metodo nao suportado', { status: 405 });
         return tratarCancelamento(request, ambiente);
+    }
+    if (ehRotaDeFinanceiro(request)) {
+        if (request.method !== 'POST') return new Response('metodo nao suportado', { status: 405 });
+        return tratarFinanceiro(request, ambiente);
     }
     if (ehRotaDeSincronizar(request)) {
         if (request.method !== 'POST') return new Response('metodo nao suportado', { status: 405 });
