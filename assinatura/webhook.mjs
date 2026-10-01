@@ -45,7 +45,10 @@ import {
 } from './regras.mjs';
 import { lerDoc, gravarDoc, apagarDoc, listarDocs, lerContaServico } from './firestore-rest.mjs';
 import { verificarTokenFirebase } from './auth-firebase.mjs';
-import { registrarEntrada, sincronizarLivroCaixa, ehSuperAdmin } from './financeiro.mjs';
+import {
+    registrarEntrada, sincronizarLivroCaixa, ehSuperAdmin, ehDescricaoSisprof,
+    assinaturaEhDoSisprof, montarContextoSisprof
+} from './financeiro.mjs';
 
 const MP_API = 'https://api.mercadopago.com';
 
@@ -151,7 +154,8 @@ export async function processarNotificacao(corpo, ambiente, ferramentas) {
         // Todo pagamento que mexeu em dinheiro entra no livro-caixa — Pix de apoio,
         // cobranca mensal do cartao, estorno. Antes de decidir se vira plano.
         const { pacotes } = await pacotesDoServico(ambiente, ferramentas);
-        await registrarEntrada(assinatura, pacotes, ferramentas);
+        await registrarEntrada(assinatura, pacotes, ferramentas,
+            await montarContextoSisprof(ambiente, ferramentas));
         return processarApoioPix(assinatura, ambiente, ferramentas);
     }
 
@@ -252,7 +256,11 @@ export async function processarApoioPix(pagamento, ambiente, ferramentas, uidCon
 
     const { pacotes } = await pacotesDoServico(ambiente, ferramentas);
     const referencia = lerReferenciaPix(pagamento.external_reference);
-    const credito = referencia || pacotePorValor(pagamento.transaction_amount, pacotes);
+    // Sem a nossa referencia, o valor so' identifica o pacote quando a descricao diz
+    // SisProf: a conta do Mercado Pago recebe pagamentos de outras automacoes, e um
+    // Pix de R$ 30 de outra coisa nao pode virar 3 meses de Apoia-se.
+    const credito = referencia
+        || (ehDescricaoSisprof(pagamento.description) ? pacotePorValor(pagamento.transaction_amount, pacotes) : null);
 
     if (!credito) {
         // Pagamento que nao corresponde a nenhum pacote de apoio. Nao e' erro: a
@@ -645,7 +653,8 @@ async function tratarPedidoDePix(request, ambiente) {
 const DIAS_DE_PIX_A_CONFERIR = 35;
 
 // Os pagamentos aprovados recentes que podem ser apoio: os que nos criamos (a
-// referencia "uid|plano|meses" esta' la') e os Pix avulsos. Cobranca mensal do cartao
+// referencia "uid|plano|meses" esta' la') e os Pix avulsos com "SisProf" na descricao
+// (a conta recebe pagamentos de outras automacoes, que nao podem virar plano). Cobranca mensal do cartao
 // tambem aparece nesta busca e NAO pode virar meses de Pix — por isso o filtro.
 export async function listarPixAprovados(buscarNoMp, maxPaginas) {
     const achados = [];
@@ -662,7 +671,8 @@ export async function listarPixAprovados(buscarNoMp, maxPaginas) {
     }
     return achados
         .filter(p => p && (lerReferenciaPix(p.external_reference)
-                           || String(p.payment_method_id || '').toLowerCase() === 'pix'))
+                           || (String(p.payment_method_id || '').toLowerCase() === 'pix'
+                               && ehDescricaoSisprof(p.description))))
         .map(p => Object.assign({ _tipo: 'pagamento' }, p))
         // Do mais antigo para o mais novo: os meses somam na ordem em que foram pagos.
         .sort((a, b) => (Date.parse(a.date_approved || '') || 0) - (Date.parse(b.date_approved || '') || 0));
@@ -713,9 +723,12 @@ export async function sincronizarUsuario(dono, ambiente, ferramentas) {
     if (email) assinaturas = assinaturas.concat(
         await listarAssinaturasNoMp(buscarNoMp, { payer_email: email }, 1));
     assinaturas = assinaturas.concat(await listarAssinaturasNoMp(buscarNoMp, {}, 3));
+    const ctx = await montarContextoSisprof(ambiente, ferramentas);
     const minhas = assinaturas.filter(a => {
         if (vistas[a.id]) return false;
         vistas[a.id] = true;
+        // Assinatura de outra automacao da mesma conta, com o mesmo e-mail, nao e' plano.
+        if (!assinaturaEhDoSisprof(a, ctx)) return false;
         const ref = String(a.external_reference || '').trim();
         // Referencia com o uid de OUTRA conta: e' dela, mesmo que o e-mail coincida.
         if (ref && ref.indexOf('@') === -1 && ref !== uid) return false;
@@ -756,8 +769,10 @@ export async function varrerPagamentosPerdidos(ambiente, ferramentas) {
     }
 
     try {
-        const autorizadas = (await listarAssinaturasNoMp(buscarNoMp, { status: 'authorized' }, 10))
-            .sort(ordemDeModificacao);
+        const ctx = await montarContextoSisprof(ambiente, ferramentas);
+        const todas = await listarAssinaturasNoMp(buscarNoMp, { status: 'authorized' }, 10);
+        const autorizadas = todas.filter(a => assinaturaEhDoSisprof(a, ctx)).sort(ordemDeModificacao);
+        relatorio.assinaturasDeFora = todas.length - autorizadas.length;
         for (const a of autorizadas) {
             try {
                 const r = await processarAssinaturaMp(a, ambiente, ferramentas);
@@ -817,11 +832,14 @@ async function tratarFinanceiro(request, ambiente) {
     const ferramentas = {
         ler: (caminho) => lerDoc(projeto, caminho, conta),
         gravar: (caminho, dados) => gravarDoc(projeto, caminho, dados, conta),
+        apagar: (caminho) => apagarDoc(projeto, caminho, conta),
+        listar: (colecao, pagina) => listarDocs(projeto, colecao, conta, pagina),
         buscarNoMp: (caminho) => buscarNoMp(caminho, ambiente.MP_ACCESS_TOKEN)
     };
     try {
         const { pacotes } = await pacotesDoServico(ambiente, ferramentas);
-        const relatorio = await sincronizarLivroCaixa(pedido && pedido.dias, pacotes, ferramentas);
+        const relatorio = await sincronizarLivroCaixa(pedido && pedido.dias, pacotes, ferramentas,
+            await montarContextoSisprof(ambiente, ferramentas));
         console.log('[financeiro] livro-caixa:', JSON.stringify(relatorio));
         return responder(Object.assign({ ok: true }, relatorio), 200, cors);
     } catch (e) {
@@ -862,6 +880,7 @@ async function tratarSincronizar(request, ambiente) {
     try {
         const resultado = await sincronizarUsuario(dono, ambiente, {
             ler: (caminho) => lerDoc(projeto, caminho, conta),
+            listar: (colecao, pagina) => listarDocs(projeto, colecao, conta, pagina),
             gravar: (caminho, dados) => gravarDoc(projeto, caminho, dados, conta),
             apagar: (caminho) => apagarDoc(projeto, caminho, conta),
             buscarNoMp: (caminho) => buscarNoMp(caminho, ambiente.MP_ACCESS_TOKEN)
@@ -902,7 +921,8 @@ export async function reconciliarAssinaturas(ambiente, ferramentas) {
         relatorio.recuperados = await varrerPagamentosPerdidos(ambiente, ferramentas);
         try {
             const { pacotes } = await pacotesDoServico(ambiente, ferramentas);
-            relatorio.livroCaixa = await sincronizarLivroCaixa(35, pacotes, ferramentas);
+            relatorio.livroCaixa = await sincronizarLivroCaixa(35, pacotes, ferramentas,
+                await montarContextoSisprof(ambiente, ferramentas));
         } catch (e) {
             console.warn('[financeiro] varredura do livro-caixa falhou:', e && e.message);
         }
@@ -1163,7 +1183,8 @@ export async function tratarRequisicao(request, ambiente) {
             buscar: (acao) => buscarAssinatura(acao, ambiente.MP_ACCESS_TOKEN),
             ler: (caminho) => lerDoc(projeto, caminho, conta),
             gravar: (caminho, dados) => gravarDoc(projeto, caminho, dados, conta),
-            apagar: (caminho) => apagarDoc(projeto, caminho, conta)
+            apagar: (caminho) => apagarDoc(projeto, caminho, conta),
+            buscarNoMp: (caminho) => buscarNoMp(caminho, ambiente.MP_ACCESS_TOKEN)
         });
         console.log('[assinatura]', JSON.stringify(resultado));
         return new Response(JSON.stringify(resultado), {

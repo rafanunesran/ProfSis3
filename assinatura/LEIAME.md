@@ -360,6 +360,13 @@ Para conferir por que um aviso falhou, veja os logs da função na Vercel: `avis
   webhook quando o aviso chega, a varredura diária (últimos 35 dias) e o botão
   **"Buscar no Mercado Pago"** da tela, que chama `POST /financeiro` (só super admin)
   para o período escolhido. O id do pagamento é a chave, então buscar de novo não duplica.
+- **Só o que é do SisProf**: a conta do Mercado Pago pode receber pagamentos de outras
+  automações. Entra no livro (e vira plano) apenas o que tem marca do SisProf: o Pix
+  gerado pelo `/pix` (referência `uid|plano|meses`), descrição com "SisProf", ou
+  cobrança de assinatura de um plano do SisProf — reconhecido por `MP_PLANO_APOIASE_ID`
+  / `MP_PLANO_PROFESSOR_ID`, pelo nome do plano conter "SisProf", ou por já estar no
+  banco. **Cadastre os dois ids de plano na Vercel** (ou mantenha "SisProf" no nome dos
+  planos). Buscar de novo um período apaga do livro o que a versão antiga pegou errado.
 - **Custos**: cadastrados na tela (`financeiro_custos/`), com recorrência mensal, anual
   ou única, em real ou dólar (cotação em `financeiro_config/geral`).
 - A visão é de **caixa**: custo anual pesa no mês em que é cobrado.

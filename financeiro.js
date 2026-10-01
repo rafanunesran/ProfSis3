@@ -508,7 +508,8 @@ async function buscarEntradasNoMercadoPago() {
         await carregarDadosFinanceiros();
         renderTelaFinanceira();
         alert('Mercado Pago consultado: ' + dados.lidos + ' pagamento(s) lido(s), ' +
-              dados.gravados + ' no livro-caixa.');
+              dados.gravados + ' do SisProf no livro-caixa' +
+              (dados.deFora ? ', ' + dados.deFora + ' de fora (outras automações da conta) ignorado(s)' : '') + '.');
     } catch (e) {
         alert('Não consegui falar com o serviço (' + _fin.servico + '): ' + (e && e.message ? e.message : e));
     } finally {

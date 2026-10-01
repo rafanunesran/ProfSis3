@@ -18,6 +18,104 @@
 
 import { lerReferenciaPix, pacotePorValor, planoPorValor } from './regras.mjs';
 
+// ----------------------------------------------------------------------------
+// ESTE PAGAMENTO E' DO SISPROF?
+// ----------------------------------------------------------------------------
+// A conta do Mercado Pago recebe outras coisas alem do SisProf (outra automacao, outro
+// produto). A primeira versao gravava TODO pagamento aprovado da conta no livro — e o
+// financeiro do SisProf aparecia com dinheiro que nao era dele. Agora so' entra o que
+// tem marca do SisProf:
+//   1. Pix gerado pelo /pix: a referencia "uid|plano|meses" foi posta por nos;
+//   2. descricao com "SisProf" (o /pix escreve "SisProf - apoio ..."; o link antigo de
+//      pagamento e os planos de assinatura tambem levam o nome);
+//   3. cobranca de assinatura cujo preapproval e' de um plano do SisProf — pelo id do
+//      plano (MP_PLANO_*), pelo nome do plano, ou por ja' estar no nosso banco.
+// O que nao passa por nenhum dos tres fica de fora. Valor igual ao de um pacote NAO
+// basta: outra automacao pode cobrar os mesmos R$ 30.
+
+export function ehDescricaoSisprof(texto) {
+    return /sis\s*prof/i.test(String(texto || ''));
+}
+
+// O id da assinatura (preapproval) que gerou uma cobranca mensal do cartao.
+export function idDaAssinaturaDoPagamento(pagamento) {
+    const dados = (pagamento && pagamento.point_of_interaction
+                   && pagamento.point_of_interaction.transaction_data) || {};
+    const meta = (pagamento && pagamento.metadata) || {};
+    return String(dados.subscription_id || meta.preapproval_id || meta.subscription_id || '');
+}
+
+// `contexto`: { planosSisprof: [ids], conhecidas: Set de preapprovalIds do banco,
+//               buscarNoMp, _cache }
+export async function pagamentoEhDoSisprof(pagamento, contexto) {
+    if (!pagamento) return false;
+    if (lerReferenciaPix(pagamento.external_reference)) return true;
+    if (ehDescricaoSisprof(pagamento.description)) return true;
+
+    const idAssinatura = idDaAssinaturaDoPagamento(pagamento);
+    if (!idAssinatura) return false;
+    const ctx = contexto || {};
+    if (ctx.conhecidas && ctx.conhecidas.has(idAssinatura)) return true;
+    if (!ctx.buscarNoMp) return false;
+
+    ctx._cache = ctx._cache || {};
+    if (!(idAssinatura in ctx._cache)) {
+        let nossa = false;
+        try {
+            const pre = await ctx.buscarNoMp('/preapproval/' + encodeURIComponent(idAssinatura));
+            const planos = (ctx.planosSisprof || []).filter(Boolean);
+            nossa = !!pre && ((pre.preapproval_plan_id && planos.indexOf(pre.preapproval_plan_id) !== -1)
+                              || ehDescricaoSisprof(pre.reason));
+        } catch (e) {
+            console.warn('[financeiro] nao consegui consultar a assinatura', idAssinatura, e && e.message);
+        }
+        ctx._cache[idAssinatura] = nossa;
+    }
+    return ctx._cache[idAssinatura];
+}
+
+// Uma assinatura (preapproval) e' do SisProf? Mesmos criterios: o plano e' um dos
+// nossos (MP_PLANO_*), o nome leva "SisProf", ou ela ja' esta' no nosso banco.
+export function assinaturaEhDoSisprof(preapproval, contexto) {
+    if (!preapproval) return false;
+    const ctx = contexto || {};
+    const planos = (ctx.planosSisprof || []).filter(Boolean);
+    if (preapproval.preapproval_plan_id && planos.indexOf(String(preapproval.preapproval_plan_id)) !== -1) return true;
+    if (ehDescricaoSisprof(preapproval.reason)) return true;
+    return !!(ctx.conhecidas && ctx.conhecidas.has(String(preapproval.id || '')));
+}
+
+// O contexto a partir do ambiente e do banco. `listar` e' opcional: sem ele, as
+// assinaturas so' sao reconhecidas pelo id ou nome do plano.
+export async function montarContextoSisprof(ambiente, ferramentas) {
+    const conhecidas = new Set();
+    if (ferramentas && ferramentas.listar) {
+        try {
+            for (const colecao of ['assinaturas', 'assinaturas_sem_dono']) {
+                let pagina = '';
+                do {
+                    const lote = await ferramentas.listar(colecao, pagina);
+                    pagina = lote.proximaPagina;
+                    lote.documentos.forEach(d => {
+                        if (!d.preapprovalId) return;
+                        // Em assinaturas_sem_dono so' vale o que o super admin vinculou:
+                        // o resto pode ser justamente a assinatura de outra automacao.
+                        if (colecao === 'assinaturas' || d.uidAtribuido) conhecidas.add(String(d.preapprovalId));
+                    });
+                } while (pagina);
+            }
+        } catch (e) {
+            console.warn('[financeiro] nao consegui ler as assinaturas conhecidas:', e && e.message);
+        }
+    }
+    return {
+        planosSisprof: [ambiente && ambiente.MP_PLANO_APOIASE_ID, ambiente && ambiente.MP_PLANO_PROFESSOR_ID]
+            .filter(Boolean).map(String),
+        conhecidas: conhecidas,
+        buscarNoMp: ferramentas && ferramentas.buscarNoMp
+    };
+}
+
 // So' o que mexeu em dinheiro de verdade vira linha no livro. Pendente, rejeitado e
 // expirado (o Pix gerado e nao pago) nao sao entrada.
 const STATUS_QUE_CONTAM = ['approved', 'refunded', 'charged_back'];
@@ -67,7 +165,7 @@ export function montarEntradaFinanceira(pagamento, pacotes) {
         plano = referencia.plano;
         meses = referencia.meses;
         uid = referencia.uid;
-    } else if (metodo === 'pix') {
+    } else if (metodo === 'pix' && ehDescricaoSisprof(pagamento.description)) {
         const pacote = pacotePorValor(valor, pacotes || []);
         if (pacote) {
             categoria = 'pix';
@@ -97,26 +195,35 @@ export function montarEntradaFinanceira(pagamento, pacotes) {
     };
 }
 
-// Grava uma linha. Nunca estoura: o livro e' contabilidade, e uma falha aqui nao
-// pode impedir que o professor receba o plano que pagou.
-export async function registrarEntrada(pagamento, pacotes, ferramentas) {
+// Grava uma linha — so' se o pagamento for do SisProf. O que nao e' (e foi gravado
+// pela versao antiga, que pegava tudo) e' APAGADO: buscar de novo o mesmo periodo
+// limpa o livro. Nunca estoura: o livro e' contabilidade, e uma falha aqui nao pode
+// impedir que o professor receba o plano que pagou.
+export async function registrarEntrada(pagamento, pacotes, ferramentas, contexto) {
     try {
+        const id = String((pagamento && pagamento.id) || '');
+        if (!id) return 'ignorado';
+        if (!(await pagamentoEhDoSisprof(pagamento, contexto))) {
+            if (ferramentas.apagar) await ferramentas.apagar('financeiro_entradas/' + id);
+            return 'de-fora';
+        }
         const entrada = montarEntradaFinanceira(pagamento, pacotes);
-        if (!entrada) return false;
+        if (!entrada) return 'ignorado';
         await ferramentas.gravar('financeiro_entradas/' + entrada.id, entrada);
-        return true;
+        return 'gravado';
     } catch (e) {
         console.warn('[financeiro] nao consegui registrar o pagamento', pagamento && pagamento.id,
                      e && e.message);
-        return false;
+        return 'falhou';
     }
 }
 
-// Puxa do Mercado Pago os pagamentos de um periodo e grava no livro.
-export async function sincronizarLivroCaixa(dias, pacotes, ferramentas) {
+// Puxa do Mercado Pago os pagamentos de um periodo e grava no livro o que e' do SisProf.
+export async function sincronizarLivroCaixa(dias, pacotes, ferramentas, contexto) {
     const { buscarNoMp } = ferramentas;
     const periodo = Math.max(1, Math.min(Math.round(Number(dias) || 35), 400));
-    const relatorio = { dias: periodo, lidos: 0, gravados: 0 };
+    const relatorio = { dias: periodo, lidos: 0, gravados: 0, deFora: 0 };
+    const ctx = contexto || { buscarNoMp: buscarNoMp };
 
     for (let pagina = 0; pagina < 20; pagina++) {
         const parametros = new URLSearchParams({
@@ -128,7 +235,9 @@ export async function sincronizarLivroCaixa(dias, pacotes, ferramentas) {
         const lista = (resposta && Array.isArray(resposta.results)) ? resposta.results : [];
         relatorio.lidos += lista.length;
         for (const pagamento of lista) {
-            if (await registrarEntrada(pagamento, pacotes, ferramentas)) relatorio.gravados++;
+            const r = await registrarEntrada(pagamento, pacotes, ferramentas, ctx);
+            if (r === 'gravado') relatorio.gravados++;
+            else if (r === 'de-fora') relatorio.deFora++;
         }
         if (lista.length < 100) break;
     }

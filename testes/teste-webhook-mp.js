@@ -566,9 +566,19 @@ const assinaturaMp = (extra) => Object.assign({
   banco = bancoFalso(comLista);
   r = await W.processarNotificacao({ type: 'payment', data: { id: 'PAY-102' } }, ambientePix,
       Object.assign({ buscar: async () => pagamentoPix({ id: 'PAY-102', external_reference: '',
-        transaction_amount: 240 }) }, comApagar()));
+        transaction_amount: 240, description: 'SisProf - apoio Professor, 12 meses' }) }, comApagar()));
   ok('sem referencia, o valor recebido identifica o pacote (12 meses de Professor)',
       r.feito === true && r.meses === 12 && r.plano === 'professor');
+
+  // A conta do Mercado Pago recebe pagamentos de OUTRA automacao. Mesmo valor de um
+  // pacote nao basta: sem a nossa referencia e sem "SisProf" na descricao, nao e' nosso.
+  banco = bancoFalso(comLista);
+  r = await W.processarNotificacao({ type: 'payment', data: { id: 'PAY-104' } }, ambientePix,
+      Object.assign({ buscar: async () => pagamentoPix({ id: 'PAY-104', external_reference: 'pedido-9981',
+        transaction_amount: 240, description: 'Curso de Excel - acesso anual' }) }, comApagar()));
+  ok('Pix de outra automacao com o mesmo valor de um pacote NAO vira plano',
+      r.feito === false && !banco.docs['assinaturas/uid-professor']
+      && !Object.keys(banco.docs).some(k => k.indexOf('assinaturas_sem_dono/') === 0));
 
   // Pagamento que nao e' de apoio nao pode virar plano por acidente.
   banco = bancoFalso(comLista);
@@ -835,7 +845,8 @@ const assinaturaMp = (extra) => Object.assign({
 
   b13 = bancoVarredura({ 'system/users_list': listaAna });
   let mp = mpFalso([pixAna, pixOutro, cobrancaCartao], [cartaoAna]);
-  r = await W.sincronizarUsuario({ uid: 'uid-ana', email: 'ana@escola.com' }, Object.assign({}, ambiente13, config),
+  const ambienteSync = Object.assign({}, ambiente13, config, { MP_PLANO_PROFESSOR_ID: 'PLANO-PROF' });
+  r = await W.sincronizarUsuario({ uid: 'uid-ana', email: 'ana@escola.com' }, ambienteSync,
       Object.assign({ buscarNoMp: mp.buscarNoMp }, b13));
   ok('"ja paguei" encontra o Pix e o cartao da pessoa e libera o plano',
       r.ok === true && r.pix === 1 && r.cartao === 1 && r.plano === 'professor'
@@ -852,10 +863,29 @@ const assinaturaMp = (extra) => Object.assign({
       (b13.docs['assinaturas/uid-ana'].pagamentosCreditados || []).indexOf('PAY-CARTAO') === -1);
 
   const validoAntes = b13.docs['assinaturas/uid-ana'].validoAte;
-  r = await W.sincronizarUsuario({ uid: 'uid-ana', email: 'ana@escola.com' }, Object.assign({}, ambiente13, config),
+  r = await W.sincronizarUsuario({ uid: 'uid-ana', email: 'ana@escola.com' }, ambienteSync,
       Object.assign({ buscarNoMp: mp.buscarNoMp }, b13));
   ok('apertar "ja paguei" de novo nao credita o dobro',
       r.pix === 0 && b13.docs['assinaturas/uid-ana'].validoAte === validoAntes);
+
+  // Assinatura de outra automacao, mesmo e-mail: nao e' plano do SisProf.
+  const b13c = bancoVarredura({ 'system/users_list': listaAna });
+  r = await W.sincronizarUsuario({ uid: 'uid-ana', email: 'ana@escola.com' }, ambienteSync,
+      Object.assign({ buscarNoMp: mpFalso([], [assinaturaMp({ id: 'PRE-OUTRA', external_reference: '',
+        payer_email: 'ana@escola.com', preapproval_plan_id: 'PLANO-DE-OUTRO-PRODUTO',
+        reason: 'Clube do Livro - mensal' })]).buscarNoMp }, b13c));
+  ok('assinatura de outra automacao com o mesmo e-mail NAO libera plano',
+      r.cartao === 0 && !b13c.docs['assinaturas/uid-ana']);
+
+  const b13d = bancoVarredura({ 'system/users_list': listaAna });
+  rel = await W.reconciliarAssinaturas(ambiente13, Object.assign({ buscarNoMp: mpFalso([], [
+    assinaturaMp({ id: 'PRE-OUTRA', external_reference: '', payer_email: 'x@y.com',
+      preapproval_plan_id: 'PLANO-DE-OUTRO-PRODUTO', reason: 'Clube do Livro' }),
+    assinaturaMp({ id: 'PRE-NOSSA', external_reference: 'uid-ana', preapproval_plan_id: 'QUALQUER',
+      reason: 'SisProf - Professor' })]).buscarNoMp }, b13d));
+  ok('a varredura so olha assinaturas do SisProf (pelo nome do plano) e nao enche "sem dono"',
+      rel.recuperados.assinaturasGravadas === 1 && rel.recuperados.assinaturasDeFora === 1
+      && !b13d.docs['assinaturas_sem_dono/PRE-OUTRA'] && b13d.docs['assinaturas/uid-ana'].plano === 'professor');
 
   // A varredura diaria credita o Pix cujo aviso nunca chegou.
   b13 = bancoVarredura({ 'system/users_list': listaAna });

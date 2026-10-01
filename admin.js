@@ -730,9 +730,15 @@ async function carregarPagamentosSemDonoAdmin() {
                             (${escaparAdminTexto(tipo)})<br>
                             <span style="color:#5f6b7f;">pagador: ${escaparAdminTexto(i.email || '(sem e-mail)')} · ${quando}</span>
                         </div>
-                        <button class="btn btn-sm btn-primary" onclick="vincularPagamentoSemDonoAdmin('${String(i._id).replace(/[^A-Za-z0-9_-]/g, '')}')">
-                            Vincular a uma conta
-                        </button>
+                        <div style="display:flex; gap:6px; flex-shrink:0;">
+                            <button class="btn btn-sm btn-primary" onclick="vincularPagamentoSemDonoAdmin('${String(i._id).replace(/[^A-Za-z0-9_-]/g, '')}')">
+                                Vincular a uma conta
+                            </button>
+                            <button class="btn btn-sm btn-secondary" title="Não é do SisProf (outra automação da mesma conta do Mercado Pago)"
+                                    onclick="descartarPagamentoSemDonoAdmin('${String(i._id).replace(/[^A-Za-z0-9_-]/g, '')}')">
+                                Não é do SisProf
+                            </button>
+                        </div>
                     </div>`;
         }).join('');
     } catch (e) {
@@ -743,6 +749,20 @@ async function carregarPagamentosSemDonoAdmin() {
 function escaparAdminTexto(t) {
     return String(t == null ? '' : t).replace(/[&<>"']/g, c =>
         ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+// Pagamento de OUTRA automacao da mesma conta do Mercado Pago, que a versao antiga do
+// servico guardou aqui por engano. Hoje o servico ja' nem olha para eles; isto so'
+// limpa o que ficou.
+async function descartarPagamentoSemDonoAdmin(docId) {
+    if (!confirm('Descartar este registro?\n\nUse quando o pagamento não é do SisProf ' +
+                 '(veio de outra automação da mesma conta do Mercado Pago). Nada é cobrado nem estornado.')) return;
+    try {
+        await db.collection('assinaturas_sem_dono').doc(String(docId)).delete();
+        carregarPagamentosSemDonoAdmin();
+    } catch (e) {
+        alert('Não consegui descartar: ' + (e && e.message ? e.message : e));
+    }
 }
 
 async function vincularPagamentoSemDonoAdmin(docId) {

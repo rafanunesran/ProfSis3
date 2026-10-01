@@ -60,7 +60,8 @@ const bancoFalso = (inicial) => {
       e.categoria === 'assinatura' && e.plano === 'professor' && perto(e.liquido, 19));
 
   e = F.montarEntradaFinanceira({ id: 333, status: 'approved', transaction_amount: 60,
-    payment_method_id: 'pix', external_reference: '', date_approved: '2026-10-05T10:00:00Z' }, pacotes);
+    payment_method_id: 'pix', external_reference: '', description: 'SisProf - apoio',
+    date_approved: '2026-10-05T10:00:00Z' }, pacotes);
   ok('Pix sem referencia e reconhecido pelo valor do pacote', e.categoria === 'pix' && e.plano === 'professor');
 
   e = F.montarEntradaFinanceira({ id: 444, status: 'approved', transaction_amount: 17,
@@ -88,6 +89,50 @@ const bancoFalso = (inicial) => {
   ok('o periodo pedido chega ao Mercado Pago', /begin_date=NOW-95DAYS/.test(buscas[0]));
   rel = await F.sincronizarLivroCaixa(99999, pacotes, Object.assign({}, banco, mp));
   ok('periodo absurdo e limitado (nao varre a historia toda)', rel.dias === 400);
+
+  // ================= 2b. SO' O QUE E' DO SISPROF =================
+  // A conta do Mercado Pago recebe pagamentos de outra automacao. A primeira versao
+  // gravava todos no livro; agora so' entra o que tem marca do SisProf, e o que foi
+  // gravado errado sai quando o periodo e' buscado de novo.
+  console.log('\n2b. So entra no livro o que e do SisProf');
+  const deOutraAutomacao = { id: 900, status: 'approved', transaction_amount: 30, payment_method_id: 'pix',
+    external_reference: 'pedido-77', description: 'Curso de Excel', date_approved: '2026-10-02T10:00:00Z' };
+  const cobrancaOutra = { id: 901, status: 'approved', transaction_amount: 20, payment_method_id: 'visa',
+    operation_type: 'recurring_payment', description: 'Clube do Livro',
+    point_of_interaction: { transaction_data: { subscription_id: 'PRE-OUTRA' } }, date_approved: '2026-10-02T10:00:00Z' };
+  const cobrancaNossa = { id: 902, status: 'approved', transaction_amount: 20, payment_method_id: 'visa',
+    operation_type: 'recurring_payment', description: 'Mensalidade',
+    point_of_interaction: { transaction_data: { subscription_id: 'PRE-NOSSA' } }, date_approved: '2026-10-02T10:00:00Z' };
+  const cobrancaPlanoNomeado = Object.assign({}, cobrancaNossa, { id: 903,
+    point_of_interaction: { transaction_data: { subscription_id: 'PRE-NOVA' } } });
+  const consultas = [];
+  const mpPre = { buscarNoMp: async (c) => {
+    if (c.indexOf('/v1/payments/search') === 0) return { results: [pix, deOutraAutomacao, cobrancaOutra, cobrancaNossa, cobrancaPlanoNomeado] };
+    consultas.push(c);
+    if (c === '/preapproval/PRE-OUTRA') return { id: 'PRE-OUTRA', reason: 'Clube do Livro', preapproval_plan_id: 'P-OUTRO' };
+    if (c === '/preapproval/PRE-NOVA') return { id: 'PRE-NOVA', reason: 'SisProf — Professor', preapproval_plan_id: 'P-X' };
+    return null;
+  } };
+  banco = bancoFalso({
+    'financeiro_entradas/900': { id: '900', mes: '2026-10', status: 'approved', valor: 30 },
+    'assinaturas/uid-ana': { preapprovalId: 'PRE-NOSSA', status: 'ativa' }
+  });
+  const listar = async (colecao) => ({ proximaPagina: '', documentos: Object.keys(banco.docs)
+    .filter(k => k.indexOf(colecao + '/') === 0).map(k => Object.assign({ _id: k.split('/')[1] }, banco.docs[k])) });
+  const ctx = await F.montarContextoSisprof({}, Object.assign({ listar }, mpPre));
+  rel = await F.sincronizarLivroCaixa(35, pacotes, Object.assign({}, banco, mpPre), ctx);
+  ok('Pix com a nossa referencia entra', !!banco.docs['financeiro_entradas/111']);
+  ok('e o que a versao antiga gravou errado e apagado ao buscar de novo', !banco.docs['financeiro_entradas/900']
+      && rel.deFora === 2);
+  ok('cobranca de assinatura de outro produto NAO entra', !banco.docs['financeiro_entradas/901']);
+  ok('cobranca de assinatura que ja esta no nosso banco entra', !!banco.docs['financeiro_entradas/902']);
+  ok('cobranca de assinatura nova de plano "SisProf" entra', !!banco.docs['financeiro_entradas/903']);
+  ok('assinatura conhecida nem precisa ser consultada no Mercado Pago',
+      consultas.indexOf('/preapproval/PRE-NOSSA') === -1);
+  ok('o id do plano (MP_PLANO_*) tambem identifica a assinatura',
+      F.assinaturaEhDoSisprof({ id: 'Z', preapproval_plan_id: 'PLANO-PROF', reason: 'x' },
+        { planosSisprof: ['PLANO-PROF'] })
+      && !F.assinaturaEhDoSisprof({ id: 'Z', preapproval_plan_id: 'OUTRO', reason: 'x' }, { planosSisprof: ['PLANO-PROF'] }));
 
   // ================= 3. O AVISO DO MERCADO PAGO GRAVA NO LIVRO =================
   console.log('\n3. O aviso de pagamento grava no livro e ainda credita o plano');
