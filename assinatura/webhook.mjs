@@ -47,7 +47,7 @@ import { lerDoc, gravarDoc, apagarDoc, listarDocs, lerContaServico } from './fir
 import { verificarTokenFirebase } from './auth-firebase.mjs';
 import {
     registrarEntrada, sincronizarLivroCaixa, ehSuperAdmin, ehDescricaoSisprof,
-    assinaturaEhDoSisprof, montarContextoSisprof, montarEntradaFinanceira
+    assinaturaEhDoSisprof, montarContextoSisprof
 } from './financeiro.mjs';
 
 const MP_API = 'https://api.mercadopago.com';
@@ -244,9 +244,7 @@ export async function processarAssinaturaMp(assinatura, ambiente, ferramentas, u
 // acompanhar: existe um pagamento que CREDITA MESES. O acesso vence sozinho no fim
 // do periodo (ver assinaturaVencida em regras.mjs) — nada para cancelar, e nada
 // sendo cobrado de ninguem sem autorizacao.
-// `creditoForcado` ({ uid, plano, meses }) vem da identificacao manual do super admin
-// na tela financeira: ele diz o que o pagamento e', e isso vale mais que referencia e valor.
-export async function processarApoioPix(pagamento, ambiente, ferramentas, uidConhecido, creditoForcado) {
+export async function processarApoioPix(pagamento, ambiente, ferramentas, uidConhecido) {
     const { ler, gravar } = ferramentas;
 
     // So' dinheiro que entrou de verdade credita alguma coisa. `pending`,
@@ -261,7 +259,7 @@ export async function processarApoioPix(pagamento, ambiente, ferramentas, uidCon
     // Sem a nossa referencia, o valor so' identifica o pacote quando a descricao diz
     // SisProf: a conta do Mercado Pago recebe pagamentos de outras automacoes, e um
     // Pix de R$ 30 de outra coisa nao pode virar 3 meses de Apoia-se.
-    const credito = creditoForcado || referencia
+    const credito = referencia
         || (ehDescricaoSisprof(pagamento.description) ? pacotePorValor(pagamento.transaction_amount, pacotes) : null);
 
     if (!credito) {
@@ -799,61 +797,6 @@ export async function varrerPagamentosPerdidos(ambiente, ferramentas) {
 // Firebase prova quem pede, e so' as contas de super admin passam: a resposta nao
 // devolve dado nenhum (os numeros ficam no Firestore, que as Regras ja' fecham), mas
 // cada chamada gasta cota do Mercado Pago, e nao e' botao para ficar aberto.
-// IDENTIFICAR A MAO UM PAGAMENTO QUE O SISTEMA NAO RECONHECEU.
-//
-// Pix pago por link antigo, transferencia com descricao qualquer, pagamento sem a
-// nossa referencia: o dinheiro e' do SisProf, mas nada nele diz de quem nem do que.
-// O super admin olha na tela financeira e diz: "isto e' da conta X, plano Y, Z meses".
-//
-// O pagamento e' buscado de novo no Mercado Pago (o navegador manda so' o id; valor e
-// situacao vem de la'), e so' pagamento APROVADO credita. A identificacao fica gravada
-// em `financeiro_identificados/<id>`, para a proxima busca do periodo ja' saber o que
-// ele e' — e o mesmo pagamento identificado duas vezes nao credita duas vezes.
-export async function identificarPagamento(pedido, dono, ambiente, ferramentas) {
-    const { ler, gravar, apagar, buscarNoMp } = ferramentas;
-    const id = String((pedido && pedido.pagamentoId) || '').replace(/[^0-9A-Za-z_-]/g, '');
-    const plano = String((pedido && pedido.plano) || '').toLowerCase();
-    const meses = Math.round(Number(pedido && pedido.meses));
-    const email = String((pedido && pedido.email) || '').trim().toLowerCase();
-
-    if (!id) return { ok: false, motivo: 'falta o id do pagamento' };
-    if (!PLANOS[plano] || plano === 'free') return { ok: false, motivo: 'plano invalido' };
-    if (!isFinite(meses) || meses < 1 || meses > 24) return { ok: false, motivo: 'meses deve ser de 1 a 24' };
-    if (!email) return { ok: false, motivo: 'falta o e-mail da conta' };
-
-    const pagamento = await buscarNoMp('/v1/payments/' + encodeURIComponent(id));
-    if (!pagamento || String(pagamento.status || '').toLowerCase() !== 'approved') {
-        return { ok: false, motivo: 'o Mercado Pago diz que este pagamento nao esta aprovado (' +
-                 ((pagamento && pagamento.status) || 'nao encontrado') + ')' };
-    }
-
-    const lista = await ler('system/users_list');
-    const uid = acharUidPorEmail((lista && lista.list) || [], email);
-    if (!uid) return { ok: false, motivo: 'nao achei conta no SisProf com o e-mail ' + email };
-
-    const identificacao = {
-        uid: uid, plano: plano, meses: meses, email: email,
-        identificadoPor: String((dono && dono.email) || ''),
-        identificadoEm: new Date().toISOString()
-    };
-    await gravar('financeiro_identificados/' + id, identificacao);
-
-    const credito = await processarApoioPix(Object.assign({ _tipo: 'pagamento' }, pagamento),
-        ambiente, ferramentas, uid, { uid: uid, plano: plano, meses: meses });
-
-    const { pacotes } = await pacotesDoServico(ambiente, ferramentas);
-    const entrada = montarEntradaFinanceira(pagamento, pacotes, identificacao);
-    if (entrada) await gravar('financeiro_entradas/' + id, entrada);
-    if (apagar) await apagar('financeiro_nao_identificados/' + id);
-
-    return {
-        ok: true, uid: uid, plano: plano, meses: meses,
-        creditado: !!credito.feito,
-        validoAte: credito.validoAte || '',
-        motivo: credito.feito ? '' : credito.motivo
-    };
-}
-
 function ehRotaDeFinanceiro(request) {
     try {
         return /\/financeiro\/?$/.test(new URL(request.url).pathname);
@@ -893,17 +836,6 @@ async function tratarFinanceiro(request, ambiente) {
         listar: (colecao, pagina) => listarDocs(projeto, colecao, conta, pagina),
         buscarNoMp: (caminho) => buscarNoMp(caminho, ambiente.MP_ACCESS_TOKEN)
     };
-    if (pedido && pedido.acao === 'identificar') {
-        try {
-            const resultado = await identificarPagamento(pedido, dono, ambiente, ferramentas);
-            console.log('[financeiro] identificar:', dono.email, JSON.stringify(resultado));
-            return responder(resultado, resultado.ok ? 200 : 400, cors);
-        } catch (e) {
-            console.error('[financeiro] identificar falhou:', e && e.message);
-            return responder({ ok: false, motivo: 'falhou: ' + (e && e.message) }, 500, cors);
-        }
-    }
-
     try {
         const { pacotes } = await pacotesDoServico(ambiente, ferramentas);
         const relatorio = await sincronizarLivroCaixa(pedido && pedido.dias, pacotes, ferramentas,

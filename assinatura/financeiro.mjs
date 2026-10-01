@@ -49,8 +49,6 @@ export function idDaAssinaturaDoPagamento(pagamento) {
 //               buscarNoMp, _cache }
 export async function pagamentoEhDoSisprof(pagamento, contexto) {
     if (!pagamento) return false;
-    // Identificado a mao pelo super admin na tela financeira: e' nosso, ponto.
-    if (contexto && contexto.identificados && contexto.identificados.has(String(pagamento.id))) return true;
     if (lerReferenciaPix(pagamento.external_reference)) return true;
     if (ehDescricaoSisprof(pagamento.description)) return true;
 
@@ -110,21 +108,7 @@ export async function montarContextoSisprof(ambiente, ferramentas) {
             console.warn('[financeiro] nao consegui ler as assinaturas conhecidas:', e && e.message);
         }
     }
-    const identificados = new Map();
-    if (ferramentas && ferramentas.listar) {
-        try {
-            let pagina = '';
-            do {
-                const lote = await ferramentas.listar('financeiro_identificados', pagina);
-                pagina = lote.proximaPagina;
-                lote.documentos.forEach(d => identificados.set(String(d._id), d));
-            } while (pagina);
-        } catch (e) {
-            console.warn('[financeiro] nao consegui ler os pagamentos identificados:', e && e.message);
-        }
-    }
     return {
-        identificados: identificados,
         planosSisprof: [ambiente && ambiente.MP_PLANO_APOIASE_ID, ambiente && ambiente.MP_PLANO_PROFESSOR_ID]
             .filter(Boolean).map(String),
         conhecidas: conhecidas,
@@ -150,7 +134,7 @@ function arredondar(n) {
 
 // De um pagamento do Mercado Pago (GET /v1/payments/<id>) para a linha do livro.
 // Devolve null para o que nao conta.
-export function montarEntradaFinanceira(pagamento, pacotes, identificacao) {
+export function montarEntradaFinanceira(pagamento, pacotes) {
     if (!pagamento || !pagamento.id) return null;
     const status = String(pagamento.status || '').toLowerCase();
     if (STATUS_QUE_CONTAM.indexOf(status) === -1) return null;
@@ -190,14 +174,6 @@ export function montarEntradaFinanceira(pagamento, pacotes, identificacao) {
         }
     }
 
-    // O super admin disse o que e' este pagamento: vale mais que qualquer palpite.
-    if (identificacao && identificacao.plano) {
-        if (categoria === 'outro') categoria = metodo === 'pix' ? 'pix' : 'avulso';
-        plano = String(identificacao.plano);
-        meses = Number(identificacao.meses) || 0;
-        uid = String(identificacao.uid || '');
-    }
-
     const data = pagamento.date_approved || pagamento.date_created || '';
     return {
         id: String(pagamento.id),
@@ -215,26 +191,6 @@ export function montarEntradaFinanceira(pagamento, pacotes, identificacao) {
         uid: uid,
         email: String(((pagamento.payer && pagamento.payer.email) || '')).toLowerCase(),
         descricao: String(pagamento.description || '').slice(0, 140),
-        identificadoManualmente: !!(identificacao && identificacao.plano),
-        atualizadoEm: new Date().toISOString()
-    };
-}
-
-// O resumo de um pagamento que nao deu para reconhecer, para o super admin olhar.
-export function montarNaoIdentificado(pagamento) {
-    const data = pagamento.date_approved || pagamento.date_created || '';
-    return {
-        id: String(pagamento.id),
-        data: data,
-        mes: mesDeBrasilia(data),
-        valor: arredondar(pagamento.transaction_amount),
-        metodo: String(pagamento.payment_method_id || '').toLowerCase(),
-        recorrente: String(pagamento.operation_type || '') === 'recurring_payment',
-        email: String(((pagamento.payer && pagamento.payer.email) || '')).toLowerCase(),
-        nomePagador: String([pagamento.payer && pagamento.payer.first_name,
-                             pagamento.payer && pagamento.payer.last_name].filter(Boolean).join(' ')).slice(0, 80),
-        descricao: String(pagamento.description || '').slice(0, 140),
-        referencia: String(pagamento.external_reference || '').slice(0, 80),
         atualizadoEm: new Date().toISOString()
     };
 }
@@ -249,19 +205,11 @@ export async function registrarEntrada(pagamento, pacotes, ferramentas, contexto
         if (!id) return 'ignorado';
         if (!(await pagamentoEhDoSisprof(pagamento, contexto))) {
             if (ferramentas.apagar) await ferramentas.apagar('financeiro_entradas/' + id);
-            // Dinheiro que entrou e nao da' para dizer de quem e': vai para a lista
-            // "nao identificados" da tela financeira, onde o super admin decide. A
-            // gravacao so' toca os campos do resumo — o `ignorado` que ele marcou fica.
-            if (String(pagamento.status || '').toLowerCase() === 'approved') {
-                await ferramentas.gravar('financeiro_nao_identificados/' + id, montarNaoIdentificado(pagamento));
-            }
             return 'de-fora';
         }
-        const identificacao = contexto && contexto.identificados && contexto.identificados.get(id);
-        const entrada = montarEntradaFinanceira(pagamento, pacotes, identificacao);
+        const entrada = montarEntradaFinanceira(pagamento, pacotes);
         if (!entrada) return 'ignorado';
         await ferramentas.gravar('financeiro_entradas/' + entrada.id, entrada);
-        if (identificacao && ferramentas.apagar) await ferramentas.apagar('financeiro_nao_identificados/' + id);
         return 'gravado';
     } catch (e) {
         console.warn('[financeiro] nao consegui registrar o pagamento', pagamento && pagamento.id,

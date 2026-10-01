@@ -231,82 +231,6 @@ const bancoFalso = (inicial) => {
       csv.length === 1 + 3 + 2 && csv[1].indexOf('29,70') !== -1 && csv.some(l => /^custo;.*-500,00/.test(l)));
   ok('estorno sai com liquido zero no CSV', csv.some(l => /refunded;60,00;0,60;0,00$/.test(l)));
 
-  // ================= 7. IDENTIFICAR A MAO UM PAGAMENTO SEM ID =================
-  console.log('\n7. Pagamento sem identificacao: o super admin diz de quem, qual plano e quantos meses');
-  const semMarca = { id: 700, status: 'approved', transaction_amount: 60, payment_method_id: 'pix',
-    external_reference: '', description: 'Transferencia', date_approved: '2026-09-20T10:00:00Z',
-    payer: { email: 'conjuge@gmail.com', first_name: 'Joao', last_name: 'Silva' } };
-  banco = bancoFalso();
-  await F.sincronizarLivroCaixa(35, pacotes, Object.assign({}, banco,
-      { buscarNoMp: async () => ({ results: [semMarca, Object.assign({}, semMarca, { id: 701, status: 'pending' })] }) }));
-  ok('pagamento aprovado sem marca vai para "nao identificados", fora do financeiro',
-      !!banco.docs['financeiro_nao_identificados/700'] && !banco.docs['financeiro_entradas/700']
-      && banco.docs['financeiro_nao_identificados/700'].nomePagador === 'Joao Silva');
-  ok('pendente nem aparece la', !banco.docs['financeiro_nao_identificados/701']);
-
-  const dono = { email: 'rafael@adm.com' };
-  const bancoId = bancoFalso({
-    'system/users_list': { list: [{ uid: 'uid-maria', email: 'maria@escola.com', nome: 'Maria Souza' }] },
-    'financeiro_nao_identificados/700': { id: '700', ignorado: false },
-    'assinaturas_config/publico': { pacotesPix: pacotes }
-  });
-  const mpId = { buscarNoMp: async (c) => c === '/v1/payments/700' ? semMarca
-      : (c === '/v1/payments/702' ? Object.assign({}, semMarca, { id: 702, status: 'pending' }) : null) };
-  const ferr = Object.assign({}, bancoId, mpId);
-
-  let ri = await W.identificarPagamento({ pagamentoId: '700', email: 'Maria@Escola.com', plano: 'professor', meses: 3 },
-      dono, {}, ferr);
-  ok('identificar libera o plano escolhido pelo tempo escolhido',
-      ri.ok === true && ri.creditado === true && bancoId.docs['assinaturas/uid-maria'].plano === 'professor'
-      && bancoId.docs['assinaturas/uid-maria'].status === 'ativa'
-      && Date.parse(bancoId.docs['assinaturas/uid-maria'].validoAte) > Date.now() + 85 * 86400000);
-  ok('o pagamento entra no financeiro com o que o admin disse',
-      bancoId.docs['financeiro_entradas/700'].plano === 'professor' && bancoId.docs['financeiro_entradas/700'].meses === 3
-      && bancoId.docs['financeiro_entradas/700'].uid === 'uid-maria'
-      && bancoId.docs['financeiro_entradas/700'].identificadoManualmente === true);
-  ok('sai da lista de nao identificados e a identificacao fica guardada',
-      !bancoId.docs['financeiro_nao_identificados/700'] && bancoId.docs['financeiro_identificados/700'].uid === 'uid-maria'
-      && bancoId.docs['financeiro_identificados/700'].identificadoPor === 'rafael@adm.com');
-
-  const validoDepois = bancoId.docs['assinaturas/uid-maria'].validoAte;
-  ri = await W.identificarPagamento({ pagamentoId: '700', email: 'maria@escola.com', plano: 'professor', meses: 3 },
-      dono, {}, ferr);
-  ok('identificar o mesmo pagamento de novo NAO credita outra vez',
-      ri.ok === true && ri.creditado === false && bancoId.docs['assinaturas/uid-maria'].validoAte === validoDepois);
-
-  ri = await W.identificarPagamento({ pagamentoId: '702', email: 'maria@escola.com', plano: 'professor', meses: 3 },
-      dono, {}, ferr);
-  ok('pagamento que o Mercado Pago nao diz aprovado NAO libera nada', ri.ok === false && /aprovado/.test(ri.motivo));
-  ri = await W.identificarPagamento({ pagamentoId: '700', email: 'ninguem@x.com', plano: 'professor', meses: 3 },
-      dono, {}, ferr);
-  ok('e-mail sem conta no SisProf e recusado', ri.ok === false && /ninguem@x.com/.test(ri.motivo));
-  ri = await W.identificarPagamento({ pagamentoId: '700', email: 'maria@escola.com', plano: 'free', meses: 3 }, dono, {}, ferr);
-  const ri2 = await W.identificarPagamento({ pagamentoId: '700', email: 'maria@escola.com', plano: 'apoiase', meses: 99 }, dono, {}, ferr);
-  ok('plano e meses fora do permitido sao recusados', ri.ok === false && ri2.ok === false);
-
-  // A proxima busca do periodo ja' sabe o que ele e'.
-  const listarId = async (colecao) => ({ proximaPagina: '', documentos: Object.keys(bancoId.docs)
-    .filter(k => k.indexOf(colecao + '/') === 0).map(k => Object.assign({ _id: k.split('/')[1] }, bancoId.docs[k])) });
-  delete bancoId.docs['financeiro_entradas/700'];
-  const ctxId = await F.montarContextoSisprof({}, Object.assign({ listar: listarId }, mpId));
-  await F.sincronizarLivroCaixa(35, pacotes, Object.assign({}, bancoId,
-      { buscarNoMp: async () => ({ results: [semMarca] }) }), ctxId);
-  ok('a busca seguinte reconhece o pagamento identificado (nao volta para a lista)',
-      bancoId.docs['financeiro_entradas/700'] && bancoId.docs['financeiro_entradas/700'].plano === 'professor'
-      && !bancoId.docs['financeiro_nao_identificados/700']);
-
-  // O "ignorar" do super admin sobrevive a uma nova busca: o servidor so' grava os
-  // campos do resumo (no Firestore de verdade, por updateMask).
-  ok('o resumo gravado pelo servidor nao leva o campo "ignorado"',
-      !('ignorado' in F.montarNaoIdentificado(semMarca)));
-
-  const sug = T('sugestaoDeIdentificacao');
-  ok('sugestao pelo pacote de mesmo valor', sug(60, pacotes).plano === 'professor' && sug(60, pacotes).meses === 3
-      && sug(60, pacotes).porPacote === true);
-  ok('sem pacote, sugestao pelo valor dividido pela mensalidade',
-      sug(40, []).plano === 'professor' && sug(40, []).meses === 2
-      && sug(10, []).plano === 'apoiase' && sug(10, []).meses === 1);
-
   // ================= 6. AS REGRAS FECHAM O FINANCEIRO =================
   console.log('\n6. As Regras do Firestore');
   const regras = fs.readFileSync(path.join(RAIZ, 'firestore.rules'), 'utf8');
@@ -317,9 +241,6 @@ const bancoFalso = (inicial) => {
   ok('custos e configuracao: so o super admin',
       /allow read, write: if isSuperAdmin\(\);/.test(bloco('financeiro_custos'))
       && /allow read, write: if isSuperAdmin\(\);/.test(bloco('financeiro_config')));
-  ok('identificacoes: so o servico grava; nao identificados: so o super admin',
-      /allow write: if false;/.test(bloco('financeiro_identificados'))
-      && /allow read, write: if isSuperAdmin\(\);/.test(bloco('financeiro_nao_identificados')));
   ok('o site publica o financeiro.js',
       /financeiro\.js/.test(fs.readFileSync(path.join(RAIZ, '.github/workflows/deploy.yml'), 'utf8'))
       && /financeiro\.js/.test(fs.readFileSync(path.join(RAIZ, 'index.html'), 'utf8')));

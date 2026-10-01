@@ -367,13 +367,6 @@ Para conferir por que um aviso falhou, veja os logs da função na Vercel: `avis
   / `MP_PLANO_PROFESSOR_ID`, pelo nome do plano conter "SisProf", ou por já estar no
   banco. **Cadastre os dois ids de plano na Vercel** (ou mantenha "SisProf" no nome dos
   planos). Buscar de novo um período apaga do livro o que a versão antiga pegou errado.
-- **Pagamentos não identificados**: o que foi aprovado na conta sem a marca do SisProf
-  vai para `financeiro_nao_identificados/` e aparece no topo da tela. **Identificar**
-  (conta, plano, meses) chama `POST /financeiro` com `acao: "identificar"`: o serviço
-  confere no Mercado Pago que o pagamento está aprovado, credita os meses (somando ao
-  que a conta já tem, sem creditar duas vezes), lança no livro-caixa e guarda a decisão
-  em `financeiro_identificados/` — a próxima busca já reconhece o pagamento.
-  **Ignorar** esconde o que é de outra automação, e a busca seguinte respeita isso.
 - **Custos**: cadastrados na tela (`financeiro_custos/`), com recorrência mensal, anual
   ou única, em real ou dólar (cotação em `financeiro_config/geral`).
 - A visão é de **caixa**: custo anual pesa no mês em que é cobrado.
