@@ -276,6 +276,18 @@ service cloud.firestore {
     }
     // financeiro_custos: o que a operacao gasta (assinatura de IA, dominio, servidor...),
     // cadastrado a mao. financeiro_config: cotacao do dolar e afins.
+    // financeiro_nao_identificados: pagamento aprovado que nao deu para reconhecer
+    // (sem a referencia do SisProf). O servico grava; o super admin pode marcar
+    // "ignorar" (outra automacao da conta). financeiro_identificados: o que o super
+    // admin disse que cada um era — gravado SO' pelo servico, que confere o pagamento
+    // no Mercado Pago antes de liberar qualquer plano.
+    match /financeiro_nao_identificados/{docId} {
+      allow read, write: if isSuperAdmin();
+    }
+    match /financeiro_identificados/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
     match /financeiro_custos/{docId} {
       allow read, write: if isSuperAdmin();
     }

@@ -119,6 +119,20 @@ function resumoAssinantes(assinaturas, agoraMs, diasTolerancia) {
     return r;
 }
 
+// Palpite para identificar um pagamento: o pacote de Pix com o mesmo valor, ou, se
+// nao houver, o plano pelo valor e quantos meses o dinheiro paga (R$ 60 / R$ 20 = 3).
+const VALOR_MENSAL_FIN = { apoiase: 10, professor: 20 };
+
+function sugestaoDeIdentificacao(valor, pacotes) {
+    const v = Number(valor) || 0;
+    const pacote = (pacotes || []).find(p => Math.abs((Number(p.valor) || 0) - v) <= 0.05
+                                            && VALOR_MENSAL_FIN[p.plano] && Number(p.meses) > 0);
+    if (pacote) return { plano: pacote.plano, meses: Math.round(Number(pacote.meses)), porPacote: true };
+    const plano = v >= VALOR_MENSAL_FIN.professor ? 'professor' : 'apoiase';
+    const meses = Math.min(24, Math.max(1, Math.round(v / VALOR_MENSAL_FIN[plano])));
+    return { plano: plano, meses: meses, porPacote: false };
+}
+
 function dinheiroFin(n) {
     const v = Number(n) || 0;
     return (v < 0 ? '-' : '') + 'R$ ' + Math.abs(v).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -147,6 +161,11 @@ const _fin = {
     config: { cotacaoDolar: 5.5 },
     diasTolerancia: 5,
     editandoCustoId: '',
+    naoIdentificados: [],
+    usuarios: [],
+    pacotes: [],
+    identificandoId: '',
+    mostrarIgnorados: false,
     carregado: false
 };
 
@@ -157,13 +176,22 @@ async function carregarDadosFinanceiros() {
     const inicio = somarMesesFin(mesAtualFin(), -(MESES_NO_HISTORICO_FIN - 1));
     const desde = _fin.mes && _fin.mes < inicio ? _fin.mes : inicio;
 
-    const [entradas, custos, config, assinaturas, publico] = await Promise.all([
+    const [entradas, custos, config, assinaturas, publico, naoIdentificados, usuarios] = await Promise.all([
         db.collection('financeiro_entradas').where('mes', '>=', desde).get(),
         db.collection('financeiro_custos').get(),
         db.collection('financeiro_config').doc('geral').get(),
         db.collection('assinaturas').get().catch(() => null),
-        db.collection('assinaturas_config').doc('publico').get().catch(() => null)
+        db.collection('assinaturas_config').doc('publico').get().catch(() => null),
+        // Regras antigas ainda publicadas: a lista some, o resto da tela continua.
+        db.collection('financeiro_nao_identificados').get().catch(() => null),
+        db.collection('system').doc('users_list').get().catch(() => null)
     ]);
+    _fin.naoIdentificados = [];
+    if (naoIdentificados) naoIdentificados.forEach(d => _fin.naoIdentificados.push(Object.assign({ _id: d.id }, d.data())));
+    _fin.naoIdentificados.sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')));
+    _fin.usuarios = ((usuarios && usuarios.exists && usuarios.data().list) || [])
+        .filter(u => u && u.email)
+        .map(u => ({ email: String(u.email).toLowerCase(), nome: String(u.nome || '') }));
     _fin.entradas = [];
     entradas.forEach(d => _fin.entradas.push(Object.assign({ _id: d.id }, d.data())));
     _fin.custos = [];
@@ -175,6 +203,7 @@ async function carregarDadosFinanceiros() {
     const pub = publico && publico.exists ? publico.data() : {};
     _fin.diasTolerancia = isFinite(Number(pub.diasTolerancia)) ? Number(pub.diasTolerancia) : 5;
     _fin.servico = String(pub.servico || '');
+    _fin.pacotes = Array.isArray(pub.pacotesPix) ? pub.pacotesPix : [];
     _fin.carregado = true;
 }
 
@@ -257,6 +286,7 @@ function renderTelaFinanceira() {
             /* O CSS global estica todo select a 100%; aqui eles ficam do tamanho do conteudo. */
             #adminFinanceiroScreen select { width: auto; min-width: 72px; }
             #adminFinanceiroScreen #finCustoRecorrencia { min-width: 100px; }
+            #adminFinanceiroScreen #finIdPlano { min-width: 150px; }
         </style>
         <div class="card" style="margin-top:20px; border-left:5px solid #38a169;">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
@@ -293,10 +323,94 @@ function renderTelaFinanceira() {
             </div>
         </div>
 
+        ${naoIdentificadosFinHtml()}
         ${historicoFinHtml(cot)}
         ${entradasFinHtml(r)}
         ${custosFinHtml(cot)}
     `;
+}
+
+// PAGAMENTOS NAO IDENTIFICADOS: dinheiro aprovado na conta do Mercado Pago sem a
+// marca do SisProf. Ou e' de outra automacao (ignorar), ou e' um apoio que chegou sem
+// referencia — e ai' o super admin diz de quem e', qual plano e por quantos meses.
+function naoIdentificadosFinHtml() {
+    const todos = _fin.naoIdentificados;
+    const abertos = todos.filter(i => !i.ignorado);
+    const ignorados = todos.length - abertos.length;
+    const lista = _fin.mostrarIgnorados ? todos : abertos;
+    if (!todos.length) return '';
+
+    const campo = 'padding:7px; border:1px solid #cdd5e1; border-radius:4px;';
+    const linhas = lista.map(i => {
+        const id = String(i._id).replace(/[^0-9A-Za-z_-]/g, '');
+        const quando = String(i.data || '').slice(0, 10).split('-').reverse().join('/');
+        const meio = i.metodo === 'pix' ? '📱 Pix' : (i.recorrente ? '💳 Cartão (recorrente)' : '💳 ' + escaparFin(i.metodo || '?'));
+        const abrindo = _fin.identificandoId === id;
+        const sug = sugestaoDeIdentificacao(i.valor, _fin.pacotes);
+        const formulario = abrindo ? `<tr><td colspan="5" style="white-space:normal; background:#f7fafc;">
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; padding:6px 0;">
+                <div style="flex:2; min-width:220px;">
+                    <label style="display:block; font-size:12px; font-weight:bold; margin-bottom:4px;" for="finIdEmail">Conta no SisProf (e-mail)</label>
+                    <input type="email" id="finIdEmail" list="finUsuariosLista" value="${escaparFin(_fin.usuarios.some(u => u.email === i.email) ? i.email : '')}"
+                           placeholder="comece a digitar o nome ou e-mail" style="${campo} width:100%;">
+                    <datalist id="finUsuariosLista">
+                        ${_fin.usuarios.map(u => `<option value="${escaparFin(u.email)}">${escaparFin(u.nome)}</option>`).join('')}
+                    </datalist>
+                </div>
+                <div>
+                    <label style="display:block; font-size:12px; font-weight:bold; margin-bottom:4px;" for="finIdPlano">Plano</label>
+                    <select id="finIdPlano" style="${campo}">
+                        <option value="apoiase" ${sug.plano === 'apoiase' ? 'selected' : ''}>🤝 Apoia-se</option>
+                        <option value="professor" ${sug.plano === 'professor' ? 'selected' : ''}>🎓 Professor</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block; font-size:12px; font-weight:bold; margin-bottom:4px;" for="finIdMeses">Por quantos meses</label>
+                    <input type="number" id="finIdMeses" min="1" max="24" step="1" value="${sug.meses}" style="${campo} width:90px;">
+                </div>
+                <button class="btn btn-primary" id="btnConfirmarIdentificacao" onclick="confirmarIdentificacaoFinanceiro('${id}')">✅ Liberar plano</button>
+                <button class="btn btn-secondary" onclick="abrirIdentificacaoFinanceiro('')">Cancelar</button>
+            </div>
+            <p style="font-size:11px; color:#5f6b7f; margin:0 0 4px 0;">
+                ${sug.porPacote ? 'Sugestão pelo pacote de Pix de mesmo valor.' : 'Sugestão pelo valor: ' + dinheiroFin(i.valor) + ' ÷ mensalidade do plano.'}
+                Os meses somam ao que a conta já tem. O serviço confere o pagamento no Mercado Pago antes de liberar,
+                e o mesmo pagamento nunca credita duas vezes.
+            </p>
+        </td></tr>` : '';
+        return `<tr style="${i.ignorado ? 'opacity:0.5;' : ''}">
+            <td>${quando}</td>
+            <td style="text-align:right; font-weight:bold;">${dinheiroFin(i.valor)}</td>
+            <td>${meio}</td>
+            <td style="white-space:normal; font-size:12px; min-width:200px;">
+                ${escaparFin(i.nomePagador || '')}${i.nomePagador ? '<br>' : ''}${escaparFin(i.email || '(sem e-mail)')}
+                ${i.descricao ? '<br><span style="color:#5f6b7f;">' + escaparFin(i.descricao) + '</span>' : ''}
+            </td>
+            <td>
+                ${i.ignorado
+                    ? `<button class="btn btn-sm btn-secondary" onclick="ignorarNaoIdentificadoFinanceiro('${id}', false)">Restaurar</button>`
+                    : `<button class="btn btn-sm btn-primary" onclick="abrirIdentificacaoFinanceiro('${id}')">Identificar</button>
+                       <button class="btn btn-sm btn-secondary" title="Não é do SisProf (outra automação da conta)" onclick="ignorarNaoIdentificadoFinanceiro('${id}', true)">Ignorar</button>`}
+            </td>
+        </tr>${formulario}`;
+    }).join('');
+
+    return `<div class="card" style="margin-top:16px; border-left:5px solid #d69e2e;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <h3 style="margin:0; font-size:16px;">Pagamentos não identificados ${abertos.length ? '<span class="badge badge-danger">' + abertos.length + '</span>' : ''}</h3>
+            ${ignorados ? `<button class="btn btn-sm btn-secondary" onclick="alternarIgnoradosFinanceiro()">
+                ${_fin.mostrarIgnorados ? 'Esconder' : 'Mostrar'} ignorados (${ignorados})</button>` : ''}
+        </div>
+        <p style="font-size:12px; color:#5f6b7f; margin:6px 0 10px 0;">
+            Dinheiro aprovado na conta do Mercado Pago sem a marca do SisProf. Se for um apoio, <strong>Identificar</strong>
+            diz de quem é, qual plano e por quanto tempo — o plano é liberado e o pagamento entra no financeiro.
+            Se for de outra automação, <strong>Ignorar</strong>.
+        </p>
+        ${lista.length ? `<div style="overflow-x:auto;">
+        <table style="width:100%; font-variant-numeric:tabular-nums;">
+            <thead><tr><th>Data</th><th style="text-align:right;">Valor</th><th>Meio</th><th>Pagador</th><th></th></tr></thead>
+            <tbody>${linhas}</tbody>
+        </table></div>` : '<p style="font-size:13px; color:#2f855a;">✅ Nada esperando identificação.</p>'}
+    </div>`;
 }
 
 function historicoFinHtml(cot) {
@@ -518,6 +632,79 @@ async function buscarEntradasNoMercadoPago() {
     }
 }
 
+function abrirIdentificacaoFinanceiro(id) {
+    _fin.identificandoId = id;
+    renderTelaFinanceira();
+    const campo = document.getElementById('finIdEmail');
+    if (campo) { campo.scrollIntoView({ behavior: 'smooth', block: 'center' }); campo.focus(); }
+}
+
+function alternarIgnoradosFinanceiro() {
+    _fin.mostrarIgnorados = !_fin.mostrarIgnorados;
+    renderTelaFinanceira();
+}
+
+async function ignorarNaoIdentificadoFinanceiro(id, ignorar) {
+    try {
+        await db.collection('financeiro_nao_identificados').doc(String(id)).set({
+            ignorado: !!ignorar,
+            ignoradoEm: ignorar ? new Date().toISOString() : '',
+            ignoradoPor: ignorar ? ((typeof currentUser !== 'undefined' && currentUser && currentUser.email) || 'super_admin') : ''
+        }, { merge: true });
+        const item = _fin.naoIdentificados.find(i => String(i._id) === String(id));
+        if (item) item.ignorado = !!ignorar;
+        if (_fin.identificandoId === id) _fin.identificandoId = '';
+        renderTelaFinanceira();
+    } catch (e) {
+        alert('Não consegui alterar: ' + (e && e.message ? e.message : e));
+    }
+}
+
+async function confirmarIdentificacaoFinanceiro(id) {
+    const item = _fin.naoIdentificados.find(i => String(i._id) === String(id));
+    const email = String((document.getElementById('finIdEmail') || {}).value || '').trim().toLowerCase();
+    const plano = String((document.getElementById('finIdPlano') || {}).value || '');
+    const meses = Math.round(Number((document.getElementById('finIdMeses') || {}).value));
+    if (!email) { alert('Informe o e-mail da conta no SisProf.'); return; }
+    if (!_fin.usuarios.some(u => u.email === email)) {
+        if (!confirm('Não achei ' + email + ' na lista de contas deste aparelho. Tentar mesmo assim?')) return;
+    }
+    if (!(meses >= 1 && meses <= 24)) { alert('Meses deve ser de 1 a 24.'); return; }
+    if (!_fin.servico) { alert('O endereço do serviço não está cadastrado (💳 Assinaturas).'); return; }
+    const nomePlano = plano === 'professor' ? 'Professor' : 'Apoia-se';
+    if (!confirm('Liberar ' + nomePlano + ' por ' + meses + (meses === 1 ? ' mês' : ' meses') + ' para ' + email +
+                 (item ? ', pelo pagamento de ' + dinheiroFin(item.valor) : '') + '?')) return;
+
+    const botao = document.getElementById('btnConfirmarIdentificacao');
+    if (botao) { botao.disabled = true; botao.textContent = 'Liberando...'; }
+    try {
+        const cracha = (typeof pegarCrachaDaSessao === 'function') ? await pegarCrachaDaSessao() : '';
+        if (!cracha) { alert('Sem sessão do Firebase. Saia e entre de novo.'); return; }
+        const resposta = await fetch(_fin.servico.replace(/\/$/, '') + '/financeiro', {
+            method: 'POST',
+            headers: { authorization: 'Bearer ' + cracha, 'content-type': 'application/json' },
+            body: JSON.stringify({ acao: 'identificar', pagamentoId: id, email: email, plano: plano, meses: meses })
+        });
+        const dados = await resposta.json().catch(() => ({}));
+        if (!resposta.ok || !dados.ok) {
+            alert('Não consegui identificar: ' + (dados.motivo || dados.erro || resposta.status));
+            return;
+        }
+        _fin.identificandoId = '';
+        await carregarDadosFinanceiros();
+        renderTelaFinanceira();
+        const ate = dados.validoAte ? String(dados.validoAte).slice(0, 10).split('-').reverse().join('/') : '';
+        alert(dados.creditado
+            ? 'Pronto: ' + nomePlano + ' liberado para ' + email + (ate ? ' até ' + ate : '') + '. O pagamento entrou no financeiro.'
+            : 'Pagamento identificado e lançado no financeiro, mas o plano não foi creditado de novo: ' + dados.motivo);
+    } catch (e) {
+        alert('Não consegui falar com o serviço (' + _fin.servico + '): ' + (e && e.message ? e.message : e));
+    } finally {
+        const b = document.getElementById('btnConfirmarIdentificacao');
+        if (b) { b.disabled = false; b.textContent = '✅ Liberar plano'; }
+    }
+}
+
 function lerFormularioCustoFin() {
     const val = (id) => String((document.getElementById(id) || {}).value || '').trim();
     return {
@@ -655,4 +842,8 @@ if (typeof window !== 'undefined') {
     window.alternarCustoFinanceiro = alternarCustoFinanceiro;
     window.excluirCustoFinanceiro = excluirCustoFinanceiro;
     window.salvarCotacaoFinanceiro = salvarCotacaoFinanceiro;
+    window.abrirIdentificacaoFinanceiro = abrirIdentificacaoFinanceiro;
+    window.alternarIgnoradosFinanceiro = alternarIgnoradosFinanceiro;
+    window.ignorarNaoIdentificadoFinanceiro = ignorarNaoIdentificadoFinanceiro;
+    window.confirmarIdentificacaoFinanceiro = confirmarIdentificacaoFinanceiro;
 }
