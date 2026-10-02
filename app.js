@@ -4517,6 +4517,13 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
                 <input type="text" id="trabalhoTitulo" required value="${t ? t.titulo : ''}" placeholder="Ex: Prova Mensal">
             </label>
             
+            <label>Bimestre:
+                <select id="trabalhoBimestre">
+                    ${[1, 2, 3, 4].map(b => `<option value="${b}" ${(t ? (parseInt(t.bimestre) || 1) : currentBimestreTrabalhos) === b ? 'selected' : ''}>${b}º Bimestre</option>`).join('')}
+                </select>
+            </label>
+            ${t ? `<p style="font-size:11px; color:#5f6b7f; margin:-6px 0 12px 0;">Ao mudar o bimestre, a atividade é movida com todas as notas e critérios já lançados.${(t.tipo === 'compensacao' || t.tipo === 'caderno_auto' || t.tipo === 'participacao') ? ' Notas ainda não ajustadas à mão passam a ser calculadas pelos registros do novo bimestre.' : ''}</p>` : ''}
+
             <label>Tipo de Avaliação:
                 <select id="trabalhoTipo" onchange="toggleCamposTrabalho(this.value)" ${t ? 'disabled' : ''}>
                     <option value="comum" ${t?.tipo === 'comum' ? 'selected' : ''}>Comum (Nota Direta)</option>
@@ -4633,6 +4640,7 @@ async function salvarTrabalho(e) {
     const idEdit = document.getElementById('trabalhoIdEdit').value;
     const titulo = document.getElementById('trabalhoTitulo').value;
     const tipo = document.getElementById('trabalhoTipo').value;
+    const bimestre = parseInt(document.getElementById('trabalhoBimestre').value) || currentBimestreTrabalhos;
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e));
     
     let pesoTotal = 0;
@@ -4670,6 +4678,12 @@ async function salvarTrabalho(e) {
             t.peso = pesoTotal; // Atualiza peso (será 10 para compensação)
             t.rubricas = rubricas; // Atualiza rubricas (vazio para compensação)
             if (t.tipo === 'avaliacao_gestor') t.id_avaliacao_gestor = idAvaliacaoGestor;
+            // Mudar o bimestre só troca o campo da atividade: as notas (e rubricas marcadas)
+            // apontam para o id dela, então vão junto sem copiar nem apagar nada.
+            if ((parseInt(t.bimestre) || 1) !== bimestre) {
+                t.bimestre = bimestre;
+                currentBimestreTrabalhos = bimestre;
+            }
 
             if (t.tipo === 'rubrica') {
                 atualizarNotasRubricaPosEdicao(t.id);
@@ -4683,10 +4697,11 @@ async function salvarTrabalho(e) {
             tipo: tipo,
             peso: pesoTotal,
             rubricas: rubricas,
-            bimestre: currentBimestreTrabalhos
+            bimestre: bimestre
         };
         if (tipo === 'avaliacao_gestor') novoTrabalho.id_avaliacao_gestor = idAvaliacaoGestor;
         data.trabalhos.push(novoTrabalho);
+        currentBimestreTrabalhos = bimestre;
     }
     
     await persistirDados();
