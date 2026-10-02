@@ -4527,6 +4527,7 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
             <label>Tipo de Avaliação:
                 <select id="trabalhoTipo" onchange="toggleCamposTrabalho(this.value)" ${t ? 'disabled' : ''}>
                     <option value="comum" ${t?.tipo === 'comum' ? 'selected' : ''}>Comum (Nota Direta)</option>
+                    <option value="colar" ${t?.tipo === 'colar' ? 'selected' : ''}>Colar do Excel (Nome + Nota)</option>
                     <option value="rubrica" ${t?.tipo === 'rubrica' ? 'selected' : ''}>Rubrica (Critérios Ponderados)</option>
                     <option value="compensacao" ${t?.tipo === 'compensacao' ? 'selected' : ''}>Compensação de Faltas</option>
                     <option value="caderno_auto" ${t?.tipo === 'caderno_auto' ? 'selected' : ''}>Caderno (Automático)</option>
@@ -4539,6 +4540,12 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
                 <label>Peso Total (Valor):
                     <input type="number" id="trabalhoPeso" step="0.1" value="${t ? t.peso : '10'}">
                 </label>
+            </div>
+
+            <div id="camposColar" style="display:none; margin-top:15px; background:#f0fff4; padding:15px; border-radius:8px; border:1px solid #c6f6d5;">
+                <p style="font-size:12px; color:#276749; margin:0 0 8px 0;">Copie do Excel as duas colunas (nome do estudante e nota) e cole abaixo, uma linha por estudante. O sistema identifica cada estudante pelo nome e lança a nota.${t ? ' Colar de novo substitui as notas dos estudantes encontrados; deixe vazio para manter as atuais.' : ''}</p>
+                <textarea id="trabalhoColarTexto" rows="10" placeholder="AGATHA SOARES DA SILVA&#9;8.5&#10;ALICIA OLIVEIRA DE ANDRADE&#9;9.5" oninput="previaColarNotas()" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:12px; padding:8px;"></textarea>
+                <div id="previaColar" style="font-size:12px; margin-top:8px;"></div>
             </div>
 
             <div id="camposRubrica" style="display:none; margin-top:15px; background:#f6f8fb; padding:15px; border-radius:8px; border:1px solid #e3e8ef;">
@@ -4596,6 +4603,8 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
         toggleCamposTrabalho('participacao');
     } else if (t && t.tipo === 'avaliacao_gestor') {
         toggleCamposTrabalho('avaliacao_gestor');
+    } else if (t && t.tipo === 'colar') {
+        toggleCamposTrabalho('colar');
     } else if (!t) {
         toggleCamposTrabalho('comum');
     }
@@ -4611,6 +4620,7 @@ function abrirModalNovoTrabalho(trabalhoId = null) {
 function toggleCamposTrabalho(tipo) {
     document.getElementById('campoPesoComum').style.display = (tipo === 'rubrica' || tipo === 'compensacao' || tipo === 'caderno_auto' || tipo === 'participacao' || tipo === 'avaliacao_gestor') ? 'none' : 'block';
     document.getElementById('camposRubrica').style.display = tipo === 'rubrica' ? 'block' : 'none';
+    document.getElementById('camposColar').style.display = tipo === 'colar' ? 'block' : 'none';
     document.getElementById('infoCompensacao').style.display = tipo === 'compensacao' ? 'block' : 'none';
     document.getElementById('infoCadernoAuto').style.display = tipo === 'caderno_auto' ? 'block' : 'none';
     document.getElementById('infoParticipacao').style.display = tipo === 'participacao' ? 'block' : 'none';
@@ -4633,6 +4643,79 @@ function adicionarRubricaInput(nome = '', peso = '') {
         <button type="button" class="btn btn-xs btn-danger" onclick="this.parentElement.remove()" style="padding:0 8px;">×</button>
     `;
     container.appendChild(div);
+}
+
+// --- COLAR NOTAS DO EXCEL ---
+// Cada linha "NOME<tab>NOTA" (ou nome seguido da nota separados por espaço/;) vira a nota
+// do estudante da turma com o mesmo nome. Acento, caixa e espaços sobrando não importam.
+function normNomeColar(s) {
+    return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .toUpperCase().replace(/[^A-Z ]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function interpretarNotasColadas(texto, estudantes) {
+    const porNome = {};
+    estudantes.forEach(e => {
+        const k = normNomeColar(e.nome_completo);
+        (porNome[k] = porNome[k] || []).push(e);
+    });
+    const achados = [], naoEncontrados = [], semNota = [];
+    const usados = new Set();
+    String(texto || '').split(/\r?\n/).forEach(linha => {
+        if (!linha.trim()) return;
+        let nome, nota;
+        const cols = linha.split('\t').map(c => c.trim()).filter(c => c !== '');
+        if (cols.length >= 2) {
+            nome = cols[0];
+            nota = cols[cols.length - 1];
+        } else {
+            const m = linha.trim().match(/^(.*?)[\s;]+(-?\d+(?:[.,]\d+)?)$/);
+            if (m) { nome = m[1]; nota = m[2]; } else { nome = linha.trim(); nota = ''; }
+        }
+        const notaNum = parseFloat(String(nota).replace(',', '.'));
+        if (isNaN(notaNum)) { semNota.push(linha.trim()); return; }
+        const k = normNomeColar(nome);
+        let cand = porNome[k] || [];
+        // Nome cortado ou completado numa das pontas (ex.: célula estreita no Excel):
+        // aceita só quando um único estudante da turma bate.
+        if (cand.length === 0 && k.length >= 8) {
+            cand = estudantes.filter(e => {
+                const n = normNomeColar(e.nome_completo);
+                return n.startsWith(k) || k.startsWith(n);
+            });
+        }
+        if (cand.length === 1 && !usados.has(String(cand[0].id))) {
+            usados.add(String(cand[0].id));
+            achados.push({ estudante: cand[0], nome: nome, valor: String(notaNum).replace('.', ',') });
+        } else {
+            naoEncontrados.push(nome + (cand.length > 1 ? ' (mais de um estudante com esse nome)' : (cand.length === 1 ? ' (repetido)' : '')));
+        }
+    });
+    const semLinha = estudantes.filter(e => !usados.has(String(e.id)));
+    return { achados, naoEncontrados, semNota, semLinha };
+}
+
+function estudantesDaTurmaParaNotas() {
+    return (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e));
+}
+
+function previaColarNotas() {
+    const box = document.getElementById('previaColar');
+    const texto = document.getElementById('trabalhoColarTexto').value;
+    if (!box) return;
+    if (!texto.trim()) { box.innerHTML = ''; return; }
+    const r = interpretarNotasColadas(texto, estudantesDaTurmaParaNotas());
+    const lista = (itens) => itens.slice(0, 30).map(x => `<li>${escapeHtmlColar(x)}</li>`).join('') + (itens.length > 30 ? `<li>… e mais ${itens.length - 30}</li>` : '');
+    box.innerHTML = `
+        <div style="color:#276749; font-weight:bold;">✔ ${r.achados.length} estudante(s) identificado(s)</div>
+        ${r.naoEncontrados.length ? `<div style="color:#c53030; margin-top:6px;"><strong>✖ ${r.naoEncontrados.length} nome(s) não encontrado(s) nesta turma (ignorados):</strong><ul style="margin:4px 0 0 18px; padding:0;">${lista(r.naoEncontrados)}</ul></div>` : ''}
+        ${r.semNota.length ? `<div style="color:#b7791f; margin-top:6px;"><strong>⚠ ${r.semNota.length} linha(s) sem nota (ignoradas):</strong><ul style="margin:4px 0 0 18px; padding:0;">${lista(r.semNota)}</ul></div>` : ''}
+        ${r.semLinha.length ? `<div style="color:#5f6b7f; margin-top:6px;"><strong>${r.semLinha.length} estudante(s) da turma ficaram sem nota colada:</strong><ul style="margin:4px 0 0 18px; padding:0;">${lista(r.semLinha.map(e => e.nome_completo))}</ul></div>` : ''}
+    `;
+}
+
+function escapeHtmlColar(s) {
+    return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
 async function salvarTrabalho(e) {
@@ -4669,7 +4752,21 @@ async function salvarTrabalho(e) {
         pesoTotal = parseFloat(document.getElementById('trabalhoPeso').value) || 0;
     }
 
+    // Colar do Excel: confere os nomes antes de gravar qualquer coisa
+    let colados = null;
+    if (tipo === 'colar') {
+        const texto = document.getElementById('trabalhoColarTexto').value;
+        if (texto.trim()) {
+            colados = interpretarNotasColadas(texto, estudantes);
+            if (colados.achados.length === 0) return alert('Nenhum estudante desta turma foi identificado no texto colado. Confira se copiou as colunas de nome e nota.');
+            if (colados.naoEncontrados.length && !confirm(`${colados.achados.length} nota(s) serão lançadas.\n${colados.naoEncontrados.length} nome(s) não foram encontrados nesta turma e serão ignorados:\n\n${colados.naoEncontrados.slice(0, 15).join('\n')}${colados.naoEncontrados.length > 15 ? '\n…' : ''}\n\nContinuar?`)) return;
+        } else if (!idEdit) {
+            return alert('Cole as linhas do Excel (nome e nota) na caixa de texto.');
+        }
+    }
+
     if (!data.trabalhos) data.trabalhos = [];
+    let idTrabalhoSalvo = idEdit;
 
     if (idEdit) {
         const t = data.trabalhos.find(x => x.id == idEdit);
@@ -4701,12 +4798,24 @@ async function salvarTrabalho(e) {
         };
         if (tipo === 'avaliacao_gestor') novoTrabalho.id_avaliacao_gestor = idAvaliacaoGestor;
         data.trabalhos.push(novoTrabalho);
+        idTrabalhoSalvo = novoTrabalho.id;
         currentBimestreTrabalhos = bimestre;
+    }
+
+    if (colados) {
+        if (!data.notas) data.notas = [];
+        const idT = Number(idTrabalhoSalvo);
+        colados.achados.forEach(a => {
+            const nota = data.notas.find(n => n.id_trabalho == idT && n.id_estudante == a.estudante.id);
+            if (nota) nota.valor = a.valor;
+            else data.notas.push({ id: novoId(), id_trabalho: idT, id_estudante: a.estudante.id, valor: a.valor });
+        });
     }
     
     await persistirDados();
     closeModal('modalNovoTrabalho');
     renderTrabalhos();
+    if (colados) alert(`${colados.achados.length} nota(s) lançada(s).` + (colados.semLinha.length ? `\n${colados.semLinha.length} estudante(s) da turma ficaram sem nota.` : ''));
 }
 
 async function toggleRubrica(trabalhoId, estudanteId, rubricId, isChecked) {
