@@ -4350,6 +4350,7 @@ function renderTrabalhos() {
             </div>
         </div>
         
+        ${campoFiltroAlunos('tabTrabalhos')}
         <div style="overflow-x:auto; background: white; border-radius: 8px; border: 1px solid #e3e8ef; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
             <table style="font-size:13px; min-width: 600px; border-collapse: collapse; width: 100%;">
                 <thead>
@@ -4472,7 +4473,7 @@ function renderTrabalhos() {
                         const corMedia = (media !== '-' && parseFloat(media) < 5) ? '#e53e3e' : '#1c2536';
 
                         return `
-                            <tr onmouseover="this.style.background='#f6f8fb'" onmouseout="this.style.background='transparent'">
+                            <tr data-nome="${escapeHtmlColar(e.nome_completo)}" onmouseover="this.style.background='#f6f8fb'" onmouseout="this.style.background='transparent'">
                             <td style="position:sticky; left:0; background:inherit; border-bottom: 1px solid #e3e8ef; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cdd5e1; z-index: 5;">${getFaltaBadgeHtml(e.id, todayStr)}${getAeePrefix(e)}${e.nome_completo} ${tagFaltoso}</td>
                                 ${gradeCells}                                
                                 <td id="media-est-current-${e.id}" style="text-align:center; font-weight:bold; color: ${corMedia}; background: #f6f8fb; border-bottom: 1px solid #e3e8ef; position: sticky; right: 80px; z-index: 5; border-left: 2px solid #cdd5e1;">
@@ -4491,6 +4492,7 @@ function renderTrabalhos() {
         ${trabalhos.length === 0 ? '<p class="empty-state">Crie uma atividade para começar a lançar notas.</p>' : ''}
     `;
     document.getElementById('tabTrabalhos').innerHTML = html;
+    filtrarAlunosNaTela('tabTrabalhos', filtroAlunosTexto['tabTrabalhos:' + turmaAtual]);
 }
 
 async function salvarNota(trabalhoId, estudanteId, valor) {
@@ -5028,6 +5030,40 @@ function removerTrabalho(id) {
 }
 
 // --- COMPENSAÇÕES DE AUSÊNCIAS ---
+// --- FILTRO DE ESTUDANTES POR NOME NAS TELAS DE LANÇAMENTO ---
+// Mostra só as linhas cujo nome contém o trecho digitado (sem diferença de acento ou
+// caixa). Esconde/mostra as linhas já desenhadas, sem redesenhar a tela: assim o
+// campo não perde o foco e o que está sendo digitado numa nota não se perde.
+// O texto fica guardado por tela e turma e é reaplicado quando ela é redesenhada.
+const filtroAlunosTexto = {};
+
+function campoFiltroAlunos(containerId) {
+    const valor = escapeHtmlColar(filtroAlunosTexto[containerId + ':' + turmaAtual] || '');
+    return `
+        <div class="no-print" style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+            <input type="search" class="filtro-alunos" value="${valor}" placeholder="🔎 Filtrar estudante pelo nome..."
+                oninput="filtrarAlunosNaTela('${containerId}', this.value)"
+                style="flex:1; max-width:340px; padding:7px 10px; border:1px solid #cdd5e1; border-radius:6px; font-size:13px;">
+            <span class="filtro-alunos-contagem" style="font-size:12px; color:#5f6b7f;"></span>
+        </div>`;
+}
+
+function filtrarAlunosNaTela(containerId, valor) {
+    filtroAlunosTexto[containerId + ':' + turmaAtual] = valor || '';
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const q = normNomeColar(valor);
+    const linhas = container.querySelectorAll('tr[data-nome]');
+    let visiveis = 0;
+    linhas.forEach(tr => {
+        const mostra = !q || normNomeColar(tr.dataset.nome).includes(q);
+        tr.style.display = mostra ? '' : 'none';
+        if (mostra) visiveis++;
+    });
+    const contagem = container.querySelector('.filtro-alunos-contagem');
+    if (contagem) contagem.textContent = q ? `${visiveis} de ${linhas.length}` : '';
+}
+
 function renderCompensacoes() {
     const today = new Date();
     // Padrão: Mês anterior para "consolidado", ou atual se for dia 20+
@@ -5084,6 +5120,7 @@ function renderCompensacoes() {
                 <input type="number" id="filtroCompAno" value="${selAnoFiltro}" onchange="renderCompensacoes()" style="width:50px; padding:2px;">
             </div>
         </div>
+        ${campoFiltroAlunos('tabCompensacoes')}
         <div style="overflow-x:auto;">
             <table>
                 <thead>
@@ -5126,7 +5163,7 @@ function renderCompensacoes() {
                         }).join('');
 
                         return `
-                            <tr>
+                            <tr data-nome="${escapeHtmlColar(nomeEst)}">
                                 <td>
                                     ${getFaltaBadgeHtml(est ? est.id : null, todayStr)}${getAeePrefix(est)}<strong>${nomeEst}</strong>
                                     <div style="font-size:10px; color:#5f6b7f; margin-top:2px;">${logMinimizado}</div>
@@ -5147,6 +5184,7 @@ function renderCompensacoes() {
         </div>
     `;
     document.getElementById('tabCompensacoes').innerHTML = html;
+    filtrarAlunosNaTela('tabCompensacoes', filtroAlunosTexto['tabCompensacoes:' + turmaAtual]);
 }
 
 function gerarCompensacoesAutomatico() {
@@ -5261,6 +5299,7 @@ function renderCaderno() {
         <div class="form-row">
             <label>Data da Atividade: <input type="date" id="cadernoData" value="${dataSelecionada}" onchange="renderCaderno()"></label>
         </div>
+        ${campoFiltroAlunos('tabCaderno')}
         <table style="margin-top:10px;">
             <thead>
                 <tr>
@@ -5279,7 +5318,7 @@ function renderCaderno() {
                     const extraPrat = reg ? reg.extra_pratica : false;
 
                     return `
-                    <tr>
+                    <tr data-nome="${escapeHtmlColar(e.nome_completo)}">
                         <td>${getFaltaBadgeHtml(e.id, dataSelecionada)}${getAeePrefix(e)}${e.nome_completo}</td>
                         <td style="text-align:center;">
                             <div style="display:flex; justify-content:center; gap:15px;">
@@ -5307,6 +5346,7 @@ function renderCaderno() {
         </table>
     `;
     container.innerHTML = html;
+    filtrarAlunosNaTela('tabCaderno', filtroAlunosTexto['tabCaderno:' + turmaAtual]);
 }
 
 async function salvarStatusCaderno(estudanteId, valor, campo) {
