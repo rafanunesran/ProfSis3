@@ -2986,3 +2986,37 @@ html[data-estilo="ambar"] .modal-content form > button[type="submit"]:last-child
     font-size: 12.5px;
     color: var(--text-4);
 }
+
+/* ==========================================================================
+   Planilha de notas (aba Trabalhos): coluna do nome congelada à esquerda.
+   Fundo sólido para as notas passarem POR TRÁS do nome ao rolar para o lado
+   (antes era transparente e as caixinhas das rubricas apareciam por cima).
+   ========================================================================== */
+.planilha-notas .col-nome-fixa {
+    position: sticky;
+    left: 0;
+    z-index: 6;
+    min-width: 220px;
+    background: var(--surface);
+    background-clip: padding-box;
+    box-shadow: 4px 0 6px -4px rgba(0, 0, 0, 0.18);
+}
+
+.planilha-notas thead .col-nome-fixa {
+    z-index: 11;
+    background: var(--surface-2);
+}
+
+.planilha-notas tbody tr:hover .col-nome-fixa {
+    background: var(--surface-2);
+}
+
+@media (max-width: 760px) {
+    .planilha-notas .col-nome-fixa {
+        min-width: 130px;
+        max-width: 42vw;
+        padding: 8px 10px !important;
+        font-size: 12px;
+        line-height: 1.25;
+    }
+}

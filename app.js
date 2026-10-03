@@ -4352,10 +4352,10 @@ function renderTrabalhos() {
         
         ${campoFiltroAlunos('tabTrabalhos')}
         <div style="overflow-x:auto; background: white; border-radius: 8px; border: 1px solid #e3e8ef; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-            <table style="font-size:13px; min-width: 600px; border-collapse: collapse; width: 100%;">
+            <table class="planilha-notas" style="font-size:13px; min-width: 600px; border-collapse: collapse; width: 100%;">
                 <thead>
                     <tr>
-                        <th style="text-align:left; min-width: 220px; position:sticky; left:0; background:#f6f8fb; z-index:10; border-bottom:2px solid #cdd5e1; padding: 12px 15px; border-right: 2px solid #cdd5e1;">Estudante</th>
+                        <th class="col-nome-fixa" style="text-align:left; border-bottom:2px solid #cdd5e1; padding: 12px 15px; border-right: 2px solid #cdd5e1;">Estudante</th>
                         ${trabalhos.map(t => `
                             <th style="text-align:center; min-width: ${t.tipo === 'rubrica' ? (t.rubricas.length * 35 + 60) : 100}px; border-bottom:2px solid #cdd5e1; padding: 10px; background: #f6f8fb;">
                                 <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
@@ -4474,7 +4474,7 @@ function renderTrabalhos() {
 
                         return `
                             <tr data-nome="${escapeHtmlColar(e.nome_completo)}" onmouseover="this.style.background='#f6f8fb'" onmouseout="this.style.background='transparent'">
-                            <td style="position:sticky; left:0; background:inherit; border-bottom: 1px solid #e3e8ef; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cdd5e1; z-index: 5;">${getFaltaBadgeHtml(e.id, todayStr)}${getAeePrefix(e)}${e.nome_completo} ${tagFaltoso}</td>
+                            <td class="col-nome-fixa" style="border-bottom: 1px solid #e3e8ef; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cdd5e1;">${getFaltaBadgeHtml(e.id, todayStr)}${getAeePrefix(e)}${e.nome_completo} ${tagFaltoso}</td>
                                 ${gradeCells}                                
                                 <td id="media-est-current-${e.id}" style="text-align:center; font-weight:bold; color: ${corMedia}; background: #f6f8fb; border-bottom: 1px solid #e3e8ef; position: sticky; right: 80px; z-index: 5; border-left: 2px solid #cdd5e1;">
                                     ${media}
