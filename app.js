@@ -4344,7 +4344,10 @@ function renderTrabalhos() {
                 <h3 style="margin:0;">📊 Planilha de Notas - ${currentBimestreTrabalhos}º Bimestre</h3>
                 ${totalAulasBim > 0 ? `<div style="font-size:12px; color:#5f6b7f; margin-top:2px;">📅 Total de aulas previstas no período: <strong>${totalAulasBim}</strong></div>` : ''}
             </div>
-            <button class="btn btn-primary btn-sm no-print" onclick="abrirModalNovoTrabalho()">+ Criar Nova Atividade</button>
+            <div style="display:flex; gap:8px;" class="no-print">
+                <button class="btn btn-secondary btn-sm" onclick="abrirModalImportarAtividades()" title="Copiar atividades (nome, tipo, peso e critérios) de outra turma, sem as notas">📥 Importar de outra turma</button>
+                <button class="btn btn-primary btn-sm" onclick="abrirModalNovoTrabalho()">+ Criar Nova Atividade</button>
+            </div>
         </div>
         
         <div style="overflow-x:auto; background: white; border-radius: 8px; border: 1px solid #e3e8ef; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
@@ -4816,6 +4819,107 @@ async function salvarTrabalho(e) {
     closeModal('modalNovoTrabalho');
     renderTrabalhos();
     if (colados) alert(`${colados.achados.length} nota(s) lançada(s).` + (colados.semLinha.length ? `\n${colados.semLinha.length} estudante(s) da turma ficaram sem nota.` : ''));
+}
+
+// --- IMPORTAR ATIVIDADES DE OUTRA TURMA ---
+// Copia só a estrutura (título, tipo, peso, critérios da rubrica). Notas, rubricas
+// marcadas e ajustes ficam na turma de origem: a cópia nasce vazia.
+const TIPOS_ATIVIDADE_ROTULO = { comum: 'Comum', colar: 'Colar do Excel', rubrica: 'Rubrica', compensacao: 'Compensação',
+    caderno_auto: 'Caderno', participacao: 'Participação', avaliacao_gestor: 'Avaliação do Gestor' };
+
+function abrirModalImportarAtividades() {
+    const turmas = (data.turmas || []).filter(t => t.id != turmaAtual);
+    const grupos = turmas.map(tu => ({
+        turma: tu,
+        atividades: (data.trabalhos || []).filter(t => t.id_turma == tu.id)
+            .sort((a, b) => (parseInt(a.bimestre) || 1) - (parseInt(b.bimestre) || 1) || a.id - b.id)
+    })).filter(g => g.atividades.length);
+
+    const descricao = t => {
+        const partes = [TIPOS_ATIVIDADE_ROTULO[t.tipo] || t.tipo, `${parseInt(t.bimestre) || 1}º bim.`, `peso ${t.peso}`];
+        if (t.tipo === 'rubrica') partes.push(`${(t.rubricas || []).length} critério(s): ${(t.rubricas || []).map(r => escapeHtmlColar(r.nome)).join(', ')}`);
+        return partes.join(' · ');
+    };
+
+    const modal = document.getElementById('modalNovoTrabalho');
+    modal.querySelector('.modal-content').innerHTML = `
+        <h3>📥 Importar atividades de outra turma</h3>
+        <p style="font-size:12px; color:#5f6b7f; margin-top:0;">Copia o nome, o tipo, o peso e os critérios das rubricas. <strong>As notas não são copiadas</strong>: as atividades chegam vazias nesta turma.</p>
+        ${grupos.length === 0 ? '<p class="empty-state">Nenhuma outra turma tem atividades criadas.</p>' : `
+            <label>Turma de origem:
+                <select id="importarTurmaOrigem" onchange="document.querySelectorAll('.importar-grupo').forEach(d => d.style.display = d.dataset.turma === this.value ? 'block' : 'none')">
+                    ${grupos.map((g, i) => `<option value="${g.turma.id}" ${i === 0 ? 'selected' : ''}>${escapeHtmlColar(g.turma.nome)}${g.turma.disciplina ? ' - ' + escapeHtmlColar(g.turma.disciplina) : ''} (${g.atividades.length})</option>`).join('')}
+                </select>
+            </label>
+            ${grupos.map((g, i) => `
+                <div class="importar-grupo" data-turma="${g.turma.id}" style="display:${i === 0 ? 'block' : 'none'}; max-height:300px; overflow-y:auto; border:1px solid #e3e8ef; border-radius:8px; padding:8px; margin-top:8px;">
+                    <label style="display:flex; gap:8px; align-items:center; font-size:12px; color:#3d4759; border-bottom:1px solid #e3e8ef; padding-bottom:6px; margin-bottom:6px;">
+                        <input type="checkbox" onchange="this.closest('.importar-grupo').querySelectorAll('.importar-item').forEach(c => c.checked = this.checked)"> Selecionar todas
+                    </label>
+                    ${g.atividades.map(t => `
+                        <label style="display:flex; gap:8px; align-items:flex-start; padding:6px 0; cursor:pointer;">
+                            <input type="checkbox" class="importar-item" value="${t.id}" style="margin-top:3px;">
+                            <span><strong>${escapeHtmlColar(t.titulo)}</strong><br><span style="font-size:11px; color:#5f6b7f;">${descricao(t)}</span></span>
+                        </label>
+                    `).join('')}
+                </div>
+            `).join('')}
+            <label style="margin-top:12px;">Colocar no bimestre:
+                <select id="importarBimestreDestino">
+                    <option value="mesmo">O mesmo da atividade original</option>
+                    ${[1, 2, 3, 4].map(b => `<option value="${b}" ${b === currentBimestreTrabalhos ? 'selected' : ''}>${b}º Bimestre</option>`).join('')}
+                </select>
+            </label>
+        `}
+        <div style="margin-top:20px; display:flex; justify-content:flex-end; gap:10px;">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('modalNovoTrabalho')">Cancelar</button>
+            ${grupos.length ? '<button type="button" class="btn btn-primary" onclick="importarAtividadesSelecionadas()">Importar selecionadas</button>' : ''}
+        </div>
+    `;
+    showModal('modalNovoTrabalho');
+}
+
+async function importarAtividadesSelecionadas() {
+    const origem = document.getElementById('importarTurmaOrigem').value;
+    const grupo = document.querySelector(`.importar-grupo[data-turma="${origem}"]`);
+    const ids = Array.from(grupo.querySelectorAll('.importar-item:checked')).map(c => c.value);
+    if (!ids.length) return alert('Marque pelo menos uma atividade.');
+    const destinoBim = document.getElementById('importarBimestreDestino').value;
+    const avaliacoesDaTurma = getAvaliacoesGestorDaTurma().map(a => String(a.id));
+
+    if (!data.trabalhos) data.trabalhos = [];
+    const base = Date.now();
+    const puladas = [];
+    let importadas = 0;
+    ids.forEach(id => {
+        const orig = data.trabalhos.find(t => t.id == id);
+        if (!orig) return;
+        // Avaliação do gestor só vale se a mesma avaliação foi aplicada nesta turma
+        if (orig.tipo === 'avaliacao_gestor' && !avaliacoesDaTurma.includes(String(orig.id_avaliacao_gestor))) {
+            puladas.push(orig.titulo);
+            return;
+        }
+        const copia = {
+            id: base + importadas,
+            id_turma: turmaAtual,
+            titulo: orig.titulo,
+            tipo: orig.tipo || 'comum',
+            peso: orig.peso,
+            rubricas: (orig.rubricas || []).map(r => ({ id: r.id, nome: r.nome, peso: r.peso })),
+            bimestre: destinoBim === 'mesmo' ? (parseInt(orig.bimestre) || 1) : parseInt(destinoBim)
+        };
+        if (orig.tipo === 'avaliacao_gestor') copia.id_avaliacao_gestor = orig.id_avaliacao_gestor;
+        data.trabalhos.push(copia);
+        importadas++;
+    });
+
+    if (importadas) {
+        if (destinoBim !== 'mesmo') currentBimestreTrabalhos = parseInt(destinoBim);
+        await persistirDados();
+    }
+    closeModal('modalNovoTrabalho');
+    renderTrabalhos();
+    alert(`${importadas} atividade(s) importada(s).` + (puladas.length ? `\n\nNão importadas (a avaliação da gestão não foi aplicada nesta turma):\n${puladas.join('\n')}` : ''));
 }
 
 async function toggleRubrica(trabalhoId, estudanteId, rubricId, isChecked) {
