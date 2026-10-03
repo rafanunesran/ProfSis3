@@ -4351,23 +4351,32 @@ function renderTrabalhos() {
         </div>
         
         ${campoFiltroAlunos('tabTrabalhos')}
-        <div style="overflow-x:auto; background: white; border-radius: 8px; border: 1px solid #e3e8ef; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+        <div class="planilha-notas-box" style="background: white; border-radius: 8px; border: 1px solid #e3e8ef; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
             <table class="planilha-notas" style="font-size:13px; min-width: 600px; border-collapse: collapse; width: 100%;">
                 <thead>
-                    <tr>
-                        <th class="col-nome-fixa" style="text-align:left; border-bottom:2px solid #cdd5e1; padding: 12px 15px; border-right: 2px solid #cdd5e1;">Estudante</th>
+                    <!-- Linha 1: ações e peso. Rola junto e some ao descer a planilha. -->
+                    <tr class="planilha-acoes">
+                        <th class="col-nome-fixa" style="border-right: 2px solid #cdd5e1;"></th>
                         ${trabalhos.map(t => `
-                            <th style="text-align:center; min-width: ${t.tipo === 'rubrica' ? (t.rubricas.length * 35 + 60) : 100}px; border-bottom:2px solid #cdd5e1; padding: 10px; background: #f6f8fb;">
-                                <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
+                            <th style="text-align:center; min-width: ${t.tipo === 'rubrica' ? (t.rubricas.length * 35 + 60) : 100}px; padding: 8px 10px 2px; background: #f6f8fb;">
+                                <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
                                     <button class="btn btn-xs btn-secondary no-print" style="padding:0 5px; font-size:10px; opacity: 0.6;" onclick="abrirModalNovoTrabalho(${t.id})" title="Editar Atividade">✏️</button>
-                                    <span title="${t.titulo}" style="white-space: nowrap; font-weight: bold; color: #1c2536;">${t.titulo.substring(0,12)}</span>
                                     <span style="font-size: 10px; color: #5f6b7f; font-weight: normal;">Peso: ${t.peso}</span>
                                     <button class="btn btn-xs btn-danger no-print" style="padding:0 5px; font-size:10px; border-radius: 50%; opacity: 0.6;" onclick="removerTrabalho(${t.id})" title="Excluir Atividade">×</button>
                                 </div>
                             </th>
                         `).join('')}
-                        <th style="text-align:center; min-width: 90px; border-bottom:2px solid #cdd5e1; padding: 10px; background: #eef2f7; color: #1c2536; font-weight: bold; position: sticky; right: 80px; z-index: 10; border-left: 2px solid #cdd5e1;">MÉDIA</th>
-                        <th style="text-align:center; min-width: 80px; border-bottom:2px solid #cdd5e1; padding: 10px; background: #eef2f7; color: #1c2536; font-weight: bold; position: sticky; right: 0; z-index: 10; border-left: 1px solid #cdd5e1;">FALTAS/AT.</th>
+                        <th class="col-media-fixa" style="border-left: 2px solid #cdd5e1;"></th>
+                        <th class="col-faltas-fixa" style="border-left: 1px solid #cdd5e1;"></th>
+                    </tr>
+                    <!-- Linha 2: só os nomes. Fica congelada no topo ao rolar para baixo. -->
+                    <tr class="planilha-titulos">
+                        <th class="col-nome-fixa" style="text-align:left; border-bottom:2px solid #cdd5e1; padding: 8px 15px 10px; border-right: 2px solid #cdd5e1;">Estudante</th>
+                        ${trabalhos.map(t => `
+                            <th title="${escapeHtmlColar(t.titulo)}" style="text-align:center; border-bottom:2px solid #cdd5e1; padding: 4px 10px 10px; background: #f6f8fb; white-space: nowrap; font-weight: bold; color: #1c2536;">${escapeHtmlColar(t.titulo.substring(0,12))}</th>
+                        `).join('')}
+                        <th class="col-media-fixa" style="border-bottom:2px solid #cdd5e1; border-left: 2px solid #cdd5e1;">MÉDIA</th>
+                        <th class="col-faltas-fixa" style="border-bottom:2px solid #cdd5e1; border-left: 1px solid #cdd5e1;">FALTAS/AT.</th>
                     </tr>
                 </thead>
                 <tbody>

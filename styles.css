@@ -3020,3 +3020,62 @@ html[data-estilo="ambar"] .modal-content form > button[type="submit"]:last-child
         line-height: 1.25;
     }
 }
+
+/* Planilha de notas: rola dentro da própria caixa para o cabeçalho poder congelar.
+   A 1ª linha do cabeçalho (editar, peso, excluir) rola junto e some; a 2ª (só os
+   nomes das atividades) gruda no topo. */
+.planilha-notas-box {
+    overflow: auto;
+    max-height: calc(100vh - 140px);
+    max-height: calc(100dvh - 140px);
+    overscroll-behavior: contain;
+}
+
+.planilha-notas thead tr.planilha-acoes th {
+    border-bottom: none;
+}
+
+.planilha-notas thead tr.planilha-titulos th {
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    background: var(--surface-2);
+    box-shadow: 0 2px 4px -2px rgba(0, 0, 0, 0.15);
+}
+
+.planilha-notas thead .col-media-fixa,
+.planilha-notas thead .col-faltas-fixa {
+    position: sticky;
+    text-align: center;
+    padding: 10px;
+    background: #eef2f7;
+    color: #1c2536;
+    font-weight: bold;
+    z-index: 9;
+}
+
+.planilha-notas thead .col-media-fixa { right: 80px; min-width: 90px; }
+.planilha-notas thead .col-faltas-fixa { right: 0; min-width: 80px; }
+
+/* Cantos: congelados nos dois sentidos, ficam por cima de tudo */
+.planilha-notas thead tr.planilha-titulos th.col-nome-fixa,
+.planilha-notas thead tr.planilha-titulos th.col-media-fixa,
+.planilha-notas thead tr.planilha-titulos th.col-faltas-fixa {
+    z-index: 12;
+}
+
+.planilha-notas thead tr.planilha-titulos .col-media-fixa,
+.planilha-notas thead tr.planilha-titulos .col-faltas-fixa {
+    background: #eef2f7;
+}
+
+html[data-tema="ambar-noturno"] .planilha-notas thead .col-media-fixa,
+html[data-tema="ambar-noturno"] .planilha-notas thead .col-faltas-fixa {
+    background: var(--surface-2);
+    color: inherit;
+}
+
+@media print {
+    .planilha-notas-box { max-height: none; overflow: visible; }
+    .planilha-notas thead tr.planilha-titulos th { position: static; box-shadow: none; }
+}
