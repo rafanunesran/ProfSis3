@@ -62,6 +62,7 @@ manda o `localhost` por fora do proxy, senão o próprio site não carregaria).
 | `teste-colar-notas.js` | Tipo de atividade "Colar do Excel": cada linha nome + nota vira a nota do estudante da turma (tab ou espaço, ponto ou vírgula, acento e nome cortado no fim); nome de fora da turma e linha sem nota são ignorados e avisados; colar de novo substitui sem duplicar. |
 | `teste-importar-atividades.js` | "Importar de outra turma" na aba Trabalhos: copia título, tipo, peso e critérios da rubrica sem as notas, no bimestre escolhido ou no original; avaliação da gestão de outra turma é pulada; a turma de origem não muda. |
 | `teste-filtro-alunos.js` | Filtro por nome nas telas de lançamento (Trabalhos, Caderno, Compensações): trecho em qualquer parte do nome, sem diferença de acento; filtra sem redesenhar (nota digitada não se perde), sobrevive a um redesenho e não passa para outra turma. |
+| `teste-ids-texto.js` | Clica de verdade nos botões com ids gerados por `novoId()` (texto com hífen) e numéricos: status e exclusão de compensação, nota e rubrica na planilha, caderno. Sem aspas no `onclick` esses cliques davam erro e não faziam nada. |
 
 As Regras do Firestore têm um teste próprio, fora daqui: `firestore.rules.teste.mjs`
 na raiz, que roda no emulador e compara duas versões lado a lado.

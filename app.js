@@ -4453,7 +4453,7 @@ function renderTrabalhos() {
                                             <div style="display:flex; gap:5px;">
                                                 ${t.rubricas.map(r => `
                                                     <label style="display:flex; flex-direction:column; align-items:center; cursor:pointer;" title="${r.nome} (Peso: ${r.peso})">
-                                                        <input type="checkbox" onchange="toggleRubrica(${t.id}, ${e.id}, ${r.id}, this.checked)" ${marcadas.includes(r.id) ? 'checked' : ''}>
+                                                        <input type="checkbox" onchange="toggleRubrica(${t.id}, '${e.id}', ${r.id}, this.checked)" ${marcadas.includes(r.id) ? 'checked' : ''}>
                                                         <span style="font-size:9px; color:#7a869a;">${r.id}</span>
                                                     </label>
                                                 `).join('')}
@@ -4473,7 +4473,7 @@ function renderTrabalhos() {
                                         style="width:100%; border:none; text-align:center; padding: 12px 0; background:transparent; font-size:13px; outline: none;"
                                         placeholder="-"
                                         onfocus="this.parentElement.style.background='#edf3fd';"
-                                        onblur="this.parentElement.style.background='transparent'; salvarNota(${t.id}, ${e.id}, this.value)">
+                                        onblur="this.parentElement.style.background='transparent'; salvarNota(${t.id}, '${e.id}', this.value)">
                                 </td>
                             `;
                         }).join('');
@@ -4504,7 +4504,16 @@ function renderTrabalhos() {
     filtrarAlunosNaTela('tabTrabalhos', filtroAlunosTexto['tabTrabalhos:' + turmaAtual]);
 }
 
+// Os botões e campos passam o id entre aspas: ids gerados por novoId() têm letras e
+// hífen ("mg3k2-a1b2") e, sem aspas, o onclick vira uma conta e quebra. Aqui o id volta
+// ao valor gravado no estudante (número ou texto), para não mudar o tipo nos registros.
+function idEstudanteGravado(id) {
+    const est = (data.estudantes || []).find(e => String(e.id) === String(id));
+    return est ? est.id : id;
+}
+
 async function salvarNota(trabalhoId, estudanteId, valor) {
+    estudanteId = idEstudanteGravado(estudanteId);
     if (!data.notas) data.notas = [];
     let nota = data.notas.find(n => n.id_trabalho == trabalhoId && n.id_estudante == estudanteId);
     if (nota) {
@@ -4934,6 +4943,7 @@ async function importarAtividadesSelecionadas() {
 }
 
 async function toggleRubrica(trabalhoId, estudanteId, rubricId, isChecked) {
+    estudanteId = idEstudanteGravado(estudanteId);
     if (!data.notas) data.notas = [];
     let nota = data.notas.find(n => n.id_trabalho == trabalhoId && n.id_estudante == estudanteId);
     const trabalho = data.trabalhos.find(t => t.id == trabalhoId);
@@ -5180,11 +5190,11 @@ function renderCompensacoes() {
                                 <td style="font-size:12px;">${meses[c.mes_referencia]}/${c.ano_referencia}</td>
                                 <td>${c.atividade} <br><span style="font-size:10px; color:#5f6b7f;">Aulas comp.: ${c.peso_faltas || c.qtd_faltas}</span></td>
                                 <td>
-                                    <button onclick="toggleStatusCompensacao(${c.id})" style="border:1px solid ${st.color}; background:${st.bg}; color:${st.color}; padding:5px 10px; border-radius:15px; font-weight:bold; cursor:pointer; width: 130px;">
+                                    <button onclick="toggleStatusCompensacao('${c.id}')" style="border:1px solid ${st.color}; background:${st.bg}; color:${st.color}; padding:5px 10px; border-radius:15px; font-weight:bold; cursor:pointer; width: 130px;">
                                         ${st.label}
                                     </button>
                                 </td>
-                                <td><button class="btn btn-danger btn-sm" onclick="removerCompensacao(${c.id})">🗑️</button></td>
+                                <td><button class="btn btn-danger btn-sm" onclick="removerCompensacao('${c.id}')">🗑️</button></td>
                             </tr>
                         `;
                     }).join('') : '<tr><td colspan="5" style="text-align:center; color:#999;">Nenhuma compensação registrada.</td></tr>'}
@@ -5286,7 +5296,7 @@ function toggleStatusCompensacao(id) {
 
 function removerCompensacao(id) {
     if(confirm('Excluir esta atribuição?')) {
-        data.compensacoes = data.compensacoes.filter(c => c.id !== id);
+        data.compensacoes = data.compensacoes.filter(c => String(c.id) !== String(id));
         persistirDados();
         renderCompensacoes();
     }
@@ -5331,22 +5341,22 @@ function renderCaderno() {
                         <td>${getFaltaBadgeHtml(e.id, dataSelecionada)}${getAeePrefix(e)}${e.nome_completo}</td>
                         <td style="text-align:center;">
                             <div style="display:flex; justify-content:center; gap:15px;">
-                                <label style="font-size:12px; cursor:pointer;"><input type="radio" name="status_${e.id}" value="completo" onchange="salvarStatusCaderno(${e.id}, this.value, 'status')" ${status === 'completo' ? 'checked' : ''}> C</label>
-                                <label style="font-size:12px; cursor:pointer; color:#d69e2e;"><input type="radio" name="status_${e.id}" value="incompleto" onchange="salvarStatusCaderno(${e.id}, this.value, 'status')" ${status === 'incompleto' ? 'checked' : ''}> I</label>
-                                <label style="font-size:12px; cursor:pointer; color:#e53e3e;"><input type="radio" name="status_${e.id}" value="nao_realizou" onchange="salvarStatusCaderno(${e.id}, this.value, 'status')" ${status === 'nao_realizou' ? 'checked' : ''}> N</label>
+                                <label style="font-size:12px; cursor:pointer;"><input type="radio" name="status_${e.id}" value="completo" onchange="salvarStatusCaderno('${e.id}', this.value, 'status')" ${status === 'completo' ? 'checked' : ''}> C</label>
+                                <label style="font-size:12px; cursor:pointer; color:#d69e2e;"><input type="radio" name="status_${e.id}" value="incompleto" onchange="salvarStatusCaderno('${e.id}', this.value, 'status')" ${status === 'incompleto' ? 'checked' : ''}> I</label>
+                                <label style="font-size:12px; cursor:pointer; color:#e53e3e;"><input type="radio" name="status_${e.id}" value="nao_realizou" onchange="salvarStatusCaderno('${e.id}', this.value, 'status')" ${status === 'nao_realizou' ? 'checked' : ''}> N</label>
                             </div>
                         </td>
                         <td style="text-align:center;">
                             <div style="display:flex; justify-content:center; gap:15px;">
-                                <label style="font-size:12px; cursor:pointer;"><input type="radio" name="eng_${e.id}" value="total" onchange="salvarStatusCaderno(${e.id}, this.value, 'engajamento')" ${engajamento === 'total' ? 'checked' : ''}> T</label>
-                                <label style="font-size:12px; cursor:pointer; color:#d69e2e;"><input type="radio" name="eng_${e.id}" value="medio" onchange="salvarStatusCaderno(${e.id}, this.value, 'engajamento')" ${engajamento === 'medio' ? 'checked' : ''}> M</label>
-                                <label style="font-size:12px; cursor:pointer; color:#e53e3e;"><input type="radio" name="eng_${e.id}" value="nada" onchange="salvarStatusCaderno(${e.id}, this.value, 'engajamento')" ${engajamento === 'nada' ? 'checked' : ''}> N</label>
+                                <label style="font-size:12px; cursor:pointer;"><input type="radio" name="eng_${e.id}" value="total" onchange="salvarStatusCaderno('${e.id}', this.value, 'engajamento')" ${engajamento === 'total' ? 'checked' : ''}> T</label>
+                                <label style="font-size:12px; cursor:pointer; color:#d69e2e;"><input type="radio" name="eng_${e.id}" value="medio" onchange="salvarStatusCaderno('${e.id}', this.value, 'engajamento')" ${engajamento === 'medio' ? 'checked' : ''}> M</label>
+                                <label style="font-size:12px; cursor:pointer; color:#e53e3e;"><input type="radio" name="eng_${e.id}" value="nada" onchange="salvarStatusCaderno('${e.id}', this.value, 'engajamento')" ${engajamento === 'nada' ? 'checked' : ''}> N</label>
                             </div>
                         </td>
                         <td style="text-align:center;">
                             <div style="display:flex; justify-content:center; gap:10px;">
-                                <label style="font-size:11px; cursor:pointer; color:#2563c9;"><input type="checkbox" onchange="salvarStatusCaderno(${e.id}, this.checked, 'extra_caderno')" ${extraCad ? 'checked' : ''}> Cad.</label>
-                                <label style="font-size:11px; cursor:pointer; color:#38a169;"><input type="checkbox" onchange="salvarStatusCaderno(${e.id}, this.checked, 'extra_pratica')" ${extraPrat ? 'checked' : ''}> Prat.</label>
+                                <label style="font-size:11px; cursor:pointer; color:#2563c9;"><input type="checkbox" onchange="salvarStatusCaderno('${e.id}', this.checked, 'extra_caderno')" ${extraCad ? 'checked' : ''}> Cad.</label>
+                                <label style="font-size:11px; cursor:pointer; color:#38a169;"><input type="checkbox" onchange="salvarStatusCaderno('${e.id}', this.checked, 'extra_pratica')" ${extraPrat ? 'checked' : ''}> Prat.</label>
                             </div>
                         </td>
                     </tr>
@@ -5359,6 +5369,7 @@ function renderCaderno() {
 }
 
 async function salvarStatusCaderno(estudanteId, valor, campo) {
+    estudanteId = idEstudanteGravado(estudanteId);
     const container = document.getElementById('tabCaderno');
     const dataReg = container.querySelector('#cadernoData').value;
     
