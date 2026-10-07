@@ -265,6 +265,70 @@ function completarComLocal(nuvem, local) {
     return base;
 }
 
+// ============================================================================
+//  QUAL VERSÃO DO ESTUDANTE VALE: A EDITADA POR ÚLTIMO
+// ----------------------------------------------------------------------------
+//  A junção entre aparelhos (unirCamadaPessoal) mantinha SEMPRE a versão daqui
+//  quando o mesmo estudante existia dos dois lados. O gestor mudava o status de
+//  uma turma inteira num computador; o outro aparelho (ou a outra conta da gestão),
+//  com a cópia da semana anterior, abria o painel, ficava com a versão velha e a
+//  republicava para a escola quatro segundos depois. Para todo mundo, inclusive
+//  para quem fez a mudança, parecia que nada tinha sido alterado.
+//
+//  O conserto: o painel da gestão carimba `atualizadoEm` em todo estudante que
+//  mudou desde a última gravação, e a junção fica com o carimbo mais novo. Não é
+//  preciso lembrar disto em cada tela que mexe no estudante (status, remanejamento,
+//  importação, edição): a comparação acontece na hora de gravar, para todas.
+// ============================================================================
+
+function _carimboDe(r) {
+    return (r && typeof r.atualizadoEm === 'string') ? r.atualizadoEm : '';
+}
+
+// O estudante é o mesmo quando tem o mesmo id e o mesmo nome. A turma NÃO entra:
+// remanejar troca a turma, e o remanejado não pode virar dois (um em cada turma).
+function mesmoEstudante(a, b) {
+    if (!a || !b) return false;
+    if (String(a.id) !== String(b.id)) return false;
+    const na = String(a.nome_completo || '').trim().toUpperCase();
+    const nb = String(b.nome_completo || '').trim().toUpperCase();
+    if (!na || !nb) return mesmoRegistro(a, b);
+    return na === nb;
+}
+
+function _assinaturaEstudante(e) {
+    const copia = Object.assign({}, e);
+    delete copia.atualizadoEm;
+    return JSON.stringify(copia);
+}
+
+function _chaveRetrato(e) {
+    return String(e && e.id) + '|' + String((e && e.nome_completo) || '').trim().toUpperCase();
+}
+
+let _retratoEstudantes = null;   // chave -> assinatura, como estavam na última gravação
+
+// Guarda como os estudantes estão agora. Chamada ao terminar de carregar o painel.
+function lembrarRetratoEstudantes(dados) {
+    const mapa = {};
+    ((dados && dados.estudantes) || []).forEach(e => { mapa[_chaveRetrato(e)] = _assinaturaEstudante(e); });
+    _retratoEstudantes = mapa;
+}
+
+// Carimba quem mudou desde o último retrato e tira o retrato novo. Devolve quantos.
+function carimbarEstudantesAlterados(dados) {
+    if (!dados || !Array.isArray(dados.estudantes)) return 0;
+    if (!_retratoEstudantes) { lembrarRetratoEstudantes(dados); return 0; }
+    const agora = new Date().toISOString();
+    let n = 0;
+    dados.estudantes.forEach(e => {
+        if (!e || typeof e !== 'object') return;
+        if (_retratoEstudantes[_chaveRetrato(e)] !== _assinaturaEstudante(e)) { e.atualizadoEm = agora; n++; }
+    });
+    lembrarRetratoEstudantes(dados);
+    return n;
+}
+
 // Junta a camada pessoal de OUTRO aparelho (a que veio cifrada da nuvem) na de agora,
 // registro a registro. Muda `alvo` no lugar e devolve o que entrou.
 //
@@ -275,7 +339,8 @@ function completarComLocal(nuvem, local) {
 // aparelho acrescenta o que falta em vez de apagar.
 //
 // Mesma identidade de registro do resgate (mesmoRegistro): id igual e mesma pessoa é
-// o mesmo registro, e o daqui manda. O preço conhecido: algo apagado num aparelho pode
+// o mesmo registro; vale o de `atualizadoEm` mais novo e, no empate (ou sem carimbo),
+// o daqui. Estudante se reconhece por id + nome (mesmoEstudante). O preço conhecido: algo apagado num aparelho pode
 // voltar vindo de outro que ainda o tinha. Reaparecer é melhor do que sumir.
 function unirCamadaPessoal(alvo, vindo) {
     const por = {};
@@ -290,10 +355,24 @@ function unirCamadaPessoal(alvo, vindo) {
             const porId = {};
             const k = (it) => (it && it.id != null) ? String(it.id) : 'js:' + JSON.stringify(it);
             aqui.forEach(it => { (porId[k(it)] = porId[k(it)] || []).push(it); });
+            const mesmo = (chave === 'estudantes') ? mesmoEstudante : mesmoRegistro;
             let entraram = 0;
             lista.forEach(it => {
                 const candidatos = porId[k(it)] || [];
-                if (candidatos.some(j => mesmoRegistro(j, it))) return;
+                const igual = candidatos.find(j => mesmo(j, it));
+                if (igual) {
+                    // O mesmo registro dos dois lados: vale o editado por último. Sem
+                    // isto o daqui mandava sempre, e o aparelho com cópia velha
+                    // desfazia — e republicava para a escola — o que outro aparelho
+                    // tinha mudado (ver carimbarEstudantesAlterados).
+                    if (_carimboDe(it) > _carimboDe(igual) && JSON.stringify(it) !== JSON.stringify(igual)) {
+                        const pos = aqui.indexOf(igual);
+                        if (pos !== -1) aqui[pos] = it;
+                        candidatos[candidatos.indexOf(igual)] = it;
+                        entraram++;
+                    }
+                    return;
+                }
                 (porId[k(it)] = candidatos).push(it);
                 aqui.push(it);
                 entraram++;

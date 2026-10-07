@@ -3576,12 +3576,32 @@ async function montarCartaoListaEscola() {
                 <button class="btn btn-sm btn-primary" onclick="publicarListaEscolaAgora()">📤 Publicar agora</button>
             </div>
             <p style="font-size:11px; color:#5f6b7f; margin:10px 0 0;">
-                A publicação é automática a cada alteração. Este botão serve para conferir na hora.
+                A publicação é automática a cada alteração. Este botão publica na hora e faz a lista
+                deste aparelho valer sobre a de outros aparelhos da gestão.
             </p>
         </div>`;
 }
 
 async function publicarListaEscolaAgora() {
+    // "Publicar agora" é também o jeito de dizer: a lista CERTA é a deste aparelho.
+    // Estudante que está diferente do publicado ganha a data de agora, e com isso
+    // vence a cópia velha de qualquer outro aparelho ou conta da gestão — inclusive
+    // as alterações feitas antes de existir o carimbo (shared.js).
+    const publicada = await lerListaEscola('gestor', { forcar: true });
+    if (publicada.estado === 'ok' && typeof estudantesDiferentesDaPublicada === 'function') {
+        const diferentes = estudantesDiferentesDaPublicada(data.estudantes, (publicada.dados || {}).estudantes);
+        if (diferentes.length) {
+            const amostra = diferentes.slice(0, 15).map(e => `• ${e.nome_completo} (${e.status || 'Ativo'})`).join('\n');
+            const mais = diferentes.length > 15 ? `\n... e mais ${diferentes.length - 15}` : '';
+            if (!confirm(`${diferentes.length} estudante(s) deste painel estão diferentes da lista publicada:\n\n` +
+                         `${amostra}${mais}\n\nPublicar a versão DESTE aparelho? Ela passa a valer para os ` +
+                         `professores e para os outros aparelhos da gestão.`)) return;
+            const agora = new Date().toISOString();
+            diferentes.forEach(e => { e.atualizadoEm = agora; });
+            await persistirDados();
+        }
+    }
+
     let r = await publicarListaEscola(data, 'gestor', { forcar: true });
 
     // A recusa não pode ser uma parede: a escola que REALMENTE esvaziou a lista

@@ -316,6 +316,41 @@ function _guardarCache(id, resultado) {
     return resultado;
 }
 
+// --- O painel da gestão também LÊ o que está publicado ------------------------
+//
+// O painel publicava a sua cópia sem nunca olhar a publicada. Bastava abrir num
+// aparelho com a lista da semana passada (ou entrar com a conta de outro gestor,
+// cuja camada pessoal é cifrada com a chave dele) para a lista velha ir ao ar por
+// cima da nova, quatro segundos depois. Agora, ao abrir, o painel junta a publicada
+// na sua, e fica com a versão editada por último de cada estudante (shared.js).
+async function trazerListaPublicadaParaGestor() {
+    if (typeof currentViewMode === 'undefined' || currentViewMode !== 'gestor') return { estado: 'nao-gestor' };
+    if (typeof data === 'undefined' || !data) return { estado: 'sem-dados' };
+    if (window.bloquearEscritaLocal || window.bloquearEscritaNuvem) return { estado: 'bloqueado' };
+
+    const lista = await lerListaEscola('gestor', { forcar: true });
+    if (lista.estado !== 'ok') return { estado: lista.estado };
+
+    if (!Array.isArray(data.estudantes)) data.estudantes = [];
+    const entrou = unirCamadaPessoal(data, { estudantes: (lista.dados && lista.dados.estudantes) || [] });
+    if (entrou.total) {
+        console.log('[Lista da escola] Alterações publicadas por outro aparelho trazidas para este painel:', entrou.por);
+        if (typeof lembrarRetratoEstudantes === 'function') lembrarRetratoEstudantes(data);
+        if (typeof persistirDados === 'function') await persistirDados();
+    }
+    return { estado: 'ok', entrou: entrou.total };
+}
+
+// Quantos estudantes deste painel estão diferentes da lista publicada (ou faltam
+// nela). Usado pelo "Publicar agora" para dizer o que vai mudar para a escola.
+function estudantesDiferentesDaPublicada(locais, publicados) {
+    const pub = publicados || [];
+    return (locais || []).filter(e => {
+        const outro = pub.find(p => mesmoEstudante(p, e));
+        return !outro || _assinaturaEstudante(outro) !== _assinaturaEstudante(e);
+    });
+}
+
 // ============================================================================
 //  O QUE O PROFESSOR DEVOLVE PARA A ESCOLA: OCORRÊNCIAS E FALTAS
 // ----------------------------------------------------------------------------

@@ -104,6 +104,14 @@ async function iniciarApp() {
         // [AUTO-BACKUP] Cria no máximo 1 backup por dia; mantém histórico dos últimos 15 dias
         verificarBackupAutomatico();
 
+        // Antes de publicar qualquer coisa, o painel da gestão traz o que JÁ está
+        // publicado: a mudança feita em outro aparelho, ou por outra conta da gestão,
+        // entra aqui em vez de ser desfeita pela cópia velha deste aparelho.
+        if (currentViewMode === 'gestor' && window.dadosCarregados && typeof trazerListaPublicadaParaGestor === 'function') {
+            try { await trazerListaPublicadaParaGestor(); } catch (e) { console.warn('[SisProf] Lista publicada:', e); }
+        }
+        if (typeof lembrarRetratoEstudantes === 'function') lembrarRetratoEstudantes(data);
+
         // Publica a lista da escola assim que o painel da gestão abre (listaescola.js).
         // Sem isto, um gestor que só consulta — sem editar nada — nunca dispararia
         // persistirDados(), e a lista dos professores continuaria a do dia da virada.
@@ -9430,6 +9438,12 @@ async function persistirDados() {
 
     // [CORREÇÃO DEFINITIVA] Usa a chave correta baseada no modo (Professor vs Gestor) para evitar sobreescrever dados.
     const key = getStorageKey(currentUser);
+
+    // Quem a gestão alterou desde a última gravação ganha a data da alteração. É o
+    // que faz a versão nova vencer a cópia velha de outro aparelho (shared.js).
+    if (currentViewMode === 'gestor' && typeof carimbarEstudantesAlterados === 'function') {
+        carimbarEstudantesAlterados(data);
+    }
 
     // A função saveData em core.js já lida com o salvamento no Firebase (se online) ou no LocalStorage (se offline) usando a chave correta.
     if (typeof salvarDadosUsuario === 'function') {
