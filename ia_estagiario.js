@@ -404,10 +404,24 @@ function lerHistoricoDocumentosProfessor() {
 // Guarda mais um documento no topo do histórico (mais recente primeiro) e corta o excedente.
 // Nunca interrompe a impressão: qualquer falha (dados ainda não carregados, cota cheia) vira só
 // aviso no console. Devolve o registro criado (ou null) pra quem precisar do id.
-function registrarDocumentoNoHistoricoProfessor(entrada) {
+// `idExistente`: o documento já foi guardado nesta mesma tela de revisão (💾 Salvar e depois PDF ou
+// Imprimir, por exemplo) - atualiza aquele registro em vez de criar outro igual.
+function registrarDocumentoNoHistoricoProfessor(entrada, idExistente) {
     try {
         if (typeof data === 'undefined' || !data) return null;
         if (!Array.isArray(data.historicoDocumentos)) data.historicoDocumentos = [];
+
+        if (idExistente) {
+            const pos = data.historicoDocumentos.findIndex(h => h && String(h.id) === String(idExistente));
+            if (pos !== -1) {
+                const atualizado = Object.assign({}, data.historicoDocumentos[pos], entrada || {},
+                    { id: data.historicoDocumentos[pos].id, ts: Date.now(), criadoEm: getTodayString() });
+                data.historicoDocumentos.splice(pos, 1);
+                data.historicoDocumentos.unshift(atualizado);
+                if (typeof persistirDados === 'function') persistirDados();
+                return atualizado;
+            }
+        }
 
         const registro = Object.assign({
             id: 'doc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
@@ -502,10 +516,11 @@ function lerHistoricoPlanoAulaEstagiario() {
 
 // Guarda o plano recém-impresso nos dois lugares (histórico da conta + espelho no aparelho). Nunca
 // interrompe a impressão: qualquer falha (cota do localStorage, por exemplo) só vira aviso no console.
-function registrarPlanoAulaNoHistoricoEstagiario(payload) {
+// Devolve o id do registro (pra quem salvou poder atualizá-lo depois, em vez de duplicar).
+function registrarPlanoAulaNoHistoricoEstagiario(payload, idExistente) {
     const dados = (payload && payload.dados) || {};
     // Plano em branco não serve de base pra nada - não ocupa espaço no histórico.
-    if (!PLANO_AULA_CAMPOS_IA.some(c => (dados[c.key] || '').toString().trim())) return;
+    if (!PLANO_AULA_CAMPOS_IA.some(c => (dados[c.key] || '').toString().trim())) return null;
 
     const identificacao = {
         serie: payload.serie || '',
@@ -521,10 +536,12 @@ function registrarPlanoAulaNoHistoricoEstagiario(payload) {
         titulo: `Plano de Aula - ${identificacao.disciplina || 'sem disciplina'}${identificacao.serie ? ' (' + identificacao.serie + ')' : ''}`,
         subtitulo: [identificacao.tema, identificacao.semana ? `semana ${identificacao.semana}` : ''].filter(Boolean).join(' · '),
         payload: Object.assign({}, payload)
-    }, identificacao));
+    }, identificacao), idExistente);
 
     try {
-        const historico = lerHistoricoPlanoAulaLocalEstagiario();
+        const idRegistro = registro ? registro.id : idExistente;
+        const historico = lerHistoricoPlanoAulaLocalEstagiario()
+            .filter(h => !idRegistro || String(h.id) !== String(idRegistro));
         historico.unshift(Object.assign({
             id: registro ? registro.id : undefined,
             ts: Date.now(),
@@ -536,13 +553,15 @@ function registrarPlanoAulaNoHistoricoEstagiario(payload) {
     } catch (e) {
         console.warn('[Estagiário] Não foi possível guardar o plano no histórico local:', e);
     }
+    return registro ? registro.id : (idExistente || null);
 }
 
 // Reimprime um Plano de Aula já gerado, a partir do que ficou guardado no histórico - sem IA e sem
 // refazer o formulário. Chamada pela aba "Planos de Aula" da tela Documentos (app.js).
 // Registros antigos (anteriores ao histórico) não guardaram o payload inteiro: nesse caso o
 // documento é remontado com o que existe, e os campos que nunca foram guardados saem em branco.
-async function reimprimirPlanoAulaHistoricoEstagiario(id) {
+// `modo` = 'pdf' baixa o arquivo em vez de abrir a impressão (botão 📄 PDF da tela Documentos).
+async function reimprimirPlanoAulaHistoricoEstagiario(id, modo) {
     const plano = lerHistoricoPlanoAulaEstagiario().find(h => String(h.id) === String(id));
     if (!plano) return alert('Plano de aula não encontrado no histórico.');
 
@@ -557,10 +576,10 @@ async function reimprimirPlanoAulaHistoricoEstagiario(id) {
     if (!payload.professor) payload.professor = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.nome : '';
 
     try {
-        imprimirDocumentoEstagiario(await montarHtmlPlanoAula(payload));
+        await saidaDocumentoEstagiario(await montarHtmlPlanoAula(payload), modo);
     } catch (e) {
         console.error(e);
-        alert('Erro ao reimprimir o plano de aula: ' + e.message);
+        alert((modo === 'pdf' ? 'Erro ao gerar o PDF do plano de aula: ' : 'Erro ao reimprimir o plano de aula: ') + e.message);
     }
 }
 
@@ -2504,6 +2523,122 @@ function imprimirDocumentoEstagiario(htmlFinal) {
     win.document.close();
 }
 
+// PDF baixado direto, sem passar pela janela de impressão. O documento é montado num <iframe>
+// escondido (com o CSS do próprio modelo) e o html2pdf.js é carregado DENTRO dele: assim a
+// "fotografia" da página usa os estilos do documento, e não os da tela do sistema. O arquivo
+// sai com o mesmo nome sugerido para a impressão (o <title> - ver definirTituloPdfEstagiario).
+const URL_HTML2PDF_ESTAGIARIO = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+
+function nomeArquivoPdfEstagiario(html) {
+    const m = String(html || '').match(/<title>([\s\S]*?)<\/title>/i);
+    const nome = sanitizarNomeArquivoEstagiario(m ? m[1] : '') || 'documento';
+    return nome + '.pdf';
+}
+
+async function baixarPdfDocumentoEstagiario(htmlFinal) {
+    const html = String(htmlFinal || '').replace(/<script[\s\S]*?<\/script>/gi, '');
+    const paisagem = /size\s*:\s*[^;}]*landscape/i.test(html);
+    const nomeArquivo = nomeArquivoPdfEstagiario(html);
+
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = `position:fixed; left:-12000px; top:0; width:${paisagem ? 1120 : 820}px; height:1400px; border:0; background:#fff;`;
+    document.body.appendChild(iframe);
+
+    try {
+        const doc = iframe.contentDocument;
+        doc.open();
+        doc.write(html);
+        doc.close();
+
+        // A quebra de página DEPOIS do último bloco (o modelo do plano tem uma) vira, no PDF,
+        // uma página em branco no fim. Na impressão ela não aparece; aqui é preciso tirar.
+        const semQuebraNoFim = doc.createElement('style');
+        // A margem de baixo do corpo (o Anexo IV traz 135pt, herdados do Word) tem o mesmo efeito: no
+        // PDF a margem da folha já existe.
+        semQuebraNoFim.textContent = 'body > :last-child, body > :last-child :last-child { page-break-after: auto !important; break-after: auto !important; }'
+            + ' body { padding-bottom: 0 !important; margin-bottom: 0 !important; }';
+        doc.head.appendChild(semQuebraNoFim);
+        // Pelo mesmo motivo, sai o que sobra vazio no fim do modelo (parágrafos e a tabela de rodapé
+        // em branco que vieram do Word): só empurrariam uma folha a mais para o PDF.
+        let ultimo = doc.body.lastElementChild;
+        while (ultimo && !ultimo.textContent.trim() && !ultimo.querySelector('img') && ultimo.tagName !== 'IMG') {
+            const anterior = ultimo.previousElementSibling;
+            ultimo.remove();
+            ultimo = anterior;
+        }
+
+        // Logos e imagens do modelo precisam estar carregadas antes da fotografia.
+        await Promise.all(Array.from(doc.images || []).map(img => img.complete ? null
+            : new Promise(r => { img.onload = img.onerror = r; setTimeout(r, 5000); })));
+
+        const win = iframe.contentWindow;
+        if (typeof win.html2pdf !== 'function') {
+            await new Promise((resolve, reject) => {
+                const sc = doc.createElement('script');
+                sc.src = URL_HTML2PDF_ESTAGIARIO;
+                sc.onload = resolve;
+                sc.onerror = () => reject(new Error('Não consegui carregar o gerador de PDF. Confira a internet e tente de novo (ou use o Imprimir > Salvar como PDF).'));
+                doc.head.appendChild(sc);
+            });
+        }
+
+        const blob = await win.html2pdf().set({
+            margin: 10,
+            filename: nomeArquivo,
+            image: { type: 'jpeg', quality: 0.95 },
+            html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: paisagem ? 'landscape' : 'portrait' },
+            pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'img', 'p', 'li', 'h1', 'h2', 'h3', 'h4'] }
+        }).from(doc.body).outputPdf('blob');
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = nomeArquivo;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        return nomeArquivo;
+    } finally {
+        iframe.remove();
+    }
+}
+
+// Saída única dos documentos do Estagiário: 'pdf' baixa o arquivo, qualquer outra coisa imprime.
+async function saidaDocumentoEstagiario(html, modo) {
+    if (modo === 'pdf') return baixarPdfDocumentoEstagiario(html);
+    return imprimirDocumentoEstagiario(html);
+}
+
+// Botões do rodapé dos modais de revisão (Salvar / PDF / Imprimir). Ficam todos travados enquanto
+// um deles trabalha, pra um clique duplo não registrar o mesmo documento duas vezes.
+function botoesSaidaRevisaoEstagiario(funcao) {
+    return `<span style="display:flex; gap:8px; flex-wrap:wrap;" data-botoes-saida>
+                <button class="btn btn-secondary" data-acao="salvar" onclick="${funcao}('salvar')" title="Guarda o documento para consultar, reaproveitar e imprimir depois">💾 Salvar</button>
+                <button class="btn btn-info" data-acao="pdf" onclick="${funcao}('pdf')" title="Baixa o documento em PDF">📄 PDF</button>
+                <button class="btn btn-success" data-acao="imprimir" onclick="${funcao}('imprimir')">🖨️ Imprimir</button>
+            </span>`;
+}
+
+function travarBotoesSaidaEstagiario(idModal, travar, acao) {
+    const modal = document.getElementById(idModal);
+    const grupo = modal && modal.querySelector('[data-botoes-saida]');
+    if (!grupo) return;
+    const trabalhando = { salvar: 'Salvando... ⏳', pdf: 'Gerando PDF... ⏳', imprimir: 'Gerando Documento... ⏳' };
+    grupo.querySelectorAll('button').forEach(b => {
+        if (travar) {
+            b.dataset.rotulo = b.textContent;
+            b.disabled = true;
+            if (b.dataset.acao === acao && trabalhando[acao]) b.textContent = trabalhando[acao];
+        } else {
+            b.disabled = false;
+            if (b.dataset.rotulo) b.textContent = b.dataset.rotulo;
+        }
+    });
+}
+
 // Ids dos <iframe> de prévia - cada modal de revisão tem o seu, e é de lá que o texto revisado é lido
 // de volta na hora de imprimir.
 const ID_PREVIA_PLANO_AULA_ESTAGIARIO = 'previaPlanoAulaEstagiario';
@@ -2562,6 +2697,9 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
     modal.dataset.professorParceiro = professorParceiro || '';
     // Guarda a saída ORIGINAL da IA para comparar com a versão editada na exportação (aprendizado).
     modal.dataset.dadosOriginais = JSON.stringify(dados || {});
+    // Documento novo nesta tela: ainda não foi guardado nem aprendido (ver exportarDocumentoFinal).
+    delete modal.dataset.historicoId;
+    delete modal.dataset.aprendido;
 
     // Seletor de "qual aula do Material Digital foi dada" - reaproveita o catálogo compartilhado da
     // escola pra essa disciplina+série (já resolvido em gerarDocumentoIA, antes de chamar esta função).
@@ -2596,7 +2734,7 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
     modal.innerHTML = `
         <div class="modal-content" style="max-width: 1150px; width: 96%; padding: 20px;">
             <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e3e8ef; padding-bottom:10px; margin-bottom:12px;">
-                <h2 style="margin: 0;">📄 Plano de Aula — revisar e imprimir</h2>
+                <h2 style="margin: 0;">📄 Plano de Aula — revisar e salvar</h2>
                 <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalRevisaoDocumento')">×</button>
             </div>
             ${fundamentacaoHtml}
@@ -2605,7 +2743,7 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
             ${cardsMaterialDigitalHtml}
             <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e3e8ef; padding-top:15px;">
                 <button class="btn btn-secondary" onclick="closeModal('modalRevisaoDocumento'); showModal('modalGerarDocumentoIA')">← Voltar</button>
-                <button class="btn btn-success" onclick="exportarDocumentoFinal('${tipo}')" id="btnExportarDoc">🖨️ Imprimir</button>
+                ${botoesSaidaRevisaoEstagiario('exportarDocumentoFinalPlanoAula')}
             </div>
         </div>
     `;
@@ -2655,6 +2793,7 @@ function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId, pularImpressao
     // Rascunho original da IA - usado como reserva se a prévia não puder ser lida na hora de salvar.
     modal.dataset.dadosOriginais = JSON.stringify(dados || {});
     modal.dataset.manual = modoManual || '';
+    delete modal.dataset.historicoId;
 
     // Anexo III - PAEE já salvo no perfil deste estudante: base do "📥 Puxar anterior".
     const anterior = encontrarAnexoPaeeAnteriorEstagiario(alunoId);
@@ -2663,7 +2802,7 @@ function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId, pularImpressao
     modal.innerHTML = `
         <div class="modal-content" style="max-width: 1000px; width: 96%; padding: 20px;">
             <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e3e8ef; padding-bottom:10px; margin-bottom:12px;">
-                <h2 style="margin: 0;">📄 Anexo III - PAEE — revisar e ${pularImpressao ? 'salvar' : 'imprimir'}</h2>
+                <h2 style="margin: 0;">📄 Anexo III - PAEE — revisar e salvar</h2>
                 <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalRevisaoAnexoPaee')">×</button>
             </div>
             <p style="font-size:13px; color:#5f6b7f; margin:0 0 12px;">${pularImpressao
@@ -2675,7 +2814,9 @@ function abrirModalRevisaoAnexoPaee(dadosBasicos, dados, alunoId, pularImpressao
             ${blocoPreviaDocumentoEstagiario(ID_PREVIA_ANEXO_PAEE_ESTAGIARIO, modoManual)}
             <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e3e8ef; padding-top:15px;">
                 <button class="btn btn-secondary" onclick="${pularImpressao ? "closeModal('modalRevisaoAnexoPaee')" : "closeModal('modalRevisaoAnexoPaee'); showModal('modalGerarDocumentoIA')"}">${pularImpressao ? 'Cancelar' : '← Voltar'}</button>
-                <button class="btn btn-success" onclick="exportarAnexoPaeeFinal()" id="btnExportarAnexoPaee">${pularImpressao ? '💾 Salvar no Perfil do Estudante' : '🖨️ Imprimir'}</button>
+                ${pularImpressao
+                    ? `<span data-botoes-saida><button class="btn btn-success" data-acao="salvar" onclick="exportarAnexoPaeeFinal('salvar')">💾 Salvar no Perfil do Estudante</button></span>`
+                    : botoesSaidaRevisaoEstagiario('exportarAnexoPaeeFinal')}
             </div>
         </div>
     `;
@@ -2704,6 +2845,7 @@ function abrirModalRevisaoAnexoIV(dadosBasicos, dados, alunoId, modoManual) {
     modal.dataset.alunoId = alunoId;
     modal.dataset.dadosOriginais = JSON.stringify(dados || {});
     modal.dataset.manual = modoManual || '';
+    delete modal.dataset.historicoId;
 
     // Anexo IV - PEI anterior DESTE estudante: base do "📥 Puxar anterior" (o "Criar com Ref" do
     // formulário é outra coisa - lá a base é o Anexo IV de outro estudante da mesma série/disciplina).
@@ -2719,7 +2861,7 @@ function abrirModalRevisaoAnexoIV(dadosBasicos, dados, alunoId, modoManual) {
     modal.innerHTML = `
         <div class="modal-content" style="max-width: 1000px; width: 96%; padding: 20px;">
             <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e3e8ef; padding-bottom:10px; margin-bottom:12px;">
-                <h2 style="margin: 0;">📄 Anexo IV - PEI — revisar e imprimir</h2>
+                <h2 style="margin: 0;">📄 Anexo IV - PEI — revisar e salvar</h2>
                 <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalRevisaoAnexoIV')">×</button>
             </div>
             ${fichaAeeAvisoHtml}
@@ -2727,7 +2869,7 @@ function abrirModalRevisaoAnexoIV(dadosBasicos, dados, alunoId, modoManual) {
             ${blocoPreviaDocumentoEstagiario(ID_PREVIA_ANEXO_IV_ESTAGIARIO, modoManual)}
             <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #e3e8ef; padding-top:15px;">
                 <button class="btn btn-secondary" onclick="closeModal('modalRevisaoAnexoIV'); showModal('modalGerarDocumentoIA')">← Voltar</button>
-                <button class="btn btn-success" onclick="exportarAnexoIVFinal()" id="btnExportarAnexoIV">🖨️ Imprimir</button>
+                ${botoesSaidaRevisaoEstagiario('exportarAnexoIVFinal')}
             </div>
         </div>
     `;
@@ -2792,8 +2934,8 @@ async function montarHtmlAnexoPaee(dadosBasicos, dados, opcoes) {
 
 // Monta e imprime o Anexo III - PAEE. Usada tanto pela exportação normal do wizard quanto pela
 // reimpressão de um Anexo III-PAEE já salvo no perfil do estudante (app.js: abrirFichaAeeReadOnly).
-async function montarEImprimirAnexoPaee(dadosBasicos, dados) {
-    imprimirDocumentoEstagiario(await montarHtmlAnexoPaee(dadosBasicos, dados));
+async function montarEImprimirAnexoPaee(dadosBasicos, dados, modo) {
+    await saidaDocumentoEstagiario(await montarHtmlAnexoPaee(dadosBasicos, dados), modo);
 }
 
 // Grava o Anexo III-PAEE (dadosBasicos + dados) direto no documento AEE da escola (chave
@@ -2827,14 +2969,14 @@ async function salvarAnexoPaeeSchoolWide(schoolId, tutoradoId, dadosBasicos, dad
 // depois no Painel AEE sem precisar gerar tudo de novo (app.js: abrirFichaAeeReadOnly). Quando vem da
 // análise de um Word já pronto (modal.dataset.pularImpressao), só salva - não reabre a impressão, já
 // que o professor já tem o documento em mãos.
-async function exportarAnexoPaeeFinal() {
+// `acao`: 'imprimir', 'pdf' ou 'salvar'. Os três guardam no perfil do estudante; 'salvar' só guarda.
+async function exportarAnexoPaeeFinal(acao) {
     const modal = document.getElementById('modalRevisaoAnexoPaee');
     const pularImpressao = modal.dataset.pularImpressao === '1';
+    acao = pularImpressao ? 'salvar' : (acao || 'imprimir');
+    const soSalvar = acao === 'salvar';
 
-    const btn = document.getElementById('btnExportarAnexoPaee');
-    const originalText = btn.textContent;
-    btn.textContent = pularImpressao ? 'Salvando... ⏳' : 'Gerando Documento... ⏳';
-    btn.disabled = true;
+    travarBotoesSaidaEstagiario('modalRevisaoAnexoPaee', true, acao);
 
     const dadosBasicos = JSON.parse(modal.dataset.basicos);
     const alunoId = modal.dataset.alunoId;
@@ -2842,8 +2984,8 @@ async function exportarAnexoPaeeFinal() {
     const dados = lerCamposEditadosPreviaEstagiario(ID_PREVIA_ANEXO_PAEE_ESTAGIARIO, ANEXO_PAEE_CAMPOS_IA, JSON.parse(modal.dataset.dadosOriginais || '{}'));
 
     try {
-        if (!pularImpressao) {
-            await montarEImprimirAnexoPaee(dadosBasicos, dados);
+        if (!soSalvar) {
+            await montarEImprimirAnexoPaee(dadosBasicos, dados, acao);
         }
 
         if (alunoId && currentUser && currentUser.schoolId) {
@@ -2853,28 +2995,30 @@ async function exportarAnexoPaeeFinal() {
                     atualizarFichaAeeReadOnlyAposSalvar(alunoId, anexoPaeeSalvo);
                 }
                 // Mesmo rastro do Anexo IV: identificação + ponteiro pro documento no Painel AEE.
-                registrarDocumentoNoHistoricoProfessor({
+                const registro = registrarDocumentoNoHistoricoProfessor({
                     tipo: 'anexo3_paee',
                     titulo: `Anexo III - PAEE - ${dadosBasicos.nomeEstudante || 'estudante'}`,
                     subtitulo: dadosBasicos.escolaridade || '',
                     nomeEstudante: dadosBasicos.nomeEstudante || '',
                     refTutoradoId: alunoId
-                });
+                }, modal.dataset.historicoId);
+                if (registro) modal.dataset.historicoId = registro.id;
                 if (pularImpressao) alert('Anexo III - PAEE salvo no perfil do estudante!');
+                else if (soSalvar) alert('💾 Anexo III - PAEE salvo no perfil do estudante.\n\nDá pra baixar em PDF ou imprimir depois, pela ficha do estudante ou por Documentos > Histórico.');
             } catch (eSalvar) {
                 console.error(eSalvar);
-                const prefixo = pularImpressao ? '' : 'O documento foi impresso, mas ';
+                const prefixo = soSalvar ? '' : (acao === 'pdf' ? 'O PDF foi gerado, mas ' : 'O documento foi impresso, mas ');
                 alert(`${prefixo}houve um erro ao salvar no perfil do estudante:\n${eSalvar.message}`);
             }
         }
 
-        closeModal('modalRevisaoAnexoPaee');
+        // Salvar (sem ser o envio do Word) deixa a tela aberta pra baixar o PDF ou imprimir em seguida.
+        if (!soSalvar || pularImpressao) closeModal('modalRevisaoAnexoPaee');
     } catch (e) {
         console.error(e);
         alert('Erro ao gerar o documento: ' + e.message);
     } finally {
-        btn.textContent = originalText;
-        btn.disabled = false;
+        travarBotoesSaidaEstagiario('modalRevisaoAnexoPaee', false);
     }
 }
 
@@ -2920,8 +3064,8 @@ async function montarHtmlAnexoIV(dadosBasicos, dados, opcoes) {
 
 // Monta e imprime o Anexo IV - PEI. Usada tanto pela exportação normal do wizard quanto pela
 // reimpressão de um Anexo IV já salvo no perfil do estudante (app.js: reimprimirAnexoIVSalvo).
-async function montarEImprimirAnexoIV(dadosBasicos, dados) {
-    imprimirDocumentoEstagiario(await montarHtmlAnexoIV(dadosBasicos, dados));
+async function montarEImprimirAnexoIV(dadosBasicos, dados, modo) {
+    await saidaDocumentoEstagiario(await montarHtmlAnexoIV(dadosBasicos, dados), modo);
 }
 
 // Grava o Anexo IV-PEI direto no documento AEE da escola (chave app_data_school_<id>_aee), na lista
@@ -2987,11 +3131,11 @@ async function excluirAnexoIVSchoolWide(schoolId, tutoradoId, anexoIVId) {
 // Exporta o Anexo IV - PEI final: preenche o modelo e abre a impressão (montarEImprimirAnexoIV) e
 // salva os dados estruturados no perfil do estudante, pra aparecer depois no Painel AEE sem precisar
 // gerar tudo de novo (app.js: abrirFichaAeeReadOnly).
-async function exportarAnexoIVFinal() {
-    const btn = document.getElementById('btnExportarAnexoIV');
-    const originalText = btn.textContent;
-    btn.textContent = 'Gerando Documento... ⏳';
-    btn.disabled = true;
+// `acao`: 'imprimir', 'pdf' ou 'salvar'. Os três guardam no perfil do estudante; 'salvar' só guarda.
+async function exportarAnexoIVFinal(acao) {
+    acao = acao || 'imprimir';
+    const soSalvar = acao === 'salvar';
+    travarBotoesSaidaEstagiario('modalRevisaoAnexoIV', true, acao);
 
     const modal = document.getElementById('modalRevisaoAnexoIV');
     const dadosBasicos = JSON.parse(modal.dataset.basicos);
@@ -3000,7 +3144,7 @@ async function exportarAnexoIVFinal() {
     const dados = lerCamposEditadosPreviaEstagiario(ID_PREVIA_ANEXO_IV_ESTAGIARIO, ANEXO_PEI_CAMPOS_IA, JSON.parse(modal.dataset.dadosOriginais || '{}'));
 
     try {
-        await montarEImprimirAnexoIV(dadosBasicos, dados);
+        if (!soSalvar) await montarEImprimirAnexoIV(dadosBasicos, dados, acao);
 
         if (alunoId && currentUser && currentUser.schoolId) {
             try {
@@ -3011,7 +3155,7 @@ async function exportarAnexoIVFinal() {
                 // Deixa o rastro no histórico do professor (tela Documentos). Só a identificação e o
                 // ponteiro: o texto do PEI continua com dono único no Painel AEE da escola, que é de
                 // onde a aba "Anexo IV - PEI" lê pra consultar e reimprimir.
-                registrarDocumentoNoHistoricoProfessor({
+                const registro = registrarDocumentoNoHistoricoProfessor({
                     tipo: 'anexo4_pei',
                     titulo: `Anexo IV - PEI - ${dadosBasicos.nomeEstudante || 'estudante'}`,
                     subtitulo: [dadosBasicos.disciplina, dadosBasicos.bimestre ? `${dadosBasicos.bimestre}º bimestre` : ''].filter(Boolean).join(' · '),
@@ -3020,20 +3164,23 @@ async function exportarAnexoIVFinal() {
                     nomeEstudante: dadosBasicos.nomeEstudante || '',
                     refTutoradoId: alunoId,
                     refAnexoId: anexoIVSalvo.id
-                });
+                }, modal.dataset.historicoId);
+                if (registro) modal.dataset.historicoId = registro.id;
+                if (soSalvar) alert('💾 Anexo IV - PEI salvo no perfil do estudante.\n\nEle fica em Documentos > Anexo IV - PEI, pronto pra baixar em PDF ou imprimir depois.');
             } catch (eSalvar) {
                 console.error(eSalvar);
-                alert('O documento foi impresso, mas houve um erro ao salvar no perfil do estudante:\n' + eSalvar.message);
+                const prefixo = soSalvar ? '' : (acao === 'pdf' ? 'O PDF foi gerado, mas ' : 'O documento foi impresso, mas ');
+                alert(prefixo + 'houve um erro ao salvar no perfil do estudante:\n' + eSalvar.message);
             }
         }
 
-        closeModal('modalRevisaoAnexoIV');
+        // Salvar deixa a tela aberta pra baixar o PDF ou imprimir em seguida.
+        if (!soSalvar) closeModal('modalRevisaoAnexoIV');
     } catch (e) {
         console.error(e);
         alert('Erro ao gerar o documento: ' + e.message);
     } finally {
-        btn.textContent = originalText;
-        btn.disabled = false;
+        travarBotoesSaidaEstagiario('modalRevisaoAnexoIV', false);
     }
 }
 
@@ -3270,12 +3417,17 @@ async function montarHtmlPlanoAula(payload, opcoes) {
 
 // Imprime o Plano de Aula com o texto exatamente como ficou na prévia editável e dispara os efeitos
 // colaterais de sempre: aprendizado das preferências do professor e rascunhos de registro de aula.
-async function exportarDocumentoFinal(tipo) {
+// `acao`: 'imprimir' (padrão), 'pdf' (baixa o arquivo) ou 'salvar' (só guarda, sem gerar nada - o
+// plano fica na aba Planos de Aula e no "📥 Puxar anterior"/"Último", pronto pra imprimir depois).
+// Os três guardam o plano; salvar e depois baixar/imprimir atualiza o mesmo registro.
+function exportarDocumentoFinalPlanoAula(acao) {
+    const modal = document.getElementById('modalRevisaoDocumento');
+    return exportarDocumentoFinal(modal ? modal.dataset.tipo : 'plano_aula', acao);
+}
 
-    const btn = document.getElementById('btnExportarDoc');
-    const originalText = btn.textContent;
-    btn.textContent = 'Gerando Documento... ⏳';
-    btn.disabled = true;
+async function exportarDocumentoFinal(tipo, acao) {
+    acao = acao || 'imprimir';
+    travarBotoesSaidaEstagiario('modalRevisaoDocumento', true, acao);
 
     const modal = document.getElementById('modalRevisaoDocumento');
     const dadosOriginais = JSON.parse(modal.dataset.dadosOriginais || '{}');
@@ -3297,22 +3449,31 @@ async function exportarDocumentoFinal(tipo) {
     };
 
     try {
-        imprimirDocumentoEstagiario(await montarHtmlPlanoAula(payload));
+        if (acao !== 'salvar') await saidaDocumentoEstagiario(await montarHtmlPlanoAula(payload), acao);
 
-        // Guarda o plano impresso no aparelho pra o "📥 Puxar anterior" do próximo plano da mesma
-        // série/disciplina (ver registrarPlanoAulaNoHistoricoEstagiario) - nunca atrapalha a impressão.
-        registrarPlanoAulaNoHistoricoEstagiario(payload);
+        // Guarda o plano pra o "📥 Puxar anterior" do próximo plano da mesma série/disciplina e pra
+        // aba Planos de Aula (ver registrarPlanoAulaNoHistoricoEstagiario) - nunca atrapalha a saída.
+        const idGuardado = registrarPlanoAulaNoHistoricoEstagiario(payload, modal.dataset.historicoId);
+        if (idGuardado) modal.dataset.historicoId = idGuardado;
 
         // [APRENDIZADO] Compara a saída original da IA com a versão editada e atualiza (em silêncio,
-        // sem bloquear a impressão) as preferências aprendidas. Só para Plano de Aula. No modo manual
-        // ('branco'/'ultimo') não há rascunho de IA pra comparar, então nada é aprendido.
-        if (payload.tipo === 'plano_aula' && !modal.dataset.manual) {
+        // sem bloquear a impressão) as preferências aprendidas. Só para Plano de Aula, e uma vez por
+        // documento. No modo manual ('branco'/'ultimo') não há rascunho de IA pra comparar.
+        if (payload.tipo === 'plano_aula' && !modal.dataset.manual && !modal.dataset.aprendido) {
+            modal.dataset.aprendido = '1';
             try {
                 aprenderPreferenciasEstagiario(dadosOriginais, payload.dados); // fire-and-forget (sem await)
             } catch (e) { console.warn('[Estagiário] Não foi possível iniciar o aprendizado:', e); }
         }
 
-        closeModal('modalRevisaoDocumento');
+        // Salvar deixa a tela aberta: dá pra seguir editando, baixar o PDF ou imprimir em seguida.
+        if (acao === 'salvar') {
+            if (idGuardado) alert('💾 Plano de aula salvo.\n\nEle fica em Documentos > Planos de Aula (para consultar, baixar em PDF ou imprimir) e no "📥 Puxar anterior" dos próximos planos.');
+            else alert('Nada para salvar: o plano está em branco.');
+        } else {
+            closeModal('modalRevisaoDocumento');
+        }
+        if (typeof renderDocumentosPlanos === 'function' && document.getElementById('tabDocPlanos')) renderDocumentosPlanos();
         
         // [NOVO] AUTO-SALVAR DRAFT DO REGISTRO DE AULA
         // Gera um rascunho de registro para CADA dia em que a turma realmente tem aula dentro da
@@ -3404,7 +3565,6 @@ async function exportarDocumentoFinal(tipo) {
     } catch (e) {
         alert('Erro ao formatar o documento: ' + e.message);
     } finally {
-        btn.textContent = originalText;
-        btn.disabled = false;
+        travarBotoesSaidaEstagiario('modalRevisaoDocumento', false);
     }
 }

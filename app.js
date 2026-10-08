@@ -7191,7 +7191,7 @@ function renderDocumentosPlanos() {
         container.innerHTML = `
             <div class="empty-state">
                 <p>Nenhum plano de aula gerado ainda.</p>
-                <p style="font-size:12px; color:#5f6b7f;">Os planos que você imprimir pelo "✨ Estagiário" ficam guardados aqui, prontos para consultar, reimprimir e reaproveitar.</p>
+                <p style="font-size:12px; color:#5f6b7f;">Os planos que você salvar, baixar ou imprimir pelo "✨ Estagiário" ficam guardados aqui, prontos para consultar, baixar em PDF, reimprimir e reaproveitar.</p>
             </div>`;
         return;
     }
@@ -7222,7 +7222,8 @@ function renderDocumentosPlanos() {
                             <div style="font-size:12px; color:#7a869a;">Gerado em ${formatarDataDocumentos(p.salvoEm)}</div>
                         </div>
                         <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                            ${temTexto ? `<button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirPlanoAulaHistoricoEstagiario('${escapeAttrEstagiario(p.id || '')}')">🖨️ Reimprimir</button>` : ''}
+                            ${temTexto ? `<button class="btn btn-sm btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="reimprimirPlanoAulaHistoricoEstagiario('${escapeAttrEstagiario(p.id || '')}', 'pdf')">📄 PDF</button>
+                                         <button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirPlanoAulaHistoricoEstagiario('${escapeAttrEstagiario(p.id || '')}')">🖨️ Reimprimir</button>` : ''}
                             <button class="btn btn-sm btn-danger" style="padding:4px 10px; font-size:12px;" onclick="excluirPlanoAulaHistoricoEstagiario('${escapeAttrEstagiario(p.id || '')}')">🗑️ Excluir</button>
                         </div>
                     </div>
@@ -7331,6 +7332,7 @@ async function renderDocumentosAnexosIV() {
                         <div style="font-size:12px; color:#7a869a;">Professor: ${escapeHtmlEstagiario(b.professorRegente || '—')} · Atualizado em ${formatarDataDocumentos(item.anexo.atualizadoEm)}</div>
                     </div>
                     <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                        <button class="btn btn-sm btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${item.tutoradoId}, ${item.anexo.id}, 'pdf')">📄 PDF</button>
                         <button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${item.tutoradoId}, ${item.anexo.id})">🖨️ Reimprimir</button>
                     </div>
                 </div>
@@ -7390,8 +7392,12 @@ function renderDocumentosHistorico() {
                         <div style="font-size:12px; color:#7a869a;">${escapeHtmlEstagiario(nomesTipo[h.tipo] || h.tipo || '')} · ${formatarDataDocumentos(h.criadoEm)}</div>
                     </div>
                     <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                        ${h.tipo === 'plano_aula' && h.payload ? `<button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirPlanoAulaHistoricoEstagiario('${escapeAttrEstagiario(h.id)}')">🖨️ Reimprimir</button>` : ''}
-                        ${h.tipo === 'anexo4_pei' && h.refTutoradoId && h.refAnexoId ? `<button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${h.refTutoradoId}, ${h.refAnexoId})">🖨️ Reimprimir</button>` : ''}
+                        ${h.tipo === 'plano_aula' && h.payload ? `<button class="btn btn-sm btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="reimprimirPlanoAulaHistoricoEstagiario('${escapeAttrEstagiario(h.id)}', 'pdf')">📄 PDF</button>
+                            <button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirPlanoAulaHistoricoEstagiario('${escapeAttrEstagiario(h.id)}')">🖨️ Reimprimir</button>` : ''}
+                        ${h.tipo === 'anexo4_pei' && h.refTutoradoId && h.refAnexoId ? `<button class="btn btn-sm btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${h.refTutoradoId}, ${h.refAnexoId}, 'pdf')">📄 PDF</button>
+                            <button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${h.refTutoradoId}, ${h.refAnexoId})">🖨️ Reimprimir</button>` : ''}
+                        ${h.tipo === 'anexo3_paee' && h.refTutoradoId ? `<button class="btn btn-sm btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoPaeeSalvo(${h.refTutoradoId}, 'pdf')">📄 PDF</button>
+                            <button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoPaeeSalvo(${h.refTutoradoId})">🖨️ Reimprimir</button>` : ''}
                     </div>
                 </div>
             `).join('')}
@@ -9212,15 +9218,26 @@ function encontrarTutoradoAeeEmQualquerContexto(tutoradoId) {
     return null;
 }
 
+// Mesma busca, mas lendo o documento AEE da escola quando nenhuma tela o carregou ainda - é o caso
+// do Histórico da tela Documentos, aberto direto sem passar pela aba Anexo IV - PEI.
+async function buscarTutoradoAeeParaReimprimir(tutoradoId) {
+    const achado = encontrarTutoradoAeeEmQualquerContexto(tutoradoId);
+    if (achado || !currentUser || !currentUser.schoolId) return achado;
+    const aeeKey = `app_data_school_${currentUser.schoolId}_aee`;
+    const aeeData = (typeof lerDocUsuario === 'function') ? await lerDocUsuario(aeeKey) : await getData('app_data', aeeKey);
+    return ((aeeData && aeeData.tutorados) || []).find(x => x.id == tutoradoId) || null;
+}
+
 // Reimprime um Anexo III-PAEE já salvo (sem rodar IA de novo) - delega o preenchimento do template
 // pra ia_estagiario.js.
-function reimprimirAnexoPaeeSalvo(tutoradoId) {
-    const t = encontrarTutoradoAeeEmQualquerContexto(tutoradoId);
+// `modo` = 'pdf' baixa o arquivo em vez de abrir a impressão.
+async function reimprimirAnexoPaeeSalvo(tutoradoId, modo) {
+    const t = await buscarTutoradoAeeParaReimprimir(tutoradoId);
     if (!t || !t.anexoPaee) return alert('Anexo III-PAEE não encontrado para este estudante.');
 
-    montarEImprimirAnexoPaee(t.anexoPaee.dadosBasicos, t.anexoPaee.dados).catch(e => {
+    montarEImprimirAnexoPaee(t.anexoPaee.dadosBasicos, t.anexoPaee.dados, modo).catch(e => {
         console.error(e);
-        alert('Erro ao reimprimir o documento: ' + e.message);
+        alert((modo === 'pdf' ? 'Erro ao gerar o PDF: ' : 'Erro ao reimprimir o documento: ') + e.message);
     });
 }
 
@@ -9266,14 +9283,15 @@ function atualizarFichaAeeReadOnlyAposSalvar(tutoradoId, anexoPaee) {
 // Reimprime um Anexo IV-PEI já salvo (sem rodar IA de novo) - delega o preenchimento do template pra
 // ia_estagiario.js. anexoIVId identifica qual Anexo IV (o estudante pode ter vários, um por
 // Disciplina+Bimestre - ver ia_estagiario.js: salvarAnexoIVSchoolWide).
-function reimprimirAnexoIVSalvo(tutoradoId, anexoIVId) {
-    const t = encontrarTutoradoAeeEmQualquerContexto(tutoradoId);
+// `modo` = 'pdf' baixa o arquivo em vez de abrir a impressão.
+async function reimprimirAnexoIVSalvo(tutoradoId, anexoIVId, modo) {
+    const t = await buscarTutoradoAeeParaReimprimir(tutoradoId);
     const anexoIV = t && Array.isArray(t.anexosIV) ? t.anexosIV.find(a => a.id == anexoIVId) : null;
     if (!anexoIV) return alert('Anexo IV - PEI não encontrado para este estudante.');
 
-    montarEImprimirAnexoIV(anexoIV.dadosBasicos, anexoIV.dados).catch(e => {
+    montarEImprimirAnexoIV(anexoIV.dadosBasicos, anexoIV.dados, modo).catch(e => {
         console.error(e);
-        alert('Erro ao reimprimir o documento: ' + e.message);
+        alert((modo === 'pdf' ? 'Erro ao gerar o PDF: ' : 'Erro ao reimprimir o documento: ') + e.message);
     });
 }
 
