@@ -92,6 +92,35 @@ const FAKE = () => {
     data.estudantes = salvos;
     renderTrabalhos();
 
+    // nome da coluna = atividades que ela resume; caixa de "já lancei" apaga as notas
+    const cabecalhos = () => [...document.querySelectorAll('#painelSugestaoSalaFuturo thead th')].map(th => th.querySelector('span') ? th.querySelector('span').textContent : th.textContent.trim());
+    out.nomesColunas = cabecalhos().slice(1, 4);
+    const caixas = () => [...document.querySelectorAll('#painelSugestaoSalaFuturo thead input[type=checkbox]')];
+    out.qtdCaixas = caixas().length;
+    caixas()[0].checked = true; caixas()[0].dispatchEvent(new Event('change'));
+    await new Promise(r => setTimeout(r, 50));
+    out.flags = data.trabalhos.map(t => !!t.lancadoSalaFuturo);
+    out.marcadaDepois = caixas().map(c => c.checked);
+    const opac = (col) => [...document.querySelectorAll('#painelSugestaoSalaFuturo tbody tr')].map(tr => tr.children[col].style.opacity);
+    out.opacCol1 = opac(1); out.opacCol2 = opac(2);
+    // atividade nova muda a divisão: coluna com atividade ainda não marcada não aparece marcada
+    data.trabalhos.push({ id:16, id_turma:500, titulo:'Caderno', tipo:'comum', peso:10, rubricas:[], bimestre:1 });
+    renderTrabalhos();
+    out.nomesComNova = cabecalhos().slice(1, 4);
+    out.marcadaComNova = caixas().map(c => c.checked);
+    data.trabalhos.pop();
+    caixas()[0].checked = false; caixas()[0].dispatchEvent(new Event('change'));
+    await new Promise(r => setTimeout(r, 50));
+    out.desmarcou = data.trabalhos.every(t => !t.lancadoSalaFuturo);
+    // menos de 3 atividades: coluna sem atividade usa a média e não tem caixa
+    const todos = data.trabalhos;
+    data.trabalhos = todos.slice(0, 1);
+    renderTrabalhos();
+    out.nomesUma = cabecalhos().slice(1, 4);
+    out.caixasUma = caixas().length;
+    data.trabalhos = todos;
+    renderTrabalhos();
+
     const c2 = document.getElementById('chaveSugestaoSalaFuturo');
     c2.checked = false; c2.dispatchEvent(new Event('change'));
     out.desligou = !document.getElementById('painelSugestaoSalaFuturo');
@@ -126,6 +155,13 @@ const FAKE = () => {
   const bruno = r.linhas.find(l => l[0] === 'Bruno Silva');
   chk(bruno && bruno[5] === '4' && (+bruno[1] + +bruno[2] + +bruno[3]) === 12, 'Bruno: média 3,92 vira 4 ' + JSON.stringify(bruno));
   chk(r.desligou, 'desligar a chave esconde o painel');
+  chk(JSON.stringify(r.nomesColunas) === '["At1 + At2","At3 + At4","At5"]', 'colunas levam o nome das atividades que resumem ' + JSON.stringify(r.nomesColunas));
+  chk(r.qtdCaixas === 3, 'uma caixa de "já lancei" por coluna de atividade');
+  chk(JSON.stringify(r.flags) === '[true,true,false,false,false]' && JSON.stringify(r.marcadaDepois) === '[true,false,false]', 'marcar a 1ª coluna grava nas atividades dela e continua marcada após redesenhar');
+  chk(r.opacCol1.every(o => o === '0.5') && r.opacCol2.every(o => o === ''), 'notas da coluna marcada ficam com 50% de opacidade, as outras não');
+  chk(JSON.stringify(r.nomesComNova) === '["At1 + At2","At3 + At4","At5 + Caderno"]' && JSON.stringify(r.marcadaComNova) === '[true,false,false]', 'atividade nova entra na divisão sem marcar coluna à toa ' + JSON.stringify(r.nomesComNova));
+  chk(r.desmarcou, 'desmarcar limpa a marcação');
+  chk(JSON.stringify(r.nomesUma) === '["At1","Média (sem atividade)","Média (sem atividade)"]' && r.caixasUma === 1, 'com uma atividade só, as outras colunas usam a média e não têm caixa ' + JSON.stringify(r.nomesUma));
   chk(r.rolaSozinha && r.tituloNoTopo, 'com 40 alunos o quadro rola e o título fica congelado no topo');
   chk(r.qtdBotoesSug === 4, 'painel tem botão copiar em Atividade 1, 2, 3 e Média SF');
   chk(r.copiaSugAtiv1 === r.esperadoSugAtiv1 && r.copiaSugAtiv1.split('\n').length === 2, 'copiar Atividade 1 da sugestão: uma nota por linha ' + JSON.stringify(r.copiaSugAtiv1));

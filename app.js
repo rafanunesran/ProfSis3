@@ -4459,24 +4459,55 @@ function copiarNotasSugestaoSalaFuturo(coluna, botao) {
     copiarTextoNotas(textoNotasSugestaoSalaFuturo(coluna), botao);
 }
 
+// As 3 colunas da sugestão: as atividades com peso, na ordem da planilha, divididas em
+// terços, do mesmo jeito que sugerirNotasSalaFuturo agrupa as notas.
+function gruposTrabalhosSalaFuturo(trabalhos) {
+    const comPeso = trabalhos.filter(t => (parseFloat(t.peso) || 0) > 0);
+    const grupos = [[], [], []];
+    comPeso.forEach((t, idx) => grupos[Math.floor(idx * 3 / comPeso.length)].push(t));
+    return grupos;
+}
+
+// Controle pessoal do que já foi lançado na Sala do Futuro. Fica gravado nas próprias
+// atividades da coluna: se a divisão em terços mudar (atividade nova), a coluna só
+// aparece marcada quando todas as atividades dela já estavam marcadas.
+function colunaSalaFuturoLancada(grupo) {
+    return grupo.length > 0 && grupo.every(t => t.lancadoSalaFuturo);
+}
+
+async function marcarLancadoSalaFuturo(coluna, marcado) {
+    const grupo = gruposTrabalhosSalaFuturo(trabalhosPlanilhaTrabalhos())[coluna] || [];
+    grupo.forEach(t => { t.lancadoSalaFuturo = !!marcado; });
+    renderTrabalhos();
+    await persistirDados();
+}
+
 function renderSugestaoSalaFuturo(estudantes, trabalhos) {
     if (trabalhos.length === 0) return '<p style="font-size:12px; color:#5f6b7f; margin:0;">Crie atividades neste bimestre para ver a sugestão.</p>';
+    const grupos = gruposTrabalhosSalaFuturo(trabalhos);
+    const lancadas = grupos.map(colunaSalaFuturoLancada);
     const linhas = estudantes.map(e => {
         const sug = sugestaoSalaFuturoDoEstudante(e, trabalhos);
         const celulas = sug
-            ? sug.notas.map(n => `<td style="text-align:center; border:1px solid #e3e8ef; padding:6px; font-weight:bold;">${n}</td>`).join('')
+            ? sug.notas.map((n, k) => `<td style="text-align:center; border:1px solid #e3e8ef; padding:6px; font-weight:bold;${lancadas[k] ? ' opacity:0.5;' : ''}">${n}</td>`).join('')
               + `<td style="text-align:center; border:1px solid #e3e8ef; padding:6px; color:#5f6b7f;">${sug.media.toFixed(2).replace('.', ',')}</td>`
               + `<td style="text-align:center; border:1px solid #e3e8ef; padding:6px; font-weight:bold; color:${sug.alvo < 5 ? '#e53e3e' : '#2563c9'};">${sug.alvo}</td>`
             : '<td colspan="5" style="text-align:center; border:1px solid #e3e8ef; padding:6px; color:#7a869a;">-</td>';
         return `<tr data-nome="${escapeHtmlColar(e.nome_completo)}"><td style="border:1px solid #e3e8ef; padding:6px 10px; font-weight:bold;">${escapeHtmlColar(e.nome_completo)}</td>${celulas}</tr>`;
     }).join('');
 
-    const grupos = [[], [], []];
-    trabalhos.forEach((t, idx) => grupos[Math.floor(idx * 3 / trabalhos.length)].push(t.titulo));
-    const cab = grupos.map((g, k) => `<th title="${escapeHtmlColar(g.join(', ') || 'Sem atividade: usa a média')}" style="border:1px solid #e3e8ef; padding:6px;">Atividade ${k + 1}<br><button type="button" class="btn btn-xs btn-secondary no-print" style="padding:1px 6px; font-size:10px; margin-top:3px;" onclick="copiarNotasSugestaoSalaFuturo(${k}, this)" title="Copiar as notas desta coluna, uma por linha, para colar na Sala do Futuro">📋 Copiar</button></th>`).join('');
+    const cab = grupos.map((g, k) => {
+        // O nome da coluna é a referência das atividades que ela resume: "Pesquisa", "PD + Caderno"
+        const nome = g.length ? g.map(t => t.titulo).join(' + ') : 'Média (sem atividade)';
+        const chave = g.length
+            ? `<input type="checkbox" class="no-print" ${lancadas[k] ? 'checked' : ''} onchange="marcarLancadoSalaFuturo(${k}, this.checked)" title="Marque quando já tiver lançado esta coluna na Sala do Futuro" style="margin:0; cursor:pointer;">`
+            : '';
+        return `<th title="${escapeHtmlColar(nome)}" style="border:1px solid #e3e8ef; padding:6px; max-width:180px;">
+            <label style="display:inline-flex; align-items:center; gap:6px; cursor:${g.length ? 'pointer' : 'default'}; font-weight:bold;">${chave}<span style="${lancadas[k] ? 'opacity:0.5;' : ''}">${escapeHtmlColar(nome)}</span></label><br><button type="button" class="btn btn-xs btn-secondary no-print" style="padding:1px 6px; font-size:10px; margin-top:3px;" onclick="copiarNotasSugestaoSalaFuturo(${k}, this)" title="Copiar as notas desta coluna, uma por linha, para colar na Sala do Futuro">📋 Copiar</button></th>`;
+    }).join('');
 
     return `
-        <p style="font-size:12px; color:#5f6b7f; margin:0 0 8px;">Três notas inteiras cuja média é a média do bimestre arredondada para cima. Passe o mouse sobre "Atividade" para ver quais atividades cada uma resume. O botão 📋 Copiar copia a coluna inteira, uma nota por linha, na ordem alfabética. O lançamento na Sala do Futuro é feito manualmente por você.</p>
+        <p style="font-size:12px; color:#5f6b7f; margin:0 0 8px;">Três notas inteiras cuja média é a média do bimestre arredondada para cima. Cada coluna leva o nome das atividades que resume. Marque a caixa ao lado do nome quando já tiver lançado a coluna: as notas dela ficam apagadas. O botão 📋 Copiar copia a coluna inteira, uma nota por linha, na ordem alfabética. O lançamento na Sala do Futuro é feito manualmente por você.</p>
         <div class="sugestao-sala-futuro-box">
             <table class="sugestao-sala-futuro" style="font-size:13px; border-collapse:collapse; width:100%; min-width:480px;">
                 <thead><tr>
