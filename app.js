@@ -4380,16 +4380,89 @@ function sugerirNotasSalaFuturo(itens) {
     return { notas, media, alvo };
 }
 
+// Mesmos estudantes e atividades, na mesma ordem, que a planilha do bimestre mostra.
+function estudantesPlanilhaTrabalhos() {
+    return (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e)).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
+}
+function trabalhosPlanilhaTrabalhos() {
+    return (data.trabalhos || []).filter(t => t.id_turma == turmaAtual && (t.bimestre == currentBimestreTrabalhos || (!t.bimestre && currentBimestreTrabalhos == 1)));
+}
+
+function sugestaoSalaFuturoDoEstudante(e, trabalhos) {
+    const notas = data.notas || [];
+    const itens = trabalhos.map(t => {
+        const valor = valorNotaTrabalho(t, e.id, notas.find(n => n.id_trabalho == t.id && n.id_estudante == e.id));
+        const parsed = parseFloat(String(valor).replace(',', '.'));
+        return { valor: isNaN(parsed) ? 0 : parsed, peso: parseFloat(t.peso) || 0 };
+    });
+    return sugerirNotasSalaFuturo(itens);
+}
+
+// --- COPIAR NOTAS DE UMA COLUNA ---
+// Uma nota por linha, na ordem alfabética da planilha, com vírgula decimal. Copia a turma
+// inteira mesmo com o filtro de nomes ativo: colada de uma vez, cada linha precisa cair
+// no estudante certo. Nota vazia vira linha vazia pelo mesmo motivo.
+function formatarNotaParaCopiar(valor) {
+    if (valor === '' || valor === null || valor === undefined) return '';
+    const n = parseFloat(String(valor).replace(',', '.'));
+    if (isNaN(n)) return String(valor).trim();
+    return String(Math.round(n * 10) / 10).replace('.', ',');
+}
+
+function textoNotasAtividade(trabalhoId) {
+    const t = (data.trabalhos || []).find(x => x.id == trabalhoId);
+    if (!t) return '';
+    const notas = data.notas || [];
+    return estudantesPlanilhaTrabalhos().map(e =>
+        formatarNotaParaCopiar(valorNotaTrabalho(t, e.id, notas.find(n => n.id_trabalho == t.id && n.id_estudante == e.id)))
+    ).join('\n');
+}
+
+function textoNotasSugestaoSalaFuturo(coluna) {
+    const trabalhos = trabalhosPlanilhaTrabalhos();
+    return estudantesPlanilhaTrabalhos().map(e => {
+        const sug = sugestaoSalaFuturoDoEstudante(e, trabalhos);
+        if (!sug) return '';
+        return coluna === 'media' ? String(sug.alvo) : String(sug.notas[coluna]);
+    }).join('\n');
+}
+
+function copiarTextoNotas(texto, botao) {
+    const original = botao ? botao.textContent : '';
+    const avisar = (msg) => {
+        if (!botao) return;
+        botao.textContent = msg;
+        setTimeout(() => { botao.textContent = original; }, 1500);
+    };
+    const reserva = () => {
+        // Navegador antigo (e a WebView do aplicativo Android) não tem clipboard
+        const campo = document.createElement('textarea');
+        campo.value = texto;
+        campo.style.position = 'fixed'; campo.style.opacity = '0';
+        document.body.appendChild(campo);
+        campo.select();
+        try { document.execCommand('copy'); avisar('✓ Copiado'); } catch (_) { avisar('Falhou'); }
+        campo.remove();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(() => avisar('✓ Copiado')).catch(reserva);
+    } else {
+        reserva();
+    }
+}
+
+function copiarNotasAtividade(trabalhoId, botao) {
+    copiarTextoNotas(textoNotasAtividade(trabalhoId), botao);
+}
+
+function copiarNotasSugestaoSalaFuturo(coluna, botao) {
+    copiarTextoNotas(textoNotasSugestaoSalaFuturo(coluna), botao);
+}
+
 function renderSugestaoSalaFuturo(estudantes, trabalhos) {
     if (trabalhos.length === 0) return '<p style="font-size:12px; color:#5f6b7f; margin:0;">Crie atividades neste bimestre para ver a sugestão.</p>';
-    const notas = data.notas || [];
     const linhas = estudantes.map(e => {
-        const itens = trabalhos.map(t => {
-            const valor = valorNotaTrabalho(t, e.id, notas.find(n => n.id_trabalho == t.id && n.id_estudante == e.id));
-            const parsed = parseFloat(String(valor).replace(',', '.'));
-            return { valor: isNaN(parsed) ? 0 : parsed, peso: parseFloat(t.peso) || 0 };
-        });
-        const sug = sugerirNotasSalaFuturo(itens);
+        const sug = sugestaoSalaFuturoDoEstudante(e, trabalhos);
         const celulas = sug
             ? sug.notas.map(n => `<td style="text-align:center; border:1px solid #e3e8ef; padding:6px; font-weight:bold;">${n}</td>`).join('')
               + `<td style="text-align:center; border:1px solid #e3e8ef; padding:6px; color:#5f6b7f;">${sug.media.toFixed(2).replace('.', ',')}</td>`
@@ -4400,16 +4473,16 @@ function renderSugestaoSalaFuturo(estudantes, trabalhos) {
 
     const grupos = [[], [], []];
     trabalhos.forEach((t, idx) => grupos[Math.floor(idx * 3 / trabalhos.length)].push(t.titulo));
-    const cab = grupos.map((g, k) => `<th title="${escapeHtmlColar(g.join(', ') || 'Sem atividade: usa a média')}" style="border:1px solid #e3e8ef; padding:6px;">Atividade ${k + 1}</th>`).join('');
+    const cab = grupos.map((g, k) => `<th title="${escapeHtmlColar(g.join(', ') || 'Sem atividade: usa a média')}" style="border:1px solid #e3e8ef; padding:6px;">Atividade ${k + 1}<br><button type="button" class="btn btn-xs btn-secondary no-print" style="padding:1px 6px; font-size:10px; margin-top:3px;" onclick="copiarNotasSugestaoSalaFuturo(${k}, this)" title="Copiar as notas desta coluna, uma por linha, para colar na Sala do Futuro">📋 Copiar</button></th>`).join('');
 
     return `
-        <p style="font-size:12px; color:#5f6b7f; margin:0 0 8px;">Três notas inteiras cuja média é a média do bimestre arredondada para cima. Passe o mouse sobre "Atividade" para ver quais atividades cada uma resume. O lançamento na Sala do Futuro é feito manualmente por você.</p>
+        <p style="font-size:12px; color:#5f6b7f; margin:0 0 8px;">Três notas inteiras cuja média é a média do bimestre arredondada para cima. Passe o mouse sobre "Atividade" para ver quais atividades cada uma resume. O botão 📋 Copiar copia a coluna inteira, uma nota por linha, na ordem alfabética. O lançamento na Sala do Futuro é feito manualmente por você.</p>
         <div style="overflow-x:auto;">
             <table class="sugestao-sala-futuro" style="font-size:13px; border-collapse:collapse; width:100%; min-width:480px;">
                 <thead style="background:#f6f8fb;"><tr>
                     <th style="border:1px solid #e3e8ef; padding:6px 10px; text-align:left;">Estudante</th>${cab}
                     <th style="border:1px solid #e3e8ef; padding:6px;">Média atual</th>
-                    <th style="border:1px solid #e3e8ef; padding:6px;">Média SF</th>
+                    <th style="border:1px solid #e3e8ef; padding:6px;">Média SF<br><button type="button" class="btn btn-xs btn-secondary no-print" style="padding:1px 6px; font-size:10px; margin-top:3px;" onclick="copiarNotasSugestaoSalaFuturo('media', this)" title="Copiar as notas desta coluna, uma por linha, para colar na Sala do Futuro">📋 Copiar</button></th>
                 </tr></thead>
                 <tbody>${linhas}</tbody>
             </table>
@@ -4417,8 +4490,8 @@ function renderSugestaoSalaFuturo(estudantes, trabalhos) {
 }
 
 function renderTrabalhos() {
-    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e)).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
-    const trabalhos = (data.trabalhos || []).filter(t => t.id_turma == turmaAtual && (t.bimestre == currentBimestreTrabalhos || (!t.bimestre && currentBimestreTrabalhos == 1)));
+    const estudantes = estudantesPlanilhaTrabalhos();
+    const trabalhos = trabalhosPlanilhaTrabalhos();
     const notas = data.notas || [];
 
     // [NOVO] Cálculo do total de aulas para exibição no cabeçalho
@@ -4469,6 +4542,7 @@ function renderTrabalhos() {
                                 <div style="display:flex; align-items:center; justify-content:center; gap:6px;">
                                     <button class="btn btn-xs btn-secondary no-print" style="padding:0 5px; font-size:10px; opacity: 0.6;" onclick="abrirModalNovoTrabalho(${t.id})" title="Editar Atividade">✏️</button>
                                     <span style="font-size: 10px; color: #5f6b7f; font-weight: normal;">Peso: ${t.peso}</span>
+                                    <button class="btn btn-xs btn-secondary no-print" style="padding:0 5px; font-size:10px; opacity: 0.6;" onclick="copiarNotasAtividade(${t.id}, this)" title="Copiar as notas desta atividade, uma por linha, para colar na Sala do Futuro">📋</button>
                                     <button class="btn btn-xs btn-danger no-print" style="padding:0 5px; font-size:10px; border-radius: 50%; opacity: 0.6;" onclick="removerTrabalho(${t.id})" title="Excluir Atividade">×</button>
                                 </div>
                             </th>

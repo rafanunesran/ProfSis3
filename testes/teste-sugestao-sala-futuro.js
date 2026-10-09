@@ -23,7 +23,9 @@ const FAKE = () => {
 
 (async () => {
   const b = await chromium.launch({ executablePath: CHROME });
-  const p = await (await b.newContext()).newPage();
+  const ctx = await b.newContext();
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new globalThis.URL(URL).origin });
+  const p = await ctx.newPage();
   p.on('dialog', async d => await d.accept());
   await p.addInitScript(FAKE);
   await p.goto(URL, { waitUntil:'domcontentloaded' });
@@ -54,6 +56,26 @@ const FAKE = () => {
     const linhas = [...document.querySelectorAll('#painelSugestaoSalaFuturo tbody tr')].map(tr =>
       [...tr.querySelectorAll('td')].map(td => td.textContent.trim()));
     out.linhas = linhas;
+
+    // copiar coluna da sugestão (botão) e da planilha
+    const lerAreaTransf = async () => { await new Promise(r => setTimeout(r, 100)); return navigator.clipboard.readText(); };
+    const botoesSug = document.querySelectorAll('#painelSugestaoSalaFuturo thead button');
+    out.qtdBotoesSug = botoesSug.length;
+    botoesSug[0].click();
+    out.copiaSugAtiv1 = await lerAreaTransf();
+    out.esperadoSugAtiv1 = linhas.map(l => l[1]).join('\n');
+    botoesSug[3].click();
+    out.copiaSugMedia = await lerAreaTransf();
+    // filtro de nomes ativo não pode encurtar a cópia
+    filtroAlunosTexto['tabTrabalhos:' + turmaAtual] = 'bruno';
+    out.copiaAtiv1 = textoNotasAtividade(11);
+    filtroAlunosTexto['tabTrabalhos:' + turmaAtual] = '';
+    const btPlanilha = document.querySelector('button[onclick^="copiarNotasAtividade(15"]');
+    btPlanilha.click();
+    out.copiaAtiv5 = await lerAreaTransf();
+    // nota vazia vira linha vazia, mantendo o alinhamento
+    data.notas = data.notas.filter(n => !(n.id_trabalho == 12 && n.id_estudante == 1));
+    out.copiaAtiv2Vazia = textoNotasAtividade(12);
 
     const c2 = document.getElementById('chaveSugestaoSalaFuturo');
     c2.checked = false; c2.dispatchEvent(new Event('change'));
@@ -89,6 +111,12 @@ const FAKE = () => {
   const bruno = r.linhas.find(l => l[0] === 'Bruno Silva');
   chk(bruno && bruno[5] === '4' && (+bruno[1] + +bruno[2] + +bruno[3]) === 12, 'Bruno: média 3,92 vira 4 ' + JSON.stringify(bruno));
   chk(r.desligou, 'desligar a chave esconde o painel');
+  chk(r.qtdBotoesSug === 4, 'painel tem botão copiar em Atividade 1, 2, 3 e Média SF');
+  chk(r.copiaSugAtiv1 === r.esperadoSugAtiv1 && r.copiaSugAtiv1.split('\n').length === 2, 'copiar Atividade 1 da sugestão: uma nota por linha ' + JSON.stringify(r.copiaSugAtiv1));
+  chk(r.copiaSugMedia === '7\n4', 'copiar Média SF ' + JSON.stringify(r.copiaSugMedia));
+  chk(r.copiaAtiv1 === '8,5\n3', 'copiar atividade da planilha ignora o filtro e usa vírgula ' + JSON.stringify(r.copiaAtiv1));
+  chk(r.copiaAtiv5 === '5,5\n4', 'botão 📋 da planilha copia a coluna ' + JSON.stringify(r.copiaAtiv5));
+  chk(r.copiaAtiv2Vazia === '\n4', 'nota vazia vira linha vazia ' + JSON.stringify(r.copiaAtiv2Vazia));
   chk(JSON.stringify(r.exata.notas) === '[7,7,7]' && r.exata.alvo === 7, 'média exata 7 fica 7');
   chk(r.umaAtiv.alvo === 7 && r.umaAtiv.notas.reduce((a,v)=>a+v,0) === 21, 'uma atividade só: 6,2 vira 7 em 3 notas');
   chk(JSON.stringify(r.dez.notas) === '[10,10,10]', 'média 9,75 vira 10,10,10');
