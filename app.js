@@ -4326,6 +4326,96 @@ function getNotaAvaliacaoGestor(estudanteId, idAvaliacaoGestor, disciplinaDaTurm
     return Math.min(10, parseFloat(media.toFixed(1)));
 }
 
+// Valor da nota que a planilha mostra: o lançado, ou, se vazio, o calculado dos tipos automáticos.
+function valorNotaTrabalho(t, estudanteId, nota) {
+    let valor = (nota && nota.valor !== undefined) ? nota.valor : '';
+    if (valor === '') {
+        if (t.tipo === 'compensacao') valor = getNotaCompensacao(estudanteId, currentBimestreTrabalhos);
+        if (t.tipo === 'caderno_auto') valor = getNotaCaderno(estudanteId, currentBimestreTrabalhos);
+        if (t.tipo === 'participacao') valor = getNotaParticipacao(estudanteId, currentBimestreTrabalhos);
+        if (t.tipo === 'avaliacao_gestor') {
+            const turmaObj = (data.turmas || []).find(tu => tu.id == turmaAtual);
+            valor = getNotaAvaliacaoGestor(estudanteId, t.id_avaliacao_gestor, turmaObj ? turmaObj.disciplina : '');
+        }
+    }
+    return valor;
+}
+
+// --- SUGESTÃO PARA A SALA DO FUTURO ---
+// Resume as notas do bimestre em 3 notas inteiras (0 a 10) cuja média é exatamente a
+// média ponderada do estudante arredondada para cima. As atividades são divididas, na
+// ordem da planilha, em 3 grupos; cada nota sugerida parte da média do seu grupo e é
+// ajustada de 1 em 1 até a soma fechar 3 × a média alvo. O lançamento é manual.
+let mostrarSugestaoSalaFuturo = false;
+
+function sugerirNotasSalaFuturo(itens) {
+    // itens: [{ valor: número, peso: número }] na ordem das atividades
+    const validos = (itens || []).filter(i => i && !isNaN(i.valor) && (parseFloat(i.peso) || 0) > 0);
+    const somaPesos = validos.reduce((a, i) => a + parseFloat(i.peso), 0);
+    if (somaPesos <= 0) return null;
+    const media = validos.reduce((a, i) => a + i.valor * parseFloat(i.peso), 0) / somaPesos;
+    // teto estrito; a folga de 1e-9 só evita que 6,0000000001 (erro de ponto flutuante) vire 7
+    const alvo = Math.min(10, Math.max(0, Math.ceil(media - 1e-9)));
+
+    const grupos = [[], [], []];
+    validos.forEach((i, idx) => grupos[Math.floor(idx * 3 / validos.length)].push(i));
+    const notas = grupos.map(g => {
+        const sp = g.reduce((a, i) => a + parseFloat(i.peso), 0);
+        const m = sp > 0 ? g.reduce((a, i) => a + i.valor * parseFloat(i.peso), 0) / sp : media;
+        return Math.min(10, Math.max(0, Math.round(m)));
+    });
+
+    const somaAlvo = alvo * 3;
+    let soma = notas.reduce((a, n) => a + n, 0);
+    while (soma < somaAlvo) {
+        let idx = -1;
+        notas.forEach((n, k) => { if (n < 10 && (idx < 0 || n < notas[idx])) idx = k; });
+        notas[idx]++; soma++;
+    }
+    while (soma > somaAlvo) {
+        let idx = -1;
+        notas.forEach((n, k) => { if (n > 0 && (idx < 0 || n > notas[idx])) idx = k; });
+        notas[idx]--; soma--;
+    }
+    return { notas, media, alvo };
+}
+
+function renderSugestaoSalaFuturo(estudantes, trabalhos) {
+    if (trabalhos.length === 0) return '<p style="font-size:12px; color:#5f6b7f; margin:0;">Crie atividades neste bimestre para ver a sugestão.</p>';
+    const notas = data.notas || [];
+    const linhas = estudantes.map(e => {
+        const itens = trabalhos.map(t => {
+            const valor = valorNotaTrabalho(t, e.id, notas.find(n => n.id_trabalho == t.id && n.id_estudante == e.id));
+            const parsed = parseFloat(String(valor).replace(',', '.'));
+            return { valor: isNaN(parsed) ? 0 : parsed, peso: parseFloat(t.peso) || 0 };
+        });
+        const sug = sugerirNotasSalaFuturo(itens);
+        const celulas = sug
+            ? sug.notas.map(n => `<td style="text-align:center; border:1px solid #e3e8ef; padding:6px; font-weight:bold;">${n}</td>`).join('')
+              + `<td style="text-align:center; border:1px solid #e3e8ef; padding:6px; color:#5f6b7f;">${sug.media.toFixed(2).replace('.', ',')}</td>`
+              + `<td style="text-align:center; border:1px solid #e3e8ef; padding:6px; font-weight:bold; color:${sug.alvo < 5 ? '#e53e3e' : '#2563c9'};">${sug.alvo}</td>`
+            : '<td colspan="5" style="text-align:center; border:1px solid #e3e8ef; padding:6px; color:#7a869a;">-</td>';
+        return `<tr data-nome="${escapeHtmlColar(e.nome_completo)}"><td style="border:1px solid #e3e8ef; padding:6px 10px; font-weight:bold;">${escapeHtmlColar(e.nome_completo)}</td>${celulas}</tr>`;
+    }).join('');
+
+    const grupos = [[], [], []];
+    trabalhos.forEach((t, idx) => grupos[Math.floor(idx * 3 / trabalhos.length)].push(t.titulo));
+    const cab = grupos.map((g, k) => `<th title="${escapeHtmlColar(g.join(', ') || 'Sem atividade: usa a média')}" style="border:1px solid #e3e8ef; padding:6px;">Atividade ${k + 1}</th>`).join('');
+
+    return `
+        <p style="font-size:12px; color:#5f6b7f; margin:0 0 8px;">Três notas inteiras cuja média é a média do bimestre arredondada para cima. Passe o mouse sobre "Atividade" para ver quais atividades cada uma resume. O lançamento na Sala do Futuro é feito manualmente por você.</p>
+        <div style="overflow-x:auto;">
+            <table class="sugestao-sala-futuro" style="font-size:13px; border-collapse:collapse; width:100%; min-width:480px;">
+                <thead style="background:#f6f8fb;"><tr>
+                    <th style="border:1px solid #e3e8ef; padding:6px 10px; text-align:left;">Estudante</th>${cab}
+                    <th style="border:1px solid #e3e8ef; padding:6px;">Média atual</th>
+                    <th style="border:1px solid #e3e8ef; padding:6px;">Média SF</th>
+                </tr></thead>
+                <tbody>${linhas}</tbody>
+            </table>
+        </div>`;
+}
+
 function renderTrabalhos() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e)).sort((a,b) => a.nome_completo.localeCompare(b.nome_completo));
     const trabalhos = (data.trabalhos || []).filter(t => t.id_turma == turmaAtual && (t.bimestre == currentBimestreTrabalhos || (!t.bimestre && currentBimestreTrabalhos == 1)));
@@ -4345,6 +4435,15 @@ function renderTrabalhos() {
                     ${b}º Bimestre
                 </button>
             `).join('')}
+        </div>
+
+        <div class="no-print" style="margin-bottom:15px;">
+            <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:bold;">
+                <input type="checkbox" id="chaveSugestaoSalaFuturo" role="switch" ${mostrarSugestaoSalaFuturo ? 'checked' : ''}
+                       onchange="mostrarSugestaoSalaFuturo=this.checked; renderTrabalhos()">
+                💡 Sugestão de notas para a Sala do Futuro (3 atividades)
+            </label>
+            ${mostrarSugestaoSalaFuturo ? `<div id="painelSugestaoSalaFuturo" style="margin-top:10px; background:white; border:1px solid #e3e8ef; border-radius:8px; padding:12px;">${renderSugestaoSalaFuturo(estudantes, trabalhos)}</div>` : ''}
         </div>
 
         <div style="margin-bottom:15px; display:flex; justify-content:space-between; align-items:center;">
@@ -4431,18 +4530,8 @@ function renderTrabalhos() {
 
                         const gradeCells = trabalhos.map(t => {
                             const nota = notas.find(n => n.id_trabalho == t.id && n.id_estudante == e.id);
-                            let valor = (nota && nota.valor !== undefined) ? nota.valor : '';
-                            
-                            // [NOVO] Sugestão dinâmica: Se estiver vazio e for automático, sugere o cálculo
-                            if (valor === '') {
-                                if (t.tipo === 'compensacao') valor = getNotaCompensacao(e.id, currentBimestreTrabalhos);
-                                if (t.tipo === 'caderno_auto') valor = getNotaCaderno(e.id, currentBimestreTrabalhos);
-                                if (t.tipo === 'participacao') valor = getNotaParticipacao(e.id, currentBimestreTrabalhos);
-                                if (t.tipo === 'avaliacao_gestor') {
-                                    const turmaObj = (data.turmas || []).find(tu => tu.id == turmaAtual);
-                                    valor = getNotaAvaliacaoGestor(e.id, t.id_avaliacao_gestor, turmaObj ? turmaObj.disciplina : '');
-                                }
-                            }
+                            // Sugestão dinâmica: se estiver vazio e for automático, usa o cálculo
+                            const valor = valorNotaTrabalho(t, e.id, nota);
 
                             const peso = parseFloat(t.peso) || 0;
                             const parsed = parseFloat(valor.toString().replace(',', '.'));
