@@ -3075,7 +3075,25 @@ html[data-tema="ambar-noturno"] .planilha-notas thead .col-faltas-fixa {
     color: inherit;
 }
 
+/* Sugestão para a Sala do Futuro: mesma ideia, títulos congelados ao rolar */
+.sugestao-sala-futuro-box {
+    overflow: auto;
+    max-height: calc(100vh - 140px);
+    max-height: calc(100dvh - 140px);
+    overscroll-behavior: contain;
+}
+
+.sugestao-sala-futuro thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface-2);
+    box-shadow: 0 2px 4px -2px rgba(0, 0, 0, 0.15);
+}
+
 @media print {
+    .sugestao-sala-futuro-box { max-height: none; overflow: visible; }
+    .sugestao-sala-futuro thead th { position: static; box-shadow: none; }
     .planilha-notas-box { max-height: none; overflow: visible; }
     .planilha-notas thead tr.planilha-titulos th { position: static; box-shadow: none; }
 }

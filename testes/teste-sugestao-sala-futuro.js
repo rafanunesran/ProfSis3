@@ -77,6 +77,21 @@ const FAKE = () => {
     data.notas = data.notas.filter(n => !(n.id_trabalho == 12 && n.id_estudante == 1));
     out.copiaAtiv2Vazia = textoNotasAtividade(12);
 
+    // título congelado: com muitos alunos o quadro rola e o cabeçalho fica no topo
+    const salvos = data.estudantes;
+    data.estudantes = Array.from({ length:40 }, (_, k) => ({ id:100+k, id_turma:500, nome_completo:'Aluno ' + String(k).padStart(2,'0'), status:'Ativo' }));
+    renderTrabalhos();
+    // a aba fica escondida fora da tela da turma; mostra o caminho até ela para medir
+    for (let el = document.getElementById('tabTrabalhos'); el && el !== document.body; el = el.parentElement) el.style.display = 'block';
+    const caixa = document.querySelector('.sugestao-sala-futuro-box');
+    const th = caixa.querySelector('thead th');
+    out.rolaSozinha = caixa.scrollHeight > caixa.clientHeight;
+    caixa.scrollTop = 300;
+    await new Promise(r => setTimeout(r, 50));
+    out.tituloNoTopo = Math.abs(th.getBoundingClientRect().top - caixa.getBoundingClientRect().top) <= 2;
+    data.estudantes = salvos;
+    renderTrabalhos();
+
     const c2 = document.getElementById('chaveSugestaoSalaFuturo');
     c2.checked = false; c2.dispatchEvent(new Event('change'));
     out.desligou = !document.getElementById('painelSugestaoSalaFuturo');
@@ -111,6 +126,7 @@ const FAKE = () => {
   const bruno = r.linhas.find(l => l[0] === 'Bruno Silva');
   chk(bruno && bruno[5] === '4' && (+bruno[1] + +bruno[2] + +bruno[3]) === 12, 'Bruno: média 3,92 vira 4 ' + JSON.stringify(bruno));
   chk(r.desligou, 'desligar a chave esconde o painel');
+  chk(r.rolaSozinha && r.tituloNoTopo, 'com 40 alunos o quadro rola e o título fica congelado no topo');
   chk(r.qtdBotoesSug === 4, 'painel tem botão copiar em Atividade 1, 2, 3 e Média SF');
   chk(r.copiaSugAtiv1 === r.esperadoSugAtiv1 && r.copiaSugAtiv1.split('\n').length === 2, 'copiar Atividade 1 da sugestão: uma nota por linha ' + JSON.stringify(r.copiaSugAtiv1));
   chk(r.copiaSugMedia === '7\n4', 'copiar Média SF ' + JSON.stringify(r.copiaSugMedia));

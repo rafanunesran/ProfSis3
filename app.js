@@ -4477,9 +4477,9 @@ function renderSugestaoSalaFuturo(estudantes, trabalhos) {
 
     return `
         <p style="font-size:12px; color:#5f6b7f; margin:0 0 8px;">Três notas inteiras cuja média é a média do bimestre arredondada para cima. Passe o mouse sobre "Atividade" para ver quais atividades cada uma resume. O botão 📋 Copiar copia a coluna inteira, uma nota por linha, na ordem alfabética. O lançamento na Sala do Futuro é feito manualmente por você.</p>
-        <div style="overflow-x:auto;">
+        <div class="sugestao-sala-futuro-box">
             <table class="sugestao-sala-futuro" style="font-size:13px; border-collapse:collapse; width:100%; min-width:480px;">
-                <thead style="background:#f6f8fb;"><tr>
+                <thead><tr>
                     <th style="border:1px solid #e3e8ef; padding:6px 10px; text-align:left;">Estudante</th>${cab}
                     <th style="border:1px solid #e3e8ef; padding:6px;">Média atual</th>
                     <th style="border:1px solid #e3e8ef; padding:6px;">Média SF<br><button type="button" class="btn btn-xs btn-secondary no-print" style="padding:1px 6px; font-size:10px; margin-top:3px;" onclick="copiarNotasSugestaoSalaFuturo('media', this)" title="Copiar as notas desta coluna, uma por linha, para colar na Sala do Futuro">📋 Copiar</button></th>
