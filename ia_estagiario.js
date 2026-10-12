@@ -1482,9 +1482,7 @@ async function gerarAgendaMensalEstagiario(modo) {
         doc.head.insertBefore(base, doc.head.firstChild);
 
         const printStyle = doc.createElement('style');
-        printStyle.textContent = '@media print { body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } }'
-            // Cada semana cabe inteira numa folha: não deixa o cabeçalho dela numa página e as aulas na outra.
-            + ' table { page-break-inside: avoid; break-inside: avoid; }';
+        printStyle.textContent = '@media print { body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } }';
         doc.head.appendChild(printStyle);
 
         // Nome sugerido do PDF: Agenda_<Mês>_<Professor>
@@ -1492,7 +1490,9 @@ async function gerarAgendaMensalEstagiario(modo) {
         doc.title = `Agenda_${mesesNomeEstagiario[mes] || (mes + 1)}_${sanitizarNomeArquivoEstagiario(currentUser.nome)}`;
 
         if (modo === 'pdf') {
-            await baixarPdfDocumentoEstagiario('<!DOCTYPE html>' + doc.documentElement.outerHTML);
+            // Cada semana vai inteira para uma folha, menos a 1ª, que fica sempre logo abaixo do título.
+            await baixarPdfDocumentoEstagiario('<!DOCTYPE html>' + doc.documentElement.outerHTML,
+                { semQuebraEm: 'table.c22 ~ table.c22' });
         } else {
             const win = window.open('', '', 'width=1200,height=800');
             if (!win) throw new Error('O navegador bloqueou a abertura da janela (Pop-up). Permita pop-ups no seu navegador para gerar a agenda.');
@@ -2624,7 +2624,42 @@ function nomeArquivoPdfEstagiario(html) {
     return nome + '.pdf';
 }
 
-async function baixarPdfDocumentoEstagiario(htmlFinal) {
+// Blocos (`seletor`) que cruzariam o fim de uma folha descem inteiros para a seguinte. Mede a partir
+// do topo do próprio container do html2pdf - a quebra automática dele mede pela tela e, quando o
+// container não começa no topo, deixa espaços em branco no meio da página.
+// Depois, nenhuma linha de tabela fica cortada ao meio: a que cruzaria desce inteira.
+function afastarDaQuebraDePaginaEstagiario(container, seletor, alturaPagina) {
+    const doc = container.ownerDocument;
+    const faltaParaQuebra = (el) => {
+        const topoContainer = container.getBoundingClientRect().top;
+        const r = el.getBoundingClientRect();
+        if (r.height >= alturaPagina) return 0; // maior que uma folha: não tem como não quebrar
+        const topo = r.top - topoContainer;
+        const pagina = Math.floor(topo / alturaPagina);
+        if (Math.floor((r.bottom - topoContainer - 1) / alturaPagina) === pagina) return 0;
+        return (pagina + 1) * alturaPagina - topo;
+    };
+    Array.from(container.querySelectorAll(seletor)).forEach(el => {
+        const falta = faltaParaQuebra(el);
+        if (!falta) return;
+        const espaco = doc.createElement('div');
+        espaco.style.cssText = `display:block; height:${falta}px;`;
+        el.parentNode.insertBefore(espaco, el);
+    });
+    Array.from(container.querySelectorAll('tr')).forEach(tr => {
+        const falta = faltaParaQuebra(tr);
+        if (!falta) return;
+        // Dentro da tabela o espaço tem de ser uma linha (sem bordas) - um <div> ali não teria altura.
+        const espaco = doc.createElement('tr');
+        espaco.innerHTML = `<td colspan="99" style="height:${falta}px; padding:0; border:none; background:#fff;"></td>`;
+        tr.parentNode.insertBefore(espaco, tr);
+    });
+}
+
+// `opcoes.semQuebraEm`: seletor dos blocos que não podem ser cortados entre duas folhas. Com ele, a
+// quebra automática do html2pdf fica desligada e as quebras são as de afastarDaQuebraDePaginaEstagiario.
+async function baixarPdfDocumentoEstagiario(htmlFinal, opcoes) {
+    const semQuebraEm = opcoes && opcoes.semQuebraEm;
     const html = String(htmlFinal || '').replace(/<script[\s\S]*?<\/script>/gi, '');
     const paisagem = /size\s*:\s*[^;}]*landscape/i.test(html);
     const nomeArquivo = nomeArquivoPdfEstagiario(html);
@@ -2672,14 +2707,25 @@ async function baixarPdfDocumentoEstagiario(htmlFinal) {
             });
         }
 
-        const blob = await win.html2pdf().set({
+        let tarefa = win.html2pdf().set({
             margin: 10,
             filename: nomeArquivo,
             image: { type: 'jpeg', quality: 0.95 },
             html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
             jsPDF: { unit: 'mm', format: 'a4', orientation: paisagem ? 'landscape' : 'portrait' },
-            pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', 'img', 'p', 'li', 'h1', 'h2', 'h3', 'h4'] }
-        }).from(doc.body).outputPdf('blob');
+            pagebreak: semQuebraEm ? { mode: [] }
+                : { mode: ['css', 'legacy'], avoid: ['tr', 'img', 'p', 'li', 'h1', 'h2', 'h3', 'h4'] }
+        }).from(doc.body);
+        if (semQuebraEm) {
+            tarefa = tarefa.toContainer().then(function () {
+                const container = this.prop.container;
+                const folha = this.prop.pageSize.inner;
+                // Mesma altura de folha que o html2pdf usa para fatiar a imagem em páginas.
+                afastarDaQuebraDePaginaEstagiario(container, semQuebraEm,
+                    container.getBoundingClientRect().width * folha.height / folha.width);
+            });
+        }
+        const blob = await tarefa.outputPdf('blob');
 
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
