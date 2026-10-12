@@ -7415,6 +7415,10 @@ function renderDocumentosPlanos() {
                             <div style="font-weight:bold; color:#1c2536;">📝 ${titulo}</div>
                             <div style="font-size:13px; color:#5f6b7f;">${escapeHtmlEstagiario(detalhe) || '&nbsp;'}</div>
                             <div style="font-size:12px; color:#7a869a;">Gerado em ${formatarDataDocumentos(p.salvoEm)}</div>
+                            ${p.id ? `<label style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:12px; color:#1c2536;" title="Clique num dia: o plano passa para a semana (Seg a Sex) desse dia">
+                                📅 Data do plano:
+                                <input type="date" value="${escapeAttrEstagiario((p.payload && p.payload.semanaInicio) || '')}" onchange="alterarDataPlanoAulaHistoricoEstagiario('${escapeAttrEstagiario(p.id)}', this.value)" style="padding:2px 6px; border:1px solid #cdd5e1; border-radius:4px; font-size:12px;">
+                            </label>` : ''}
                         </div>
                         <div style="display:flex; gap:6px; flex-wrap:wrap;">
                             ${temTexto ? `<button class="btn btn-sm btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="reimprimirPlanoAulaHistoricoEstagiario('${escapeAttrEstagiario(p.id || '')}', 'pdf')">📄 PDF</button>

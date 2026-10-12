@@ -583,6 +583,52 @@ async function reimprimirPlanoAulaHistoricoEstagiario(id, modo) {
     }
 }
 
+// Correção da data de um plano já guardado (aba Planos de Aula da tela Documentos): troca a semana
+// nos dois lugares onde ele fica, sem mexer no texto nem na ordem da lista. O PDF/Reimprimir seguintes
+// já saem com a data nova.
+function alterarDataPlanoAulaHistoricoEstagiario(id, dateStr) {
+    const semana = semanaPorDataEstagiario(dateStr);
+    if (!semana || !id) return;
+
+    const corrigir = (registro) => {
+        registro.semana = semana.texto;
+        if (registro.payload) {
+            registro.payload = Object.assign({}, registro.payload,
+                { semana: semana.texto, semanaInicio: semana.inicio, semanaFim: semana.fim });
+        } else {
+            registro.payload = { semanaInicio: semana.inicio, semanaFim: semana.fim, semana: semana.texto };
+        }
+        if (registro.tipo === 'plano_aula') {
+            registro.subtitulo = [registro.tema, `semana ${semana.texto}`].filter(Boolean).join(' · ');
+        }
+    };
+
+    let achou = false;
+    if (typeof data !== 'undefined' && data && Array.isArray(data.historicoDocumentos)) {
+        const registro = data.historicoDocumentos.find(h => h && String(h.id) === String(id));
+        if (registro) {
+            corrigir(registro);
+            achou = true;
+            if (typeof persistirDados === 'function') persistirDados();
+        }
+    }
+    try {
+        const historico = lerHistoricoPlanoAulaLocalEstagiario();
+        const local = historico.find(h => String(h.id) === String(id));
+        if (local) {
+            corrigir(local);
+            achou = true;
+            localStorage.setItem(CHAVE_HISTORICO_PLANO_AULA_ESTAGIARIO, JSON.stringify(historico));
+        }
+    } catch (e) {
+        console.warn('[Estagiário] Não foi possível atualizar o histórico local de planos:', e);
+    }
+    if (!achou) return alert('Plano de aula não encontrado no histórico.');
+
+    if (typeof renderDocumentosPlanos === 'function') renderDocumentosPlanos();
+    if (typeof renderDocumentosHistorico === 'function' && document.getElementById('tabDocHistorico')) renderDocumentosHistorico();
+}
+
 // Apaga um plano do histórico (dos dois lugares onde ele fica). O documento que o professor já
 // imprimiu ou salvou em PDF não é afetado - aqui só sai o registro guardado no sistema.
 async function excluirPlanoAulaHistoricoEstagiario(id) {
@@ -1163,25 +1209,54 @@ function restaurarPromptPadraoIA() {
 // configurações da escola/sistema.
 // Seleção de semana do Plano de Aula: a partir de QUALQUER dia clicado no calendário, encaixa a semana
 // de segunda a sexta e preenche o campo de exibição + as datas ocultas (usadas no PDF/registros).
-function atualizarSemanaPorDataEstagiario(dateStr) {
-    if (!dateStr) return;
-    const [y, m, d] = dateStr.split('-').map(Number);
-    if (!y || !m || !d) return;
+// Semana (Seg a Sex) que contém o dia clicado no calendário: { inicio, fim, texto: 'dd/mm a dd/mm' }.
+function semanaPorDataEstagiario(dateStr) {
+    if (!dateStr) return null;
+    const [y, m, d] = String(dateStr).split('-').map(Number);
+    if (!y || !m || !d) return null;
     const base = new Date(y, m - 1, d); // data local (evita shift de fuso do new Date('YYYY-MM-DD'))
     const offSeg = (base.getDay() + 6) % 7; // 0=Seg ... 6=Dom
     const seg = new Date(base); seg.setDate(base.getDate() - offSeg);
     const sex = new Date(seg); sex.setDate(seg.getDate() + 4);
     const toISO = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
     const dm = (dt) => `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}`;
+    return { inicio: toISO(seg), fim: toISO(sex), texto: `${dm(seg)} a ${dm(sex)}` };
+}
+
+function atualizarSemanaPorDataEstagiario(dateStr) {
+    const semana = semanaPorDataEstagiario(dateStr);
+    if (!semana) return;
 
     const ini = document.getElementById('iaDocSemanaInicio');
     const fim = document.getElementById('iaDocSemanaFim');
     const disp = document.getElementById('iaDocSemana');
     const picker = document.getElementById('iaDocSemanaData');
-    if (ini) ini.value = toISO(seg);
-    if (fim) fim.value = toISO(sex);
-    if (disp) disp.value = `${dm(seg)} a ${dm(sex)}`;
-    if (picker) picker.value = toISO(seg); // reencaixa o calendário na segunda-feira (feedback visual)
+    if (ini) ini.value = semana.inicio;
+    if (fim) fim.value = semana.fim;
+    if (disp) disp.value = semana.texto;
+    if (picker) picker.value = semana.inicio; // reencaixa o calendário na segunda-feira (feedback visual)
+}
+
+// Correção da data na tela de revisão do Plano de Aula: troca a semana guardada no modal (é ela que
+// vai para o documento e para o nome do PDF) e já mostra a nova no campo DATA da prévia, sem
+// remontar a prévia - o texto que o professor já editou continua lá.
+function alterarDataRevisaoPlanoAulaEstagiario(dateStr) {
+    const semana = semanaPorDataEstagiario(dateStr);
+    const modal = document.getElementById('modalRevisaoDocumento');
+    if (!semana || !modal) return;
+    modal.dataset.semana = semana.texto;
+    modal.dataset.semanaInicio = semana.inicio;
+    modal.dataset.semanaFim = semana.fim;
+
+    const picker = document.getElementById('revDocSemanaData');
+    if (picker) picker.value = semana.inicio;
+    const texto = document.getElementById('revDocSemanaTexto');
+    if (texto) texto.textContent = semana.texto;
+
+    const iframe = document.getElementById(ID_PREVIA_PLANO_AULA_ESTAGIARIO);
+    const doc = iframe && iframe.contentDocument;
+    const celula = doc && Array.from(doc.querySelectorAll('td')).find(td => /^\s*DATA:/.test(td.textContent));
+    if (celula) celula.innerHTML = `<b>DATA:</b> ${escapeHtmlEstagiario(semana.texto)}`;
 }
 
 // ---- Nome sugerido do PDF: o navegador usa o <title> do documento como nome no "Salvar como PDF" ----
@@ -2752,6 +2827,11 @@ function abrirModalRevisaoDocumento(tipo, serie, disciplina, tema, semana, turma
                 <button class="btn btn-sm btn-danger" style="padding: 2px 8px;" onclick="closeModal('modalRevisaoDocumento')">×</button>
             </div>
             ${fundamentacaoHtml}
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; font-size:13px; color:#1c2536;">
+                <label for="revDocSemanaData" style="font-weight:bold;">📅 Data do plano (clique num dia — pega Seg a Sex):</label>
+                <input type="date" id="revDocSemanaData" value="${escapeAttrEstagiario(semanaInicioISO || '')}" onchange="alterarDataRevisaoPlanoAulaEstagiario(this.value)" style="padding:4px 8px; border:1px solid #cdd5e1; border-radius:4px;">
+                <span id="revDocSemanaTexto" style="color:#5f6b7f;">${escapeHtmlEstagiario(semana || '')}</span>
+            </div>
             ${blocoPuxarAnteriorEstagiario(anterior, 'modalRevisaoDocumento', ID_PREVIA_PLANO_AULA_ESTAGIARIO, 'PLANO_AULA_CAMPOS_IA')}
             ${blocoPreviaDocumentoEstagiario(ID_PREVIA_PLANO_AULA_ESTAGIARIO, modoManual)}
             ${cardsMaterialDigitalHtml}
