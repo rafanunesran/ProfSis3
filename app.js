@@ -6405,6 +6405,7 @@ function abrirFichaTutorado(id) {
                     <div style="background:#f6f8fb; padding:15px; border-radius:6px; border:1px solid #e3e8ef;">
                         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                             <span style="font-size:12px; color:#2f855a;">✅ Salvo (atualizado em ${formatDate(anexoPaee.atualizadoEm)})</span>
+                            <button class="btn btn-sm btn-secondary" style="padding:2px 8px; font-size:12px;" onclick="reimprimirAnexoPaeeSalvo(${t.id}, 'pdf')">📄 PDF</button>
                             <button class="btn btn-sm btn-info" style="padding:2px 8px; font-size:12px;" onclick="reimprimirAnexoPaeeSalvo(${t.id})">🖨️ Reimprimir</button>
                             <button class="btn btn-sm btn-secondary" style="padding:2px 8px; font-size:12px;" onclick="editarAnexoPaeeSalvo(${t.id})">✏️ Editar</button>
                         </div>
@@ -9242,6 +9243,7 @@ function renderAnexosIVHtml(t, permitirExcluir) {
             </div>
             <div style="display:flex; align-items:center; gap:10px;">
                 <span style="font-size:12px; color:#5f6b7f;">Atualizado em ${formatDate(a.atualizadoEm)}</span>
+                <button class="btn btn-sm btn-secondary" style="padding:2px 8px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${t.id}, ${a.id}, 'pdf')">📄 PDF</button>
                 <button class="btn btn-sm btn-info" style="padding:2px 8px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${t.id}, ${a.id})">🖨️ Reimprimir</button>
                 ${permitirExcluir ? `<button class="btn btn-sm btn-danger" style="padding:2px 8px; font-size:12px;" onclick="excluirAnexoIVSalvo(${t.id}, ${a.id})">🗑️ Excluir</button>` : ''}
             </div>
@@ -9343,7 +9345,10 @@ async function abrirFichaAeeReadOnly(tutoradoId) {
                 <label style="font-weight:bold; display:block; margin-bottom:5px; color:#1b4488;">Anexo III - PAEE</label>
                 <div style="background:#f6f8fb; padding:15px; border-radius:6px; border:1px solid #e3e8ef;">
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-                        <button class="btn btn-sm btn-info" onclick="reimprimirAnexoPaeeSalvo(${t.id})">🖨️ Reimprimir</button>
+                        <span style="display:flex; gap:6px;">
+                            <button class="btn btn-sm btn-secondary" onclick="reimprimirAnexoPaeeSalvo(${t.id}, 'pdf')">📄 PDF</button>
+                            <button class="btn btn-sm btn-info" onclick="reimprimirAnexoPaeeSalvo(${t.id})">🖨️ Reimprimir</button>
+                        </span>
                         <span style="font-size:12px; color:#2f855a;">✅ Salvo (atualizado em ${formatDate(anexoPaee.atualizadoEm)})</span>
                     </div>
                     <div style="margin-top:12px; display:grid; grid-template-columns: 1fr 1fr; gap:8px; font-size:12px;">

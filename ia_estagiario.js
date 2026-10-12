@@ -928,6 +928,7 @@ async function abrirModalGerarDocumentoIA() {
                 <div style="margin-top:20px; display:flex; justify-content:flex-end; align-items:center; gap:10px; flex-wrap:wrap;">
                     <button class="btn btn-secondary" onclick="closeModal('modalGerarDocumentoIA')">Cancelar</button>
                     <button class="btn btn-secondary" id="btnGerarDocumentoManual" onclick="gerarDocumentoManualEstagiario()" title="Monta o documento sem passar pela IA: em branco ou já com o texto do último documento">✍️ Manual</button>
+                    <button class="btn btn-info" id="btnGerarAgendaPdf" onclick="gerarAgendaMensalEstagiario('pdf')" style="display:none;" title="Baixa a agenda em PDF, sem abrir a janela de impressão">📄 Baixar PDF</button>
                     <button class="btn btn-primary" id="btnGerarDocumentoIA" onclick="gerarDocumentoIA()">Gerar Estrutura</button>
                 </div>
             </div>
@@ -1109,6 +1110,9 @@ function toggleTipoDocumentoIA() {
     // revisão), então não existe versão "manual" dela pra oferecer.
     const btnManual = document.getElementById('btnGerarDocumentoManual');
     if (btnManual) btnManual.style.display = isAgenda ? 'none' : '';
+    // Só a Agenda sai direto daqui; os outros documentos ganham o "📄 PDF" na tela de revisão.
+    const btnPdf = document.getElementById('btnGerarAgendaPdf');
+    if (btnPdf) btnPdf.style.display = isAgenda ? '' : 'none';
 }
 
 // Preenche automaticamente os campos do Anexo III - PAEE com os dados já cadastrados do aluno
@@ -1208,15 +1212,18 @@ function definirTituloPdfEstagiario(html, nome) {
     return titulo + html;
 }
 
-async function gerarAgendaMensalEstagiario() {
+// `modo` = 'pdf' baixa o arquivo direto em vez de abrir a janela de impressão.
+async function gerarAgendaMensalEstagiario(modo) {
     const mes = parseInt(document.getElementById('iaAgendaMes').value);
     const ano = parseInt(document.getElementById('iaAgendaAno').value);
     if (isNaN(mes) || isNaN(ano) || ano < 2000) return alert('Informe um Mês e Ano válidos.');
 
-    const btn = document.getElementById('btnGerarDocumentoIA');
+    const btn = document.getElementById(modo === 'pdf' ? 'btnGerarAgendaPdf' : 'btnGerarDocumentoIA');
+    const outroBtn = document.getElementById(modo === 'pdf' ? 'btnGerarDocumentoIA' : 'btnGerarAgendaPdf');
     const originalText = btn.textContent;
-    btn.textContent = 'Gerando agenda... ⏳';
+    btn.textContent = modo === 'pdf' ? 'Gerando PDF... ⏳' : 'Gerando agenda... ⏳';
     btn.disabled = true;
+    if (outroBtn) outroBtn.disabled = true;
 
     try {
         // 1. Carrega o modelo (template) da agenda
@@ -1400,18 +1407,24 @@ async function gerarAgendaMensalEstagiario() {
         doc.head.insertBefore(base, doc.head.firstChild);
 
         const printStyle = doc.createElement('style');
-        printStyle.textContent = '@media print { body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } }';
+        printStyle.textContent = '@media print { body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } }'
+            // Cada semana cabe inteira numa folha: não deixa o cabeçalho dela numa página e as aulas na outra.
+            + ' table { page-break-inside: avoid; break-inside: avoid; }';
         doc.head.appendChild(printStyle);
 
         // Nome sugerido do PDF: Agenda_<Mês>_<Professor>
         const mesesNomeEstagiario = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
         doc.title = `Agenda_${mesesNomeEstagiario[mes] || (mes + 1)}_${sanitizarNomeArquivoEstagiario(currentUser.nome)}`;
 
-        const win = window.open('', '', 'width=1200,height=800');
-        if (!win) throw new Error('O navegador bloqueou a abertura da janela (Pop-up). Permita pop-ups no seu navegador para gerar a agenda.');
-        win.document.write(doc.documentElement.outerHTML);
-        win.document.close();
-        setTimeout(() => { win.print(); }, 500);
+        if (modo === 'pdf') {
+            await baixarPdfDocumentoEstagiario('<!DOCTYPE html>' + doc.documentElement.outerHTML);
+        } else {
+            const win = window.open('', '', 'width=1200,height=800');
+            if (!win) throw new Error('O navegador bloqueou a abertura da janela (Pop-up). Permita pop-ups no seu navegador para gerar a agenda.');
+            win.document.write(doc.documentElement.outerHTML);
+            win.document.close();
+            setTimeout(() => { win.print(); }, 500);
+        }
 
         // A Agenda Mensal é montada na hora, a partir da grade e dos registros do mês - por isso o
         // histórico guarda só o fato de ter sido gerada (mês/ano); gerar de novo devolve a versão
@@ -1424,10 +1437,11 @@ async function gerarAgendaMensalEstagiario() {
 
         closeModal('modalGerarDocumentoIA');
     } catch (e) {
-        alert('Erro ao gerar a agenda: ' + e.message);
+        alert((modo === 'pdf' ? 'Erro ao gerar o PDF da agenda: ' : 'Erro ao gerar a agenda: ') + e.message);
     } finally {
         btn.textContent = originalText;
         btn.disabled = false;
+        if (outroBtn) outroBtn.disabled = false;
     }
 }
 
