@@ -317,6 +317,25 @@ const DESENHAR_PNG = ({ largura, altura }) => {
         r.temComparacao = !!depois && !!cortina && !!document.getElementById('ampComparar');
         r.resultadoEBlobLocal = !!depois && depois.src.indexOf('blob:') === 0;
 
+        // A cortina e' uma mascara: em qualquer posicao a imagem de cima tem o mesmo
+        // tamanho e o mesmo lugar da de baixo (nada e' espremido junto com a cortina).
+        // A aba fica escondida no teste: o quadro vai, por um instante, para uma caixa
+        // visivel de 400px (mesmas regras de CSS da pagina) e depois volta ao lugar.
+        const quadro = document.getElementById('ampComparar');
+        const lugar = quadro.parentNode, vizinho = quadro.nextSibling;
+        const caixa = document.createElement('div');
+        caixa.style.cssText = 'position:fixed; left:0; top:0; width:400px; z-index:99999;';
+        document.body.appendChild(caixa); caixa.appendChild(quadro);
+        const antesImg = quadro.querySelector(':scope > img');
+        await new Promise(ok => setTimeout(ok, 300));
+        r.mascaraAlinhada = [10, 50, 90].every(v => {
+            cortina.value = v; cortina.dispatchEvent(new Event('input'));
+            const x = antesImg.getBoundingClientRect(), y = depois.getBoundingClientRect();
+            return x.width > 300 && Math.abs(x.width - y.width) < 1 && Math.abs(x.height - y.height) < 1
+                && Math.abs(x.left - y.left) < 1 && Math.abs(x.top - y.top) < 1;
+        });
+        lugar.insertBefore(quadro, vizinho); caixa.remove();
+
         // O arquivo de verdade: lido de volta do <canvas> para conferir que a imagem
         // ampliada tem mesmo o dobro do tamanho e nao e' uma tela em branco.
         const im = new Image();
@@ -342,6 +361,7 @@ const DESENHAR_PNG = ({ largura, altura }) => {
     ok('a imagem ampliada tem conteudo (nao e uma tela lisa)', resultado.temContraste);
     ok('tem botao de baixar', resultado.temBotaoBaixar);
     ok('e a comparacao antes/depois esta montada', resultado.temComparacao);
+    ok('a cortina recorta (mascara) sem redimensionar a imagem', resultado.mascaraAlinhada);
     ok('o resultado e um blob local, nao um link de servidor', resultado.resultadoEBlobLocal);
     console.log('  (ampliou 120x90 -> 240x180 em ' + resultado.segundos.toFixed(2) + 's)');
 

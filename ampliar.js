@@ -560,8 +560,10 @@ function ampRender() {
             .amp-comparar { position: relative; overflow: hidden; border-radius: 8px; background:
                 repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 18px 18px; line-height: 0; }
             .amp-comparar img { display: block; width: 100%; height: auto; }
-            .amp-depois { position: absolute; inset: 0; overflow: hidden; }
-            .amp-depois img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+            .amp-depois { position: absolute; inset: 0; clip-path: inset(0 50% 0 0); }
+            .amp-depois img { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; object-fit: fill; }
+            .amp-depois::after { content: ''; position: absolute; top: 0; bottom: 0; right: var(--amp-corte, 50%);
+                width: 2px; margin-right: -1px; background: #fff; box-shadow: 0 0 4px rgba(0,0,0,.45); }
         </style>
 
         <div class="card" style="margin:20px 0;">
@@ -788,7 +790,7 @@ function ampHtmlResultado() {
             <div class="amp-rotulo" style="margin-bottom:6px;">Antes e depois</div>
             <div class="amp-comparar" id="ampComparar">
                 <img src="${escAmp(ampImagem.url)}" alt="Antes">
-                <div class="amp-depois" id="ampDepois" style="width:50%;">
+                <div class="amp-depois" id="ampDepois">
                     <img src="${escAmp(r.url)}" alt="Depois" id="ampImagemDepois">
                 </div>
             </div>
@@ -801,26 +803,20 @@ function ampHtmlResultado() {
         </div>`;
 }
 
-// A cortina do "antes e depois". As duas imagens sao desenhadas no MESMO tamanho de
-// tela, uma por cima da outra; o que se move e' so' a largura do recorte de cima. Por
-// isso a de cima usa object-fit:fill e largura/altura de 100%: ela precisa acompanhar o
-// enquadramento da de baixo, e nao o proprio.
+// A cortina do "antes e depois" e' uma MASCARA: as duas imagens ocupam o quadro inteiro,
+// uma sobre a outra, no mesmo enquadramento. A cortina so' muda o recorte (clip-path) da
+// de cima; nenhuma das duas e' redimensionada, entao cada ponto bate com o mesmo ponto.
 function ampLigarComparador() {
     const cortina = document.getElementById('ampCortina');
     const depois = document.getElementById('ampDepois');
-    const imagemDepois = document.getElementById('ampImagemDepois');
-    const quadro = document.getElementById('ampComparar');
-    if (!cortina || !depois || !imagemDepois || !quadro) return;
+    if (!cortina || !depois) return;
 
     const ajustar = () => {
-        depois.style.width = cortina.value + '%';
-        // A imagem de cima e' recortada pelo pai, entao ela precisa manter a largura do
-        // QUADRO inteiro — senao ela encolhe junto com a cortina e a comparacao mente.
-        imagemDepois.style.width = quadro.clientWidth + 'px';
-        imagemDepois.style.height = quadro.clientHeight + 'px';
+        const corte = (100 - Number(cortina.value)) + '%';
+        depois.style.clipPath = 'inset(0 ' + corte + ' 0 0)';
+        depois.style.setProperty('--amp-corte', corte);
     };
     cortina.addEventListener('input', ajustar);
-    window.addEventListener('resize', ajustar);
     ajustar();
 }
 
