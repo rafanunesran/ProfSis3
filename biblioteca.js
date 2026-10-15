@@ -191,7 +191,7 @@ async function renderBiblioteca() {
 
             <!-- MODO RÁPIDO -->
             <div id="bibModoRapido">
-                <p style="font-size:13px; color:#555; margin-bottom:10px;">Escolha a disciplina e a série, suba o documento, e a IA gera título, descrição e tags. Você confere antes de publicar. <em>O arquivo não é guardado — usamos só o conteúdo (texto) para a IA e para a impressão.</em></p>
+                <p style="font-size:13px; color:#555; margin-bottom:10px;">Escolha a disciplina e a série, suba o documento, e a IA gera título, descrição e tags. Você confere antes de publicar. Pode selecionar <strong>vários arquivos de uma vez</strong>: nesse caso a IA classifica e publica cada um direto, sem a etapa de revisão. <em>O arquivo não é guardado — usamos só o conteúdo (texto) para a IA e para a impressão.</em></p>
                 <form onsubmit="bibliotecaEnviarRapido(event)">
                     <div style="display:flex; gap:10px; flex-wrap:wrap;">
                         <label style="flex:1; min-width:170px;">Disciplina:
@@ -206,8 +206,8 @@ async function renderBiblioteca() {
                             </select>
                         </label>
                     </div>
-                    <label style="display:block; margin-top:10px;">Documento (PDF, Word, Excel, PPT, imagem):
-                        <input type="file" id="bibRapidoArquivo" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp" style="width:100%; padding:6px; margin-top:4px;">
+                    <label style="display:block; margin-top:10px;">Documento(s) (PDF, Word, Excel, PPT, imagem):
+                        <input type="file" id="bibRapidoArquivo" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp" style="width:100%; padding:6px; margin-top:4px;">
                     </label>
                     <div id="bibProgressoRapido" style="font-size:13px; color:#1b4488; margin:8px 0;"></div>
                     <button type="submit" class="btn btn-primary" id="bibBtnRapido">✨ Classificar e revisar</button>
@@ -435,7 +435,9 @@ async function bibliotecaEnviarRapido(e) {
     const disciplina = document.getElementById('bibRapidoDisciplina').value.trim();
     const serie = document.getElementById('bibRapidoSerie').value;
     const arquivoInput = document.getElementById('bibRapidoArquivo');
-    const arquivo = arquivoInput.files && arquivoInput.files[0];
+    const arquivos = Array.from(arquivoInput.files || []);
+    if (arquivos.length > 1) { await bibliotecaEnviarLote(arquivos, disciplina, serie); return; }
+    const arquivo = arquivos[0];
 
     if (!arquivo) { alert('Selecione um documento para subir.'); return; }
     if (arquivo.size > BIBLIOTECA_MAX_FILE_MB * 1024 * 1024) {
@@ -480,6 +482,56 @@ async function bibliotecaEnviarRapido(e) {
     } finally {
         if (btn) btn.disabled = false;
     }
+}
+
+// Envio em LOTE (vários arquivos no modo rápido): a IA classifica e publica cada um direto,
+// em sequência, sem a prévia editável. Arquivos com erro não interrompem os demais.
+async function bibliotecaEnviarLote(arquivos, disciplina, serie) {
+    const limite = BIBLIOTECA_MAX_FILE_MB * 1024 * 1024;
+    const grandes = arquivos.filter(a => a.size > limite);
+    const validos = arquivos.filter(a => a.size <= limite);
+    if (validos.length === 0) { alert(`Todos os arquivos passam do limite de ${BIBLIOTECA_MAX_FILE_MB}MB.`); return; }
+    if (!confirm(`Publicar ${validos.length} arquivo(s) direto na biblioteca, com título, descrição e tags gerados pela IA?` +
+        (grandes.length ? `\n\n${grandes.length} arquivo(s) acima de ${BIBLIOTECA_MAX_FILE_MB}MB serão ignorados.` : ''))) return;
+
+    const btn = document.getElementById('bibBtnRapido');
+    const arquivoInput = document.getElementById('bibRapidoArquivo');
+    const prog = document.getElementById('bibProgressoRapido');
+    if (btn) btn.disabled = true;
+    if (arquivoInput) arquivoInput.disabled = true;
+
+    const falhas = grandes.map(a => `${a.name} (maior que ${BIBLIOTECA_MAX_FILE_MB}MB)`);
+    let publicados = 0;
+    try {
+        for (let i = 0; i < validos.length; i++) {
+            const arquivo = validos[i];
+            const setProg = (t) => { if (prog) prog.textContent = `[${i + 1}/${validos.length}] ${arquivo.name} — ${t}`; };
+            try {
+                setProg('Lendo o conteúdo do arquivo...');
+                const texto = (await extrairTextoArquivoBiblioteca(arquivo)).slice(0, BIBLIOTECA_MAX_TEXTO_EXTRAIDO);
+                setProg('Classificando com a IA...');
+                const meta = await classificarMaterialComIA(texto, disciplina, serie, arquivo.name);
+                await salvarMaterialBiblioteca({
+                    titulo: meta.titulo || arquivo.name.replace(/\.[^.]+$/, ''),
+                    disciplina, serie, tags: meta.tags || [], descricao: meta.descricao || '',
+                    arquivo, link: '', textoJaExtraido: texto, setProg
+                });
+                publicados++;
+            } catch (err) {
+                console.error('[Biblioteca] Erro no lote:', arquivo.name, err);
+                falhas.push(`${arquivo.name} (${err.message || err})`);
+            }
+        }
+    } finally {
+        if (prog) prog.textContent = '';
+        if (btn) btn.disabled = false;
+        if (arquivoInput) { arquivoInput.disabled = false; arquivoInput.value = ''; }
+    }
+
+    let msg = `${publicados} de ${arquivos.length} material(is) publicado(s). 📚`;
+    if (falhas.length) msg += `\n\nNão foi possível publicar:\n- ${falhas.join('\n- ')}`;
+    alert(msg);
+    if (publicados) await recarregarBiblioteca();
 }
 
 // ---------------------------------------------------------------------------
