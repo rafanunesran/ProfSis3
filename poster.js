@@ -20,13 +20,30 @@
 //
 //   3. As marcas de corte e o nome de cada folha ("L2-C3"), que e' o que salva quem
 //      espalhou dezesseis folhas no chao da sala dos professores.
+//
+//   4. O LOTE. Varias imagens entram de uma vez e saem no MESMO PDF, todas com a mesma
+//      configuracao (a mesma largura ou altura, o mesmo papel, o mesmo estilo). A previa
+//      mostra uma por vez; a fileira de miniaturas escolhe qual.
+//
+//   5. Os 300 DPI. No modo foto, se a imagem nao tem resolucao para 300 DPI no tamanho
+//      pedido, cada folha passa pelo motor "Nitido" da aba Ampliar (Lanczos + limitador
+//      de aureola + realce) antes de entrar no PDF. E' feito folha por folha, e nao na
+//      imagem inteira: um cartaz de 4x4 folhas a 300 DPI teria uns 120 megapixels, e o
+//      navegador do celular cai muito antes disso.
 
 (function () {
 'use strict';
 
 const POSTER_MAX_MB = 40;
+const POSTER_MAX_IMAGENS = 30;
+const POSTER_DPI_ALVO = 300;
+// Teto de pixels de UMA folha renderizada. A3 a 300 DPI da' ~17 MP; acima disso o
+// celular comeca a matar a aba durante a ampliacao.
+const POSTER_MAX_PX_FOLHA = 16e6;
 
-let posImagem = null;        // { nome, tipo, tamanho, largura, altura, url, bitmap, dados }
+let posImagens = [];         // o lote, na ordem em que vai para o PDF
+let posAtual = 0;            // qual delas a previa mostra
+let posImagem = null;        // = posImagens[posAtual]: { nome, tipo, tamanho, largura, altura, url, bitmap, dados }
 let posResultado = null;     // { blob, url, folhas, segundos }
 let posOcupado = false;
 let posDesistiu = false;
@@ -55,7 +72,8 @@ const posOpcoes = {
     contraste: 1,
     invertido: false,
     marcasDeCorte: true,
-    numerarFolhas: true
+    numerarFolhas: true,
+    auto300: true            // modo foto: ampliar sozinho ate' 300 DPI quando faltar
 };
 
 function escPos(s) {
@@ -102,16 +120,16 @@ function corParaRgb(hex) {
 // ---------------------------------------------------------------------------
 
 async function posEscolherArquivo(input) {
-    const arquivo = input && input.files && input.files[0];
-    if (arquivo) await posAbrir(arquivo);
+    const arquivos = (input && input.files) ? Array.from(input.files) : [];
     if (input) input.value = '';
+    if (arquivos.length) await posAdicionar(arquivos);
 }
 
 async function posSoltar(ev) {
     ev.preventDefault(); ev.stopPropagation();
     if (ev.currentTarget) ev.currentTarget.classList.remove('pos-sobre');
-    const arquivo = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
-    if (arquivo) await posAbrir(arquivo);
+    const arquivos = (ev.dataTransfer && ev.dataTransfer.files) ? Array.from(ev.dataTransfer.files) : [];
+    if (arquivos.length) await posAdicionar(arquivos);
 }
 
 function posArrastando(ev, entrou) {
@@ -128,61 +146,118 @@ function posCarregarBitmap(src) {
     });
 }
 
-async function posAbrir(arquivo) {
-    posErro = ''; posAviso = ''; posResultado = null;
-
+// Le um arquivo e devolve a imagem pronta para o lote — ou lanca o erro com a frase que
+// vai para a tela.
+async function posLer(arquivo) {
     if (!/^image\//.test(arquivo.type || '')) {
-        posErro = 'Isto não parece uma imagem (' + escPos(arquivo.type || 'tipo desconhecido') + '). ' +
-                  'Vale PNG, JPG, WebP, GIF ou BMP.';
-        posRender(); return;
+        throw new Error('Isto não parece uma imagem (' + (arquivo.type || 'tipo desconhecido') + '). ' +
+                        'Vale PNG, JPG, WebP, GIF ou BMP.');
     }
     if (arquivo.size > POSTER_MAX_MB * 1024 * 1024) {
-        posErro = 'A imagem tem ' + posTamanho(arquivo.size) + '. O limite aqui é ' + POSTER_MAX_MB + ' MB.';
-        posRender(); return;
+        throw new Error('A imagem tem ' + posTamanho(arquivo.size) + '. O limite aqui é ' + POSTER_MAX_MB + ' MB.');
     }
-
-    posLimparUrls();
     const url = posUrlDe(arquivo);
+    let bitmap;
     try {
-        const bitmap = await posCarregarBitmap(url);
-        const largura = bitmap.naturalWidth || bitmap.width;
-        const altura = bitmap.naturalHeight || bitmap.height;
-
-        // A imagem e' lida UMA vez para bytes e fica guardada assim. O reticulado le a
-        // imagem inteira a cada mexida num controle; reler do <canvas> toda vez deixaria
-        // os controles pesados sem motivo.
-        //
-        // Acima de ~4 megapixels a leitura e' feita sobre uma copia reduzida: o cartaz
-        // sai de MEDIAS de regioes, e a media de um pedaco nao muda por a foto ter 12 ou
-        // 4 megapixels — so' o tempo de percorrer muda.
-        const limite = 4e6;
-        const fator = (largura * altura > limite) ? Math.sqrt(limite / (largura * altura)) : 1;
-        const cL = Math.max(1, Math.round(largura * fator));
-        const cA = Math.max(1, Math.round(altura * fator));
-        const canvas = document.createElement('canvas');
-        canvas.width = cL; canvas.height = cA;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-        ctx.drawImage(bitmap, 0, 0, cL, cA);
-        const dados = ctx.getImageData(0, 0, cL, cA);
-
-        posImagem = {
-            nome: arquivo.name || 'imagem',
-            tipo: arquivo.type,
-            tamanho: arquivo.size,
-            largura: largura, altura: altura,
-            url: url, bitmap: bitmap,
-            dados: { largura: dados.width, altura: dados.height, dados: dados.data }
-        };
+        bitmap = await posCarregarBitmap(url);
     } catch (_) {
-        posImagem = null;
-        posErro = 'Não consegui abrir esta imagem. O arquivo pode estar corrompido, ou ser de um ' +
-                  'formato que este navegador não lê (HEIC do iPhone, por exemplo).';
+        try { URL.revokeObjectURL(url); } catch (__) { /* ja' foi */ }
+        throw new Error('Não consegui abrir esta imagem. O arquivo pode estar corrompido, ou ser de um ' +
+                        'formato que este navegador não lê (HEIC do iPhone, por exemplo).');
     }
+    return {
+        nome: arquivo.name || 'imagem',
+        tipo: arquivo.type,
+        tamanho: arquivo.size,
+        largura: bitmap.naturalWidth || bitmap.width,
+        altura: bitmap.naturalHeight || bitmap.height,
+        url: url, bitmap: bitmap,
+        dados: null             // lido sob demanda por posDadosDe()
+    };
+}
+
+// Os bytes da imagem, para o reticulado. Sao lidos UMA vez e guardados: o reticulado le
+// a imagem inteira a cada mexida num controle, e reler do <canvas> toda vez deixaria os
+// controles pesados sem motivo.
+//
+// Acima de ~4 megapixels a leitura e' feita sobre uma copia reduzida: o cartaz sai de
+// MEDIAS de regioes, e a media de um pedaco nao muda por a foto ter 12 ou 4 megapixels —
+// so' o tempo de percorrer muda.
+//
+// Em lote, so' a imagem da previa fica com os bytes guardados (ate' 16 MB cada); as
+// outras leem na hora de montar o PDF e soltam logo depois.
+function posDadosDe(img) {
+    if (img.dados) return img.dados;
+    const limite = 4e6;
+    const fator = (img.largura * img.altura > limite) ? Math.sqrt(limite / (img.largura * img.altura)) : 1;
+    const cL = Math.max(1, Math.round(img.largura * fator));
+    const cA = Math.max(1, Math.round(img.altura * fator));
+    const canvas = document.createElement('canvas');
+    canvas.width = cL; canvas.height = cA;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img.bitmap, 0, 0, cL, cA);
+    const dados = ctx.getImageData(0, 0, cL, cA);
+    canvas.width = canvas.height = 1;
+    img.dados = { largura: dados.width, altura: dados.height, dados: dados.data };
+    return img.dados;
+}
+
+function posSincronizar() {
+    if (posAtual >= posImagens.length) posAtual = Math.max(0, posImagens.length - 1);
+    if (posAtual < 0) posAtual = 0;
+    posImagem = posImagens[posAtual] || null;
+}
+
+async function posAdicionar(arquivos) {
+    posErro = ''; posAviso = ''; posResultado = null;
+    const erros = [];
+    let foraDoLimite = 0;
+    for (let i = 0; i < arquivos.length; i++) {
+        if (posImagens.length >= POSTER_MAX_IMAGENS) { foraDoLimite = arquivos.length - i; break; }
+        try {
+            posImagens.push(await posLer(arquivos[i]));
+        } catch (erro) {
+            erros.push(arquivos.length > 1 ? (arquivos[i].name || 'imagem') + ': ' + erro.message : erro.message);
+        }
+    }
+    if (foraDoLimite) {
+        erros.push('O lote vai até ' + POSTER_MAX_IMAGENS + ' imagens; ' + foraDoLimite +
+                   (foraDoLimite > 1 ? ' ficaram' : ' ficou') + ' de fora.');
+    }
+    posErro = erros.join(' · ');
+    posSincronizar();
     posRender();
 }
 
+function posVerImagem(indice) {
+    if (posOcupado || !posImagens[indice]) return;
+    // A que sai da previa solta os bytes: com 30 imagens guardadas seriam ~500 MB.
+    if (posImagem && posImagem !== posImagens[indice]) posImagem.dados = null;
+    posAtual = indice;
+    posSincronizar();
+    posRender();
+}
+
+function posRemoverImagem(indice) {
+    if (posOcupado || !posImagens[indice]) return;
+    const [saiu] = posImagens.splice(indice, 1);
+    try { URL.revokeObjectURL(saiu.url); } catch (_) { /* ja' foi */ }
+    if (indice < posAtual) posAtual--;
+    posResultado = null; posErro = ''; posAviso = '';
+    posSincronizar();
+    if (!posImagem) { posPlano = null; posReticulado = null; }
+    posRender();
+}
+
+function posAdicionarMais() {
+    const campo = document.getElementById('posArquivo');
+    if (campo && !posOcupado) campo.click();
+}
+
+// Limpa o lote inteiro (o nome ficou de quando a aba so' aceitava uma imagem).
 function posTrocarImagem() {
     posLimparUrls();
+    posImagens = []; posAtual = 0;
     posImagem = null; posResultado = null; posErro = ''; posAviso = '';
     posPlano = null; posReticulado = null;
     posRender();
@@ -192,11 +267,12 @@ function posTrocarImagem() {
 // O plano e a previa
 // ---------------------------------------------------------------------------
 
-function posCalcular() {
-    if (!posImagem) { posPlano = null; posReticulado = null; return; }
-    posPlano = POSTEROPS.planejarPoster({
-        larguraOrigem: posImagem.largura,
-        alturaOrigem: posImagem.altura,
+// O mesmo plano para qualquer imagem do lote: e' isto que faz todas sairem do mesmo
+// tamanho (a mesma largura, ou a mesma altura, pedida no controle de tamanho).
+function posPlanejar(img) {
+    return POSTEROPS.planejarPoster({
+        larguraOrigem: img.largura,
+        alturaOrigem: img.altura,
         papel: posOpcoes.papel,
         orientacao: posOpcoes.orientacao,
         margem: posOpcoes.margemCm * POSTEROPS.PT_POR_CM,
@@ -207,9 +283,11 @@ function posCalcular() {
         unidade: posOpcoes.unidade,
         eixo: posOpcoes.eixo
     });
+}
 
-    posReticulado = (posOpcoes.estilo === 'pontos')
-        ? POSTEROPS.gerarPontos(posImagem.dados, posPlano, {
+function posReticular(img, plano) {
+    return (posOpcoes.estilo === 'pontos')
+        ? POSTEROPS.gerarPontos(posDadosDe(img), plano, {
               passo: posOpcoes.passo,
               tamanhoPonto: posOpcoes.tamanhoPonto,
               cor: posOpcoes.cor,
@@ -217,6 +295,19 @@ function posCalcular() {
               invertido: posOpcoes.invertido
           })
         : null;
+}
+
+function posCalcular() {
+    posSincronizar();
+    if (!posImagem) { posPlano = null; posReticulado = null; return; }
+    posPlano = posPlanejar(posImagem);
+    posReticulado = posReticular(posImagem, posPlano);
+}
+
+// No modo foto a imagem passa pelo motor de ampliar quando falta resolucao para 300 DPI?
+function posVaiAmpliar(plano) {
+    return posOpcoes.estilo === 'foto' && posOpcoes.auto300 && !!window.AMPLIAROPS &&
+           plano.dpiEfetivo < POSTER_DPI_ALVO * 0.95;
 }
 
 // A previa desenha o cartaz inteiro pequeno, com a grade das folhas por cima. Os pontos
@@ -292,7 +383,10 @@ async function posGerar() {
     const comecou = Date.now();
     try {
         posCalcular();
-        const plano = posPlano;
+        const lote = posImagens.slice();
+        const planos = lote.map(posPlanejar);
+        const totalFolhas = planos.reduce((t, p) => t + p.folhas.length, 0);
+        const emLote = lote.length > 1;
 
         posProgresso = { fracao: 0.04, texto: 'Carregando o motor de PDF...' };
         posDesenharProgresso();
@@ -300,30 +394,58 @@ async function posGerar() {
 
         const doc = await PDFLib.PDFDocument.create();
         const fonte = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
-        doc.setTitle('Pôster — ' + posImagem.nome);
+        doc.setTitle(emLote ? 'Pôsteres — ' + lote.length + ' imagens' : 'Pôster — ' + lote[0].nome);
         doc.setProducer('SisProf — Ferramentas');
 
-        for (let i = 0; i < plano.folhas.length; i++) {
-            if (posDesistiu) throw erroCancelado();
-            const folha = plano.folhas[i];
-            const pagina = doc.addPage([plano.pagina.largura, plano.pagina.altura]);
+        const resumo = [];
+        let feitas = 0;
+        for (let k = 0; k < lote.length; k++) {
+            const img = lote[k];
+            const plano = planos[k];
+            const reticulado = (posOpcoes.estilo === 'pontos')
+                ? (img === posImagem && posReticulado ? posReticulado : posReticular(img, plano))
+                : null;
+            const ampliada = posVaiAmpliar(plano);
+            const rotulo = emLote ? 'Imagem ' + (k + 1) + ' de ' + lote.length + ' (' + img.nome + ')' : '';
 
-            if (posOpcoes.estilo === 'pontos') {
-                desenharPontosNaPagina(PDFLib, pagina, folha, plano);
-            } else {
-                await desenharFotoNaPagina(PDFLib, doc, pagina, folha, plano);
+            for (let i = 0; i < plano.folhas.length; i++) {
+                if (posDesistiu) throw erroCancelado();
+                const folha = plano.folhas[i];
+                const pagina = doc.addPage([plano.pagina.largura, plano.pagina.altura]);
+                posProgresso = {
+                    fracao: 0.08 + feitas / totalFolhas * 0.86,
+                    texto: (emLote ? 'Imagem ' + (k + 1) + ' de ' + lote.length + ' · ' : '') +
+                           (ampliada ? 'Ampliando para 300 DPI e montando' : 'Montando') +
+                           ' a folha ' + (i + 1) + ' de ' + plano.folhas.length + '...'
+                };
+                posDesenharProgresso();
+                await new Promise(ok => setTimeout(ok, 0));
+
+                if (posOpcoes.estilo === 'pontos') {
+                    desenharPontosNaPagina(PDFLib, pagina, folha, plano, reticulado);
+                } else {
+                    await desenharFotoNaPagina(PDFLib, doc, pagina, folha, plano, img);
+                }
+
+                if (posOpcoes.marcasDeCorte) desenharMarcas(PDFLib, pagina, folha, plano);
+                if (posOpcoes.numerarFolhas) desenharEtiqueta(PDFLib, pagina, fonte, folha, plano, rotulo);
+
+                feitas++;
+                // Devolve o controle ao navegador: sem isso a aba congela ate' a ultima folha.
+                await new Promise(ok => setTimeout(ok, 0));
             }
-
-            if (posOpcoes.marcasDeCorte) desenharMarcas(PDFLib, pagina, folha, plano);
-            if (posOpcoes.numerarFolhas) desenharEtiqueta(PDFLib, pagina, fonte, folha, plano);
-
-            posProgresso = {
-                fracao: 0.08 + (i + 1) / plano.folhas.length * 0.86,
-                texto: 'Montando a folha ' + (i + 1) + ' de ' + plano.folhas.length + '...'
-            };
-            posDesenharProgresso();
-            // Devolve o controle ao navegador: sem isso a aba congela ate' a ultima folha.
-            await new Promise(ok => setTimeout(ok, 0));
+            // Os bytes das outras imagens do lote so' serviram para este PDF.
+            if (img !== posImagem) img.dados = null;
+            resumo.push({
+                nome: img.nome,
+                folhas: plano.folhas.length,
+                colunas: plano.colunas,
+                linhas: plano.linhas,
+                larguraCm: plano.posterLarguraCm,
+                alturaCm: plano.posterAlturaCm,
+                dpiOrigem: plano.dpiEfetivo,
+                ampliada: ampliada
+            });
         }
 
         posProgresso = { fracao: 0.96, texto: 'Fechando o arquivo...' };
@@ -333,11 +455,12 @@ async function posGerar() {
         posResultado = {
             blob: blob,
             url: posUrlDe(blob),
-            folhas: plano.folhas.length,
-            colunas: plano.colunas,
-            linhas: plano.linhas,
-            larguraCm: plano.posterLarguraCm,
-            alturaCm: plano.posterAlturaCm,
+            folhas: totalFolhas,
+            imagens: resumo,
+            colunas: resumo[0].colunas,
+            linhas: resumo[0].linhas,
+            larguraCm: resumo[0].larguraCm,
+            alturaCm: resumo[0].alturaCm,
             segundos: (Date.now() - comecou) / 1000
         };
     } catch (erro) {
@@ -374,8 +497,8 @@ function posCancelar() {
 // mesmo teste com drawCircle deu a area exata esperada, entao o problema e' do truque,
 // nao da medicao. Um cartaz que sai em branco no visualizador da escola e' um desastre
 // bem maior do que um arquivo pesado.
-function desenharPontosNaPagina(PDFLib, pagina, folha, plano) {
-    const pontos = POSTEROPS.pontosDaFolha(posReticulado, folha, plano);
+function desenharPontosNaPagina(PDFLib, pagina, folha, plano, reticulado) {
+    const pontos = POSTEROPS.pontosDaFolha(reticulado || posReticulado, folha, plano);
     const fixa = corParaRgb(posOpcoes.corFixa);
     const corPadrao = posOpcoes.cor === 'fixa'
         ? PDFLib.rgb(fixa[0] / 255, fixa[1] / 255, fixa[2] / 255)
@@ -396,27 +519,89 @@ function desenharPontosNaPagina(PDFLib, pagina, folha, plano) {
 // impressao. Recortar antes de embutir (em vez de embutir a foto inteira e deixar o PDF
 // cortar) e' o que impede o arquivo de carregar a imagem toda uma vez por folha — num
 // cartaz de 12 folhas isso seria a mesma foto 12 vezes dentro do PDF.
-async function desenharFotoNaPagina(PDFLib, doc, pagina, folha, plano) {
-    const alvoDpi = 150;
-    const larguraPx = Math.max(1, Math.round(folha.destino.largura / 72 * alvoDpi));
-    const alturaPx = Math.max(1, Math.round(folha.destino.altura / 72 * alvoDpi));
+async function desenharFotoNaPagina(PDFLib, doc, pagina, folha, plano, img) {
+    const pedaco = await posPedacoDaFolha(img || posImagem, folha);
+    const dataUrl = pedaco.toDataURL('image/jpeg', 0.9);
+    const jpg = await doc.embedJpg(dataUrl);
+    pagina.drawImage(jpg, {
+        x: folha.destino.x, y: folha.destino.y,
+        width: folha.destino.largura, height: folha.destino.altura
+    });
+    pedaco.width = pedaco.height = 1;
+}
+
+// O pedaco de UMA folha, ja' no tamanho de impressao.
+//
+// Com "300 DPI automatico" ligado, a folha sai a 300 DPI. Se a imagem nao tem pixels para
+// isso, o recorte da folha passa pelas pecas do motor "Nitido" da aba Ampliar — Lanczos,
+// limitador de aureola e realce de borda —, e nao pelo esticar do <canvas>
+// (bilinear, que deixa borrado e quadriculado). E' feito por folha justamente para caber
+// na memoria: so' o pedaco desta folha e' ampliado.
+//
+// O recorte pega alguns pixels a mais em volta: o Lanczos olha a vizinhanca, e sem essa
+// folga cada emenda entre folhas ganharia uma borda diferente da do meio da imagem.
+async function posPedacoDaFolha(img, folha) {
+    const dpi = posOpcoes.auto300 ? POSTER_DPI_ALVO : 150;
+    let larguraPx = folha.destino.largura / 72 * dpi;
+    let alturaPx = folha.destino.altura / 72 * dpi;
+    const reduz = Math.min(1, Math.sqrt(POSTER_MAX_PX_FOLHA / (larguraPx * alturaPx)));
+    larguraPx = Math.max(1, Math.round(larguraPx * reduz));
+    alturaPx = Math.max(1, Math.round(alturaPx * reduz));
 
     const canvas = document.createElement('canvas');
     canvas.width = larguraPx; canvas.height = alturaPx;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, larguraPx, alturaPx);
+    ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    const r = folha.recorte;
-    ctx.drawImage(posImagem.bitmap, r.x, r.y, r.largura, r.altura, 0, 0, larguraPx, alturaPx);
 
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-    const img = await doc.embedJpg(dataUrl);
-    pagina.drawImage(img, {
-        x: folha.destino.x, y: folha.destino.y,
-        width: folha.destino.largura, height: folha.destino.altura
-    });
-    canvas.width = canvas.height = 1;
+    const r = folha.recorte;
+    const escala = larguraPx / r.largura;
+    if (!(posOpcoes.auto300 && window.AMPLIAROPS && escala > 1.05)) {
+        ctx.drawImage(img.bitmap, r.x, r.y, r.largura, r.altura, 0, 0, larguraPx, alturaPx);
+        return canvas;
+    }
+
+    const folga = 4;
+    const x0 = Math.max(0, Math.floor(r.x) - folga);
+    const y0 = Math.max(0, Math.floor(r.y) - folga);
+    const x1 = Math.min(img.largura, Math.ceil(r.x + r.largura) + folga);
+    const y1 = Math.min(img.altura, Math.ceil(r.y + r.altura) + folga);
+    const cw = Math.max(1, x1 - x0), ch = Math.max(1, y1 - y0);
+
+    const origem = document.createElement('canvas');
+    origem.width = cw; origem.height = ch;
+    const octx = origem.getContext('2d', { willReadFrequently: true });
+    octx.drawImage(img.bitmap, x0, y0, cw, ch, 0, 0, cw, ch);
+    const fonte = octx.getImageData(0, 0, cw, ch);
+    origem.width = origem.height = 1;
+
+    // Teto: o pedaco ampliado (com a folga) nao passa do limite de pixels de uma folha.
+    const e = Math.min(escala, Math.sqrt(POSTER_MAX_PX_FOLHA * 1.3 / (cw * ch)));
+    // Em dois tempos, por velocidade: o realce de borda e' feito na copia 2x (pequena) e
+    // o resto do caminho e' UM salto de Lanczos com o limitador de aureola. Medido numa
+    // folha A4: ~1,3 s, contra ~8 s fazendo o realce na imagem ja' a 300 DPI — e num
+    // cartaz de 20 folhas isso e' a diferenca entre esperar meio minuto e desistir.
+    const meio = await AMPLIAROPS.ampliar(
+        { largura: cw, altura: ch, dados: fonte.data },
+        { escala: Math.min(2, e), ruido: 0, nitidez: 1, cancelado: () => posDesistiu });
+    if (posDesistiu) throw erroCancelado();
+    let saida = meio;
+    if (e > 2) {
+        saida = AMPLIAROPS.redimensionar(meio, Math.round(cw * e), Math.round(ch * e), 3);
+        AMPLIAROPS.limitarEstouro(saida, meio, 1);
+    }
+
+    const ampliada = document.createElement('canvas');
+    ampliada.width = saida.largura; ampliada.height = saida.altura;
+    const dados = saida.dados instanceof Uint8ClampedArray ? saida.dados : new Uint8ClampedArray(saida.dados);
+    ampliada.getContext('2d').putImageData(new ImageData(dados, saida.largura, saida.altura), 0, 0);
+    const ex = saida.largura / cw, ey = saida.altura / ch;
+    ctx.drawImage(ampliada, (r.x - x0) * ex, (r.y - y0) * ey, r.largura * ex, r.altura * ey,
+                  0, 0, larguraPx, alturaPx);
+    ampliada.width = ampliada.height = 1;
+    return canvas;
 }
 
 // As marcas de corte vao SO' nas bordas que nao encostam em outra folha. Marcar a borda
@@ -451,8 +636,11 @@ function desenharMarcas(PDFLib, pagina, folha, plano) {
 }
 
 // A etiqueta. Dezesseis folhas iguais espalhadas no chao viram um quebra-cabeca sem isto.
-function desenharEtiqueta(PDFLib, pagina, fonte, folha, plano) {
-    const texto = 'L' + (folha.linha + 1) + '-C' + (folha.coluna + 1) +
+function desenharEtiqueta(PDFLib, pagina, fonte, folha, plano, rotulo) {
+    // A Helvetica padrao do PDF so' conhece o alfabeto latino: um emoji ou um ideograma
+    // no nome do arquivo derrubaria a montagem inteira. Vira "?".
+    const prefixo = rotulo ? String(rotulo).replace(/[^\x20-\x7E\u00A0-\u00FF]/g, '?').slice(0, 70) + '   ' : '';
+    const texto = prefixo + 'L' + (folha.linha + 1) + '-C' + (folha.coluna + 1) +
                   '   (linha ' + (folha.linha + 1) + ' de ' + plano.linhas +
                   ', coluna ' + (folha.coluna + 1) + ' de ' + plano.colunas + ')';
     const tamanho = 7;
@@ -466,8 +654,9 @@ function desenharEtiqueta(PDFLib, pagina, fonte, folha, plano) {
 // O nome com que o PDF chega na pasta de downloads. "documento(3).pdf" nao diz nada
 // tres meses depois; "mapa-poster-3x2.pdf" diz o que e' e de que tamanho.
 function posNomeDoArquivo() {
-    const base = (posImagem && posImagem.nome || 'imagem').replace(/\.[^.]+$/, '');
     const r = posResultado;
+    if (r && r.imagens && r.imagens.length > 1) return 'posteres-' + r.imagens.length + '-imagens.pdf';
+    const base = (posImagem && posImagem.nome || 'imagem').replace(/\.[^.]+$/, '');
     return base + '-poster-' + (r ? r.colunas + 'x' + r.linhas : '') + '.pdf';
 }
 
@@ -478,7 +667,7 @@ function posNomeDoArquivo() {
 function posDefinir(chave, valor) {
     const numericos = ['margemCm', 'sobreposicaoCm', 'folhas', 'medida', 'passo', 'tamanhoPonto', 'contraste'];
     if (numericos.indexOf(chave) !== -1) valor = Number(valor);
-    if (chave === 'invertido' || chave === 'marcasDeCorte' || chave === 'numerarFolhas') valor = !!valor;
+    if (chave === 'invertido' || chave === 'marcasDeCorte' || chave === 'numerarFolhas' || chave === 'auto300') valor = !!valor;
     posOpcoes[chave] = valor;
     posResultado = null;
     posAviso = '';
@@ -494,6 +683,7 @@ function renderPoster() { posRender(); }
 function posRender() {
     const area = document.getElementById('tabFerramentasPoster');
     if (!area) return;
+    posSincronizar();
 
     if (posImagem && !posOcupado) {
         try {
@@ -517,6 +707,22 @@ function posRender() {
             .pos-rotulo { font-size:12px; font-weight:bold; color:#3d4759; text-transform:uppercase; letter-spacing:.03em; }
             .pos-ajuda { color:#5f6b7f; font-size:12px; margin-top:6px; line-height:1.5; }
             #posPrevia { border:1px solid #e3e8ef; border-radius:6px; background:#fff; max-width:100%; }
+            .pos-sobre { outline:2px dashed #2563c9; outline-offset:2px; }
+            .pos-lote { display:flex; gap:8px; overflow-x:auto; padding:2px 2px 6px; }
+            .pos-mini { position:relative; flex:0 0 auto; width:72px; border:2px solid #e3e8ef; border-radius:8px;
+                        background:#fff; padding:3px; cursor:pointer; transition:border-color .15s; }
+            .pos-mini:hover { border-color:#7a869a; }
+            .pos-mini.pos-ativa { border-color:#2563c9; }
+            .pos-mini img { display:block; width:100%; height:56px; object-fit:contain; }
+            .pos-mini-num { position:absolute; left:4px; top:4px; background:rgba(28,37,54,.75); color:#fff;
+                            font-size:10px; font-weight:bold; border-radius:4px; padding:0 4px; line-height:16px; }
+            .pos-mini-tira { position:absolute; right:-7px; top:-7px; width:20px; height:20px; border-radius:50%;
+                             border:1px solid #cdd5e1; background:#fff; color:#5f6b7f; font-size:12px; line-height:17px;
+                             padding:0; cursor:pointer; }
+            .pos-mini-tira:hover { background:#fff5f5; color:#c53030; border-color:#fc8181; }
+            .pos-mini-mais { flex:0 0 auto; width:72px; min-height:68px; border:2px dashed #cdd5e1; border-radius:8px;
+                             background:#f6f8fb; color:#3d4759; font-size:12px; cursor:pointer; }
+            .pos-mini-mais:hover { border-color:#2563c9; color:#1f55ad; }
         </style>
 
         <div class="card" style="margin:20px 0;">
@@ -560,31 +766,80 @@ function posHtmlSemImagem() {
              ondragover="posArrastando(event, true)" ondragleave="posArrastando(event, false)"
              ondrop="posSoltar(event)">
             <div style="font-size:38px; line-height:1;">🧱</div>
-            <div style="font-weight:bold; color:#1c2536; margin-top:10px;">Escolha a imagem ou arraste ela para cá</div>
+            <div style="font-weight:bold; color:#1c2536; margin-top:10px;">Escolha as imagens ou arraste para cá</div>
             <div style="color:#5f6b7f; font-size:12px; margin-top:6px;">
-                PNG, JPG, WebP, GIF ou BMP — até ${POSTER_MAX_MB} MB
+                Uma ou várias de uma vez (até ${POSTER_MAX_IMAGENS}) — todas saem no mesmo PDF, com o mesmo tamanho.
+                PNG, JPG, WebP, GIF ou BMP — até ${POSTER_MAX_MB} MB cada
             </div>
         </div>
-        <input type="file" id="posArquivo" accept="image/*" style="display:none;" onchange="posEscolherArquivo(this)">`;
+        ${posHtmlCampoArquivo()}`;
+}
+
+function posHtmlCampoArquivo() {
+    return `<input type="file" id="posArquivo" accept="image/*" multiple style="display:none;" onchange="posEscolherArquivo(this)">`;
+}
+
+// O lote: uma miniatura por imagem (clicar mostra ela na previa; o "x" tira do lote) e
+// um quadrado para somar mais. Com uma imagem so', fica a faixa de sempre.
+function posHtmlLote() {
+    const img = posImagem;
+    const n = posImagens.length;
+    const totalFolhas = posImagens.reduce((t, i) => {
+        try { return t + posPlanejar(i).total; } catch (_) { return t; }
+    }, 0);
+    const trava = posOcupado ? 'disabled' : '';
+    return `
+        <div ondragover="posArrastando(event, true)" ondragleave="posArrastando(event, false)" ondrop="posSoltar(event)"
+             style="background:#f6f8fb; border:1px solid #e3e8ef; border-radius:8px; padding:10px 12px; margin:12px 0;">
+            <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap;">
+                <img src="${escPos(img.url)}" alt="" style="width:64px; height:64px; object-fit:contain; background:#fff; border:1px solid #e3e8ef; border-radius:6px;">
+                <div style="flex:1; min-width:180px;">
+                    <div style="font-weight:bold; color:#1c2536; font-size:14px; word-break:break-all;">
+                        ${n > 1 ? `<span style="color:#1f55ad;">${posAtual + 1}/${n}</span> · ` : ''}${escPos(img.nome)}</div>
+                    <div style="color:#5f6b7f; font-size:12px; margin-top:2px;">
+                        ${img.largura} × ${img.altura} px · ${posTamanho(img.tamanho)}
+                    </div>
+                    ${n > 1 ? `<div style="color:#1c2536; font-size:12px; margin-top:4px;">
+                        <strong>Lote: ${n} imagens · ${totalFolhas} folhas no total</strong>, tudo num PDF só</div>` : ''}
+                </div>
+                <button class="btn btn-sm btn-secondary" onclick="posAdicionarMais()" ${trava}
+                        ${n >= POSTER_MAX_IMAGENS ? 'disabled' : ''}>+ Adicionar imagens</button>
+                <button class="btn btn-sm btn-secondary" onclick="posTrocarImagem()" ${trava}>
+                    ${n > 1 ? 'Limpar o lote' : 'Trocar imagem'}</button>
+            </div>
+            ${n > 1 ? `
+                <div class="pos-lote" style="margin-top:10px;" role="list" aria-label="Imagens do lote">
+                    ${posImagens.map((im, i) => `
+                        <div class="pos-mini ${i === posAtual ? 'pos-ativa' : ''}" role="listitem"
+                             title="${escPos(im.nome)}" onclick="posVerImagem(${i})">
+                            <span class="pos-mini-num">${i + 1}</span>
+                            <img src="${escPos(im.url)}" alt="${escPos(im.nome)}">
+                            <button class="pos-mini-tira" ${trava} title="Tirar do lote" aria-label="Tirar ${escPos(im.nome)} do lote"
+                                    onclick="event.stopPropagation(); posRemoverImagem(${i})">×</button>
+                        </div>`).join('')}
+                    ${n < POSTER_MAX_IMAGENS ? `<button class="pos-mini-mais" onclick="posAdicionarMais()" ${trava}>+ mais</button>` : ''}
+                </div>` : ''}
+        </div>
+        ${posHtmlCampoArquivo()}`;
 }
 
 function posHtmlComImagem() {
     const img = posImagem;
     const plano = posPlano;
-    const avisos = (plano && window.POSTEROPS) ? POSTEROPS.conferirPlano(plano, posReticulado) : [];
+    let avisos = (plano && window.POSTEROPS) ? POSTEROPS.conferirPlano(plano, posReticulado) : [];
+    if (plano && posVaiAmpliar(plano)) {
+        avisos = avisos.filter(a => a.texto.indexOf('pontos por polegada') === -1);
+        avisos.push({
+            grau: 'informacao',
+            texto: 'Neste tamanho a imagem tem só ' + Math.round(plano.dpiEfetivo) + ' DPI. Ao montar, cada folha ' +
+                   'é ampliada automaticamente para 300 DPI (o mesmo motor "Nítido" da aba Ampliar): some o ' +
+                   'quadriculado e a borda fica limpa. Detalhe que a foto não tem não aparece — para cartaz ' +
+                   'muito grande, o estilo Pontos ainda rende mais.'
+        });
+    }
 
     return `
-        <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap; background:#f6f8fb;
-                    border:1px solid #e3e8ef; border-radius:8px; padding:10px 12px; margin:12px 0;">
-            <img src="${escPos(img.url)}" alt="" style="width:64px; height:64px; object-fit:contain; background:#fff; border:1px solid #e3e8ef; border-radius:6px;">
-            <div style="flex:1; min-width:180px;">
-                <div style="font-weight:bold; color:#1c2536; font-size:14px; word-break:break-all;">${escPos(img.nome)}</div>
-                <div style="color:#5f6b7f; font-size:12px; margin-top:2px;">
-                    ${img.largura} × ${img.altura} px · ${posTamanho(img.tamanho)}
-                </div>
-            </div>
-            <button class="btn btn-sm btn-secondary" onclick="posTrocarImagem()" ${posOcupado ? 'disabled' : ''}>Trocar imagem</button>
-        </div>
+        ${posHtmlLote()}
 
         <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:16px 22px; margin:18px 0;">
             ${posHtmlTamanho()}
@@ -614,7 +869,12 @@ function posHtmlComImagem() {
                         ${posReticulado ? `<div style="margin-top:6px; color:#5f6b7f;">
                             ${posReticulado.pontos.length.toLocaleString('pt-BR')} pontos<br>
                             ~${Math.round(posReticulado.coberturaMedia * 100)}% de tinta no papel</div>` : `
-                            <div style="margin-top:6px; color:#5f6b7f;">${Math.round(plano.dpiEfetivo)} DPI na impressão</div>`}
+                            <div style="margin-top:6px; color:#5f6b7f;">${Math.round(plano.dpiEfetivo)} DPI na impressão</div>
+                            ${posVaiAmpliar(plano) ? `<div style="color:#22543d; font-weight:bold;">→ sai em 300 DPI (ampliada)</div>` : ''}`}
+                        ${posImagens.length > 1 ? `<div style="margin-top:8px; padding-top:6px; border-top:1px solid #e3e8ef; color:#5f6b7f;">
+                            Prévia da imagem ${posAtual + 1} de ${posImagens.length}.<br>
+                            Todas com ${posOpcoes.modo === 'folhas' ? posOpcoes.folhas + ' folha(s)' : posOpcoes.medida + ' cm'}
+                            de ${posOpcoes.eixo}.</div>` : ''}
                     </div>
                 </div>
             </div>` : ''}
@@ -662,7 +922,8 @@ function posHtmlTamanho() {
                     <option value="altura" ${posOpcoes.eixo === 'altura' ? 'selected' : ''}>altura</option>
                 </select>
             </div>
-            <div class="pos-ajuda">O outro lado sai da proporção da imagem — o pôster não distorce.</div>
+            <div class="pos-ajuda">O outro lado sai da proporção da imagem — o pôster não distorce.
+                ${posImagens.length > 1 ? 'No lote, todas as imagens seguem esta mesma medida.' : ''}</div>
         </div>`;
 }
 
@@ -714,6 +975,12 @@ function posHtmlEstilo() {
                     ? 'A imagem vira uma grade de bolinhas que crescem conforme o escuro. Aguenta ampliação enorme sem borrar e gasta pouca tinta.'
                     : 'A imagem é recortada e ampliada como está. Bom para pouca ampliação; em cartaz grande fica borrada e gasta muita tinta.'}
             </div>
+            ${posOpcoes.estilo === 'foto' ? `
+                <label style="display:flex; gap:6px; align-items:flex-start; margin-top:8px; font-size:13px; color:#3d4759;">
+                    <input type="checkbox" style="margin-top:3px;" ${posOpcoes.auto300 ? 'checked' : ''} ${posOcupado ? 'disabled' : ''}
+                           onchange="posDefinir('auto300', this.checked)">
+                    <span>Garantir 300 DPI: se faltar resolução, a imagem é ampliada automaticamente ao montar</span>
+                </label>` : ''}
         </div>`;
 }
 
@@ -794,15 +1061,22 @@ function posDesenharProgresso() {
 function posHtmlResultado() {
     if (!posResultado || posOcupado) return '';
     const r = posResultado;
+    const lote = !!(r.imagens && r.imagens.length > 1);
     return `
         <div style="margin-top:18px; border-top:1px solid #e3e8ef; padding-top:16px;
                     display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
             <div style="flex:1; min-width:200px;">
-                <div style="font-weight:bold; color:#1c2536;">✅ Pronto — ${r.folhas} folha${r.folhas > 1 ? 's' : ''}</div>
+                <div style="font-weight:bold; color:#1c2536;">✅ Pronto — ${lote ? r.imagens.length + ' imagens, ' : ''}${r.folhas} folha${r.folhas > 1 ? 's' : ''}</div>
                 <div style="color:#5f6b7f; font-size:12px; margin-top:2px;">
-                    ${r.colunas} × ${r.linhas} · ${r.larguraCm.toFixed(0)} × ${r.alturaCm.toFixed(0)} cm ·
+                    ${lote ? '' : `${r.colunas} × ${r.linhas} · ${r.larguraCm.toFixed(0)} × ${r.alturaCm.toFixed(0)} cm · `}
                     ${posTamanho(r.blob.size)} · ${r.segundos.toFixed(1)}s
+                    ${!lote && r.imagens && r.imagens[0].ampliada ? ' · ampliada para 300 DPI' : ''}
                 </div>
+                ${lote ? `<ol style="margin:6px 0 0 18px; padding:0; color:#3d4759; font-size:12px; line-height:1.6;">
+                    ${r.imagens.map(im => `<li><span style="word-break:break-all;">${escPos(im.nome)}</span> —
+                        ${im.colunas} × ${im.linhas} folhas · ${im.larguraCm.toFixed(0)} × ${im.alturaCm.toFixed(0)} cm
+                        ${im.ampliada ? ' · ampliada para 300 DPI' : ''}</li>`).join('')}
+                </ol>` : ''}
                 <div style="color:#5f6b7f; font-size:12px; margin-top:6px;">
                     Na hora de imprimir, escolha <strong>"Tamanho real"</strong> (ou 100%) — se a impressora
                     "ajustar à página", as folhas não encaixam.
@@ -819,6 +1093,9 @@ window.posEscolherArquivo = posEscolherArquivo;
 window.posSoltar = posSoltar;
 window.posArrastando = posArrastando;
 window.posTrocarImagem = posTrocarImagem;
+window.posVerImagem = posVerImagem;
+window.posRemoverImagem = posRemoverImagem;
+window.posAdicionarMais = posAdicionarMais;
 window.posDefinir = posDefinir;
 window.posGerar = posGerar;
 window.posCancelar = posCancelar;
