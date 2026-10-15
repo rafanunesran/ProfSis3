@@ -686,6 +686,8 @@ function professorParceiroDasTurmasEstagiario(turmas) {
 // escolhidas são de uma eletiva, já preenchido com o nome cadastrado na turma (o professor ainda
 // pode ajustar o texto só para este plano).
 function atualizarProfessorParceiroPlanoAula() {
+    // Série/disciplina mudaram: as sugestões de tema da escolha anterior não valem mais.
+    limparSugestoesTemasPlanoAulaEstagiario();
     const campo = document.getElementById('campoProfessorParceiroPlano');
     const input = document.getElementById('iaDocProfessorParceiro');
     if (!campo || !input) return;
@@ -700,6 +702,140 @@ function atualizarProfessorParceiroPlanoAula() {
     const ehEletiva = turmas.some(t => t.tipo === 'eletiva');
     campo.style.display = ehEletiva ? 'block' : 'none';
     input.value = ehEletiva ? professorParceiroDasTurmasEstagiario(turmas) : '';
+}
+
+// --- SUGESTÃO DE TEMAS DO PLANO DE AULA ---
+// Antes de gerar o plano, o professor pode pedir sugestões de tema: a IA lê os materiais que os
+// professores postaram na Biblioteca de Apoio (Tier 3) e as aulas da planilha oficial de
+// escopo-sequência (Tier 1) da série+disciplina escolhidas e devolve alguns temas. Clicar num tema
+// só preenche o campo "Tema / Assunto" - a geração continua sendo o "Gerar Estrutura" de sempre,
+// que já usa esses mesmos materiais como base (montarContextoCurriculoOficial).
+const MAX_SUGESTOES_TEMAS_ESTAGIARIO = 6;
+let ultimasSugestoesTemasEstagiario = [];
+
+function limparSugestoesTemasPlanoAulaEstagiario() {
+    ultimasSugestoesTemasEstagiario = [];
+    const box = document.getElementById('iaDocSugestoesTemas');
+    if (box) { box.innerHTML = ''; box.style.display = 'none'; }
+}
+
+// Junta o que a IA precisa ler pra sugerir: os materiais da Biblioteca dessa série+disciplina e as
+// aulas oficiais (do bimestre atual primeiro, quando a planilha informa o bimestre). Nunca lança.
+async function montarFontesSugestaoTemasEstagiario(serie, disciplina) {
+    let materiais = [];
+    let aulas = [];
+    try {
+        materiais = (await buscarMateriaisApoioEstagiario(serie))
+            .filter(m => !m.disciplinaOriginal || disciplinasSaoSemelhantes(disciplina, m.disciplinaOriginal))
+            .sort((a, b) => (b.createdAtMs || 0) - (a.createdAtMs || 0))
+            .slice(0, 8);
+    } catch (e) { console.warn('[Estagiário][Temas] Erro ao buscar materiais:', e); }
+    try {
+        const linhas = (await buscarLinhasCurriculoOficial(serie))
+            .filter(l => disciplinasSaoSemelhantes(disciplina, l.disciplinaOriginal));
+        const bimAtual = String(calcularBimestreAtual(getTodayString())).replace(/\D/g, '');
+        const doBimestre = linhas.filter(l => String(l.bimestre || '') === bimAtual);
+        aulas = (doBimestre.length > 0 ? doBimestre : linhas).slice(0, 25);
+    } catch (e) { console.warn('[Estagiário][Temas] Erro ao buscar currículo:', e); }
+    return { materiais, aulas };
+}
+
+function montarPromptSugestaoTemasEstagiario(serie, disciplina, fontes) {
+    let prompt = `Você é um coordenador pedagógico experiente do Estado de São Paulo. Sugira ${MAX_SUGESTOES_TEMAS_ESTAGIARIO} temas de aula de ${disciplina} para a série/ano ${serie}, para o professor escolher um e depois gerar o Plano de Aula.`;
+    if (fontes.materiais.length > 0) {
+        prompt += `\n\n[MATERIAIS DA BIBLIOTECA - postados pelos professores. Dê PRIORIDADE a temas que estes materiais cobrem, e diga de qual material veio cada tema.]\n`;
+        fontes.materiais.forEach(m => {
+            const trecho = (m.textoExtraido || '').replace(/\s+/g, ' ').trim().slice(0, 800);
+            prompt += `- ${m.titulo || 'Material'}: ${m.descricao || ''}${(m.tags || []).length ? ' (tags: ' + m.tags.join(', ') + ')' : ''}`;
+            if (trecho) prompt += `\n  Trecho: ${trecho}`;
+            prompt += '\n';
+        });
+    }
+    if (fontes.aulas.length > 0) {
+        prompt += `\n[AULAS DO CURRÍCULO OFICIAL - planilha de escopo-sequência dessa série e disciplina]\n`;
+        fontes.aulas.forEach(l => {
+            prompt += `- ${l.bimestre ? l.bimestre + 'º bim, ' : ''}${l.titulo || l.objetoConhecimento || ''}${l.conteudo ? ' — ' + String(l.conteudo).slice(0, 200) : ''}\n`;
+        });
+    }
+    if (fontes.materiais.length === 0 && fontes.aulas.length === 0) {
+        prompt += `\n\nNão há materiais na Biblioteca nem aulas da planilha oficial para essa série e disciplina. Sugira temas compatíveis com o Currículo Paulista.`;
+    }
+    prompt += `\n\nCada tema deve ser curto (no máximo 70 caracteres), pronto para virar o título de uma aula. Responda APENAS com um JSON válido, sem markdown, no formato exato:\n{"temas": [{"tema": "título curto do tema", "motivo": "1 frase curta dizendo por que esse tema", "fonte": "título do material da Biblioteca usado, ou 'Currículo' se veio da planilha oficial, ou '' se nenhum"}]}`;
+    return prompt;
+}
+
+// Aceita {"temas":[...]} ou a lista direto, com cada item como objeto ou texto. Remove repetidos.
+function normalizarSugestoesTemasEstagiario(resposta) {
+    let lista = Array.isArray(resposta) ? resposta : (resposta && Array.isArray(resposta.temas) ? resposta.temas : []);
+    const vistos = new Set();
+    return lista.map(item => {
+        if (typeof item === 'string') return { tema: item, motivo: '', fonte: '' };
+        return { tema: String((item && item.tema) || ''), motivo: String((item && item.motivo) || ''), fonte: String((item && item.fonte) || '') };
+    }).map(t => ({ ...t, tema: t.tema.trim().slice(0, 120) }))
+      .filter(t => {
+          const chave = t.tema.toLowerCase();
+          if (!t.tema || vistos.has(chave)) return false;
+          vistos.add(chave);
+          return true;
+      }).slice(0, MAX_SUGESTOES_TEMAS_ESTAGIARIO);
+}
+
+function renderizarSugestoesTemasEstagiario(temas, fontes) {
+    const box = document.getElementById('iaDocSugestoesTemas');
+    if (!box) return;
+    ultimasSugestoesTemasEstagiario = temas;
+    const qtdMateriais = fontes.materiais.length;
+    const origem = qtdMateriais > 0
+        ? `Com base em ${qtdMateriais} material${qtdMateriais > 1 ? 'is' : ''} da Biblioteca${fontes.aulas.length ? ' e no currículo oficial' : ''}.`
+        : (fontes.aulas.length ? 'Nenhum material na Biblioteca para essa série e disciplina — sugestões com base no currículo oficial.' : 'Nenhum material na Biblioteca nem no currículo oficial para essa série e disciplina — sugestões gerais da IA.');
+    box.innerHTML = `
+        <p style="font-size:11px; color:#5f6b7f; margin:0 0 6px 0;">${escapeHtmlEstagiario(origem)} Clique num tema para usar:</p>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+            ${temas.map((t, i) => `
+                <button type="button" class="sugestao-tema-estagiario" data-indice="${i}" onclick="escolherSugestaoTemaEstagiario(${i})"
+                    style="text-align:left; padding:8px 10px; border:1px solid #cdd5e1; border-radius:6px; background:#fff; cursor:pointer; font-size:13px; line-height:1.35;">
+                    <strong>${escapeHtmlEstagiario(t.tema)}</strong>
+                    ${t.motivo ? `<br><span style="font-size:11px; color:#5f6b7f;">${escapeHtmlEstagiario(t.motivo)}</span>` : ''}
+                    ${t.fonte ? `<br><span style="font-size:11px; color:#1b4488;">📚 ${escapeHtmlEstagiario(t.fonte)}</span>` : ''}
+                </button>`).join('')}
+        </div>`;
+    box.style.display = 'block';
+}
+
+function escolherSugestaoTemaEstagiario(indice) {
+    const t = ultimasSugestoesTemasEstagiario[indice];
+    const input = document.getElementById('iaDocTema');
+    if (!t || !input) return;
+    input.value = t.tema;
+    document.querySelectorAll('#iaDocSugestoesTemas .sugestao-tema-estagiario').forEach(b => {
+        const escolhido = Number(b.dataset.indice) === indice;
+        b.style.borderColor = escolhido ? '#2f6fd6' : '#cdd5e1';
+        b.style.background = escolhido ? '#edf3fd' : '#fff';
+    });
+}
+
+async function sugerirTemasPlanoAulaEstagiario() {
+    const serie = (document.getElementById('iaDocSerie') || {}).value || '';
+    const disciplina = (document.getElementById('iaDocDisciplina') || {}).value || '';
+    if (!serie || !disciplina) {
+        alert('Escolha a Série / Ano e a Disciplina antes de pedir sugestões de tema.');
+        return;
+    }
+    const btn = document.getElementById('btnSugerirTemasPlanoAula');
+    const textoOriginal = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Pensando... ⏳'; }
+    try {
+        const fontes = await montarFontesSugestaoTemasEstagiario(serie, disciplina);
+        const resposta = await chamarIAEstruturada(montarPromptSugestaoTemasEstagiario(serie, disciplina, fontes), null);
+        const temas = normalizarSugestoesTemasEstagiario(resposta);
+        if (temas.length === 0) throw new Error('A IA não devolveu nenhum tema. Tente de novo.');
+        renderizarSugestoesTemasEstagiario(temas, fontes);
+    } catch (e) {
+        console.error(e);
+        alert('Não deu para sugerir temas:\n' + e.message);
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = textoOriginal; }
+    }
 }
 
 async function abrirModalGerarDocumentoIA() {
@@ -859,7 +995,11 @@ async function abrirModalGerarDocumentoIA() {
 
                     <div style="margin-bottom: 15px;">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Tema / Assunto:</label>
-                        <input type="text" id="iaDocTema" placeholder="Ex: Revolução Francesa" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
+                        <div style="display:flex; gap:8px;">
+                            <input type="text" id="iaDocTema" placeholder="Ex: Revolução Francesa" style="flex:1; min-width:0; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
+                            <button type="button" class="btn btn-sm btn-info" id="btnSugerirTemasPlanoAula" onclick="sugerirTemasPlanoAulaEstagiario()" title="A IA lê os materiais da Biblioteca e o currículo dessa série e disciplina e sugere temas de aula">💡 Sugerir temas</button>
+                        </div>
+                        <div id="iaDocSugestoesTemas" style="display:none; margin-top:8px;"></div>
                     </div>
 
                     <div style="margin-bottom: 15px; border-top: 1px solid #e3e8ef; padding-top: 15px;">
@@ -1008,6 +1148,7 @@ async function abrirModalGerarDocumentoIA() {
 
     const docTema = document.getElementById('iaDocTema');
     if (docTema) docTema.value = '';
+    limparSugestoesTemasPlanoAulaEstagiario();
     const docSerie = document.getElementById('iaDocSerie');
     if (docSerie) docSerie.value = '';
     const docDisciplina = document.getElementById('iaDocDisciplina');
