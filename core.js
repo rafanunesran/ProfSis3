@@ -698,7 +698,7 @@ function mensagemCredencial(codigo) {
         texto += 'Esta conta está desativada. Fale com a gestão.';
     } else {
         texto += 'Pode ser a senha, ou o e-mail estar cadastrado de outra forma. ' +
-                 'Se não lembra a senha, use "Esqueceu a senha?" logo abaixo.';
+                 'Se não lembra a senha, use "Recuperar senha" logo abaixo.';
     }
 
     if (codigo) texto += '\n\n(código: ' + codigo + ')';
@@ -706,7 +706,7 @@ function mensagemCredencial(codigo) {
 }
 
 // Credencial recusada pelo Firebase Auth. Em vez de mandar a pessoa procurar o
-// link "Esqueceu a senha?" e digitar o e-mail de novo, oferece o envio aqui mesmo,
+// link "Recuperar senha" e digitar o e-mail de novo, oferece o envio aqui mesmo,
 // com o endereço que ela acabou de usar.
 //
 // Este caso ficou comum depois que as Regras passaram a exigir sessão para ler
@@ -1039,7 +1039,10 @@ async function prepararBackupCifrado(senha) {
 }
 
 async function solicitarResetSenha() {
-    const email = prompt("Por favor, insira seu e-mail para redefinir a senha:");
+    // Já traz o que a pessoa digitou no campo de e-mail do login, se houver.
+    const campoEmail = document.getElementById('loginEmail');
+    const sugestao = campoEmail ? campoEmail.value.trim() : '';
+    const email = prompt("Por favor, insira seu e-mail para redefinir a senha:", sugestao);
     if (!email) {
         return; // User cancelled the prompt
     }
@@ -1447,7 +1450,7 @@ function renderLogin() {
                 <button type="submit" class="btn btn-primary">Entrar</button>
             </form>
             <div class="auth-links-container">
-                <span class="auth-link" onclick="solicitarResetSenha()">Esqueceu a senha?</span>
+                <span class="auth-link" onclick="solicitarResetSenha()">🔑 Recuperar senha</span>
                 <span class="auth-link" onclick="renderCadastro()">Não tem conta? Cadastre-se</span>
             </div>
             <div style="text-align:center; margin-top:12px;">

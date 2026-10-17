@@ -44,7 +44,7 @@
     <!-- Assinatura: planos, cobranca mensal no cartao (Mercado Pago) e o portao premium -->
     <script src="assinatura.js?v=1.6.0" defer></script>
     <!-- App Scripts -->
-    <script src="core.js?v=3.41" defer></script>
+    <script src="core.js?v=3.42" defer></script>
     <script src="admin.js?v=3.46.0" defer></script>
     <script src="financeiro.js?v=1.2" defer></script>
     <script src="gestor.js?v=3.33" defer></script>
@@ -98,7 +98,10 @@
                 </label>
                 <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Entrar</button>
             </form>
-            <span class="auth-link" onclick="renderCadastro()">Não tem conta? Cadastre-se</span>
+            <div class="auth-links-container">
+                <span class="auth-link" onclick="solicitarResetSenha()">🔑 Recuperar senha</span>
+                <span class="auth-link" onclick="renderCadastro()">Não tem conta? Cadastre-se</span>
+            </div>
         </div>
     </div>
 
