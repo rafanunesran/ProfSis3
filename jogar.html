@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Na Mosca! — Entrar no quiz</title>
+    <meta name="theme-color" content="#160f2e">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..800&display=swap">
+    <!-- A pagina do ALUNO no quiz ao vivo "Na Mosca!" (o lado do professor e' quiz.js).
+         Nao pede conta nem instala nada: PIN + apelido. So' carrega o Firestore —
+         nada de Auth, Analytics ou o resto do sistema. -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="quiz_operacoes.js?v=1.0"></script>
+    <style>
+        :root { --fundo:#160f2e; --cartao:#ffffff; --texto:#160f2e; --roxo:#7c3aed; }
+        * { box-sizing: border-box; }
+        html, body { margin:0; min-height:100%; }
+        body { background: var(--fundo); color:#fff; font-family: 'Geist', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+        .tela { min-height: 100vh; min-height: 100dvh; display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 20px 16px calc(20px + env(safe-area-inset-bottom)); text-align:center; }
+        .marca { font-size: 34px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 18px; }
+        .marca span { color: #a78bfa; }
+        .caixa { background: var(--cartao); color: var(--texto); border-radius: 16px; padding: 20px; width: min(380px, 100%); display:flex; flex-direction:column; gap:12px; }
+        input { font: inherit; font-size: 22px; font-weight: 700; text-align:center; padding: 14px; border: 2px solid #d4d0e8; border-radius: 10px; width:100%; color: var(--texto); }
+        input:focus { outline: 3px solid #a78bfa; border-color: var(--roxo); }
+        button { font: inherit; border:none; cursor:pointer; }
+        .btn { background: var(--fundo); color:#fff; font-size: 20px; font-weight: 800; padding: 14px; border-radius: 10px; }
+        .btn:disabled { opacity: .5; }
+        .erro { color:#b91c1c; font-size:15px; min-height: 20px; }
+        .info { font-size: 20px; opacity: .9; max-width: 520px; line-height: 1.35; }
+        .grande { font-size: 30px; font-weight: 800; margin: 8px 0; }
+        .apelido { display:inline-block; background: rgba(255,255,255,.14); border-radius: 999px; padding: 6px 16px; font-weight: 700; margin-bottom: 14px; }
+        .topo { position: fixed; top: 0; left:0; right:0; display:flex; justify-content:space-between; padding: 10px 14px; font-weight:700; font-size: 15px; background: rgba(0,0,0,.25); }
+        .pergunta { font-size: 21px; font-weight: 800; background:#fff; color: var(--texto); border-radius: 12px; padding: 14px; width: min(720px, 100%); margin: 50px 0 12px; }
+        .img { max-width: 100%; max-height: 28vh; border-radius: 10px; margin-bottom: 10px; }
+        .ops { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; width: min(720px, 100%); }
+        .ops.uma { grid-template-columns: 1fr; }
+        .op { color:#fff; font-size: 18px; font-weight: 700; border-radius: 12px; padding: 16px 12px; min-height: 84px; display:flex; align-items:center; gap:10px; text-align:left; }
+        .op .lt { background: rgba(0,0,0,.22); border-radius: 8px; min-width: 36px; height: 36px; display:inline-flex; align-items:center; justify-content:center; font-size: 18px; }
+        .op:active { transform: scale(.98); }
+        .relogio { font-size: 15px; opacity: .85; }
+        .selo { font-size: 74px; line-height: 1; margin-bottom: 10px; }
+        .verde { background:#15803d; } .vermelho { background:#b91c1c; } .neutro { background:#334155; }
+        .linha { display:flex; justify-content:space-between; gap:16px; min-width:220px; background: rgba(255,255,255,.1); border-radius: 10px; padding: 10px 14px; margin: 6px 0; width: min(420px, 100%); font-weight: 700; font-size: 18px; }
+        .linha.eu { background: #a78bfa; color: var(--fundo); }
+        .rodape { font-size: 12px; opacity: .6; margin-top: 20px; max-width: 360px; }
+        @media (max-width: 380px) { .ops { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<div id="app" class="tela"></div>
+<script>
+(function () {
+'use strict';
+
+// Mesma configuracao do core.js (o projeto e' o mesmo; a chave web do Firebase e' publica
+// por desenho — quem protege os dados sao as Regras do Firestore).
+const firebaseConfig = {
+    apiKey: "AIzaSyCOP_TE6YvVkg9E2DFuwfF7jDkBgxyc8ls",
+    authDomain: "profsis3.firebaseapp.com",
+    projectId: "profsis3",
+    storageBucket: "profsis3.firebasestorage.app",
+    messagingSenderId: "944272675889",
+    appId: "1:944272675889:web:2afc6a869f363aefedf110"
+};
+const CORES = ['#7c3aed', '#0d9488', '#ea580c', '#db2777'];
+const LETRAS = ['A', 'B', 'C', 'D'];
+const Q = window.QUIZOPS;
+
+let db = null;
+try { firebase.initializeApp(firebaseConfig); db = firebase.firestore(); } catch (e) { console.error(e); }
+
+const app = document.getElementById('app');
+const estado = { pin: '', jid: '', apelido: '', sala: null, eu: null, respondida: -1, escolha: null, recebidaEm: 0, ouvintes: [], timer: null };
+
+function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function salaRef() { return db.collection('quiz_salas').doc(estado.pin); }
+function chaveSessao(pin) { return 'namosca_' + pin; }
+
+function marca() { return '<div class="marca">🎯 Na <span>Mosca!</span></div>'; }
+
+// --- 1. PIN ----------------------------------------------------------------
+function telaPin(msg) {
+    const sugestao = Q.limparPin(new URLSearchParams(location.search).get('pin') || '');
+    app.innerHTML = marca() + `
+        <form class="caixa" id="fPin">
+            <input id="iPin" inputmode="numeric" autocomplete="off" maxlength="7" placeholder="PIN do jogo" value="${esc(sugestao)}" aria-label="PIN do jogo">
+            <button class="btn" type="submit">Entrar</button>
+            <div class="erro" id="ePin">${esc(msg || '')}</div>
+        </form>
+        <div class="rodape">O PIN aparece na tela do professor.</div>`;
+    const inp = document.getElementById('iPin');
+    inp.focus();
+    document.getElementById('fPin').onsubmit = async (ev) => {
+        ev.preventDefault();
+        const pin = Q.limparPin(inp.value);
+        const erro = document.getElementById('ePin');
+        if (!Q.pinValido(pin)) { erro.textContent = 'O PIN tem 6 números.'; return; }
+        if (!db) { erro.textContent = 'Sem conexão. Confira a internet e recarregue.'; return; }
+        erro.textContent = 'Procurando a sala...';
+        try {
+            const s = await db.collection('quiz_salas').doc(pin).get();
+            if (!s.exists || (s.data() || {}).estado === 'fim') { erro.textContent = 'Não achei uma sala aberta com esse PIN.'; return; }
+            estado.pin = pin;
+            // Ja' entrou antes neste celular (recarregou a pagina)? Volta como o mesmo jogador.
+            let salvo = null;
+            try { salvo = JSON.parse(sessionStorage.getItem(chaveSessao(pin)) || 'null'); } catch (_) {}
+            if (salvo && salvo.jid) {
+                const eu = await salaRef().collection('jogadores').doc(salvo.jid).get();
+                if (eu.exists) { estado.jid = salvo.jid; estado.apelido = salvo.apelido; comecarAOuvir(); return; }
+            }
+            telaApelido();
+        } catch (e) {
+            console.error(e);
+            erro.textContent = 'Não consegui falar com a sala. Confira a internet.';
+        }
+    };
+}
+
+// --- 2. APELIDO ------------------------------------------------------------
+function telaApelido(msg) {
+    app.innerHTML = marca() + `
+        <form class="caixa" id="fApe">
+            <input id="iApe" maxlength="${Q.MAX_APELIDO}" autocomplete="off" placeholder="Seu apelido" aria-label="Seu apelido">
+            <button class="btn" type="submit">Pronto!</button>
+            <div class="erro" id="eApe">${esc(msg || '')}</div>
+        </form>
+        <div class="rodape">Use um apelido, não o seu nome completo.</div>`;
+    const inp = document.getElementById('iApe');
+    inp.focus();
+    document.getElementById('fApe').onsubmit = async (ev) => {
+        ev.preventDefault();
+        const apelido = Q.limparApelido(inp.value);
+        const erro = document.getElementById('eApe');
+        if (apelido.length < 2) { erro.textContent = 'Escreva um apelido com pelo menos 2 letras.'; return; }
+        erro.textContent = 'Entrando...';
+        try {
+            const ref = salaRef().collection('jogadores').doc();
+            await ref.set({ apelido, pontos: 0, entrouEm: firebase.firestore.FieldValue.serverTimestamp() });
+            estado.jid = ref.id; estado.apelido = apelido;
+            try { sessionStorage.setItem(chaveSessao(estado.pin), JSON.stringify({ jid: ref.id, apelido })); } catch (_) {}
+            comecarAOuvir();
+        } catch (e) {
+            console.error(e);
+            erro.textContent = 'Não consegui entrar. A sala pode ter sido fechada.';
+        }
+    };
+}
+
+// --- 3. O JOGO -------------------------------------------------------------
+function comecarAOuvir() {
+    estado.ouvintes.forEach(f => f()); estado.ouvintes = [];
+    estado.ouvintes.push(salaRef().onSnapshot(s => {
+        if (!s.exists) { encerrado('O professor fechou a sala.'); return; }
+        const antes = estado.sala;
+        estado.sala = s.data();
+        if (estado.sala.estado === 'pergunta' && (!antes || antes.estado !== 'pergunta' || antes.indice !== estado.sala.indice)) {
+            estado.recebidaEm = Date.now(); estado.escolha = null;
+        }
+        desenhar();
+    }, () => encerrado('A conexão com a sala caiu. Recarregue a página para voltar.')));
+    estado.ouvintes.push(salaRef().collection('jogadores').doc(estado.jid).onSnapshot(s => {
+        if (!s.exists) { encerrado('Você saiu da sala.'); try { sessionStorage.removeItem(chaveSessao(estado.pin)); } catch (_) {} return; }
+        estado.eu = s.data();
+        desenhar();
+    }, () => {}));
+}
+
+function encerrado(msg) {
+    estado.ouvintes.forEach(f => { try { f(); } catch (_) {} }); estado.ouvintes = [];
+    clearInterval(estado.timer);
+    const fim = estado.sala && estado.sala.estado === 'fim' && estado.eu;
+    app.innerHTML = marca() + `<div class="info">${esc(msg)}</div>
+        ${fim ? `<div class="grande">${estado.eu.pontos || 0} pontos</div>` : ''}
+        <div style="margin-top:20px;"><button class="btn" style="background:#fff; color:#160f2e; padding:12px 22px;" onclick="location.href=location.pathname">Entrar em outro jogo</button></div>`;
+}
+
+function topo() {
+    const s = estado.sala || {};
+    const pts = (estado.eu && estado.eu.pontos) || 0;
+    const n = s.indice >= 0 ? `Pergunta ${s.indice + 1}/${s.total}` : '';
+    return `<div class="topo"><span>${esc(estado.apelido)}</span><span>${n}</span><span>${pts} pts</span></div>`;
+}
+
+function desenhar() {
+    const s = estado.sala;
+    if (!s) return;
+    clearInterval(estado.timer);
+    const eu = estado.eu || {};
+    const u = eu.ultimo || null;
+
+    if (s.estado === 'sala') {
+        app.innerHTML = topo() + marca() + `<div class="apelido">${esc(estado.apelido)}</div>
+            <div class="grande">Você está dentro!</div><div class="info">Veja seu apelido na tela do professor. O jogo começa já já.</div>`;
+        return;
+    }
+    if (s.estado === 'pergunta' && s.pergunta) {
+        if (estado.respondida === s.indice) {
+            app.innerHTML = topo() + `<div class="selo">⏳</div><div class="grande">Resposta enviada!</div><div class="info">Espere o tempo acabar...</div>`;
+            return;
+        }
+        const p = s.pergunta;
+        app.innerHTML = topo() + `
+            <div class="pergunta">${esc(p.texto)}</div>
+            ${p.imagem ? `<img class="img" src="${p.imagem}" alt="">` : ''}
+            <div class="ops ${p.opcoes.length <= 2 ? 'uma' : ''}">${p.opcoes.map((o, k) => `
+                <button class="op" style="background:${CORES[k]}" data-k="${k}"><span class="lt">${LETRAS[k]}</span><span>${esc(o)}</span></button>`).join('')}
+            </div>
+            <div class="relogio" id="rel" style="margin-top:12px;"></div>`;
+        app.querySelectorAll('.op').forEach(b => { b.onclick = () => responder(Number(b.dataset.k)); });
+        const tick = () => {
+            const r = Math.max(0, Math.ceil(p.tempo - (Date.now() - estado.recebidaEm) / 1000));
+            const el = document.getElementById('rel');
+            if (el) el.textContent = r > 0 ? '⏱️ ' + r + ' s' : 'Tempo esgotado';
+            if (r <= 0) { clearInterval(estado.timer); app.querySelectorAll('.op').forEach(b => { b.disabled = true; b.style.opacity = .5; }); }
+        };
+        tick(); estado.timer = setInterval(tick, 250);
+        return;
+    }
+    if (s.estado === 'revelada') {
+        const enquete = s.pergunta && s.pergunta.tipo === 'enquete';
+        if (!u || u.indice !== s.indice) {
+            app.innerHTML = topo() + `<div class="selo">⏳</div><div class="info">Conferindo as respostas...</div>`;
+            return;
+        }
+        const certa = (s.gabarito || []).map(i => (s.pergunta.opcoes || [])[i]).filter(Boolean).join(' ou ');
+        let cls = 'neutro', selo = '🗳️', titulo = 'Voto registrado!', extra = '';
+        if (!enquete) {
+            if (!u.respondeu) { cls = 'neutro'; selo = '⌛'; titulo = 'Não deu tempo!'; }
+            else if (u.acertou) { cls = 'verde'; selo = '🎯'; titulo = 'Na mosca!'; extra = `<div class="grande">+${u.ganhou}</div>`; }
+            else { cls = 'vermelho'; selo = '💨'; titulo = 'Passou perto!'; }
+        } else if (!u.respondeu) { selo = '⌛'; titulo = 'Não deu tempo!'; }
+        document.body.className = '';
+        app.innerHTML = topo() + `<div class="caixa ${cls}" style="color:#fff;">
+                <div class="selo">${selo}</div><div class="grande">${titulo}</div>${extra}
+                ${!enquete && !u.acertou && certa ? `<div class="info">A resposta era: <strong>${esc(certa)}</strong></div>` : ''}
+                ${!enquete && (eu.sequencia || 0) >= 2 ? `<div class="info">🔥 ${eu.sequencia} acertos seguidos!</div>` : ''}
+            </div>
+            <div class="info" style="margin-top:16px;">Você está em <strong>${u.posicao}º</strong> de ${u.total}.</div>`;
+        return;
+    }
+    if (s.estado === 'placar') {
+        const lista = s.placar || [];
+        app.innerHTML = topo() + `<div class="grande">🏆 Placar</div>
+            ${lista.map((j, i) => `<div class="linha ${j.apelido === estado.apelido ? 'eu' : ''}"><span>${i + 1}º ${esc(j.apelido)}</span><span>${j.pontos}</span></div>`).join('')}
+            ${u ? `<div class="info" style="margin-top:12px;">Você: <strong>${u.posicao}º</strong> com ${eu.pontos || 0} pontos.</div>` : ''}`;
+        return;
+    }
+    if (s.estado === 'fim') {
+        const pod = s.podio || [];
+        const meu = pod.findIndex(j => j.apelido === estado.apelido);
+        app.innerHTML = marca() + `
+            <div class="selo">${meu === 0 ? '🥇' : meu === 1 ? '🥈' : meu === 2 ? '🥉' : '🎉'}</div>
+            <div class="grande">${meu >= 0 ? 'Você está no pódio!' : 'Fim de jogo!'}</div>
+            <div class="info">${u ? `Você terminou em <strong>${u.posicao}º</strong> com <strong>${eu.pontos || 0}</strong> pontos e ${eu.acertos || 0} acerto(s).` : ''}</div>
+            <div style="margin-top:14px;">${pod.map((j, i) => `<div class="linha ${i === meu ? 'eu' : ''}"><span>${['🥇', '🥈', '🥉'][i]} ${esc(j.apelido)}</span><span>${j.pontos}</span></div>`).join('')}</div>`;
+        return;
+    }
+}
+
+async function responder(k) {
+    const s = estado.sala;
+    if (!s || s.estado !== 'pergunta' || estado.respondida === s.indice) return;
+    estado.respondida = s.indice; estado.escolha = k;
+    desenhar();
+    try {
+        await salaRef().collection('respostas').doc(estado.jid + '_' + s.indice).set({
+            jogadorId: estado.jid, indice: s.indice, escolha: k,
+            em: firebase.firestore.FieldValue.serverTimestamp()
+        });
+    } catch (e) {
+        console.warn(e);
+        // Fora do tempo, ou a resposta ja' tinha chegado: nao ha' o que refazer.
+        app.innerHTML = topo() + `<div class="selo">⌛</div><div class="grande">Não deu tempo!</div><div class="info">Sua resposta chegou depois do fim do tempo.</div>`;
+    }
+}
+
+telaPin();
+})();
+</script>
+</body>
+</html>

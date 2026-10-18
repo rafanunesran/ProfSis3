@@ -444,6 +444,64 @@ service cloud.firestore {
       allow read, write: if liberado();
     }
 
+    // ------------------- Na Mosca! (quiz ao vivo, quiz.js) -------------------
+    // O quiz do professor, COM o gabarito: só o dono lê e escreve.
+    match /quizzes/{quizId} {
+      allow read, update, delete: if isSignedIn() && resource.data.donoUid == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.donoUid == request.auth.uid;
+    }
+
+    // A sala ao vivo. O ALUNO NÃO TEM CONTA (entra em jogar.html com PIN e apelido),
+    // então aqui há leitura e escrita sem sessão — e só aqui, e só no formato certo.
+    //   - A sala é lida pelo PIN (get), nunca listada: ninguém varre PINs.
+    //   - O gabarito só entra no documento depois que o tempo acaba (quiz.js).
+    //   - Só o professor que abriu a sala muda o estado, os pontos e apaga tudo.
+    function salaQuiz(pin) {
+      return get(/databases/$(database)/documents/quiz_salas/$(pin)).data;
+    }
+    function ehHostDaSala(pin) {
+      return isSignedIn() && salaQuiz(pin).hostUid == request.auth.uid;
+    }
+    match /quiz_salas/{pin} {
+      allow get: if true;
+      allow create: if isSignedIn() && pin.matches('^[1-9][0-9]{5}$')
+                    && request.resource.data.hostUid == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.hostUid == request.auth.uid
+                    && request.resource.data.hostUid == resource.data.hostUid;
+      allow delete: if isSignedIn() && resource.data.hostUid == request.auth.uid;
+
+      // Jogador: o aluno se cria com apelido e zero ponto; depois, só o professor altera.
+      match /jogadores/{jogadorId} {
+        allow get: if true;
+        allow list: if ehHostDaSala(pin);
+        allow create: if salaQuiz(pin).estado != 'fim'
+                      && request.resource.data.keys().hasOnly(['apelido', 'pontos', 'entrouEm'])
+                      && request.resource.data.apelido is string
+                      && request.resource.data.apelido.size() >= 1
+                      && request.resource.data.apelido.size() <= 20
+                      && request.resource.data.pontos == 0
+                      && request.resource.data.entrouEm == request.time;
+        allow update, delete: if ehHostDaSala(pin);
+      }
+
+      // Uma resposta por aluno por pergunta (o id é <jogador>_<pergunta>, e não há
+      // update), com a hora do SERVIDOR, só da pergunta que está aberta e só dentro
+      // do tempo dela (+3 s de folga para a rede).
+      match /respostas/{respostaId} {
+        allow read, delete: if ehHostDaSala(pin);
+        allow create: if request.resource.data.keys().hasOnly(['jogadorId', 'indice', 'escolha', 'em'])
+                      && respostaId == request.resource.data.jogadorId + '_' + string(request.resource.data.indice)
+                      && exists(/databases/$(database)/documents/quiz_salas/$(pin)/jogadores/$(request.resource.data.jogadorId))
+                      && salaQuiz(pin).estado == 'pergunta'
+                      && request.resource.data.indice == salaQuiz(pin).indice
+                      && request.resource.data.escolha is int
+                      && request.resource.data.escolha >= 0
+                      && request.resource.data.escolha < salaQuiz(pin).pergunta.opcoes.size()
+                      && request.resource.data.em == request.time
+                      && request.time < salaQuiz(pin).abertaEm + duration.value(salaQuiz(pin).pergunta.tempo + 3, 's');
+      }
+    }
+
     // --------------------- Padrão: nega o resto ------------------------------
     match /{document=**} {
       allow read, write: if false;

@@ -63,6 +63,7 @@ const PLANOS_SISPROF = {
             'Ferramentas: ampliar e limpar imagem, tambem sem enviar nada',
             'Ferramentas: poster de parede em varias folhas A4, sem enviar nada',
             'Ferramentas: editar video (cortar, juntar, comprimir, GIF) sem enviar o video',
+            'Ferramentas: Na Mosca!, quiz ao vivo em sala com PIN, placar e relatorio',
             'Prioridade no suporte e nas novidades'
         ]
     }

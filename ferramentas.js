@@ -21,6 +21,8 @@
 //                                             ampliar.js, em #tabFerramentasAmpliar)
 //     aba "Poster"   -> poster.js             desenha dentro de #tabFerramentasPoster
 //     aba "Video"    -> video.js              desenha dentro de #tabFerramentasVideo
+//     aba "Na Mosca!"-> quiz.js               desenha dentro de #tabFerramentasQuiz
+//                                             (quiz ao vivo; o aluno joga em jogar.html)
 //
 //   Acrescentar uma aba e' acrescentar uma linha em ABAS_FERRAMENTAS e um arquivo que
 //   saiba desenhar no container dela.
@@ -54,6 +56,10 @@ const ABAS_FERRAMENTAS = [
     {
         id: 'video', container: 'tabFerramentasVideo', icone: '🎬', label: 'Vídeo',
         render: () => { if (typeof renderVideo === 'function') renderVideo(); }
+    },
+    {
+        id: 'quiz', container: 'tabFerramentasQuiz', icone: '🎯', label: 'Na Mosca!',
+        render: () => { if (typeof renderQuiz === 'function') renderQuiz(); }
     }
 ];
 
