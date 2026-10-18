@@ -719,11 +719,52 @@ function limparSugestoesTemasPlanoAulaEstagiario() {
     if (box) { box.innerHTML = ''; box.style.display = 'none'; }
 }
 
-// Junta o que a IA precisa ler pra sugerir: os materiais da Biblioteca dessa série+disciplina e as
-// aulas oficiais (do bimestre atual primeiro, quando a planilha informa o bimestre). Nunca lança.
+// Junta o que a IA precisa ler pra sugerir: os materiais da Biblioteca dessa série+disciplina, as
+// aulas oficiais (do bimestre atual primeiro, quando a planilha informa o bimestre) e o que o
+// professor já deu - os Registros de Aula das turmas dessa série+disciplina e os Planos de Aula já
+// criados - pra IA não repetir tema e sugerir a continuação. Nunca lança.
+const MAX_REGISTROS_AULA_SUGESTAO_TEMAS = 20;
+const MAX_PLANOS_SUGESTAO_TEMAS = 15;
+
+function lecionadoParaSugestaoTemasEstagiario(serie, disciplina) {
+    let registros = [];
+    let planos = [];
+    try {
+        const idsTurmas = new Set(turmasDaSerieDisciplinaEstagiario(serie, disciplina).map(t => String(t.id)));
+        const vistos = new Set();
+        registros = (data.registrosAula || [])
+            .filter(r => r && idsTurmas.has(String(r.id_turma)) && String(r.conteudo || '').trim())
+            .sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')))
+            .map(r => ({ data: r.data || '', conteudo: String(r.conteudo).replace(/\s+/g, ' ').trim().slice(0, 200) }))
+            .filter(r => {
+                // A mesma aula registrada em duas turmas (7A e 7B) entra uma vez só.
+                const chave = r.conteudo.toLowerCase();
+                if (vistos.has(chave)) return false;
+                vistos.add(chave);
+                return true;
+            })
+            .slice(0, MAX_REGISTROS_AULA_SUGESTAO_TEMAS);
+    } catch (e) { console.warn('[Estagiário][Temas] Erro ao ler registros de aula:', e); }
+    try {
+        const vistos = new Set();
+        planos = lerHistoricoPlanoAulaEstagiario()
+            .filter(h => h.serie === serie && h.disciplina === disciplina && String(h.tema || '').trim())
+            .filter(h => {
+                const chave = h.tema.trim().toLowerCase();
+                if (vistos.has(chave)) return false;
+                vistos.add(chave);
+                return true;
+            })
+            .slice(0, MAX_PLANOS_SUGESTAO_TEMAS)
+            .map(h => ({ tema: h.tema.trim(), semana: h.semana || '' }));
+    } catch (e) { console.warn('[Estagiário][Temas] Erro ao ler planos anteriores:', e); }
+    return { registros, planos };
+}
+
 async function montarFontesSugestaoTemasEstagiario(serie, disciplina) {
     let materiais = [];
     let aulas = [];
+    const { registros, planos } = lecionadoParaSugestaoTemasEstagiario(serie, disciplina);
     try {
         materiais = (await buscarMateriaisApoioEstagiario(serie))
             .filter(m => !m.disciplinaOriginal || disciplinasSaoSemelhantes(disciplina, m.disciplinaOriginal))
@@ -737,7 +778,7 @@ async function montarFontesSugestaoTemasEstagiario(serie, disciplina) {
         const doBimestre = linhas.filter(l => String(l.bimestre || '') === bimAtual);
         aulas = (doBimestre.length > 0 ? doBimestre : linhas).slice(0, 25);
     } catch (e) { console.warn('[Estagiário][Temas] Erro ao buscar currículo:', e); }
-    return { materiais, aulas };
+    return { materiais, aulas, registros, planos };
 }
 
 function montarPromptSugestaoTemasEstagiario(serie, disciplina, fontes) {
@@ -757,11 +798,24 @@ function montarPromptSugestaoTemasEstagiario(serie, disciplina, fontes) {
             prompt += `- ${l.bimestre ? l.bimestre + 'º bim, ' : ''}${l.titulo || l.objetoConhecimento || ''}${l.conteudo ? ' — ' + String(l.conteudo).slice(0, 200) : ''}\n`;
         });
     }
+    const registros = fontes.registros || [];
+    const planos = fontes.planos || [];
+    if (registros.length > 0 || planos.length > 0) {
+        prompt += `\n[JÁ LECIONADO - o professor já deu estas aulas nesta série e disciplina. NÃO repita estes temas; sugira a continuação natural (o próximo passo do conteúdo) ou o que ainda falta cobrir dos materiais e do currículo acima.]\n`;
+        registros.forEach(r => { prompt += `- Registro de aula${r.data ? ' de ' + formatarDataBrEstagiario(r.data) : ''}: ${r.conteudo}\n`; });
+        planos.forEach(h => { prompt += `- Plano de Aula já criado${h.semana ? ' (semana ' + h.semana + ')' : ''}: ${h.tema}\n`; });
+    }
     if (fontes.materiais.length === 0 && fontes.aulas.length === 0) {
         prompt += `\n\nNão há materiais na Biblioteca nem aulas da planilha oficial para essa série e disciplina. Sugira temas compatíveis com o Currículo Paulista.`;
     }
-    prompt += `\n\nCada tema deve ser curto (no máximo 70 caracteres), pronto para virar o título de uma aula. Responda APENAS com um JSON válido, sem markdown, no formato exato:\n{"temas": [{"tema": "título curto do tema", "motivo": "1 frase curta dizendo por que esse tema", "fonte": "título do material da Biblioteca usado, ou 'Currículo' se veio da planilha oficial, ou '' se nenhum"}]}`;
+    prompt += `\n\nCada tema deve ser curto (no máximo 70 caracteres), pronto para virar o título de uma aula. Responda APENAS com um JSON válido, sem markdown, no formato exato:\n{"temas": [{"tema": "título curto do tema", "motivo": "1 frase curta dizendo por que esse tema", "fonte": "título do material da Biblioteca usado, ou 'Currículo' se veio da planilha oficial, ou 'Continuação' se é o próximo passo do que já foi lecionado, ou '' se nenhum"}]}`;
     return prompt;
+}
+
+// "2026-10-15" -> "15/10/2026"; o que não for data ISO passa como está.
+function formatarDataBrEstagiario(iso) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ''));
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso || '');
 }
 
 // Aceita {"temas":[...]} ou a lista direto, com cada item como objeto ou texto. Remove repetidos.
@@ -788,8 +842,15 @@ function renderizarSugestoesTemasEstagiario(temas, fontes) {
     const origem = qtdMateriais > 0
         ? `Com base em ${qtdMateriais} material${qtdMateriais > 1 ? 'is' : ''} da Biblioteca${fontes.aulas.length ? ' e no currículo oficial' : ''}.`
         : (fontes.aulas.length ? 'Nenhum material na Biblioteca para essa série e disciplina — sugestões com base no currículo oficial.' : 'Nenhum material na Biblioteca nem no currículo oficial para essa série e disciplina — sugestões gerais da IA.');
+    const qtdRegistros = (fontes.registros || []).length;
+    const qtdPlanos = (fontes.planos || []).length;
+    const partesLecionado = [
+        qtdRegistros ? `${qtdRegistros} registro${qtdRegistros > 1 ? 's' : ''} de aula` : '',
+        qtdPlanos ? `${qtdPlanos} plano${qtdPlanos > 1 ? 's' : ''} já criado${qtdPlanos > 1 ? 's' : ''}` : ''
+    ].filter(Boolean);
+    const lecionado = partesLecionado.length ? ` Olhei também ${partesLecionado.join(' e ')} para não repetir o que você já deu.` : '';
     box.innerHTML = `
-        <p style="font-size:11px; color:#5f6b7f; margin:0 0 6px 0;">${escapeHtmlEstagiario(origem)} Clique num tema para usar:</p>
+        <p style="font-size:11px; color:#5f6b7f; margin:0 0 6px 0;">${escapeHtmlEstagiario(origem + lecionado)} Clique num tema para usar:</p>
         <div style="display:flex; flex-direction:column; gap:6px;">
             ${temas.map((t, i) => `
                 <button type="button" class="sugestao-tema-estagiario" data-indice="${i}" onclick="escolherSugestaoTemaEstagiario(${i})"

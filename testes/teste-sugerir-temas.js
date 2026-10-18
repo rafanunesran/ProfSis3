@@ -13,6 +13,8 @@
 //   3. os temas aparecem, com o material de origem, sem repetidos;
 //   4. clicar num tema preenche o campo Tema;
 //   5. trocar a disciplina apaga as sugestoes antigas;
+//   2b. o pedido tambem leva o que ja' foi lecionado (Registros de Aula das turmas
+//      dessa serie+disciplina e Planos de Aula ja' criados), pra IA nao repetir;
 //   6. o plano gerado com o tema escolhido leva o material da Biblioteca no pedido.
 const { chromium } = require('playwright');
 
@@ -53,8 +55,18 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
     window.dadosCarregados = true;
     data = Object.assign(getInitialData(), {
       turmas: [ { id:1, nome:'7A', ano_serie:'7º Ano', disciplina:'História' },
-                { id:2, nome:'7B', ano_serie:'7º Ano', disciplina:'Geografia' } ],
+                { id:2, nome:'7B', ano_serie:'7º Ano', disciplina:'Geografia' },
+                { id:3, nome:'7C', ano_serie:'7º Ano', disciplina:'História' } ],
+      registrosAula: [
+        { id:10, id_turma:1, data:'2026-10-05', conteudo:'Antigo Regime e os três estados' },
+        { id:11, id_turma:3, data:'2026-10-06', conteudo:'Antigo Regime e os três estados' },
+        { id:12, id_turma:2, data:'2026-10-05', conteudo:'Bacias hidrográficas' }
+      ],
       horariosAulas: [] });
+    localStorage.setItem('estagiario_planos_aula_recentes', JSON.stringify([
+      { id:'h1', ts:1, serie:'7º Ano', disciplina:'História', tema:'Iluminismo', semana:'28/09 a 02/10', dados:{} },
+      { id:'h2', ts:2, serie:'7º Ano', disciplina:'Geografia', tema:'Clima do Brasil', semana:'', dados:{} }
+    ]));
     const colecoes = {
       materiais_apoio: [
         { titulo:'Apostila Revolução Francesa', descricao:'Texto e exercícios sobre 1789', tags:['bastilha'],
@@ -126,6 +138,13 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
       && r2.pedido.indexOf('queda da Bastilha marcou') !== -1);
   ok('o material de outra disciplina fica de fora', r2.pedido.indexOf('Relevo brasileiro') === -1);
   ok('o pedido leva as aulas do curriculo oficial', r2.pedido.indexOf('Grandes navegações') !== -1);
+  ok('o pedido leva o registro de aula das turmas da disciplina, com a data', r2.pedido.indexOf('Registro de aula de 06/10/2026: Antigo Regime') !== -1);
+  ok('a mesma aula registrada em duas turmas entra uma vez so', r2.pedido.split('Antigo Regime e os três estados').length === 2);
+  ok('o registro de outra disciplina fica de fora', r2.pedido.indexOf('Bacias hidrográficas') === -1);
+  ok('o pedido leva os planos de aula ja criados', r2.pedido.indexOf('Plano de Aula já criado (semana 28/09 a 02/10): Iluminismo') !== -1);
+  ok('o plano de outra disciplina fica de fora', r2.pedido.indexOf('Clima do Brasil') === -1);
+  ok('o pedido manda a IA nao repetir o que ja foi lecionado', r2.pedido.indexOf('NÃO repita') !== -1);
+  ok('a tela diz que olhou os registros e os planos', r2.texto.indexOf('1 registro de aula e 1 plano já criado') !== -1);
   ok('as sugestoes aparecem na tela', r2.visivel && r2.botoes.length > 0);
   ok('tema repetido (so muda maiuscula) aparece uma vez so', r2.botoes.length === 2);
   ok('cada sugestao mostra de qual material veio', r2.botoes[0].indexOf('Apostila Revolução Francesa') !== -1);
