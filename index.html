@@ -39,6 +39,10 @@
                 document.documentElement.classList.remove('pode-instalar');
             });
             window.instalarApp = function () {
+                if (jaInstalado) {
+                    alert('Você já está usando o SisProf como app. 👍');
+                    return;
+                }
                 if (avisoInstalacao) {
                     avisoInstalacao.prompt();
                     avisoInstalacao.userChoice.finally(function () { avisoInstalacao = null; });
@@ -48,10 +52,27 @@
                     alert('Para instalar no iPhone/iPad:\n\n' +
                           '1. Abra este site no Safari.\n' +
                           '2. Toque em Compartilhar (o quadrado com a seta para cima).\n' +
-                          '3. Escolha "Adicionar à Tela de Início".');
+                          '3. Escolha "Adicionar à Tela de Início".\n\n' +
+                          'Se já houver um ícone "SisProf" na tela de início, é só tocar nele.');
+                    return;
+                }
+                // Sem o aviso do navegador: ou ele já considera o app instalado, ou o
+                // navegador não instala sites (ex.: alguns navegadores de fabricante).
+                var ehAndroid = /android/i.test(navigator.userAgent);
+                if (ehAndroid) {
+                    alert('O navegador indica que o SisProf já está instalado (ou não permite instalar por aqui).\n\n' +
+                          'PARA ABRIR:\n' +
+                          '• Procure o ícone "SisProf" na tela inicial ou na gaveta de apps (deslize para cima e pesquise "SisProf").\n' +
+                          '• Ou, no Chrome, toque no menu ⋮ e escolha "Abrir app".\n\n' +
+                          'NÃO ENCONTROU? Reinstale:\n' +
+                          '1. Toque e segure o ícone antigo do SisProf (se houver) e escolha "Desinstalar" ou "Remover".\n' +
+                          '2. Ou, no Chrome: menu ⋮ → Configurações → Configurações do site → Todos os sites → este site → "Limpar e redefinir".\n' +
+                          '3. Volte a este site no Chrome, recarregue a página e toque de novo em "Instalar".\n\n' +
+                          'Dica: use o Google Chrome — alguns navegadores não instalam sites.');
                 } else {
-                    alert('Para instalar: abra o menu do navegador (⋮) e escolha ' +
-                          '"Instalar app" ou "Adicionar à tela inicial".');
+                    alert('O navegador indica que o SisProf já está instalado (ou não permite instalar por aqui).\n\n' +
+                          'PARA ABRIR: procure "SisProf" no menu Iniciar / Launchpad, ou no Chrome digite chrome://apps na barra de endereço.\n\n' +
+                          'PARA INSTALAR: no Chrome ou Edge, clique no ícone de instalar na barra de endereço, ou menu ⋮ → "Transmitir, salvar e compartilhar" → "Instalar página como app".');
                 }
             };
         })();
@@ -468,6 +489,12 @@
                 <button class="btn btn-secondary" onclick="document.getElementById('bgUpload').click()">📤 Carregar Imagem</button>
                 <button class="btn btn-danger" onclick="removerBackgroundPersonalizado()">🗑️ Remover</button>
             </div>
+            <hr style="border: 0; border-top: 1px solid #e3e8ef; margin: 15px 0;">
+            <h3>📲 App no celular</h3>
+            <p style="font-size: 13px; color: #5f6b7f; margin: 0 0 10px;">
+                Instale o SisProf como app para abrir direto da tela inicial, em tela cheia.
+            </p>
+            <button class="btn btn-primary" style="width: 100%;" onclick="instalarApp()">📲 Instalar / abrir o app</button>
             <button class="btn btn-secondary" style="width: 100%; margin-top: 20px;" onclick="closeModal('modalPerfilUsuario')">Fechar</button>
         </div>
     </div>
