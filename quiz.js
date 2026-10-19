@@ -208,6 +208,11 @@ function renderQuiz() {
     if (qzQuizzes === null) carregarQuizzes().then(() => { if (qzVista === 'lista') desenharLista(); });
 }
 
+// Ícone do Na Mosca! no mesmo estilo dos outros (icones.js); sem ele, volta o emoji.
+function qzIconeMarca() {
+    return window.iconeSisProf ? iconeSisProf('alvo', 'ico-texto') : '🎯 ';
+}
+
 function desenharLista() {
     const el = container();
     if (!el) return;
@@ -215,7 +220,7 @@ function desenharLista() {
     const lista = qzQuizzes || [];
     el.innerHTML = ESTILO + `
         <div class="qz-topo">
-            <div class="qz-marca">🎯 Na <span>Mosca!</span></div>
+            <div class="qz-marca">${qzIconeMarca()}Na <span>Mosca!</span></div>
             <div style="color:#5f6b7f; font-size:14px; flex:1; min-width:220px;">Quiz ao vivo: você projeta, a turma responde pelo celular com um PIN, e quem acerta mais rápido pontua mais.</div>
         </div>
         ${premium ? '' : `<div class="qz-aviso">Criar quizzes e abrir salas faz parte do plano Professor ${qzSeloPro()}.</div>`}
@@ -298,7 +303,7 @@ function desenharEditor() {
     el.innerHTML = ESTILO + `
         <div class="qz-topo">
             <button class="btn btn-secondary" onclick="qzVoltar()">← Voltar</button>
-            <div class="qz-marca" style="font-size:20px;">🎯 Editar quiz</div>
+            <div class="qz-marca" style="font-size:20px;">${qzIconeMarca()}Editar quiz</div>
             <div style="flex:1"></div>
             <button class="btn btn-secondary" onclick="qzAbrirGerador(false)">✨ Mais perguntas com IA</button>
             <button class="btn btn-primary" onclick="qzSalvar()">💾 Salvar</button>

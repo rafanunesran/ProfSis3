@@ -58,6 +58,7 @@ const ICONES_SISPROF = {
     poster:       { rotulo: 'Pôster',        a: '<circle cx="33.5" cy="13.5" r="9.5"/><path d="M14.6 12.4a2.6 2.6 0 0 1 4.4 0L31.5 33.5l3.4-5a2.5 2.5 0 0 1 4.2 0l6.6 10.6a3 3 0 0 1-2.6 4.6H4.9a3 3 0 0 1-2.6-4.5z"/>', b: '<rect x="2" y="2" width="20" height="20" rx="4.5"/><rect x="26" y="2" width="20" height="20" rx="4.5"/><rect x="2" y="26" width="20" height="20" rx="4.5"/><rect x="26" y="26" width="20" height="20" rx="4.5"/>' },
     video:        { rotulo: 'Vídeo',         a: '<rect x="4" y="9" width="40" height="30" rx="7"/>', b: '<path d="M19 16.6a2 2 0 0 1 3-1.7l12.5 7.4a2 2 0 0 1 0 3.4L22 33.1a2 2 0 0 1-3-1.7z"/>' },
     video:        { rotulo: 'Vídeo',         a: '<rect x="3" y="11" width="31" height="27" rx="7"/>', b: '<path d="M30 21.5 43 14a1.5 1.5 0 0 1 2.2 1.3v17.4A1.5 1.5 0 0 1 43 34l-13-7.5z"/>' },
+    alvo:         { rotulo: 'Na Mosca!',     a: '<circle cx="21" cy="27" r="18"/>', b: '<path d="M21 15a12 12 0 1 1 0 24a12 12 0 1 1 0-24zM21 21a6 6 0 1 0 0 12a6 6 0 1 0 0-12zM21 24a3 3 0 1 1 0 6a3 3 0 1 1 0-6zM22.4 28.4 19.6 25.6 36.6 8.6 39.4 11.4zM34 4.5h9.5V14l-4 4-9.5-9.5z"/>' },
     imagem:       { rotulo: 'Imagem',        a: '<circle cx="33" cy="14" r="9"/>', b: '<path d="M16.3 11.6a2 2 0 0 1 3.4 0L29 27.4l3.3-4.8a2 2 0 0 1 3.3 0l8 12.3a2 2 0 0 1-1.7 3.1H6.1a2 2 0 0 1-1.7-3z"/>' },
 
     // ---- Dados e cópia de segurança ----
@@ -87,7 +88,7 @@ const EMOJI_ICONE = {
     '☁️': 'nuvem', '☁': 'nuvem', '⬇️': 'baixar', '⬆️': 'importar', '📤': 'importar', '📥': 'baixar',
     '🖨️': 'imprimir', '🖨': 'imprimir', '🗑️': 'lixeira', '🗑': 'lixeira', '✏️': 'editar', '✏': 'editar',
     '🎨': 'tema', '📱': 'celular', '🔒': 'seguranca', '🔐': 'seguranca', '🛟': 'seguranca',
-    '🧑‍🎓': 'estudante', '👨‍🎓': 'estudante', '👩‍🎓': 'estudante', '📈': 'relatorio', '📋': 'historico'
+    '🧑‍🎓': 'estudante', '👨‍🎓': 'estudante', '👩‍🎓': 'estudante', '📈': 'relatorio', '📋': 'historico', '🎯': 'alvo'
 };
 
 (function () {
