@@ -156,32 +156,9 @@ async function iniciarApp() {
         if (headerTitle) {
             if (logoEscola) {
                 headerTitle.innerHTML = `<img src="${logoEscola}" style="height: 40px; vertical-align: middle; margin-right: 10px; border-radius: 4px;"> SisProf - ${nomeEscola}`;
-                
-                // Adiciona o logo da escola como miniatura (favicon) da aba do navegador
-                let favicon = document.querySelector("link[rel~='icon']");
-                if (!favicon) {
-                    favicon = document.createElement('link');
-                    favicon.rel = 'icon';
-                    document.head.appendChild(favicon);
-                }
-                favicon.href = logoEscola;
-                
-                // Adiciona também para a barra de favoritos e atalhos de celular
-                let shortcutIcon = document.querySelector("link[rel='shortcut icon']");
-                if (!shortcutIcon) {
-                    shortcutIcon = document.createElement('link');
-                    shortcutIcon.rel = 'shortcut icon';
-                    document.head.appendChild(shortcutIcon);
-                }
-                shortcutIcon.href = logoEscola;
-
-                let appleIcon = document.querySelector("link[rel='apple-touch-icon']");
-                if (!appleIcon) {
-                    appleIcon = document.createElement('link');
-                    appleIcon.rel = 'apple-touch-icon';
-                    document.head.appendChild(appleIcon);
-                }
-                appleIcon.href = logoEscola;
+                // O logo da escola fica só no cabeçalho. A miniatura da aba (favicon) e o
+                // ícone de atalho no celular são sempre o ícone do SisProf, igual para todas
+                // as escolas (definidos no index.html e no manifest).
             } else {
                 headerTitle.textContent = `SisProf - ${nomeEscola}`;
             }
