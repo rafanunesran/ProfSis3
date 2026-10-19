@@ -1,15 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <rect width="512" height="512" rx="96" fill="#2c5282"/>
-  <rect x="112" y="140" width="288" height="256" rx="24" fill="#ffffff"/>
-  <rect x="112" y="140" width="288" height="64" rx="24" fill="#4299e1"/>
-  <rect x="168" y="108" width="28" height="64" rx="14" fill="#2c5282"/>
-  <rect x="316" y="108" width="28" height="64" rx="14" fill="#2c5282"/>
-  <g fill="#2c5282">
-    <rect x="152" y="240" width="48" height="40" rx="8"/>
-    <rect x="232" y="240" width="48" height="40" rx="8"/>
-    <rect x="312" y="240" width="48" height="40" rx="8"/>
-    <rect x="152" y="308" width="48" height="40" rx="8"/>
-    <rect x="232" y="308" width="48" height="40" rx="8" fill="#e53e3e"/>
-    <rect x="312" y="308" width="48" height="40" rx="8"/>
+  <rect width="512" height="512" rx="112" fill="#141417"/><defs><radialGradient id="g" cx="0.3" cy="0.15" r="0.9"><stop offset="0" stop-color="#3a2f12"/><stop offset="1" stop-color="#141417" stop-opacity="0"/></radialGradient></defs><rect width="512" height="512" rx="112" fill="url(#g)"/>
+  <defs>
+    <filter id="d" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4"/></filter>
+    <clipPath id="f"><path d="M11 21h26v12c0 4-6 8-13 8s-13-4-13-8z"/><rect x="40" y="17" width="4" height="15" rx="2"/></clipPath>
+  </defs>
+  <g transform="translate(102.4 102.4) scale(6.4)">
+    <g fill="#f5b301"><path d="M22.2 6.9a4 4 0 0 1 3.6 0l17.4 8.7a2 2 0 0 1 0 3.6l-17.4 8.7a4 4 0 0 1-3.6 0L4.8 19.2a2 2 0 0 1 0-3.6z"/></g>
+    <g fill="rgba(160,158,166,0.62)"><path d="M11 21h26v12c0 4-6 8-13 8s-13-4-13-8z"/><rect x="40" y="17" width="4" height="15" rx="2"/></g>
+    <g clip-path="url(#f)"><g filter="url(#d)" fill="#fbd9a0"><path d="M22.2 6.9a4 4 0 0 1 3.6 0l17.4 8.7a2 2 0 0 1 0 3.6l-17.4 8.7a4 4 0 0 1-3.6 0L4.8 19.2a2 2 0 0 1 0-3.6z"/></g></g>
   </g>
 </svg>
