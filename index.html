@@ -7,15 +7,55 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&display=swap">
-    <link rel="stylesheet" href="styles.css?v=5.4">
+    <link rel="stylesheet" href="styles.css?v=5.5">
     <!-- PWA / iOS (iPhone e iPad) -->
-    <link rel="manifest" href="manifest.webmanifest?v=1">
+    <link rel="manifest" href="manifest.webmanifest?v=2">
     <meta name="theme-color" content="#16171b">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="SisProf">
-    <link rel="apple-touch-icon" href="resources/app-icon.svg">
+    <link rel="apple-touch-icon" href="resources/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="resources/icon-192.png">
+    <script>
+        // Instalar como app (PWA). O Chrome/Edge do Android avisam com
+        // `beforeinstallprompt`; guardamos o aviso e mostramos o botão "Instalar app".
+        // No iPhone/iPad não existe esse aviso: o botão explica o caminho pelo Safari.
+        // A classe vai no <html> para valer também nas telas que o JS redesenha.
+        (function () {
+            var jaInstalado = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+                              window.navigator.standalone === true;
+            var ehIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+                        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            var avisoInstalacao = null;
+            if (!jaInstalado && ehIOS) document.documentElement.classList.add('pode-instalar');
+            window.addEventListener('beforeinstallprompt', function (e) {
+                e.preventDefault();
+                avisoInstalacao = e;
+                document.documentElement.classList.add('pode-instalar');
+            });
+            window.addEventListener('appinstalled', function () {
+                avisoInstalacao = null;
+                document.documentElement.classList.remove('pode-instalar');
+            });
+            window.instalarApp = function () {
+                if (avisoInstalacao) {
+                    avisoInstalacao.prompt();
+                    avisoInstalacao.userChoice.finally(function () { avisoInstalacao = null; });
+                    return;
+                }
+                if (ehIOS) {
+                    alert('Para instalar no iPhone/iPad:\n\n' +
+                          '1. Abra este site no Safari.\n' +
+                          '2. Toque em Compartilhar (o quadrado com a seta para cima).\n' +
+                          '3. Escolha "Adicionar à Tela de Início".');
+                } else {
+                    alert('Para instalar: abra o menu do navegador (⋮) e escolha ' +
+                          '"Instalar app" ou "Adicionar à tela inicial".');
+                }
+            };
+        })();
+    </script>
     <script src="shared.js?v=3.20"></script>
     <!-- Galeria de ícones: troca os emojis do menu, abas, títulos e botões pelo desenho -->
     <script src="icones.js?v=1.4" defer></script>
@@ -44,7 +84,7 @@
     <!-- Assinatura: planos, cobranca mensal no cartao (Mercado Pago) e o portao premium -->
     <script src="assinatura.js?v=1.6.1" defer></script>
     <!-- App Scripts -->
-    <script src="core.js?v=3.42" defer></script>
+    <script src="core.js?v=3.43" defer></script>
     <script src="admin.js?v=3.46.0" defer></script>
     <script src="financeiro.js?v=1.2" defer></script>
     <script src="gestor.js?v=3.33" defer></script>
@@ -105,6 +145,7 @@
                 <span class="auth-link" onclick="solicitarResetSenha()">🔑 Recuperar senha</span>
                 <span class="auth-link" onclick="renderCadastro()">Não tem conta? Cadastre-se</span>
             </div>
+            <button type="button" class="btn btn-secondary btn-instalar-app" onclick="instalarApp()">📲 Instalar app no celular</button>
         </div>
     </div>
 
@@ -119,6 +160,7 @@
                     </div>
                     <div id="headerUserArea">
                         <div class="date-info" id="currentDate"></div>
+                        <button class="btn btn-sm btn-secondary btn-instalar-app" onclick="instalarApp()" title="Instalar o SisProf como app">📲 Instalar</button>
                         <button class="btn btn-sm btn-danger" onclick="logout()">Sair</button>
                     </div>
                 </div>
@@ -456,7 +498,7 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=1').catch(err => console.warn('SW não registrado:', err));
+                navigator.serviceWorker.register('sw.js?v=2').catch(err => console.warn('SW não registrado:', err));
             });
         }
     </script>

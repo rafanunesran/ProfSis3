@@ -3097,3 +3097,15 @@ html[data-tema="ambar-noturno"] .planilha-notas thead .col-faltas-fixa {
     .planilha-notas-box { max-height: none; overflow: visible; }
     .planilha-notas thead tr.planilha-titulos th { position: static; box-shadow: none; }
 }
+
+/* Botão "Instalar app": só aparece quando o navegador permite instalar (ou no iPhone/iPad). */
+.btn-instalar-app {
+    display: none;
+}
+html.pode-instalar .btn-instalar-app {
+    display: inline-block;
+}
+.auth-box .btn-instalar-app {
+    width: 100%;
+    margin-top: 16px;
+}

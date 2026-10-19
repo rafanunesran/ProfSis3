@@ -2,7 +2,7 @@
 // Objetivo: permitir a instalação como app (PWA) no iPhone/iPad e Android e oferecer um
 // "shell" offline básico. Estratégia network-first para evitar servir JS/versões desatualizadas.
 
-const CACHE = 'sisprof-shell-v1';
+const CACHE = 'sisprof-shell-v2';
 const SHELL = ['./', './index.html'];
 
 self.addEventListener('install', (event) => {

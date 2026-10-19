@@ -1453,6 +1453,7 @@ function renderLogin() {
                 <span class="auth-link" onclick="solicitarResetSenha()">🔑 Recuperar senha</span>
                 <span class="auth-link" onclick="renderCadastro()">Não tem conta? Cadastre-se</span>
             </div>
+            <button type="button" class="btn btn-secondary btn-instalar-app" onclick="instalarApp()">📲 Instalar app no celular</button>
             <div style="text-align:center; margin-top:12px;">
                 <a href="termos.html" target="_blank" class="auth-link" style="font-size:12px;">📄 Termos de Uso</a>
             </div>
