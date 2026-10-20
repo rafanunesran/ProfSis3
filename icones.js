@@ -59,6 +59,7 @@ const ICONES_SISPROF = {
     video:        { rotulo: 'Vídeo',         a: '<rect x="4" y="9" width="40" height="30" rx="7"/>', b: '<path d="M19 16.6a2 2 0 0 1 3-1.7l12.5 7.4a2 2 0 0 1 0 3.4L22 33.1a2 2 0 0 1-3-1.7z"/>' },
     video:        { rotulo: 'Vídeo',         a: '<rect x="3" y="11" width="31" height="27" rx="7"/>', b: '<path d="M30 21.5 43 14a1.5 1.5 0 0 1 2.2 1.3v17.4A1.5 1.5 0 0 1 43 34l-13-7.5z"/>' },
     alvo:         { rotulo: 'Na Mosca!',     a: '<circle cx="21" cy="27" r="18"/>', b: '<path d="M21 15a12 12 0 1 1 0 24a12 12 0 1 1 0-24zM21 21a6 6 0 1 0 0 12a6 6 0 1 0 0-12zM21 24a3 3 0 1 1 0 6a3 3 0 1 1 0-6zM22.4 28.4 19.6 25.6 36.6 8.6 39.4 11.4zM34 4.5h9.5V14l-4 4-9.5-9.5z"/>' },
+    atelie:       { rotulo: 'Ateliê',        a: '<path fill-rule="evenodd" d="M23 4C11.4 4 3 12.4 3 23s8.6 19 19 19c2.8 0 4.4-1.5 4.4-3.6 0-1.1-.5-1.9-.5-3 0-1.9 1.5-3.2 3.4-3.2H34c5.3 0 9-3.9 9-9C43 12.3 34.2 4 23 4zM13 20.5a3.5 3.5 0 1 0 0 .01zM21 12a3.5 3.5 0 1 0 0 .01zM12.5 30a3.5 3.5 0 1 0 0 .01z"/>', b: '<path d="M40.6 5.4a3 3 0 0 1 4.2 4.2L31 25.5l-4.4-4.4z"/><path d="M25 23.5l4.6 4.6c-.6 4.8-4.6 8.2-10.6 7.4 2.6-1.8 2.2-4.6 3-7 .6-2 1.6-3.8 3-5z"/>' },
     imagem:       { rotulo: 'Imagem',        a: '<circle cx="33" cy="14" r="9"/>', b: '<path d="M16.3 11.6a2 2 0 0 1 3.4 0L29 27.4l3.3-4.8a2 2 0 0 1 3.3 0l8 12.3a2 2 0 0 1-1.7 3.1H6.1a2 2 0 0 1-1.7-3z"/>' },
 
     // ---- Dados e cópia de segurança ----
@@ -88,7 +89,7 @@ const EMOJI_ICONE = {
     '☁️': 'nuvem', '☁': 'nuvem', '⬇️': 'baixar', '⬆️': 'importar', '📤': 'importar', '📥': 'baixar',
     '🖨️': 'imprimir', '🖨': 'imprimir', '🗑️': 'lixeira', '🗑': 'lixeira', '✏️': 'editar', '✏': 'editar',
     '🎨': 'tema', '📱': 'celular', '🔒': 'seguranca', '🔐': 'seguranca', '🛟': 'seguranca',
-    '🧑‍🎓': 'estudante', '👨‍🎓': 'estudante', '👩‍🎓': 'estudante', '📈': 'relatorio', '📋': 'historico', '🎯': 'alvo'
+    '🧑‍🎓': 'estudante', '👨‍🎓': 'estudante', '👩‍🎓': 'estudante', '📈': 'relatorio', '📋': 'historico', '🎯': 'alvo', '🖌️': 'atelie', '🖌': 'atelie'
 };
 
 (function () {

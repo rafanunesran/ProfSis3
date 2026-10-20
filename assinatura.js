@@ -64,6 +64,7 @@ const PLANOS_SISPROF = {
             'Ferramentas: poster de parede em varias folhas A4, sem enviar nada',
             'Ferramentas: editar video (cortar, juntar, comprimir, GIF) sem enviar o video',
             'Ferramentas: Na Mosca!, quiz ao vivo em sala com PIN, placar e relatorio',
+            'Ferramentas: Ateliê, editor de cartazes, certificados e convites, com IA e certificado em lote',
             'Prioridade no suporte e nas novidades'
         ]
     }

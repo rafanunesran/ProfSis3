@@ -7,7 +7,7 @@
 //
 // O que este teste cobre:
 //   1. o botao do menu virou "Ferramentas" nos quatro perfis, e a tela nasce sob demanda;
-//   2. as cinco abas existem (PDF, IMG, Poster, Video, Na Mosca!), so' uma aparece por vez, trocar
+//   2. as seis abas existem (PDF, IMG, Poster, Video, Na Mosca!, Ateliê), so' uma aparece por vez, trocar
 //      de aba funciona, e o nome antigo showFerramentasTab('ampliar') cai na aba IMG,
 //      direto na ferramenta "Aumentar resolucao";
 //   3. o atalho antigo showScreen('pdf') continua caindo na aba de PDF, com o catalogo
@@ -189,8 +189,8 @@ const DESENHAR_PNG = ({ largura, altura }) => {
         return r;
     });
     ok('a tela de Ferramentas nasceu e ficou ativa', abas.criada && abas.ativa);
-    ok('tem as cinco abas: PDF, IMG, Poster, Video e Na Mosca!',
-       JSON.stringify(abas.abas) === '["pdf","img","poster","video","quiz"]', abas.rotulos.join(' | '));
+    ok('tem as seis abas: PDF, IMG, Poster, Video, Na Mosca! e Ateliê',
+       JSON.stringify(abas.abas) === '["pdf","img","poster","video","quiz","atelie"]', abas.rotulos.join(' | '));
     ok('a aba de imagem se chama IMG', /IMG/.test(abas.rotulos[1] || ''), abas.rotulos[1]);
     ok('so uma aba aparece por vez', abas.umaVisivelNoInicio.length === 1 && abas.depoisDeTrocar.length === 1);
     ok('abre na aba de PDF', abas.umaVisivelNoInicio[0] === 'tabFerramentasPdf');

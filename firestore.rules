@@ -451,6 +451,14 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.resource.data.donoUid == request.auth.uid;
     }
 
+    // ATELIÊ: as artes do professor (atelie.js). Só o dono lê e escreve; o dono não muda.
+    match /artes/{arteId} {
+      allow read, delete: if isSignedIn() && resource.data.donoUid == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.donoUid == request.auth.uid
+                    && request.resource.data.donoUid == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.donoUid == request.auth.uid;
+    }
+
     // A sala ao vivo. O ALUNO NÃO TEM CONTA (entra em jogar.html com PIN e apelido),
     // então aqui há leitura e escrita sem sessão — e só aqui, e só no formato certo.
     //   - A sala é lida pelo PIN (get), nunca listada: ninguém varre PINs.
