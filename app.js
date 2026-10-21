@@ -737,7 +737,10 @@ function renderProfessorPanel() {
         <button onclick="showScreen('aeeVisaoGeral', event)"><span class="icon">🌟</span><span class="label">Painel AEE</span></button>
         <button onclick="showScreen('biblioteca', event)"><span class="icon">📚</span><span class="label">Biblioteca</span></button>
         <button onclick="showScreen('ferramentas', event)"><span class="icon">🧰</span><span class="label">Ferramentas</span></button>
+        <button onclick="showScreen('tutoriais', event)"><span class="icon">📘</span><span class="label">Tutoriais</span></button>
     `;
+    // Botão "?" no topo: tour da tela atual (tutoriais.js). Por enquanto só no perfil professor.
+    if (typeof montarBotaoAjuda === 'function') montarBotaoAjuda();
     renderDashboard();
     showScreen('dashboard');
 }
@@ -814,6 +817,8 @@ function showScreen(screenId, evt) {
     // como a Biblioteca — ver ferramentas.js. O portao do plano fica no clique de cada
     // ferramenta, e nao aqui: o catalogo tem de ser visivel para quem ainda nao assina.
     if (screenId === 'ferramentas' && typeof renderFerramentas === 'function') renderFerramentas();
+    // Tutoriais (manuais e passo a passo do Iniciante), criada sob demanda — ver tutoriais.js.
+    if (screenId === 'tutoriais' && typeof renderTutoriais === 'function') renderTutoriais();
 }
 
 function showModal(modalId) {

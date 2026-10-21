@@ -19,7 +19,7 @@
         { id: 'dia', nome: 'Dia a dia', telas: ['dashboard', 'turmas', 'tutoria', 'ocorrenciasGestor', 'tutoriasGestor'] },
         { id: 'reg', nome: 'Registros', telas: ['documentos', 'registrosProfessor', 'registrosGestor', 'aeeVisaoGeral'] },
         { id: 'esc', nome: 'Escola', telas: ['horariosGestor', 'escolaGestor'] },
-        { id: 'rec', nome: 'Recursos', telas: ['biblioteca', 'ferramentas'] }
+        { id: 'rec', nome: 'Recursos', telas: ['biblioteca', 'ferramentas', 'tutoriais'] }
     ];
     const NOMES_TELA = {
         turmaDetalhe: 'Turma', tutoradoDetalhe: 'Tutorado', estudanteDetalhe: 'Estudante',
