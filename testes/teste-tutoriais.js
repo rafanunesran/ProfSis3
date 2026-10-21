@@ -108,7 +108,15 @@ const ESTADO_TOUR = () => {
             turmas: [{ id: 5, nome: '6º A', disciplina: 'Ciências', turno: 'Manhã' }],
             configBimestres: [],
             estudantes: [{ id: 1, id_turma: 5, nome_completo: 'Ana Souza', status: 'Ativo' },
-                         { id: 2, id_turma: 5, nome_completo: 'Bruno Lima', status: 'Ativo' }]
+                         { id: 2, id_turma: 5, nome_completo: 'Bruno Lima', status: 'Ativo' },
+                         { id: 3, id_turma: 5, nome_completo: 'Caio Reis', status: 'Ativo' }],
+            trabalhos: [{ id: 70, id_turma: 5, titulo: 'Prova 1', peso: 2, tipo: 'comum', bimestre: 1 }],
+            notas: [{ id: 'n1', id_trabalho: 70, id_estudante: 1, valor: '8' }],
+            registrosAula: [{ id: 80, id_turma: 5, data: '2026-10-19', conteudo: 'Frações: introdução' }],
+            atrasos: [{ id: 81, id_turma: 5, id_estudante: 2, data: new Date().toISOString().slice(0, 10) }],
+            presencas: [{ id: 'p1', id_estudante: 3, data: new Date().toISOString().slice(0, 10), status: 'falta' }],
+            compensacoes: [{ id: 'c1', id_turma: 5, id_estudante: 3, mes_referencia: new Date().getMonth(), ano_referencia: new Date().getFullYear(), atividade: 'Lista 3', qtd_faltas: 1, peso_faltas: 1, status: 'pendente', historico: [] }],
+            ocorrencias: [{ id: 90, id_turma: 5, ids_estudantes: [2], data: '2026-10-19', relato: 'Conversa durante a explicação.', tipo: 'rapida', status: 'pendente' }]
         });
         window.dadosCarregados = true;
         currentViewMode = 'professor';
@@ -159,7 +167,8 @@ const ESTADO_TOUR = () => {
         };
     });
     ok('a tela abre ativa', tela.ativa);
-    ok('tem as abas Iniciante, Páginas e Ferramentas', /Iniciante/.test(tela.abas[0]) && /Páginas/.test(tela.abas[1]) && /Ferramentas/.test(tela.abas[2]), tela.abas.join(' | '));
+    ok('tem as abas Iniciante, Páginas, Dentro da turma e Ferramentas', /Iniciante/.test(tela.abas[0]) && /Páginas/.test(tela.abas[1]) &&
+       /Dentro da turma/.test(tela.abas[2]) && /Ferramentas/.test(tela.abas[3]), tela.abas.join(' | '));
     ok('o Iniciante tem 10 passos, cada um com "Mostrar na tela"', tela.itens === 10 && tela.botoesVer === 10, String(tela.itens));
     ok('o Iniciante cobre turmas, agenda, abas da turma, Estagiário e Biblioteca',
        ['turmas', 'agenda', 'abas', 'Estagiário', 'Biblioteca'].every(p => tela.titulos.some(t => t.indexOf(p) !== -1)), tela.titulos.join(' | '));
@@ -181,6 +190,23 @@ const ESTADO_TOUR = () => {
     await page.click('#tutNav .tut-aba[data-aba="paginas"]');
     const pags = await page.evaluate(() => Array.from(document.querySelectorAll('#tutConteudo .tut-item-tit')).map(e => e.textContent));
     ok('a aba Páginas tem um manual por página', ['Início', 'Turmas', 'Dentro da turma', 'Tutoria', 'Documentos', 'Estagiário', 'Registros', 'Painel AEE', 'Biblioteca', 'Perfil'].every(n => pags.some(t => t.indexOf(n) !== -1)), String(pags.length));
+    await page.click('#tutNav .tut-aba[data-aba="turma"]');
+    const turmaMan = await page.evaluate(() => Array.from(document.querySelectorAll('#tutConteudo .tut-item')).map(d => ({
+        tit: d.querySelector('.tut-item-tit').textContent,
+        secoes: d.querySelectorAll('.tut-secao').length,
+        itens: d.querySelectorAll('.tut-passos li').length,
+        ver: !!d.querySelector('.tut-ver')
+    })));
+    ok('a aba "Dentro da turma" tem um manual por aba (9) + visão geral + ficha',
+       ['Como a turma funciona', 'Estudantes', 'Chamada', 'Registros', 'Atrasos', 'Trabalhos', 'Compensações', 'Caderno', 'Ocorrências', 'Mapeamento', 'Ficha'].every(n => turmaMan.some(m => m.tit.indexOf(n) !== -1)), turmaMan.map(m => m.tit).join(' | '));
+    ok('cada manual da turma é detalhado (seções, vários itens e "Mostrar na tela")',
+       turmaMan.every(m => m.secoes >= 2 && m.itens >= 4 && m.ver), JSON.stringify(turmaMan.filter(m => !(m.secoes >= 2 && m.itens >= 4 && m.ver))));
+    await foto(page, 'tut-1b-turma');
+    await page.evaluate(() => { const d = document.querySelector('#tutConteudo .tut-ver[data-item="t-chamada"]').closest('details'); d.open = true; d.scrollIntoView(); });
+    await foto(page, 'tut-1c-manual-chamada');
+    await page.fill('#tutBusca', 'rubrica');
+    const rub = await page.evaluate(() => Array.from(document.querySelectorAll('#tutConteudo .tut-item-tit')).map(e => e.textContent));
+    ok('a busca entra nas seções do manual ("rubrica" -> Trabalhos)', rub.some(t => /Trabalhos/.test(t)), rub.join(' | '));
     await page.fill('#tutBusca', 'certificado');
     const busca = await page.evaluate(() => Array.from(document.querySelectorAll('#tutConteudo .tut-item-tit')).map(e => e.textContent));
     ok('a busca acha manual de outra aba ("certificado" -> Ateliê)', busca.some(t => /Ateliê/.test(t)), busca.join(' | '));
@@ -227,7 +253,8 @@ const ESTADO_TOUR = () => {
     // -----------------------------------------------------------------------
     await page.evaluate(async () => { await abrirTurma(5); showTurmaTab('trabalhos'); });
     await page.waitForTimeout(400);
-    await page.click('#btnAjudaTour');
+    // o tour das nove abas (pelos Tutoriais ou pelo fim do "?" de uma aba)
+    await page.evaluate(() => iniciarTour('turmaDetalhe'));
     await page.waitForTimeout(500);
     const abasVistas = [];
     for (let i = 0; i < 20; i++) {
@@ -251,6 +278,48 @@ const ESTADO_TOUR = () => {
     ok('no fim o tour fecha e devolve a aba em que a pessoa estava (Trabalhos)', !depois.aberto && depois.vis.join() === 'tabTrabalhos', JSON.stringify(depois));
 
     // -----------------------------------------------------------------------
+    console.log('\n4b. O "?" com uma aba aberta explica aquela aba em detalhe');
+    // -----------------------------------------------------------------------
+    const porAba = {};
+    for (const tab of ['estudantes', 'chamada', 'registros', 'atrasos', 'trabalhos', 'compensacoes', 'caderno', 'ocorrencias', 'mapeamento']) {
+        await page.evaluate((t) => { showTurmaTab(t); }, tab);
+        await page.waitForTimeout(500);
+        await page.click('#btnAjudaTour');
+        await page.waitForTimeout(900);
+        const titulos = [];
+        let tabNoFim = null, temFinal = false;
+        for (let i = 0; i < 20; i++) {
+            st = await page.evaluate(ESTADO_TOUR);
+            if (!st.aberto) break;
+            titulos.push(st.titulo);
+            if (tab === 'chamada' && i === 3) await foto(page, 'tut-3b-aba-chamada');
+            if (tab === 'trabalhos' && i === 4) await foto(page, 'tut-3c-aba-trabalhos');
+            const prox = await page.$('.tour-balao [data-acao="proximo"]');
+            if (!prox) { temFinal = !!(await page.$('.tour-balao [data-acao="final"]')); break; }
+            await prox.click();
+            await page.waitForTimeout(250);
+        }
+        tabNoFim = await page.evaluate(() => Array.from(document.querySelectorAll('.turma-tab')).filter(t => t.style.display !== 'none').map(t => t.id).join());
+        porAba[tab] = { n: titulos.length, primeiro: titulos[0], temFinal, conta: st.conta };
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(200);
+        ok('aba ' + tab + ': o "?" explica a aba aberta, em ' + titulos.length + ' passos', titulos.length >= 4 && /Aba/.test(st.conta || '') && temFinal &&
+           tabNoFim === 'tab' + tab.charAt(0).toUpperCase() + tab.slice(1), JSON.stringify(porAba[tab]) + ' ' + tabNoFim);
+    }
+    // o botão do fim leva ao tour das nove abas
+    await page.evaluate(() => showTurmaTab('caderno'));
+    await page.waitForTimeout(300);
+    await page.click('#btnAjudaTour');
+    await page.waitForTimeout(800);
+    for (let i = 0; i < 15; i++) { const prox = await page.$('.tour-balao [data-acao="proximo"]'); if (!prox) break; await prox.click(); await page.waitForTimeout(200); }
+    await page.click('.tour-balao [data-acao="final"]');
+    await page.waitForTimeout(500);
+    st = await page.evaluate(ESTADO_TOUR);
+    ok('"Ver todas as abas" no fim abre o tour das nove abas', st.aberto && /Dentro da turma/.test(st.conta), st.conta);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+
+    // -----------------------------------------------------------------------
     console.log('\n5. Todo passo de todo tour aponta para algo que existe');
     // -----------------------------------------------------------------------
     // Passos que, com estes dados de teste, de fato não têm o que mostrar.
@@ -271,7 +340,7 @@ const ESTADO_TOUR = () => {
                 if (!p.alvo) continue;
                 const el = typeof p.alvo === 'function' ? p.alvo() : document.querySelector(p.alvo);
                 const rr = el && el.getBoundingClientRect();
-                if (!el || rr.width < 2 || rr.height < 2) faltando.push(p.titulo);
+                if ((!el || rr.width < 2 || rr.height < 2) && !p.opcional) faltando.push(p.titulo);
             }
             if (preparo && preparo.fechar) preparo.fechar();
             r[id] = { faltando };
