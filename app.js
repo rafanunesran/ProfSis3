@@ -436,11 +436,6 @@ async function abrirModalPerfil() {
             <a href="documentacao.html" target="_blank" class="btn btn-sm btn-secondary" style="width:100%; display:block; text-align:center; text-decoration:none; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📖 Abrir Documentação</a>
         </div>
         <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cdd5e1;">
-            <h4 style="color:#1b4488; margin-bottom:5px; font-size:14px;">📱 App Android (APK)</h4>
-            <p style="font-size:11px; color:#5f6b7f; margin-bottom:10px;">Instala o ProfSis3 no celular. É o mesmo ProfSis do navegador, em formato de aplicativo.</p>
-            <button class="btn btn-sm btn-info" onclick="baixarApkAndroid()" style="width:100%; font-weight:bold; padding:10px; border-radius:4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">⬇️ Baixar APK</button>
-        </div>
-        <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cdd5e1;">
             <h4 style="color:#1b4488; margin-bottom:5px; font-size:14px;">🔒 Sistemas da SEDUC</h4>
             <p style="font-size:11px; color:#5f6b7f; margin-bottom:0;">O ProfSis3 não possui extensão, integração ou automação com a Secretaria Escolar Digital / Sala do Futuro. O lançamento nos sistemas da SEDUC é sempre feito manualmente pelo profissional, no ambiente oficial da Secretaria.</p>
         </div>
@@ -1888,29 +1883,6 @@ function enriquecerRegistrosComNome(registros, estudantesGestor) {
         return r;
     });
 }
-
-// Baixa o APK do app Android do ProfSis3 (WebView do próprio ProfSis, sem qualquer acesso a
-// sistemas da SEDUC - ver app-android/), servido do MESMO domínio do site (GitHub Pages,
-// gerado a cada deploy por .github/workflows/deploy.yml). Importante: NÃO usar o link direto
-// do GitHub Releases aqui - é cross-origin (github.com) e alguns navegadores mobile mais
-// simples (ex: Lemur Browser) travam no meio do download por causa da cadeia de
-// redirecionamento assinada.
-window.baixarApkAndroid = function() {
-    const urlApp = window.location.href.split('?')[0].split('#')[0];
-    const baseUrl = urlApp.substring(0, urlApp.lastIndexOf('/') + 1);
-    const apkUrl = baseUrl + 'app-android/dist/profsis3-debug.apk?nocache=' + Date.now();
-
-    if (!confirm('Isso vai baixar o APK do app ProfSis3 para Android (fora da Play Store).\\n\\nDeseja prosseguir?')) return;
-
-    const a = document.createElement('a');
-    a.href = apkUrl;
-    a.download = 'profsis3.apk';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-
-    alert('Baixando profsis3.apk\\n\\nCOMO INSTALAR:\\n1. Abra o arquivo baixado (pode precisar permitir "instalar apps de fontes desconhecidas" na primeira vez).\\n2. Conclua a instalação normalmente.\\n3. Abra o app "ProfSis3" - ele abre direto no ProfSis.\\n\\nDica: de vez em quando baixe de novo para pegar uma versão mais recente (o APK ainda não se atualiza sozinho).');
-};
 
 // Extrai um código "série+letra" (ex: "8C") do nome da turma, tanto do texto cru da SED
 // ("8º Ano C Integral 9H Anual") quanto do nome local abreviado ("8A", "8C"...).
