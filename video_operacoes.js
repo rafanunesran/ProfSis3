@@ -796,7 +796,10 @@ function ehLinkDeArquivo(url) {
 }
 
 function validarLink(texto) {
-    const t = String(texto || '').trim();
+    let t = String(texto || '').trim();
+    // Link copiado sem o comeco ("youtube.com/watch?v=..." ou "www.site.com/..."):
+    // completa com https:// em vez de recusar.
+    if (t && !/^[a-z][a-z0-9+.-]*:\/\//i.test(t) && /^[^\s\/:]+\.[a-z]{2,}([\/?#:]|$)/i.test(t)) t = 'https://' + t.replace(/^\/+/, '');
     let u;
     try { u = new URL(t); } catch (_) { throw new Error('Isso nao parece um link. Cole o endereco completo, comecando com https://'); }
     if (!/^https?:$/.test(u.protocol)) throw new Error('O link precisa comecar com http:// ou https://');

@@ -340,6 +340,7 @@ const GRAVAR_VIDEO = async ({ segundos, largura, altura, comSom }) => {
         r.bloqueado = await tentar({ link: 'https://bloqueado.teste/filme.mp4' });
         r.semServidor = await tentar({ link: 'https://site.teste/watch?v=abc' });
         r.naoELink = await tentar({ link: 'isso nao e link' });
+        r.semHttps = [V.validarLink('youtube.com/watch?v=abc&pp=x%3D'), V.validarLink(' www.site.teste/v/1 ')];
         window.PROFSIS_VIDEO_SERVIDORES = [{ url: 'https://servidor.teste', chave: 'segredo' }];
         r.pelaApi = await tentar({ link: 'https://site.teste/watch?v=abc', qualidade: '480' });
         r.privado = await tentar({ link: 'https://site.teste/privado/1' });
@@ -360,6 +361,8 @@ const GRAVAR_VIDEO = async ({ segundos, largura, altura, comSom }) => {
     ok('sem servidor configurado: explica, sem citar plataforma', /ainda n[aã]o est/.test(link.semServidor.erro || '') &&
        !/youtube|facebook|instagram/i.test(link.semServidor.erro || ''), link.semServidor.erro);
     ok('texto que nao e link e recusado', /nao parece um link/.test(link.naoELink.erro || ''), link.naoELink.erro);
+    ok('link sem https:// e completado', link.semHttps[0] === 'https://youtube.com/watch?v=abc&pp=x%3D' &&
+       link.semHttps[1] === 'https://www.site.teste/v/1', JSON.stringify(link.semHttps));
     ok('pelo servidor: resolve e baixa com o nome certo', !link.pelaApi.erro && link.pelaApi.nome === 'aula_gravada.webm' &&
        link.pelaApi.bytes === video.length, JSON.stringify(link.pelaApi));
     ok('o servidor recebeu o link, a qualidade e a chave', pedidosAoServidor.length >= 1 &&
