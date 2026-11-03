@@ -346,6 +346,172 @@ function tarjaRegiao(img, ret, cor) {
     return saida;
 }
 
+// ---------------------------------------------------------------------------
+// Remover marca d'agua (ou carimbo, data da camera, logotipo do canto)
+// ---------------------------------------------------------------------------
+// O professor marca um retangulo; o que esta' dentro e' trocado pelo que esta' em volta.
+// A conta e' a de "preencher o buraco" (inpainting) em piramide: diminui a imagem ate' o
+// buraco sumir, e na volta cada nivel parte do nivel menor e alisa so' os pixels do
+// buraco pela media dos vizinhos. O resultado casa com a cor de todas as bordas.
+//   metodo 'suave'   so' o preenchimento liso (bom para fundo liso, ceu, parede, papel);
+//          'textura' preenchimento liso + o "granulado" copiado do lado (bom para foto).
+//   soMarca          dentro do retangulo, troca so' o que destoa do fundo (as letras da
+//                    marca), e deixa o resto como estava. Bom para marca em fundo liso.
+//   tolerancia       0..100: quanto o pixel precisa destoar para contar como marca.
+//   margem           px a mais em volta de cada retangulo (a sombra da letra).
+
+// Preenche, dentro de uma janela (Float32 RGBA), os pixels com mascara=1.
+function preencherBuraco(d, L, A, mascara) {
+    let tem = false;
+    for (let i = 0; i < mascara.length; i++) if (mascara[i]) { tem = true; break; }
+    if (!tem) return;
+    if (L > 1 || A > 1) {
+        // Nivel menor: cada bloco 2x2 vira a media dos pixels conhecidos dele.
+        const l2 = Math.max(1, Math.ceil(L / 2)), a2 = Math.max(1, Math.ceil(A / 2));
+        const d2 = new Float32Array(l2 * a2 * 4), m2 = new Uint8Array(l2 * a2);
+        for (let y = 0; y < a2; y++) for (let x = 0; x < l2; x++) {
+            let n = 0, r = 0, g = 0, b = 0, al = 0;
+            for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+                const sx = x * 2 + dx, sy = y * 2 + dy;
+                if (sx >= L || sy >= A) continue;
+                const i = sy * L + sx;
+                if (mascara[i]) continue;
+                r += d[i * 4]; g += d[i * 4 + 1]; b += d[i * 4 + 2]; al += d[i * 4 + 3]; n++;
+            }
+            const j = y * l2 + x;
+            if (n) { d2[j * 4] = r / n; d2[j * 4 + 1] = g / n; d2[j * 4 + 2] = b / n; d2[j * 4 + 3] = al / n; }
+            else m2[j] = 1;
+        }
+        // Tudo buraco (nenhum pixel conhecido): nao ha' de onde tirar cor.
+        if (l2 * a2 === L * A) return;
+        preencherBuraco(d2, l2, a2, m2);
+        // Volta: o buraco comeca com a cor do nivel menor (bilinear).
+        for (let y = 0; y < A; y++) for (let x = 0; x < L; x++) {
+            const i = y * L + x;
+            if (!mascara[i]) continue;
+            const fx = Math.min(l2 - 1, Math.max(0, (x - 0.5) / 2)), fy = Math.min(a2 - 1, Math.max(0, (y - 0.5) / 2));
+            const x0 = Math.floor(fx), y0 = Math.floor(fy);
+            const x1 = Math.min(l2 - 1, x0 + 1), y1 = Math.min(a2 - 1, y0 + 1);
+            const tx = fx - x0, ty = fy - y0;
+            for (let c = 0; c < 4; c++) {
+                const v00 = d2[(y0 * l2 + x0) * 4 + c], v10 = d2[(y0 * l2 + x1) * 4 + c];
+                const v01 = d2[(y1 * l2 + x0) * 4 + c], v11 = d2[(y1 * l2 + x1) * 4 + c];
+                d[i * 4 + c] = (v00 * (1 - tx) + v10 * tx) * (1 - ty) + (v01 * (1 - tx) + v11 * tx) * ty;
+            }
+        }
+    }
+    // Alisa so' o buraco: cada pixel vira a media dos 4 vizinhos (algumas voltas).
+    const lista = [];
+    for (let i = 0; i < mascara.length; i++) if (mascara[i]) lista.push(i);
+    for (let volta = 0; volta < 8; volta++) {
+        for (let k = 0; k < lista.length; k++) {
+            const i = lista[k], x = i % L, y = (i - x) / L;
+            let n = 0, r = 0, g = 0, b = 0, al = 0;
+            const viz = [x > 0 ? i - 1 : -1, x < L - 1 ? i + 1 : -1, y > 0 ? i - L : -1, y < A - 1 ? i + L : -1];
+            for (let v = 0; v < 4; v++) {
+                const j = viz[v];
+                if (j < 0) continue;
+                r += d[j * 4]; g += d[j * 4 + 1]; b += d[j * 4 + 2]; al += d[j * 4 + 3]; n++;
+            }
+            if (n) { d[i * 4] = r / n; d[i * 4 + 1] = g / n; d[i * 4 + 2] = b / n; d[i * 4 + 3] = al / n; }
+        }
+    }
+}
+
+// O "granulado" de uma faixa vizinha (pixel menos a media local), espelhado para dentro
+// do buraco. Some a cor: so' a textura vem do lado; a cor e' a do preenchimento liso.
+function texturaDoLado(img, r, janela) {
+    const L = img.largura, A = img.altura;
+    const deitado = r.largura >= r.altura;
+    const tam = deitado ? r.altura : r.largura;
+    // Escolhe o lado com mais espaco para copiar.
+    let lado;
+    if (deitado) lado = (r.y >= tam || r.y >= A - (r.y + r.altura)) ? 'cima' : 'baixo';
+    else lado = (r.x >= tam || r.x >= L - (r.x + r.largura)) ? 'esquerda' : 'direita';
+    const raio = Math.max(2, Math.round(tam / 6));
+    const borrada = caixaSeparavel(caixaSeparavel(janela.img, raio), raio);
+    const detalhe = new Float32Array(r.largura * r.altura * 4);
+    for (let y = 0; y < r.altura; y++) for (let x = 0; x < r.largura; x++) {
+        let sx = r.x + x, sy = r.y + y;
+        if (lado === 'cima') sy = r.y - 1 - (y % Math.max(1, r.y));
+        else if (lado === 'baixo') sy = r.y + r.altura + (y % Math.max(1, A - r.y - r.altura));
+        else if (lado === 'esquerda') sx = r.x - 1 - (x % Math.max(1, r.x));
+        else sx = r.x + r.largura + (x % Math.max(1, L - r.x - r.largura));
+        sx = limitar(sx, 0, L - 1); sy = limitar(sy, 0, A - 1);
+        const jx = sx - janela.x, jy = sy - janela.y;
+        if (jx < 0 || jy < 0 || jx >= janela.img.largura || jy >= janela.img.altura) continue;
+        const o = (sy * L + sx) * 4, ob = (jy * janela.img.largura + jx) * 4, od = (y * r.largura + x) * 4;
+        for (let c = 0; c < 3; c++) detalhe[od + c] = img.dados[o + c] - borrada.dados[ob + c];
+    }
+    return detalhe;
+}
+
+function removerMarcaRegioes(img, rets, op) {
+    op = op || {};
+    const saida = copiar(img);
+    const L = img.largura, A = img.altura;
+    const margem = Math.max(0, Math.round(Number(op.margem) || 0));
+    const tol = limitar(op.tolerancia == null ? 35 : Number(op.tolerancia), 0, 100) * 2.55;
+    (rets || []).forEach(ret => {
+        const r = normalizarRet(img, ret && {
+            x: ret.x - margem, y: ret.y - margem, largura: ret.largura + margem * 2, altura: ret.altura + margem * 2 });
+        if (!r) return;
+        // Janela de trabalho: o retangulo com uma folga em volta (de onde vem a cor).
+        // Com textura, a folga cobre tambem a faixa vizinha de onde o granulado e' copiado.
+        const folga = Math.max(6, Math.round(Math.min(r.largura, r.altura) * (op.metodo === 'textura' ? 1.2 : 0.6)) + 2);
+        const jx = Math.max(0, r.x - folga), jy = Math.max(0, r.y - folga);
+        const jl = Math.min(L, r.x + r.largura + folga) - jx, ja = Math.min(A, r.y + r.altura + folga) - jy;
+        const base = recortar(saida, jx, jy, jl, ja);
+        const dentro = (x, y) => x >= r.x - jx && x < r.x - jx + r.largura && y >= r.y - jy && y < r.y - jy + r.altura;
+
+        let mascara = new Uint8Array(jl * ja);
+        for (let y = 0; y < ja; y++) for (let x = 0; x < jl; x++) if (dentro(x, y)) mascara[y * jl + x] = 1;
+        // Se o retangulo cobre a imagem toda, nao ha' de onde tirar cor.
+        if (r.largura >= L && r.altura >= A) return;
+
+        let d = Float32Array.from(base.dados);
+        preencherBuraco(d, jl, ja, mascara);
+
+        if (op.soMarca) {
+            // O preenchimento liso e' o "fundo esperado". Fica marcado so' o que destoa dele.
+            const nova = new Uint8Array(jl * ja);
+            for (let i = 0; i < mascara.length; i++) {
+                if (!mascara[i]) continue;
+                let dif = 0;
+                for (let c = 0; c < 3; c++) dif = Math.max(dif, Math.abs(base.dados[i * 4 + c] - d[i * 4 + c]));
+                if (dif > tol) nova[i] = 1;
+            }
+            // Engorda a mascara 2 px (a borda da letra, meio misturada com o fundo).
+            for (let volta = 0; volta < 2; volta++) {
+                const ant = nova.slice();
+                for (let y = 0; y < ja; y++) for (let x = 0; x < jl; x++) {
+                    const i = y * jl + x;
+                    if (ant[i] || !dentro(x, y)) continue;
+                    if ((x > 0 && ant[i - 1]) || (x < jl - 1 && ant[i + 1]) || (y > 0 && ant[i - jl]) || (y < ja - 1 && ant[i + jl])) nova[i] = 1;
+                }
+            }
+            mascara = nova;
+            d = Float32Array.from(base.dados);
+            preencherBuraco(d, jl, ja, mascara);
+        }
+
+        const detalhe = op.metodo === 'textura' ? texturaDoLado(saida, r, { x: jx, y: jy, img: base }) : null;
+        for (let y = 0; y < ja; y++) for (let x = 0; x < jl; x++) {
+            const i = y * jl + x;
+            if (!mascara[i]) continue;
+            const o = ((y + jy) * L + (x + jx)) * 4;
+            let add = [0, 0, 0];
+            if (detalhe) {
+                const od = ((y + jy - r.y) * r.largura + (x + jx - r.x)) * 4;
+                add = [detalhe[od], detalhe[od + 1], detalhe[od + 2]];
+            }
+            for (let c = 0; c < 3; c++) saida.dados[o + c] = limitar(Math.round(d[i * 4 + c] + add[c]), 0, 255);
+            saida.dados[o + 3] = limitar(Math.round(d[i * 4 + 3]), 0, 255);
+        }
+    });
+    return saida;
+}
+
 function normalizarRet(img, ret) {
     if (!ret) return null;
     const x0 = limitar(Math.round(Math.min(ret.x, ret.x + ret.largura)), 0, img.largura);
@@ -701,7 +867,7 @@ function extensaoDoTipo(tipo) {
 
 const IMGOPS = {
     novaImagem, copiar, girar, espelhar, recortar, calcularTamanho, redimensionar,
-    FILTROS, ajustar, desfocarRegiao, pixelarRegiao, tarjaRegiao, corDoFundo, removerFundo,
+    FILTROS, ajustar, desfocarRegiao, pixelarRegiao, tarjaRegiao, removerMarcaRegioes, corDoFundo, removerFundo,
     achatar, temTransparencia, POSICOES, posicionar, codificarGif, codificarBmp,
     formatarTamanho, nomeDeSaida, extensaoDoTipo, corDeHex
 };

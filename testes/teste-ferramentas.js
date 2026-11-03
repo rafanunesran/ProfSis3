@@ -484,8 +484,8 @@ const DESENHAR_PNG = ({ largura, altura }) => {
         };
     });
     const esperadas = ['comprimir', 'redimensionar', 'cortar', 'paraJpg', 'deJpg', 'editor', 'ampliar',
-                       'removerFundo', 'marcaDagua', 'meme', 'girar', 'htmlImagem', 'desfocarRosto'];
-    ok('o catalogo tem as 13 ferramentas do iLoveIMG', JSON.stringify(catalogo.ids) === JSON.stringify(esperadas),
+                       'removerFundo', 'marcaDagua', 'removerMarca', 'meme', 'girar', 'htmlImagem', 'desfocarRosto'];
+    ok('o catalogo tem as 14 ferramentas de imagem', JSON.stringify(catalogo.ids) === JSON.stringify(esperadas),
        catalogo.ids.join(', '));
     ok('com o aviso de privacidade', catalogo.privacidade);
 
@@ -665,6 +665,35 @@ const DESENHAR_PNG = ({ largura, altura }) => {
     ok('desfocar arrastando: a area marcada vira tarja preta', (tarja.marcas.areas || []).length === 1 &&
        tarja.r.px[0][0] < 10 && tarja.r.px[0][1] < 10, tarja.r.erro || tarja.r.px[0].join(','));
     ok('e fora dela nada muda', tarja.r.px[2][0] > 200, tarja.r.px[2].join(','));
+
+    // Remover marca d'agua: o circulo vermelho do desenho faz o papel da marca. Arrastando
+    // sobre ele, o vermelho vira o branco em volta; fora da area, nada muda.
+    const semMarcaDagua = await page.evaluate(async () => { imgAbrir('removerMarca'); await imgExecutar(); return imgEstado(); });
+    ok("remover marca d'agua sem marcar nada: pede para marcar", semMarcaDagua.resultados.length === 0 && /Marque/.test(semMarcaDagua.erro), semMarcaDagua.erro);
+    await page.waitForTimeout(200);
+    await page.locator('#imgPreviaCanvas').scrollIntoViewIfNeeded();
+    const caixa3 = await page.locator('#imgPreviaCanvas').boundingBox();
+    await page.mouse.move(caixa3.x + caixa3.width * 0.55, caixa3.y + caixa3.height * 0.42);
+    await page.mouse.down();
+    await page.mouse.move(caixa3.x + caixa3.width * 0.97, caixa3.y + caixa3.height * 0.97, { steps: 5 });
+    await page.mouse.up();
+    const limpa = await page.evaluate(async () => {
+        imgDefinir('metodo', 'suave');
+        await imgExecutar();
+        return { r: await __lerResultado(0), marcas: imgEstado().marcas, erro: imgEstado().erro };
+    });
+    ok("remover marca d'agua: o circulo vermelho some e vira o branco em volta", (limpa.marcas.areas || []).length === 1 &&
+       !limpa.r.erro && limpa.r.px[3].slice(0, 3).every(v => v > 225) && /-sem-marca\./.test(limpa.r.nome),
+       limpa.r.erro || limpa.erro || (limpa.r.px[3].join(',') + ' ' + limpa.r.nome));
+    ok("e fora da area nada muda (o canto escuro continua escuro)", limpa.r.canto[0] < 60 && limpa.r.meio[0] > 225,
+       limpa.r.canto.join(',') + ' / ' + limpa.r.meio.join(','));
+    const soLetras = await page.evaluate(async () => {
+        imgDefinir('alcance', 'soMarca');
+        await imgExecutar();
+        return await __lerResultado(0);
+    });
+    ok("\"so as letras da marca\" tambem apaga o vermelho", !soLetras.erro && soLetras.px[3].slice(0, 3).every(v => v > 225),
+       soLetras.erro || soLetras.px[3].join(','));
 
     const html = await page.evaluate(() => __rodar('htmlImagem', { largura: '600', escala: '2' }));
     ok('HTML para imagem: sai no tamanho pedido (x2) e desenhado', !html.erro && html.largura === 1200 &&

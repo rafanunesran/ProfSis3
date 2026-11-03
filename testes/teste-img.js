@@ -17,7 +17,9 @@
 //   9. GIF: o arquivo e' lido de volta por um decodificador escrito aqui e as cores batem,
 //      inclusive com varios quadros (GIF animado);
 //  10. BMP: cabecalho e pixels no lugar certo (de baixo para cima, BGR);
-//  11. posicao da marca d'agua e nomes de arquivo.
+//  11. posicao da marca d'agua e nomes de arquivo;
+//  12. remover marca d'agua: o retangulo vira o fundo em volta, fora dele nada muda,
+//      e "so' a marca" deixa intacto o que nao destoa.
 //
 // Como rodar:  node testes/teste-img.js
 
@@ -315,6 +317,57 @@ console.log('\n11. Marca d\'agua e nomes');
     ok('nome de saida troca a extensao', IMG.nomeDeSaida('foto.final.PNG', '-comprimida', 'jpg') === 'foto.final-comprimida.jpg');
     ok('nome sem extensao', IMG.nomeDeSaida('scan', '', 'png') === 'scan.png');
     ok('tamanho legivel', IMG.formatarTamanho(1536) === '1,5 KB' && IMG.formatarTamanho(5 * 1024 * 1024) === '5,0 MB');
+}
+
+console.log('\n12. Remover marca d\'agua');
+{
+    // Degrade suave (azul) com um texto branco "carimbado" num retangulo.
+    const fundo = (x, y) => [40 + x * 2, 80 + y, 160];
+    const ret = { x: 30, y: 20, largura: 30, altura: 12 };
+    const comMarca = montar(90, 50, (x, y) => {
+        const naMarca = x >= 33 && x < 57 && y >= 23 && y < 29 && (x % 3 !== 0);
+        return naMarca ? [255, 255, 255] : fundo(x, y);
+    });
+    const perto = (a, b, t) => a.slice(0, 3).every((v, i) => Math.abs(v - b[i]) <= t);
+    ['suave', 'textura'].forEach(metodo => {
+        const r = IMG.removerMarcaRegioes(comMarca, [ret], { metodo: metodo });
+        ok(metodo + ': fora do retangulo nada muda', [[5, 5], [80, 40], [29, 25], [61, 25], [45, 19], [45, 33]]
+           .every(([x, y]) => igual(px(r, x, y), px(comMarca, x, y))));
+        let pior = 0;
+        for (let y = 23; y < 29; y++) for (let x = 33; x < 57; x++) {
+            const p = px(r, x, y), f = fundo(x, y);
+            pior = Math.max(pior, ...p.slice(0, 3).map((v, i) => Math.abs(v - f[i])));
+        }
+        ok(metodo + ': o branco da marca some e vira o degrade do fundo', pior <= 25, 'maior diferenca ' + pior);
+        ok(metodo + ': o original nao e alterado', igual(px(comMarca, 34, 24), [255, 255, 255, 255]));
+    });
+    // "So' a marca": o que nao destoa (o fundo entre as letras) fica exatamente como estava.
+    const so = IMG.removerMarcaRegioes(comMarca, [ret], { soMarca: true, tolerancia: 35 });
+    ok('so a marca: o pixel entre as letras fica identico', igual(px(so, 31, 21), px(comMarca, 31, 21)));
+    ok('so a marca: a letra some', perto(px(so, 34, 24), fundo(34, 24), 25), px(so, 34, 24).join(','));
+    // Margem: a sombra de 1 px em volta tambem sai.
+    const m = IMG.removerMarcaRegioes(comMarca, [{ x: 33, y: 23, largura: 24, altura: 6 }], { margem: 2 });
+    ok('margem amplia o retangulo', !igual(px(m, 32, 24), [0, 0, 0, 0]) && perto(px(m, 34, 24), fundo(34, 24), 25));
+    // Marca no canto (encostada na borda da imagem) tambem e' preenchida.
+    const canto = IMG.removerMarcaRegioes(comMarca, [{ x: 70, y: 40, largura: 40, altura: 40 }], {});
+    ok('marca encostada no canto', perto(px(canto, 89, 49), fundo(89, 49), 30), px(canto, 89, 49).join(','));
+    // Foto com granulado: "textura" traz o granulado de volta; "suave" deixa liso.
+    let semente = 7;
+    const ruido = () => { semente = (semente * 1103515245 + 12345) % 2147483648; return semente / 2147483648; };
+    const granulado = montar(90, 50, () => { const v = 100 + Math.round(ruido() * 80); return [v, v, v]; });
+    const variacao = (img) => {
+        const v = [];
+        for (let y = 23; y < 29; y++) for (let x = 33; x < 57; x++) v.push(px(img, x, y)[0]);
+        const media = v.reduce((a, b) => a + b, 0) / v.length;
+        return Math.sqrt(v.reduce((a, b) => a + (b - media) * (b - media), 0) / v.length);
+    };
+    const vSuave = variacao(IMG.removerMarcaRegioes(granulado, [ret], { metodo: 'suave' }));
+    const vTextura = variacao(IMG.removerMarcaRegioes(granulado, [ret], { metodo: 'textura' }));
+    ok('textura devolve o granulado da foto (suave fica liso)', vTextura > vSuave * 2 && vTextura > 10,
+       'suave ' + vSuave.toFixed(1) + ' / textura ' + vTextura.toFixed(1) + ' / original ' + variacao(granulado).toFixed(1));
+    ok('retangulo vazio ou da imagem inteira nao quebra',
+       igual(Array.from(IMG.removerMarcaRegioes(comMarca, [{ x: 0, y: 0, largura: 90, altura: 50 }], {}).dados), Array.from(comMarca.dados)) &&
+       IMG.removerMarcaRegioes(comMarca, [], {}).largura === 90);
 }
 
 console.log('\n' + (falhas ? falhas + ' FALHA(S) de ' + total : 'Tudo certo: ' + total + ' verificacoes.'));

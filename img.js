@@ -357,6 +357,38 @@ const CATALOGO_IMG = [
         processar: async (fonte, op) => ({ canvas: desenharMarca(fonte, op), sufixo: '-marca' })
     },
     {
+        id: 'removerMarca', emoji: '🧽', nome: "Remover marca d'água", previa: true, marcar: 'areas',
+        resumo: "Apaga marca d'água, carimbo, data da câmera ou logotipo de um canto da imagem.",
+        detalhe: 'Arraste na prévia sobre cada marca. O que estiver dentro é trocado pelo que está em volta. ' +
+                 'Fica perfeito em fundo liso (papel, parede, céu); em foto cheia de detalhe pode sobrar uma ' +
+                 'mancha. Use só em imagem que você tem direito de usar: tirar o crédito do autor não é permitido.',
+        campos: [
+            { id: 'alcance', tipo: 'botoes', rotulo: 'O que apagar', padrao: 'tudo',
+              opcoes: [['tudo', 'Toda a área marcada'], ['soMarca', 'Só as letras da marca']],
+              ajuda: '"Só as letras" deixa o resto da área como estava — bom para texto em fundo liso.' },
+            { id: 'tolerancia', tipo: 'faixa', rotulo: 'Sensibilidade', padrao: 35, min: 5, max: 90, passo: 1,
+              quando: op => op.alcance === 'soMarca',
+              ajuda: 'Desça se sobrar pedaço da letra; suba se começar a apagar o que não é marca.' },
+            { id: 'metodo', tipo: 'botoes', rotulo: 'Como preencher', padrao: 'textura',
+              opcoes: [['textura', 'Com a textura do lado (foto)'], ['suave', 'Liso (fundo de uma cor)']] },
+            { id: 'margem', tipo: 'faixa', rotulo: 'Folga em volta', padrao: 2, min: 0, max: 20, passo: 1, sufixo: ' px',
+              ajuda: 'Pega também a sombra ou o contorno da marca.' },
+            cFormato(), cQualidade()
+        ],
+        processar: async (fonte, op, extra) => {
+            const rets = (extra.marcas.areas || []).map(a => ({
+                x: a.x * fonte.width, y: a.y * fonte.height, largura: a.l * fonte.width, altura: a.a * fonte.height }));
+            // A folga e' em pixels da foto de verdade; na previa (copia menor) encolhe junto.
+            const escala = extra.previa && imgArquivos[0] ? fonte.width / imgArquivos[0].largura : 1;
+            return {
+                canvas: comPixels(fonte, p => IMGOPS.removerMarcaRegioes(p, rets, {
+                    metodo: op.metodo, soMarca: op.alcance === 'soMarca', tolerancia: op.tolerancia,
+                    margem: (Number(op.margem) || 0) * escala })),
+                sufixo: '-sem-marca'
+            };
+        }
+    },
+    {
         id: 'meme', emoji: '😂', nome: 'Gerador de memes', previa: true,
         resumo: 'Texto em cima e embaixo, letra branca com contorno preto.',
         detalhe: 'Para a aula ficar mais leve, o aviso do mural chamar atenção, a atividade de interpretação.',
@@ -697,7 +729,9 @@ async function imgExecutar() {
     if (!f || imgOcupado) return;
     if (!f.semArquivo && !imgArquivos.length) return;
     if (f.marcar === 'areas' && !(imgMarcas.areas || []).length) {
-        imgErro = 'Marque na prévia pelo menos uma área para esconder (arraste o dedo ou o mouse sobre o rosto).';
+        imgErro = f.id === 'removerMarca'
+            ? "Marque na prévia pelo menos uma área (arraste o dedo ou o mouse sobre a marca d'água)."
+            : 'Marque na prévia pelo menos uma área para esconder (arraste o dedo ou o mouse sobre o rosto).';
         imgRender();
         return;
     }
@@ -1265,7 +1299,8 @@ function rotuloDoBotao(f, op) {
     if (f.juntar && f.juntar(op, n)) return 'Criar GIF animado';
     const verbo = { comprimir: 'Comprimir', redimensionar: 'Redimensionar', cortar: 'Cortar', paraJpg: 'Converter',
                     deJpg: 'Converter', editor: 'Salvar a foto', removerFundo: 'Remover o fundo', marcaDagua: "Aplicar a marca d'água",
-                    meme: 'Gerar o meme', girar: 'Girar', htmlImagem: 'Gerar a imagem', desfocarRosto: 'Esconder as áreas marcadas' }[f.id] || 'Processar';
+                    meme: 'Gerar o meme', girar: 'Girar', htmlImagem: 'Gerar a imagem', desfocarRosto: 'Esconder as áreas marcadas',
+                    removerMarca: "Remover a marca d'água" }[f.id] || 'Processar';
     return verbo + (n > 1 && f.varios ? ' ' + n + ' imagens' : '');
 }
 
@@ -1309,10 +1344,12 @@ function htmlPrevia(f) {
         botoes = `<button class="btn btn-sm btn-secondary" onclick="imgLimparMarcas()">Imagem inteira</button>`;
     } else if (f.marcar === 'areas') {
         const n = (imgMarcas.areas || []).length;
-        dica = 'Arraste sobre cada rosto (ou placa, crachá, documento). Áreas marcadas: <strong id="imgContagemMarcas">' + n + '</strong>';
+        dica = (f.id === 'removerMarca'
+            ? "Arraste sobre cada marca d'água (texto, logotipo, data). A prévia já mostra como fica. Áreas marcadas: "
+            : 'Arraste sobre cada rosto (ou placa, crachá, documento). Áreas marcadas: ') + '<strong id="imgContagemMarcas">' + n + '</strong>';
         botoes = `<button class="btn btn-sm btn-secondary" onclick="imgDesfazerMarca()">Desfazer a última</button>
                   <button class="btn btn-sm btn-secondary" onclick="imgLimparMarcas()">Apagar todas</button>
-                  ${'FaceDetector' in window ? '<button class="btn btn-sm btn-secondary" onclick="imgDetectarRostos()">🤖 Achar rostos sozinho</button>' : ''}`;
+                  ${f.id === 'desfocarRosto' && 'FaceDetector' in window ? '<button class="btn btn-sm btn-secondary" onclick="imgDetectarRostos()">🤖 Achar rostos sozinho</button>' : ''}`;
     } else if (f.marcar === 'pontos') {
         const n = (imgMarcas.pontos || []).length;
         dica = 'Sobrou fundo? Toque nele na prévia. ' + (n ? 'Toques: <strong>' + n + '</strong>' : '');
