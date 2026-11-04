@@ -10,7 +10,7 @@
 //   2. a lista de estudantes e' so' da serie escolhida (todas as fichas, com ou sem Anexo III);
 //   3. sem tema, avisa e nao chama a IA;
 //   4. o pedido leva as fichas, o curriculo e as regras de texto curto, SEM o nome dos estudantes;
-//   5. a tela mostra o bloco da serie e um por estudante, com os 4 campos e o botao Copiar;
+//   5. a tela mostra UMA atividade para todos (com os nomes para quem vale), os 4 campos e o Copiar;
 //   6. "Copiar" copia o texto do campo; "Copiar os 4" copia os 4 com os titulos;
 //   7. fica no Historico com o texto; editar e fechar atualiza o mesmo registro;
 //   8. o Historico reabre a tela com o texto editado;
@@ -92,7 +92,7 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
     chamarIAEstruturada = async (prompt) => {
       window.__pedidosIA.push(prompt);
       const c = (s) => ({ conteudos_habilidades: 'EF07MA05 ' + s, estrategias: 'Jogo de cartas ' + s, acompanhamento: 'Observação ' + s, apoios: 'AEE ' + s });
-      return { turma: c('turma'), estudantes: [ Object.assign({ codigo: 'E2' }, c('E2')), Object.assign({ codigo: 'E1' }, c('E1')) ] };
+      return { atividade: c('turma') };
     };
   }, PROF);
 
@@ -134,6 +134,8 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
   ok('o nome dos estudantes NAO vai para a IA', r4.indexOf('Ana Souza') === -1 && r4.indexOf('Bruno Lima') === -1);
   ok('o pedido leva o curriculo oficial', r4.indexOf('Frações equivalentes') !== -1);
   ok('o pedido exige texto curto e os 4 campos', r4.indexOf('MÁXIMO 2 ou 3 frases') !== -1 && r4.indexOf('Apoios complementares') !== -1);
+  ok('o pedido pede UMA atividade para todos (nao uma por estudante)', r4.indexOf('UMA ÚNICA atividade') !== -1 && r4.indexOf('"atividade"') !== -1 && r4.indexOf('"estudantes"') === -1);
+  ok('o pedido pede so os codigos das habilidades', r4.indexOf('APENAS os códigos') !== -1 && r4.indexOf('sem a descrição') !== -1);
 
   // ============ 5. A TELA ============
   const r5 = await p.evaluate(() => {
@@ -144,15 +146,16 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
       titulos: blocos.map(b => b.querySelector('strong').innerText),
       campos: blocos.map(b => b.querySelectorAll('.anexo4DuaCampo').length),
       copiar: blocos.map(b => b.querySelectorAll('button').length),
-      anaEstr: blocos[1] ? blocos[1].querySelector('[data-campo="estrategias"]').value : ''
+      vale: (m.querySelector('.anexo4DuaVale') || {}).innerText || '',
+      estr: blocos[0] ? blocos[0].querySelector('[data-campo="estrategias"]').value : ''
     };
   });
   ok('a tela abre', r5.aberto);
-  ok('um bloco da serie e um por estudante', r5.titulos.length === 3 && r5.titulos[0].indexOf('Série 7º Ano') !== -1
-      && r5.titulos[1].indexOf('Ana Souza') !== -1 && r5.titulos[2].indexOf('Bruno Lima') !== -1);
-  ok('cada bloco tem os 4 campos', r5.campos.every(n => n === 4));
-  ok('cada bloco tem 4 "Copiar" + "Copiar os 4"', r5.copiar.every(n => n === 5));
-  ok('o texto da IA volta para o estudante certo (pelo codigo)', r5.anaEstr === 'Jogo de cartas E1');
+  ok('um bloco so, da atividade para todos', r5.titulos.length === 1 && r5.titulos[0].indexOf('Atividade para todos') !== -1);
+  ok('o bloco diz para quais estudantes vale', r5.vale.indexOf('Ana Souza') !== -1 && r5.vale.indexOf('Bruno Lima') !== -1);
+  ok('o bloco tem os 4 campos', r5.campos[0] === 4);
+  ok('o bloco tem 4 "Copiar" + "Copiar os 4"', r5.copiar[0] === 5);
+  ok('o texto da IA preenche os campos', r5.estr === 'Jogo de cartas turma');
 
   if (process.env.PROFSIS_PRINTS) {
     await p.setViewportSize({ width: 900, height: 1000 });
@@ -176,7 +179,7 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
   // ============ 7 e 8. HISTORICO ============
   const r7 = await p.evaluate(async () => {
     const antes = data.historicoDocumentos.filter(h => h.tipo === 'anexo4_dua');
-    const ta = document.querySelector('#modalAnexo4Dua .anexo4DuaBloco[data-grupo="e1"] [data-campo="apoios"]');
+    const ta = document.querySelector('#modalAnexo4Dua .anexo4DuaBloco[data-grupo="turma"] [data-campo="apoios"]');
     ta.value = 'Ledor e fonte ampliada'; ta.dispatchEvent(new Event('input'));
     fecharModalAnexo4Dua();
     const depois = data.historicoDocumentos.filter(h => h.tipo === 'anexo4_dua');
@@ -184,9 +187,9 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
     const aba = document.getElementById('tabDocHistorico');
     const botao = aba.querySelector('button[onclick*="abrirAnexo4DuaHistorico"]');
     if (botao) botao.click();
-    const ta2 = document.querySelector('#modalAnexo4Dua .anexo4DuaBloco[data-grupo="e1"] [data-campo="apoios"]');
+    const ta2 = document.querySelector('#modalAnexo4Dua .anexo4DuaBloco[data-grupo="turma"] [data-campo="apoios"]');
     return { antes: antes.length, depois: depois.length, titulo: depois[0] && depois[0].titulo,
-             salvo: depois[0] && depois[0].payload.estudantes[1].campos.apoios,
+             salvo: depois[0] && depois[0].payload.turma.apoios,
              textoAba: aba.innerText, botao: !!botao, reaberto: ta2 ? ta2.value : '' };
   });
   ok('gerar ja salva no Historico', r7.antes === 1);
@@ -208,7 +211,7 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
     const campos = Array.from(document.querySelectorAll('#modalAnexo4Dua .anexo4DuaCampo'));
     return { n: campos.length, vazios: campos.every(c => c.value === ''), pedidos: window.__pedidosIA.length };
   });
-  ok('o Manual abre os campos em branco (serie + 2 estudantes)', r9.n === 12 && r9.vazios);
+  ok('o Manual abre os 4 campos em branco', r9.n === 4 && r9.vazios);
   ok('o Manual nao chama a IA', r9.pedidos === 0);
 
   await b.close();

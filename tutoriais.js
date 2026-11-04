@@ -293,7 +293,7 @@ const TOURS = {
             { alvo: '#anexo4DuaSerie', titulo: 'Série e disciplina', texto: 'Vêm das suas turmas. A IA usa o currículo dessa série e disciplina.' },
             { alvo: '#anexo4DuaTema', titulo: 'Tema / atividade', texto: 'Escreva o tema central ou a atividade que você vai fazer com a turma.' },
             { alvo: '#anexo4DuaEstudantes', titulo: 'Estudantes com ficha', texto: 'Os estudantes do Painel AEE das suas turmas dessa série. A IA lê a ficha de cada um. Desmarque quem não deve entrar.' },
-            { alvo: '#btnGerarDocumentoIA', titulo: '✨ Gerar Anexo IV', texto: 'A IA cria uma atividade adaptada (DUA) para a turma toda e escreve os 4 campos: um bloco da série e um de cada estudante, cada campo com o botão "📋 Copiar". Fica salvo em Documentos › Histórico.' }
+            { alvo: '#btnGerarDocumentoIA', titulo: '✨ Gerar Anexo IV', texto: 'A IA cria uma atividade adaptada (DUA) única, que serve para a turma e para todos os estudantes marcados, e escreve os 4 campos (habilidades só com os códigos), cada um com o botão "📋 Copiar". Cole o mesmo texto na linha da série e na de cada estudante. Fica salvo em Documentos › Histórico.' }
         ]
     },
 
@@ -907,11 +907,11 @@ const PAGINAS = [
       praQue: 'Rascunho de plano de aula, Agenda Mensal, Anexo III - PAEE e Anexo IV (novo modelo e PEI antigo).',
       passos: INICIANTE.find(x => x.id === 'i-estagiario').passos },
     { id: 'p-anexo4', icone: '📘', titulo: 'Anexo IV (novo modelo): copiar e colar', tour: 'anexo4Dua',
-      praQue: 'Preencher os 4 campos do Anexo IV no documento compartilhado, da série e de cada estudante.',
+      praQue: 'Preencher os 4 campos do Anexo IV no documento compartilhado com uma atividade única, que serve para a série e para cada estudante.',
       passos: ['Toque em "✨ Estagiário" e escolha "📘 Anexo IV (novo modelo)".',
                'Escolha a série e a disciplina e escreva o tema central ou a atividade.',
                'Confira os estudantes com ficha (Painel AEE) que a IA vai considerar.',
-               'Toque em "✨ Gerar Anexo IV": a IA cria uma atividade adaptada (DUA) para a turma toda.',
+               'Toque em "✨ Gerar Anexo IV": a IA cria uma atividade adaptada (DUA) única, que serve para todos os marcados. Em habilidades vêm só os códigos.',
                'Em cada campo (Conteúdos e habilidades; Estratégias, intervenções pedagógicas e recursos; Acompanhar o aprendizado; Apoios complementares), toque em "📋 Copiar" e cole no documento.',
                'Fica salvo em Documentos › Histórico ("📋 Abrir e copiar" reabre).'],
       dicas: ['O texto sai curto de propósito. Ajuste na própria caixa antes de copiar; ao fechar, a mudança fica salva.',

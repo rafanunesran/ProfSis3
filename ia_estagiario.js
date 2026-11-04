@@ -4154,41 +4154,37 @@ Série/ano: ${serie}. Componente curricular: ${disciplina}. Bimestre: ${bimestre
 Tema central / atividade planejada pelo professor:
 """${tema}"""
 
-Crie UMA atividade adaptada pelo Desenho Universal para a Aprendizagem (DUA), aplicada a TODA a turma: várias formas de apresentar o conteúdo, de engajar e de o estudante mostrar o que aprendeu. A mesma atividade vale para todos; para cada estudante abaixo, diga só o que se ajusta ou se reforça para ele, a partir da ficha.
+Crie UMA ÚNICA atividade adaptada pelo Desenho Universal para a Aprendizagem (DUA), aplicada a TODA a turma: várias formas de apresentar o conteúdo, de engajar e de o estudante mostrar o que aprendeu. É uma atividade só, que precisa servir AO MESMO TEMPO para todos os estudantes abaixo (considere todas as fichas juntas). Não escreva uma versão para cada estudante.
 
 Estudantes com ficha cadastrada nesta série (nomes trocados por códigos; não invente diagnóstico além do que está escrito):
 ${blocoEstudantes}
 
 Regras de escrita (obrigatórias):
 - Português, direto, técnico e assertivo. Cada campo com no MÁXIMO 2 ou 3 frases curtas (até uns 300 caracteres). Sem introdução, sem repetir o enunciado, sem listas longas, sem markdown.
-- "conteudos_habilidades": o conteúdo e o(s) código(s) oficial(is) de habilidade do Currículo Paulista de ${disciplina} (ex.: EF07MA05), com descrição curta.
+- "conteudos_habilidades": o conteúdo em poucas palavras e, das habilidades, APENAS os códigos oficiais do Currículo Paulista de ${disciplina}, sem a descrição da habilidade (ex.: "Frações equivalentes. EF07MA05, EF07MA06").
 - "estrategias": a atividade DUA e as intervenções e recursos.
 - "acompanhamento": como acompanhar o aprendizado (instrumentos e evidências observáveis).
 - "apoios": apoios complementares (AEE, profissional de apoio, tecnologia assistiva, colega tutor, família).
-- Nos estudantes, mantenha o mesmo conteúdo e a mesma atividade da turma, ajustando à ficha.
+- Os 4 campos descrevem a atividade única, que vale igual para a série e para cada estudante listado.
 
 Retorne APENAS um objeto JSON válido (sem markdown; escape aspas e quebras de linha com \\n), exatamente assim:
-{"turma": {${linhaCampos}}, "estudantes": [{"codigo": "E1", ${linhaCampos}}]}
-${estudantes.length ? `A lista "estudantes" deve ter um item para cada código, de E1 a E${estudantes.length}.` : 'A lista "estudantes" deve vir vazia: [].'}`;
+{"atividade": {${linhaCampos}}}`;
     prompt += montarBlocoContextoOficial(contextoOficial);
     return prompt;
 }
 
-// Junta a resposta da IA com os estudantes reais (a IA só vê os códigos E1, E2...).
+// Uma atividade só para todos: os 4 campos ficam em `turma` e valem para a série e para cada
+// estudante selecionado (que aparece só pelo nome; a IA viu apenas os códigos E1, E2...).
+// Registros antigos do Histórico, de quando cada estudante tinha os próprios campos, continuam abrindo.
 function montarResultadoAnexo4Dua(form, resposta) {
-    const listaIA = (resposta && Array.isArray(resposta.estudantes)) ? resposta.estudantes : [];
     return {
         serie: form.serie,
         disciplina: form.disciplina,
         tema: form.tema,
         bimestre: form.bimestre,
         turmasNomes: form.turmasNomes || '',
-        turma: normalizarCamposAnexo4Dua(resposta && resposta.turma),
-        estudantes: form.estudantes.map((t, i) => {
-            const codigo = 'E' + (i + 1);
-            const daIA = listaIA.find(e => e && String(e.codigo || '').toUpperCase() === codigo) || listaIA[i] || null;
-            return { id: t.id, nome: t.nome_estudante, turma: t.turma || '', campos: normalizarCamposAnexo4Dua(daIA) };
-        })
+        turma: normalizarCamposAnexo4Dua(resposta && (resposta.atividade || resposta.turma)),
+        estudantes: form.estudantes.map(t => ({ id: t.id, nome: t.nome_estudante, turma: t.turma || '' }))
     };
 }
 
@@ -4288,8 +4284,9 @@ function abrirModalAnexo4Dua(resultado, historicoId) {
             <p style="margin:0 0 4px 0; font-size:13px; color:#3d4759;"><strong>Atividade:</strong> ${escapeHtmlEstagiario(r.tema)}</p>
             <p style="margin:0 0 12px 0; font-size:12px; color:#5f6b7f;">Leia e ajuste se precisar. Toque em "📋 Copiar" e cole no campo do documento compartilhado. ${historicoId ? 'Já está salvo em Documentos › Histórico.' : 'Toque em "💾 Salvar" para guardar no Histórico.'}</p>
             <div id="anexo4DuaBlocos" style="max-height:60vh; overflow-y:auto; padding-right:4px;">
-                ${htmlBlocoAnexo4Dua(`🏫 Série ${escapeHtmlEstagiario(r.serie)} (turma toda)${r.turmasNomes ? ` <span style="font-weight:normal; color:#7a869a; font-size:12px;">${escapeHtmlEstagiario(r.turmasNomes)}</span>` : ''}`, 'turma', r.turma)}
-                ${r.estudantes.map((e, i) => htmlBlocoAnexo4Dua(`👤 ${escapeHtmlEstagiario(e.nome)}${e.turma ? ` <span style="font-weight:normal; color:#7a869a; font-size:12px;">${escapeHtmlEstagiario(e.turma)}</span>` : ''}`, 'e' + i, e.campos)).join('')}
+                ${htmlBlocoAnexo4Dua(`📌 Atividade para todos · Série ${escapeHtmlEstagiario(r.serie)}${r.turmasNomes ? ` <span style="font-weight:normal; color:#7a869a; font-size:12px;">${escapeHtmlEstagiario(r.turmasNomes)}</span>` : ''}`
+                    + (r.estudantes.length ? `<div class="anexo4DuaVale" style="font-weight:normal; font-size:12px; color:#3d4759; margin-top:4px;">Vale também para: ${r.estudantes.map(e => escapeHtmlEstagiario(e.nome)).join(', ')}. Cole o mesmo texto na linha de cada um.</div>` : ''), 'turma', r.turma)}
+                ${r.estudantes.map((e, i) => !e.campos ? '' : htmlBlocoAnexo4Dua(`👤 ${escapeHtmlEstagiario(e.nome)}${e.turma ? ` <span style="font-weight:normal; color:#7a869a; font-size:12px;">${escapeHtmlEstagiario(e.turma)}</span>` : ''}`, 'e' + i, e.campos)).join('')}
             </div>
             <div style="margin-top:14px; display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap;">
                 <button class="btn btn-secondary" onclick="fecharModalAnexo4Dua()">Fechar</button>
@@ -4309,7 +4306,7 @@ function lerTelaAnexo4Dua() {
     if (!r) return null;
     document.querySelectorAll('#modalAnexo4Dua .anexo4DuaBloco').forEach(bloco => {
         const grupo = bloco.dataset.grupo;
-        const alvo = grupo === 'turma' ? r.turma : (r.estudantes[parseInt(grupo.slice(1), 10)] || {}).campos;
+        const alvo = grupo === 'turma' ? r.turma : (r.estudantes[parseInt(grupo.slice(1), 10)] || {}).campos;  // estudante só tem campos em registros antigos
         if (!alvo) return;
         bloco.querySelectorAll('.anexo4DuaCampo').forEach(ta => { alvo[ta.dataset.campo] = ta.value; });
     });
