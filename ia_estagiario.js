@@ -21,6 +21,9 @@ const MESES_AGENDA = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho'
 // reaproveitado por gerarAnexoIVEstagiario pra ler a Ficha AEE (aee_diagnostico/aee_relatorio) do
 // estudante escolhido no <select id="anexoIVAluno"> sem precisar buscar tudo de novo no Firestore.
 let ultimaListaTutoradosAeeParaAnexoIV = [];
+// Anexo IV (novo modelo, DUA): TODOS os estudantes do Painel AEE das turmas deste professor (com ou
+// sem Anexo III), porque a atividade é da turma inteira e considera todas as fichas cadastradas.
+let ultimaListaTutoradosEscolaAnexo4Dua = [];
 
 // Diferencia Ensino Médio de Ensino Fundamental quando os dois usam "Ano" pro mesmo número (ex: "1º
 // Ano" do Fundamental vs "1º Ano EM"/"1º Ano do Ensino Médio") - sem isso, extrairSerieChaveMaterialDigital
@@ -970,7 +973,8 @@ async function abrirModalGerarDocumentoIA() {
         <option value="plano_aula">Plano de Aula</option>
         <option value="agenda_mensal">📅 Agenda Mensal</option>
         ${isAeeView ? '<option value="anexo3_paee">📋 Anexo III - PAEE</option>' : ''}
-        ${isProfessorOuAeeView ? '<option value="anexo4_pei">📘 Anexo IV - PEI</option>' : ''}
+        ${isProfessorOuAeeView ? '<option value="anexo4_dua">📘 Anexo IV (novo modelo)</option>' : ''}
+        ${isProfessorOuAeeView ? '<option value="anexo4_pei">📘 Anexo IV - PEI (modelo antigo)</option>' : ''}
     `;
     const alunosAeeOptionsHtml = '<option value="">Selecione...</option>' + (data.tutorados || [])
         .map(t => `<option value="${t.id}">${t.nome_estudante}</option>`).join('');
@@ -1000,6 +1004,7 @@ async function abrirModalGerarDocumentoIA() {
             // Só estudantes que já têm o Anexo III - PAEE postado pelo professor AEE (t.anexoPaee,
             // gravado por salvarAnexoPaeeSchoolWide). Nem todo aluno do Painel AEE precisa de um Anexo
             // IV - PEI: ele só faz sentido quando existe o Anexo III correspondente lançado pelo AEE.
+            ultimaListaTutoradosEscolaAnexo4Dua = tutoradosEscola.filter(Boolean);
             tutoradosEscola = tutoradosEscola.filter(t => t && t.anexoPaee);
 
             alunosPeiOptionsHtml += tutoradosEscola.length
@@ -1166,6 +1171,28 @@ async function abrirModalGerarDocumentoIA() {
                     </div>
                 </div>
 
+                <div id="camposAnexo4Dua" style="display:none;">
+                    <p style="font-size:12px; color:#1b4488; background:#edf3fd; border:1px solid #a9c6f3; border-radius:6px; padding:8px 10px; margin:0 0 15px 0;">Novo Anexo IV: a IA cria uma atividade adaptada (DUA) para a turma toda e escreve os 4 campos curtos do documento compartilhado, para a série e para cada estudante. É só copiar e colar.</p>
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px; margin-bottom: 15px;">
+                        <div>
+                            <label style="font-weight:bold; display:block; margin-bottom:5px;">Série / Ano:</label>
+                            <select id="anexo4DuaSerie" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;" onchange="atualizarEstudantesAnexo4Dua()"></select>
+                        </div>
+                        <div>
+                            <label style="font-weight:bold; display:block; margin-bottom:5px;">Disciplina:</label>
+                            <select id="anexo4DuaDisciplina" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;" onchange="atualizarEstudantesAnexo4Dua()"></select>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Tema central / atividade que você vai fazer:</label>
+                        <textarea id="anexo4DuaTema" rows="3" placeholder="Ex.: Frações equivalentes com jogo de cartas em grupo" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px; font-family:inherit; font-size:13px; line-height:1.4;"></textarea>
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Estudantes com ficha nessa série:</label>
+                        <div id="anexo4DuaEstudantes" style="font-size:13px; color:#3d4759;"></div>
+                    </div>
+                </div>
+
                 <div id="camposAnexoIV" style="display:none;">
                     <div style="margin-bottom: 15px;">
                         <label style="font-weight:bold; display:block; margin-bottom:5px;">Estudante (Painel AEE):</label>
@@ -1296,6 +1323,7 @@ async function abrirModalGerarDocumentoIA() {
     document.querySelectorAll('input[name="anexoIVBimestre"]').forEach(el => { el.onchange = atualizarBotaoCriarComRefAnexoIV; });
     atualizarBotaoCriarComRefAnexoIV();
 
+    prepararCamposAnexo4Dua(seriesUnicas, disciplinasUnicas);
     toggleTipoDocumentoIA();
     // Os selects de série/disciplina voltam pra "Selecione..." a cada abertura - realinha o campo do
     // professor parceiro com essa seleção (esconde e limpa).
@@ -1381,20 +1409,23 @@ function toggleTipoDocumentoIA() {
     const isAgenda = tipo === 'agenda_mensal';
     const isAnexoPaee = tipo === 'anexo3_paee';
     const isAnexoIV = tipo === 'anexo4_pei';
+    const isAnexo4Dua = tipo === 'anexo4_dua';
 
     const campoSemana = document.getElementById('campoSemanaVigente');
-    if (campoSemana) campoSemana.style.display = (isAgenda || isAnexoPaee || isAnexoIV) ? 'none' : '';
+    if (campoSemana) campoSemana.style.display = (isAgenda || isAnexoPaee || isAnexoIV || isAnexo4Dua) ? 'none' : '';
     const campoMesAno = document.getElementById('campoMesAnoAgenda');
     if (campoMesAno) campoMesAno.style.display = isAgenda ? 'block' : 'none';
     const camposPlano = document.getElementById('camposPlanoAula');
-    if (camposPlano) camposPlano.style.display = (isAgenda || isAnexoPaee || isAnexoIV) ? 'none' : '';
+    if (camposPlano) camposPlano.style.display = (isAgenda || isAnexoPaee || isAnexoIV || isAnexo4Dua) ? 'none' : '';
     const camposAnexo = document.getElementById('camposAnexoPaee');
     if (camposAnexo) camposAnexo.style.display = isAnexoPaee ? '' : 'none';
     const camposAnexoIV = document.getElementById('camposAnexoIV');
     if (camposAnexoIV) camposAnexoIV.style.display = isAnexoIV ? '' : 'none';
+    const camposAnexo4Dua = document.getElementById('camposAnexo4Dua');
+    if (camposAnexo4Dua) camposAnexo4Dua.style.display = isAnexo4Dua ? '' : 'none';
 
     const btn = document.getElementById('btnGerarDocumentoIA');
-    if (btn) btn.textContent = isAgenda ? '🖨️ Gerar e Imprimir Agenda' : 'Gerar Estrutura';
+    if (btn) btn.textContent = isAgenda ? '🖨️ Gerar e Imprimir Agenda' : (isAnexo4Dua ? '✨ Gerar Anexo IV' : 'Gerar Estrutura');
     // A Agenda Mensal já é um preenchimento mecânico da grade (não passa pela IA nem pela tela de
     // revisão), então não existe versão "manual" dela pra oferecer.
     const btnManual = document.getElementById('btnGerarDocumentoManual');
@@ -2063,6 +2094,7 @@ async function gerarDocumentoIA() {
     if (tipo === 'agenda_mensal') return gerarAgendaMensalEstagiario();
     if (tipo === 'anexo3_paee') return gerarAnexoPaeeEstagiario();
     if (tipo === 'anexo4_pei') return gerarAnexoIVEstagiario();
+    if (tipo === 'anexo4_dua') return gerarAnexo4DuaEstagiario();
 
     const form = coletarFormularioPlanoAulaEstagiario();
     if (!form) return;
@@ -2442,6 +2474,7 @@ let escolhaManualEstagiario = null;
 async function gerarDocumentoManualEstagiario() {
     const tipo = document.getElementById('iaDocTipo').value;
     if (tipo === 'agenda_mensal') return alert('A Agenda Mensal já é montada direto da sua grade horária, sem IA - use o botão "🖨️ Gerar e Imprimir Agenda".');
+    if (tipo === 'anexo4_dua') return gerarAnexo4DuaManual();
 
     let form = null;
     let anterior = null;
@@ -3950,4 +3983,359 @@ async function exportarDocumentoFinal(tipo, acao) {
     } finally {
         travarBotoesSaidaEstagiario('modalRevisaoDocumento', false);
     }
+}
+
+// ===================================================================================================
+// ANEXO IV - NOVO MODELO (atividade adaptada DUA, campos para copiar e colar)
+// ===================================================================================================
+// O Anexo IV mudou: em vez do PEI em Word por estudante, a escola preenche um documento compartilhado
+// com 4 campos curtos (Conteúdos e habilidades; Estratégias, intervenções pedagógicas e recursos;
+// Acompanhar o aprendizado; Apoios complementares), um bloco por série e um por estudante.
+// O professor informa série, disciplina e o tema/atividade; a IA cria UMA atividade adaptada pelo
+// Desenho Universal para a Aprendizagem (DUA) para a turma toda, considerando o currículo oficial e
+// as fichas dos estudantes do Painel AEE daquela série, e devolve os 4 campos (da série e de cada
+// estudante) para copiar e colar. Tudo fica no histórico de documentos do professor
+// (data.historicoDocumentos, que vai cifrado para a nuvem), com o texto, para abrir e copiar de novo.
+// O modelo antigo (anexo4_pei) continua disponível como "(modelo antigo)".
+
+const ANEXO4_DUA_CAMPOS = [
+    { key: 'conteudos_habilidades', label: 'Conteúdos e habilidades' },
+    { key: 'estrategias', label: 'Estratégias, intervenções pedagógicas e recursos' },
+    { key: 'acompanhamento', label: 'Acompanhar o aprendizado' },
+    { key: 'apoios', label: 'Apoios complementares' }
+];
+const MAX_ANEXO4_DUA_COM_TEXTO_HISTORICO = 60;
+const TAMANHO_MAX_TRECHO_FICHA_ANEXO4_DUA = 600;
+
+// Preenche os seletores de série/disciplina do novo Anexo IV (o modal é reaproveitado entre aberturas,
+// então refaz a lista sempre) e zera tema e estudantes.
+function prepararCamposAnexo4Dua(series, disciplinas) {
+    const selSerie = document.getElementById('anexo4DuaSerie');
+    if (selSerie) selSerie.innerHTML = '<option value="">Selecione...</option>' + (series || []).map(s => `<option value="${escapeAttrEstagiario(s)}">${escapeHtmlEstagiario(s)}</option>`).join('');
+    const selDisc = document.getElementById('anexo4DuaDisciplina');
+    if (selDisc) selDisc.innerHTML = '<option value="">Selecione...</option>' + (disciplinas || []).map(d => `<option value="${escapeAttrEstagiario(d)}">${escapeHtmlEstagiario(d)}</option>`).join('');
+    const tema = document.getElementById('anexo4DuaTema');
+    if (tema) tema.value = '';
+    atualizarEstudantesAnexo4Dua();
+}
+
+// Turmas do professor daquela série (e disciplina, quando casa) e os códigos série+letra delas (ex.: "7A").
+function turmasAnexo4Dua(serie, disciplina) {
+    let turmas = disciplina ? turmasDaSerieDisciplinaEstagiario(serie, disciplina) : [];
+    if (turmas.length === 0) {
+        const serieNome = (nome) => String(nome || '').trim().replace(/[\s-]+[A-Za-z]$/i, '').replace(/(\d)[A-Za-z]$/i, '$1').replace(/([ºª])[A-Za-z]$/i, '$1').trim();
+        turmas = (data.turmas || []).filter(t => serieNome(t.ano_serie || t.nome) === serie);
+    }
+    const codigos = new Set(turmas
+        .map(t => (typeof extrairCodigoSerieTurmaExtensao === 'function') ? extrairCodigoSerieTurmaExtensao((t.nome || '').split('-')[0]) : null)
+        .filter(Boolean));
+    return { turmas, codigos };
+}
+
+// Estudantes do Painel AEE (todas as fichas, com ou sem Anexo III) que estão nas turmas daquela série.
+function estudantesDaSerieAnexo4Dua(serie, disciplina) {
+    if (!serie) return [];
+    const { codigos } = turmasAnexo4Dua(serie, disciplina);
+    let lista = (ultimaListaTutoradosEscolaAnexo4Dua && ultimaListaTutoradosEscolaAnexo4Dua.length)
+        ? ultimaListaTutoradosEscolaAnexo4Dua : (data.tutorados || []);
+    if (codigos.size === 0) return [];
+    const codigoDe = (v) => (typeof extrairCodigoSerieTurmaExtensao === 'function') ? extrairCodigoSerieTurmaExtensao(String(v || '').split('-')[0]) : null;
+    const vistos = new Set();
+    return lista.filter(t => {
+        if (!t || !t.nome_estudante) return false;
+        if (!codigos.has(codigoDe(t.turma || t.serie))) return false;
+        const chave = String(t.id_estudante_origem || t.id || t.nome_estudante);
+        if (vistos.has(chave)) return false;
+        vistos.add(chave);
+        return true;
+    }).sort((a, b) => String(a.nome_estudante).localeCompare(String(b.nome_estudante), 'pt-BR'));
+}
+
+function atualizarEstudantesAnexo4Dua() {
+    const box = document.getElementById('anexo4DuaEstudantes');
+    if (!box) return;
+    const serie = (document.getElementById('anexo4DuaSerie') || {}).value || '';
+    const disciplina = (document.getElementById('anexo4DuaDisciplina') || {}).value || '';
+    if (!serie) { box.innerHTML = '<span style="color:#7a869a;">Escolha a série para ver os estudantes.</span>'; return; }
+    const estudantes = estudantesDaSerieAnexo4Dua(serie, disciplina);
+    if (estudantes.length === 0) {
+        box.innerHTML = '<span style="color:#7a869a;">Nenhum estudante do Painel AEE nas suas turmas dessa série. A IA gera só o bloco da série.</span>';
+        return;
+    }
+    box.innerHTML = `<p style="font-size:11px; color:#5f6b7f; margin:0 0 6px 0;">A IA lê a ficha de cada um. Desmarque quem não deve entrar.</p>`
+        + estudantes.map(t => `<label style="display:block; margin:3px 0;"><input type="checkbox" class="anexo4DuaEstudante" value="${escapeAttrEstagiario(t.id)}" checked> ${escapeHtmlEstagiario(t.nome_estudante)}${t.turma ? ` <span style="color:#7a869a;">(${escapeHtmlEstagiario(t.turma)})</span>` : ''}${t.anexoPaee ? ' <span title="Tem Anexo III - PAEE">📋</span>' : ''}</label>`).join('');
+}
+
+// Resumo curto da ficha do estudante para a IA: diagnóstico/categoria e os campos do Anexo III - PAEE
+// que mais ajudam o professor de sala. Sem nome (a IA recebe só um código).
+function fichaResumoAnexo4Dua(t) {
+    const corta = (v) => {
+        const txt = String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+        return txt.length > TAMANHO_MAX_TRECHO_FICHA_ANEXO4_DUA ? txt.slice(0, TAMANHO_MAX_TRECHO_FICHA_ANEXO4_DUA) + '...' : txt;
+    };
+    const partes = [];
+    if (t.aee_categoria_diagnostico) partes.push(`Categoria: ${corta(t.aee_categoria_diagnostico)}`);
+    if (t.aee_diagnostico) partes.push(`Diagnóstico: ${corta(t.aee_diagnostico)}`);
+    const d = t.anexoPaee && t.anexoPaee.dados;
+    if (d) {
+        ['informacoes_identificadas', 'habilidades_desenvolvidas', 'estrategias_utilizadas', 'recomendacao_professor', 'materiais_pedagogicos']
+            .forEach(k => {
+                const c = ANEXO_PAEE_CAMPOS_IA.find(x => x.key === k);
+                if (c && d[k] && String(d[k]).trim()) partes.push(`${c.label}: ${corta(d[k])}`);
+            });
+    }
+    if (!d && t.aee_relatorio) partes.push(`Relatório: ${corta(t.aee_relatorio)}`);
+    return partes.join(' | ');
+}
+
+function coletarFormularioAnexo4Dua() {
+    const serie = (document.getElementById('anexo4DuaSerie') || {}).value || '';
+    const disciplina = (document.getElementById('anexo4DuaDisciplina') || {}).value || '';
+    const tema = ((document.getElementById('anexo4DuaTema') || {}).value || '').trim();
+    if (!serie || !disciplina) { alert('Escolha a Série / Ano e a Disciplina.'); return null; }
+    if (!tema) { alert('Escreva o tema central ou a atividade que você vai fazer.'); return null; }
+    const marcados = new Set([...document.querySelectorAll('#anexo4DuaEstudantes .anexo4DuaEstudante:checked')].map(el => String(el.value)));
+    const estudantes = estudantesDaSerieAnexo4Dua(serie, disciplina).filter(t => marcados.has(String(t.id)));
+    const { turmas } = turmasAnexo4Dua(serie, disciplina);
+    const turmasNomes = [...new Set(turmas.map(t => t.nome).filter(Boolean))].join(', ');
+    return { serie, disciplina, tema, estudantes, turmasNomes, bimestre: calcularBimestreAtual(getTodayString()) };
+}
+
+function camposVaziosAnexo4Dua() {
+    const o = {};
+    ANEXO4_DUA_CAMPOS.forEach(c => { o[c.key] = ''; });
+    return o;
+}
+
+// Aceita o que a IA devolver com pequenas variações (chave diferente, lista em vez de texto).
+function normalizarCamposAnexo4Dua(obj) {
+    const o = camposVaziosAnexo4Dua();
+    if (!obj || typeof obj !== 'object') return o;
+    const sinonimos = {
+        conteudos_habilidades: ['conteudos_habilidades', 'conteudos', 'habilidades', 'conteudos_e_habilidades'],
+        estrategias: ['estrategias', 'estrategias_intervencoes', 'estrategias_intervencoes_recursos', 'intervencoes'],
+        acompanhamento: ['acompanhamento', 'acompanhar_aprendizado', 'acompanhar_o_aprendizado', 'avaliacao'],
+        apoios: ['apoios', 'apoios_complementares']
+    };
+    Object.keys(sinonimos).forEach(k => {
+        const achado = sinonimos[k].map(s => obj[s]).find(v => v != null && String(v).trim());
+        if (achado != null) o[k] = Array.isArray(achado) ? achado.join(' ') : String(achado).trim();
+    });
+    return o;
+}
+
+function montarPromptAnexo4Dua(form, contextoOficial) {
+    const { serie, disciplina, tema, estudantes, bimestre } = form;
+    const blocoEstudantes = estudantes.length
+        ? estudantes.map((t, i) => `[E${i + 1}] Turma ${t.turma || serie}. ${fichaResumoAnexo4Dua(t) || 'Ficha sem detalhes: use orientações gerais de acessibilidade, sem inventar diagnóstico.'}`).join('\n')
+        : '(nenhum estudante com ficha nesta série)';
+    const linhaCampos = ANEXO4_DUA_CAMPOS.map(c => `"${c.key}": "${c.label}"`).join(', ');
+
+    let prompt = `Você é professor de ${disciplina} da rede estadual de São Paulo e vai preencher o NOVO Anexo IV, um documento compartilhado com só 4 campos curtos.
+Série/ano: ${serie}. Componente curricular: ${disciplina}. Bimestre: ${bimestre}.
+Tema central / atividade planejada pelo professor:
+"""${tema}"""
+
+Crie UMA atividade adaptada pelo Desenho Universal para a Aprendizagem (DUA), aplicada a TODA a turma: várias formas de apresentar o conteúdo, de engajar e de o estudante mostrar o que aprendeu. A mesma atividade vale para todos; para cada estudante abaixo, diga só o que se ajusta ou se reforça para ele, a partir da ficha.
+
+Estudantes com ficha cadastrada nesta série (nomes trocados por códigos; não invente diagnóstico além do que está escrito):
+${blocoEstudantes}
+
+Regras de escrita (obrigatórias):
+- Português, direto, técnico e assertivo. Cada campo com no MÁXIMO 2 ou 3 frases curtas (até uns 300 caracteres). Sem introdução, sem repetir o enunciado, sem listas longas, sem markdown.
+- "conteudos_habilidades": o conteúdo e o(s) código(s) oficial(is) de habilidade do Currículo Paulista de ${disciplina} (ex.: EF07MA05), com descrição curta.
+- "estrategias": a atividade DUA e as intervenções e recursos.
+- "acompanhamento": como acompanhar o aprendizado (instrumentos e evidências observáveis).
+- "apoios": apoios complementares (AEE, profissional de apoio, tecnologia assistiva, colega tutor, família).
+- Nos estudantes, mantenha o mesmo conteúdo e a mesma atividade da turma, ajustando à ficha.
+
+Retorne APENAS um objeto JSON válido (sem markdown; escape aspas e quebras de linha com \\n), exatamente assim:
+{"turma": {${linhaCampos}}, "estudantes": [{"codigo": "E1", ${linhaCampos}}]}
+${estudantes.length ? `A lista "estudantes" deve ter um item para cada código, de E1 a E${estudantes.length}.` : 'A lista "estudantes" deve vir vazia: [].'}`;
+    prompt += montarBlocoContextoOficial(contextoOficial);
+    return prompt;
+}
+
+// Junta a resposta da IA com os estudantes reais (a IA só vê os códigos E1, E2...).
+function montarResultadoAnexo4Dua(form, resposta) {
+    const listaIA = (resposta && Array.isArray(resposta.estudantes)) ? resposta.estudantes : [];
+    return {
+        serie: form.serie,
+        disciplina: form.disciplina,
+        tema: form.tema,
+        bimestre: form.bimestre,
+        turmasNomes: form.turmasNomes || '',
+        turma: normalizarCamposAnexo4Dua(resposta && resposta.turma),
+        estudantes: form.estudantes.map((t, i) => {
+            const codigo = 'E' + (i + 1);
+            const daIA = listaIA.find(e => e && String(e.codigo || '').toUpperCase() === codigo) || listaIA[i] || null;
+            return { id: t.id, nome: t.nome_estudante, turma: t.turma || '', campos: normalizarCamposAnexo4Dua(daIA) };
+        })
+    };
+}
+
+async function gerarAnexo4DuaEstagiario() {
+    const form = coletarFormularioAnexo4Dua();
+    if (!form) return;
+    const btn = document.getElementById('btnGerarDocumentoIA');
+    const original = btn ? btn.textContent : '';
+    if (btn) { btn.textContent = 'Gerando... ⏳'; btn.disabled = true; }
+    try {
+        const contextoOficial = await montarContextoCurriculoOficial(form.disciplina, form.serie, form.tema);
+        const resposta = await chamarIAEstruturada(montarPromptAnexo4Dua(form, contextoOficial), btn);
+        const resultado = montarResultadoAnexo4Dua(form, resposta);
+        const registro = salvarAnexo4DuaNoHistorico(resultado);
+        closeModal('modalGerarDocumentoIA');
+        abrirModalAnexo4Dua(resultado, registro ? registro.id : '');
+    } catch (e) {
+        console.error(e);
+        alert('Erro ao gerar o Anexo IV com IA:\n' + e.message);
+    } finally {
+        if (btn) { btn.textContent = original; btn.disabled = false; }
+    }
+}
+
+// "✍️ Manual": abre a mesma tela com os campos em branco (série + cada estudante) para escrever à mão.
+function gerarAnexo4DuaManual() {
+    const form = coletarFormularioAnexo4Dua();
+    if (!form) return;
+    const resultado = montarResultadoAnexo4Dua(form, null);
+    closeModal('modalGerarDocumentoIA');
+    abrirModalAnexo4Dua(resultado, '');
+}
+
+function salvarAnexo4DuaNoHistorico(resultado, idExistente) {
+    const registro = registrarDocumentoNoHistoricoProfessor({
+        tipo: 'anexo4_dua',
+        titulo: `Anexo IV - ${resultado.disciplina} - ${resultado.serie}`,
+        subtitulo: resultado.tema + (resultado.estudantes.length ? ` · ${resultado.estudantes.length} estudante(s)` : ''),
+        serie: resultado.serie,
+        disciplina: resultado.disciplina,
+        payload: JSON.parse(JSON.stringify(resultado))
+    }, idExistente);
+    // Mantém o texto só dos mais recentes, para o histórico não crescer sem limite.
+    try {
+        let comTexto = 0;
+        (data.historicoDocumentos || []).forEach(h => {
+            if (!h || h.tipo !== 'anexo4_dua' || !h.payload) return;
+            comTexto++;
+            if (comTexto > MAX_ANEXO4_DUA_COM_TEXTO_HISTORICO) { delete h.payload; h.textoArquivado = true; }
+        });
+    } catch (_) { /* só poda */ }
+    return registro;
+}
+
+function textoBlocoAnexo4Dua(campos) {
+    return ANEXO4_DUA_CAMPOS.map(c => `${c.label}: ${String((campos && campos[c.key]) || '').trim()}`).join('\n\n');
+}
+
+function htmlBlocoAnexo4Dua(titulo, grupo, campos) {
+    return `
+        <div class="anexo4DuaBloco" data-grupo="${escapeAttrEstagiario(grupo)}" style="border:1px solid #e3e8ef; border-radius:8px; padding:10px 12px; margin-bottom:12px; background:#fff;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+                <strong style="color:#1b4488;">${titulo}</strong>
+                <button type="button" class="btn btn-sm btn-secondary" style="padding:3px 8px; font-size:12px;" onclick="copiarBlocoAnexo4Dua(this)">📋 Copiar os 4</button>
+            </div>
+            ${ANEXO4_DUA_CAMPOS.map(c => `
+                <div style="margin-bottom:8px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                        <label style="font-size:12px; font-weight:bold; color:#3d4759;">${escapeHtmlEstagiario(c.label)}:</label>
+                        <button type="button" class="btn btn-sm btn-info" style="padding:2px 8px; font-size:12px;" onclick="copiarCampoAnexo4Dua(this)">📋 Copiar</button>
+                    </div>
+                    <textarea class="anexo4DuaCampo" data-campo="${c.key}" rows="3" oninput="marcarAlteradoAnexo4Dua()" style="width:100%; padding:6px 8px; border:1px solid #cdd5e1; border-radius:4px; font-family:inherit; font-size:13px; line-height:1.4; margin-top:3px;">${escapeHtmlEstagiario((campos && campos[c.key]) || '')}</textarea>
+                </div>`).join('')}
+        </div>`;
+}
+
+let resultadoAbertoAnexo4Dua = null;
+
+function abrirModalAnexo4Dua(resultado, historicoId) {
+    resultadoAbertoAnexo4Dua = JSON.parse(JSON.stringify(resultado));
+    let modal = document.getElementById('modalAnexo4Dua');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modalAnexo4Dua';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    modal.dataset.historicoId = historicoId || '';
+    modal.dataset.alterado = '';
+    const r = resultadoAbertoAnexo4Dua;
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 720px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e3e8ef; padding-bottom:10px; margin-bottom:12px;">
+                <h2 style="margin:0; font-size:20px;">📘 Anexo IV · ${escapeHtmlEstagiario(r.serie)} · ${escapeHtmlEstagiario(r.disciplina)}</h2>
+                <button class="btn btn-sm btn-danger" style="padding:2px 8px;" onclick="fecharModalAnexo4Dua()">×</button>
+            </div>
+            <p style="margin:0 0 4px 0; font-size:13px; color:#3d4759;"><strong>Atividade:</strong> ${escapeHtmlEstagiario(r.tema)}</p>
+            <p style="margin:0 0 12px 0; font-size:12px; color:#5f6b7f;">Leia e ajuste se precisar. Toque em "📋 Copiar" e cole no campo do documento compartilhado. ${historicoId ? 'Já está salvo em Documentos › Histórico.' : 'Toque em "💾 Salvar" para guardar no Histórico.'}</p>
+            <div id="anexo4DuaBlocos" style="max-height:60vh; overflow-y:auto; padding-right:4px;">
+                ${htmlBlocoAnexo4Dua(`🏫 Série ${escapeHtmlEstagiario(r.serie)} (turma toda)${r.turmasNomes ? ` <span style="font-weight:normal; color:#7a869a; font-size:12px;">${escapeHtmlEstagiario(r.turmasNomes)}</span>` : ''}`, 'turma', r.turma)}
+                ${r.estudantes.map((e, i) => htmlBlocoAnexo4Dua(`👤 ${escapeHtmlEstagiario(e.nome)}${e.turma ? ` <span style="font-weight:normal; color:#7a869a; font-size:12px;">${escapeHtmlEstagiario(e.turma)}</span>` : ''}`, 'e' + i, e.campos)).join('')}
+            </div>
+            <div style="margin-top:14px; display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap;">
+                <button class="btn btn-secondary" onclick="fecharModalAnexo4Dua()">Fechar</button>
+                <button class="btn btn-primary" id="btnSalvarAnexo4Dua" onclick="salvarEdicoesAnexo4Dua()">💾 Salvar</button>
+            </div>
+        </div>`;
+    showModal('modalAnexo4Dua');
+}
+
+function marcarAlteradoAnexo4Dua() {
+    const modal = document.getElementById('modalAnexo4Dua');
+    if (modal) modal.dataset.alterado = '1';
+}
+
+function lerTelaAnexo4Dua() {
+    const r = resultadoAbertoAnexo4Dua;
+    if (!r) return null;
+    document.querySelectorAll('#modalAnexo4Dua .anexo4DuaBloco').forEach(bloco => {
+        const grupo = bloco.dataset.grupo;
+        const alvo = grupo === 'turma' ? r.turma : (r.estudantes[parseInt(grupo.slice(1), 10)] || {}).campos;
+        if (!alvo) return;
+        bloco.querySelectorAll('.anexo4DuaCampo').forEach(ta => { alvo[ta.dataset.campo] = ta.value; });
+    });
+    return r;
+}
+
+function salvarEdicoesAnexo4Dua(silencioso) {
+    const modal = document.getElementById('modalAnexo4Dua');
+    const r = lerTelaAnexo4Dua();
+    if (!modal || !r) return;
+    const registro = salvarAnexo4DuaNoHistorico(r, modal.dataset.historicoId || '');
+    if (registro) modal.dataset.historicoId = registro.id;
+    modal.dataset.alterado = '';
+    if (!silencioso) alert(registro ? '💾 Anexo IV salvo em Documentos › Histórico.' : 'Não foi possível salvar no Histórico.');
+}
+
+// Fechar guarda sozinho o que foi editado, para o Histórico ficar igual ao que foi colado.
+function fecharModalAnexo4Dua() {
+    const modal = document.getElementById('modalAnexo4Dua');
+    if (modal && modal.dataset.alterado === '1') salvarEdicoesAnexo4Dua(true);
+    closeModal('modalAnexo4Dua');
+}
+
+function copiarCampoAnexo4Dua(botao) {
+    const caixa = botao.closest('div').parentElement.querySelector('.anexo4DuaCampo');
+    if (caixa) copiarTextoAnexo4Dua(caixa.value.trim(), botao);
+}
+
+function copiarBlocoAnexo4Dua(botao) {
+    const bloco = botao.closest('.anexo4DuaBloco');
+    if (!bloco) return;
+    const campos = {};
+    bloco.querySelectorAll('.anexo4DuaCampo').forEach(ta => { campos[ta.dataset.campo] = ta.value; });
+    copiarTextoAnexo4Dua(textoBlocoAnexo4Dua(campos), botao);
+}
+
+function copiarTextoAnexo4Dua(texto, botao) {
+    if (typeof copiarTextoNotas === 'function') return copiarTextoNotas(texto, botao);
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(texto);
+}
+
+// Documentos › Histórico: "📋 Abrir" reabre a tela de copiar e colar com o texto guardado.
+function abrirAnexo4DuaHistorico(id) {
+    const h = (data.historicoDocumentos || []).find(x => x && String(x.id) === String(id));
+    if (!h || !h.payload) return alert('O texto deste Anexo IV não está mais guardado (só os mais recentes ficam com o texto).');
+    abrirModalAnexo4Dua(h.payload, h.id);
 }

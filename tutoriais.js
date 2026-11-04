@@ -265,13 +265,35 @@ const TOURS = {
         },
         passos: [
             { alvo: '#modalGerarDocumentoIA .modal-content', titulo: '🤖 Estagiário IA', texto: 'O Estagiário escreve o rascunho do documento para você revisar. Abre pelo botão "✨ Estagiário" (no Início ou em Documentos).' },
-            { alvo: '#iaDocTipo', titulo: 'Tipo de documento', texto: 'Plano de Aula, Agenda Mensal (montada da sua agenda, sem IA), Anexo III - PAEE ou Anexo IV - PEI. Os campos de baixo mudam conforme o tipo.' },
+            { alvo: '#iaDocTipo', titulo: 'Tipo de documento', texto: 'Plano de Aula, Agenda Mensal (montada da sua agenda, sem IA), Anexo III - PAEE, Anexo IV (novo modelo, para copiar e colar) ou Anexo IV - PEI (modelo antigo). Os campos de baixo mudam conforme o tipo.' },
             { alvo: '#iaDocSemanaData', titulo: 'Semana', texto: 'Para o plano de aula: clique num dia e a semana inteira (segunda a sexta) é escolhida.' },
             { alvo: '#iaDocSerie', titulo: 'Série e disciplina', texto: 'Vêm das suas turmas.' },
             { alvo: '#iaDocTema', titulo: 'Tema da aula', texto: 'Escreva o assunto (ex.: Frações).' },
             { alvo: '#btnSugerirTemasPlanoAula', titulo: '💡 Sugerir temas', texto: 'Sem ideia? A IA lê os materiais da Biblioteca e o currículo da série e sugere temas. Toque num tema para usá-lo.' },
             { alvo: () => { const t = $('#iaDocPrompt'); return t ? (t.parentElement || t) : null; }, titulo: 'Comando do Estagiário', texto: 'O pedido que vai para a IA. Pode ajustar; "Restaurar Padrão" volta ao original.' },
             { alvo: '#btnGerarDocumentoIA', titulo: 'Gerar Estrutura', texto: 'A IA monta o documento. Depois você revisa, edita, salva, baixa em PDF ou imprime. O que for salvo aparece em Documentos.' }
+        ]
+    },
+
+    anexo4Dua: {
+        nome: 'Anexo IV (novo modelo)',
+        preparar: async () => {
+            if (typeof abrirModalGerarDocumentoIA !== 'function') return;
+            if (!modalAberto('modalGerarDocumentoIA')) {
+                await irPara('documentos');
+                await abrirModalGerarDocumentoIA();
+                await esperar(300);
+            }
+            const sel = $('#iaDocTipo');
+            if (sel && sel.querySelector('option[value="anexo4_dua"]')) { sel.value = 'anexo4_dua'; toggleTipoDocumentoIA(); }
+            return { fechar: () => { if (typeof closeModal === 'function') closeModal('modalGerarDocumentoIA'); } };
+        },
+        passos: [
+            { alvo: '#iaDocTipo', titulo: '📘 Anexo IV (novo modelo)', texto: 'Escolha "Anexo IV (novo modelo)". É o Anexo IV do documento compartilhado, com 4 campos curtos.' },
+            { alvo: '#anexo4DuaSerie', titulo: 'Série e disciplina', texto: 'Vêm das suas turmas. A IA usa o currículo dessa série e disciplina.' },
+            { alvo: '#anexo4DuaTema', titulo: 'Tema / atividade', texto: 'Escreva o tema central ou a atividade que você vai fazer com a turma.' },
+            { alvo: '#anexo4DuaEstudantes', titulo: 'Estudantes com ficha', texto: 'Os estudantes do Painel AEE das suas turmas dessa série. A IA lê a ficha de cada um. Desmarque quem não deve entrar.' },
+            { alvo: '#btnGerarDocumentoIA', titulo: '✨ Gerar Anexo IV', texto: 'A IA cria uma atividade adaptada (DUA) para a turma toda e escreve os 4 campos: um bloco da série e um de cada estudante, cada campo com o botão "📋 Copiar". Fica salvo em Documentos › Histórico.' }
         ]
     },
 
@@ -828,7 +850,7 @@ const INICIANTE = [
     { id: 'i-estagiario', titulo: 'Estagiário IA: plano de aula e documentos', tour: 'estagiario',
       praQue: 'A IA escreve o rascunho; você revisa e usa.',
       passos: ['Toque em "✨ Estagiário" (no Início ou em Documentos).',
-               'Escolha o tipo: Plano de Aula, Agenda Mensal, Anexo III - PAEE ou Anexo IV - PEI.',
+               'Escolha o tipo: Plano de Aula, Agenda Mensal, Anexo III - PAEE ou Anexo IV.',
                'No plano de aula: escolha a semana, a série, a disciplina e escreva o tema. Sem ideia? "💡 Sugerir temas".',
                'Toque em "Gerar Estrutura", revise o texto e salve, baixe em PDF ou imprima.',
                'O que você salvar fica em Documentos (Planos de Aula, Anexo IV e Histórico).'],
@@ -882,8 +904,19 @@ const PAGINAS = [
       praQue: 'Dizer em que horário você está em cada turma.',
       passos: ['A grade vem da gestão.', 'Em cada horário, escolha a turma ou a atividade.', 'Salva sozinho.', 'Opcional: Google Agenda.'] },
     { id: 'p-estagiario', icone: '🤖', titulo: 'Estagiário IA', tour: 'estagiario',
-      praQue: 'Rascunho de plano de aula, Agenda Mensal, Anexo III - PAEE e Anexo IV - PEI.',
+      praQue: 'Rascunho de plano de aula, Agenda Mensal, Anexo III - PAEE e Anexo IV (novo modelo e PEI antigo).',
       passos: INICIANTE.find(x => x.id === 'i-estagiario').passos },
+    { id: 'p-anexo4', icone: '📘', titulo: 'Anexo IV (novo modelo): copiar e colar', tour: 'anexo4Dua',
+      praQue: 'Preencher os 4 campos do Anexo IV no documento compartilhado, da série e de cada estudante.',
+      passos: ['Toque em "✨ Estagiário" e escolha "📘 Anexo IV (novo modelo)".',
+               'Escolha a série e a disciplina e escreva o tema central ou a atividade.',
+               'Confira os estudantes com ficha (Painel AEE) que a IA vai considerar.',
+               'Toque em "✨ Gerar Anexo IV": a IA cria uma atividade adaptada (DUA) para a turma toda.',
+               'Em cada campo (Conteúdos e habilidades; Estratégias, intervenções pedagógicas e recursos; Acompanhar o aprendizado; Apoios complementares), toque em "📋 Copiar" e cole no documento.',
+               'Fica salvo em Documentos › Histórico ("📋 Abrir e copiar" reabre).'],
+      dicas: ['O texto sai curto de propósito. Ajuste na própria caixa antes de copiar; ao fechar, a mudança fica salva.',
+              '"✍️ Manual" abre os mesmos campos em branco, sem IA.',
+              'O Anexo IV - PEI em Word continua como "(modelo antigo)".'] },
     { id: 'p-registros', icone: '📂', titulo: 'Registros (da gestão)', tour: 'registrosProfessor',
       praQue: 'Faltas justificadas, atestados e alertas que a gestão lançou para os seus estudantes.',
       passos: ['Só para consulta: quem altera é a gestão.', 'Separado por turma.'] },
