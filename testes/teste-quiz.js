@@ -360,11 +360,12 @@ async function ate(fn, ms) {
     await page.waitForTimeout(500);
     const resto = await page.evaluate(() => ({
         sala: Object.keys(window.__fakeBanco.docs).filter(k => k.startsWith('quiz_salas/')),
-        relatorios: JSON.parse(localStorage.getItem('sisprof_quiz_relatorios_u1') || '[]').length,
+        relatorios: qzRelatoriosConta.ler().length,
+        naConta: (typeof data !== 'undefined' && data && Array.isArray(data.relatoriosQuiz)) ? data.relatoriosQuiz.length : -1,
         lista: /Relatórios das últimas partidas/.test(document.getElementById('tabFerramentasQuiz').textContent)
     }));
     ok('sala, jogadores e respostas apagados do banco', resto.sala.length === 0, resto.sala.join(', '));
-    ok('o relatorio ficou no aparelho e aparece na lista', resto.relatorios === 1 && resto.lista);
+    ok('o relatorio ficou guardado (na conta, quando ela esta carregada) e aparece na lista', resto.relatorios === 1 && resto.lista, 'naConta=' + resto.naConta);
     await fA.waitForFunction(() => /fechou a sala/.test(document.body.textContent), null, { timeout: 5000 }).catch(() => {});
     ok('o aluno fica sabendo que a sala fechou', /fechou a sala/.test(await fA.textContent('body')));
 

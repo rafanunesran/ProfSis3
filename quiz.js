@@ -823,16 +823,78 @@ function qzTelaCheia() {
 }
 
 // ---------------------------------------------------------------------------
-// Relatorios guardados no aparelho
+// Relatorios das partidas: vao com a conta, nao ficam presos ao aparelho
 // ---------------------------------------------------------------------------
+// Moram em `data.relatoriosQuiz`. O campo nao esta em CAMPOS_NUVEM (shared.js), entao e' tratado
+// como PESSOAL: sobe para o Firestore dentro da camada pessoal cifrada da conta (core.js:
+// enviarCamadaPessoalCifrada) e volta em qualquer aparelho em que o professor entrar. Isso importa
+// porque o relatorio traz o apelido que o aluno digitou, que muitas vezes e' o nome dele.
+// Antes eles ficavam so' no localStorage; os que ainda estiverem la' sao trazidos para a conta
+// na primeira leitura. Sem os dados da conta carregados, continua usando o aparelho.
+
+const MAX_RELATORIOS_QUIZ = 20;
 
 function chaveRelatorios() { return 'sisprof_quiz_relatorios_' + (uidAtual() || 'anon'); }
-function lerRelatorios() { try { return JSON.parse(localStorage.getItem(chaveRelatorios()) || '[]'); } catch (_) { return []; } }
+function lerRelatoriosDoAparelho() { try { const l = JSON.parse(localStorage.getItem(chaveRelatorios()) || '[]'); return Array.isArray(l) ? l : []; } catch (_) { return []; } }
+function temDadosDaConta() { return typeof data !== 'undefined' && !!data && typeof data === 'object'; }
+function salvarDadosDaConta() { try { if (typeof persistirDados === 'function') persistirDados(); } catch (e) { console.warn('[Quiz] nao consegui salvar na conta:', e); } }
+
+// Traz para a conta o que so' existia neste aparelho. Roda uma vez por aparelho/conta.
+function migrarRelatoriosDoAparelho() {
+    if (!temDadosDaConta()) return false;
+    const locais = lerRelatoriosDoAparelho();
+    if (!locais.length) return false;
+    if (!Array.isArray(data.relatoriosQuiz)) data.relatoriosQuiz = [];
+    const ids = new Set(data.relatoriosQuiz.map(r => r && String(r.id)));
+    locais.forEach(r => { if (r && r.id && !ids.has(String(r.id))) { data.relatoriosQuiz.push(r); ids.add(String(r.id)); } });
+    ordenarRelatorios();
+    try { localStorage.removeItem(chaveRelatorios()); } catch (_) {}
+    salvarDadosDaConta();
+    return true;
+}
+
+function ordenarRelatorios() {
+    const excl = new Set((data.relatoriosQuizExcluidos || []).map(String));
+    data.relatoriosQuiz = data.relatoriosQuiz
+        .filter(r => r && !excl.has(String(r.id)))
+        .sort((a, b) => String(b.data || '').localeCompare(String(a.data || '')))
+        .slice(0, MAX_RELATORIOS_QUIZ);
+}
+
+function lerRelatorios() {
+    if (!temDadosDaConta()) return lerRelatoriosDoAparelho();
+    migrarRelatoriosDoAparelho();
+    if (!Array.isArray(data.relatoriosQuiz)) return [];
+    ordenarRelatorios();   // a juncao com outro aparelho acrescenta no fim
+    return data.relatoriosQuiz;
+}
+
 function guardarRelatorio(rel) {
-    const lista = lerRelatorios();
     rel.id = rel.id || Q().novoId();
-    lista.unshift(rel);
-    try { localStorage.setItem(chaveRelatorios(), JSON.stringify(lista.slice(0, 20))); } catch (e) { console.warn('[Quiz] relatorio nao coube no aparelho:', e); }
+    if (!temDadosDaConta()) {
+        const lista = lerRelatoriosDoAparelho();
+        lista.unshift(rel);
+        try { localStorage.setItem(chaveRelatorios(), JSON.stringify(lista.slice(0, MAX_RELATORIOS_QUIZ))); } catch (e) { console.warn('[Quiz] relatorio nao coube no aparelho:', e); }
+        return;
+    }
+    migrarRelatoriosDoAparelho();
+    if (!Array.isArray(data.relatoriosQuiz)) data.relatoriosQuiz = [];
+    data.relatoriosQuiz.unshift(rel);
+    ordenarRelatorios();
+    salvarDadosDaConta();
+}
+
+function apagarRelatorioGuardado(id) {
+    if (!temDadosDaConta()) {
+        try { localStorage.setItem(chaveRelatorios(), JSON.stringify(lerRelatoriosDoAparelho().filter(r => r.id !== id))); } catch (_) {}
+        return;
+    }
+    if (Array.isArray(data.relatoriosQuiz)) data.relatoriosQuiz = data.relatoriosQuiz.filter(r => r && r.id !== id);
+    // Sem isto, o relatorio apagado aqui voltaria do outro aparelho na juncao (shared.js: unirCamadaPessoal).
+    if (!Array.isArray(data.relatoriosQuizExcluidos)) data.relatoriosQuizExcluidos = [];
+    if (data.relatoriosQuizExcluidos.indexOf(String(id)) === -1) data.relatoriosQuizExcluidos.push(String(id));
+    data.relatoriosQuizExcluidos = data.relatoriosQuizExcluidos.slice(-500);
+    salvarDadosDaConta();
 }
 
 function desenharRelatoriosAntigos() {
@@ -868,8 +930,8 @@ function qzBaixarCsv(id) {
 }
 
 function qzApagarRelatorio(id) {
-    if (!confirm('Apagar este relatório deste aparelho?')) return;
-    try { localStorage.setItem(chaveRelatorios(), JSON.stringify(lerRelatorios().filter(r => r.id !== id))); } catch (_) {}
+    if (!confirm('Apagar este relatório?')) return;
+    apagarRelatorioGuardado(id);
     desenharLista();
 }
 
@@ -1034,7 +1096,8 @@ Object.assign(window, {
     qzIniciar, qzRemoverJogador, qzProximaPergunta, qzRevelar, qzPlacar, qzEncerrar, qzTelaCheia,
     qzVerRelatorio, qzVerRelatorioAtual, qzBaixarCsv, qzApagarRelatorio,
     // so' leitura, para os testes e para o console de suporte
-    qzEstado: () => ({ editando: qzEditando, vista: qzVista, partida: qzPartida })
+    qzEstado: () => ({ editando: qzEditando, vista: qzVista, partida: qzPartida }),
+    qzRelatoriosConta: { ler: lerRelatorios, guardar: guardarRelatorio, apagar: apagarRelatorioGuardado }
 });
 
 })();

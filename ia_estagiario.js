@@ -396,9 +396,41 @@ function podarHistoricoDocumentosProfessor(historico) {
     return cortado;
 }
 
+// Ids dos documentos que o professor tirou do histórico. O histórico vai pra nuvem dentro da camada
+// pessoal cifrada e, ao abrir em outro aparelho, as duas cópias são UNIDAS (shared.js:
+// unirCamadaPessoal) - sem esta lista, o documento apagado no computador voltava do celular que ainda
+// o tinha. Também é campo pessoal (não está em CAMPOS_NUVEM), então viaja junto, cifrado.
+const MAX_HISTORICO_EXCLUIDOS_PROFESSOR = 1000;
+
+function idsExcluidosHistoricoProfessor() {
+    if (typeof data === 'undefined' || !data || !Array.isArray(data.historicoDocumentosExcluidos)) return new Set();
+    return new Set(data.historicoDocumentosExcluidos.map(String));
+}
+
+function _momentoHistoricoProfessor(h) {
+    if (h && typeof h.ts === 'number') return h.ts;
+    const t = Date.parse((h && h.criadoEm) || '');
+    return isNaN(t) ? 0 : t;
+}
+
+// Arruma o histórico depois de ele ter sido juntado com o de outro aparelho: tira o que foi apagado
+// em qualquer um deles e põe de novo do mais recente pro mais antigo (a junção acrescenta no fim).
+function arrumarHistoricoDocumentosProfessor() {
+    if (typeof data === 'undefined' || !data || !Array.isArray(data.historicoDocumentos)) return [];
+    const excluidos = idsExcluidosHistoricoProfessor();
+    const lista = data.historicoDocumentos
+        .filter(h => h && !(h.id != null && excluidos.has(String(h.id))));
+    const ordenada = lista.slice().sort((a, b) => _momentoHistoricoProfessor(b) - _momentoHistoricoProfessor(a));
+    const mudou = ordenada.length !== data.historicoDocumentos.length
+        || ordenada.some((h, i) => h !== data.historicoDocumentos[i]);
+    if (mudou) data.historicoDocumentos = ordenada;
+    return data.historicoDocumentos;
+}
+
 function lerHistoricoDocumentosProfessor() {
     if (typeof data === 'undefined' || !data) return [];
-    return Array.isArray(data.historicoDocumentos) ? data.historicoDocumentos : [];
+    if (!Array.isArray(data.historicoDocumentos)) return [];
+    return arrumarHistoricoDocumentosProfessor();
 }
 
 // Guarda mais um documento no topo do histórico (mais recente primeiro) e corta o excedente.
@@ -430,6 +462,7 @@ function registrarDocumentoNoHistoricoProfessor(entrada, idExistente) {
             professor: (typeof currentUser !== 'undefined' && currentUser) ? currentUser.nome : ''
         }, entrada || {});
 
+        arrumarHistoricoDocumentosProfessor();
         data.historicoDocumentos.unshift(registro);
         data.historicoDocumentos = podarHistoricoDocumentosProfessor(data.historicoDocumentos);
         if (typeof persistirDados === 'function') persistirDados();
@@ -445,6 +478,11 @@ function registrarDocumentoNoHistoricoProfessor(entrada, idExistente) {
 async function excluirDocumentoHistoricoProfessor(id) {
     if (typeof data === 'undefined' || !data || !Array.isArray(data.historicoDocumentos)) return;
     data.historicoDocumentos = data.historicoDocumentos.filter(h => String(h.id) !== String(id));
+    if (!Array.isArray(data.historicoDocumentosExcluidos)) data.historicoDocumentosExcluidos = [];
+    if (data.historicoDocumentosExcluidos.indexOf(String(id)) === -1) data.historicoDocumentosExcluidos.push(String(id));
+    if (data.historicoDocumentosExcluidos.length > MAX_HISTORICO_EXCLUIDOS_PROFESSOR) {
+        data.historicoDocumentosExcluidos = data.historicoDocumentosExcluidos.slice(-MAX_HISTORICO_EXCLUIDOS_PROFESSOR);
+    }
     if (typeof persistirDados === 'function') await persistirDados();
 }
 
@@ -491,7 +529,10 @@ function lerHistoricoPlanoAulaEstagiario() {
             payload: h.payload || null
         }));
 
-    const doAparelho = lerHistoricoPlanoAulaLocalEstagiario().map(h => ({
+    const excluidos = idsExcluidosHistoricoProfessor();
+    const doAparelho = lerHistoricoPlanoAulaLocalEstagiario()
+        .filter(h => !(h && h.id != null && excluidos.has(String(h.id))))
+        .map(h => ({
         id: h.id,
         ts: momentoPlanoAulaEstagiario(h),
         serie: h.serie || '',
