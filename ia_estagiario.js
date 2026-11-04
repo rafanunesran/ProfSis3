@@ -1799,6 +1799,8 @@ async function gerarAgendaMensalEstagiario(modo) {
 // tenta os provedores/modelos com fallback e devolve o objeto já parseado. Lança erro (pro chamador
 // tratar com alert) se a chave não estiver configurada, se todas as tentativas falharem ou se a IA
 // não devolver um JSON válido.
+const LIMITE_TEMPO_IA_MS = 45000;
+
 async function chamarIAEstruturada(promptText, btn) {
     let apiKeys = [];
     let configData = null;
@@ -1811,7 +1813,7 @@ async function chamarIAEstruturada(promptText, btn) {
         console.warn('Erro ao buscar chave da IA:', e);
     }
 
-    if (apiKeys.length === 0) throw new Error('⚠️ A chave da API não foi configurada. Peça ao Administrador para entrar no painel Super Admin e adicioná-la na aba Migração.');
+    if (apiKeys.length === 0) throw new Error('⚠️ A chave da API não foi configurada. Peça ao Administrador para entrar no painel Super Admin e adicioná-la em 🔑 Chaves de IA (e deixá-la Ativa).');
 
     // Tenta as chaves do Gemini antes das de OpenAI/Groq (mesmo se o Administrador tiver deixado mais
     // de uma cadastrada) - evita bater em limite de outro provedor (ex: Groq) antes de chegar na chave
@@ -1822,6 +1824,15 @@ async function chamarIAEstruturada(promptText, btn) {
     let success = false;
     let lastError = '';
     let respostaTexto = '';
+    // Último erro de CADA chave (pelo nome dado no painel Super Admin), pra o aviso final dizer o que
+    // aconteceu com cada uma - antes só aparecia o erro da última chave tentada, e parecia que as
+    // outras (ex: as do Gemini) nem tinham sido usadas.
+    const errosPorChave = new Map();
+    const nomeDaChave = (k) => {
+        const c = configData && Array.isArray(configData.chaves) ? configData.chaves.find(x => x && x.chave === k) : null;
+        const fim = k.length > 4 ? '…' + k.slice(-4) : '';
+        return ((c && c.nome) ? c.nome : 'Chave') + ' ' + fim;
+    };
 
     let tentativas = 3; // Tenta até 3 vezes
     // Modelos do Gemini em ordem de preferência (core.js: listarModelosGemini) - configuráveis pelo
@@ -1837,9 +1848,12 @@ async function chamarIAEstruturada(promptText, btn) {
             try {
                 if (btn) btn.textContent = `Gerando estrutura... ⏳ (Tentativa ${i+1}/3)`;
 
-                // Implementa limite de tempo (20 segundos) para evitar congelamento da tela
+                // Limite de tempo para evitar congelamento da tela. Era 20s, mas os modelos novos do
+                // Gemini "pensam" antes de responder e, com prompts grandes (Anexo IV com as fichas
+                // do AEE, Plano de Aula com o currículo), passavam disso - a chave era cortada por
+                // tempo e parecia que não estava funcionando.
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 20000);
+                const timeoutId = setTimeout(() => controller.abort(), LIMITE_TEMPO_IA_MS);
 
                 // --- ROTEADOR MULTI-IA AUTOMÁTICO ---
                 if (currentKey.startsWith('sk-or-')) {
@@ -1985,13 +1999,14 @@ async function chamarIAEstruturada(promptText, btn) {
                 // domínio da API - comum em redes de escola) do erro de resposta da própria API, pra
                 // dar uma pista útil no alert final em vez do "Failed to fetch" genérico do navegador.
                 if (err.name === 'AbortError') {
-                    lastError = 'Tempo de resposta esgotado (20s) - rede lenta ou bloqueando a API.';
+                    lastError = `Tempo de resposta esgotado (${LIMITE_TEMPO_IA_MS / 1000}s) - rede lenta ou bloqueando a API.`;
                 } else if (err instanceof TypeError) {
                     lastError = `Falha de conexão com a API de IA (${err.message}). Provável bloqueio de firewall/rede - peça para a equipe de TI/rede liberar o domínio generativelanguage.googleapis.com (ou api.openai.com/api.groq.com/integrate.api.nvidia.com, conforme a chave usada).`;
                 } else {
                     lastError = err.message;
                 }
-                console.warn(`⚠️ Falha na API (Tentativa ${i+1}):`, lastError);
+                console.warn(`⚠️ Falha na API (Tentativa ${i+1}, ${nomeDaChave(currentKey)}):`, lastError);
+                errosPorChave.set(nomeDaChave(currentKey), lastError);
 
                 // Modelo aposentado pelo Google: a mensagem de erro traz o substituto. Adota o novo
                 // modelo e passa pra próxima tentativa - insistir com as outras chaves no mesmo
@@ -2011,7 +2026,10 @@ async function chamarIAEstruturada(promptText, btn) {
     }
 
     if (!success) {
-        throw new Error(`A Inteligência Artificial falhou ou rejeitou o pedido.\nMotivo: ${lastError}`);
+        const detalhes = errosPorChave.size > 1
+            ? '\n\nO que aconteceu com cada chave:\n' + [...errosPorChave].map(([nome, erro]) => `• ${nome}: ${erro}`).join('\n')
+            : '';
+        throw new Error(`A Inteligência Artificial falhou ou rejeitou o pedido.\nMotivo: ${lastError}${detalhes}`);
     }
 
     // Limpa potenciais blocos markdown que a IA possa enviar por teimosia e converte para objeto
