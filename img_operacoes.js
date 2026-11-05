@@ -189,7 +189,47 @@ function redimensionar(img, novaL, novaA) {
 // Tudo em -100..100, zero = sem mudanca. Feito em JavaScript puro, e nao com o
 // `ctx.filter` do canvas, porque o Safari do iPhone passou anos ignorando o filter em
 // silencio: o professor mexia no controle e a foto baixada saia igual.
-const FILTROS = ['nenhum', 'cinza', 'sepia', 'pb', 'inverter', 'frio', 'quente', 'vintage'];
+const FILTROS = ['nenhum', 'cinza', 'sepia', 'pb', 'inverter', 'frio', 'quente', 'vintage',
+                 'folha', 'lapis', 'posterizar', 'duotom'];
+
+// Os pontos de corte do "ajuste automatico": o 0,5% mais escuro vira preto e o 0,5% mais
+// claro vira branco, canal por canal. E' o que tira o veu cinza/amarelado da foto tirada
+// com luz de sala de aula. Canal quase sem variacao (foto de uma cor so') fica como esta'.
+function pontosDosNiveis(img) {
+    const h = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
+    const d = img.dados;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3] < 8) continue;
+        h[0][d[i]]++; h[1][d[i + 1]]++; h[2][d[i + 2]]++; n++;
+    }
+    const corte = Math.max(1, Math.round(n * 0.005));
+    return h.map(hist => {
+        let lo = 0, hi = 255, s = 0;
+        for (; lo < 255; lo++) { s += hist[lo]; if (s >= corte) break; }
+        s = 0;
+        for (; hi > 0; hi--) { s += hist[hi]; if (s >= corte) break; }
+        return hi - lo < 24 ? [0, 255] : [lo, hi];
+    });
+}
+
+// Histograma da luminosidade (256 caixas), para a tela desenhar.
+function histograma(img) {
+    const h = new Uint32Array(256), d = img.dados;
+    for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3] < 8) continue;
+        h[Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2])]++;
+    }
+    return h;
+}
+
+// O desfoque de caixa tres vezes (quase um gaussiano), com o raio limitado ao tamanho.
+function borrar(img, raio) {
+    raio = Math.max(1, Math.round(raio));
+    let b = img;
+    for (let i = 0; i < 3; i++) b = caixaSeparavel(b, raio);
+    return b;
+}
 
 function ajustar(img, op) {
     op = op || {};
@@ -198,25 +238,50 @@ function ajustar(img, op) {
     const saturacao = limitar(Number(op.saturacao) || 0, -100, 100) / 100;
     const temperatura = limitar(Number(op.temperatura) || 0, -100, 100) / 100;
     const exposicao = limitar(Number(op.exposicao) || 0, -100, 100) / 100;
+    const sombras = limitar(Number(op.sombras) || 0, -100, 100) / 100;
+    const realces = limitar(Number(op.realces) || 0, -100, 100) / 100;
     const filtro = FILTROS.indexOf(op.filtro) >= 0 ? op.filtro : 'nenhum';
 
     // Contraste pela formula classica (em torno do cinza medio); o fator vai de 0 a ~4x.
     const fc = contraste >= 0 ? 1 + contraste * 3 : 1 + contraste;
     const fe = Math.pow(2, exposicao * 1.5);
 
-    // Tabela por canal: brilho, exposicao e contraste sao a mesma curva nos tres canais,
-    // calculada uma vez so' (256 contas em vez de uma por pixel).
-    const curva = new Float32Array(256);
-    for (let i = 0; i < 256; i++) {
-        let v = i * fe + brilho * 255 * 0.6;
-        v = (v - 128) * fc + 128;
-        curva[i] = v;
+    // Tabela por canal: niveis automaticos, brilho, exposicao e contraste viram uma conta
+    // so' por valor (256 contas por canal em vez de uma por pixel).
+    const niveis = op.auto ? pontosDosNiveis(img) : [[0, 255], [0, 255], [0, 255]];
+    const curvas = niveis.map(([lo, hi]) => {
+        const curva = new Float32Array(256);
+        for (let i = 0; i < 256; i++) {
+            let v = (i - lo) * 255 / (hi - lo);
+            v = v * fe + brilho * 255 * 0.6;
+            v = (v - 128) * fc + 128;
+            curva[i] = v;
+        }
+        return curva;
+    });
+    // Sombras e realces: clareiam (ou escurecem) so' as partes escuras ou so' as claras,
+    // pela luminosidade do pixel. O peso e' maximo em 1/3 (sombras) e 2/3 (realces) e
+    // some nos extremos, para o preto continuar preto e o branco continuar branco.
+    let tom = null;
+    if (sombras || realces) {
+        tom = new Float32Array(256);
+        for (let i = 0; i < 256; i++) {
+            const y = i / 255;
+            const ps = y * (1 - y) * (1 - y) * 6.75, pr = y * y * (1 - y) * 6.75;
+            tom[i] = (sombras * ps + realces * pr) * 255 * 0.4;
+        }
     }
+    const escuro = corDeHex(op.cor1 || '#1f3a68'), claro = corDeHex(op.cor2 || '#ffd8a8');
 
-    const saida = copiar(img), s = saida.dados;
+    let saida = copiar(img), s = saida.dados;
+    const [c0, c1, c2] = curvas;
     for (let i = 0; i < s.length; i += 4) {
-        let r = curva[s[i]], g = curva[s[i + 1]], b = curva[s[i + 2]];
+        let r = c0[s[i]], g = c1[s[i + 1]], b = c2[s[i + 2]];
 
+        if (tom) {
+            const t = tom[limitar(Math.round(0.299 * r + 0.587 * g + 0.114 * b), 0, 255)];
+            r += t; g += t; b += t;
+        }
         if (saturacao) {
             const cinza = 0.299 * r + 0.587 * g + 0.114 * b;
             const f = 1 + saturacao;
@@ -226,7 +291,7 @@ function ajustar(img, op) {
 
         if (filtro !== 'nenhum') {
             const cinza = 0.299 * r + 0.587 * g + 0.114 * b;
-            if (filtro === 'cinza') { r = g = b = cinza; }
+            if (filtro === 'cinza' || filtro === 'folha' || filtro === 'lapis') { r = g = b = cinza; }
             else if (filtro === 'pb') { r = g = b = cinza >= 128 ? 255 : 0; }
             else if (filtro === 'sepia') {
                 const nr = 0.393 * r + 0.769 * g + 0.189 * b;
@@ -240,10 +305,254 @@ function ajustar(img, op) {
             else if (filtro === 'vintage') {
                 r = r * 0.9 + 30; g = g * 0.85 + 20; b = b * 0.7 + 25;
             }
+            else if (filtro === 'posterizar') {
+                r = Math.round(limitar(r, 0, 255) / 85) * 85;
+                g = Math.round(limitar(g, 0, 255) / 85) * 85;
+                b = Math.round(limitar(b, 0, 255) / 85) * 85;
+            }
+            else if (filtro === 'duotom') {
+                const t = limitar(cinza, 0, 255) / 255;
+                r = escuro[0] + (claro[0] - escuro[0]) * t;
+                g = escuro[1] + (claro[1] - escuro[1]) * t;
+                b = escuro[2] + (claro[2] - escuro[2]) * t;
+            }
         }
         s[i] = r; s[i + 1] = g; s[i + 2] = b;   // Uint8ClampedArray ja' corta em 0..255
     }
+
+    // Daqui para baixo, o que olha os vizinhos do pixel. Os raios sao proporcionais ao
+    // tamanho da imagem: e' isso que faz a previa pequena e o arquivo grande baterem.
+    const lado = Math.max(img.largura, img.altura);
+    if (filtro === 'folha') saida = folhaLimpa(saida, lado);
+    if (filtro === 'lapis') saida = desenhoALapis(saida, lado);
+
+    const ruido = limitar(Number(op.ruido) || 0, 0, 100) / 100;
+    if (ruido) saida = reduzirRuido(saida, lado, ruido);
+    const desfoque = limitar(Number(op.desfoque) || 0, 0, 100) / 100;
+    if (desfoque) saida = borrar(saida, lado * desfoque * 0.02);
+    const nitidez = limitar(Number(op.nitidez) || 0, 0, 100) / 100;
+    if (nitidez) saida = realcarNitidez(saida, lado, nitidez);
+    const pixelar = limitar(Number(op.pixelar) || 0, 0, 100);
+    if (pixelar) saida = pixelarRegiao(saida, { x: 0, y: 0, largura: img.largura, altura: img.altura }, pixelar / 10);
+    const vinheta = limitar(Number(op.vinheta) || 0, -100, 100) / 100;
+    if (vinheta) saida = aplicarVinheta(saida, vinheta);
     return saida;
+}
+
+// "Folha limpa": a foto da folha de caderno tirada com a sombra da mao em cima. Divide
+// cada pixel pelo "fundo" em volta dele (um desfoque bem largo): onde o papel e' cinza
+// por causa da sombra, a divisao devolve branco; a letra, mais escura que o papel em
+// volta, continua escura. Depois um corte de contraste deixa o papel branco de verdade.
+function folhaLimpa(img, lado) {
+    const fundo = borrar(img, Math.max(2, lado / 45));
+    const saida = copiar(img), s = saida.dados, f = fundo.dados;
+    for (let i = 0; i < s.length; i += 4) {
+        const razao = s[i] / Math.max(1, f[i]);
+        const v = limitar((razao - 0.55) / 0.37, 0, 1);
+        s[i] = s[i + 1] = s[i + 2] = Math.round(Math.pow(v, 1.6) * 255);
+    }
+    return saida;
+}
+
+// "Desenho a lapis": o truque classico de "subexposicao de cor" entre a foto em cinza e
+// o negativo dela borrado. Onde nada muda (parede, ceu) fica branco; nas bordas sobra o
+// risco.
+function desenhoALapis(img, lado) {
+    const neg = copiar(img), n = neg.dados;
+    for (let i = 0; i < n.length; i += 4) { n[i] = n[i + 1] = n[i + 2] = 255 - n[i]; }
+    const b = borrar(neg, Math.max(1, lado / 160)).dados;
+    const saida = copiar(img), s = saida.dados;
+    for (let i = 0; i < s.length; i += 4) {
+        const v = Math.min(255, s[i] * 255 / Math.max(1, 255 - b[i]));
+        s[i] = s[i + 1] = s[i + 2] = v;
+    }
+    return saida;
+}
+
+// Granulado de foto com pouca luz: troca cada pixel pela media dos vizinhos SO' onde a
+// diferenca e' pequena (granulado). Onde a diferenca e' grande (uma borda, uma letra), o
+// pixel fica como esta' — senao "tirar o granulado" viraria so' desfocar.
+function reduzirRuido(img, lado, forca) {
+    const b = borrar(img, Math.max(1, lado / 500)).dados;
+    const saida = copiar(img), s = saida.dados;
+    const limiar = 12 + forca * 28;
+    for (let i = 0; i < s.length; i += 4) {
+        const dif = (Math.abs(b[i] - s[i]) + Math.abs(b[i + 1] - s[i + 1]) + Math.abs(b[i + 2] - s[i + 2])) / 3;
+        const k = forca * Math.max(0, 1 - dif / limiar);
+        if (!k) continue;
+        s[i] += (b[i] - s[i]) * k; s[i + 1] += (b[i + 1] - s[i + 1]) * k; s[i + 2] += (b[i + 2] - s[i + 2]) * k;
+    }
+    return saida;
+}
+
+// Nitidez pela "mascara de desfoque": soma a diferenca entre a foto e ela mesma borrada.
+function realcarNitidez(img, lado, forca) {
+    const b = borrar(img, Math.max(1, lado / 700)).dados;
+    const saida = copiar(img), s = saida.dados;
+    const k = forca * 1.6;
+    for (let i = 0; i < s.length; i += 4) {
+        s[i] += (s[i] - b[i]) * k; s[i + 1] += (s[i + 1] - b[i + 1]) * k; s[i + 2] += (s[i + 2] - b[i + 2]) * k;
+    }
+    return saida;
+}
+
+// Vinheta: positivo escurece os cantos, negativo clareia (moldura branca suave).
+function aplicarVinheta(img, forca) {
+    const saida = copiar(img), s = saida.dados, L = img.largura, A = img.altura;
+    const cx = (L - 1) / 2, cy = (A - 1) / 2;
+    for (let y = 0; y < A; y++) {
+        const dy = (y - cy) / (cy || 1);
+        for (let x = 0; x < L; x++) {
+            const dx = (x - cx) / (cx || 1);
+            const r = Math.sqrt(dx * dx + dy * dy) / Math.SQRT2;          // 0 no meio, 1 no canto
+            const t = limitar((r - 0.35) / 0.65, 0, 1);
+            const p = t * t * (3 - 2 * t) * Math.abs(forca) * 0.75;
+            const o = (y * L + x) * 4;
+            if (forca > 0) { s[o] *= 1 - p; s[o + 1] *= 1 - p; s[o + 2] *= 1 - p; }
+            else { s[o] += (255 - s[o]) * p; s[o + 1] += (255 - s[o + 1]) * p; s[o + 2] += (255 - s[o + 2]) * p; }
+        }
+    }
+    return saida;
+}
+
+// ---------------------------------------------------------------------------
+// Endireitar a foto da folha (corte em perspectiva)
+// ---------------------------------------------------------------------------
+// O professor fotografa a prova em cima da mesa, de lado. Os 4 cantos da folha formam um
+// quadrilatero torto; a conta abaixo "desentorta" esse quadrilatero num retangulo, como
+// se a folha tivesse passado no scanner.
+//
+// `cantos` em pixels da imagem, em qualquer ordem: a funcao poe em ordem (superior
+// esquerdo, superior direito, inferior direito, inferior esquerdo).
+
+function ordenarCantos(cantos) {
+    const pts = (cantos || []).slice(0, 4).map(p => ({ x: Number(p.x) || 0, y: Number(p.y) || 0 }));
+    if (pts.length !== 4) return null;
+    const cx = pts.reduce((s, p) => s + p.x, 0) / 4, cy = pts.reduce((s, p) => s + p.y, 0) / 4;
+    // Em volta do centro, no sentido do relogio (y cresce para baixo).
+    pts.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+    // Comeca pelo canto mais perto do topo-esquerdo.
+    let ini = 0;
+    pts.forEach((p, i) => { if (p.x + p.y < pts[ini].x + pts[ini].y) ini = i; });
+    return pts.slice(ini).concat(pts.slice(0, ini));
+}
+
+function distancia(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+// Largura e altura do retangulo de saida: a media dos lados opostos do quadrilatero.
+function tamanhoDaFolha(cantos) {
+    const p = ordenarCantos(cantos);
+    if (!p) return null;
+    return {
+        largura: Math.max(1, Math.round((distancia(p[0], p[1]) + distancia(p[3], p[2])) / 2)),
+        altura: Math.max(1, Math.round((distancia(p[0], p[3]) + distancia(p[1], p[2])) / 2))
+    };
+}
+
+// Homografia que leva os 4 pontos `de` nos 4 pontos `para` (sistema 8x8, eliminacao de
+// Gauss com pivo parcial). Devolve os 9 coeficientes (h8 = 1) ou null se degenerado.
+function homografia(de, para) {
+    const M = [];
+    for (let i = 0; i < 4; i++) {
+        const { x, y } = de[i], u = para[i].x, v = para[i].y;
+        M.push([x, y, 1, 0, 0, 0, -u * x, -u * y, u]);
+        M.push([0, 0, 0, x, y, 1, -v * x, -v * y, v]);
+    }
+    for (let c = 0; c < 8; c++) {
+        let piv = c;
+        for (let r = c + 1; r < 8; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+        if (Math.abs(M[piv][c]) < 1e-10) return null;
+        [M[c], M[piv]] = [M[piv], M[c]];
+        for (let r = 0; r < 8; r++) {
+            if (r === c) continue;
+            const f = M[r][c] / M[c][c];
+            for (let k = c; k < 9; k++) M[r][k] -= f * M[c][k];
+        }
+    }
+    const h = [];
+    for (let i = 0; i < 8; i++) h.push(M[i][8] / M[i][i]);
+    h.push(1);
+    return h;
+}
+
+function endireitar(img, cantos, largura, altura) {
+    const p = ordenarCantos(cantos);
+    if (!p) throw new Error('Marque os 4 cantos da folha.');
+    const tam = tamanhoDaFolha(p);
+    const L = Math.max(1, Math.round(largura || tam.largura)), A = Math.max(1, Math.round(altura || tam.altura));
+    // De cada pixel da SAIDA para o ponto da foto (assim nao sobra buraco).
+    const H = homografia([{ x: 0, y: 0 }, { x: L, y: 0 }, { x: L, y: A }, { x: 0, y: A }], p);
+    if (!H) throw new Error('Os cantos marcados estão alinhados demais. Puxe cada um para um canto da folha.');
+    const saida = novaImagem(L, A), s = saida.dados, d = img.dados, IL = img.largura, IA = img.altura;
+    for (let y = 0; y < A; y++) {
+        const yy = y + 0.5;
+        for (let x = 0; x < L; x++) {
+            const xx = x + 0.5;
+            const w = H[6] * xx + H[7] * yy + H[8];
+            let sx = (H[0] * xx + H[1] * yy + H[2]) / w - 0.5;
+            let sy = (H[3] * xx + H[4] * yy + H[5]) / w - 0.5;
+            sx = limitar(sx, 0, IL - 1); sy = limitar(sy, 0, IA - 1);
+            const x0 = Math.floor(sx), y0 = Math.floor(sy);
+            const x1 = Math.min(IL - 1, x0 + 1), y1 = Math.min(IA - 1, y0 + 1);
+            const tx = sx - x0, ty = sy - y0;
+            const o00 = (y0 * IL + x0) * 4, o10 = (y0 * IL + x1) * 4, o01 = (y1 * IL + x0) * 4, o11 = (y1 * IL + x1) * 4;
+            const n = (y * L + x) * 4;
+            for (let c = 0; c < 4; c++) {
+                s[n + c] = (d[o00 + c] * (1 - tx) + d[o10 + c] * tx) * (1 - ty) + (d[o01 + c] * (1 - tx) + d[o11 + c] * tx) * ty;
+            }
+        }
+    }
+    return saida;
+}
+
+// Acha a folha sozinho: a maior mancha clara ligada (papel em cima de mesa mais escura),
+// numa copia pequena, e os 4 pontos mais extremos dela. Devolve os cantos NORMALIZADOS
+// (0..1) ou null quando nao ha' uma folha clara ocupando boa parte da foto.
+function acharFolha(img) {
+    const f = Math.min(1, 320 / Math.max(img.largura, img.altura));
+    const p = f < 1 ? redimensionar(img, Math.max(1, Math.round(img.largura * f)), Math.max(1, Math.round(img.altura * f))) : img;
+    const L = p.largura, A = p.altura, N = L * A, d = p.dados;
+    const cinza = new Uint8Array(N), hist = new Uint32Array(256);
+    for (let i = 0; i < N; i++) {
+        const v = Math.round(0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]);
+        cinza[i] = v; hist[v]++;
+    }
+    // Limiar de Otsu: o corte que melhor separa "claro" de "escuro".
+    let soma = 0; for (let i = 0; i < 256; i++) soma += i * hist[i];
+    let sB = 0, wB = 0, melhor = 0, limiar = 128;
+    for (let t = 0; t < 256; t++) {
+        wB += hist[t]; if (!wB) continue;
+        const wF = N - wB; if (!wF) break;
+        sB += t * hist[t];
+        const mB = sB / wB, mF = (soma - sB) / wF;
+        const entre = wB * wF * (mB - mF) * (mB - mF);
+        if (entre > melhor) { melhor = entre; limiar = t; }
+    }
+    // Maior mancha clara ligada (vizinhanca de 4).
+    const rotulo = new Int32Array(N).fill(-1), fila = new Int32Array(N);
+    let maior = null;
+    for (let i = 0; i < N; i++) {
+        if (rotulo[i] !== -1 || cinza[i] <= limiar) continue;
+        let ini = 0, fim = 0; fila[fim++] = i; rotulo[i] = i;
+        let tl = i, tr = i, br = i, bl = i;
+        const val = (k, sx, sy) => (k % L) * sx + Math.floor(k / L) * sy;
+        while (ini < fim) {
+            const k = fila[ini++], x = k % L, y = (k - x) / L;
+            if (val(k, 1, 1) < val(tl, 1, 1)) tl = k;
+            if (val(k, 1, 1) > val(br, 1, 1)) br = k;
+            if (val(k, 1, -1) > val(tr, 1, -1)) tr = k;
+            if (val(k, 1, -1) < val(bl, 1, -1)) bl = k;
+            const viz = [x > 0 ? k - 1 : -1, x < L - 1 ? k + 1 : -1, y > 0 ? k - L : -1, y < A - 1 ? k + L : -1];
+            for (const v of viz) if (v >= 0 && rotulo[v] === -1 && cinza[v] > limiar) { rotulo[v] = i; fila[fim++] = v; }
+        }
+        if (!maior || fim > maior.area) maior = { area: fim, cantos: [tl, tr, br, bl] };
+    }
+    if (!maior || maior.area < N * 0.12) return null;
+    const cantos = maior.cantos.map(k => ({ x: ((k % L) + 0.5) / L, y: (Math.floor(k / L) + 0.5) / A }));
+    // Quadrilatero pequeno demais (mancha comprida e fina) nao e' folha.
+    const t = tamanhoDaFolha(cantos.map(c => ({ x: c.x * L, y: c.y * A })));
+    if (!t || t.largura < L * 0.2 || t.altura < A * 0.2) return null;
+    return cantos;
 }
 
 // ---------------------------------------------------------------------------
@@ -867,7 +1176,8 @@ function extensaoDoTipo(tipo) {
 
 const IMGOPS = {
     novaImagem, copiar, girar, espelhar, recortar, calcularTamanho, redimensionar,
-    FILTROS, ajustar, desfocarRegiao, pixelarRegiao, tarjaRegiao, removerMarcaRegioes, corDoFundo, removerFundo,
+    FILTROS, ajustar, histograma, pontosDosNiveis, ordenarCantos, tamanhoDaFolha, endireitar, acharFolha,
+    desfocarRegiao, pixelarRegiao, tarjaRegiao, removerMarcaRegioes, corDoFundo, removerFundo,
     achatar, temTransparencia, POSICOES, posicionar, codificarGif, codificarBmp,
     formatarTamanho, nomeDeSaida, extensaoDoTipo, corDeHex
 };

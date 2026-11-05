@@ -165,7 +165,8 @@ function quebrarLinhas(ctx, texto, larguraMax) {
 // Ferramenta:
 //   varios     aceita muitos arquivos de uma vez (processa um por um)
 //   previa     mostra a previa ao vivo da PRIMEIRA imagem enquanto os controles mudam
-//   marcar     'corte' | 'areas' | 'pontos' — o professor marca na previa com o dedo
+//   marcar     'corte' | 'areas' | 'pontos' | 'cantos' — o professor marca na previa com o dedo
+//   histograma mostra o histograma da previa embaixo dela (editor de fotos)
 //   semArquivo nao pede imagem (HTML para imagem)
 //   externo    a ferramenta tem tela propria (Aumentar resolucao = ampliar.js)
 
@@ -184,6 +185,9 @@ const cQualidade = () => ({
 function tipoPedido(op, arquivo) {
     return (!op.formato || op.formato === 'mesmo') ? formatoDeSaida(arquivo.tipo) : op.formato;
 }
+
+// Cantos iniciais do "Endireitar" (normalizados), quando a folha nao e' achada sozinha.
+const CANTOS_PADRAO = [{ x: 0.08, y: 0.08 }, { x: 0.92, y: 0.08 }, { x: 0.92, y: 0.92 }, { x: 0.08, y: 0.92 }];
 
 const CATALOGO_IMG = [
     {
@@ -257,6 +261,36 @@ const CATALOGO_IMG = [
         }
     },
     {
+        id: 'endireitar', emoji: '📐', nome: 'Endireitar foto de folha', previa: true, marcar: 'cantos',
+        resumo: 'A foto da prova tirada de lado sai reta, como se tivesse passado no scanner.',
+        detalhe: 'Puxe as 4 bolinhas para os 4 cantos da folha. O sistema tenta achar a folha sozinho; ' +
+                 'funciona melhor com a folha sobre uma mesa mais escura que ela.',
+        campos: [
+            { id: 'tamanho', tipo: 'botoes', rotulo: 'Formato da folha', padrao: 'auto',
+              opcoes: [['auto', 'Como foi marcada'], ['a4p', 'A4 em pé'], ['a4d', 'A4 deitado']] },
+            { id: 'acabamento', tipo: 'botoes', rotulo: 'Acabamento', padrao: 'folha',
+              opcoes: [['nenhum', 'Cor original'], ['auto', 'Ajuste automático'], ['folha', 'Folha limpa (preto e branco)'], ['pb', 'Alto contraste']],
+              ajuda: '"Folha limpa" tira a sombra da mão e deixa o papel branco; bom para imprimir e para o OCR.' },
+            cFormato('image/jpeg'), cQualidade()
+        ],
+        processar: async (fonte, op, extra) => {
+            const k = (extra.marcas.cantos || CANTOS_PADRAO).map(c => ({ x: c.x * fonte.width, y: c.y * fonte.height }));
+            let t = IMGOPS.tamanhoDaFolha(k);
+            // Nao sai maior que a foto: a folha ocupa so' parte dela.
+            const lado = Math.max(fonte.width, fonte.height);
+            if (op.tamanho === 'a4p' || op.tamanho === 'a4d') {
+                const curto = Math.min(t.largura, t.altura), longo = Math.round(curto * 1.4142);
+                t = op.tamanho === 'a4p' ? { largura: curto, altura: longo } : { largura: longo, altura: curto };
+            }
+            const f = Math.min(1, lado / Math.max(t.largura, t.altura));
+            let p = IMGOPS.endireitar(pixels(fonte), k, t.largura * f, t.altura * f);
+            if (op.acabamento === 'folha') p = IMGOPS.ajustar(p, { filtro: 'folha' });
+            else if (op.acabamento === 'auto') p = IMGOPS.ajustar(p, { auto: true });
+            else if (op.acabamento === 'pb') p = IMGOPS.ajustar(p, { auto: true, filtro: 'pb' });
+            return { canvas: canvasDePixels(p), sufixo: '-endireitada' };
+        }
+    },
+    {
         id: 'paraJpg', emoji: '🔄', nome: 'Converter para JPG', varios: true,
         resumo: 'PNG, WebP, GIF, BMP, SVG e outros viram JPG.',
         detalhe: 'O formato que todo sistema aceita. O que era transparente ganha a cor de fundo escolhida.',
@@ -284,20 +318,36 @@ const CATALOGO_IMG = [
         processar: async (fonte, op) => ({ blob: await salvar(fonte, op.destino, 0.92), sufixo: '' })
     },
     {
-        id: 'editor', emoji: '🎨', nome: 'Editor de fotos', previa: true,
-        resumo: 'Brilho, contraste, cor e filtros, vendo o resultado na hora.',
+        id: 'editor', emoji: '🎨', nome: 'Editor de fotos', previa: true, histograma: true,
+        resumo: 'Ajuste automático, luz, cor, nitidez e filtros, vendo o resultado na hora.',
         detalhe: 'Para a foto escura da atividade no quadro, ou para o material sair com cara de uma coisa só.',
         campos: [
+            { id: 'auto', tipo: 'check', rotulo: '✨ Ajuste automático (corrige a luz e a cor sozinho)', padrao: false,
+              ajuda: 'Tira o véu cinza ou amarelado da foto. Depois dá para mexer nos outros controles por cima.' },
             { id: 'brilho', tipo: 'faixa', rotulo: 'Brilho', padrao: 0, min: -100, max: 100, passo: 1 },
             { id: 'contraste', tipo: 'faixa', rotulo: 'Contraste', padrao: 0, min: -100, max: 100, passo: 1 },
             { id: 'exposicao', tipo: 'faixa', rotulo: 'Exposição', padrao: 0, min: -100, max: 100, passo: 1 },
+            { id: 'sombras', tipo: 'faixa', rotulo: 'Partes escuras', padrao: 0, min: -100, max: 100, passo: 1,
+              ajuda: 'Positivo clareia só o que está escuro (rosto contra a janela), sem estourar o resto.' },
+            { id: 'realces', tipo: 'faixa', rotulo: 'Partes claras', padrao: 0, min: -100, max: 100, passo: 1,
+              ajuda: 'Negativo recupera o céu ou o quadro branco que ficou estourado.' },
             { id: 'saturacao', tipo: 'faixa', rotulo: 'Saturação', padrao: 0, min: -100, max: 100, passo: 1 },
             { id: 'temperatura', tipo: 'faixa', rotulo: 'Temperatura', padrao: 0, min: -100, max: 100, passo: 1,
               ajuda: 'Negativo esfria (azul), positivo esquenta (amarelo).' },
+            { id: 'nitidez', tipo: 'faixa', rotulo: 'Nitidez', padrao: 0, min: 0, max: 100, passo: 1 },
+            { id: 'ruido', tipo: 'faixa', rotulo: 'Tirar granulado', padrao: 0, min: 0, max: 100, passo: 1,
+              ajuda: 'Para foto tirada com pouca luz. Alisa os pontinhos sem borrar as letras.' },
+            { id: 'desfoque', tipo: 'faixa', rotulo: 'Desfoque', padrao: 0, min: 0, max: 100, passo: 1 },
+            { id: 'vinheta', tipo: 'faixa', rotulo: 'Vinheta', padrao: 0, min: -100, max: 100, passo: 1,
+              ajuda: 'Positivo escurece os cantos; negativo faz uma moldura branca suave.' },
+            { id: 'pixelar', tipo: 'faixa', rotulo: 'Pixelar', padrao: 0, min: 0, max: 100, passo: 1 },
             { id: 'filtro', tipo: 'botoes', rotulo: 'Filtro', padrao: 'nenhum',
-              opcoes: [['nenhum', 'Nenhum'], ['cinza', 'Preto e branco'], ['pb', 'Alto contraste'], ['sepia', 'Sépia'],
-                       ['vintage', 'Antigo'], ['frio', 'Frio'], ['quente', 'Quente'], ['inverter', 'Negativo']],
-              ajuda: '"Alto contraste" transforma foto de folha escrita em preto no branco — bom para imprimir.' },
+              opcoes: [['nenhum', 'Nenhum'], ['cinza', 'Preto e branco'], ['pb', 'Alto contraste'], ['folha', 'Folha limpa'],
+                       ['lapis', 'Desenho a lápis'], ['sepia', 'Sépia'], ['vintage', 'Antigo'], ['frio', 'Frio'],
+                       ['quente', 'Quente'], ['posterizar', 'Pôster'], ['duotom', 'Duas cores'], ['inverter', 'Negativo']],
+              ajuda: '"Folha limpa" tira a sombra da foto de folha escrita e deixa o papel branco — o melhor para imprimir.' },
+            { id: 'cor1', tipo: 'cor', rotulo: 'Cor das partes escuras', padrao: '#1f3a68', quando: op => op.filtro === 'duotom' },
+            { id: 'cor2', tipo: 'cor', rotulo: 'Cor das partes claras', padrao: '#ffd8a8', quando: op => op.filtro === 'duotom' },
             cFormato(), cQualidade()
         ],
         processar: async (fonte, op) => ({ canvas: comPixels(fonte, p => IMGOPS.ajustar(p, op)), sufixo: '-editada' })
@@ -946,13 +996,14 @@ async function desenharPrevia() {
     const op = opcoesDe(f);
     let quadro = imgPreviaFonte;
     try {
-        if (f.marcar !== 'corte' && f.processar) {
+        if (f.marcar !== 'corte' && f.marcar !== 'cantos' && f.processar) {
             const r = await f.processar(imgPreviaFonte, op, { marcas: imgMarcas, previa: true });
             if (r.canvas) quadro = r.canvas;
         }
     } catch (e) { console.warn('[IMG] previa', e); }
     tela.width = quadro.width;
     tela.height = quadro.height;
+    if (f.histograma) desenharHistograma(quadro);
     const ctx = tela.getContext('2d');
     ctx.clearRect(0, 0, tela.width, tela.height);
     ctx.drawImage(quadro, 0, 0);
@@ -985,6 +1036,31 @@ async function desenharPrevia() {
             ctx.strokeRect(r.x * L, r.y * A, r.l * L, r.a * A);
         });
         ctx.setLineDash([]);
+    } else if (f.marcar === 'cantos') {
+        const k = (imgMarcas.cantos || CANTOS_PADRAO).map(c => ({ x: c.x * L, y: c.y * A }));
+        const ordem = IMGOPS.ordenarCantos(k) || k;
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.beginPath();
+        ctx.rect(0, 0, L, A);
+        ctx.moveTo(ordem[0].x, ordem[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(ordem[i].x, ordem[i].y);
+        ctx.closePath();
+        ctx.fill('evenodd');
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = linha * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(ordem[0].x, ordem[0].y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(ordem[i].x, ordem[i].y);
+        ctx.closePath();
+        ctx.stroke();
+        const raio = Math.max(7, L / 45);
+        k.forEach((c, i) => {
+            ctx.beginPath();
+            ctx.arc(c.x, c.y, raio, 0, Math.PI * 2);
+            ctx.fillStyle = _arrasto && _arrasto.canto === i ? 'rgba(56,189,248,0.9)' : 'rgba(255,255,255,0.85)';
+            ctx.fill();
+            ctx.lineWidth = linha; ctx.strokeStyle = '#0369a1'; ctx.stroke();
+        });
     } else if (f.marcar === 'pontos') {
         (imgMarcas.pontos || []).forEach(p => {
             ctx.beginPath();
@@ -992,6 +1068,22 @@ async function desenharPrevia() {
             ctx.fillStyle = '#e53e3e'; ctx.fill();
             ctx.lineWidth = linha; ctx.strokeStyle = '#ffffff'; ctx.stroke();
         });
+    }
+}
+
+function desenharHistograma(quadro) {
+    const c = document.getElementById('imgHistograma');
+    if (!c) return;
+    const h = IMGOPS.histograma(pixels(quadro));
+    // Escala pela raiz: um pico enorme (fundo branco) nao achata o resto.
+    let max = 1;
+    for (let i = 0; i < 256; i++) max = Math.max(max, Math.sqrt(h[i]));
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, 256, 48);
+    ctx.fillStyle = '#64748b';
+    for (let i = 0; i < 256; i++) {
+        const a = Math.round(Math.sqrt(h[i]) / max * 46);
+        if (a) ctx.fillRect(i, 48 - a, 1, a);
     }
 }
 
@@ -1029,6 +1121,7 @@ function ligarPrevia() {
         imgMarcas.corte = { x: 0, y: 0, l: 1, a: 1 };
         aplicarProporcaoAoCorte();
     }
+    if (f.marcar === 'cantos' && !imgMarcas.cantos) acharFolhaNaPrevia();
     desenharPrevia();
     if (!f.marcar) return;
     tela.style.touchAction = 'none';
@@ -1044,6 +1137,21 @@ function ligarPrevia() {
             return;
         }
         try { tela.setPointerCapture(ev.pointerId); } catch (_) { /* sem suporte */ }
+        if (f.marcar === 'cantos') {
+            // Pega a bolinha mais perto do dedo (em pixels de tela, para valer no celular),
+            // e ja' a leva para onde o dedo tocou.
+            const r = tela.getBoundingClientRect();
+            const k = imgMarcas.cantos = (imgMarcas.cantos || CANTOS_PADRAO).map(c => ({ x: c.x, y: c.y }));
+            let perto = 0, melhor = Infinity;
+            k.forEach((c, i) => {
+                const d = Math.hypot((c.x - p.x) * r.width, (c.y - p.y) * r.height);
+                if (d < melhor) { melhor = d; perto = i; }
+            });
+            _arrasto = { modo: 'canto', canto: perto };
+            k[perto] = p;
+            agendarPrevia();
+            return;
+        }
         if (f.marcar === 'corte') {
             const c = imgMarcas.corte;
             const r = tela.getBoundingClientRect();
@@ -1069,7 +1177,9 @@ function ligarPrevia() {
     tela.addEventListener('pointermove', ev => {
         if (!_arrasto) return;
         const p = pontoNormalizado(ev, tela);
-        if (_arrasto.modo === 'mover') {
+        if (_arrasto.modo === 'canto') {
+            imgMarcas.cantos[_arrasto.canto] = p;
+        } else if (_arrasto.modo === 'mover') {
             const c = imgMarcas.corte;
             c.x = Math.max(0, Math.min(1 - c.l, p.x - _arrasto.dx));
             c.y = Math.max(0, Math.min(1 - c.a, p.y - _arrasto.dy));
@@ -1129,7 +1239,22 @@ function imgLimparMarcas() {
     const f = ferramenta(imgFerramenta);
     if (!f) return;
     if (f.marcar === 'corte') { imgMarcas.corte = { x: 0, y: 0, l: 1, a: 1 }; aplicarProporcaoAoCorte(); }
+    else if (f.marcar === 'cantos') imgMarcas = { cantos: CANTOS_PADRAO.map(c => ({ x: c.x, y: c.y })), achou: null };
     else imgMarcas = {};
+    soltarResultados();
+    imgRender();
+}
+
+// "Endireitar": tenta achar a folha na previa; se nao achar, as bolinhas ficam perto dos
+// cantos da foto e o professor puxa.
+function acharFolhaNaPrevia() {
+    let achou = null;
+    try { if (imgPreviaFonte) achou = IMGOPS.acharFolha(pixels(imgPreviaFonte)); } catch (e) { console.warn('[IMG] achar folha', e); }
+    imgMarcas = { cantos: (achou || CANTOS_PADRAO).map(c => ({ x: c.x, y: c.y })), achou: !!achou };
+}
+
+function imgAcharFolha() {
+    acharFolhaNaPrevia();
     soltarResultados();
     imgRender();
 }
@@ -1350,6 +1475,13 @@ function htmlPrevia(f) {
         botoes = `<button class="btn btn-sm btn-secondary" onclick="imgDesfazerMarca()">Desfazer a última</button>
                   <button class="btn btn-sm btn-secondary" onclick="imgLimparMarcas()">Apagar todas</button>
                   ${f.id === 'desfocarRosto' && 'FaceDetector' in window ? '<button class="btn btn-sm btn-secondary" onclick="imgDetectarRostos()">🤖 Achar rostos sozinho</button>' : ''}`;
+    } else if (f.marcar === 'cantos') {
+        if (!imgMarcas.cantos && imgPreviaFonte) acharFolhaNaPrevia();
+        dica = (imgMarcas.achou === true ? '🤖 Achei a folha. Confira as 4 bolinhas; se alguma estiver fora do canto, puxe. '
+              : imgMarcas.achou === false ? 'Não achei a folha sozinho. Puxe cada bolinha para um canto da folha. '
+              : 'Puxe cada bolinha para um canto da folha. ') + 'O resultado aparece ao tocar no botão abaixo.';
+        botoes = `<button class="btn btn-sm btn-secondary" onclick="imgAcharFolha()">🤖 Achar a folha de novo</button>
+                  <button class="btn btn-sm btn-secondary" onclick="imgLimparMarcas()">Bolinhas nos cantos da foto</button>`;
     } else if (f.marcar === 'pontos') {
         const n = (imgMarcas.pontos || []).length;
         dica = 'Sobrou fundo? Toque nele na prévia. ' + (n ? 'Toques: <strong>' + n + '</strong>' : '');
@@ -1362,6 +1494,11 @@ function htmlPrevia(f) {
             <div class="img-xadrez" style="border:1px solid var(--border, #e3e8ef); border-radius:8px; padding:8px;">
                 <canvas id="imgPreviaCanvas" class="img-previa"></canvas>
             </div>
+            ${f.histograma ? `<div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+                <canvas id="imgHistograma" width="256" height="48" title="Histograma: à esquerda os escuros, à direita os claros"
+                        style="width:100%; max-width:320px; height:48px; background:var(--surface-3, #eef2f7); border-radius:6px;"></canvas>
+                <span class="img-ajuda" style="margin:0;">Histograma: montanha encostada na direita = foto estourada; na esquerda = foto escura.</span>
+            </div>` : ''}
             ${dica ? `<div class="img-ajuda">${dica}</div>` : ''}
             ${botoes ? `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">${botoes}</div>` : ''}
         </div>`;
@@ -1490,6 +1627,7 @@ window.imgBaixarZip = imgBaixarZip;
 window.imgDesfazerMarca = imgDesfazerMarca;
 window.imgLimparMarcas = imgLimparMarcas;
 window.imgDetectarRostos = imgDetectarRostos;
+window.imgAcharFolha = imgAcharFolha;
 // Para os testes: le/abre sem passar pela tela.
 window.imgAdicionarArquivos = imgAdicionar;
 window.imgEstado = () => ({ ferramenta: imgFerramenta, arquivos: imgArquivos.length, resultados: imgResultados.slice(),

@@ -483,9 +483,9 @@ const DESENHAR_PNG = ({ largura, altura }) => {
             privacidade: aba.innerHTML.indexOf('não sai deste aparelho') !== -1
         };
     });
-    const esperadas = ['comprimir', 'redimensionar', 'cortar', 'paraJpg', 'deJpg', 'editor', 'ampliar',
+    const esperadas = ['comprimir', 'redimensionar', 'cortar', 'endireitar', 'paraJpg', 'deJpg', 'editor', 'ampliar',
                        'removerFundo', 'marcaDagua', 'removerMarca', 'meme', 'girar', 'htmlImagem', 'desfocarRosto'];
-    ok('o catalogo tem as 14 ferramentas de imagem', JSON.stringify(catalogo.ids) === JSON.stringify(esperadas),
+    ok('o catalogo tem as 15 ferramentas de imagem', JSON.stringify(catalogo.ids) === JSON.stringify(esperadas),
        catalogo.ids.join(', '));
     ok('com o aviso de privacidade', catalogo.privacidade);
 
@@ -580,6 +580,42 @@ const DESENHAR_PNG = ({ largura, altura }) => {
     const cinza = await page.evaluate(() => __rodar('editor', { filtro: 'cinza' }));
     ok('editor, preto e branco: R = G = B', !cinza.erro && cinza.px.every(p => Math.abs(p[0] - p[1]) <= 2 && Math.abs(p[1] - p[2]) <= 2),
        cinza.erro || cinza.meio.join(','));
+
+    const novoEditor = await page.evaluate(async () => {
+        const r = await __rodar('editor', { auto: true, sombras: 40, nitidez: 50, ruido: 30, vinheta: 30, filtro: 'folha' });
+        return { r: r, temHistograma: !!document.getElementById('imgHistograma') };
+    });
+    ok('editor novo (automatico + folha limpa + nitidez): sai a foto, cinza, do mesmo tamanho',
+       !novoEditor.r.erro && novoEditor.r.largura === 1600 && novoEditor.r.px.every(p => Math.abs(p[0] - p[2]) <= 2),
+       novoEditor.r.erro || novoEditor.r.meio.join(','));
+    ok('editor mostra o histograma', novoEditor.temHistograma);
+
+    // Endireitar: puxa a bolinha de cima-esquerda para o canto (10%, 10%) arrastando o mouse.
+    await page.evaluate(() => {
+        imgAbrir('endireitar');
+        imgLimparMarcas();
+        for (let el = document.getElementById('imgPreviaCanvas'); el && el !== document.body; el = el.parentElement) {
+            if (getComputedStyle(el).display === 'none') el.style.display = 'block';
+        }
+    });
+    await page.locator('#imgPreviaCanvas').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(200);
+    const cx = await page.locator('#imgPreviaCanvas').boundingBox();
+    await page.mouse.move(cx.x + cx.width * 0.09, cx.y + cx.height * 0.09);
+    await page.mouse.down();
+    await page.mouse.move(cx.x + cx.width * 0.2, cx.y + cx.height * 0.2, { steps: 4 });
+    await page.mouse.up();
+    const endi = await page.evaluate(async () => {
+        const marcas = imgEstado().marcas;
+        imgDefinir('acabamento', 'nenhum');
+        await imgExecutar();
+        return { marcas: marcas, r: await __lerResultado(0) };
+    });
+    const c0 = endi.marcas.cantos && endi.marcas.cantos[0];
+    ok('endireitar: arrastar move a bolinha mais perto', !!c0 && Math.abs(c0.x - 0.2) < 0.03 && Math.abs(c0.y - 0.2) < 0.03,
+       JSON.stringify(endi.marcas.cantos));
+    ok('endireitar: sai JPG com a folha desentortada', !endi.r.erro && endi.r.tipo === 'image/jpeg' && endi.r.largura > 900 && endi.r.altura > 600 &&
+       /-endireitada\.jpg$/.test(endi.r.nome), endi.r.erro || (endi.r.nome + ' ' + endi.r.largura + 'x' + endi.r.altura));
 
     const meme = await page.evaluate(() => __rodar('meme', { cima: 'TESTE', baixo: 'DE MEME', tamanho: 12 }));
     ok('meme: texto branco no alto da imagem', !meme.erro && meme.largura === 1600, meme.erro);

@@ -19,7 +19,9 @@
 //  10. BMP: cabecalho e pixels no lugar certo (de baixo para cima, BGR);
 //  11. posicao da marca d'agua e nomes de arquivo;
 //  12. remover marca d'agua: o retangulo vira o fundo em volta, fora dele nada muda,
-//      e "so' a marca" deixa intacto o que nao destoa.
+//      e "so' a marca" deixa intacto o que nao destoa;
+//  13. editor novo: automatico, partes escuras/claras, folha limpa, nitidez, vinheta, duas cores;
+//  14. endireitar folha: cantos em ordem, quadrantes no lugar, achar a folha sozinho.
 //
 // Como rodar:  node testes/teste-img.js
 
@@ -368,6 +370,91 @@ console.log('\n12. Remover marca d\'agua');
     ok('retangulo vazio ou da imagem inteira nao quebra',
        igual(Array.from(IMG.removerMarcaRegioes(comMarca, [{ x: 0, y: 0, largura: 90, altura: 50 }], {}).dados), Array.from(comMarca.dados)) &&
        IMG.removerMarcaRegioes(comMarca, [], {}).largura === 90);
+}
+
+
+console.log('\n13. Editor de fotos novo: ajuste automatico, sombras, filtros e efeitos');
+{
+    const foto = montar(40, 30, (x, y) => [60 + x * 2, 70 + y * 2, 90 + x]);
+    const zeros = IMG.ajustar(foto, { auto: false, sombras: 0, realces: 0, nitidez: 0, ruido: 0, desfoque: 0, vinheta: 0, pixelar: 0, filtro: 'nenhum' });
+    ok('controles novos em zero nao mudam nada', igual(Array.from(zeros.dados), Array.from(foto.dados)));
+    // Foto "lavada" (valores so' de 100 a 160): o automatico estica para perto de 0..255.
+    const lavada = montar(64, 1, (x) => { const v = 100 + Math.round(x * 60 / 63); return [v, v, v]; });
+    const auto = IMG.ajustar(lavada, { auto: true });
+    ok('ajuste automatico estica a foto lavada', px(auto, 0, 0)[0] < 10 && px(auto, 63, 0)[0] > 245, px(auto, 0, 0)[0] + ' / ' + px(auto, 63, 0)[0]);
+    const lisa = montar(10, 10, () => [120, 120, 120]);
+    ok('automatico nao estraga foto de uma cor so', igual(px(IMG.ajustar(lisa, { auto: true }), 5, 5), [120, 120, 120, 255]));
+    const degr = montar(256, 1, (x) => [x, x, x]);
+    const somb = IMG.ajustar(degr, { sombras: 80 });
+    ok('partes escuras clareia o escuro e deixa o branco', px(somb, 70, 0)[0] > 90 && px(somb, 255, 0)[0] === 255 && px(somb, 0, 0)[0] === 0,
+       px(somb, 70, 0)[0] + '');
+    const real = IMG.ajustar(degr, { realces: -80 });
+    ok('partes claras negativo escurece o claro e deixa o preto', px(real, 190, 0)[0] < 170 && px(real, 0, 0)[0] === 0, px(real, 190, 0)[0] + '');
+    // Folha com sombra: papel 230 a esquerda, 140 a direita (sombra), letra 40 nas duas.
+    const folha = montar(120, 60, (x, y) => {
+        const papel = x < 60 ? 230 : 140;
+        const letra = (y > 25 && y < 30 && (x % 20) < 3);
+        return letra ? [Math.round(papel * 0.25)] .concat([Math.round(papel * 0.25), Math.round(papel * 0.25)]) : [papel, papel, papel];
+    });
+    const limpa = IMG.ajustar(folha, { filtro: 'folha' });
+    ok('folha limpa: papel na sombra fica branco', px(limpa, 90, 10)[0] > 235 && px(limpa, 20, 10)[0] > 235, px(limpa, 90, 10)[0] + '/' + px(limpa, 20, 10)[0]);
+    ok('folha limpa: a letra continua escura', px(limpa, 81, 27)[0] < 60 && px(limpa, 21, 27)[0] < 60, px(limpa, 81, 27)[0] + '/' + px(limpa, 21, 27)[0]);
+    const borda = montar(40, 10, (x) => x < 20 ? [80, 80, 80] : [180, 180, 180]);
+    const nit = IMG.ajustar(borda, { nitidez: 100 });
+    ok('nitidez aumenta a diferenca na borda', px(nit, 19, 5)[0] < 80 && px(nit, 20, 5)[0] > 180, px(nit, 19, 5)[0] + '/' + px(nit, 20, 5)[0]);
+    const vin = IMG.ajustar(montar(50, 50, () => [200, 200, 200]), { vinheta: 100 });
+    ok('vinheta escurece o canto e nao o meio', px(vin, 0, 0)[0] < 100 && px(vin, 25, 25)[0] === 200, px(vin, 0, 0)[0] + '');
+    const duo = IMG.ajustar(montar(2, 1, (x) => x ? [255, 255, 255] : [0, 0, 0]), { filtro: 'duotom', cor1: '#102030', cor2: '#f0e0d0' });
+    ok('duas cores: preto vira a cor escura, branco a clara', igual(px(duo, 0, 0), [16, 32, 48, 255]) && igual(px(duo, 1, 0), [240, 224, 208, 255]));
+    const h = IMG.histograma(degr);
+    ok('histograma conta um pixel por valor', h.length === 256 && h[0] === 1 && h[255] === 1);
+    const lapis = IMG.ajustar(montar(30, 30, () => [120, 140, 160]), { filtro: 'lapis' });
+    ok('lapis: area lisa fica branca', px(lapis, 15, 15)[0] > 245, px(lapis, 15, 15)[0] + '');
+}
+
+console.log('\n14. Endireitar foto de folha (perspectiva) e achar a folha sozinho');
+{
+    // Mesa escura 200x160 com uma "folha" clara em quadrilatero torto; cada quadrante da
+    // folha tem uma cor, para conferir que a saida nao saiu girada nem espelhada.
+    const Q = [{ x: 40, y: 30 }, { x: 170, y: 20 }, { x: 180, y: 140 }, { x: 30, y: 130 }];
+    const dentro = (x, y) => {
+        let s = 0;
+        for (let i = 0; i < 4; i++) {
+            const a = Q[i], b = Q[(i + 1) % 4];
+            const c = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
+            if (c < 0) return false;
+        }
+        return true;
+    };
+    const mesa = montar(200, 160, (x, y) => {
+        if (!dentro(x, y)) return [40, 30, 25];
+        const cx = 105, cy = 80;
+        if (x < cx && y < cy) return [250, 210, 210];   // topo-esquerda rosado
+        if (x >= cx && y < cy) return [210, 250, 210];  // topo-direita verde
+        if (x >= cx) return [210, 210, 250];            // baixo-direita azul
+        return [250, 250, 200];                         // baixo-esquerda amarelo
+    });
+    const perto = (a, b, t) => a.slice(0, 3).every((v, i) => Math.abs(v - b[i]) <= t);
+    const ordem = IMG.ordenarCantos([Q[2], Q[0], Q[3], Q[1]]);
+    ok('ordenarCantos poe em ordem (sup-esq, sup-dir, inf-dir, inf-esq)', JSON.stringify(ordem) === JSON.stringify(Q));
+    const t = IMG.tamanhoDaFolha(Q);
+    ok('tamanho da folha e a media dos lados', Math.abs(t.largura - 140) < 6 && Math.abs(t.altura - 115) < 6, t.largura + 'x' + t.altura);
+    const reta = IMG.endireitar(mesa, Q, 100, 80);
+    ok('endireitar sai do tamanho pedido', reta.largura === 100 && reta.altura === 80);
+    const cor = (x, y) => px(reta, x, y).slice(0, 3);
+    ok('cada quadrante no lugar certo', perto(cor(20, 15), [250, 210, 210], 15) && perto(cor(80, 15), [210, 250, 210], 15) &&
+       perto(cor(80, 65), [210, 210, 250], 15) && perto(cor(20, 65), [250, 250, 200], 15),
+       [cor(20, 15), cor(80, 15), cor(80, 65), cor(20, 65)].map(c => c.join(',')).join(' | '));
+    let mesaNaBorda = 0;
+    for (let y = 3; y < 77; y += 4) for (let x = 3; x < 97; x += 4) if (px(reta, x, y)[0] < 80) mesaNaBorda++;
+    ok('quase nada da mesa entra na folha endireitada', mesaNaBorda <= 2, mesaNaBorda + ' pontos');
+    const achou = IMG.acharFolha(mesa);
+    ok('acha a folha sozinho', !!achou && achou.every((c, i) => Math.abs(c.x * 200 - Q[i].x) < 8 && Math.abs(c.y * 160 - Q[i].y) < 8),
+       achou ? achou.map(c => Math.round(c.x * 200) + ',' + Math.round(c.y * 160)).join(' ') : 'null');
+    ok('sem folha clara, nao inventa', IMG.acharFolha(montar(80, 60, () => [90, 90, 90])) === null);
+    let erro = '';
+    try { IMG.endireitar(mesa, [{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 20 }, { x: 30, y: 30 }]); } catch (e) { erro = e.message; }
+    ok('cantos em linha reta dao erro claro', /alinhados/.test(erro), erro);
 }
 
 console.log('\n' + (falhas ? falhas + ' FALHA(S) de ' + total : 'Tudo certo: ' + total + ' verificacoes.'));
