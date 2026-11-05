@@ -95,6 +95,10 @@ const CATALOGO_VIDEO = [
         ]
     },
     {
+        id: 'montar', grupo: 'editar', emoji: '🎞️', nome: 'Montar vídeo (editor completo)', editor: true,
+        resumo: 'Linha do tempo: junte vídeos e fotos, corte pedaços, ponha títulos, legendas e música, e exporte um vídeo só.'
+    },
+    {
         id: 'cortar', grupo: 'editar', emoji: '✂️', nome: 'Cortar vídeo',
         resumo: 'Fique só com o trecho que interessa: escolha início e fim.',
         acao: 'cortar', rotuloBotao: 'Cortar',
@@ -290,8 +294,8 @@ function vidRenderCatalogo() {
         <div class="card" style="margin:20px 0;">
             <h2>🎬 Vídeo ${vidSeloPro()}</h2>
             <p style="color:#3d4759; font-size:14px; line-height:1.6; margin-bottom:6px;">
-                ${CATALOGO_VIDEO.length} ferramentas de vídeo dentro do sistema: baixar, cortar, juntar, girar, comprimir,
-                mudar a velocidade, trocar o som e transformar em GIF.
+                ${CATALOGO_VIDEO.length} ferramentas de vídeo dentro do sistema: um editor completo com linha do tempo,
+                e ainda baixar, cortar, juntar, girar, comprimir, mudar a velocidade, trocar o som e transformar em GIF.
             </p>
             <div style="background:#f0fff4; border:1px solid #9ae6b4; border-radius:8px; padding:12px 14px; margin:12px 0; font-size:13px; color:#22543d; line-height:1.6;">
                 🔒 <strong>O vídeo não sai deste aparelho.</strong> A edição acontece aqui, no navegador — o vídeo da
@@ -311,10 +315,12 @@ function vidRenderCatalogo() {
         ${grupos}`;
 }
 
-function abrirFerramentaVideo(id) {
+function abrirFerramentaVideo(id, opcoes) {
     const f = vidFerramenta(id);
     if (!f) return;
-    if (!vidPodeUsar(f.nome)) return;
+    // semPortao: o tour de Tutoriais mostra o editor a quem ainda nao assina (ver e' livre;
+    // por dentro, acrescentar arquivo e exportar pedem o plano).
+    if (!(opcoes && opcoes.semPortao) && !vidPodeUsar(f.nome)) return;
     if (vidOcupado) return;
     vidAberta = id;
     vidEntradas = {};
@@ -327,6 +333,8 @@ function abrirFerramentaVideo(id) {
 }
 
 function fecharFerramentaVideo() {
+    const aberta = vidFerramenta(vidAberta);
+    if (aberta && aberta.editor && window.MONTAGEM && !window.MONTAGEM.fechar()) return;
     if (vidOcupado) {
         if (!confirm('O vídeo ainda está sendo processado. Parar e voltar?')) return;
         vidCancelar();
@@ -343,6 +351,12 @@ function vidRenderPainel() {
     const tela = vidTela();
     const f = vidFerramenta(vidAberta);
     if (!f) { vidRenderCatalogo(); return; }
+    if (f.editor) {
+        if (window.MONTAGEM) { window.MONTAGEM.render(tela); return; }
+        tela.innerHTML = '<div class="card" style="margin:20px 0;">O editor não carregou. Recarregue a página.' +
+            ' <button class="btn btn-sm btn-secondary" onclick="fecharFerramentaVideo()">← Voltar</button></div>';
+        return;
+    }
     const grupo = GRUPOS_VIDEO.find(g => g.id === f.grupo) || { nome: '', emoji: '' };
     tela.innerHTML = `
         <div class="card" style="margin:20px 0;">

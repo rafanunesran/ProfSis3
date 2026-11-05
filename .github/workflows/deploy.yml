@@ -108,6 +108,7 @@ jobs:
           cp img_operacoes.js img.js _site/
           cp poster_operacoes.js poster.js _site/
           cp video_operacoes.js video.js _site/
+          cp montagem_operacoes.js montagem.js _site/
           cp quiz_operacoes.js quiz.js jogar.html _site/
           cp atelie_operacoes.js atelie.js _site/
           cp tutoriais.js _site/

@@ -358,9 +358,41 @@ const TOURS = {
             { id: 'pdf', alvo: abaFerr('pdf'), titulo: '📕 PDF', texto: 'Juntar, dividir, comprimir, girar, assinar, pôr marca d\'água, converter para Word/imagem, proteger com senha e muito mais (49 ferramentas). Use a busca para achar a que precisa.', antes: () => showFerramentasTab('pdf') },
             { id: 'img', alvo: abaFerr('img'), titulo: '🖼️ IMG', texto: 'Comprimir, redimensionar, cortar, converter, remover fundo, pôr ou tirar marca d\'água, aumentar resolução e desfocar rosto de estudante antes de postar.', antes: () => showFerramentasTab('img') },
             { id: 'poster', alvo: abaFerr('poster'), titulo: '🧱 Pôster', texto: 'Transforma uma imagem num cartaz grande, dividido em folhas A4 para imprimir e colar na parede, com marcas de corte.', antes: () => showFerramentasTab('poster') },
-            { id: 'video', alvo: abaFerr('video'), titulo: '🎬 Vídeo', texto: 'Cortar, juntar, girar, comprimir, tirar ou pôr som e virar GIF, sem enviar o vídeo para ninguém.', antes: () => showFerramentasTab('video') },
+            { id: 'video', alvo: abaFerr('video'), titulo: '🎬 Vídeo', texto: 'Um editor com linha do tempo (🎞️ Montar vídeo: cortes, títulos, música) e ainda cortar, juntar, girar, comprimir, tirar ou pôr som e virar GIF, sem enviar o vídeo para ninguém.', antes: () => showFerramentasTab('video') },
             { id: 'quiz', alvo: abaFerr('quiz'), titulo: '🎯 Na Mosca!', texto: 'Quiz ao vivo na sala: você projeta o PIN e os alunos jogam pelo celular, sem conta. No fim sai o pódio e o relatório de acertos.', antes: () => showFerramentasTab('quiz') },
             { id: 'atelie', alvo: abaFerr('atelie'), titulo: '🖌️ Ateliê', texto: 'Editor de artes: certificado, cartaz, convite, crachá, comunicado. Parta de um modelo, da folha em branco ou de um pedido para a IA. Gera até um certificado por estudante da turma.', antes: () => showFerramentasTab('atelie') }
+        ]
+    },
+
+    montagemVideo: {
+        nome: 'Montar vídeo',
+        preparar: async () => {
+            await irPara('ferramentas');
+            const voltar = abaFerrAtual();
+            if (typeof showFerramentasTab === 'function') showFerramentasTab('video');
+            await esperar(150);
+            const jaAberto = !!$('#mvEditor');
+            if (!jaAberto && typeof abrirFerramentaVideo === 'function') abrirFerramentaVideo('montar', { semPortao: true });
+            await esperar(250);
+            return { fechar: () => {
+                if (jaAberto) return;
+                // Fecha o editor (vazio, aberto pelo tour) sem perguntar e volta para onde estava.
+                if (window.MONTAGEM && (!MONTAGEM.estado().proj || !MONTAGEM.estado().proj.clipes.length) && typeof fecharFerramentaVideo === 'function') fecharFerramentaVideo();
+                if (typeof showFerramentasTab === 'function') showFerramentasTab(voltar);
+            } };
+        },
+        passos: [
+            { alvo: '#mvEditor', titulo: '🎞️ Montar vídeo', texto: 'Um editor com linha do tempo: junte vídeos e fotos, corte os pedaços ruins, ponha títulos e música e saia com um vídeo só. Nada é enviado: tudo acontece no aparelho.' },
+            { alvo: '#mvBtnMidia', titulo: '➕ Vídeo ou foto', texto: 'Escolha um ou vários arquivos. Eles entram em fila na faixa de vídeo, na ordem escolhida.' },
+            { alvo: '#mvBtnCor', titulo: '🟦 Tela colorida', texto: 'Uma tela de uma cor só (4 s), boa para abrir com o título ou separar partes.' },
+            { alvo: '#mvBtnTexto', titulo: '🔤 Texto', texto: 'Título ou legenda por cima do vídeo, a partir do ponto da agulha. Escreva, escolha o estilo e arraste o texto na prévia.' },
+            { alvo: '#mvBtnAudio', titulo: '🎵 Música ou áudio', texto: 'Uma música ou narração, misturada ao som dos vídeos. Dá para deixar baixinha e terminar abaixando.' },
+            { alvo: '#mvBtnDividir', titulo: '✂️ Dividir e apagar', texto: 'Ponha a agulha vermelha onde quer cortar e toque em Dividir (tecla S). "Apagar antes" e "Apagar depois" tiram de uma vez o pedaço de um lado da agulha.' },
+            { alvo: '#mvBtnDesfazer', titulo: '↶ Desfazer', texto: 'Errou? Desfaz (Ctrl+Z) e refaz (Ctrl+Y) quantas vezes quiser.' },
+            { alvo: '#mvCanvas', titulo: 'A prévia', texto: 'Mostra o vídeo como vai ficar, com os textos. Espaço toca e pausa.' },
+            { alvo: '#mvProps', titulo: 'Ajustes', texto: 'Sem nada escolhido: o formato (deitado, em pé, quadrado), o fundo e a qualidade. Com um pedaço escolhido: velocidade, volume, duração, cor e o texto.' },
+            { alvo: '#mvLinha', titulo: 'A linha do tempo', texto: 'Toque num pedaço para escolher. Arraste para mudar de lugar; puxe as bordas para aparar. Toque na régua para mover a agulha.' },
+            { alvo: '#mvBtnExportar', titulo: '⬇️ Exportar MP4', texto: 'Gera o vídeo final no aparelho. Leva mais ou menos o tempo do vídeo; deixe a aba aberta e baixe no fim.' }
         ]
     },
 
@@ -565,6 +597,7 @@ function tourDaTelaAtual() {
     if (t === 'tutoradoDetalhe') return 'fichaTutorado';
     if (t === 'turmaDetalhe' && TOURS['aba_' + abaTurmaVisivel()]) return 'aba_' + abaTurmaVisivel();
     if (t === 'documentos' && abaDocAtual() === 'agenda') return 'documentos';
+    if (t === 'ferramentas' && $('#mvEditor') && $('#mvEditor').offsetParent !== null) return 'montagemVideo';
     return TOURS[t] ? t : 'inicio';
 }
 
@@ -943,7 +976,10 @@ const FERRAMENTAS = [
       passos: ['Escolha a imagem (ou várias).', 'Diga a largura ou a altura do cartaz: a tela mostra quantas folhas vão sair.', 'Confira a prévia com a grade das folhas.', 'Baixe o PDF: cada folha tem marca de corte e o nome do lugar (ex.: L2-C3).'] },
     { id: 'f-video', icone: '🎬', titulo: 'Vídeo', tour: 'ferramentas', tourPasso: 'video',
       praQue: 'Editar vídeos da turma sem subir o vídeo para ninguém.',
-      passos: ['Cortar, juntar, girar, espelhar e recortar.', 'Redimensionar e comprimir.', 'Mudar a velocidade e repetir.', 'Tirar ou pôr áudio.', 'Vídeo para GIF e imagens para GIF.', 'Na primeira vez, o programa de vídeo é baixado; o seu vídeo fica no aparelho.'] },
+      passos: ['🎞️ Montar vídeo: editor com linha do tempo para juntar vídeos e fotos, dividir e aparar pedaços, pôr títulos, legendas e música, mudar a velocidade e exportar em MP4 (deitado, em pé ou quadrado).', 'Cortar, juntar, girar, espelhar e recortar.', 'Redimensionar e comprimir.', 'Mudar a velocidade e repetir.', 'Tirar ou pôr áudio.', 'Vídeo para GIF e imagens para GIF.', 'Na primeira vez, o programa de vídeo é baixado; o seu vídeo fica no aparelho.'] },
+    { id: 'f-montar-video', icone: '🎞️', titulo: 'Montar vídeo (editor com linha do tempo)', tour: 'montagemVideo',
+      praQue: 'O vídeo da apresentação, da feira ou da aula, com título, cortes e música, num arquivo só.',
+      passos: ['Em Ferramentas → Vídeo, abra "🎞️ Montar vídeo".', '"➕ Vídeo ou foto": os arquivos entram em fila na faixa de vídeo. "🟦 Tela colorida" faz uma tela de título.', 'Ponha a agulha vermelha no ponto e use "✂️ Dividir" (tecla S); escolha o pedaço ruim e "🗑️ Apagar". Ou puxe as bordas do pedaço para aparar.', 'Arraste os pedaços para mudar a ordem. Toque num pedaço para mudar velocidade (câmera lenta ou acelerado), volume ou tirar o som.', '"🔤 Texto": escreva, escolha o estilo (contorno, caixa, faixa) e arraste na prévia. Na linha do tempo, puxe as bordas para dizer quando aparece e some.', '"🎵 Música ou áudio": a música fica misturada ao som; use "Fundo baixinho" e "Terminar abaixando".', 'Sem nada escolhido, ajuste o formato (deitado 16:9, em pé 9:16 para celular, quadrado) e o fundo (cor ou o próprio vídeo desfocado).', '"⬇️ Exportar MP4" e baixe. A montagem não fica salva: exporte antes de sair.'] },
     { id: 'f-quiz', icone: '🎯', titulo: 'Na Mosca! (quiz ao vivo)', tour: 'ferramentas', tourPasso: 'quiz',
       praQue: 'Um jogo de perguntas na sala, com os alunos respondendo pelo celular.',
       passos: ['"➕ Novo quiz": escreva as perguntas (múltipla escolha, verdadeiro ou falso, enquete), o tempo e a resposta certa.', 'Ou "✨ Criar com IA" a partir de um tema ou de um material da Biblioteca.', '"▶️ Abrir sala" e projete o PIN.', 'Os alunos entram pelo celular com o PIN e um apelido, sem conta.', 'Quem acerta mais rápido ganha mais pontos. No fim: pódio, relatório e planilha (CSV).'] },

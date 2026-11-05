@@ -992,7 +992,16 @@ const VIDEOOPS = {
     ehLinkDeArquivo,
     validarLink,
     VIDEO_MAX_MB,
-    motorCarregado: () => !!_ffmpeg
+    motorCarregado: () => !!_ffmpeg,
+    // Pecas do motor usadas pelo "Montar video" (montagem_operacoes.js), que monta um
+    // comando so' a partir da linha do tempo inteira.
+    rodar,
+    h264,
+    AAC,
+    MP4_FIM,
+    par,
+    nomeBase,
+    extensao
 };
 
 raiz.VIDEOOPS = VIDEOOPS;
