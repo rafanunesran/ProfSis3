@@ -1442,7 +1442,6 @@ function htmlProps() {
             <h5>Efeitos</h5>
             ${faixa('Contorno', el.contornoLarg, 0, 40, 1, 'el', 'contornoLarg', '')}
             ${el.contornoLarg > 0 ? campoCor('Cor contorno', el.contornoCor, 'el', 'contornoCor') : ''}
-            <div class="ed-linha"><label>Sombra</label>${botaoLiga(el.sombra ? 'Ligada' : 'Desligada', 'sombra', el.sombra)}</div>
             ${campoCor('Fundo do texto', el.fundoCor, 'el', 'fundoCor', true)}
             ${el.fundoCor ? faixa('Cantos', el.fundoRaio, 0, 200, 2, 'el', 'fundoRaio', '') : ''}`;
     } else if (el.tipo === 'forma') {
@@ -1460,10 +1459,16 @@ function htmlProps() {
             <div class="ed-linha"><label>Filtro</label><select onchange="atProp('filtro', this.value, true)" style="flex:1;">
                 ${Object.keys(A().FILTROS).map(k => `<option value="${k}" ${k === el.filtro ? 'selected' : ''}>${esc(A().FILTROS[k])}</option>`).join('')}
             </select></div>
-            <div class="ed-linha"><label>Recorte</label><div class="ed-grupo">
-                <button class="ed-b ${el.recorte !== 'circulo' ? 'on' : ''}" onclick="atProp('recorte','',true,true)">▭ Retângulo</button>
-                <button class="ed-b ${el.recorte === 'circulo' ? 'on' : ''}" onclick="atProp('recorte','circulo',true,true)">◯ Redondo</button></div></div>
-            ${el.recorte !== 'circulo' ? faixa('Cantos', el.raio, 0, Math.round(Math.min(el.w, el.h) / 2), 1, 'el', 'raio', '') : ''}
+            <div class="ed-linha" style="align-items:flex-start;"><label>Recorte</label><div class="ed-grupo" style="flex-wrap:wrap;">
+                ${RECORTES_TELA.map(([id, simbolo, nome]) => `<button class="ed-b ${(el.recorte || '') === id ? 'on' : ''}" title="${esc(nome)}"
+                    onclick="atProp('recorte','${id}',true,true)">${simbolo}</button>`).join('')}</div></div>
+            ${!el.recorte ? faixa('Cantos', el.raio, 0, Math.round(Math.min(el.w, el.h) / 2), 1, 'el', 'raio', '') : ''}
+            <h5>Ajustes da foto</h5>
+            ${faixa('Brilho', el.ajBrilho || 0, -100, 100, 1, 'el', 'ajBrilho', '')}
+            ${faixa('Contraste', el.ajContraste || 0, -100, 100, 1, 'el', 'ajContraste', '')}
+            ${faixa('Saturação', el.ajSat || 0, -100, 100, 1, 'el', 'ajSat', '')}
+            ${faixa('Desfoque', el.ajDesf || 0, 0, 30, 1, 'el', 'ajDesf', '')}
+            ${(el.ajBrilho || el.ajContraste || el.ajSat || el.ajDesf) ? `<div class="ed-linha"><button class="ed-b" onclick="atZerarAjustes()">↺ Zerar ajustes</button></div>` : ''}
             ${faixa('Moldura', el.bordaLarg, 0, 60, 1, 'el', 'bordaLarg', '')}
             ${el.bordaLarg > 0 ? campoCor('Cor moldura', el.borda, 'el', 'borda') : ''}
             <div class="ed-linha">${botaoLiga('⇋ Espelhar', 'espelhar', el.espelhar)}
@@ -1476,7 +1481,36 @@ function htmlProps() {
             </div>
             <div id="atMsgImagem" class="ed-dica"></div>`;
     }
-    return `<h4>${esc(tit)}</h4>${especificos}<h5>Arrumar</h5>${comuns}`;
+    return `<h4>${esc(tit)}</h4>${especificos}${htmlEfeitos(el)}<h5>Arrumar</h5>${comuns}`;
+}
+
+// Recortes da foto na tela: [valor, simbolo, nome].
+const RECORTES_TELA = [['', '▭', 'Retângulo'], ['circulo', '◯', 'Redondo'], ['estrela', '★', 'Estrela'], ['coracao', '♥', 'Coração'],
+    ['hexagono', '⬡', 'Hexágono'], ['triangulo', '▲', 'Triângulo'], ['losango', '◆', 'Losango'], ['balao', '💬', 'Balão de fala'], ['seta', '➜', 'Seta']];
+
+// Sombra, brilho em volta e mistura: valem para texto, forma e foto.
+function htmlEfeitos(el) {
+    const sb = A().parametrosSombra(el);
+    return `<h5>Sombra e brilho</h5>
+        <div class="ed-linha"><label>Sombra</label>${botaoLiga(el.sombra ? 'Ligada' : 'Desligada', 'sombra', el.sombra)}</div>
+        ${el.sombra ? `
+            ${campoCor('Cor da sombra', el.sombraCor, 'el', 'sombraCor')}
+            ${faixa('Força', Math.round(el.sombraForca), 0, 100, 1, 'el', 'sombraForca', '%')}
+            ${faixa('Desfoque', Math.round(sb.desf), 0, 120, 1, 'el', 'sombraDesf', '')}
+            ${faixa('Distância', Math.round(sb.dist), 0, 120, 1, 'el', 'sombraDist', '')}
+            ${faixa('Direção', Math.round(el.sombraAng), 0, 359, 5, 'el', 'sombraAng', '°')}` : ''}
+        ${campoCor('Brilho em volta', el.brilhoCor, 'el', 'brilhoCor', true)}
+        ${el.brilhoCor ? faixa('Tamanho do brilho', Math.round(el.brilhoTam), 2, 120, 1, 'el', 'brilhoTam', '') : ''}
+        <div class="ed-linha"><label>Mistura</label><select onchange="atProp('mistura', this.value, true)" style="flex:1;" title="Como a cor se mistura com o que está atrás">
+            ${Object.keys(A().MISTURAS).map(k => `<option value="${k}" ${k === (el.mistura || '') ? 'selected' : ''}>${esc(A().MISTURAS[k])}</option>`).join('')}
+        </select></div>`;
+}
+
+function atZerarAjustes() {
+    const el = selecionado();
+    if (!el || el.tipo !== 'imagem') return;
+    Object.assign(el, { ajBrilho: 0, ajContraste: 0, ajSat: 0, ajDesf: 0 });
+    pedirDesenho(); registrar(); desenharProps();
 }
 
 function htmlPropsFolha() {
@@ -1593,7 +1627,8 @@ function atAlinhar(modo) {
     registrar(); pedirDesenho();
 }
 
-const NUMERICOS = ['tam', 'entrelinha', 'espaco', 'contornoLarg', 'fundoRaio', 'bordaLarg', 'raio', 'opac', 'rot', 'x', 'y', 'w', 'h'];
+const NUMERICOS = ['tam', 'entrelinha', 'espaco', 'contornoLarg', 'fundoRaio', 'bordaLarg', 'raio', 'opac', 'rot', 'x', 'y', 'w', 'h',
+                   'sombraForca', 'sombraDesf', 'sombraDist', 'sombraAng', 'brilhoTam', 'ajBrilho', 'ajContraste', 'ajSat', 'ajDesf'];
 const MEXEM_NO_TEXTO = ['texto', 'fonte', 'tam', 'negrito', 'italico', 'entrelinha', 'espaco', 'maiusculas', 'fundoCor'];
 
 // Muda um campo do elemento selecionado. `registrarHist` false = arrastando o controle
@@ -1617,7 +1652,7 @@ function atProp(campo, valor, registrarHist, redesenharPainel) {
     }
     pedirDesenho();
     if (registrarHist !== false) registrar(); else marcarMudanca();
-    if (redesenharPainel || ['fundoCor', 'contornoLarg', 'bordaLarg', 'recorte'].indexOf(campo) >= 0 && registrarHist !== false) desenharProps();
+    if (redesenharPainel || ['fundoCor', 'contornoLarg', 'bordaLarg', 'recorte', 'brilhoCor', 'sombra'].indexOf(campo) >= 0 && registrarHist !== false) desenharProps();
     if (campo === 'texto' && atAba === 'camadas' && registrarHist !== false) desenharPainel();
 }
 
@@ -2041,7 +2076,7 @@ Object.assign(window, {
     atSair, atRenomear, atDesfazer, atRefazer, atSalvarAgora, atZoomPasso, atZoomAjustar, atMudarAba,
     atTrocarModelo, atAddTexto, atInserirCampo, atAddForma, atAddFigurinha, atSelecionar, atCamada, atAcao, atAlinhar,
     atProp, atFundo, atPaleta, atRedimensionarFolha, atArquivosEscolhidos, atReusarImagem, atFundoImagem,
-    atTrocarImagem, atRemoverFundo, atIAEscrever, atIAReescrever, atIARefazer, atMenuBaixar, atBaixar,
+    atTrocarImagem, atRemoverFundo, atZerarAjustes, atIAEscrever, atIAReescrever, atIARefazer, atMenuBaixar, atBaixar,
     atAbrirLote, atLoteTurma, atLoteContar, atGerarLote, atEstado,
     atComecarTexto: comecarEdicaoTexto, atRenderizar: renderizar
 });

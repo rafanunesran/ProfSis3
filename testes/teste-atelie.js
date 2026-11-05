@@ -12,7 +12,8 @@
 //   5. "Criar com IA" a partir de um pedido;
 //   6. imagem: colocar, "remover fundo liso" (canto vira transparente);
 //   7. baixar PNG (arquivo de verdade, no tamanho da arte) e PDF;
-//   8. "Em lote" a partir de uma turma: uma pagina por estudante, com o nome trocado.
+//   8. "Em lote" a partir de uma turma: uma pagina por estudante, com o nome trocado;
+//  10. efeitos: sombra (inclusive girada), brilho, mistura, foto recortada em estrela, ajustes.
 //
 // O banco e' FALSO (em memoria). O gerador de PDF (jsPDF, da CDN) e' trocado por um
 // falso que conta as paginas — o PDF de verdade nao e' aberto aqui. As fontes do Google
@@ -97,6 +98,17 @@ async function ate(fn, ms) {
     const q = A.quebrarLinhas(ctxFalso, t);
     ok('o texto quebra na largura da caixa', q.linhas.length === 2 && q.linhas[0] === 'aaaa bbbb', JSON.stringify(q.linhas));
     ok('a altura acompanha as linhas', A.ajustarAlturaTexto(ctxFalso, t).h === 60);
+    // Efeitos novos (sombra/brilho/mistura) e foto com recorte em forma e ajustes.
+    const ef = A.normalizarElemento({ tipo: 'imagem', recorte: 'estrela', mistura: 'multiply', sombra: true, ajBrilho: 20, ajDesf: 3 });
+    ok('foto aceita recorte em estrela e mistura', ef.recorte === 'estrela' && ef.mistura === 'multiply');
+    ok('recorte e mistura invalidos voltam ao normal', A.normalizarElemento({ tipo: 'imagem', recorte: 'xyz', mistura: 'hack' }).recorte === '' &&
+       A.normalizarElemento({ tipo: 'forma', mistura: 'hack' }).mistura === '');
+    ok('ajustes viram o filtro do canvas', A.filtroDaImagem(ef) === 'brightness(1.20) blur(3px)', A.filtroDaImagem(ef));
+    const sbT = A.parametrosSombra(A.normalizarElemento({ tipo: 'texto', tam: 100, sombra: true }));
+    ok('sombra automatica do texto igual a antiga (desfoque 18% do tamanho)', Math.abs(sbT.desf - 18) < 0.01 && sbT.alfa === 0.35);
+    const baixo = A.deslocamentoSombra({ ang: Math.PI, dist: 10 });
+    ok('direcao 180 = sombra para baixo', Math.abs(baixo.x) < 1e-9 && Math.abs(baixo.y - 10) < 1e-9, JSON.stringify(baixo));
+    ok('arte antiga sem os campos novos abre igual (sem efeitos)', !A.temEfeitos(A.normalizarElemento({ tipo: 'forma' })));
     const longa = A.quebrarLinhas(ctxFalso, A.normalizarElemento({ tipo: 'texto', texto: 'x'.repeat(25), tam: 20, w: 100 }));
     ok('palavra maior que a linha e cortada por letra', longa.linhas.length === 3 && longa.linhas.every(l => l.length <= 10));
     ok('{escola} e {data} viram o dado; {nome} sem dado fica', A.substituir('{escola} {nome} {data}', { escola: 'EE Sol', data: '1 de maio' }) === 'EE Sol {nome} 1 de maio');
@@ -370,6 +382,75 @@ async function ate(fn, ms) {
     const [dl3] = await Promise.all([page.waitForEvent('download', { timeout: 15000 }), page.click('#atLoteBtn')]);
     const pdfLote = await page.evaluate(() => window.__ultimoPdf);
     ok('o PDF do lote tem uma pagina por estudante', /lote\.pdf$/.test(dl3.suggestedFilename()) && pdfLote.paginas === 3 && pdfLote.imagens.length === 3, JSON.stringify({ n: pdfLote.paginas }));
+
+    // -----------------------------------------------------------------------
+    console.log('\n10. Efeitos: sombra, brilho, mistura e recorte em forma (desenho de verdade)');
+    // -----------------------------------------------------------------------
+    const efe = await page.evaluate(() => {
+        const A = window.ATELIEOPS;
+        const c = document.createElement('canvas'); c.width = 400; c.height = 300;
+        const x = c.getContext('2d');
+        const px = (u, v) => Array.from(x.getImageData(u, v, 1, 1).data);
+        const limpar = () => { x.setTransform(1, 0, 0, 1, 0, 0); x.globalCompositeOperation = 'source-over'; x.fillStyle = '#ffffff'; x.fillRect(0, 0, 400, 300); };
+        const r = {};
+        // Quadrado azul 100x100 em (100,80) com sombra preta forte para baixo (dist 30, sem desfoque).
+        limpar();
+        A.desenharElemento(x, A.normalizarElemento({ tipo: 'forma', forma: 'ret', preench: '#2563c9', x: 100, y: 80, w: 100, h: 100,
+            sombra: true, sombraForca: 100, sombraDesf: 0, sombraDist: 30, sombraAng: 180 }), {});
+        r.dentro = px(150, 130); r.sombraEmbaixo = px(150, 195); r.semSombraEmCima = px(150, 70);
+        // Mesmo quadrado girado 90 graus: a sombra continua caindo para baixo na folha.
+        limpar();
+        A.desenharElemento(x, A.normalizarElemento({ tipo: 'forma', forma: 'ret', preench: '#2563c9', x: 100, y: 80, w: 100, h: 100, rot: 90,
+            sombra: true, sombraForca: 100, sombraDesf: 0, sombraDist: 30, sombraAng: 180 }), {});
+        r.giradoEmbaixo = px(150, 195); r.giradoDireita = px(215, 130);
+        // Brilho amarelo em volta de um circulo.
+        limpar();
+        A.desenharElemento(x, A.normalizarElemento({ tipo: 'forma', forma: 'circulo', preench: '#000000', x: 150, y: 100, w: 100, h: 100,
+            brilhoCor: '#ffcc00', brilhoTam: 20 }), {});
+        r.brilho = px(200, 95);
+        // Mistura "multiplicar": vermelho por cima do azul vira escuro.
+        limpar();
+        A.desenharElemento(x, A.normalizarElemento({ tipo: 'forma', preench: '#3366ff', x: 0, y: 0, w: 200, h: 200 }), {});
+        A.desenharElemento(x, A.normalizarElemento({ tipo: 'forma', preench: '#ff3333', x: 100, y: 100, w: 200, h: 150, mistura: 'multiply' }), {});
+        r.multiplicado = px(150, 150); r.soVermelho = px(250, 220);
+        // Foto (um quadro verde) recortada em estrela: o canto da caixa fica de fora.
+        limpar();
+        const foto = document.createElement('canvas'); foto.width = 100; foto.height = 100;
+        const fx = foto.getContext('2d'); fx.fillStyle = '#22aa44'; fx.fillRect(0, 0, 100, 100);
+        A.desenharElemento(x, A.normalizarElemento({ tipo: 'imagem', recurso: 'r1', recorte: 'estrela', x: 100, y: 50, w: 200, h: 200 }), { imagem: () => foto });
+        r.estrelaMeio = px(200, 160); r.estrelaCanto = px(105, 55);
+        // Ajuste de brilho na foto escurece.
+        limpar();
+        A.desenharElemento(x, A.normalizarElemento({ tipo: 'imagem', recurso: 'r1', ajBrilho: -50, x: 100, y: 50, w: 100, h: 100 }), { imagem: () => foto });
+        r.escurecida = px(150, 100);
+        return r;
+    });
+    ok('sombra: o quadrado continua azul', efe.dentro[2] > 150 && efe.dentro[0] < 80, efe.dentro.join(','));
+    ok('sombra cai embaixo e nao em cima', efe.sombraEmbaixo[0] < 60 && efe.semSombraEmCima[0] > 240, efe.sombraEmbaixo.join(',') + ' / ' + efe.semSombraEmCima.join(','));
+    ok('girado 90 graus, a sombra continua para baixo', efe.giradoEmbaixo[0] < 60 && efe.giradoDireita[0] > 240, efe.giradoEmbaixo.join(',') + ' / ' + efe.giradoDireita.join(','));
+    ok('brilho amarelo em volta do circulo', efe.brilho[0] > 200 && efe.brilho[1] > 150 && efe.brilho[2] < 150, efe.brilho.join(','));
+    ok('multiplicar: onde cruza fica escuro, fora fica vermelho', efe.multiplicado[0] < 80 && efe.multiplicado[2] < 80 && efe.soVermelho[0] > 230,
+       efe.multiplicado.join(',') + ' / ' + efe.soVermelho.join(','));
+    ok('foto recortada em estrela: meio verde, canto da caixa branco', efe.estrelaMeio[1] > 150 && efe.estrelaMeio[0] < 80 && efe.estrelaCanto[0] > 240,
+       efe.estrelaMeio.join(',') + ' / ' + efe.estrelaCanto.join(','));
+    ok('ajuste de brilho -50 escurece a foto', efe.escurecida[1] < 110 && efe.escurecida[1] > 40, efe.escurecida.join(','));
+    // Na arte aberta: efeitos no titulo e numa foto recortada em coracao; o painel mostra os controles.
+    const painelEf = await page.evaluate(async () => {
+        const arte = atEstado().arte;
+        const txt = arte.elementos.find(e => e.tipo === 'texto');
+        Object.assign(txt, { sombra: true, sombraForca: 60, sombraDist: 14, sombraDesf: 10, brilhoCor: '#ffd43b', brilhoTam: 18 });
+        const img = arte.elementos.find(e => e.tipo === 'imagem');
+        const janela = document.getElementById('atJanela');
+        if (janela) janela.style.display = 'none';
+        if (img) { Object.assign(img, { recorte: 'coracao', sombra: true, ajSat: 40 }); atSelecionar(img.id); }
+        else atSelecionar(txt.id);
+        await new Promise(ok => setTimeout(ok, 300));
+        const p = document.getElementById('atProps') ? document.getElementById('atProps').innerHTML : document.body.innerHTML;
+        return { temImagem: !!img, sombra: /Sombra e brilho/.test(p), mistura: /Mistura/.test(p), recortes: img ? /Coração/.test(p) && /Ajustes da foto/.test(p) : true };
+    });
+    ok('painel mostra sombra, brilho, mistura (e recortes/ajustes na foto)', painelEf.sombra && painelEf.mistura && painelEf.recortes, JSON.stringify(painelEf));
+    await foto(page, 'at-6-efeitos');
+    await page.evaluate(() => { const j = document.getElementById('atJanela'); if (j) j.style.display = ''; });
 
     // -----------------------------------------------------------------------
     console.log('\n9. Celular');
