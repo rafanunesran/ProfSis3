@@ -515,7 +515,7 @@ async function atCriarIA() {
 
 const ESTILO_EDITOR = `
 <style>
-  /* Mesmo visual do "Montar video" (escuro, tela cheia), a partir de um prototipo feito no
+  /* Mesmo visual do "Editor de video" (escuro, tela cheia), a partir de um prototipo feito no
      Lovable so' como referencia. A folha continua branca: o escuro e' so' a moldura. */
   #atEditor { --at-fundo:#14171d; --at-sup:#1d2129; --at-sup2:#272c36; --at-linha:#343a46; --at-txt:#eef1f6; --at-apagado:#a3abb9;
     --at-acento:var(--accent, ${COR_MARCA}); --at-sobre:var(--on-accent, #fff); --at-sel:#ffd60a;

@@ -193,7 +193,7 @@ const FAKE = () => {
         try { closeModal('modalApoie'); } catch (_) {}
         return r;
     });
-    ok('o cartao "Montar video" esta no catalogo', cartao.cartao);
+    ok('o cartao "Editor de video" esta no catalogo', cartao.cartao);
     ok('conta gratuita recebe o convite do plano', cartao.convite);
     ok('e o editor nao abre', cartao.naoAbriu);
 

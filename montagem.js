@@ -2,7 +2,7 @@
 //
 // O QUE E'
 //   Um editor de video com linha do tempo, dentro da aba Video de Ferramentas (cartao
-//   "🎞️ Montar video"). Tres faixas:
+//   "🎞️ Editor de video"). Tres faixas:
 //     🎬 Video  — videos, fotos e telas coloridas, colados um depois do outro;
 //     🔤 Texto  — titulos e legendas por cima, cada um com inicio e duracao;
 //     🎵 Audio  — musica ou narracao, misturada ao som dos videos.
@@ -55,7 +55,7 @@ const num = (v, p) => { const n = Number(String(v).replace(',', '.')); return is
 
 function podeUsar() {
     if (typeof exigirPremium !== 'function') return true;
-    return exigirPremium('Ferramentas — Vídeo — Montar vídeo');
+    return exigirPremium('Ferramentas — Vídeo — Editor de vídeo');
 }
 
 // ---------------------------------------------------------------------------
@@ -89,7 +89,7 @@ function render(destino) {
     ed.innerHTML = ESTILO + `
       <div class="mv-topo">
         <button class="mv-fantasma" onclick="fecharFerramentaVideo()" title="Voltar para as ferramentas de vídeo">← <span class="mv-some-cel">Voltar</span></button>
-        <div class="mv-titulo">🎞️ Montar vídeo</div>
+        <div class="mv-titulo">🎞️ Editor de vídeo</div>
         <div class="mv-topo-dir">
           <button class="mv-fantasma" onclick="mvAjuda()" title="Como usar">?</button>
           <button class="mv-primario" id="mvBtnExportar" onclick="mvExportar()">⬇️ Exportar<span class="mv-some-cel"> MP4</span></button>

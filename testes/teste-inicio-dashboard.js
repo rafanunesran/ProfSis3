@@ -86,8 +86,8 @@ async function abrir(browser, viewport) {
         atalhos: Array.from(document.querySelectorAll('#atalhosFerramentas .dash-ferr-nome')).map(e => e.textContent)
     }));
     ok('o card "Tutorias/Ações" saiu do Início', !cards.tutorias);
-    ok('o card Ferramentas tem PDF, Imagem, Ateliê, Montar vídeo, Na Mosca! e Baixar vídeo',
-       ['PDF', 'Imagem', 'Ateliê', 'Montar vídeo', 'Na Mosca!', 'Baixar vídeo'].every(n => cards.atalhos.indexOf(n) !== -1), cards.atalhos.join(' | '));
+    ok('o card Ferramentas tem PDF, Imagem, Ateliê, Editor de vídeo, Na Mosca! e Baixar vídeo',
+       ['PDF', 'Imagem', 'Ateliê', 'Editor de vídeo', 'Na Mosca!', 'Baixar vídeo'].every(n => cards.atalhos.indexOf(n) !== -1), cards.atalhos.join(' | '));
     for (const [nome, aba] of [['Ateliê', 'tabFerramentasAtelie'], ['PDF', 'tabFerramentasPdf'], ['Na Mosca!', 'tabFerramentasQuiz']]) {
         await page.evaluate(() => showScreen('dashboard'));
         await page.waitForTimeout(600);

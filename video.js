@@ -95,7 +95,7 @@ const CATALOGO_VIDEO = [
         ]
     },
     {
-        id: 'montar', grupo: 'editar', emoji: '🎞️', nome: 'Montar vídeo (editor completo)', editor: true,
+        id: 'montar', grupo: 'editar', emoji: '🎞️', nome: 'Editor de vídeo (linha do tempo)', editor: true,
         resumo: 'Linha do tempo: junte vídeos e fotos, corte pedaços, ponha títulos, legendas e música, e exporte um vídeo só.'
     },
     {

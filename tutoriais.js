@@ -151,7 +151,7 @@ const TOURS = {
             { alvo: '#appContainer nav.app-nav', titulo: 'O menu', texto: 'Todas as páginas ficam aqui, agrupadas por assunto: Dia a dia, Registros e Recursos. No celular, o menu fica embaixo e o botão "Mais" mostra o resto.' },
             { alvo: '#dashboard .ux-inicio', titulo: 'Início', texto: 'A saudação do dia e os atalhos: a busca rápida e o Estagiário.' },
             { alvo: cartaoDe('#agendaHoje'), titulo: '📅 Agenda do Dia', texto: 'O cronograma de hoje: as aulas (da sua agenda em Documentos › Minha Agenda), os horários fixos da escola (café, almoço...) e as tutorias marcadas, cada uma no seu horário, com "Registrar". Se está vazio, a agenda ainda não foi montada.' },
-            { alvo: cartaoDe('#atalhosFerramentas'), titulo: '🧰 Ferramentas', texto: 'Atalhos direto para as ferramentas: PDF, Imagem, Ateliê, Montar vídeo, Na Mosca!, Baixar vídeo e mais. Um toque e a ferramenta já abre.' },
+            { alvo: cartaoDe('#atalhosFerramentas'), titulo: '🧰 Ferramentas', texto: 'Atalhos direto para as ferramentas: PDF, Imagem, Ateliê, Editor de vídeo, Na Mosca!, Baixar vídeo e mais. Um toque e a ferramenta já abre.' },
             { alvo: '#novidadesDashboard', opcional: true, titulo: '✨ Novidades', texto: 'No computador, este quadro vai mostrando o que chegou de novo no sistema. Use as setas para passar e o botão para abrir a novidade.' },
             { alvo: () => { const b = $('#dashboard button[onclick*="exportarArquivoProfsis"]'); return b ? b.closest('.card') : null; }, titulo: '⚙️ Backups e Segurança', texto: 'Sincronize com a nuvem, baixe a sua cópia de segurança e, se trocar de computador, importe o arquivo de volta: é nele que estão os dados dos estudantes.' },
             { alvo: cartaoDe('#avisosGerais'), titulo: '📢 Quadro de Avisos', texto: 'Recados da gestão da escola.' },
@@ -359,14 +359,14 @@ const TOURS = {
             { id: 'pdf', alvo: abaFerr('pdf'), titulo: '📕 PDF', texto: 'Juntar, dividir, comprimir, girar, assinar, pôr marca d\'água, converter para Word/imagem, proteger com senha e muito mais (50 ferramentas). Use a busca para achar a que precisa.', antes: () => showFerramentasTab('pdf') },
             { id: 'img', alvo: abaFerr('img'), titulo: '🖼️ IMG', texto: 'Comprimir, redimensionar, cortar, converter, remover fundo, pôr ou tirar marca d\'água, aumentar resolução e desfocar rosto de estudante antes de postar.', antes: () => showFerramentasTab('img') },
             { id: 'poster', alvo: abaFerr('poster'), titulo: '🧱 Pôster', texto: 'Transforma uma imagem num cartaz grande, dividido em folhas A4 para imprimir e colar na parede, com marcas de corte.', antes: () => showFerramentasTab('poster') },
-            { id: 'video', alvo: abaFerr('video'), titulo: '🎬 Vídeo', texto: 'Um editor com linha do tempo (🎞️ Montar vídeo: cortes, títulos, música) e ainda cortar, juntar, girar, comprimir, tirar ou pôr som e virar GIF, sem enviar o vídeo para ninguém.', antes: () => showFerramentasTab('video') },
+            { id: 'video', alvo: abaFerr('video'), titulo: '🎬 Vídeo', texto: 'Um editor com linha do tempo (🎞️ Editor de vídeo: cortes, títulos, música) e ainda cortar, juntar, girar, comprimir, tirar ou pôr som e virar GIF, sem enviar o vídeo para ninguém.', antes: () => showFerramentasTab('video') },
             { id: 'quiz', alvo: abaFerr('quiz'), titulo: '🎯 Na Mosca!', texto: 'Quiz ao vivo na sala: você projeta o PIN e os alunos jogam pelo celular, sem conta. No fim sai o pódio e o relatório de acertos.', antes: () => showFerramentasTab('quiz') },
             { id: 'atelie', alvo: abaFerr('atelie'), titulo: '🖌️ Ateliê', texto: 'Editor de artes: certificado, cartaz, convite, crachá, comunicado. Parta de um modelo, da folha em branco ou de um pedido para a IA. Gera até um certificado por estudante da turma.', antes: () => showFerramentasTab('atelie') }
         ]
     },
 
     montagemVideo: {
-        nome: 'Montar vídeo',
+        nome: 'Editor de vídeo',
         preparar: async () => {
             await irPara('ferramentas');
             const voltar = abaFerrAtual();
@@ -383,7 +383,7 @@ const TOURS = {
             } };
         },
         passos: [
-            { alvo: '#mvEditor', titulo: '🎞️ Montar vídeo', texto: 'Um editor com linha do tempo: junte vídeos e fotos, corte os pedaços ruins, ponha títulos e música e saia com um vídeo só. Nada é enviado: tudo acontece no aparelho.' },
+            { alvo: '#mvEditor', titulo: '🎞️ Editor de vídeo', texto: 'Um editor com linha do tempo: junte vídeos e fotos, corte os pedaços ruins, ponha títulos e música e saia com um vídeo só. Nada é enviado: tudo acontece no aparelho.' },
             { alvo: '#mvBtnMidia', titulo: '➕ Vídeo ou foto', texto: 'Escolha um ou vários arquivos. Eles entram em fila na faixa de vídeo, na ordem escolhida.' },
             { alvo: '#mvBtnCor', titulo: '🟦 Tela colorida', texto: 'Uma tela de uma cor só (4 s), boa para abrir com o título ou separar partes.' },
             { alvo: '#mvBtnTexto', titulo: '🔤 Texto', texto: 'Título ou legenda por cima do vídeo, a partir do ponto da agulha. Escreva, escolha o estilo e arraste o texto na prévia.' },
@@ -915,7 +915,7 @@ const PAGINAS = [
     { id: 'p-inicio', icone: '📊', titulo: 'Início (Dashboard)', tour: 'inicio',
       praQue: 'O resumo do seu dia.',
       passos: ['Agenda do Dia: o cronograma de hoje, com as aulas (Documentos › Minha Agenda), os horários fixos da escola (café, almoço...) e as tutorias marcadas, cada uma no seu horário.',
-               'Ferramentas: atalhos para PDF, Imagem, Ateliê, Montar vídeo, Na Mosca!, Baixar vídeo e outras.',
+               'Ferramentas: atalhos para PDF, Imagem, Ateliê, Editor de vídeo, Na Mosca!, Baixar vídeo e outras.',
                'Novidades (só no computador): um quadro que gira mostrando o que chegou de novo, com botão para abrir.',
                'Backups e Segurança: sincronizar com a nuvem, baixar e importar a sua cópia.',
                'Quadro de Avisos: recados da gestão.',
@@ -978,10 +978,10 @@ const FERRAMENTAS = [
       passos: ['Escolha a imagem (ou várias).', 'Diga a largura ou a altura do cartaz: a tela mostra quantas folhas vão sair.', 'Confira a prévia com a grade das folhas.', 'Baixe o PDF: cada folha tem marca de corte e o nome do lugar (ex.: L2-C3).'] },
     { id: 'f-video', icone: '🎬', titulo: 'Vídeo', tour: 'ferramentas', tourPasso: 'video',
       praQue: 'Editar vídeos da turma sem subir o vídeo para ninguém.',
-      passos: ['🎞️ Montar vídeo: editor com linha do tempo para juntar vídeos e fotos, dividir e aparar pedaços, pôr títulos, legendas e música, mudar a velocidade e exportar em MP4 (deitado, em pé ou quadrado).', 'Cortar, juntar, girar, espelhar e recortar.', 'Redimensionar e comprimir.', 'Mudar a velocidade e repetir.', 'Tirar ou pôr áudio.', 'Vídeo para GIF e imagens para GIF.', 'Na primeira vez, o programa de vídeo é baixado; o seu vídeo fica no aparelho.'] },
-    { id: 'f-montar-video', icone: '🎞️', titulo: 'Montar vídeo (editor com linha do tempo)', tour: 'montagemVideo',
+      passos: ['🎞️ Editor de vídeo: linha do tempo para juntar vídeos e fotos, dividir e aparar pedaços, pôr títulos, legendas e música, mudar a velocidade e exportar em MP4 (deitado, em pé ou quadrado).', 'Cortar, juntar, girar, espelhar e recortar.', 'Redimensionar e comprimir.', 'Mudar a velocidade e repetir.', 'Tirar ou pôr áudio.', 'Vídeo para GIF e imagens para GIF.', 'Na primeira vez, o programa de vídeo é baixado; o seu vídeo fica no aparelho.'] },
+    { id: 'f-montar-video', icone: '🎞️', titulo: 'Editor de vídeo (com linha do tempo)', tour: 'montagemVideo',
       praQue: 'O vídeo da apresentação, da feira ou da aula, com título, cortes e música, num arquivo só.',
-      passos: ['Em Ferramentas → Vídeo, abra "🎞️ Montar vídeo".', '"➕ Vídeo ou foto": os arquivos entram em fila na faixa de vídeo. "🟦 Tela colorida" faz uma tela de título.', 'Ponha a agulha vermelha no ponto e use "✂️ Dividir" (tecla S); escolha o pedaço ruim e "🗑️ Apagar". Ou puxe as bordas do pedaço para aparar.', 'Arraste os pedaços para mudar a ordem. Toque num pedaço para mudar velocidade (câmera lenta ou acelerado), volume ou tirar o som.', '"🔤 Texto": escreva, escolha o estilo (contorno, caixa, faixa) e arraste na prévia. Na linha do tempo, puxe as bordas para dizer quando aparece e some.', '"🎵 Música ou áudio": a música fica misturada ao som; use "Fundo baixinho" e "Terminar abaixando".', 'Sem nada escolhido, ajuste o formato (deitado 16:9, em pé 9:16 para celular, quadrado) e o fundo (cor ou o próprio vídeo desfocado).', '"⬇️ Exportar MP4" e baixe. A montagem não fica salva: exporte antes de sair.'] },
+      passos: ['Em Ferramentas → Vídeo, abra "🎞️ Editor de vídeo".', '"➕ Vídeo ou foto": os arquivos entram em fila na faixa de vídeo. "🟦 Tela colorida" faz uma tela de título.', 'Ponha a agulha vermelha no ponto e use "✂️ Dividir" (tecla S); escolha o pedaço ruim e "🗑️ Apagar". Ou puxe as bordas do pedaço para aparar.', 'Arraste os pedaços para mudar a ordem. Toque num pedaço para mudar velocidade (câmera lenta ou acelerado), volume ou tirar o som.', '"🔤 Texto": escreva, escolha o estilo (contorno, caixa, faixa) e arraste na prévia. Na linha do tempo, puxe as bordas para dizer quando aparece e some.', '"🎵 Música ou áudio": a música fica misturada ao som; use "Fundo baixinho" e "Terminar abaixando".', 'Sem nada escolhido, ajuste o formato (deitado 16:9, em pé 9:16 para celular, quadrado) e o fundo (cor ou o próprio vídeo desfocado).', '"⬇️ Exportar MP4" e baixe. A montagem não fica salva: exporte antes de sair.'] },
     { id: 'f-quiz', icone: '🎯', titulo: 'Na Mosca! (quiz ao vivo)', tour: 'ferramentas', tourPasso: 'quiz',
       praQue: 'Um jogo de perguntas na sala, com os alunos respondendo pelo celular.',
       passos: ['"➕ Novo quiz": escreva as perguntas (múltipla escolha, verdadeiro ou falso, enquete), o tempo e a resposta certa.', 'Ou "✨ Criar com IA" a partir de um tema ou de um material da Biblioteca.', '"▶️ Abrir sala" e projete o PIN.', 'Os alunos entram pelo celular com o PIN e um apelido, sem conta.', 'Quem acerta mais rápido ganha mais pontos. No fim: pódio, relatório e planilha (CSV).'] },

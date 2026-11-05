@@ -1376,7 +1376,7 @@ const ATALHOS_DASHBOARD_FERRAMENTAS = [
     { aba: 'pdf',    emoji: '📕', nome: 'PDF',            desc: 'Juntar, dividir, comprimir' },
     { aba: 'img',    emoji: '🖼️', nome: 'Imagem',         desc: 'Editar, cortar, ampliar' },
     { aba: 'atelie', emoji: '🖌️', nome: 'Ateliê',         desc: 'Cartaz, certificado, arte' },
-    { aba: 'video', ferramenta: 'montar', emoji: '🎞️', nome: 'Montar vídeo', desc: 'Editor com linha do tempo' },
+    { aba: 'video', ferramenta: 'montar', emoji: '🎞️', nome: 'Editor de vídeo', desc: 'Cortes, textos e música' },
     { aba: 'quiz',   emoji: '🎯', nome: 'Na Mosca!',      desc: 'Quiz ao vivo com a turma' },
     { aba: 'video', ferramenta: 'baixar-link', emoji: '🔗', nome: 'Baixar vídeo', desc: 'Pelo link do vídeo' },
     { aba: 'img', ferramenta: 'removerMarca', emoji: '🧽', nome: "Tirar marca d'água", desc: 'Apaga o texto por cima' },
@@ -1411,7 +1411,7 @@ function abrirAtalhoFerramenta(aba, ferramenta) {
 // Banner rotativo de novidades (só no computador: no celular o CSS esconde). Para anunciar
 // algo novo, ponha uma linha NO TOPO desta lista — a mais nova aparece primeiro.
 const NOVIDADES_SISPROF = [
-    { emoji: '🎞️', titulo: 'Montar vídeo de cara nova', texto: 'O editor agora abre em tela cheia, com linha do tempo, textos e transições.', botao: 'Abrir editor', abrir: () => abrirAtalhoFerramenta('video', 'montar') },
+    { emoji: '🎞️', titulo: 'Editor de vídeo de cara nova', texto: 'O editor agora abre em tela cheia, com linha do tempo, textos e música.', botao: 'Abrir editor', abrir: () => abrirAtalhoFerramenta('video', 'montar') },
     { emoji: '🃏', titulo: 'Mesa de páginas no PDF', texto: 'Veja todas as páginas de uma vez, arraste para reordenar, gire e apague.', botao: 'Abrir', abrir: () => abrirAtalhoFerramenta('pdf', 'mesa-paginas') },
     { emoji: '📐', titulo: 'Endireitar foto de folha', texto: 'Tirou foto torta de uma atividade? A folha fica reta, como se fosse escaneada.', botao: 'Experimentar', abrir: () => abrirAtalhoFerramenta('img', 'endireitar') },
     { emoji: '🖌️', titulo: 'Ateliê com efeitos', texto: 'Sombra, brilho e recortes para deixar cartazes e certificados mais bonitos.', botao: 'Abrir Ateliê', abrir: () => abrirAtalhoFerramenta('atelie') },

@@ -993,7 +993,7 @@ const VIDEOOPS = {
     validarLink,
     VIDEO_MAX_MB,
     motorCarregado: () => !!_ffmpeg,
-    // Pecas do motor usadas pelo "Montar video" (montagem_operacoes.js), que monta um
+    // Pecas do motor usadas pelo "Editor de video" (montagem_operacoes.js), que monta um
     // comando so' a partir da linha do tempo inteira.
     rodar,
     h264,
