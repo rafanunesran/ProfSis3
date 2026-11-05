@@ -62,6 +62,8 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
     window.__impressos = [];
     window.open = () => ({ document: { write: (h) => window.__impressos.push(h), close: () => {} } });
     window.__pdfs = [];
+    window.__campo = (k, v) => { const d = document.getElementById('previaDocBrancoEstagiario').contentDocument; const el = d.querySelector('[data-campo="' + k + '"]');
+      if (v === undefined) return el.innerText; el.innerText = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
     baixarPdfDocumentoEstagiario = async (h) => { window.__pdfs.push(h); return 'x.pdf'; };
   }, PROF);
 
@@ -76,15 +78,20 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
                 botao: document.getElementById('btnGerarDocumentoIA').textContent };
     document.getElementById('docBrancoTitulo').value = 'Comunicado';
     await gerarDocumentoIA();
-    r.modal = vis('docBrancoTexto');
-    r.tituloEdicao = document.getElementById('docBrancoTituloEdicao').value;
+    const doc = document.getElementById('previaDocBrancoEstagiario').contentDocument;
+    const corpo = doc.querySelector('[data-campo="texto"]');
+    const tit = doc.querySelector('[data-campo="titulo"]');
+    r.modal = vis('previaDocBrancoEstagiario') && !!corpo && corpo.isContentEditable;
+    r.tituloEdicao = tit ? tit.innerText : '';
+    r.cabecalho = doc.body.innerText.indexOf('EE ESCOLA DE TESTE') !== -1 && doc.body.innerText.indexOf('UNIDADE REGIONAL DE ENSINO - REGIÃO TESTE') !== -1;
     r.ia = window.__chamouIA;
     return r;
   });
   ok('o tipo "Documento em branco" aparece', r1.opcoes.some(o => o.indexOf('Documento em branco') !== -1));
   ok('mostra o campo de título e esconde tema/semana do plano', r1.titulo && !r1.plano && !r1.semana);
   ok('esconde o "Manual" e o botão vira "Abrir documento"', !r1.manual && r1.botao.indexOf('Abrir documento') !== -1);
-  ok('abre a caixa de texto com o título digitado', r1.modal && r1.tituloEdicao === 'Comunicado');
+  ok('abre a prévia do documento com caixa de texto editável', r1.modal);
+  ok('a prévia tem o cabeçalho da escola e o título editável no cabeçalho', r1.cabecalho && r1.tituloEdicao === 'Comunicado');
   ok('não chama a IA', r1.ia === 0);
 
   // ============ 3 ============
@@ -97,11 +104,10 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
 
   // ============ 4 e 5 ============
   const r4 = await p.evaluate(async () => {
-    document.getElementById('docBrancoTexto').value = 'Senhores pais,\n\nA reunião será dia 10 <às 19h> & café.\n    Recuo mantido.';
-    marcarAlteradoDocBranco();
+    __campo('texto', 'Senhores pais,\n\nA reunião será dia 10 <às 19h> & café.\n    Recuo mantido.');
     await exportarDocBrancoEstagiario('salvar');
     const h1 = JSON.parse(JSON.stringify(data.historicoDocumentos));
-    document.getElementById('docBrancoTexto').value += '\nAtenciosamente.';
+    __campo('texto', __campo('texto') + '\nAtenciosamente.');
     await exportarDocBrancoEstagiario('salvar');
     const h2 = JSON.parse(JSON.stringify(data.historicoDocumentos));
     const html = await montarHtmlDocBranco(h2[0].payload);
@@ -133,12 +139,14 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
 
   // ============ 7 ============
   const r7 = await p.evaluate(async () => {
-    document.getElementById('docBrancoTexto').value = 'Texto trocado no fim.';
-    marcarAlteradoDocBranco();
+    __campo('texto', 'Texto trocado no fim.');
+    __campo('titulo', 'Aviso');
+    const alterado = document.getElementById('modalDocBranco').dataset.alterado === '1';
     fecharModalDocBranco();
-    return { n: data.historicoDocumentos.length, texto: data.historicoDocumentos[0].payload.texto };
+    return { alterado, n: data.historicoDocumentos.length, texto: data.historicoDocumentos[0].payload.texto, titulo: data.historicoDocumentos[0].payload.titulo };
   });
-  ok('fechar depois de editar guarda sozinho', r7.n === 1 && r7.texto === 'Texto trocado no fim.');
+  ok('digitar na prévia marca como alterado', r7.alterado);
+  ok('fechar depois de editar guarda sozinho (texto e título)', r7.n === 1 && r7.texto === 'Texto trocado no fim.' && r7.titulo === 'Aviso');
 
   // ============ 8 ============
   const r8 = await p.evaluate(async () => {
@@ -147,16 +155,16 @@ const ok = (nome, cond) => { console.log((cond ? '  ok   ' : '  FALHA') + ' - ' 
     renderDocumentosHistorico();
     const txt = box.textContent;
     const id = data.historicoDocumentos[0].id;
-    abrirDocBrancoHistorico(id);
-    const r = { txt, texto: document.getElementById('docBrancoTexto').value, titulo: document.getElementById('docBrancoTituloEdicao').value,
+    await abrirDocBrancoHistorico(id);
+    const r = { txt, texto: __campo('texto'), titulo: __campo('titulo'),
                 hid: document.getElementById('modalDocBranco').dataset.historicoId === id };
     await reimprimirDocBrancoHistorico(id, 'pdf');
     r.pdf = window.__pdfs.length === 2 && window.__pdfs[1].indexOf('Texto trocado no fim.') !== -1;
     if (criado) box.remove();
     return r;
   });
-  ok('Histórico mostra o documento com Abrir/PDF/Reimprimir', r8.txt.indexOf('Comunicado') !== -1 && r8.txt.indexOf('Abrir') !== -1 && r8.txt.indexOf('PDF') !== -1 && r8.txt.indexOf('Reimprimir') !== -1);
-  ok('"Abrir" reabre o texto e o título', r8.texto === 'Texto trocado no fim.' && r8.titulo === 'Comunicado' && r8.hid);
+  ok('Histórico mostra o documento com Abrir/PDF/Reimprimir', r8.txt.indexOf('Aviso') !== -1 && r8.txt.indexOf('Abrir') !== -1 && r8.txt.indexOf('PDF') !== -1 && r8.txt.indexOf('Reimprimir') !== -1);
+  ok('"Abrir" reabre o texto e o título', r8.texto === 'Texto trocado no fim.' && r8.titulo === 'Aviso' && r8.hid);
   ok('PDF direto do Histórico', r8.pdf);
   ok('sem erros na página', erros.length === 0);
   if (erros.length) console.log(erros);

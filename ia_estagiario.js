@@ -4380,6 +4380,12 @@ function abrirAnexo4DuaHistorico(id) {
 
 const MAX_DOC_BRANCO_COM_TEXTO_HISTORICO = 40;
 const TITULO_PADRAO_DOC_BRANCO = 'DOCUMENTO';
+const ID_PREVIA_DOC_BRANCO_ESTAGIARIO = 'previaDocBrancoEstagiario';
+// Os dois campos editáveis direto no documento (como no Plano de Aula): o título, no cabeçalho, e o texto.
+const DOC_BRANCO_CAMPOS = [
+    { key: 'titulo', label: 'Título (ex.: Comunicado)' },
+    { key: 'texto', label: 'Clique aqui e digite o documento...' }
+];
 
 // Só o título, que vai no cabeçalho (onde o Plano de Aula escreve "PLANO DE AULA").
 function coletarFormularioDocBranco() {
@@ -4391,7 +4397,7 @@ function coletarFormularioDocBranco() {
 function gerarDocBrancoEstagiario() {
     const form = coletarFormularioDocBranco();
     closeModal('modalGerarDocumentoIA');
-    abrirModalDocBranco({ titulo: form.titulo, texto: '' }, '');
+    return abrirModalDocBranco({ titulo: form.titulo, texto: '' }, '');
 }
 
 function escapeTextoDocBranco(texto) {
@@ -4403,9 +4409,18 @@ function escapeTextoDocBranco(texto) {
     }).join('\n');
 }
 
-async function montarHtmlDocBranco(payload) {
+// Com { editavel: true } (prévia da tela de edição) o título e o texto saem como blocos editáveis,
+// destacados em azul; sem isso, sai o documento final (impressão/PDF).
+async function montarHtmlDocBranco(payload, opcoes) {
+    const editavel = !!(opcoes && opcoes.editavel);
     const cfg = await carregarConfigsDocumentoEstagiario();
     const titulo = String((payload && payload.titulo) || '').trim() || TITULO_PADRAO_DOC_BRANCO;
+    const tituloHtml = editavel
+        ? `<span class="campo-editavel-estagiario doc-titulo-editavel" contenteditable="true" data-campo="titulo" data-placeholder="${escapeAttrEstagiario(DOC_BRANCO_CAMPOS[0].label)}">${escapeHtmlEstagiario(String((payload && payload.titulo) || '').trim())}</span>`
+        : escapeHtmlEstagiario(titulo.toUpperCase());
+    const corpoHtml = editavel
+        ? valorCampoDocumentoEstagiario(DOC_BRANCO_CAMPOS[1], (payload && payload.texto) || '', true)
+        : escapeTextoDocBranco(payload && payload.texto);
     const html = `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -4422,18 +4437,20 @@ async function montarHtmlDocBranco(payload) {
     .header-sub { font-weight: normal; font-size: 9pt; margin-top: 3px; }
     .doc-corpo { line-height: 1.5; text-align: justify; }
     .doc-linha { margin: 0; white-space: pre-wrap; word-wrap: break-word; }
+    .doc-corpo .campo-editavel-estagiario { min-height: 480px; white-space: pre-wrap; text-align: left; }
+    .doc-titulo-editavel { display: inline-block !important; min-width: 220px; text-align: center; font-weight: bold; }
 </style>
 </head>
 <body>
     <table class="header-table">
         <tr>
             <td class="header-left"><img src="{{LOGO_ESTADO}}" style="max-width: 150px; max-height: 70px;"></td>
-            <td class="header-center">UNIDADE REGIONAL DE ENSINO - ${escapeHtmlEstagiario(cfg.regiao)}<br>${escapeHtmlEstagiario(cfg.nomeCompletoEscola)}<br>${escapeHtmlEstagiario(titulo.toUpperCase())}<div class="header-sub">${escapeHtmlEstagiario(cfg.emailEscola)}<br>${escapeHtmlEstagiario(cfg.enderecoEscola)}<br>Fone: ${escapeHtmlEstagiario(cfg.telefoneEscola)}</div></td>
+            <td class="header-center">UNIDADE REGIONAL DE ENSINO - ${escapeHtmlEstagiario(cfg.regiao)}<br>${escapeHtmlEstagiario(cfg.nomeCompletoEscola)}<br>${tituloHtml}<div class="header-sub">${escapeHtmlEstagiario(cfg.emailEscola)}<br>${escapeHtmlEstagiario(cfg.enderecoEscola)}<br>Fone: ${escapeHtmlEstagiario(cfg.telefoneEscola)}</div></td>
             <td class="header-right"><img src="{{LOGO_ESCOLA}}" style="max-width: 100px; max-height: 70px;"></td>
         </tr>
     </table>
     <div class="doc-corpo">
-${escapeTextoDocBranco(payload && payload.texto)}
+${corpoHtml}
     </div>
 </body>
 </html>`
@@ -4465,7 +4482,12 @@ function salvarDocBrancoNoHistorico(payload, idExistente) {
     return registro;
 }
 
+// Tela de edição igual à do Plano de Aula: o próprio documento (cabeçalho da escola + corpo) numa
+// prévia, com o título e o texto em caixas editáveis destacadas em azul.
+let docBrancoAberto = null;
+
 function abrirModalDocBranco(payload, historicoId) {
+    docBrancoAberto = { titulo: String((payload && payload.titulo) || ''), texto: String((payload && payload.texto) || '') };
     let modal = document.getElementById('modalDocBranco');
     if (!modal) {
         modal = document.createElement('div');
@@ -4476,24 +4498,47 @@ function abrirModalDocBranco(payload, historicoId) {
     modal.dataset.historicoId = historicoId || '';
     modal.dataset.alterado = '';
     modal.innerHTML = `
-        <div class="modal-content" style="max-width: 760px;">
+        <div class="modal-content" style="max-width: 900px; width: 96%; padding: 20px;">
             <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e3e8ef; padding-bottom:10px; margin-bottom:12px;">
-                <h2 style="margin:0; font-size:20px;">📄 Documento em branco</h2>
+                <h2 style="margin:0;">📄 Documento em branco — editar e salvar</h2>
                 <button class="btn btn-sm btn-danger" style="padding:2px 8px;" onclick="fecharModalDocBranco()">×</button>
             </div>
-            <p style="margin:0 0 10px 0; font-size:12px; color:#5f6b7f;">Sai com o cabeçalho da escola (o mesmo do Plano de Aula) e o texto abaixo. ${historicoId ? 'Está guardado em Documentos › Histórico.' : 'Ao salvar, baixar ou imprimir, ele fica guardado em Documentos › Histórico.'}</p>
-            <label style="font-weight:bold; display:block; margin-bottom:5px;">Título (vai no cabeçalho):</label>
-            <input type="text" id="docBrancoTituloEdicao" maxlength="120" placeholder="Ex.: Comunicado, Ofício, Relatório" value="${escapeAttrEstagiario(payload.titulo || '')}" oninput="marcarAlteradoDocBranco()" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px; margin-bottom:12px;">
-            <label style="font-weight:bold; display:block; margin-bottom:5px;">Texto:</label>
-            <textarea id="docBrancoTexto" rows="16" placeholder="Digite aqui o documento..." oninput="marcarAlteradoDocBranco()" style="width:100%; min-height:45vh; padding:10px; border:1px solid #cdd5e1; border-radius:4px; font-family:Arial, sans-serif; font-size:14px; line-height:1.5; resize:vertical;">${escapeHtmlEstagiario(payload.texto || '')}</textarea>
-            <div style="margin-top:14px; display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap;">
+            <div style="background:#edf3fd; border:1px solid #a9c6f3; color:#1b4488; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✍️ Sai com o cabeçalho da escola (o mesmo do Plano de Aula). Escreva o título no cabeçalho e o texto no corpo. Nada é gerado por IA. ${historicoId ? 'Está guardado em Documentos › Histórico.' : 'Ao salvar, baixar ou imprimir, fica guardado em Documentos › Histórico.'}</div>
+            ${blocoPreviaDocumentoEstagiario(ID_PREVIA_DOC_BRANCO_ESTAGIARIO, 'branco')}
+            <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; border-top:1px solid #e3e8ef; padding-top:15px;">
                 <button class="btn btn-secondary" onclick="fecharModalDocBranco()">Fechar</button>
                 ${botoesSaidaRevisaoEstagiario('exportarDocBrancoEstagiario')}
             </div>
         </div>`;
     showModal('modalDocBranco');
-    const caixa = document.getElementById('docBrancoTexto');
-    if (caixa) setTimeout(() => { try { caixa.focus(); } catch (_) {} }, 50);
+
+    return montarHtmlDocBranco(docBrancoAberto, { editavel: true })
+        .then(html => {
+            renderizarPreviaDocumentoEstagiario(ID_PREVIA_DOC_BRANCO_ESTAGIARIO, html, { largura: LARGURA_PAGINA_RETRATO_ESTAGIARIO, forcarLargura: true });
+            const iframe = document.getElementById(ID_PREVIA_DOC_BRANCO_ESTAGIARIO);
+            const doc = iframe && iframe.contentDocument;
+            if (!doc) return;
+            doc.addEventListener('input', marcarAlteradoDocBranco);
+            // Colar texto de outro lugar (Word, site) entra só como texto, sem trazer a formatação de lá.
+            doc.addEventListener('paste', (ev) => {
+                const alvo = ev.target && ev.target.closest && ev.target.closest('[contenteditable="true"]');
+                if (!alvo || !ev.clipboardData) return;
+                ev.preventDefault();
+                const texto = ev.clipboardData.getData('text/plain');
+                if (alvo.dataset.campo === 'titulo') doc.execCommand('insertText', false, texto.replace(/\s*\n\s*/g, ' '));
+                else doc.execCommand('insertText', false, texto);
+            });
+            // O título fica numa linha só: Enter nele pula para o texto.
+            const titulo = doc.querySelector('[data-campo="titulo"]');
+            const corpo = doc.querySelector('[data-campo="texto"]');
+            if (titulo) titulo.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); if (corpo) corpo.focus(); } });
+            const alvo = (titulo && !titulo.textContent.trim()) ? titulo : corpo;
+            if (alvo) setTimeout(() => { try { alvo.focus({ preventScroll: true }); } catch (_) {} }, 50);
+        })
+        .catch(e => {
+            console.error(e);
+            mostrarErroPreviaEstagiario(ID_PREVIA_DOC_BRANCO_ESTAGIARIO, e.message);
+        });
 }
 
 function marcarAlteradoDocBranco() {
@@ -4501,10 +4546,10 @@ function marcarAlteradoDocBranco() {
     if (modal) modal.dataset.alterado = '1';
 }
 
+// Lê o título e o texto de dentro da prévia. Se ela não carregou, fica o que estava aberto.
 function lerTelaDocBranco() {
-    const t = document.getElementById('docBrancoTituloEdicao');
-    const x = document.getElementById('docBrancoTexto');
-    return { titulo: t ? t.value.trim() : '', texto: x ? x.value : '' };
+    const lido = lerCamposEditadosPreviaEstagiario(ID_PREVIA_DOC_BRANCO_ESTAGIARIO, DOC_BRANCO_CAMPOS, docBrancoAberto || {});
+    return { titulo: String(lido.titulo || '').replace(/\s+/g, ' ').trim(), texto: String(lido.texto || '') };
 }
 
 // 'salvar' só guarda; 'pdf' baixa; 'imprimir' abre a impressão. Os três guardam (ou atualizam) o
@@ -4563,7 +4608,7 @@ function lerDocBrancoHistorico(id) {
 // Documentos › Histórico: "✏️ Abrir" reabre o texto para continuar editando.
 function abrirDocBrancoHistorico(id) {
     const h = lerDocBrancoHistorico(id);
-    if (h) abrirModalDocBranco(h.payload, h.id);
+    if (h) return abrirModalDocBranco(h.payload, h.id);
 }
 
 // Documentos › Histórico: "📄 PDF" e "🖨️ Reimprimir" direto, sem abrir a tela.
