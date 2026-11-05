@@ -361,7 +361,7 @@ const TOURS = {
             { id: 'poster', alvo: abaFerr('poster'), titulo: '🧱 Pôster', texto: 'Transforma uma imagem num cartaz grande, dividido em folhas A4 para imprimir e colar na parede, com marcas de corte.', antes: () => showFerramentasTab('poster') },
             { id: 'video', alvo: abaFerr('video'), titulo: '🎬 Vídeo', texto: 'Um editor com linha do tempo (🎞️ Editor de vídeo: cortes, títulos, música) e ainda cortar, juntar, girar, comprimir, tirar ou pôr som e virar GIF, sem enviar o vídeo para ninguém.', antes: () => showFerramentasTab('video') },
             { id: 'quiz', alvo: abaFerr('quiz'), titulo: '🎯 Na Mosca!', texto: 'Quiz ao vivo na sala: você projeta o PIN e os alunos jogam pelo celular, sem conta. No fim sai o pódio e o relatório de acertos.', antes: () => showFerramentasTab('quiz') },
-            { id: 'atelie', alvo: abaFerr('atelie'), titulo: '🖌️ Ateliê', texto: 'Editor de artes: certificado, cartaz, convite, crachá, comunicado. Parta de um modelo, da folha em branco ou de um pedido para a IA. Gera até um certificado por estudante da turma.', antes: () => showFerramentasTab('atelie') }
+            { id: 'atelie', alvo: abaFerr('atelie'), titulo: '🖌️ Ateliê', texto: 'Editor de artes: certificado, cartaz, convite, crachá, comunicado. Parta de um modelo, da folha em branco ou de um pedido para a IA, que também faz desenhos (para colorir) e atividades adaptadas. Gera até um certificado por estudante da turma.', antes: () => showFerramentasTab('atelie') }
         ]
     },
 
@@ -997,8 +997,11 @@ const FERRAMENTAS = [
       praQue: 'Um jogo de perguntas na sala, com os alunos respondendo pelo celular.',
       passos: ['"➕ Novo quiz": escreva as perguntas (múltipla escolha, verdadeiro ou falso, enquete), o tempo e a resposta certa.', 'Ou "✨ Criar com IA" a partir de um tema ou de um material da Biblioteca.', '"▶️ Abrir sala" e projete o PIN.', 'Os alunos entram pelo celular com o PIN e um apelido, sem conta.', 'Quem acerta mais rápido ganha mais pontos. No fim: pódio, relatório e planilha (CSV).'] },
     { id: 'f-atelie', icone: '🖌️', titulo: 'Ateliê (editor de artes)', tour: 'ferramentas', tourPasso: 'atelie',
-      praQue: 'Certificados, cartazes, convites, crachás, comunicados e capas.',
-      passos: ['Comece de um modelo, de uma folha em branco ou peça à IA (ex.: "cartaz da feira de ciências dia 12/11").', 'Mexa em tudo: textos, cores, formas, imagens, figurinhas e fundo.', 'Arraste para mover; puxe as alças para mudar o tamanho; dois cliques no texto para editar.', 'Efeitos em qualquer texto, forma ou foto: sombra (cor, força, desfoque, distância e direção), brilho em volta e "Mistura" (multiplicar, tela, sobrepor...).', 'Na foto: recorte em círculo, estrela, coração, hexágono, balão e outros, e ajustes de brilho, contraste, saturação e desfoque.', 'Baixe em PNG, JPG ou PDF, ou imprima.', 'Use {nome} no texto e "Gerar em lote" para sair uma página por estudante da turma (ex.: certificados).'] }
+      praQue: 'Certificados, cartazes, convites, crachás, comunicados, capas, desenhos para colorir e atividades adaptadas.',
+      passos: ['Comece de um modelo, de uma folha em branco ou peça à IA (ex.: "cartaz da feira de ciências dia 12/11").',
+               'Na caixa "Criar com IA", escolha "🖍️ Desenho" para a IA desenhar (para colorir, colorido ou figura simples): sai uma folha A4 com o desenho, título e linha de nome.',
+               'Escolha "📝 Atividade adaptada", diga o tema e para quem (turma toda/DUA, deficiência intelectual, autismo, TDAH, dislexia, baixa visão, em alfabetização): a IA monta a folha com nome, título, comando e questões (escrever, marcar, ligar, completar, desenhar), com figuras. Tudo fica editável; o gabarito aparece no aviso do editor.',
+               'Dentro do editor, em "Imagens" → "✨ Criar desenho com IA", põe um desenho novo na arte aberta.', 'Mexa em tudo: textos, cores, formas, imagens, figurinhas e fundo.', 'Arraste para mover; puxe as alças para mudar o tamanho; dois cliques no texto para editar.', 'Efeitos em qualquer texto, forma ou foto: sombra (cor, força, desfoque, distância e direção), brilho em volta e "Mistura" (multiplicar, tela, sobrepor...).', 'Na foto: recorte em círculo, estrela, coração, hexágono, balão e outros, e ajustes de brilho, contraste, saturação e desfoque.', 'Baixe em PNG, JPG ou PDF, ou imprima.', 'Use {nome} no texto e "Gerar em lote" para sair uma página por estudante da turma (ex.: certificados).'] }
 ];
 
 // Manual detalhado de cada aba da turma. `secoes` são blocos com título; `ordem: true`

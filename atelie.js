@@ -49,6 +49,7 @@ let atTimerSalvar = null;
 let atCategoria = 'Todos';
 let atEscola = '';
 let atAviso = '';
+let atModoIA = 'arte';          // na pagina inicial: 'arte' | 'desenho' | 'atividade'
 let atCopiado = null;
 let atFontesProntas = false;
 const atImagens = new Map();   // rid -> { img, pronta }
@@ -329,6 +330,8 @@ const ESTILO_INICIO = `
   #tabFerramentasAtelie .at-sec small { color:#5f6b7f; }
   #tabFerramentasAtelie .at-ia { background:linear-gradient(120deg,#fff4e6,#edf3fd); border:1px solid #e3e8ef; border-radius:14px; padding:16px; display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
   #tabFerramentasAtelie .at-ia textarea { flex:1; min-width:240px; min-height:62px; padding:10px; border:1px solid #cdd5e1; border-radius:10px; font:inherit; font-size:14px; resize:vertical; box-sizing:border-box; }
+  #tabFerramentasAtelie .at-ia select { padding:8px; border:1px solid #cdd5e1; border-radius:10px; font:inherit; font-size:14px; background:#fff; }
+  #tabFerramentasAtelie .at-ia .at-op { display:flex; flex-direction:column; gap:4px; font-size:12px; color:#5f6b7f; }
   #tabFerramentasAtelie .at-formatos { display:flex; gap:10px; overflow-x:auto; padding-bottom:6px; }
   #tabFerramentasAtelie .at-formato { flex:none; width:118px; background:#fff; border:1px solid #e3e8ef; border-radius:12px; padding:10px; cursor:pointer; text-align:center; font-size:12px; color:#1c2536; }
   #tabFerramentasAtelie .at-formato:hover, #tabFerramentasAtelie .at-modelo:hover, #tabFerramentasAtelie .at-arte:hover { border-color:${COR_MARCA}; box-shadow:0 4px 14px rgba(232,89,12,0.12); }
@@ -375,12 +378,7 @@ function desenharInicio() {
         </div>
         ${premium ? '' : `<div class="at-aviso">Abrir o editor, criar com IA e gerar em lote fazem parte do plano Professor ${atSeloPro()}.</div>`}
         ${atAviso ? `<div class="at-ok">${esc(atAviso)}</div>` : ''}
-        <div class="at-ia">
-            <div style="flex-basis:100%; font-weight:700; color:#1c2536;">✨ Descreva a arte e a IA monta para você ${pro}</div>
-            <textarea id="atPedidoIA" placeholder="Ex.: cartaz da feira de ciências do 7º ano, dia 12/11 às 14h, no pátio"></textarea>
-            <button class="btn btn-primary" id="atBtnIA" onclick="atCriarIA()">Criar com IA</button>
-            <div id="atMsgIA" style="flex-basis:100%; font-size:13px; color:#5f6b7f;"></div>
-        </div>
+        ${htmlCaixaIA(pro)}
 
         <div class="at-sec"><h3>Começar do zero</h3><small>escolha o tamanho da folha</small></div>
         <div class="at-formatos">
@@ -487,8 +485,48 @@ async function atExcluirArte(id) {
     desenharInicio();
 }
 
+// A caixa "Criar com IA" da pagina inicial: arte (cartaz, convite...), desenho ou atividade.
+const MODOS_IA = {
+    arte: { nome: '🖌️ Arte', titulo: 'Descreva a arte e a IA monta para você', botao: 'Criar com IA',
+            exemplo: 'Ex.: cartaz da feira de ciências do 7º ano, dia 12/11 às 14h, no pátio' },
+    desenho: { nome: '🖍️ Desenho', titulo: 'Descreva o desenho e a IA desenha para você', botao: 'Desenhar',
+            exemplo: 'Ex.: uma tartaruga marinha nadando entre corais' },
+    atividade: { nome: '📝 Atividade adaptada', titulo: 'Diga o tema e a IA monta a folha de atividade, já adaptada', botao: 'Montar atividade',
+            exemplo: 'Ex.: frutas e cores, 1º ano; ou: ciclo da água, 6º ano' }
+};
+
+function htmlCaixaIA(pro) {
+    const m = MODOS_IA[atModoIA] || MODOS_IA.arte;
+    const opcoesEstilo = Object.keys(A().ESTILOS_DESENHO).map(k => `<option value="${k}">${A().ESTILOS_DESENHO[k].icone} ${esc(A().ESTILOS_DESENHO[k].nome)}</option>`).join('');
+    let extra = '';
+    if (atModoIA === 'desenho') {
+        extra = `<label class="at-op">Estilo<select id="atIAEstilo">${opcoesEstilo}</select></label>`;
+    } else if (atModoIA === 'atividade') {
+        extra = `<label class="at-op">Para quem<select id="atIAPerfil">${Object.keys(A().PERFIS_ADAPTACAO).map(k => `<option value="${k}">${esc(A().PERFIS_ADAPTACAO[k].nome)}</option>`).join('')}</select></label>
+            <label class="at-op">Figuras<select id="atIAFiguras"><option value="colorir">🖍️ Desenhos para colorir</option><option value="ilustracao">🎨 Desenhos coloridos</option><option value="emoji">😀 Só emojis (mais rápido)</option></select></label>`;
+    }
+    return `<div class="at-ia">
+            <div class="at-chips" style="flex-basis:100%;">${Object.keys(MODOS_IA).map(k => `<button class="at-chip ${k === atModoIA ? 'on' : ''}" onclick="atMudarModoIA('${k}')">${MODOS_IA[k].nome}</button>`).join('')}</div>
+            <div style="flex-basis:100%; font-weight:700; color:#1c2536;">✨ ${esc(m.titulo)} ${pro}</div>
+            <textarea id="atPedidoIA" placeholder="${esc(m.exemplo)}"></textarea>
+            ${extra}
+            <button class="btn btn-primary" id="atBtnIA" onclick="atCriarIA()">${esc(m.botao)}</button>
+            <div id="atMsgIA" style="flex-basis:100%; font-size:13px; color:#5f6b7f;">${atModoIA === 'atividade' ? 'Sai uma folha A4 com nome, título, comando e questões com espaço para responder (linhas, quadradinhos, ligar, desenhar). Tudo editável. Os nomes dos estudantes não vão para a IA.' : ''}</div>
+        </div>`;
+}
+
+function atMudarModoIA(modo) {
+    const velho = (($('atPedidoIA') || {}).value || '');
+    atModoIA = MODOS_IA[modo] ? modo : 'arte';
+    desenharInicio();
+    const t = $('atPedidoIA');
+    if (t) { t.value = velho; t.focus(); }
+}
+
 async function atCriarIA() {
     if (!atPodeUsar('criar com IA')) return;
+    if (atModoIA === 'desenho') return atCriarDesenhoInicio();
+    if (atModoIA === 'atividade') return atCriarAtividade();
     const pedido = (($('atPedidoIA') || {}).value || '').trim();
     const msg = $('atMsgIA'), btn = $('atBtnIA');
     if (!pedido) { msg.innerHTML = '<span style="color:#b91c1c;">Escreva o que você quer: tipo de arte, tema, data, local.</span>'; return; }
@@ -506,6 +544,179 @@ async function atCriarIA() {
         msg.innerHTML = '<span style="color:#b91c1c;">' + esc(e.message || String(e)) + '</span>';
     } finally {
         btn.disabled = false;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Desenhos e atividades adaptadas com IA
+// ---------------------------------------------------------------------------
+
+let atUltimoErroImagem = '';   // por que a IA de imagem nao deu (mostrado como dica)
+
+function carregarImagemSrc(src) {
+    return new Promise((ok, falha) => {
+        const img = new Image();
+        img.onload = () => ok(img);
+        img.onerror = () => falha(new Error('Não consegui abrir o desenho que a IA fez.'));
+        img.src = src;
+    });
+}
+
+// Imagem (de qualquer src) redimensionada e guardada como PNG.
+async function imagemParaRecurso(src, ladoMax) {
+    const img = await carregarImagemSrc(src);
+    const nw = img.naturalWidth || 1024, nh = img.naturalHeight || 1024;
+    const escala = Math.min(1, (ladoMax || 1400) / Math.max(nw, nh));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(nw * escala));
+    c.height = Math.max(1, Math.round(nh * escala));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    try { return { src: c.toDataURL('image/png'), w: c.width, h: c.height }; }
+    catch (_) { return { src, w: nw, h: nh }; }   // navegador que nao deixa ler o SVG: guarda o proprio
+}
+
+// SVG limpo -> PNG. Poe largura/altura (sem elas o navegador desenha em 150px).
+async function svgParaRecurso(svg) {
+    const vb = /viewBox="\s*([-\d.]+)[\s,]+([-\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)\s*"/.exec(svg);
+    const vw = vb ? Number(vb[3]) : 512, vh = vb ? Number(vb[4]) : 512;
+    const lado = 1200;
+    const w = vw >= vh ? lado : Math.round(lado * vw / vh), h = vw >= vh ? Math.round(lado * vh / vw) : lado;
+    const comTamanho = svg.replace(/^<svg([^>]*?)\s(width|height)="[^"]*"/, '<svg$1').replace(/^<svg([^>]*?)\s(width|height)="[^"]*"/, '<svg$1')
+        .replace(/^<svg/, '<svg width="' + w + '" height="' + h + '"');
+    return imagemParaRecurso('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(comTamanho), lado);
+}
+
+// Um desenho: primeiro a IA que gera imagem (se a chave tiver acesso), senao a IA de texto
+// desenha em SVG. Devolve { src, w, h, origem: 'imagem' | 'svg' }.
+async function criarDesenho(descricao, estilo) {
+    if (typeof gerarImagemIA === 'function' && (typeof iaImagemDisponivel !== 'function' || iaImagemDisponivel())) {
+        try {
+            const r = await gerarImagemIA(A().promptDesenhoImagem(descricao, estilo));
+            const img = await imagemParaRecurso(r.src, 1400);
+            atUltimoErroImagem = '';
+            return Object.assign(img, { origem: 'imagem' });
+        } catch (e) {
+            atUltimoErroImagem = e.message || String(e);
+            console.warn('Ateliê: a IA de imagem não deu, vou desenhar em SVG.', atUltimoErroImagem);
+        }
+    }
+    const svg = A().svgDaIA(await pedirIA(A().promptDesenhoSvg(descricao, estilo)));
+    if (!svg) throw new Error('A IA não devolveu um desenho que eu conseguisse usar. Tente de novo, descrevendo de outro jeito.');
+    const img = await svgParaRecurso(svg);
+    return Object.assign(img, { origem: 'svg' });
+}
+
+function notaOrigemDesenho(origem) {
+    return origem === 'svg'
+        ? 'Feito em desenho de linhas (vetor) pela IA de texto' + (atUltimoErroImagem ? ', porque a chave de IA cadastrada não gera imagens' : '') + '.'
+        : 'Feito pela IA de imagem.';
+}
+
+async function atCriarDesenhoInicio() {
+    const pedido = (($('atPedidoIA') || {}).value || '').trim();
+    const estilo = ($('atIAEstilo') || {}).value || 'colorir';
+    const msg = $('atMsgIA'), btn = $('atBtnIA');
+    if (!pedido) { msg.innerHTML = '<span style="color:#b91c1c;">Diga o que a IA deve desenhar.</span>'; return; }
+    if (typeof chamarIAEstruturada !== 'function') { msg.innerHTML = '<span style="color:#b91c1c;">O assistente de IA não carregou. Recarregue a página.</span>'; return; }
+    btn.disabled = true;
+    msg.textContent = 'A IA está desenhando... ⏳ (pode levar até 1 minuto)';
+    try {
+        const d = await criarDesenho(pedido, estilo);
+        const titulo = estilo === 'colorir' ? 'Pinte o desenho' : pedido.slice(0, 60);
+        const arte = A().paginaDeDesenho({ titulo, recurso: d.src, w: d.w, h: d.h });
+        arte.titulo = (estilo === 'colorir' ? 'Para colorir: ' : 'Desenho: ') + pedido.slice(0, 60);
+        abrirEditor(arte);
+        avisoEditor('Desenho pronto. ' + notaOrigemDesenho(d.origem) + ' Mude o título, troque o tamanho ou peça outro em "Imagens".');
+    } catch (e) {
+        msg.innerHTML = '<span style="color:#b91c1c;">' + esc(e.message || String(e)) + '</span>';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function atCriarAtividade() {
+    const pedido = (($('atPedidoIA') || {}).value || '').trim();
+    const perfil = ($('atIAPerfil') || {}).value || 'dua';
+    const figuras = ($('atIAFiguras') || {}).value || 'colorir';
+    const msg = $('atMsgIA'), btn = $('atBtnIA');
+    if (!pedido) { msg.innerHTML = '<span style="color:#b91c1c;">Diga o tema da atividade (e o ano, se quiser).</span>'; return; }
+    if (typeof chamarIAEstruturada !== 'function') { msg.innerHTML = '<span style="color:#b91c1c;">O assistente de IA não carregou. Recarregue a página.</span>'; return; }
+    btn.disabled = true;
+    msg.textContent = 'A IA está preparando a atividade... ⏳';
+    try {
+        await descobrirEscola();
+        const resposta = await chamarIAEstruturada(A().promptAtividadeAdaptada(pedido, { perfil }), null);
+        const subs = subsAtuais();
+        const res = A().atividadeDaIA(resposta, { perfil, medir: (el) => A().quebrarLinhas(medidor(), el, subs).altura });
+        if (!res) throw new Error('A IA não devolveu questões que eu conseguisse usar. Tente de novo, com mais detalhes.');
+        abrirEditor(res.arte);
+        const partes = ['Atividade montada (' + A().PERFIS_ADAPTACAO[res.perfil].nome + '). Confira as questões e ajuste o que quiser.'];
+        if (res.gabarito) partes.push('Gabarito: ' + res.gabarito);
+        if (res.dica) partes.push('Dica: ' + res.dica);
+        avisoEditor(partes.join('\n'));
+        if (figuras !== 'emoji' && res.desenhos.length) preencherDesenhos(res.arte.id, res.desenhos.slice(0, 4), figuras, partes.join('\n'));
+    } catch (e) {
+        msg.innerHTML = '<span style="color:#b91c1c;">' + esc(e.message || String(e)).replace(/\n/g, '<br>') + '</span>';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// Troca, uma por vez, as figuras (emoji) da atividade por desenhos da IA. Se o professor
+// apagou a figura ou saiu da arte, pula. Se um desenho falhar, o emoji fica.
+async function preencherDesenhos(arteId, desenhos, estilo, avisoBase) {
+    let feitos = 0, origem = '';
+    for (let i = 0; i < desenhos.length; i++) {
+        if (!atArte || atArte.id !== arteId) return;
+        const d = desenhos[i];
+        $('atStatus') && ($('atStatus').textContent = 'Desenhando figura ' + (i + 1) + ' de ' + desenhos.length + '... ⏳');
+        try {
+            const r = await criarDesenho(d.descricao, estilo);
+            if (!atArte || atArte.id !== arteId) return;
+            const k = atArte.elementos.findIndex(e => e.id === d.elId);
+            if (k < 0) continue;
+            const velho = atArte.elementos[k];
+            const prop = r.h / r.w;
+            let w = d.w, h = Math.round(w * prop);
+            if (h > d.h) { h = d.h; w = Math.round(h / prop); }
+            const el = A().novaImagem(atArte, novoRecurso(r.src), r.w, r.h, {
+                nome: 'Desenho: ' + d.descricao.slice(0, 30),
+                x: velho.x + Math.round((velho.w - w) / 2), y: d.y + Math.round((d.h - h) / 2), w, h
+            });
+            atArte.elementos.splice(k, 1, el);
+            if (atSel === velho.id) atSel = null;
+            feitos++; origem = r.origem;
+            registrar(); pedirDesenho();
+        } catch (e) {
+            console.warn('Ateliê: figura não desenhada', e);
+        }
+    }
+    if (!atArte || atArte.id !== arteId) return;
+    atualizarBarra();
+    avisoEditor(avisoBase + '\n' + (feitos ? feitos + ' figura(s) desenhada(s) pela IA. ' + notaOrigemDesenho(origem) : 'Não consegui desenhar as figuras; ficaram os emojis.'));
+}
+
+async function atIADesenhar() {
+    if (!atPodeUsar('IA')) return;
+    const pedido = (($('atIADesenhoPedido') || {}).value || '').trim();
+    const estilo = ($('atIADesenhoEstilo') || {}).value || 'colorir';
+    const msg = $('atIADesenhoMsg'), btn = $('atIADesenhoBtn');
+    if (!pedido) { msg.innerHTML = '<span class="ed-erro">Diga o que a IA deve desenhar.</span>'; return; }
+    btn.disabled = true; msg.textContent = 'Desenhando... ⏳ (pode levar até 1 minuto)';
+    const arteId = atArte && atArte.id;
+    try {
+        const d = await criarDesenho(pedido, estilo);
+        if (!atArte || atArte.id !== arteId) return;
+        inserir(A().novaImagem(atArte, novoRecurso(d.src), d.w, d.h, { nome: 'Desenho: ' + pedido.slice(0, 30) }));
+        if (atAba === 'imagens') desenharPainel();
+        const m2 = $('atIADesenhoMsg');
+        if (m2) m2.textContent = 'Desenho colocado na folha. ' + notaOrigemDesenho(d.origem);
+    } catch (e) {
+        const m2 = $('atIADesenhoMsg');
+        if (m2) m2.innerHTML = '<span class="ed-erro">' + esc(e.message || String(e)) + '</span>';
+    } finally {
+        const b2 = $('atIADesenhoBtn');
+        if (b2) b2.disabled = false;
     }
 }
 
@@ -594,7 +805,7 @@ const ESTILO_EDITOR = `
   #atEditor .ed-camada button:hover { opacity:1; }
   #atEditor .ed-dica { font-size:12px; color:var(--at-apagado); line-height:1.5; }
   #atEditor .ed-dica b { color:var(--at-txt); }
-  #atEditor .ed-ok { background:#12301f; border:1px solid #2f7a4d; color:#a7f3c4; border-radius:8px; padding:8px 10px; font-size:13px; margin-bottom:10px; }
+  #atEditor .ed-ok { white-space:pre-line; max-height:40vh; overflow-y:auto; background:#12301f; border:1px solid #2f7a4d; color:#a7f3c4; border-radius:8px; padding:8px 10px; font-size:13px; margin-bottom:10px; }
   #atEditor .ed-erro { color:#ff8a8d; font-size:13px; }
   #atEditor .ed-paleta { display:flex; align-items:center; gap:8px; width:100%; border:1px solid var(--at-linha); border-radius:10px; background:var(--at-fundo); padding:8px 10px; margin-bottom:6px; cursor:pointer; font-size:13px; color:var(--at-txt); }
   #atEditor .ed-paleta.on { border-color:var(--at-sel); }
@@ -1311,6 +1522,12 @@ function painelImagens() {
         <input type="file" id="atArquivo" accept="image/*" multiple style="display:none" onchange="atArquivosEscolhidos(this)">
         <button class="ed-b pri" style="width:100%; justify-content:center;" onclick="document.getElementById('atArquivo').click()">⬆ Enviar imagem</button>
         <p class="ed-dica">Também dá para <b>colar</b> (Ctrl+V) uma imagem copiada ou <b>arrastar</b> o arquivo para a folha. A imagem fica só nesta arte; nada vai para site de terceiros.</p>
+        <h5>✨ Criar desenho com IA</h5>
+        <textarea class="ed-campo" id="atIADesenhoPedido" placeholder="Ex.: um sapo sentado numa folha de vitória-régia"></textarea>
+        <div class="ed-linha"><select class="ed-campo" id="atIADesenhoEstilo" style="flex:1;">${Object.keys(A().ESTILOS_DESENHO).map(k => `<option value="${k}">${A().ESTILOS_DESENHO[k].icone} ${esc(A().ESTILOS_DESENHO[k].nome)}</option>`).join('')}</select>
+            <button class="ed-b pri" id="atIADesenhoBtn" onclick="atIADesenhar()">Desenhar</button></div>
+        <div id="atIADesenhoMsg" class="ed-dica"></div>
+        <p class="ed-dica">Só a descrição vai para a IA. Para colorir sai com contorno preto e fundo branco.</p>
         ${recursos.length ? `<h5>Usadas nesta arte</h5><div class="ed-grade">${recursos.map(r => `<div class="ed-cel" onclick="atReusarImagem('${r}')"><img src="${esc(atArte.recursos[r])}" alt=""></div>`).join('')}</div>` : ''}`;
 }
 
@@ -1370,6 +1587,8 @@ function painelIA() {
         ${temTexto ? `<div class="ed-cores">${Object.keys(A().COMO_REESCREVER).map(k => `<button class="ed-b" style="font-size:12px;" onclick="atIAReescrever('${k}')">${{ corrigir: 'Corrigir', curto: 'Mais curto', formal: 'Mais formal', animado: 'Mais animado', simples: 'Mais simples', ingles: 'Em inglês' }[k]}</button>`).join('')}</div>
             <div id="atIAMsg2" class="ed-dica" style="margin-top:6px;"></div>`
             : '<p class="ed-dica" style="margin-top:0;">Selecione um texto na folha para corrigir, encurtar, deixar mais formal ou traduzir.</p>'}
+        <h5>Desenho</h5>
+        <button class="ed-b" onclick="atMudarAba('imagens'); setTimeout(() => { const t = document.getElementById('atIADesenhoPedido'); if (t) t.focus(); }, 50)">🖍️ Criar desenho com IA</button>
         <h5>Refazer a arte inteira</h5>
         <textarea class="ed-campo" id="atIARefazer" placeholder="Ex.: convite da formatura do 9º ano, 15/12 às 19h, no auditório"></textarea>
         <div class="ed-linha"><button class="ed-b" id="atIARefazerBtn" onclick="atIARefazer()">Criar nova versão</button><span id="atIAMsg3" class="ed-dica"></span></div>
@@ -2099,7 +2318,7 @@ function atEstado() {
 
 window.renderAtelie = renderAtelie;
 Object.assign(window, {
-    atFiltrarModelos, atNovo, atNovoPersonalizado, atModelo, atAbrir, atDuplicarArte, atExcluirArte, atCriarIA,
+    atFiltrarModelos, atNovo, atNovoPersonalizado, atModelo, atAbrir, atDuplicarArte, atExcluirArte, atCriarIA, atMudarModoIA, atIADesenhar,
     atSair, atRenomear, atDesfazer, atRefazer, atSalvarAgora, atZoomPasso, atZoomAjustar, atMudarAba,
     atTrocarModelo, atAddTexto, atInserirCampo, atAddForma, atAddFigurinha, atSelecionar, atCamada, atAcao, atAlinhar,
     atProp, atFundo, atPaleta, atRedimensionarFolha, atArquivosEscolhidos, atReusarImagem, atFundoImagem,

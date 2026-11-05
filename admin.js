@@ -1744,6 +1744,15 @@ async function renderChavesIAScreen() {
             </div>
 
             <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e3e8ef;">
+                <h3 style="margin:0 0 6px; font-size:15px;">🖍️ Modelo de imagem do Gemini (opcional)</h3>
+                <p style="font-size:12px; color:#5f6b7f; margin-bottom:8px;">Usado pelo Ateliê para desenhar (desenhos para colorir e figuras das atividades). Precisa de uma chave do Gemini com acesso a geração de imagem (no plano gratuito do Google normalmente não tem — aí o Ateliê desenha em linhas/vetor com a IA de texto). Uma chave da OpenAI (<code>sk-…</code>) também serve (gpt-image-1). Deixe em branco para o padrão (<code>${typeof MODELOS_IMAGEM_GEMINI_PADRAO !== 'undefined' ? MODELOS_IMAGEM_GEMINI_PADRAO.join(', ') : 'gemini-2.5-flash-image'}</code>).</p>
+                <div style="display:flex; gap:10px; align-items:flex-end;">
+                    <input type="text" id="geminiImageModelInput" value="${(configIA.geminiImageModel || '').replace(/"/g, '&quot;')}" placeholder="ex: gemini-2.5-flash-image" style="flex:1; min-width:220px; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
+                    <button class="btn btn-primary" onclick="salvarModeloImagemGemini()">💾 Salvar modelo</button>
+                </div>
+            </div>
+
+            <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e3e8ef;">
                 <h3 style="margin:0 0 6px; font-size:15px;">🔀 Modelo do OpenRouter (opcional)</h3>
                 <p style="font-size:12px; color:#5f6b7f; margin-bottom:8px;">Só se você usa uma chave OpenRouter (<code>sk-or-…</code>). Deixe em branco para o modelo grátis padrão. Ex.: <code>meta-llama/llama-3.3-70b-instruct:free</code> ou <code>deepseek/deepseek-chat-v3-0324:free</code>.</p>
                 <div style="display:flex; gap:10px; align-items:flex-end;">
@@ -1762,6 +1771,13 @@ async function salvarModeloGemini() {
     configData.geminiModel = document.getElementById('geminiModelInput').value.trim();
     await saveData('system', 'config_ia', configData);
     alert(configData.geminiModel ? 'Modelo do Gemini salvo!' : `Modelo do Gemini limpo — usando o padrão (${MODELOS_GEMINI_PADRAO.join(', ')}).`);
+}
+
+async function salvarModeloImagemGemini() {
+    const configData = await getData('system', 'config_ia') || {};
+    configData.geminiImageModel = document.getElementById('geminiImageModelInput').value.trim();
+    await saveData('system', 'config_ia', configData);
+    alert(configData.geminiImageModel ? 'Modelo de imagem salvo!' : 'Modelo de imagem limpo — usando o padrão.');
 }
 
 async function salvarModeloOpenRouter() {

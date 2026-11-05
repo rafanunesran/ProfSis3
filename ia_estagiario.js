@@ -2060,6 +2060,87 @@ async function chamarIAEstruturada(promptText, btn) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// GERAR IMAGEM COM IA (usado pelo Ateliê: desenhos para colorir, ilustrações, figuras de
+// atividade adaptada). Usa as mesmas chaves de system/config_ia:
+//   - chave do Gemini: modelos que devolvem imagem (config_ia.geminiImageModel, ou o padrão
+//     abaixo). Nem toda chave tem acesso: no plano gratuito do Google esses modelos costumam
+//     responder "quota"/"limit: 0" — aí quem chama cai no desenho em SVG (feito pela IA de
+//     texto, ver atelie.js: criarDesenho).
+//   - chave da OpenAI (sk-...): gpt-image-1.
+// Devolve { src: dataURL, origem }. Lança erro com o motivo de cada chave se nenhuma der.
+// ---------------------------------------------------------------------------
+const MODELOS_IMAGEM_GEMINI_PADRAO = ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview'];
+const LIMITE_TEMPO_IMAGEM_MS = 90000;
+// Se as chaves nao tem acesso a imagem, nao adianta insistir a cada desenho: por 15 minutos
+// o Ateliê vai direto para o SVG.
+let iaImagemIndisponivelAte = 0;
+
+function iaImagemDisponivel() { return Date.now() >= iaImagemIndisponivelAte; }
+
+async function gerarImagemIA(promptText) {
+    let configData = null;
+    try { configData = await getData('system', 'config_ia'); } catch (e) { console.warn('Erro ao buscar chave da IA:', e); }
+    const chaves = configData && configData.apiKey ? configData.apiKey.split(',').map(k => k.trim()).filter(k => k) : [];
+    if (!chaves.length) throw new Error('⚠️ A chave da API não foi configurada. Peça ao Administrador para cadastrá-la em Super Admin → 🔑 Chaves de IA.');
+    const ehOpenAI = (k) => k.startsWith('sk-') && !k.startsWith('sk-ant-') && !k.startsWith('sk-or-');
+    const ehGemini = (k) => !k.startsWith('sk-') && !k.startsWith('gsk_') && !k.startsWith('nvapi-');
+    const modelos = String((configData && configData.geminiImageModel) || '').split(',').map(m => m.trim()).filter(m => m);
+    const modelosGemini = modelos.length ? modelos : MODELOS_IMAGEM_GEMINI_PADRAO.slice();
+    const erros = [];
+    const comTempo = async (fn) => {
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), LIMITE_TEMPO_IMAGEM_MS);
+        try { return await fn(controller.signal); }
+        catch (err) { if (err.name === 'AbortError') throw new Error('Tempo esgotado (' + (LIMITE_TEMPO_IMAGEM_MS / 1000) + 's).'); throw err; }
+        finally { clearTimeout(t); }
+    };
+
+    for (const chave of chaves.filter(ehGemini)) {
+        for (const modelo of modelosGemini) {
+            try {
+                const src = await comTempo(async (signal) => {
+                    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${chave}`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
+                        body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } })
+                    });
+                    const j = await r.json().catch(() => ({}));
+                    if (!r.ok) throw new Error((j.error && j.error.message) || r.statusText);
+                    const partes = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
+                    const img = partes.find(p => (p.inlineData || p.inline_data));
+                    if (!img) throw new Error('o modelo não devolveu imagem');
+                    const d = img.inlineData || img.inline_data;
+                    return 'data:' + (d.mimeType || d.mime_type || 'image/png') + ';base64,' + d.data;
+                });
+                return { src, origem: 'gemini' };
+            } catch (err) {
+                erros.push('Gemini (' + modelo + '): ' + String(err.message || err).slice(0, 200));
+            }
+        }
+    }
+    for (const chave of chaves.filter(ehOpenAI)) {
+        try {
+            const src = await comTempo(async (signal) => {
+                const r = await fetch('https://api.openai.com/v1/images/generations', {
+                    method: 'POST', signal,
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${chave}` },
+                    body: JSON.stringify({ model: (configData && configData.openaiImageModel) || 'gpt-image-1', prompt: promptText, size: '1024x1024', n: 1 })
+                });
+                const j = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error((j.error && j.error.message) || r.statusText);
+                const b64 = j.data && j.data[0] && j.data[0].b64_json;
+                if (!b64) throw new Error('a OpenAI não devolveu imagem');
+                return 'data:image/png;base64,' + b64;
+            });
+            return { src, origem: 'openai' };
+        } catch (err) {
+            erros.push('OpenAI: ' + String(err.message || err).slice(0, 200));
+        }
+    }
+    iaImagemIndisponivelAte = Date.now() + 15 * 60 * 1000;
+    throw new Error(erros.length ? 'Nenhuma chave conseguiu gerar imagem.\n' + erros.join('\n') : 'Nenhuma chave cadastrada gera imagem (Gemini ou OpenAI).');
+}
+
 // Calcula o bimestre vigente a partir das datas configuradas pelo gestor (aba Escola > Períodos
 // Bimestrais). Fora de um intervalo exato (ex: período de recesso entre bimestres) usa o bimestre
 // cujo início/fim está mais próximo de hoje, em vez de um texto genérico sem número.

@@ -1209,6 +1209,319 @@ function textoDaIA(resposta) {
     return '';
 }
 
+// ---------------------------------------------------------------------------
+// Desenhos com IA (para colorir, ilustracao, figura simples)
+// ---------------------------------------------------------------------------
+//
+// Dois caminhos, nesta ordem (quem escolhe e' a tela, ver atelie.js: criarDesenho):
+//   1. um modelo de IA que GERA IMAGEM (Gemini "image", ou OpenAI gpt-image) — sai uma
+//      figura de verdade (PNG). So' funciona se a chave cadastrada tiver acesso a isso.
+//   2. sem esse acesso, a IA de texto de sempre DESENHA EM SVG (vetor: linhas e formas).
+//      Fica mais simples, mas funciona com qualquer chave e sai muito bom para colorir.
+// O SVG que volta da IA passa por limparSvgDaIA: so' ficam formas e atributos de desenho
+// (nada de script, link, foreignObject ou imagem de fora).
+
+const ESTILOS_DESENHO = {
+    colorir: {
+        nome: 'Para colorir', icone: '🖍️',
+        imagem: 'Desenho para colorir (livro de colorir infantil): somente contornos pretos grossos e limpos, sobre fundo branco puro, sem sombras, sem tons de cinza, sem preenchimento, sem texto, formas grandes e simples, adequado para crianças.',
+        svg: 'Desenho PARA COLORIR: só contornos pretos (stroke="#000000", stroke-width entre 4 e 8, stroke-linecap="round", stroke-linejoin="round") e fill="#ffffff" ou fill="none". Nada pintado, sem cinza, sem texto. Formas grandes, fechadas e simples, para criança pintar dentro.'
+    },
+    ilustracao: {
+        nome: 'Ilustração colorida', icone: '🎨',
+        imagem: 'Ilustração colorida, estilo livro didático infantil, traço limpo, cores alegres, fundo branco, sem texto, amigável e adequada para escola.',
+        svg: 'Ilustração COLORIDA em estilo plano (flat), cores alegres, com contornos escuros finos. Sem texto. Fundo transparente (não desenhe retângulo de fundo).'
+    },
+    icone: {
+        nome: 'Figura simples', icone: '⭐',
+        imagem: 'Ícone simples e grande, estilo adesivo, cores chapadas, contorno escuro, fundo branco, sem texto, fácil de reconhecer por uma criança pequena.',
+        svg: 'ÍCONE simples (poucas formas, no máximo 15 elementos), cores chapadas, contorno escuro grosso. Sem texto. Fundo transparente.'
+    }
+};
+
+function estiloDesenho(id) { return ESTILOS_DESENHO[id] ? id : 'colorir'; }
+
+function promptDesenhoImagem(descricao, estilo) {
+    const e = ESTILOS_DESENHO[estiloDesenho(estilo)];
+    return 'Crie uma imagem para uma atividade de escola: ' + txt(descricao, 400).trim() + '. ' + e.imagem +
+        ' Imagem quadrada, figura centralizada e inteira, sem palavras nem letras.';
+}
+
+function promptDesenhoSvg(descricao, estilo) {
+    const e = ESTILOS_DESENHO[estiloDesenho(estilo)];
+    return 'Você desenha figuras em SVG para atividades escolares (crianças e adolescentes de escola pública brasileira).' +
+        ' Desenhe: "' + txt(descricao, 400).trim() + '".' +
+        ' ' + e.svg +
+        ' Regras: um único <svg> com viewBox="0 0 512 512" e xmlns="http://www.w3.org/2000/svg"; use só path, circle, ellipse, rect, line, polyline, polygon e g;' +
+        ' nada de text, image, use, defs, gradientes, filtros, script ou links. A figura deve ocupar quase todo o quadro, ser fácil de reconhecer e bem desenhada (proporções certas, detalhes que identificam o que é).' +
+        ' Responda APENAS com um JSON válido, sem markdown: {"svg": "<svg ...>...</svg>"}.';
+}
+
+const SVG_TAGS = ['svg', 'g', 'path', 'circle', 'ellipse', 'rect', 'line', 'polyline', 'polygon'];
+const SVG_ATRIBUTOS = ['viewbox', 'xmlns', 'width', 'height', 'd', 'cx', 'cy', 'r', 'rx', 'ry', 'x', 'y', 'x1', 'y1', 'x2', 'y2',
+    'points', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit', 'fill-rule', 'clip-rule',
+    'opacity', 'fill-opacity', 'stroke-opacity', 'transform'];
+
+// Refaz o SVG da IA so' com o que e' desenho. Devolve '' se nao sobrar um <svg> com algo dentro.
+function limparSvgDaIA(svg) {
+    let s = String(svg || '');
+    const ini = s.search(/<svg[\s>]/i), fim = s.toLowerCase().lastIndexOf('</svg>');
+    if (ini < 0 || fim < ini) return '';
+    s = s.slice(ini, fim + 6).replace(/<!--[\s\S]*?-->/g, '');
+    // blocos inteiros que nao queremos (com o conteudo de dentro)
+    s = s.replace(/<(script|style|foreignObject|text|defs|image|use|a|title|desc|metadata)\b[\s\S]*?<\/\1\s*>/gi, '');
+    const saida = [];
+    let formas = 0;
+    const re = /<\s*(\/)?\s*([a-zA-Z][\w:-]*)([^>]*)>/g;
+    let m;
+    const pilha = [];
+    while ((m = re.exec(s))) {
+        const fecha = !!m[1], tag = m[2].toLowerCase();
+        if (SVG_TAGS.indexOf(tag) < 0) continue;
+        if (fecha) {
+            if (tag === 'svg' || tag === 'g') {
+                const k = pilha.lastIndexOf(tag);
+                if (k >= 0) { pilha.length = k; saida.push('</' + tag + '>'); }
+            }
+            continue;
+        }
+        const autoFecha = /\/\s*$/.test(m[3]);
+        const attrs = [];
+        const reA = /([a-zA-Z][\w:-]*)\s*=\s*("([^"]*)"|'([^']*)')/g;
+        let a;
+        while ((a = reA.exec(m[3]))) {
+            const nome = a[1].toLowerCase();
+            const valor = a[3] != null ? a[3] : a[4];
+            if (SVG_ATRIBUTOS.indexOf(nome) < 0) continue;
+            if (/url\s*\(|javascript:|expression|[<>"&]/i.test(valor)) continue;
+            if (nome === 'xmlns' && valor !== 'http://www.w3.org/2000/svg') continue;
+            attrs.push((nome === 'viewbox' ? 'viewBox' : nome) + '="' + valor.slice(0, 20000) + '"');
+        }
+        if (tag === 'svg' && pilha.indexOf('svg') >= 0) continue; // svg dentro de svg: ignora
+        if (tag !== 'svg' && pilha.indexOf('svg') < 0) continue;
+        if (tag === 'svg') {
+            if (!attrs.some(x => x.indexOf('xmlns=') === 0)) attrs.push('xmlns="http://www.w3.org/2000/svg"');
+            if (!attrs.some(x => x.indexOf('viewBox=') === 0)) attrs.push('viewBox="0 0 512 512"');
+        } else if (tag !== 'g') formas++;
+        const abre = '<' + tag + (attrs.length ? ' ' + attrs.join(' ') : '');
+        if (tag === 'svg' || tag === 'g') {
+            if (autoFecha) { saida.push(abre + '/>'); continue; }
+            pilha.push(tag); saida.push(abre + '>');
+        } else saida.push(abre + '/>');
+        if (saida.length > 3000) break;
+    }
+    while (pilha.length) saida.push('</' + pilha.pop() + '>');
+    if (!formas || saida[0].indexOf('<svg') !== 0) return '';
+    return saida.join('');
+}
+
+function svgDaIA(resposta) {
+    const r = lerJsonDaIA(resposta);
+    if (r && typeof r.svg === 'string') return limparSvgDaIA(r.svg);
+    if (typeof resposta === 'string') return limparSvgDaIA(resposta);
+    return '';
+}
+
+// Uma folha A4 com o desenho grande, titulo e linha de nome (para "desenho para colorir").
+function paginaDeDesenho(opcoes) {
+    opcoes = opcoes || {};
+    const arte = novaArte('a4r', { titulo: txt(opcoes.titulo || 'Desenho', 100) });
+    const W = arte.largura, H = arte.altura;
+    const els = [];
+    els.push(normalizarElemento({ tipo: 'texto', nome: 'Nome e data', texto: 'Nome: ______________________________   Data: ___/___/____',
+        fonte: 'Arial', tam: 30, cor: '#1c2536', alinh: 'left', x: 80, y: 70, w: W - 160, h: 40 }));
+    els.push(normalizarElemento({ tipo: 'texto', campo: 'titulo', texto: txt(opcoes.titulo || 'Pinte o desenho', 120),
+        fonte: 'Fredoka', tam: 80, negrito: true, cor: '#1c2536', alinh: 'center', x: 80, y: 150, w: W - 160, h: 100 }));
+    const topo = 300, base = H - 80;
+    const proporcao = (opcoes.w && opcoes.h) ? opcoes.h / opcoes.w : 1;
+    let w = W - 160, h = Math.round(w * proporcao);
+    if (h > base - topo) { h = base - topo; w = Math.round(h / proporcao); }
+    if (opcoes.recurso) {
+        arte.recursos.r_desenho = opcoes.recurso;
+        els.push(normalizarElemento({ tipo: 'imagem', nome: 'Desenho', recurso: 'r_desenho', x: Math.round((W - w) / 2), y: topo + Math.round((base - topo - h) / 2), w, h }));
+    }
+    arte.elementos = els;
+    return arte;
+}
+
+// ---------------------------------------------------------------------------
+// Atividade adaptada (folha de atividade montada como arte editavel)
+// ---------------------------------------------------------------------------
+//
+// A IA devolve o CONTEUDO (titulo, comando, questoes); aqui e' montada a folha A4:
+// cabecalho com nome e data, titulo, comando geral e cada questao com numero, enunciado,
+// espaco de resposta (linhas, quadradinhos, colunas para ligar, caixa para desenhar) e,
+// do lado, uma figura. A figura entra primeiro como emoji; a tela depois troca cada uma
+// por um desenho feito pela IA (lista `desenhos`), se der.
+
+const PERFIS_ADAPTACAO = {
+    dua:       { nome: 'Turma toda (DUA)', tam: 30, max: 6, fonte: 'Arial', entrelinha: 1.35,
+                 guia: 'Desenho Universal para a Aprendizagem: a mesma atividade deve servir a todos — linguagem clara, um comando por questão, apoio visual, mais de um jeito de responder (escrever, marcar, desenhar).' },
+    di:        { nome: 'Deficiência intelectual', tam: 36, max: 4, fonte: 'Arial', entrelinha: 1.4,
+                 guia: 'Estudante com deficiência intelectual: frases bem curtas e concretas, palavras do dia a dia, uma ação por questão, exemplos, figuras que ajudem a entender; prefira marcar, ligar e completar com poucas opções (no máximo 3).' },
+    tea:       { nome: 'Autismo (TEA)', tam: 34, max: 4, fonte: 'Arial', entrelinha: 1.4,
+                 guia: 'Estudante autista: instruções literais e diretas (sem ironia, metáfora ou duplo sentido), passo a passo, uma questão por vez, previsibilidade, apoio visual claro, pouco texto por questão.' },
+    tdah:      { nome: 'TDAH', tam: 32, max: 5, fonte: 'Arial', entrelinha: 1.35,
+                 guia: 'Estudante com TDAH: questões curtas e objetivas, comando destacado no início, tarefas pequenas, variedade (marcar, ligar, escrever pouco), nada de texto longo.' },
+    dislexia:  { nome: 'Dislexia', tam: 34, max: 4, fonte: 'Arial', entrelinha: 1.6,
+                 guia: 'Estudante com dislexia: frases curtas, palavras simples, evitar textos longos para ler, preferir marcar, ligar e desenhar; sem pegadinhas de ortografia.' },
+    baixavisao:{ nome: 'Baixa visão', tam: 46, max: 3, fonte: 'Arial', entrelinha: 1.4, negrito: true,
+                 guia: 'Estudante com baixa visão: pouquíssimo texto, letras muito grandes, alto contraste, figuras grandes e simples, poucas questões.' },
+    alfabetizacao: { nome: 'Em alfabetização', tam: 40, max: 4, fonte: 'Arial', entrelinha: 1.4, maiusculas: true,
+                 guia: 'Estudante em fase de alfabetização: textos em LETRA MAIÚSCULA (bastão), palavras curtas, uma figura para cada questão, respostas por marcar, ligar, circular ou desenhar; quase nada para escrever.' }
+};
+
+const TIPOS_QUESTAO = ['escrever', 'marcar', 'ligar', 'completar', 'desenhar'];
+
+function perfilAdaptacao(id) { return PERFIS_ADAPTACAO[id] ? id : 'dua'; }
+
+function promptAtividadeAdaptada(pedido, extras) {
+    extras = extras || {};
+    const pid = perfilAdaptacao(extras.perfil), p = PERFIS_ADAPTACAO[pid];
+    return 'Você é professor(a) especialista em educação inclusiva numa escola pública brasileira e prepara uma folha de atividade impressa (A4).' +
+        ' Pedido do professor: "' + txt(pedido, 800) + '".' +
+        (extras.ano ? ' Ano/série: ' + txt(extras.ano, 60) + '.' : '') +
+        ' Adaptação: ' + p.guia +
+        ' Faça no máximo ' + p.max + ' questões, todas sobre o tema pedido, em português do Brasil, corretas e adequadas à idade.' +
+        ' Tipos de questão possíveis: "escrever" (resposta escrita curta, diga quantas linhas em "linhas", de 1 a 4), "marcar" (marcar X na certa; "opcoes" com 2 a 4 itens curtos), "ligar" ("pares": lista de [esquerda, direita] que combinam, 2 a 4 pares, itens curtos), "completar" (use ____ no enunciado no lugar da palavra), "desenhar" (pede um desenho).' +
+        ' Em cada questão, "figura" é a descrição curta (até 8 palavras) de um desenho que ajuda a entender a questão, e "emoji" é UM emoji que represente a mesma coisa. Se a questão não precisar de figura, deixe "figura" vazio.' +
+        ' Não use nomes de estudantes. Não coloque as respostas na folha; as respostas vão em "gabarito".' +
+        ' Responda APENAS com um JSON válido, sem markdown, no formato exato:' +
+        ' {"titulo_arte": "nome curto para salvar", "titulo": "título da folha (até 6 palavras)", "comando": "instrução geral curta para o estudante", ' +
+        '"questoes": [{"tipo": "escrever|marcar|ligar|completar|desenhar", "enunciado": "...", "opcoes": ["..."], "pares": [["...", "..."]], "linhas": 2, "figura": "...", "emoji": "🍎"}], ' +
+        '"gabarito": "respostas esperadas, curtas", "dica_professor": "uma dica curta de como aplicar"}.';
+}
+
+// Altura de um texto: a tela passa `medir` (canvas de verdade); sem ele, uma estimativa.
+function alturaEstimada(el) {
+    const porLinha = Math.max(1, Math.floor(el.w / (el.tam * (el.negrito ? 0.58 : 0.53))));
+    let linhas = 0;
+    String(el.texto || '').split('\n').forEach(par => { linhas += Math.max(1, Math.ceil(par.length / porLinha)); });
+    return Math.ceil(linhas * el.tam * el.entrelinha);
+}
+
+function montarAtividade(dados, perfil, escala, medir) {
+    const p = PERFIS_ADAPTACAO[perfil];
+    const arte = novaArte('a4r', { titulo: txt(dados.titulo_arte || dados.titulo || 'Atividade', 100) });
+    arte.paleta = 'escola';
+    const W = arte.largura, H = arte.altura, M = 80;
+    const tam = Math.round(p.tam * escala);
+    const els = [];
+    const desenhos = [];
+    const base = { fonte: p.fonte, cor: '#1c2536', entrelinha: p.entrelinha, alinh: 'left', maiusculas: !!p.maiusculas };
+    const texto = (props) => {
+        const el = normalizarElemento(Object.assign({ tipo: 'texto' }, base, props));
+        el.h = Math.max(Math.round(el.tam * el.entrelinha), Math.ceil(medir ? medir(el) : alturaEstimada(el)));
+        els.push(el);
+        return el;
+    };
+    const forma = (props) => { const el = normalizarElemento(Object.assign({ tipo: 'forma' }, props)); els.push(el); return el; };
+
+    // cabecalho
+    forma({ forma: 'arred', nome: 'Cabeçalho', x: M - 20, y: 50, w: W - 2 * M + 40, h: 120, preench: '#edf3fd', borda: '#c5d3ea', bordaLarg: 3, raio: 24 });
+    texto({ nome: 'Escola', texto: '{escola}', tam: 24, cor: '#5f6b7f', x: M, y: 64, w: W - 2 * M, maiusculas: false });
+    texto({ nome: 'Nome e data', texto: 'Nome: ______________________________  Data: ___/___/____', tam: 28, x: M, y: 108, w: W - 2 * M, maiusculas: false });
+    let y = 200;
+    const tit = texto({ campo: 'titulo', texto: txt(dados.titulo || 'Atividade', 120), fonte: 'Fredoka', negrito: true, tam: Math.round(tam * 1.9),
+        alinh: 'center', cor: '#2563c9', x: M, y, w: W - 2 * M, entrelinha: 1.1 });
+    y += tit.h + Math.round(tam * 0.6);
+    if (String(dados.comando || '').trim()) {
+        const c = texto({ campo: 'subtitulo', texto: txt(dados.comando, 400), tam: Math.round(tam * 0.95), italico: false, negrito: true, x: M, y, w: W - 2 * M,
+            fundoCor: '#fff4e6', fundoRaio: 18 });
+        y += c.h + Math.round(tam * 0.9);
+    }
+
+    const qs = Array.isArray(dados.questoes) ? dados.questoes.slice(0, p.max) : [];
+    const LADO_FIG = Math.round(Math.min(300, Math.max(190, tam * 6.2)));
+    const COR_TRACO = '#868e96';
+    qs.forEach((q, i) => {
+        q = q || {};
+        const tipo = TIPOS_QUESTAO.indexOf(q.tipo) >= 0 ? q.tipo : 'escrever';
+        const temFig = !!(String(q.figura || '').trim() || String(q.emoji || '').trim());
+        const xTexto = M + Math.round(tam * 2.2);
+        const larg = W - M - xTexto - (temFig ? LADO_FIG + 30 : 0);
+        const y0 = y;
+        const nb = Math.round(tam * 1.6);
+        forma({ forma: 'circulo', nome: 'Número ' + (i + 1), x: M, y: y0, w: nb, h: nb, preench: '#2563c9', borda: '#2563c9' });
+        texto({ nome: 'Número ' + (i + 1), texto: String(i + 1), fonte: 'Arial', negrito: true, tam: Math.round(tam * 0.95), cor: '#ffffff', alinh: 'center',
+            x: M, y: y0 + Math.round((nb - tam * 0.95 * 1.2) / 2), w: nb, entrelinha: 1.2, maiusculas: false });
+        const en = texto({ nome: 'Questão ' + (i + 1), texto: txt(q.enunciado || '', 600), tam, negrito: !!p.negrito, x: xTexto, y: y0 + Math.round((nb - tam * p.entrelinha) / 2), w: larg });
+        let yy = en.y + en.h + Math.round(tam * 0.6);
+        if (tipo === 'escrever' || tipo === 'completar') {
+            const n = tipo === 'completar' ? 0 : Math.round(num(q.linhas, 2, 1, 4));
+            for (let k = 0; k < n; k++) {
+                yy += Math.round(tam * 1.5);
+                forma({ forma: 'linha', nome: 'Linha de resposta', x: xTexto, y: yy - 10, w: larg, h: 20, borda: COR_TRACO, bordaLarg: 3 });
+                yy += 14;
+            }
+            yy += Math.round(tam * 0.3);
+        } else if (tipo === 'marcar') {
+            const ops = (Array.isArray(q.opcoes) ? q.opcoes : []).slice(0, 4).map(o => txt(o, 160)).filter(o => o.trim());
+            ops.forEach(o => {
+                const lado = Math.round(tam * 1.1);
+                forma({ forma: 'arred', nome: 'Quadradinho', x: xTexto, y: yy, w: lado, h: lado, preench: '#ffffff', borda: '#1c2536', bordaLarg: 4, raio: 8 });
+                const t = texto({ nome: 'Opção', texto: o, tam, negrito: !!p.negrito, x: xTexto + lado + 20, y: yy + Math.round((lado - tam * p.entrelinha) / 2), w: larg - lado - 20 });
+                yy = Math.max(yy + lado, t.y + t.h) + Math.round(tam * 0.5);
+            });
+        } else if (tipo === 'ligar') {
+            const pares = (Array.isArray(q.pares) ? q.pares : []).slice(0, 4).filter(x => Array.isArray(x) && x.length >= 2)
+                .map(x => [txt(x[0], 80), txt(x[1], 80)]);
+            // a coluna da direita vai em outra ordem (girada), para nao ficar ja' ligada
+            const dir = pares.map(x => x[1]);
+            if (dir.length > 1) dir.push(dir.shift());
+            const col = Math.round((larg - 120) / 2);
+            const pt = Math.round(tam * 0.5);
+            pares.forEach((par, k) => {
+                const a = texto({ nome: 'Ligar (esquerda)', texto: par[0], tam, negrito: !!p.negrito, x: xTexto, y: yy, w: col - pt - 14 });
+                const b = texto({ nome: 'Ligar (direita)', texto: dir[k], tam, negrito: !!p.negrito, x: xTexto + col + 120 + pt + 14, y: yy, w: col - pt - 14 });
+                const meio = yy + Math.round(tam * p.entrelinha / 2) - Math.round(pt / 2);
+                forma({ forma: 'circulo', nome: 'Ponto', x: xTexto + col - pt, y: meio, w: pt, h: pt, preench: '#1c2536', borda: '#1c2536' });
+                forma({ forma: 'circulo', nome: 'Ponto', x: xTexto + col + 120, y: meio, w: pt, h: pt, preench: '#1c2536', borda: '#1c2536' });
+                yy = Math.max(a.y + a.h, b.y + b.h) + Math.round(tam * 0.8);
+            });
+        } else if (tipo === 'desenhar') {
+            const alt = Math.round(Math.max(LADO_FIG, tam * 8));
+            forma({ forma: 'arred', nome: 'Espaço para desenhar', x: xTexto, y: yy, w: larg, h: alt, preench: '', borda: '#adb5bd', bordaLarg: 4, raio: 24 });
+            yy += alt + Math.round(tam * 0.5);
+        }
+        if (temFig) {
+            const fx = W - M - LADO_FIG, fy = y0;
+            const emoji = String(q.emoji || '').trim().slice(0, 8) || '🖼️';
+            const fig = normalizarElemento({ tipo: 'texto', nome: 'Figura ' + (i + 1), texto: emoji, fonte: 'Arial', tam: Math.round(LADO_FIG * 0.62),
+                alinh: 'center', x: fx, y: fy + Math.round(LADO_FIG * 0.1), w: LADO_FIG, h: Math.round(LADO_FIG * 0.8), entrelinha: 1.2, cor: '#1c2536' });
+            els.push(fig);
+            if (String(q.figura || '').trim()) desenhos.push({ elId: fig.id, descricao: txt(q.figura, 200).trim(), x: fx, y: fy, w: LADO_FIG, h: LADO_FIG });
+            yy = Math.max(yy, fy + LADO_FIG + 20);
+        }
+        y = yy + Math.round(tam * 0.9);
+    });
+    arte.elementos = els;
+    return { arte, desenhos, fim: y, cabe: y <= H - 40, questoes: qs.length };
+}
+
+// A resposta da IA vira a folha. Se nao couber, diminui a letra (ate' 70%) e, por fim,
+// tira questoes do fim. Devolve null se nao veio nenhuma questao.
+function atividadeDaIA(resposta, opcoes) {
+    opcoes = opcoes || {};
+    const r = lerJsonDaIA(resposta);
+    if (!r || !Array.isArray(r.questoes)) return null;
+    const dados = Object.assign({}, r, { questoes: r.questoes.filter(q => q && String(q.enunciado || '').trim()) });
+    if (!dados.questoes.length) return null;
+    const perfil = perfilAdaptacao(opcoes.perfil);
+    let res = null;
+    for (let tentativa = 0; tentativa < 12; tentativa++) {
+        const escala = Math.max(0.7, 1 - tentativa * 0.075);
+        res = montarAtividade(dados, perfil, escala, opcoes.medir);
+        if (res.cabe) break;
+        if (escala <= 0.7 && dados.questoes.length > 1) dados.questoes = dados.questoes.slice(0, -1);
+    }
+    res.arte.modelo = 'atividade';
+    return {
+        arte: res.arte, desenhos: res.desenhos, perfil, questoes: res.questoes,
+        gabarito: txt(r.gabarito || '', 1200), dica: txt(r.dica_professor || '', 600)
+    };
+}
+
 const ATELIEOPS = {
     VERSAO, FORMATOS, FONTES, FONTE_PADRAO, FORMAS, FORMAS_LINHA, PALETAS, PAPEIS, FIGURINHAS, CAMPOS, MODELOS,
     FILTROS, FILTROS_CSS, MISTURAS, RECORTES, COMO_REESCREVER,
@@ -1223,7 +1536,9 @@ const ATELIEOPS = {
     trocarPaleta, criarHistorico, estadoParaHistorico, aplicarHistorico,
     tamanhoFolhaMm, nomeArquivo, lerListaLote,
     aplicarModelo, aplicarTextos,
-    promptCriarComIA, arteDaIA, promptReescrever, promptEscreverTexto, textoDaIA, lerJsonDaIA
+    promptCriarComIA, arteDaIA, promptReescrever, promptEscreverTexto, textoDaIA, lerJsonDaIA,
+    ESTILOS_DESENHO, PERFIS_ADAPTACAO, TIPOS_QUESTAO, promptDesenhoImagem, promptDesenhoSvg, limparSvgDaIA, svgDaIA,
+    paginaDeDesenho, promptAtividadeAdaptada, atividadeDaIA, alturaEstimada
 };
 
 if (typeof window !== 'undefined') window.ATELIEOPS = ATELIEOPS;
