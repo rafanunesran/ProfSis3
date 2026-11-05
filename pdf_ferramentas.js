@@ -13,7 +13,7 @@
 //   problema de conformidade que o site gratuito cria.
 //
 // COMO A TELA E' FEITA
-//   Nenhuma das 49 ferramentas tem HTML escrito a mao. Cada uma se DESCREVE no
+//   Nenhuma das 50 ferramentas tem HTML escrito a mao. Cada uma se DESCREVE no
 //   catalogo (CATALOGO_PDF) — quais campos pede, de que tipo, com que padrao — e um
 //   unico motor de formulario monta a tela, le os arquivos, chama a operacao,
 //   acompanha o andamento e oferece o download (em .zip quando sai mais de um
@@ -151,13 +151,17 @@ const CATALOGO_PDF = [
                 { v: 'cada', t: 'A cada N páginas' },
                 { v: 'todas', t: 'Uma página por arquivo' },
                 { v: 'faixas', t: 'Por faixas que eu escrever' },
-                { v: 'apos', t: 'Cortar depois de certas páginas' }
+                { v: 'apos', t: 'Cortar depois de certas páginas' },
+                { v: 'antes', t: 'Começar arquivo novo em certas páginas' }
             ] },
             { id: 'cada', tipo: 'numero', rotulo: 'N páginas por arquivo', padrao: 2, min: 1,
               quando: e => e.modo === 'cada' },
             { id: 'faixas', tipo: 'textarea', rotulo: 'Faixas (uma por linha)', padrao: '1-3\n4-8',
               ajuda: 'Cada linha vira um arquivo.', quando: e => e.modo === 'faixas' },
-            Object.assign(cPaginas('3'), { rotulo: 'Cortar depois das páginas', quando: e => e.modo === 'apos' })
+            Object.assign(cPaginas('3'), { rotulo: 'Cortar depois das páginas', quando: e => e.modo === 'apos' }),
+            Object.assign(cPaginas('4'), { id: 'paginas', rotulo: 'Arquivo novo começa nas páginas',
+                ajuda: 'Ex.: 4, 9 num PDF de 12 dá três arquivos: 1-3, 4-8 e 9-12. Para escolher olhando, use a "Mesa de páginas".',
+                quando: e => e.modo === 'antes' })
         ]
     },
     {
@@ -169,6 +173,15 @@ const CATALOGO_PDF = [
             cPdf(),
             { id: 'ordem', tipo: 'texto', rotulo: 'Nova ordem', ajuda: 'Ex.: 3, 1, 2. Use as miniaturas abaixo para montar.' }
         ]
+    },
+    {
+        id: 'mesa-paginas', grupo: 'organizar', emoji: '🃏', nome: 'Mesa de páginas', acao: 'montarMesa',
+        extra: 'mesa', rotuloBotao: 'Montar o PDF',
+        resumo: 'Todas as páginas na mesa: escolha várias, arraste, gire, tire, repita, junte com outro PDF e corte.',
+        detalhe: 'Toque nas páginas para escolher (Shift pega um intervalo) e use os botões. No computador dá ' +
+                 'para arrastar. A tesoura entre duas páginas corta o documento em arquivos separados. ' +
+                 'Errou? "Desfazer" volta passo a passo.',
+        campos: [cPdf('PDF para pôr na mesa')]
     },
     {
         id: 'remover-paginas', grupo: 'organizar', emoji: '🗑️', nome: 'Remover páginas', acao: 'removerPaginas',
@@ -1336,6 +1349,49 @@ const PDF_EXTRAS = {
         }
     },
 
+    // ----------------------------------------------------------------------- mesa
+    mesa: {
+        async aoTrocarArquivo() {
+            const doc = await pdfAbrirNoVisor();
+            if (!doc) return;
+            pdfMesaMiniaturas.clear();
+            pdfExtra = { docs: [doc], outros: [], sel: [], hist: [], fut: [], ultimo: null,
+                         cartas: Array.from({ length: doc.numPages }, (_, i) => pdfMesaNovaCarta({ f: 0, p: i + 1 })) };
+        },
+        render(div) {
+            if (!pdfExtra.cartas) {
+                div.innerHTML = '<p style="color:#5f6b7f; font-size:13px;">Escolha um PDF para pôr as páginas na mesa.</p>';
+                return;
+            }
+            div.innerHTML = `
+                <style>
+                    #pdfMesaBarra { display:flex; gap:6px; flex-wrap:wrap; align-items:center; position:sticky; top:0; z-index:2;
+                        background:var(--surface, #fff); padding:8px 0; border-bottom:1px solid var(--border, #e3e8ef); margin-bottom:10px; }
+                    #pdfMesa { display:flex; flex-wrap:wrap; gap:8px 2px; align-items:stretch; }
+                    .pdf-mesa-carta { width:116px; border:2px solid #cdd5e1; border-radius:8px; background:#fff; cursor:pointer;
+                        user-select:none; overflow:hidden; display:flex; flex-direction:column; }
+                    .pdf-mesa-carta.on { border-color:#2563c9; box-shadow:0 0 0 3px rgba(37,99,201,.25); }
+                    .pdf-mesa-folha { height:140px; display:flex; align-items:center; justify-content:center; background:#f6f8fb; padding:6px; }
+                    .pdf-mesa-folha img { max-width:100%; max-height:100%; box-shadow:0 1px 4px rgba(0,0,0,.2); transition:transform .15s; }
+                    .pdf-mesa-rotulo { font-size:11px; color:#3d4759; padding:3px 6px; display:flex; gap:4px; justify-content:space-between; background:#eef2f7; }
+                    .pdf-mesa-carta.on .pdf-mesa-rotulo { background:#dbeafe; }
+                    .pdf-mesa-corte { width:18px; border:none; background:none; cursor:pointer; color:#94a3b8; font-size:14px; padding:0; }
+                    .pdf-mesa-corte.on { color:#c53030; width:24px; }
+                    .pdf-mesa-fim { width:40px; min-height:60px; }
+                </style>
+                <div id="pdfMesaBarra"></div>
+                <div id="pdfMesa"></div>`;
+            pdfMesaRender();
+        },
+        coletar() {
+            if (!pdfExtra.cartas || !pdfExtra.cartas.length) throw new Error('A mesa ficou vazia — não sobraria página nenhuma.');
+            return {
+                cartas: pdfExtra.cartas.map(c => ({ f: c.f, p: c.p, giro: c.giro || 0, branco: !!c.branco, cortarAntes: !!c.cortarAntes })),
+                outrosPdfs: pdfExtra.outros.slice()
+            };
+        }
+    },
+
     // -------------------------------------------------------------------- anotar
     anotar: {
         async aoTrocarArquivo() {
@@ -1776,6 +1832,278 @@ function pdfOrdemRefazer(modo) {
     }
     pdfOrdemAplicar();
 }
+
+// --- mesa de paginas --------------------------------------------------------
+// Todas as paginas na mesa, como cartas: seleciona varias (toque liga/desliga; Shift
+// pega o intervalo), arrasta para mudar a ordem (ou usa ◀ ▶ no celular), gira, repete,
+// apaga, poe pagina em branco, traz paginas de outro PDF e marca onde cortar em
+// arquivos separados. Cada mudanca guarda um passo para o "Desfazer".
+// As miniaturas ficam guardadas por pagina (f-p): mexer na ordem nao redesenha nada.
+
+const pdfMesaMiniaturas = new Map();
+let pdfMesaProximoId = 1;
+
+function pdfMesaNovaCarta(dados) { return Object.assign({ id: pdfMesaProximoId++, f: 0, p: 1, giro: 0 }, dados); }
+
+function pdfMesaGuardarPasso() {
+    const m = pdfExtra;
+    m.hist.push(JSON.stringify(m.cartas));
+    if (m.hist.length > 80) m.hist.shift();
+    m.fut = [];
+}
+
+function pdfMesaDesfazer(refazer) {
+    const m = pdfExtra;
+    const de = refazer ? m.fut : m.hist, para = refazer ? m.hist : m.fut;
+    if (!de || !de.length) return;
+    para.push(JSON.stringify(m.cartas));
+    m.cartas = JSON.parse(de.pop());
+    const ids = new Set(m.cartas.map(c => c.id));
+    m.sel = m.sel.filter(id => ids.has(id));
+    pdfMesaRender();
+}
+
+function pdfMesaSelecionadas() {
+    const m = pdfExtra;
+    return m.cartas.filter(c => m.sel.indexOf(c.id) !== -1);
+}
+
+function pdfMesaTocar(id, ev) {
+    const m = pdfExtra;
+    if (ev && ev.shiftKey && m.ultimo != null) {
+        const a = m.cartas.findIndex(c => c.id === m.ultimo), b = m.cartas.findIndex(c => c.id === id);
+        if (a !== -1 && b !== -1) {
+            m.cartas.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(c => { if (m.sel.indexOf(c.id) === -1) m.sel.push(c.id); });
+        }
+    } else {
+        const i = m.sel.indexOf(id);
+        if (i === -1) m.sel.push(id); else m.sel.splice(i, 1);
+    }
+    m.ultimo = id;
+    pdfMesaRender();
+}
+
+function pdfMesaSelecionar(todas) {
+    pdfExtra.sel = todas ? pdfExtra.cartas.map(c => c.id) : [];
+    pdfMesaRender();
+}
+
+// As acoes valem para as selecionadas. Sem selecao, avisam em vez de agir em tudo.
+function pdfMesaPrecisaSelecao() {
+    if (pdfExtra.sel.length) return false;
+    alert('Toque nas páginas que quer mudar (elas ficam com borda azul) e depois no botão.');
+    return true;
+}
+
+function pdfMesaGirar(graus) {
+    if (pdfMesaPrecisaSelecao()) return;
+    pdfMesaGuardarPasso();
+    pdfMesaSelecionadas().forEach(c => { c.giro = (((c.giro || 0) + graus) % 360 + 360) % 360; });
+    pdfMesaRender();
+}
+
+function pdfMesaApagar() {
+    if (pdfMesaPrecisaSelecao()) return;
+    const m = pdfExtra;
+    if (m.sel.length >= m.cartas.length) { alert('Tem de sobrar pelo menos uma página.'); return; }
+    pdfMesaGuardarPasso();
+    m.cartas = m.cartas.filter(c => m.sel.indexOf(c.id) === -1);
+    m.sel = [];
+    pdfMesaRender();
+}
+
+function pdfMesaDuplicar() {
+    if (pdfMesaPrecisaSelecao()) return;
+    const m = pdfExtra;
+    pdfMesaGuardarPasso();
+    const novas = [];
+    m.cartas = m.cartas.reduce((lista, c) => {
+        lista.push(c);
+        if (m.sel.indexOf(c.id) !== -1) {
+            const copia = pdfMesaNovaCarta({ f: c.f, p: c.p, giro: c.giro, branco: c.branco });
+            lista.push(copia); novas.push(copia.id);
+        }
+        return lista;
+    }, []);
+    m.sel = novas;
+    pdfMesaRender();
+}
+
+// Move as selecionadas uma casa (passo -1/1) ou para o comeco/fim ('inicio'/'fim').
+function pdfMesaMover(passo) {
+    if (pdfMesaPrecisaSelecao()) return;
+    const m = pdfExtra;
+    pdfMesaGuardarPasso();
+    const sel = new Set(m.sel);
+    if (passo === 'inicio' || passo === 'fim') {
+        const escolhidas = m.cartas.filter(c => sel.has(c.id)), resto = m.cartas.filter(c => !sel.has(c.id));
+        m.cartas = passo === 'inicio' ? escolhidas.concat(resto) : resto.concat(escolhidas);
+    } else {
+        const a = m.cartas;
+        const ordem = passo < 0 ? a.map((_, i) => i) : a.map((_, i) => a.length - 1 - i);
+        ordem.forEach(i => {
+            const j = i + passo;
+            if (!sel.has(a[i].id) || j < 0 || j >= a.length || sel.has(a[j].id)) return;
+            [a[i], a[j]] = [a[j], a[i]];
+        });
+    }
+    pdfMesaRender();
+}
+
+// Arrastar (computador): solta as selecionadas (ou so' a arrastada) antes da carta alvo.
+function pdfMesaArrastar(ev, id) {
+    const m = pdfExtra;
+    if (m.sel.indexOf(id) === -1) m.sel = [id];
+    m.arrastando = true;
+    try { ev.dataTransfer.setData('text/plain', String(id)); ev.dataTransfer.effectAllowed = 'move'; } catch (_) { /* velho */ }
+}
+
+function pdfMesaSoltar(ev, alvoId) {
+    ev.preventDefault();
+    const m = pdfExtra;
+    if (!m.arrastando) return;
+    m.arrastando = false;
+    if (m.sel.indexOf(alvoId) !== -1) return;
+    pdfMesaGuardarPasso();
+    const sel = new Set(m.sel);
+    const movidas = m.cartas.filter(c => sel.has(c.id));
+    const resto = m.cartas.filter(c => !sel.has(c.id));
+    const i = alvoId == null ? resto.length : resto.findIndex(c => c.id === alvoId);
+    resto.splice(i < 0 ? resto.length : i, 0, ...movidas);
+    m.cartas = resto;
+    pdfMesaRender();
+}
+
+// Onde entra pagina nova: depois da ultima selecionada; sem selecao, no fim.
+function pdfMesaPosicaoDeInsercao() {
+    const m = pdfExtra;
+    let pos = m.cartas.length;
+    m.cartas.forEach((c, i) => { if (m.sel.indexOf(c.id) !== -1) pos = i + 1; });
+    return pos;
+}
+
+function pdfMesaBranca() {
+    const m = pdfExtra;
+    pdfMesaGuardarPasso();
+    const nova = pdfMesaNovaCarta({ branco: true, p: 0 });
+    m.cartas.splice(pdfMesaPosicaoDeInsercao(), 0, nova);
+    m.sel = [nova.id];
+    pdfMesaRender();
+}
+
+async function pdfMesaInserirPdf(input) {
+    const f = input.files && input.files[0];
+    input.value = '';
+    if (!f) return;
+    if (f.size > PDF_MAX_MB * 1024 * 1024) { alert('Arquivo grande demais (limite de ' + PDF_MAX_MB + ' MB).'); return; }
+    const m = pdfExtra;
+    try {
+        pdfAviso('Lendo ' + f.name + '...', 'info');
+        const lido = { nome: f.name, bytes: new Uint8Array(await f.arrayBuffer()), tipoMime: f.type };
+        const doc = await PDFOPS.util.abrirPdfJs(lido);
+        m.outros.push(lido);
+        m.docs.push(doc);
+        const fi = m.docs.length - 1;
+        pdfMesaGuardarPasso();
+        const novas = Array.from({ length: doc.numPages }, (_, i) => pdfMesaNovaCarta({ f: fi, p: i + 1 }));
+        m.cartas.splice(pdfMesaPosicaoDeInsercao(), 0, ...novas);
+        m.sel = novas.map(c => c.id);
+        pdfAviso('', '');
+        pdfMesaRender();
+    } catch (erro) {
+        pdfAviso('Não consegui abrir ' + f.name + ': ' + (erro.message || erro), 'erro');
+    }
+}
+
+function pdfMesaCortar(id) {
+    const c = pdfExtra.cartas.find(x => x.id === id);
+    if (!c) return;
+    pdfMesaGuardarPasso();
+    c.cortarAntes = !c.cortarAntes;
+    pdfMesaRender();
+}
+
+function pdfMesaRender() {
+    const area = document.getElementById('pdfMesa');
+    const barra = document.getElementById('pdfMesaBarra');
+    const m = pdfExtra;
+    if (!area || !m.cartas) return;
+    const n = m.sel.length;
+    const partes = 1 + m.cartas.filter((c, i) => i > 0 && c.cortarAntes).length;
+    if (barra) {
+        barra.innerHTML = `
+            <span style="font-size:13px; color:#3d4759; min-width:150px;">
+                <strong>${m.cartas.length}</strong> página(s)${partes > 1 ? ' · <strong>' + partes + '</strong> arquivos' : ''}
+                · ${n ? '<strong>' + n + '</strong> selecionada(s)' : 'nenhuma selecionada'}</span>
+            <button class="btn btn-sm btn-secondary" onclick="pdfMesaSelecionar(${n < m.cartas.length})">${n < m.cartas.length ? '☑ Todas' : '☐ Nenhuma'}</button>
+            <button class="btn btn-sm btn-secondary" onclick="pdfMesaGirar(-90)" title="Girar para a esquerda">↺</button>
+            <button class="btn btn-sm btn-secondary" onclick="pdfMesaGirar(90)" title="Girar para a direita">↻</button>
+            <button class="btn btn-sm btn-secondary" onclick="pdfMesaMover(-1)" title="Uma casa para trás">◀</button>
+            <button class="btn btn-sm btn-secondary" onclick="pdfMesaMover(1)" title="Uma casa para a frente">▶</button>
+            <button class="btn btn-sm btn-secondary" onclick="pdfMesaMover('inicio')" title="Levar para o começo">⏮</button>
+            <button class="btn btn-sm btn-secondary" onclick="pdfMesaMover('fim')" title="Levar para o fim">⏭</button>
+            <button class="btn btn-sm btn-secondary" onclick="pdfMesaDuplicar()" title="Repetir as selecionadas">⧉ Repetir</button>
+            <button class="btn btn-sm btn-danger" onclick="pdfMesaApagar()" title="Tirar as selecionadas">🗑 Tirar</button>
+            <button class="btn btn-sm btn-secondary" onclick="pdfMesaBranca()">➕ Página em branco</button>
+            <button class="btn btn-sm btn-secondary" onclick="document.getElementById('pdfMesaOutro').click()">📄 Trazer de outro PDF</button>
+            <input type="file" id="pdfMesaOutro" accept="application/pdf,.pdf" style="display:none" onchange="pdfMesaInserirPdf(this)">
+            <button class="btn btn-sm btn-secondary" onclick="pdfMesaDesfazer(false)" ${m.hist.length ? '' : 'disabled'} title="Desfazer">↶ Desfazer</button>
+            <button class="btn btn-sm btn-secondary" onclick="pdfMesaDesfazer(true)" ${m.fut.length ? '' : 'disabled'} title="Refazer">↷</button>`;
+    }
+    area.innerHTML = m.cartas.map((c, i) => {
+        const marcada = m.sel.indexOf(c.id) !== -1;
+        const origem = c.branco ? 'em branco' : (c.f ? '📄' + (c.f + 1) + ' · ' : '') + 'pág. ' + c.p;
+        return `
+        ${i > 0 ? `<button class="pdf-mesa-corte ${c.cortarAntes ? 'on' : ''}" onclick="pdfMesaCortar(${c.id})"
+                    title="${c.cortarAntes ? 'Juntar de novo' : 'Cortar aqui: daqui para a frente vira outro arquivo'}">${c.cortarAntes ? '✂️' : '┊'}</button>` : ''}
+        <div class="pdf-mesa-carta ${marcada ? 'on' : ''}" draggable="true" data-id="${c.id}"
+             onclick="pdfMesaTocar(${c.id}, event)" ondragstart="pdfMesaArrastar(event, ${c.id})"
+             ondragover="event.preventDefault()" ondrop="pdfMesaSoltar(event, ${c.id})">
+            <div class="pdf-mesa-folha">
+                ${c.branco ? '<div style="width:70%; aspect-ratio:1/1.414; background:#fff; border:1px solid #e2e8f0;"></div>'
+                           : `<img data-chave="${c.f}-${c.p}" alt="" style="transform:rotate(${c.giro || 0}deg)${c.giro % 180 ? ' scale(0.72)' : ''};">`}
+            </div>
+            <div class="pdf-mesa-rotulo"><strong>${i + 1}</strong> <span>${escPdf(origem)}${c.giro ? ' · ' + c.giro + '°' : ''}</span></div>
+        </div>`;
+    }).join('') + `<div class="pdf-mesa-fim" ondragover="event.preventDefault()" ondrop="pdfMesaSoltar(event, null)"></div>`;
+    pdfMesaDesenharMiniaturas();
+}
+
+// Desenha so' as miniaturas que ainda nao existem, uma por vez (PDF grande nao trava).
+async function pdfMesaDesenharMiniaturas() {
+    const m = pdfExtra;
+    const imgs = Array.prototype.slice.call(document.querySelectorAll('#pdfMesa img[data-chave]'));
+    for (const img of imgs) {
+        const chave = img.getAttribute('data-chave');
+        if (!pdfMesaMiniaturas.has(chave)) {
+            const [f, p] = chave.split('-').map(Number);
+            const doc = m.docs && m.docs[f];
+            if (!doc) continue;
+            try {
+                const canvas = document.createElement('canvas');
+                const base = (await doc.getPage(p)).getViewport({ scale: 1 });
+                await pdfDesenharPaginaEm(canvas, doc, p, Math.min(0.5, 200 / base.width));
+                pdfMesaMiniaturas.set(chave, canvas.toDataURL('image/jpeg', 0.8));
+            } catch (_) { pdfMesaMiniaturas.set(chave, ''); }
+            if (pdfExtra !== m) return;     // trocou de arquivo no meio
+        }
+        document.querySelectorAll('#pdfMesa img[data-chave="' + chave + '"]').forEach(x => { if (!x.src) x.src = pdfMesaMiniaturas.get(chave); });
+    }
+}
+
+window.pdfMesaTocar = pdfMesaTocar;
+window.pdfMesaSelecionar = pdfMesaSelecionar;
+window.pdfMesaGirar = pdfMesaGirar;
+window.pdfMesaApagar = pdfMesaApagar;
+window.pdfMesaDuplicar = pdfMesaDuplicar;
+window.pdfMesaMover = pdfMesaMover;
+window.pdfMesaArrastar = pdfMesaArrastar;
+window.pdfMesaSoltar = pdfMesaSoltar;
+window.pdfMesaBranca = pdfMesaBranca;
+window.pdfMesaInserirPdf = pdfMesaInserirPdf;
+window.pdfMesaCortar = pdfMesaCortar;
+window.pdfMesaDesfazer = pdfMesaDesfazer;
+window.pdfMesaEstado = () => pdfExtra && pdfExtra.cartas ? { cartas: JSON.parse(JSON.stringify(pdfExtra.cartas)), sel: pdfExtra.sel.slice() } : null;
 
 // --- palco (anotar e censurar) --------------------------------------------
 function pdfBarraDePaginaHtml() {

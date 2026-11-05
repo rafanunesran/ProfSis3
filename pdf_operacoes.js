@@ -531,6 +531,14 @@ async function dividir(e, prog) {
         const partes = String(e.faixas || '').split(/[;\n]+/).map(s => s.trim()).filter(Boolean);
         if (!partes.length) throw new Error('Escreva as faixas, uma por linha. Exemplo: 1-3 na primeira linha, 4-8 na segunda.');
         grupos = partes.map(p => faixaParaIndices(p, total));
+    } else if (modo === 'antes') {
+        // Corta ANTES das paginas indicadas: "4, 8" num PDF de 10 da' 1-3, 4-7, 8-10.
+        // E' o jeito natural de quem olha as miniaturas: "o capitulo 2 comeca na 4".
+        const inicios = [0].concat(faixaParaIndices(e.paginas, total).filter(i => i > 0)).sort((a, b) => a - b);
+        inicios.forEach((ini, k) => {
+            const fim = k + 1 < inicios.length ? inicios[k + 1] : total;
+            if (fim > ini) grupos.push(Array.from({ length: fim - ini }, (_, j) => ini + j));
+        });
     } else if (modo === 'apos') {
         // Corta DEPOIS das paginas indicadas: "3, 7" num PDF de 10 da' 1-3, 4-7, 8-10.
         const cortes = faixaParaIndices(e.paginas, total).map(i => i + 1).sort((a, b) => a - b);
@@ -589,6 +597,77 @@ async function reorganizar(e, prog) {
         mensagem: 'PDF com ' + indices.length + ' paginas na ordem pedida.' +
                   (faltando > 0 ? ' Atencao: ' + faltando + ' pagina(s) do original ficaram de fora.' : '')
     };
+}
+
+// A "mesa de paginas": o professor monta o documento olhando as miniaturas — tira,
+// repete, gira, poe pagina em branco, traz pagina de outro PDF e marca onde cortar —
+// e a tela entrega a lista final de "cartas". Cada carta:
+//   { f: 0 (o PDF principal) | 1.. (outrosPdfs[f-1]), p: numero da pagina (1..),
+//     giro: 0|90|180|270 (soma ao giro que a pagina ja' tinha),
+//     branco: true (pagina em branco do tamanho da vizinha), cortarAntes: true }
+// Com algum `cortarAntes`, sai um arquivo por pedaco.
+async function montarMesa(e, prog) {
+    const PDFLib = await libPdfLib();
+    const principal = listaDe(e.arquivo)[0];
+    const fontes = [principal].concat(listaDe(e.outrosPdfs));
+    const cartas = Array.isArray(e.cartas) ? e.cartas : [];
+    if (!cartas.length) throw new Error('A mesa ficou vazia — não sobraria página nenhuma.');
+    if (cartas.every(c => c.branco)) throw new Error('Só sobraram páginas em branco. Deixe pelo menos uma página do PDF.');
+
+    const docs = [];
+    for (let i = 0; i < fontes.length; i++) docs.push(await abrirPdf(fontes[i]));
+
+    // Pedacos (um arquivo cada), cortados antes das cartas marcadas.
+    const pedacos = [[]];
+    cartas.forEach((c, i) => {
+        if (c.cortarAntes && i > 0 && pedacos[pedacos.length - 1].length) pedacos.push([]);
+        pedacos[pedacos.length - 1].push(c);
+    });
+
+    const base = semExtensao(principal.nome);
+    const saidas = [];
+    for (let k = 0; k < pedacos.length; k++) {
+        if (prog) prog(Math.round(k / pedacos.length * 90) + 5, pedacos.length > 1 ? 'Parte ' + (k + 1) + ' de ' + pedacos.length : 'Montando');
+        const novo = await PDFLib.PDFDocument.create();
+        let ultimoTamanho = null;
+        for (const c of pedacos[k]) {
+            if (c.branco) {
+                const t = ultimoTamanho || tamanhoDaPrimeira(docs, pedacos[k]) || [595.28, 841.89];
+                const pg = novo.addPage(t);
+                if (c.giro) pg.setRotation(PDFLib.degrees(((c.giro % 360) + 360) % 360));
+                continue;
+            }
+            const doc = docs[c.f || 0];
+            if (!doc) throw new Error('Uma das páginas veio de um PDF que não foi carregado.');
+            const n = parseInt(c.p, 10);
+            if (!(n >= 1 && n <= doc.getPageCount())) throw new Error('A página ' + c.p + ' não existe nesse PDF.');
+            const [pg] = await novo.copyPages(doc, [n - 1]);
+            const atual = pg.getRotation().angle || 0;
+            const giro = parseInt(c.giro, 10) || 0;
+            if (giro) pg.setRotation(PDFLib.degrees(((atual + giro) % 360 + 360) % 360));
+            novo.addPage(pg);
+            const { width, height } = pg.getSize();
+            ultimoTamanho = [width, height];
+        }
+        novo.setProducer('SisProf — Ferramentas PDF');
+        const nome = pedacos.length > 1 ? base + '_parte' + (k + 1) + '.pdf' : base + '_montado.pdf';
+        saidas.push({ nome: nome, bytes: await novo.save(), tipo: 'application/pdf' });
+    }
+    if (prog) prog(98, 'Gravando');
+    const totalPaginas = cartas.length;
+    return {
+        arquivos: saidas,
+        mensagem: saidas.length > 1
+            ? 'Montado e cortado em ' + saidas.length + ' arquivos (' + totalPaginas + ' páginas no total).'
+            : 'PDF montado com ' + totalPaginas + ' página(s).'
+    };
+}
+
+function tamanhoDaPrimeira(docs, cartas) {
+    const c = cartas.find(x => !x.branco);
+    if (!c || !docs[c.f || 0]) return null;
+    const { width, height } = docs[c.f || 0].getPage(Math.max(0, (parseInt(c.p, 10) || 1) - 1)).getSize();
+    return [width, height];
 }
 
 async function removerPaginas(e, prog) {
@@ -3090,6 +3169,7 @@ const ops = {
     juntar: juntar,
     dividir: dividir,
     reorganizar: reorganizar,
+    montarMesa: montarMesa,
     removerPaginas: removerPaginas,
     extrairPaginas: extrairPaginas,
     rotacionar: rotacionar,

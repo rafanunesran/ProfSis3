@@ -7,7 +7,7 @@
 //
 // O que este teste cobre:
 //   1. o botao PDF aparece nos quatro perfis e a tela nasce sob demanda;
-//   2. o catalogo lista as 49 ferramentas e a busca filtra;
+//   2. o catalogo lista as 50 ferramentas e a busca filtra;
 //   3. o PORTAO: conta gratuita nao abre ferramenta (o convite do plano aparece);
 //   4. as contas de verdade: juntar, dividir, girar, marca d'agua, numerar, N-up,
 //      proteger/desbloquear, metadados e formulario;
@@ -163,9 +163,9 @@ function ok(nome, condicao, extra) {
     });
     ok('a tela foi criada e ficou ativa', catalogo.criada && catalogo.ativa);
     ok("showScreen('pdf') cai na aba de PDF de Ferramentas", catalogo.dentroDaAba);
-    ok('49 ferramentas no catalogo', catalogo.totalNoCatalogo === 49, String(catalogo.totalNoCatalogo));
+    ok('50 ferramentas no catalogo', catalogo.totalNoCatalogo === 50, String(catalogo.totalNoCatalogo));
     ok('8 grupos', catalogo.grupos === 8);
-    ok('todas as ferramentas aparecem na grade', catalogo.botoes === 49, catalogo.botoes + ' botoes');
+    ok('todas as ferramentas aparecem na grade', catalogo.botoes === 50, catalogo.botoes + ' botoes');
     ok('a tela avisa que o arquivo nao sai do aparelho', catalogo.temAvisoDePrivacidade);
     ok('nenhuma ferramenta aponta para operacao que nao existe', !catalogo.acoesQuebradas.length, catalogo.acoesQuebradas.join(', '));
     ok('nenhuma ferramenta aponta para extra que nao existe', !catalogo.extrasQuebrados.length, catalogo.extrasQuebrados.join(', '));
@@ -188,7 +188,7 @@ function ok(nome, condicao, extra) {
     ok('a busca filtra ("senha")', busca.comSenha > 0 && busca.comSenha < 48, busca.comSenha + ' resultados');
     ok('a busca ignora acento', busca.comAcento);
     ok('busca sem resultado explica', busca.vazio);
-    ok('limpar a busca devolve o catalogo', busca.voltouTudo === 49);
+    ok('limpar a busca devolve o catalogo', busca.voltouTudo === 50);
 
     console.log('\n3. O portao do plano Professor');
     const portao = await page.evaluate(async () => {
@@ -300,6 +300,21 @@ function ok(nome, condicao, extra) {
         r.remover = await contar((await ops.removerPaginas({ arquivo: a, paginas: '2,4' })).arquivos[0].bytes);
         r.extrair = await contar((await ops.extrairPaginas({ arquivo: a, paginas: '1,3,5' })).arquivos[0].bytes);
         r.reorganizar = await contar((await ops.reorganizar({ arquivo: a, ordem: '5,4,3,2,1' })).arquivos[0].bytes);
+        const antes = await ops.dividir({ arquivo: a, modo: 'antes', paginas: '3, 5' });
+        r.dividirAntes = await Promise.all(antes.arquivos.map(x => contar(x.bytes)));
+        // Mesa: pag 3 girada, branca, 2 paginas do B, corte antes da 4a carta, pag 1 do A.
+        const mesa = await ops.montarMesa({ arquivo: a, outrosPdfs: [b], cartas: [
+            { f: 0, p: 3, giro: 90 }, { branco: true }, { f: 1, p: 2 }, { f: 1, p: 1, cortarAntes: true }, { f: 0, p: 1, giro: 270 }
+        ] });
+        r.mesaArquivos = mesa.arquivos.length;
+        const m1 = await PDFLib.PDFDocument.load(mesa.arquivos[0].bytes), m2 = await PDFLib.PDFDocument.load(mesa.arquivos[1].bytes);
+        r.mesaPaginas = [m1.getPageCount(), m2.getPageCount()];
+        r.mesaGiros = [m1.getPage(0).getRotation().angle, m2.getPage(1).getRotation().angle];
+        r.mesaBranca = Math.round(m1.getPage(1).getSize().width);
+        const pdfjs = await PDFOPS.util.abrirPdfJs({ bytes: mesa.arquivos[0].bytes });
+        r.mesaTextoB = (await (await pdfjs.getPage(3)).getTextContent()).items.map(i => i.str).join(' ');
+        try { await ops.montarMesa({ arquivo: a, cartas: [{ branco: true }] }); r.mesaSoBranca = 'nao reclamou'; }
+        catch (err) { r.mesaSoBranca = err.message; }
         const girado = await ops.rotacionar({ arquivo: a, paginas: 'todas', graus: 90 });
         r.giro = (await PDFLib.PDFDocument.load(girado.arquivos[0].bytes)).getPage(0).getRotation().angle;
         r.nup = await contar((await ops.paginasPorFolha({ arquivo: a, porFolha: 4 })).arquivos[0].bytes);
@@ -378,6 +393,13 @@ function ok(nome, condicao, extra) {
     ok('remover 2 paginas sobra 3', contas.remover === 3, String(contas.remover));
     ok('extrair 3 paginas', contas.extrair === 3);
     ok('reorganizar mantem 5', contas.reorganizar === 5);
+    ok('dividir "comecar arquivo novo" em 3 e 5: 2 + 2 + 1 paginas', JSON.stringify(contas.dividirAntes) === '[2,2,1]', JSON.stringify(contas.dividirAntes));
+    ok('mesa: a tesoura corta em 2 arquivos (3 + 2 paginas)', contas.mesaArquivos === 2 && JSON.stringify(contas.mesaPaginas) === '[3,2]',
+       contas.mesaArquivos + ' ' + JSON.stringify(contas.mesaPaginas));
+    ok('mesa: giro de cada pagina gravado (90 e 270)', JSON.stringify(contas.mesaGiros) === '[90,270]', JSON.stringify(contas.mesaGiros));
+    ok('mesa: pagina em branco do tamanho da vizinha (A4)', contas.mesaBranca === 595, String(contas.mesaBranca));
+    ok('mesa: pagina trazida do outro PDF e a certa', /B 2/.test(contas.mesaTextoB), contas.mesaTextoB);
+    ok('mesa: so pagina em branco nao vale', /branco/.test(contas.mesaSoBranca), contas.mesaSoBranca);
     ok('girar 90 graus', contas.giro === 90, String(contas.giro));
     ok('4 por folha: 5 paginas -> 2 folhas', contas.nup === 2, String(contas.nup));
     ok('cortar ao meio dobra as paginas', contas.aoMeio === 10, String(contas.aoMeio));
@@ -572,6 +594,53 @@ function ok(nome, condicao, extra) {
         ok('pagina girada ' + giro + '\u00b0: a tarja NAO cobriu a outra palavra',
            r.preservada > 100, 'tom medio ' + r.preservada.toFixed(0) + ' (255 = papel branco)');
     });
+
+    console.log('\n6c. Mesa de paginas: escolher, girar, tirar, desfazer e montar pela tela');
+    {
+        const r = await page.evaluate(async () => {
+            const d = await PDFLib.PDFDocument.create();
+            const f = await d.embedFont(PDFLib.StandardFonts.Helvetica);
+            for (let i = 0; i < 4; i++) d.addPage([595.28, 841.89]).drawText('Folha ' + (i + 1), { x: 60, y: 700, size: 30, font: f });
+            const bytes = await d.save();
+            abrirFerramentaPdf('mesa-paginas');
+            pdfEntradas.arquivo = { nome: 'prova.pdf', bytes: bytes };
+            await pdfAoTrocarArquivo('arquivo');
+            pdfRenderFormulario();
+            const out = {};
+            out.cartas = document.querySelectorAll('#pdfMesa .pdf-mesa-carta').length;
+            const ids = pdfMesaEstado().cartas.map(c => c.id);
+            pdfMesaTocar(ids[1]); pdfMesaTocar(ids[3], { shiftKey: true });     // 2 a 4
+            out.selecionadas = pdfMesaEstado().sel.length;
+            pdfMesaGirar(90);
+            out.giros = pdfMesaEstado().cartas.map(c => c.giro).join(',');
+            pdfMesaSelecionar(false); pdfMesaTocar(ids[0]);
+            pdfMesaApagar();
+            out.depoisDeTirar = pdfMesaEstado().cartas.map(c => c.p).join(',');
+            pdfMesaDesfazer(false);
+            out.depoisDeDesfazer = pdfMesaEstado().cartas.map(c => c.p).join(',');
+            pdfMesaSelecionar(false); pdfMesaTocar(ids[3]); pdfMesaMover('inicio');
+            out.ordem = pdfMesaEstado().cartas.map(c => c.p).join(',');
+            pdfMesaCortar(pdfMesaEstado().cartas[2].id);
+            out.temTesoura = !!document.querySelector('#pdfMesa .pdf-mesa-corte.on');
+            for (let i = 0; i < 40 && document.querySelectorAll('#pdfMesa img[src^="data:"]').length < 4; i++) await new Promise(ok => setTimeout(ok, 100));
+            out.miniaturas = document.querySelectorAll('#pdfMesa img[src^="data:"]').length;
+            await pdfExecutar();
+            out.resultado = pdfResultado ? pdfResultado.arquivos.map(a => a.nome) : null;
+            const p1 = pdfResultado && await PDFLib.PDFDocument.load(await pdfResultado.arquivos[0].blob.arrayBuffer());
+            out.giroPrimeira = p1 ? p1.getPage(0).getRotation().angle : null;
+            return out;
+        });
+        ok('mesa: 4 cartas na tela', r.cartas === 4, String(r.cartas));
+        ok('mesa: Shift pega o intervalo (3 escolhidas)', r.selecionadas === 3, String(r.selecionadas));
+        ok('mesa: girar so as escolhidas', r.giros === '0,90,90,90', r.giros);
+        ok('mesa: tirar e desfazer', r.depoisDeTirar === '2,3,4' && r.depoisDeDesfazer === '1,2,3,4', r.depoisDeTirar + ' / ' + r.depoisDeDesfazer);
+        ok('mesa: levar para o comeco', r.ordem === '4,1,2,3', r.ordem);
+        ok('mesa: tesoura marcada aparece', r.temTesoura);
+        ok('mesa: miniaturas desenhadas', r.miniaturas === 4, String(r.miniaturas));
+        ok('mesa: montar gera 2 arquivos, a primeira pagina girada',
+           JSON.stringify(r.resultado) === '["prova_parte1.pdf","prova_parte2.pdf"]' && r.giroPrimeira === 90,
+           JSON.stringify(r.resultado) + ' giro ' + r.giroPrimeira);
+    }
 
     console.log('\n7. A promessa: o arquivo nao sai do aparelho');
     const origem = new URL(base);
