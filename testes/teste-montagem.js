@@ -261,7 +261,7 @@ const FAKE = () => {
     await page.evaluate(() => { MONTAGEM.buscar(0); });
     await page.click('#mvBtnTexto');
     await page.fill('#mvTextoTexto', 'Feira de Ciências');
-    await page.selectOption('#mvEstilo', 'faixa');
+    await page.click('#mvEstilo [data-v="faixa"]');
     e = await page.evaluate(() => MONTAGEM.estado());
     const tId = e.proj.textos[0] && e.proj.textos[0].id;
     await page.evaluate((id) => { mvMudar(id, 'corFundo', '#ffff00'); mvMudar(id, 'y', 0.5); mvMudar(id, 'suave', false); mvMudar(id, 'duracao', 1.5); }, tId);
@@ -276,7 +276,7 @@ const FAKE = () => {
 
     // Video 2 (em pe) a 2x
     await page.evaluate(() => { const c = MONTAGEM.estado().proj.clipes[1]; mvSelecionar(c.id); });
-    await page.selectOption('#mvVelocidade', '2');
+    await page.click('#mvVelocidade [data-v="2"]');
     e = await page.evaluate(() => MONTAGEM.estado());
     ok('velocidade 2x no segundo video', e.proj.clipes[1].velocidade === 2);
 

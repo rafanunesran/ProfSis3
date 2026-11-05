@@ -597,7 +597,7 @@ function tourDaTelaAtual() {
     if (t === 'tutoradoDetalhe') return 'fichaTutorado';
     if (t === 'turmaDetalhe' && TOURS['aba_' + abaTurmaVisivel()]) return 'aba_' + abaTurmaVisivel();
     if (t === 'documentos' && abaDocAtual() === 'agenda') return 'documentos';
-    if (t === 'ferramentas' && $('#mvEditor') && $('#mvEditor').offsetParent !== null) return 'montagemVideo';
+    if ($('#mvEditor') && $('#mvEditor').getClientRects().length) return 'montagemVideo';
     return TOURS[t] ? t : 'inicio';
 }
 

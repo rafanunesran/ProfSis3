@@ -71,70 +71,100 @@ function iniciar() {
     }
 }
 
+// O editor ocupa a tela inteira (como o Ateliê): no meio da página de Ferramentas, com o
+// menu ao lado, a prévia e a linha do tempo ficavam apertadas e o painel cortado.
+// Layout tirado de um protótipo feito no Lovable para este editor: adicionar à esquerda,
+// prévia no meio, ajustes à direita, ações e linha do tempo embaixo; no celular a prévia
+// vai para o topo, os botões viram fileiras que rolam de lado e os ajustes sobem de baixo.
+let painelAberto = false;  // no celular: a folha de ajustes esta' aberta
+
 function render(destino) {
     tela = destino;
     iniciar();
-    tela.innerHTML = ESTILO + `
-    <div id="mvEditor">
-      <div class="card" style="margin:20px 0 12px;">
-        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-          <button class="btn btn-sm btn-secondary" onclick="fecharFerramentaVideo()">← Todas as ferramentas</button>
-          <div style="flex:1; min-width:200px;">
-            <h2 style="margin:0; border:none; padding:0;">🎞️ Montar vídeo</h2>
-            <div style="font-size:12px; color:#7a869a;">Editor com linha do tempo: vídeos, fotos, textos e música num vídeo só.</div>
-          </div>
-          <button class="btn btn-primary" id="mvBtnExportar" onclick="mvExportar()">⬇️ Exportar MP4</button>
+    tela.innerHTML = '';
+    let ed = $('mvEditor');
+    if (ed) ed.remove();
+    ed = document.createElement('div');
+    ed.id = 'mvEditor';
+    ed.innerHTML = ESTILO + `
+      <div class="mv-topo">
+        <button class="mv-fantasma" onclick="fecharFerramentaVideo()" title="Voltar para as ferramentas de vídeo">← <span class="mv-some-cel">Voltar</span></button>
+        <div class="mv-titulo">🎞️ Montar vídeo</div>
+        <div class="mv-topo-dir">
+          <button class="mv-fantasma" onclick="mvAjuda()" title="Como usar">?</button>
+          <button class="mv-primario" id="mvBtnExportar" onclick="mvExportar()">⬇️ Exportar<span class="mv-some-cel"> MP4</span></button>
         </div>
       </div>
-      <div class="card mv-card">
-        <div class="mv-barra" id="mvBarra">
-          <label class="mv-bt mv-bt-forte" id="mvBtnMidia" title="Vídeos e fotos entram na faixa de vídeo">➕ Vídeo ou foto
+      <div class="mv-principal">
+        <div class="mv-add" id="mvAdicionar">
+          <p class="mv-secao mv-some-cel">Adicionar</p>
+          <label class="mv-add-bt" id="mvBtnMidia" title="Vídeos e fotos entram em fila na faixa de vídeo">
+            <span class="mv-add-ic">🎬</span><span>Vídeo ou foto</span>
             <input type="file" accept="video/*,image/*" multiple hidden onchange="mvAcrescentarArquivos(this.files, 'video'); this.value='';"></label>
-          <button class="mv-bt" id="mvBtnCor" onclick="mvAcrescentarCor()" title="Uma tela de uma cor só, boa para título">🟦 Tela colorida</button>
-          <button class="mv-bt" id="mvBtnTexto" onclick="mvAcrescentarTexto()" title="Título ou legenda por cima do vídeo">🔤 Texto</button>
-          <label class="mv-bt" id="mvBtnAudio" title="Música ou narração">🎵 Música ou áudio
+          <button class="mv-add-bt" id="mvBtnCor" onclick="mvAcrescentarCor()" title="Uma tela de uma cor só, boa para título">
+            <span class="mv-add-ic">🟦</span><span>Tela colorida</span></button>
+          <button class="mv-add-bt" id="mvBtnTexto" onclick="mvAcrescentarTexto()" title="Título ou legenda por cima do vídeo">
+            <span class="mv-add-ic">🔤</span><span>Texto</span></button>
+          <label class="mv-add-bt" id="mvBtnAudio" title="Música ou narração">
+            <span class="mv-add-ic">🎵</span><span>Música</span>
             <input type="file" accept="audio/*" multiple hidden onchange="mvAcrescentarArquivos(this.files, 'audio'); this.value='';"></label>
-          <span class="mv-sep"></span>
-          <button class="mv-bt" id="mvBtnDesfazer" onclick="mvDesfazer()" title="Desfazer (Ctrl+Z)">↶</button>
-          <button class="mv-bt" id="mvBtnRefazer" onclick="mvRefazer()" title="Refazer (Ctrl+Y)">↷</button>
-          <span class="mv-sep"></span>
-          <button class="mv-bt" id="mvBtnDividir" onclick="mvDividir()" title="Dividir no ponto da agulha (S)">✂️ Dividir</button>
-          <button class="mv-bt" onclick="mvApagarLado('antes')" title="Apagar o pedaço antes da agulha (Q)">⇤ Apagar antes</button>
-          <button class="mv-bt" onclick="mvApagarLado('depois')" title="Apagar o pedaço depois da agulha (W)">⇥ Apagar depois</button>
-          <button class="mv-bt" onclick="mvDuplicar()" title="Duplicar (D)">⧉ Duplicar</button>
-          <button class="mv-bt" id="mvBtnApagar" onclick="mvApagar()" title="Apagar o selecionado (Delete)">🗑️ Apagar</button>
+          <button class="mv-add-bt mv-so-cel" id="mvBtnAjustes" onclick="mvAbrirAjustes()" title="Formato, fundo e qualidade">
+            <span class="mv-add-ic">⚙️</span><span>Formato</span></button>
         </div>
-        <div class="mv-meio">
+        <div class="mv-centro">
           <div class="mv-palco" id="mvPalco">
-            <div class="mv-quadro"><canvas id="mvCanvas"></canvas></div>
-            <div class="mv-controles">
-              <button class="mv-bt" onclick="mvIrPara(0)" title="Início (Home)">⏮</button>
-              <button class="mv-bt mv-bt-forte" id="mvBtnTocar" onclick="mvTocar()" title="Tocar / pausar (Espaço)">▶️</button>
-              <button class="mv-bt" onclick="mvIrPara(${'Infinity'})" title="Fim (End)">⏭</button>
-              <span id="mvTempo" class="mv-tempo">0:00,0 / 0:00,0</span>
+            <div class="mv-quadro" id="mvQuadro">
+              <canvas id="mvCanvas"></canvas>
+              <div class="mv-vazio-palco" id="mvVazioPalco">
+                <span style="font-size:40px;">🎬</span>
+                <p>Comece adicionando um vídeo ou foto</p>
+                <button class="mv-primario" onclick="document.querySelector('#mvBtnMidia input').click()">➕ Adicionar vídeo ou foto</button>
+              </div>
             </div>
           </div>
-          <div class="mv-props" id="mvProps"></div>
+          <div class="mv-controles">
+            <button class="mv-redondo" onclick="mvIrPara(0)" title="Início (Home)">⏮</button>
+            <button class="mv-redondo mv-tocar" id="mvBtnTocar" onclick="mvTocar()" title="Tocar / pausar (Espaço)">▶</button>
+            <button class="mv-redondo" onclick="mvIrPara(Infinity)" title="Fim (End)">⏭</button>
+            <span id="mvTempo" class="mv-tempo">0:00,0 / 0:00,0</span>
+          </div>
         </div>
-        <div class="mv-zoom">
-          <span style="font-size:12px; color:#5f6b7f;">Linha do tempo</span>
-          <span style="flex:1;"></span>
-          <button class="mv-bt mv-bt-p" onclick="mvZoom(0.7)" title="Afastar">−</button>
-          <button class="mv-bt mv-bt-p" onclick="mvZoom(0)" title="Caber tudo">Caber</button>
-          <button class="mv-bt mv-bt-p" onclick="mvZoom(1.4)" title="Aproximar">+</button>
+        <div class="mv-painel" id="mvPainel">
+          <div class="mv-alca-folha mv-so-cel" onclick="mvFecharAjustes()"></div>
+          <div class="mv-painel-dentro" id="mvProps"></div>
         </div>
-        <div class="mv-linha" id="mvLinha">
-          <div class="mv-rotulos"><div class="mv-r0"></div><div class="mv-r1">🎬 Vídeo</div><div class="mv-r2">🔤 Texto</div><div class="mv-r2">🎵 Áudio</div></div>
-          <div class="mv-rolagem" id="mvRolagem"><div class="mv-trilho" id="mvTrilho"></div></div>
-        </div>
-        <div class="mv-dica">Dica: toque num pedaço para escolher; arraste para mover; puxe as bordas para aparar.
-          Atalhos: Espaço tocar · S dividir · Delete apagar · Ctrl+Z desfazer.</div>
-        <div id="mvExport"></div>
       </div>
-    </div>`;
+      <div class="mv-acoes" id="mvAcoes">
+        <button class="mv-ferr" id="mvBtnDesfazer" onclick="mvDesfazer()" title="Desfazer (Ctrl+Z)"><span class="mv-ferr-ic">↶</span><span>Desfazer</span></button>
+        <button class="mv-ferr" id="mvBtnRefazer" onclick="mvRefazer()" title="Refazer (Ctrl+Y)"><span class="mv-ferr-ic">↷</span><span>Refazer</span></button>
+        <span class="mv-sep"></span>
+        <button class="mv-ferr" id="mvBtnDividir" onclick="mvDividir()" title="Dividir no ponto da agulha (S)"><span class="mv-ferr-ic">✂️</span><span>Dividir</span></button>
+        <button class="mv-ferr" onclick="mvApagarLado('antes')" title="Apagar o pedaço antes da agulha (Q)"><span class="mv-ferr-ic">⇤</span><span>Apagar antes</span></button>
+        <button class="mv-ferr" onclick="mvApagarLado('depois')" title="Apagar o pedaço depois da agulha (W)"><span class="mv-ferr-ic">⇥</span><span>Apagar depois</span></button>
+        <button class="mv-ferr" onclick="mvDuplicar()" title="Duplicar (D)"><span class="mv-ferr-ic">⧉</span><span>Duplicar</span></button>
+        <button class="mv-ferr" id="mvBtnApagar" onclick="mvApagar()" title="Apagar o selecionado (Delete)"><span class="mv-ferr-ic">🗑️</span><span>Apagar</span></button>
+        <span class="mv-sep"></span>
+        <button class="mv-ferr" onclick="mvZoom(0.7)" title="Afastar"><span class="mv-ferr-ic">−</span><span>Menos</span></button>
+        <button class="mv-ferr" onclick="mvZoom(0)" title="Caber tudo na tela"><span class="mv-ferr-ic">⤢</span><span>Caber</span></button>
+        <button class="mv-ferr" onclick="mvZoom(1.4)" title="Aproximar"><span class="mv-ferr-ic">+</span><span>Mais</span></button>
+      </div>
+      <div class="mv-linha" id="mvLinha">
+        <div class="mv-rotulos">
+          <div class="mv-r0"></div>
+          <div class="mv-rot mv-r1" title="Vídeo"><span>🎬</span><small>Vídeo</small></div>
+          <div class="mv-rot mv-r2" title="Texto"><span>🔤</span><small>Texto</small></div>
+          <div class="mv-rot mv-r2" title="Áudio"><span>🎵</span><small>Áudio</small></div>
+        </div>
+        <div class="mv-rolagem" id="mvRolagem"><div class="mv-trilho" id="mvTrilho"></div></div>
+      </div>
+      <div class="mv-cortina" id="mvCortina" onclick="mvFecharAjustes()"></div>
+      <div id="mvExport"></div>`;
+    document.body.appendChild(ed);
+    document.body.classList.add('mv-aberto');
     ligarCanvas();
     ligarTeclas();
     ajustarCanvas();
+    zoomCaber();
     atualizarTudo();
     if (resultado) renderResultado();
 }
@@ -150,13 +180,35 @@ function fechar(perguntar) {
     pausar();
     Object.values(midias).forEach(m => { try { URL.revokeObjectURL(m.url); } catch (_) { /* ok */ } });
     if (urlResultado) { try { URL.revokeObjectURL(urlResultado); } catch (_) { /* ok */ } }
-    proj = null; midias = {}; hist = null; sel = null; resultado = null; urlResultado = null; tela = null;
+    proj = null; midias = {}; hist = null; sel = null; resultado = null; urlResultado = null; tela = null; painelAberto = false;
+    const ed = $('mvEditor');
+    if (ed) ed.remove();
+    document.body.classList.remove('mv-aberto');
     return true;
 }
 
 function editorVisivel() {
     const e = $('mvEditor');
-    return !!(e && e.offsetParent !== null);
+    return !!(e && e.getClientRects().length);
+}
+
+const ehCelular = () => window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+
+function abrirAjustes() { painelAberto = true; atualizarFolha(); }
+function fecharAjustes() {
+    painelAberto = false;
+    if (ehCelular() && sel) { sel = null; atualizarTudo(); }
+    atualizarFolha();
+}
+function atualizarFolha() {
+    const p = $('mvPainel'), c = $('mvCortina');
+    const aberta = painelAberto || !!sel;
+    if (p) p.classList.toggle('mv-aberta', aberta);
+    if (c) c.classList.toggle('mv-aberta', aberta && ehCelular());
+}
+
+function ajuda() {
+    if (typeof iniciarTour === 'function') iniciarTour('montagemVideo');
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +236,8 @@ function atualizarTudo(op) {
     renderTimeline();
     if (!(op && op.semPainel)) renderProps();
     atualizarBotoes();
+    const vazio = $('mvVazioPalco');
+    if (vazio) vazio.style.display = proj.clipes.length ? 'none' : 'flex';
     desenhar();
 }
 
@@ -278,7 +332,49 @@ async function lerMidia(arquivo, faixa) {
     }
     if (tipo === 'imagem' && !m.el) throw new Error('Não consegui abrir a foto "' + arquivo.name + '".');
     m.duracao = Math.round(m.duracao * 1000) / 1000;
+    if (tipo === 'video' && m.el) await capturarMiniatura(m).catch(() => {});
+    if (tipo === 'audio') await calcularOnda(m).catch(() => {});
     return m;
+}
+
+// Miniatura do video para o bloco da linha do tempo (um quadro perto do comeco).
+async function capturarMiniatura(m) {
+    const el = m.el;
+    if (!el.videoWidth) return;
+    el.currentTime = Math.min(0.5, (m.duracao || 1) / 3);
+    await esperarEvento(el, ['seeked'], 3000);
+    const h = 60, w = Math.round(h * el.videoWidth / el.videoHeight);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(el, 0, 0, w, h);
+    m.miniatura = c.toDataURL('image/jpeg', 0.6);
+    el.currentTime = 0;
+}
+
+// Forma de onda da musica: o pico de cada pedacinho vira uma barrinha.
+async function calcularOnda(m) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx || (m.arquivo.size || 0) > 60 * 1024 * 1024) return;
+    const ctx = new Ctx();
+    try {
+        const buf = await ctx.decodeAudioData(await m.arquivo.arrayBuffer());
+        const dados = buf.getChannelData(0);
+        const n = Math.max(40, Math.min(1500, Math.round(buf.duration * 12)));
+        const passo = Math.max(1, Math.floor(dados.length / n));
+        const picos = [];
+        let maior = 0.0001;
+        for (let i = 0; i < n; i++) {
+            let p = 0;
+            for (let j = i * passo, f = Math.min(dados.length, j + passo); j < f; j += 16) p = Math.max(p, Math.abs(dados[j]));
+            picos.push(p); maior = Math.max(maior, p);
+        }
+        const c = document.createElement('canvas');
+        c.width = n * 3; c.height = 40;
+        const g = c.getContext('2d');
+        g.fillStyle = 'rgba(255,255,255,.45)';
+        picos.forEach((p, i) => { const h = Math.max(2, p / maior * 30); g.fillRect(i * 3, 20 - h / 2, 2, h); });
+        m.onda = c.toDataURL('image/png');
+    } finally { try { ctx.close(); } catch (_) { /* ok */ } }
 }
 
 async function paraPng(arquivo) {
@@ -525,7 +621,8 @@ function ajustarCanvas() {
     if (!c || !proj) return;
     const d = M().dimensoes(Object.assign({}, proj, { qualidade: '360' }));
     if (c.width !== d.W || c.height !== d.H) { c.width = d.W; c.height = d.H; }
-    c.style.aspectRatio = d.W + ' / ' + d.H;
+    const q = $('mvQuadro');
+    if (q) { q.style.setProperty('--mv-ar', d.W + ' / ' + d.H); q.style.setProperty('--mv-arn', (d.W / d.H).toFixed(4)); }
 }
 
 function desenharMidia(ctx, el, nw, nh, W, H, encaixe) {
@@ -553,7 +650,7 @@ function desenhar() {
         ctx.fillStyle = '#8a96aa';
         ctx.font = '600 ' + Math.round(H / 18) + 'px Arial, sans-serif';
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(proj.clipes.length ? '' : 'Comece em "➕ Vídeo ou foto"', W / 2, H / 2);
+        // (sem clipes, o convite "Comece adicionando..." fica por cima do canvas)
     } else {
         const cl = em.clipe;
         if (cl.tipo === 'cor') { ctx.fillStyle = cl.cor; ctx.fillRect(0, 0, W, H); }
@@ -645,6 +742,8 @@ function passoRegua() {
     return opcoes.find(s => s * pps >= 60) || 600;
 }
 
+const t1 = (s) => (Math.round(s * 10) / 10).toString().replace('.', ',') + 's';
+
 function renderTimeline() {
     const tr = $('mvTrilho');
     if (!tr || !proj) return;
@@ -657,36 +756,43 @@ function renderTimeline() {
     for (let s = 0; s * pps <= largura; s += passoR) {
         regua += `<div class="mv-tic" style="left:${s * pps}px">${passoR < 1 ? fmt(s) : fmt(s).replace(/,\d$/, '')}</div>`;
     }
-    const bloco = (item, lista, left, w, rotulo, estilo, extra) => `
-        <div class="mv-bloco mv-b-${lista} ${item.id === sel ? 'mv-sel' : ''}" data-id="${item.id}" data-lista="${lista}"
-             style="left:${left}px; width:${Math.max(6, w)}px; ${estilo || ''}" title="${esc(rotulo)}">
+    // Bloco: nome (com reticencias so' quando nao cabe) e um chip com a duracao.
+    const bloco = (item, lista, left, w, nome, chip, estilo, classe) => `
+        <div class="mv-bloco mv-b-${lista} ${classe || ''} ${item.id === sel ? 'mv-sel' : ''}" data-id="${item.id}" data-lista="${lista}"
+             style="left:${left}px; width:${Math.max(6, w - 2)}px; ${estilo || ''}" title="${esc(nome + ' · ' + chip)}">
             <div class="mv-alca mv-alca-e" data-lado="inicio"></div>
-            <div class="mv-bloco-txt">${extra || ''}${esc(rotulo)}</div>
+            <span class="mv-bloco-nome">${esc(nome)}</span>${w > 46 ? `<span class="mv-chip">${esc(chip)}</span>` : ''}
             <div class="mv-alca mv-alca-d" data-lado="fim"></div>
         </div>`;
     const clipes = proj.clipes.map((c, i) => {
         const d = M().duracaoClipe(c);
         const m = midias[c.midia];
-        let estilo = '', rot = '';
-        if (c.tipo === 'cor') { estilo = 'background:' + esc(c.cor) + ';'; rot = 'Tela colorida'; }
-        else if (c.tipo === 'imagem') { estilo = m ? `background-image:url('${m.url}');` : ''; rot = '🖼️ ' + (m ? m.nome : 'foto'); }
-        else rot = '🎬 ' + (m ? m.nome : 'vídeo');
-        const vel = c.tipo === 'video' && c.velocidade !== 1 ? ' <b>' + String(c.velocidade).replace('.', ',') + 'x</b>' : '';
-        const mudo = c.tipo === 'video' && (c.mudo || !Number(c.volume)) ? '🔇 ' : '';
-        return bloco(c, 'clipes', ini[i] * pps, d * pps, rot + ' · ' + fmt(d), estilo, mudo + (vel ? vel + ' ' : ''));
+        let estilo = '', nome = '', classe = '';
+        if (c.tipo === 'cor') { estilo = 'background:' + esc(c.cor) + ';'; nome = 'Tela colorida'; }
+        else if (c.tipo === 'imagem') { estilo = m ? `background-image:url('${m.url}');` : ''; nome = m ? m.nome : 'foto'; classe = 'mv-com-img'; }
+        else {
+            nome = (c.mudo || !Number(c.volume) ? '🔇 ' : '') + (m ? m.nome : 'vídeo');
+            if (m && m.miniatura) { estilo = `background-image:url('${m.miniatura}');`; classe = 'mv-com-img'; }
+        }
+        const chip = (c.tipo === 'video' && c.velocidade !== 1 ? String(c.velocidade).replace('.', ',') + 'x · ' : '') + t1(d);
+        return bloco(c, 'clipes', ini[i] * pps, d * pps, nome, chip, estilo, classe);
     }).join('');
-    const textos = proj.textos.map(t => bloco(t, 'textos', t.inicio * pps, t.duracao * pps, t.texto || '(vazio)')).join('');
+    const textos = proj.textos.map(t => bloco(t, 'textos', t.inicio * pps, t.duracao * pps, t.texto || '(vazio)', t1(t.duracao))).join('');
     const audios = proj.audios.map(a => {
         const m = midias[a.midia];
-        return bloco(a, 'audios', a.inicio * pps, M().duracaoAudio(a) * pps, (m ? m.nome : 'áudio'), '', a.volume === 0 ? '🔇 ' : '');
+        // A forma de onda e' do arquivo inteiro; o bloco mostra so' o trecho usado.
+        const estilo = m && m.onda ? `background-image:url('${m.onda}'); background-size:${(m.duracao * pps).toFixed(1)}px 100%; background-position:${(-a.de * pps).toFixed(1)}px 0; background-repeat:no-repeat;` : '';
+        return bloco(a, 'audios', a.inicio * pps, M().duracaoAudio(a) * pps, (a.volume === 0 ? '🔇 ' : '') + (m ? m.nome : 'áudio'), t1(M().duracaoAudio(a)), estilo);
     }).join('');
     tr.style.width = largura + 'px';
+    const vazio = `<div class="mv-faixa-vazia"><span>Comece adicionando um vídeo ou foto</span>
+        <button class="mv-primario mv-peq" onclick="event.stopPropagation(); document.querySelector('#mvBtnMidia input').click()">➕ Adicionar</button></div>`;
     tr.innerHTML = `
         <div class="mv-regua" data-faixa="regua">${regua}</div>
-        <div class="mv-faixa mv-f1" data-faixa="clipes">${clipes || '<div class="mv-vazio">Coloque vídeos e fotos aqui com “➕ Vídeo ou foto”</div>'}</div>
+        <div class="mv-faixa mv-f1" data-faixa="clipes">${clipes || vazio}</div>
         <div class="mv-faixa mv-f2" data-faixa="textos">${textos}</div>
         <div class="mv-faixa mv-f2" data-faixa="audios">${audios}</div>
-        <div class="mv-fim" style="left:${total * pps}px"></div>
+        ${total ? `<div class="mv-fim" style="left:${total * pps}px"></div>` : ''}
         <div class="mv-agulha" id="mvAgulha"><div class="mv-agulha-cab"></div></div>`;
     moverAgulha();
     ligarTimeline();
@@ -840,108 +946,107 @@ function renderTimelineSemPerderGesto() {
 // Painel de propriedades
 // ---------------------------------------------------------------------------
 
-const opts = (lista, atual) => lista.map(([v, r]) => `<option value="${esc(v)}" ${String(v) === String(atual) ? 'selected' : ''}>${esc(r)}</option>`).join('');
+// Controles do painel no estilo do protótipo: botões segmentados e "chips" em vez de listas.
+const seg = (itens, atual, acao, classe) => `<div class="mv-seg ${classe || ''}">${itens.map(([v, rot, ic]) =>
+    `<button type="button" class="${String(v) === String(atual) ? 'mv-on' : ''}" data-v="${esc(v)}" onclick="${acao.replace(/\$V/g, typeof v === 'number' ? v : "'" + esc(v) + "'")}">${ic || ''}<span>${esc(rot)}</span></button>`).join('')}</div>`;
+const campo = (rotulo, html) => `<div class="mv-campo"><label class="mv-rot-campo">${rotulo}</label>${html}</div>`;
+const CORES = ['#ffffff', '#ffd60a', '#2563c9', '#e53e3e', '#38a169', '#000000'];
+const corBolinhas = (id, chave, atual) => `<div class="mv-cores">${CORES.map(c =>
+    `<button type="button" class="mv-bolinha ${String(atual).toLowerCase() === c ? 'mv-on' : ''}" style="background:${c}" title="${c}" onclick="mvMudar('${id}', '${chave}', '${c}')"></button>`).join('')}
+    <label class="mv-bolinha mv-outra" title="Outra cor">＋<input type="color" value="${esc(atual)}" onchange="mvMudar('${id}', '${chave}', this.value)"></label></div>`;
+const botoesFim = () => `<div class="mv-linha-bts">
+    <button class="mv-fantasma mv-peq" onclick="mvDuplicar()">⧉ Duplicar</button>
+    <button class="mv-fantasma mv-peq mv-perigo" onclick="mvApagar()">🗑️ Apagar</button></div>`;
+const cabecalho = (titulo) => `<div class="mv-painel-cab"><p class="mv-secao">Ajustes</p>
+    <button class="mv-fantasma mv-peq" onclick="mvFecharAjustes(); mvSelecionar(null)">Fechar ✕</button></div>
+    <div class="mv-painel-tit">${titulo}</div>`;
 
 function renderProps() {
     const el = $('mvProps');
     if (!el || !proj) return;
     const a = sel ? M().acharItem(proj, sel) : null;
-    if (!a) { el.innerHTML = propsProjeto(); return; }
-    if (a.lista === 'clipes') el.innerHTML = propsClipe(a.item, a.indice);
+    if (!a) el.innerHTML = propsProjeto();
+    else if (a.lista === 'clipes') el.innerHTML = propsClipe(a.item, a.indice);
     else if (a.lista === 'textos') el.innerHTML = propsTexto(a.item);
     else el.innerHTML = propsAudio(a.item);
+    atualizarFolha();
 }
 
 function propsProjeto() {
     const f = proj.fundo;
+    const icFormato = { '16:9': [22, 12], '9:16': [10, 18], '1:1': [15, 15], '4:3': [18, 14] };
     return `
-      <div class="mv-ptit">⚙️ O vídeo</div>
-      <label class="mv-l">Formato do quadro
-        <select id="mvFormato" onchange="mvMudar('', 'formato', this.value)">${opts(Object.entries(M().FORMATOS).map(([k, v]) => [k, v.nome]), proj.formato)}</select></label>
-      <label class="mv-l">Fundo (aparece quando o vídeo não enche o quadro)
-        <select id="mvFundo" onchange="mvMudar('', 'fundo.tipo', this.value)">${opts([['cor', 'Uma cor'], ['desfocado', 'O próprio vídeo, desfocado']], f.tipo)}</select></label>
-      <label class="mv-l">Cor do fundo <input type="color" value="${esc(f.cor)}" onchange="mvMudar('', 'fundo.cor', this.value)"></label>
-      <label class="mv-l">Qualidade ao exportar
-        <select id="mvQualidade" onchange="mvMudar('', 'qualidade', this.value)">${opts(Object.entries(M().QUALIDADES), proj.qualidade)}</select></label>
-      <div class="mv-nota">Toque num pedaço da linha do tempo para mudar velocidade, volume, texto, cor...</div>
-      ${proj.clipes.length ? `<div class="mv-nota">${proj.clipes.length} pedaço(s) na faixa de vídeo · ${proj.textos.length} texto(s) · ${proj.audios.length} áudio(s) · total ${fmt(M().duracaoTotal(proj))}</div>` : ''}`;
+      <div class="mv-painel-cab"><p class="mv-secao">Ajustes</p>
+        <button class="mv-fantasma mv-peq mv-so-cel" onclick="mvFecharAjustes()">Fechar ✕</button></div>
+      <div class="mv-painel-tit">O vídeo</div>
+      ${campo('Formato', seg(Object.keys(M().FORMATOS).map(k => [k, k, `<i class="mv-prop" style="width:${icFormato[k][0]}px;height:${icFormato[k][1]}px"></i>`]), proj.formato, "mvMudar('', 'formato', $V)", 'mv-seg-formato'))}
+      <div class="mv-nota">${esc(M().FORMATOS[proj.formato].nome)}</div>
+      ${campo('Fundo (quando o vídeo não enche o quadro)', seg([['cor', 'Cor'], ['desfocado', 'Desfocado']], f.tipo, "mvMudar('', 'fundo.tipo', $V)"))}
+      ${f.tipo === 'cor' ? campo('Cor do fundo', corBolinhas('', 'fundo.cor', f.cor)) : ''}
+      ${campo('Qualidade ao exportar', seg([['480', '480p'], ['720', '720p'], ['1080', '1080p']], proj.qualidade, "mvMudar('', 'qualidade', $V)"))}
+      <div class="mv-nota">720p é o recomendado. 1080p demora bem mais para exportar.</div>
+      ${proj.clipes.length ? `<div class="mv-resumo">${proj.clipes.length} pedaço(s) · ${proj.textos.length} texto(s) · ${proj.audios.length} áudio(s) · total <b>${fmt(M().duracaoTotal(proj))}</b></div>`
+        : '<div class="mv-nota">Toque num pedaço da linha do tempo para mudar velocidade, volume, texto, cor...</div>'}`;
 }
 
 function propsClipe(c, i) {
     const m = midias[c.midia];
-    const nome = c.tipo === 'cor' ? '🟦 Tela colorida' : (c.tipo === 'imagem' ? '🖼️ ' : '🎬 ') + esc(m ? m.nome : '');
-    const mover = `<div class="mv-linha-bts">
-        <button class="mv-bt mv-bt-p" onclick="mvMoverClipe(-1)" ${i === 0 ? 'disabled' : ''}>◀ Para trás</button>
-        <button class="mv-bt mv-bt-p" onclick="mvMoverClipe(1)" ${i === proj.clipes.length - 1 ? 'disabled' : ''}>Para frente ▶</button></div>`;
+    const titulo = c.tipo === 'cor' ? '🟦 Tela colorida' : (c.tipo === 'imagem' ? '🖼️ ' : '🎬 ') + esc(m ? m.nome : '');
+    const encaixe = campo('No quadro', seg([['conter', 'Inteiro'], ['preencher', 'Encher (corta)']], c.encaixe, `mvMudar('${c.id}', 'encaixe', $V)`));
     let corpo = '';
     if (c.tipo === 'video') {
         corpo = `
-          <div class="mv-nota">Trecho do arquivo: ${fmt(c.de)} a ${fmt(c.ate)} · na linha do tempo: ${fmt(M().duracaoClipe(c))}</div>
-          <label class="mv-l">Velocidade
-            <select id="mvVelocidade" onchange="mvMudar('${c.id}', 'velocidade', Number(this.value))">${opts(M().VELOCIDADES.map(v => [v, String(v).replace('.', ',') + 'x' + (v === 1 ? ' (normal)' : v < 1 ? ' (câmera lenta)' : '')]), c.velocidade)}</select></label>
-          <label class="mv-l">Volume: <b id="mvVolTxt">${c.volume}%</b>
-            <input type="range" min="0" max="200" step="5" value="${c.volume}" oninput="document.getElementById('mvVolTxt').textContent=this.value+'%'; mvMudar('${c.id}', 'volume', Number(this.value), {digitando:true})"></label>
-          <label class="mv-c"><input type="checkbox" id="mvMudo" ${c.mudo ? 'checked' : ''} onchange="mvMudar('${c.id}', 'mudo', this.checked)"> Tirar o som deste pedaço</label>
-          <label class="mv-l">No quadro
-            <select onchange="mvMudar('${c.id}', 'encaixe', this.value)">${opts([['conter', 'Inteiro (sem cortar)'], ['preencher', 'Encher o quadro (corta as bordas)']], c.encaixe)}</select></label>`;
+          ${campo('Velocidade', seg(M().VELOCIDADES.map(v => [v, String(v).replace('.', ',') + 'x']), c.velocidade, `mvMudar('${c.id}', 'velocidade', $V)`, 'mv-seg-vel" id="mvVelocidade'))}
+          ${campo('Volume: <b id="mvVolTxt">' + (c.mudo ? 'sem som' : c.volume + '%') + '</b>',
+            `<input type="range" class="mv-range" min="0" max="200" step="5" value="${c.volume}" oninput="document.getElementById('mvVolTxt').textContent=this.value+'%'; mvMudar('${c.id}', 'volume', Number(this.value), {digitando:true})">`)}
+          <label class="mv-check"><input type="checkbox" id="mvMudo" ${c.mudo ? 'checked' : ''} onchange="mvMudar('${c.id}', 'mudo', this.checked)"> Tirar o som deste pedaço</label>
+          ${encaixe}
+          <div class="mv-nota">Trecho do arquivo: ${fmt(c.de)} a ${fmt(c.ate)}. Na linha do tempo: ${fmt(M().duracaoClipe(c))}.</div>`;
     } else {
         corpo = `
-          <label class="mv-l">Duração (segundos)
-            <input type="number" id="mvDuracao" min="0.1" max="600" step="0.5" value="${c.duracao}" onchange="mvMudar('${c.id}', 'duracao', Math.max(0.1, Number(this.value) || 4))"></label>
-          ${c.tipo === 'cor' ? `<label class="mv-l">Cor <input type="color" value="${esc(c.cor)}" onchange="mvMudar('${c.id}', 'cor', this.value)"></label>
-             <div class="mv-nota">Use "🔤 Texto" para escrever o título em cima.</div>` :
-            `<label class="mv-l">No quadro
-              <select onchange="mvMudar('${c.id}', 'encaixe', this.value)">${opts([['conter', 'Inteira (sem cortar)'], ['preencher', 'Encher o quadro (corta as bordas)']], c.encaixe)}</select></label>`}`;
+          ${campo('Duração (segundos)', `<input type="number" class="mv-entrada" id="mvDuracao" min="0.1" max="600" step="0.5" value="${c.duracao}" onchange="mvMudar('${c.id}', 'duracao', Math.max(0.1, Number(this.value) || 4))">`)}
+          ${c.tipo === 'cor' ? campo('Cor', corBolinhas(c.id, 'cor', c.cor)) + '<div class="mv-nota">Use “🔤 Texto” para escrever o título em cima.</div>' : encaixe}`;
     }
-    return `<div class="mv-ptit">${nome}</div>${corpo}${mover}
-        <div class="mv-linha-bts"><button class="mv-bt mv-bt-p" onclick="mvDuplicar()">⧉ Duplicar</button>
-        <button class="mv-bt mv-bt-p mv-perigo" onclick="mvApagar()">🗑️ Apagar</button>
-        <button class="mv-bt mv-bt-p" onclick="mvSelecionar(null)">Pronto</button></div>`;
+    return cabecalho(titulo) + corpo + `
+        ${campo('Posição na fila', `<div class="mv-linha-bts">
+          <button class="mv-fantasma mv-peq" onclick="mvMoverClipe(-1)" ${i === 0 ? 'disabled' : ''}>◀ Para trás</button>
+          <button class="mv-fantasma mv-peq" onclick="mvMoverClipe(1)" ${i === proj.clipes.length - 1 ? 'disabled' : ''}>Para frente ▶</button></div>`)}
+        ${botoesFim()}`;
 }
 
 function propsTexto(t) {
-    const posicoes = [['0.12', 'No alto'], ['0.5', 'No meio'], ['0.82', 'Embaixo']];
-    return `
-      <div class="mv-ptit">🔤 Texto</div>
-      <textarea id="mvTextoTexto" rows="2" oninput="mvMudar('${t.id}', 'texto', this.value, {digitando:true})">${esc(t.texto)}</textarea>
-      <div class="mv-2">
-        <label class="mv-l">Letra <select onchange="mvMudar('${t.id}', 'fonte', this.value)">${opts(Object.entries(M().FONTES).map(([k, v]) => [k, v.nome]), t.fonte)}</select></label>
-        <label class="mv-l">Estilo <select id="mvEstilo" onchange="mvMudar('${t.id}', 'estilo', this.value)">${opts([['contorno', 'Com contorno'], ['caixa', 'Numa caixa'], ['faixa', 'Faixa de lado a lado'], ['simples', 'Com sombra']], t.estilo)}</select></label>
+    const amostra = { contorno: 'mv-st-contorno', caixa: 'mv-st-caixa', faixa: 'mv-st-faixa', simples: 'mv-st-sombra' };
+    const estilos = [['contorno', 'Contorno'], ['caixa', 'Caixa'], ['faixa', 'Faixa'], ['simples', 'Sombra']];
+    const pos = t.y < 0.3 ? '0.12' : t.y > 0.7 ? '0.82' : '0.5';
+    return cabecalho('🔤 Texto') + `
+      ${campo('Texto', `<textarea class="mv-entrada" id="mvTextoTexto" rows="2" oninput="mvMudar('${t.id}', 'texto', this.value, {digitando:true})">${esc(t.texto)}</textarea>`)}
+      ${campo('Letra', `<select class="mv-entrada" onchange="mvMudar('${t.id}', 'fonte', this.value)">${Object.entries(M().FONTES).map(([k, v]) => `<option value="${k}" ${k === t.fonte ? 'selected' : ''}>${esc(v.nome)}</option>`).join('')}</select>`)}
+      ${campo('Estilo', `<div class="mv-chips" id="mvEstilo">${estilos.map(([v, r]) =>
+          `<button type="button" class="mv-chip-est ${t.estilo === v ? 'mv-on' : ''}" data-v="${v}" onclick="mvMudar('${t.id}', 'estilo', '${v}')"><span class="mv-amostra ${amostra[v]}">Aa</span><span>${r}</span></button>`).join('')}</div>`)}
+      ${campo('Cor da letra', corBolinhas(t.id, 'cor', t.cor))}
+      ${t.estilo !== 'simples' ? campo(t.estilo === 'contorno' ? 'Cor do contorno' : 'Cor da caixa', corBolinhas(t.id, 'corFundo', t.corFundo)) : ''}
+      ${campo('Tamanho', `<input type="range" class="mv-range" min="0.03" max="0.2" step="0.005" value="${t.tamanho}" oninput="mvMudar('${t.id}', 'tamanho', Number(this.value), {digitando:true})">`)}
+      ${campo('Posição <small>(ou arraste o texto na prévia)</small>', seg([['0.12', 'Alto'], ['0.5', 'Meio'], ['0.82', 'Baixo']], pos, `mvMudar('${t.id}', 'x', 0.5); mvMudar('${t.id}', 'y', Number($V))`))}
+      <label class="mv-check"><input type="checkbox" ${t.negrito ? 'checked' : ''} onchange="mvMudar('${t.id}', 'negrito', this.checked)"> Negrito</label>
+      <label class="mv-check"><input type="checkbox" ${t.suave ? 'checked' : ''} onchange="mvMudar('${t.id}', 'suave', this.checked)"> Aparecer e sumir suave</label>
+      <div class="mv-duas">
+        ${campo('Começa em (s)', `<input type="number" class="mv-entrada" min="0" step="0.1" value="${t.inicio}" onchange="mvMudar('${t.id}', 'inicio', Math.max(0, Number(this.value) || 0))">`)}
+        ${campo('Dura (s)', `<input type="number" class="mv-entrada" id="mvTextoDuracao" min="0.1" step="0.1" value="${t.duracao}" onchange="mvMudar('${t.id}', 'duracao', Math.max(0.1, Number(this.value) || 3))">`)}
       </div>
-      <div class="mv-2">
-        <label class="mv-l">Cor da letra <input type="color" value="${esc(t.cor)}" onchange="mvMudar('${t.id}', 'cor', this.value)"></label>
-        <label class="mv-l">Cor do contorno/caixa <input type="color" value="${esc(t.corFundo)}" onchange="mvMudar('${t.id}', 'corFundo', this.value)"></label>
-      </div>
-      <label class="mv-l">Tamanho
-        <input type="range" min="0.03" max="0.2" step="0.005" value="${t.tamanho}" oninput="mvMudar('${t.id}', 'tamanho', Number(this.value), {digitando:true})"></label>
-      <label class="mv-c"><input type="checkbox" ${t.negrito ? 'checked' : ''} onchange="mvMudar('${t.id}', 'negrito', this.checked)"> Negrito</label>
-      <label class="mv-c"><input type="checkbox" ${t.suave ? 'checked' : ''} onchange="mvMudar('${t.id}', 'suave', this.checked)"> Aparecer e sumir suave</label>
-      <div class="mv-linha-bts">${posicoes.map(([y, r]) => `<button class="mv-bt mv-bt-p" onclick="mvMudar('${t.id}', 'y', ${y}); mvMudar('${t.id}', 'x', 0.5)">${r}</button>`).join('')}</div>
-      <div class="mv-nota">Ou arraste o texto na prévia.</div>
-      <div class="mv-2">
-        <label class="mv-l">Começa em (s) <input type="number" min="0" step="0.1" value="${t.inicio}" onchange="mvMudar('${t.id}', 'inicio', Math.max(0, Number(this.value) || 0))"></label>
-        <label class="mv-l">Dura (s) <input type="number" id="mvTextoDuracao" min="0.1" step="0.1" value="${t.duracao}" onchange="mvMudar('${t.id}', 'duracao', Math.max(0.1, Number(this.value) || 3))"></label>
-      </div>
-      <div class="mv-linha-bts"><button class="mv-bt mv-bt-p" onclick="mvDuplicar()">⧉ Duplicar</button>
-        <button class="mv-bt mv-bt-p mv-perigo" onclick="mvApagar()">🗑️ Apagar</button>
-        <button class="mv-bt mv-bt-p" onclick="mvSelecionar(null)">Pronto</button></div>`;
+      ${botoesFim()}`;
 }
 
 function propsAudio(a) {
     const m = midias[a.midia];
-    return `
-      <div class="mv-ptit">🎵 ${esc(m ? m.nome : 'Áudio')}</div>
-      <div class="mv-nota">Toca de ${fmt(a.inicio)} a ${fmt(a.inicio + M().duracaoAudio(a))} do vídeo (trecho ${fmt(a.de)}–${fmt(a.ate)} do arquivo).
-        O que passar do fim do vídeo é cortado.</div>
-      <label class="mv-l">Volume: <b id="mvVolATxt">${a.volume}%</b>
-        <input type="range" min="0" max="200" step="5" value="${a.volume}" oninput="document.getElementById('mvVolATxt').textContent=this.value+'%'; mvMudar('${a.id}', 'volume', Number(this.value), {digitando:true})"></label>
-      <div class="mv-linha-bts">${[[15, 'Fundo baixinho'], [50, 'Médio'], [100, 'Normal']].map(([v, r]) => `<button class="mv-bt mv-bt-p" onclick="mvMudar('${a.id}', 'volume', ${v})">${r}</button>`).join('')}</div>
-      <label class="mv-c"><input type="checkbox" ${a.entrarSuave ? 'checked' : ''} onchange="mvMudar('${a.id}', 'entrarSuave', this.checked)"> Começar baixinho e subir</label>
-      <label class="mv-c"><input type="checkbox" ${a.sairSuave ? 'checked' : ''} onchange="mvMudar('${a.id}', 'sairSuave', this.checked)"> Terminar abaixando</label>
-      <label class="mv-l">Começa em (s) <input type="number" min="0" step="0.1" value="${a.inicio}" onchange="mvMudar('${a.id}', 'inicio', Math.max(0, Number(this.value) || 0))"></label>
-      <div class="mv-linha-bts"><button class="mv-bt mv-bt-p" onclick="mvDuplicar()">⧉ Duplicar</button>
-        <button class="mv-bt mv-bt-p mv-perigo" onclick="mvApagar()">🗑️ Apagar</button>
-        <button class="mv-bt mv-bt-p" onclick="mvSelecionar(null)">Pronto</button></div>`;
+    return cabecalho('🎵 ' + esc(m ? m.nome : 'Áudio')) + `
+      ${campo('Volume: <b id="mvVolATxt">' + a.volume + '%</b>',
+        `<input type="range" class="mv-range" min="0" max="200" step="5" value="${a.volume}" oninput="document.getElementById('mvVolATxt').textContent=this.value+'%'; mvMudar('${a.id}', 'volume', Number(this.value), {digitando:true})">`)}
+      ${seg([[15, 'Fundo baixinho'], [50, 'Médio'], [100, 'Normal']], a.volume, `mvMudar('${a.id}', 'volume', $V)`)}
+      <label class="mv-check"><input type="checkbox" ${a.entrarSuave ? 'checked' : ''} onchange="mvMudar('${a.id}', 'entrarSuave', this.checked)"> Começar baixinho e subir</label>
+      <label class="mv-check"><input type="checkbox" ${a.sairSuave ? 'checked' : ''} onchange="mvMudar('${a.id}', 'sairSuave', this.checked)"> Terminar abaixando</label>
+      ${campo('Começa em (s)', `<input type="number" class="mv-entrada" min="0" step="0.1" value="${a.inicio}" onchange="mvMudar('${a.id}', 'inicio', Math.max(0, Number(this.value) || 0))">`)}
+      <div class="mv-nota">Toca de ${fmt(a.inicio)} a ${fmt(a.inicio + M().duracaoAudio(a))} do vídeo. O que passar do fim do vídeo é cortado.</div>
+      ${botoesFim()}`;
 }
 
 function moverClipeSel(direcao) {
@@ -1004,6 +1109,7 @@ async function exportar() {
     exportando = true;
     resultado = null;
     atualizarBotoes();
+    fecharExport();
     renderExportando({ pct: 0, texto: 'Começando...' });
     const inicio = Date.now();
     try {
@@ -1016,111 +1122,215 @@ async function exportar() {
     } catch (e) {
         const cancelado = !exportando;
         exportando = false;
-        if (!cancelado) {
-            const ex = $('mvExport');
-            if (ex) ex.innerHTML = `<div class="mv-erro">❌ ${esc(e.message || e)}</div>`;
-        }
+        if (!cancelado) renderErroExport(e.message || String(e));
     } finally {
         atualizarBotoes();
     }
 }
 
-function renderExportando(estado) {
+// Exportar aparece numa janela por cima do editor (nao empurra a linha do tempo).
+function janelaExport(html) {
     const ex = $('mvExport');
     if (!ex) return;
-    if (!estado) { ex.innerHTML = '<div class="mv-nota">Exportação cancelada.</div>'; return; }
-    ex.innerHTML = `
-      <div class="mv-exp">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <b style="flex:1;">⏳ Exportando o vídeo...</b>
-          <button class="btn btn-sm btn-secondary" onclick="mvCancelarExportacao()">Cancelar</button>
-        </div>
-        <div style="background:#e3e8ef; border-radius:99px; height:8px; overflow:hidden; margin-top:8px;">
-          <div id="mvBarra" style="background:#2563c9; height:100%; width:${Math.max(0, Math.min(100, estado.pct || 0))}%; transition:width .25s;"></div></div>
-        <div id="mvTextoProgresso" style="font-size:12px; color:#5f6b7f; margin-top:6px;">${esc(estado.texto || '')}</div>
+    ex.innerHTML = html ? `<div class="mv-janela-fundo"><div class="mv-janela">${html}</div></div>` : '';
+}
+
+function renderExportando(estado) {
+    if (!estado) {
+        janelaExport(`<div class="mv-jan-tit">Exportação cancelada</div>
+            <div class="mv-linha-bts" style="justify-content:flex-end;"><button class="mv-primario" onclick="mvFecharExport()">OK</button></div>`);
+        return;
+    }
+    const pct = Math.max(0, Math.min(100, estado.pct || 0));
+    const barra = $('mvBarra');
+    if (barra) {   // so' atualiza (nao refaz a janela a cada passo)
+        barra.style.width = pct + '%';
+        const t = $('mvTextoProgresso'); if (t) t.textContent = estado.texto || '';
+        return;
+    }
+    janelaExport(`
+        <div class="mv-jan-tit">⏳ Exportando o vídeo...</div>
+        <div class="mv-barra-fundo"><div id="mvBarra" style="width:${pct}%"></div></div>
+        <div id="mvTextoProgresso" class="mv-nota">${esc(estado.texto || '')}</div>
         <div class="mv-nota">Deixe esta aba aberta. No navegador, exportar leva mais ou menos o tempo do vídeo (ou mais, em 1080p).</div>
-      </div>`;
+        <div class="mv-linha-bts" style="justify-content:flex-end;"><button class="mv-fantasma" onclick="mvCancelarExportacao()">Cancelar</button></div>`);
+}
+
+function renderErroExport(msg) {
+    janelaExport(`<div class="mv-jan-tit">❌ Não deu para exportar</div><div class="mv-erro">${esc(msg)}</div>
+        <div class="mv-linha-bts" style="justify-content:flex-end;"><button class="mv-primario" onclick="mvFecharExport()">OK</button></div>`);
 }
 
 function renderResultado() {
-    const ex = $('mvExport');
-    if (!ex || !resultado) return;
+    if (!resultado) return;
     const a = resultado.arquivos[0];
     if (urlResultado) { try { URL.revokeObjectURL(urlResultado); } catch (_) { /* ok */ } }
     urlResultado = URL.createObjectURL(a.blob);
-    ex.innerHTML = `
-      <div class="mv-exp mv-pronto">
-        <div><b>✅ Pronto${resultado.segundos ? ' em ' + resultado.segundos.toFixed(1) + 's' : ''}.</b> ${esc(resultado.mensagem)}</div>
-        <video src="${urlResultado}" controls playsinline style="max-width:100%; max-height:300px; margin-top:10px; border-radius:6px; background:#000;"></video>
-        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px;">
-          <span>🎬 ${esc(a.nome)} · ${V() ? V().formatarTamanho(a.blob.size) : ''}</span>
-          <a class="btn btn-primary" id="mvBaixar" href="${urlResultado}" download="${esc(a.nome)}">⬇️ Baixar</a>
-        </div>
-        <div class="mv-nota">O vídeo fica só neste aparelho e se perde ao sair da página: baixe antes de sair.</div>
-      </div>`;
+    janelaExport(`
+        <div class="mv-jan-tit mv-pronto">✅ Pronto${resultado.segundos ? ' em ' + resultado.segundos.toFixed(1) + 's' : ''}</div>
+        <div class="mv-nota">${esc(resultado.mensagem)}</div>
+        <video src="${urlResultado}" controls playsinline class="mv-video-final"></video>
+        <div class="mv-nota">🎬 ${esc(a.nome)} · ${V() ? V().formatarTamanho(a.blob.size) : ''}. O vídeo fica só neste aparelho e se perde ao sair da página: baixe antes de sair.</div>
+        <div class="mv-linha-bts" style="justify-content:flex-end;">
+          <button class="mv-fantasma" onclick="mvFecharExport()">Voltar a editar</button>
+          <a class="mv-primario" id="mvBaixar" href="${urlResultado}" download="${esc(a.nome)}">⬇️ Baixar</a>
+        </div>`);
 }
+
+function fecharExport() { janelaExport(''); }
 
 // ---------------------------------------------------------------------------
 
 const ESTILO = `<style>
-  #mvEditor .mv-card { padding:12px; }
-  #mvEditor .mv-barra { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:10px; }
-  #mvEditor .mv-bt { display:inline-flex; align-items:center; gap:4px; border:1px solid #cdd5e1; background:#fff; color:#1c2536; border-radius:6px; padding:7px 10px; font:inherit; font-size:13px; cursor:pointer; white-space:nowrap; }
-  #mvEditor .mv-bt:hover:not(:disabled) { border-color:#2563c9; background:#f3f7fd; }
-  #mvEditor .mv-bt:disabled { opacity:.4; cursor:default; }
-  #mvEditor .mv-bt-forte { background:#2563c9; color:#fff; border-color:#2563c9; }
-  #mvEditor .mv-bt-forte:hover:not(:disabled) { background:#1b4fa8; }
-  #mvEditor .mv-bt-p { padding:5px 8px; font-size:12px; }
-  #mvEditor .mv-perigo { color:#c53030; }
-  #mvEditor .mv-sep { width:1px; height:24px; background:#e3e8ef; margin:0 2px; }
-  #mvEditor .mv-meio { display:grid; grid-template-columns:minmax(0, 1fr) 290px; gap:12px; }
-  @media (max-width: 820px) { #mvEditor .mv-meio { grid-template-columns:1fr; } }
-  #mvEditor .mv-palco { background:#11151c; border-radius:8px; padding:10px; display:flex; flex-direction:column; align-items:center; gap:8px; min-width:0; }
-  #mvEditor .mv-quadro { width:100%; display:flex; justify-content:center; }
-  #mvEditor #mvCanvas { max-width:100%; max-height:52vh; background:#000; border-radius:4px; touch-action:none; }
-  #mvEditor .mv-controles { display:flex; gap:6px; align-items:center; }
-  #mvEditor .mv-tempo { color:#e2e8f0; font-variant-numeric:tabular-nums; font-size:13px; margin-left:6px; }
-  #mvEditor .mv-props { border:1px solid #e3e8ef; border-radius:8px; padding:10px; font-size:13px; max-height:62vh; overflow:auto; }
-  #mvEditor .mv-ptit { font-weight:700; color:#1b4488; margin-bottom:8px; word-break:break-word; }
-  #mvEditor .mv-l { display:block; margin:8px 0; color:#3d4759; font-size:12.5px; }
-  #mvEditor .mv-l select, #mvEditor .mv-l input[type=number] { display:block; width:100%; margin-top:3px; padding:6px 8px; border:1px solid #cdd5e1; border-radius:6px; font:inherit; box-sizing:border-box; }
-  #mvEditor .mv-l input[type=range] { display:block; width:100%; }
-  #mvEditor .mv-l input[type=color] { display:block; width:100%; height:30px; margin-top:3px; border:1px solid #cdd5e1; border-radius:6px; padding:1px; }
-  #mvEditor .mv-c { display:flex; gap:6px; align-items:center; margin:6px 0; font-size:12.5px; }
-  #mvEditor textarea { width:100%; box-sizing:border-box; padding:7px 9px; border:1px solid #cdd5e1; border-radius:6px; font:inherit; font-size:14px; }
-  #mvEditor .mv-2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-  #mvEditor .mv-2 .mv-l { margin:4px 0; }
-  #mvEditor .mv-linha-bts { display:flex; flex-wrap:wrap; gap:5px; margin:8px 0; }
-  #mvEditor .mv-nota { font-size:11.5px; color:#5f6b7f; line-height:1.5; margin:6px 0; }
-  #mvEditor .mv-zoom { display:flex; align-items:center; gap:5px; margin:12px 0 4px; }
-  #mvEditor .mv-linha { display:flex; border:1px solid #e3e8ef; border-radius:8px; overflow:hidden; background:#f7f9fc; }
-  #mvEditor .mv-rotulos { flex:0 0 74px; border-right:1px solid #e3e8ef; background:#fff; font-size:11px; color:#5f6b7f; }
-  #mvEditor .mv-rotulos div { display:flex; align-items:center; padding-left:6px; box-sizing:border-box; }
-  #mvEditor .mv-r0 { height:22px; } #mvEditor .mv-r1 { height:58px; } #mvEditor .mv-r2 { height:38px; }
-  #mvEditor .mv-rolagem { flex:1; overflow-x:auto; overflow-y:hidden; position:relative; }
-  #mvEditor .mv-trilho { position:relative; min-height:156px; user-select:none; -webkit-user-select:none; }
-  #mvEditor .mv-regua { height:22px; position:relative; border-bottom:1px solid #e3e8ef; cursor:pointer; touch-action:none; background:#fff; }
-  #mvEditor .mv-tic { position:absolute; top:0; height:100%; border-left:1px solid #cdd5e1; font-size:10px; color:#7a869a; padding-left:3px; line-height:22px; }
-  #mvEditor .mv-faixa { position:relative; border-bottom:1px solid #edf0f5; }
-  #mvEditor .mv-f1 { height:58px; } #mvEditor .mv-f2 { height:38px; }
-  #mvEditor .mv-vazio { position:absolute; left:10px; top:18px; font-size:12px; color:#9aa5b8; white-space:nowrap; }
-  #mvEditor .mv-bloco { position:absolute; top:4px; bottom:4px; border-radius:6px; box-sizing:border-box; border:2px solid transparent; overflow:hidden; cursor:grab; touch-action:none; font-size:11px; color:#fff; background-size:auto 100%; background-repeat:repeat-x; }
-  #mvEditor .mv-b-clipes { background-color:#3a6fd8; }
-  #mvEditor .mv-b-textos { background-color:#d69e2e; color:#1c2536; }
-  #mvEditor .mv-b-audios { background-color:#38a169; }
-  #mvEditor .mv-bloco.mv-sel { border-color:#ffd60a; box-shadow:0 0 0 1px #1c2536; }
-  #mvEditor .mv-bloco-txt { position:absolute; inset:0 10px; display:flex; align-items:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-shadow:0 1px 2px rgba(0,0,0,.6); pointer-events:none; }
-  #mvEditor .mv-b-textos .mv-bloco-txt { text-shadow:none; }
-  #mvEditor .mv-alca { position:absolute; top:0; bottom:0; width:9px; cursor:ew-resize; background:rgba(255,255,255,.35); z-index:2; }
+  body.mv-aberto { overflow:hidden; }
+  #mvEditor { --mv-fundo:#14171d; --mv-sup:#1d2129; --mv-sup2:#272c36; --mv-linha:#343a46; --mv-txt:#eef1f6; --mv-apagado:#a3abb9;
+    --mv-acento:var(--accent, #2563c9); --mv-sobre-acento:var(--on-accent, #fff); --mv-sel:#ffd60a; --mv-verde:#2f9e63; --mv-verm:#e5484d;
+    position:fixed; inset:0; z-index:990; background:var(--mv-fundo); color:var(--mv-txt); display:flex; flex-direction:column;
+    font-size:14px; line-height:1.35; overflow:hidden; }
+  #mvEditor *, #mvEditor *::before, #mvEditor *::after { box-sizing:border-box; }
+  #mvEditor button, #mvEditor input, #mvEditor select, #mvEditor textarea { font:inherit; color:inherit; }
+  #mvEditor button { cursor:pointer; }
+  #mvEditor button:disabled { opacity:.35; cursor:default; }
+  #mvEditor p { margin:0; }
+  #mvEditor label { display:block; margin:0; font-weight:inherit; font-size:inherit; color:inherit; }
+  #mvEditor input, #mvEditor textarea, #mvEditor select { margin:0; min-height:0; box-shadow:none; font-size:14px; }
+  #mvEditor input:focus, #mvEditor textarea:focus, #mvEditor select:focus { border-color:var(--mv-acento); box-shadow:0 0 0 2px var(--mv-acento); outline:none; }
+  #mvEditor select.mv-entrada { background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a3abb9' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 10px center; padding-right:30px; }
+  #mvEditor .mv-so-cel, #mvEditor .mv-add-bt.mv-so-cel { display:none !important; }
+
+  #mvEditor .mv-topo { flex:none; height:52px; display:flex; align-items:center; gap:10px; padding:0 12px; background:var(--mv-sup); border-bottom:1px solid var(--mv-linha); }
+  #mvEditor .mv-titulo { flex:1; text-align:center; font-size:15px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #mvEditor .mv-topo-dir { display:flex; gap:8px; }
+  #mvEditor .mv-fantasma { background:transparent; border:1px solid var(--mv-linha); border-radius:8px; padding:7px 11px; white-space:nowrap; }
+  #mvEditor .mv-fantasma:hover:not(:disabled) { background:var(--mv-sup2); }
+  #mvEditor .mv-primario { display:inline-flex; align-items:center; gap:6px; background:var(--mv-acento); color:var(--mv-sobre-acento); border:0; border-radius:8px; padding:8px 14px; font-weight:700; white-space:nowrap; text-decoration:none; }
+  #mvEditor .mv-primario:hover:not(:disabled) { filter:brightness(1.1); }
+  #mvEditor .mv-peq { padding:5px 10px; font-size:12px; }
+  #mvEditor .mv-perigo { color:#ff8a8d; }
+  #mvEditor .mv-secao { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--mv-apagado); font-weight:700; }
+
+  #mvEditor .mv-principal { flex:1; min-height:0; display:grid; grid-template-columns:100px minmax(0,1fr) 310px; }
+  #mvEditor .mv-add { border-right:1px solid var(--mv-linha); padding:12px 8px; display:flex; flex-direction:column; gap:8px; overflow-y:auto; }
+  #mvEditor .mv-add-bt { display:flex !important; margin:0; flex-direction:column; align-items:center; gap:4px; padding:10px 4px; border-radius:12px; background:var(--mv-sup); border:1px solid var(--mv-linha); font-size:12px; text-align:center; line-height:1.2; cursor:pointer; color:var(--mv-txt); }
+  #mvEditor .mv-add-bt:hover { border-color:var(--mv-acento); }
+  #mvEditor .mv-add-ic { font-size:24px; line-height:1.1; }
+
+  #mvEditor .mv-centro { min-width:0; min-height:0; display:flex; flex-direction:column; padding:12px; gap:10px; }
+  #mvEditor .mv-palco { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; container-type:size; }
+  #mvEditor .mv-quadro { position:relative; aspect-ratio:var(--mv-ar, 16/9); width:min(100cqw, 100cqh * var(--mv-arn, 1.7778)); max-height:100%; background:#000; border-radius:8px; overflow:hidden; box-shadow:0 10px 40px -10px #000; }
+  #mvEditor #mvCanvas { display:block; width:100%; height:100%; touch-action:none; }
+  #mvEditor .mv-vazio-palco { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; text-align:center; padding:16px; border:2px dashed var(--mv-linha); border-radius:8px; background:var(--mv-fundo); }
+  #mvEditor .mv-vazio-palco p { font-size:clamp(14px, 2.2vw, 20px); font-weight:700; }
+  #mvEditor .mv-controles { flex:none; display:flex; align-items:center; justify-content:center; gap:8px; }
+  #mvEditor .mv-redondo { width:38px; height:38px; border-radius:50%; background:var(--mv-sup); border:1px solid var(--mv-linha); display:inline-flex; align-items:center; justify-content:center; }
+  #mvEditor .mv-tocar { width:46px; height:46px; background:var(--mv-acento); color:var(--mv-sobre-acento); border:0; font-size:18px; }
+  #mvEditor .mv-tempo { font-variant-numeric:tabular-nums; color:var(--mv-apagado); margin-left:6px; white-space:nowrap; }
+
+  #mvEditor .mv-painel { border-left:1px solid var(--mv-linha); background:var(--mv-sup); overflow-y:auto; min-width:0; }
+  #mvEditor .mv-painel-dentro { padding:14px; display:flex; flex-direction:column; gap:14px; }
+  #mvEditor .mv-painel-cab { display:flex; justify-content:space-between; align-items:center; gap:8px; min-height:28px; }
+  #mvEditor .mv-painel-tit { font-size:16px; font-weight:700; overflow-wrap:anywhere; }
+  #mvEditor .mv-campo { display:flex; flex-direction:column; gap:6px; min-width:0; }
+  #mvEditor .mv-rot-campo { font-size:12px; color:var(--mv-apagado); overflow-wrap:anywhere; }
+  #mvEditor .mv-rot-campo b { color:var(--mv-txt); }
+  #mvEditor .mv-seg { display:flex; flex-wrap:wrap; gap:2px; background:var(--mv-fundo); padding:3px; border-radius:10px; }
+  #mvEditor .mv-seg button { flex:1 1 0; min-width:52px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:7px 4px; border:0; background:transparent; border-radius:8px; font-size:12px; line-height:1.2; text-align:center; }
+  #mvEditor .mv-seg button:hover:not(.mv-on) { background:var(--mv-sup2); }
+  #mvEditor .mv-seg button.mv-on { background:var(--mv-acento); color:var(--mv-sobre-acento); font-weight:700; }
+  #mvEditor .mv-seg-vel button { flex:1 0 21%; min-width:44px; }
+  #mvEditor .mv-prop { display:block; border:2px solid currentColor; border-radius:2px; }
+  #mvEditor .mv-entrada { width:100%; background:var(--mv-fundo); border:1px solid var(--mv-linha); border-radius:8px; padding:8px; color:var(--mv-txt); resize:vertical; }
+  #mvEditor select.mv-entrada option { background:var(--mv-sup); }
+  #mvEditor .mv-range { width:100%; accent-color:var(--mv-acento); }
+  #mvEditor .mv-check { display:flex !important; gap:8px; align-items:center; font-size:13px; cursor:pointer; }
+  #mvEditor .mv-check input { accent-color:var(--mv-acento); width:16px; height:16px; }
+  #mvEditor .mv-duas { display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:10px; }
+  #mvEditor .mv-chips { display:grid; grid-template-columns:repeat(auto-fit, minmax(58px, 1fr)); gap:6px; }
+  #mvEditor .mv-chip-est { display:flex; flex-direction:column; align-items:center; gap:4px; padding:6px 4px; border-radius:10px; background:var(--mv-fundo); border:2px solid transparent; font-size:11px; }
+  #mvEditor .mv-chip-est.mv-on { border-color:var(--mv-sel); }
+  #mvEditor .mv-amostra { font-weight:800; font-size:16px; padding:0 6px; border-radius:4px; color:#fff; }
+  #mvEditor .mv-st-contorno { -webkit-text-stroke:1px #000; paint-order:stroke fill; background:#3b5f86; }
+  #mvEditor .mv-st-caixa { background:#000; }
+  #mvEditor .mv-st-faixa { background:var(--mv-acento); color:var(--mv-sobre-acento); width:100%; text-align:center; }
+  #mvEditor .mv-st-sombra { text-shadow:2px 2px 0 #000; background:#3b5f86; }
+  #mvEditor .mv-cores { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  #mvEditor .mv-bolinha { display:inline-block; width:28px; height:28px; border-radius:50%; border:2px solid var(--mv-linha); padding:0; position:relative; }
+  #mvEditor .mv-bolinha.mv-on { outline:3px solid var(--mv-sel); outline-offset:2px; }
+  #mvEditor .mv-outra { display:inline-flex !important; align-items:center; justify-content:center; background:conic-gradient(red, yellow, lime, aqua, blue, magenta, red); color:#fff; font-weight:800; text-shadow:0 0 3px #000; cursor:pointer; overflow:hidden; }
+  #mvEditor .mv-outra input { position:absolute; inset:0; opacity:0; cursor:pointer; }
+  #mvEditor .mv-linha-bts { display:flex; flex-wrap:wrap; gap:6px; }
+  #mvEditor .mv-nota { font-size:12px; color:var(--mv-apagado); line-height:1.5; }
+  #mvEditor .mv-resumo { font-size:12px; color:var(--mv-apagado); background:var(--mv-fundo); border-radius:8px; padding:8px 10px; }
+
+  #mvEditor .mv-acoes { flex:none; display:flex; align-items:center; justify-content:center; gap:2px; padding:4px 8px; border-top:1px solid var(--mv-linha); background:var(--mv-sup); overflow-x:auto; }
+  #mvEditor .mv-ferr { display:flex; flex-direction:column; align-items:center; gap:1px; min-width:54px; padding:4px 6px; background:transparent; border:0; border-radius:8px; font-size:11px; color:var(--mv-apagado); white-space:nowrap; flex:none; }
+  #mvEditor .mv-ferr:hover:not(:disabled) { background:var(--mv-sup2); color:var(--mv-txt); }
+  #mvEditor .mv-ferr-ic { font-size:17px; color:var(--mv-txt); line-height:1.25; }
+  #mvEditor .mv-sep { width:1px; height:28px; background:var(--mv-linha); margin:0 6px; flex:none; }
+
+  #mvEditor .mv-linha { flex:none; display:flex; border-top:1px solid var(--mv-linha); background:var(--mv-fundo); }
+  #mvEditor .mv-rotulos { flex:none; width:58px; border-right:1px solid var(--mv-linha); background:var(--mv-sup); }
+  #mvEditor .mv-r0 { height:22px; }
+  #mvEditor .mv-rot { margin:4px 0; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:16px; line-height:1; }
+  #mvEditor .mv-rot small { font-size:10px; color:var(--mv-apagado); margin-top:3px; }
+  #mvEditor .mv-r1 { height:64px; } #mvEditor .mv-r2 { height:40px; }
+  #mvEditor .mv-rolagem { flex:1; min-width:0; overflow-x:auto; overflow-y:hidden; padding-bottom:6px; }
+  #mvEditor .mv-trilho { position:relative; user-select:none; -webkit-user-select:none; }
+  #mvEditor .mv-regua { height:22px; position:relative; border-bottom:1px solid var(--mv-linha); cursor:pointer; touch-action:none; }
+  #mvEditor .mv-tic { position:absolute; top:4px; height:18px; border-left:1px solid var(--mv-linha); font-size:10px; color:var(--mv-apagado); padding-left:3px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  #mvEditor .mv-faixa { position:relative; margin:4px 0; }
+  #mvEditor .mv-f1 { height:64px; } #mvEditor .mv-f2 { height:40px; }
+  #mvEditor .mv-faixa-vazia { position:absolute; left:8px; top:0; bottom:0; display:flex; align-items:center; gap:12px; padding:0 12px; border:2px dashed var(--mv-linha); border-radius:10px; color:var(--mv-apagado); font-weight:700; white-space:nowrap; }
+  #mvEditor .mv-bloco { position:absolute; top:0; bottom:0; border-radius:8px; border:2px solid transparent; display:flex; align-items:center; gap:6px; padding:0 12px; overflow:hidden; cursor:grab; touch-action:none; color:#fff; background-color:#2563c9; background-repeat:repeat-x; background-size:auto 100%; min-width:6px; }
+  #mvEditor .mv-com-img::before { content:''; position:absolute; inset:0; background:linear-gradient(90deg, rgba(0,0,0,.55), rgba(0,0,0,.15) 60%); pointer-events:none; }
+  #mvEditor .mv-b-textos { background-color:var(--mv-sel); color:#1a1a1a; font-weight:700; }
+  #mvEditor .mv-b-audios { background-color:var(--mv-verde); }
+  #mvEditor .mv-bloco.mv-sel { border-color:var(--mv-sel); box-shadow:0 0 0 1px var(--mv-sel); z-index:2; }
+  #mvEditor .mv-b-textos.mv-sel { border-color:#fff; box-shadow:0 0 0 2px var(--mv-sel); }
+  #mvEditor .mv-bloco-nome { position:relative; flex:1 1 auto; min-width:0; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; pointer-events:none; text-shadow:0 1px 2px rgba(0,0,0,.5); }
+  #mvEditor .mv-b-textos .mv-bloco-nome { text-shadow:none; }
+  #mvEditor .mv-chip { position:relative; flex:none; font-size:10px; padding:1px 5px; border-radius:6px; background:rgba(0,0,0,.4); color:#fff; pointer-events:none; white-space:nowrap; }
+  #mvEditor .mv-alca { position:absolute; top:0; bottom:0; width:10px; cursor:ew-resize; z-index:3; }
+  #mvEditor .mv-alca::after { content:''; position:absolute; top:22%; bottom:22%; left:3px; width:4px; border-radius:2px; background:rgba(255,255,255,.55); }
+  #mvEditor .mv-sel .mv-alca { background:var(--mv-sel); }
+  #mvEditor .mv-sel .mv-alca::after { background:#1a1a1a; }
   #mvEditor .mv-alca-e { left:0; } #mvEditor .mv-alca-d { right:0; }
-  #mvEditor .mv-fim { position:absolute; top:22px; bottom:0; width:0; border-left:2px dashed #a0aec0; pointer-events:none; }
-  #mvEditor .mv-agulha { position:absolute; top:0; bottom:0; left:0; width:2px; background:#e53e3e; pointer-events:none; z-index:4; }
-  #mvEditor .mv-agulha-cab { position:absolute; top:0; left:-6px; width:14px; height:12px; background:#e53e3e; border-radius:0 0 7px 7px; }
-  #mvEditor .mv-dica { font-size:11.5px; color:#7a869a; margin-top:6px; }
-  #mvEditor .mv-exp { margin-top:12px; border:1px solid #cdd5e1; border-radius:8px; padding:12px; background:#f7f9fc; font-size:13px; }
-  #mvEditor .mv-pronto { background:#f0fff4; border-color:#9ae6b4; }
-  #mvEditor .mv-erro { margin-top:12px; border:1px solid #feb2b2; background:#fff5f5; color:#9b2c2c; border-radius:8px; padding:12px; font-size:13px; }
-  .mv-aviso { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#1c2536; color:#fff; padding:10px 16px; border-radius:8px; font-size:13px; z-index:9000; max-width:90vw; transition:opacity .3s; pointer-events:none; box-shadow:0 6px 18px rgba(0,0,0,.25); }
+  #mvEditor .mv-fim { position:absolute; top:22px; bottom:0; width:0; border-left:2px dashed #6b7385; pointer-events:none; }
+  #mvEditor .mv-agulha { position:absolute; top:0; bottom:0; left:0; width:2px; background:var(--mv-verm); pointer-events:none; z-index:5; }
+  #mvEditor .mv-agulha-cab { position:absolute; top:0; left:-6px; width:14px; height:14px; background:var(--mv-verm); border-radius:3px 3px 50% 50%; }
+
+  #mvEditor .mv-alca-folha { width:40px; height:5px; border-radius:3px; background:var(--mv-linha); margin:8px auto 0; cursor:pointer; }
+  #mvEditor .mv-cortina { display:none; }
+
+  #mvEditor .mv-janela-fundo { position:fixed; inset:0; z-index:995; background:rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center; padding:16px; }
+  #mvEditor .mv-janela { width:min(520px, 100%); max-height:calc(100dvh - 32px); overflow:auto; background:var(--mv-sup); border:1px solid var(--mv-linha); border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:12px; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+  #mvEditor .mv-jan-tit { font-size:16px; font-weight:700; }
+  #mvEditor .mv-pronto { color:#5be49b; }
+  #mvEditor .mv-barra-fundo { background:var(--mv-fundo); border-radius:99px; height:8px; overflow:hidden; }
+  #mvEditor #mvBarra { background:var(--mv-acento); height:100%; transition:width .25s; }
+  #mvEditor .mv-video-final { width:100%; max-height:45dvh; border-radius:8px; background:#000; }
+  #mvEditor .mv-erro { border:1px solid #7a2b2e; background:#3a1618; color:#ffb4b6; border-radius:8px; padding:10px 12px; font-size:13px; }
+
+  @media (max-width: 767px) {
+    #mvEditor { overflow-y:auto; }
+    #mvEditor .mv-some-cel { display:none !important; }
+    #mvEditor .mv-so-cel, #mvEditor .mv-add-bt.mv-so-cel { display:flex !important; }
+    #mvEditor .mv-alca-folha.mv-so-cel { display:block !important; }
+    #mvEditor .mv-topo { height:48px; padding:0 8px; }
+    #mvEditor .mv-titulo { font-size:14px; }
+    #mvEditor .mv-principal { display:flex; flex-direction:column; flex:none; }
+    #mvEditor .mv-centro { order:1; padding:8px; }
+    #mvEditor .mv-palco { flex:none; container-type:inline-size; }
+    #mvEditor .mv-quadro { width:min(100%, 52dvh * var(--mv-arn, 1.7778)); }
+    #mvEditor .mv-add { order:2; flex-direction:row; overflow-x:auto; border:0; border-top:1px solid var(--mv-linha); padding:6px 8px; gap:6px; }
+    #mvEditor .mv-add-bt { flex:none; flex-direction:row; padding:7px 10px; border-radius:99px; font-size:12.5px; white-space:nowrap; }
+    #mvEditor .mv-add-ic { font-size:16px; }
+    #mvEditor .mv-acoes { justify-content:flex-start; }
+    #mvEditor .mv-painel { position:fixed; left:0; right:0; bottom:0; max-height:60dvh; border:0; border-top:1px solid var(--mv-linha); border-radius:18px 18px 0 0; transform:translateY(105%); transition:transform .25s ease; z-index:993; box-shadow:0 -10px 40px #000; }
+    #mvEditor .mv-painel.mv-aberta { transform:translateY(0); }
+    #mvEditor .mv-cortina.mv-aberta { display:block; position:fixed; inset:0; z-index:992; background:rgba(0,0,0,.35); }
+  }
+  .mv-aviso { position:fixed; left:50%; top:62px; transform:translateX(-50%); background:#1c2536; color:#fff; padding:10px 16px; border-radius:8px; font-size:13px; z-index:100050; max-width:90vw; transition:opacity .3s; pointer-events:none; box-shadow:0 6px 18px rgba(0,0,0,.35); border:1px solid #343a46; }
 </style>`;
 
 // ---------------------------------------------------------------------------
@@ -1150,5 +1360,9 @@ window.mvMoverClipe = moverClipeSel;
 window.mvSelecionar = selecionar;
 window.mvExportar = exportar;
 window.mvCancelarExportacao = cancelarExportacao;
+window.mvFecharExport = fecharExport;
+window.mvAbrirAjustes = abrirAjustes;
+window.mvFecharAjustes = fecharAjustes;
+window.mvAjuda = ajuda;
 
 })();
