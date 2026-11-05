@@ -7780,13 +7780,13 @@ function renderDocumentosHistorico() {
         container.innerHTML = `
             <div class="empty-state">
                 <p>Nenhum documento gerado ainda.</p>
-                <p style="font-size:12px; color:#5f6b7f;">Plano de Aula, Agenda Mensal, Anexo III - PAEE e Anexo IV ficam registrados aqui conforme você os gera pelo "✨ Estagiário".</p>
+                <p style="font-size:12px; color:#5f6b7f;">Plano de Aula, Agenda Mensal, Anexo III - PAEE, Anexo IV e Documento em branco ficam registrados aqui conforme você os gera pelo "✨ Estagiário".</p>
             </div>`;
         return;
     }
 
-    const icones = { plano_aula: '📝', agenda_mensal: '📅', anexo3_paee: '📋', anexo4_pei: '📘', anexo4_dua: '📘' };
-    const nomesTipo = { plano_aula: 'Plano de Aula', agenda_mensal: 'Agenda Mensal', anexo3_paee: 'Anexo III - PAEE', anexo4_pei: 'Anexo IV - PEI', anexo4_dua: 'Anexo IV (novo modelo)' };
+    const icones = { plano_aula: '📝', agenda_mensal: '📅', anexo3_paee: '📋', anexo4_pei: '📘', anexo4_dua: '📘', doc_branco: '📄' };
+    const nomesTipo = { plano_aula: 'Plano de Aula', agenda_mensal: 'Agenda Mensal', anexo3_paee: 'Anexo III - PAEE', anexo4_pei: 'Anexo IV - PEI', anexo4_dua: 'Anexo IV (novo modelo)', doc_branco: 'Documento em branco' };
 
     // Agrupa por mês pra o histórico continuar legível quando o ano avança.
     const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -7815,6 +7815,9 @@ function renderDocumentosHistorico() {
                         ${h.tipo === 'anexo4_pei' && h.refTutoradoId && h.refAnexoId ? `<button class="btn btn-sm btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${h.refTutoradoId}, ${h.refAnexoId}, 'pdf')">📄 PDF</button>
                             <button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${h.refTutoradoId}, ${h.refAnexoId})">🖨️ Reimprimir</button>` : ''}
                         ${h.tipo === 'anexo4_dua' && h.payload ? `<button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="abrirAnexo4DuaHistorico('${escapeAttrEstagiario(h.id)}')">📋 Abrir e copiar</button>` : ''}
+                        ${h.tipo === 'doc_branco' && h.payload ? `<button class="btn btn-sm btn-primary" style="padding:4px 10px; font-size:12px;" onclick="abrirDocBrancoHistorico('${escapeAttrEstagiario(h.id)}')">✏️ Abrir</button>
+                            <button class="btn btn-sm btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="reimprimirDocBrancoHistorico('${escapeAttrEstagiario(h.id)}', 'pdf')">📄 PDF</button>
+                            <button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirDocBrancoHistorico('${escapeAttrEstagiario(h.id)}')">🖨️ Reimprimir</button>` : ''}
                         ${h.tipo === 'anexo3_paee' && h.refTutoradoId ? `<button class="btn btn-sm btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoPaeeSalvo(${h.refTutoradoId}, 'pdf')">📄 PDF</button>
                             <button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoPaeeSalvo(${h.refTutoradoId})">🖨️ Reimprimir</button>` : ''}
                     </div>

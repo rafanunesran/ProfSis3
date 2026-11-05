@@ -972,6 +972,7 @@ async function abrirModalGerarDocumentoIA() {
     const opcoesTipoDocHtml = `
         <option value="plano_aula">Plano de Aula</option>
         <option value="agenda_mensal">📅 Agenda Mensal</option>
+        <option value="doc_branco">📄 Documento em branco</option>
         ${isAeeView ? '<option value="anexo3_paee">📋 Anexo III - PAEE</option>' : ''}
         ${isProfessorOuAeeView ? '<option value="anexo4_dua">📘 Anexo IV (novo modelo)</option>' : ''}
         ${isProfessorOuAeeView ? '<option value="anexo4_pei">📘 Anexo IV - PEI (modelo antigo)</option>' : ''}
@@ -1116,6 +1117,14 @@ async function abrirModalGerarDocumentoIA() {
                         </div>
                         <p style="font-size:11px; color:#5f6b7f; margin-bottom:5px;">Você pode modificar com seu prompt pessoal ou usar o nativo</p>
                         <textarea id="iaDocPrompt" rows="6" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px; font-family:monospace; font-size:11px; line-height:1.4;" onchange="localStorage.setItem('ia_prompt_template', this.value)"></textarea>
+                    </div>
+                </div>
+
+                <div id="camposDocBranco" style="display:none;">
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Título do documento (vai no cabeçalho):</label>
+                        <input type="text" id="docBrancoTitulo" maxlength="120" placeholder="Ex.: Comunicado, Ofício, Relatório, Declaração" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
+                        <p style="font-size:11px; color:#5f6b7f; margin:4px 0 0 0;">Sai com o mesmo cabeçalho da escola do Plano de Aula. No corpo, só o texto que você digitar - sem IA. Fica guardado em Documentos › Histórico.</p>
                     </div>
                 </div>
 
@@ -1410,13 +1419,16 @@ function toggleTipoDocumentoIA() {
     const isAnexoPaee = tipo === 'anexo3_paee';
     const isAnexoIV = tipo === 'anexo4_pei';
     const isAnexo4Dua = tipo === 'anexo4_dua';
+    const isDocBranco = tipo === 'doc_branco';
 
     const campoSemana = document.getElementById('campoSemanaVigente');
-    if (campoSemana) campoSemana.style.display = (isAgenda || isAnexoPaee || isAnexoIV || isAnexo4Dua) ? 'none' : '';
+    if (campoSemana) campoSemana.style.display = (isAgenda || isAnexoPaee || isAnexoIV || isAnexo4Dua || isDocBranco) ? 'none' : '';
     const campoMesAno = document.getElementById('campoMesAnoAgenda');
     if (campoMesAno) campoMesAno.style.display = isAgenda ? 'block' : 'none';
     const camposPlano = document.getElementById('camposPlanoAula');
-    if (camposPlano) camposPlano.style.display = (isAgenda || isAnexoPaee || isAnexoIV || isAnexo4Dua) ? 'none' : '';
+    if (camposPlano) camposPlano.style.display = (isAgenda || isAnexoPaee || isAnexoIV || isAnexo4Dua || isDocBranco) ? 'none' : '';
+    const camposDocBranco = document.getElementById('camposDocBranco');
+    if (camposDocBranco) camposDocBranco.style.display = isDocBranco ? '' : 'none';
     const camposAnexo = document.getElementById('camposAnexoPaee');
     if (camposAnexo) camposAnexo.style.display = isAnexoPaee ? '' : 'none';
     const camposAnexoIV = document.getElementById('camposAnexoIV');
@@ -1425,11 +1437,11 @@ function toggleTipoDocumentoIA() {
     if (camposAnexo4Dua) camposAnexo4Dua.style.display = isAnexo4Dua ? '' : 'none';
 
     const btn = document.getElementById('btnGerarDocumentoIA');
-    if (btn) btn.textContent = isAgenda ? '🖨️ Gerar e Imprimir Agenda' : (isAnexo4Dua ? '✨ Gerar Anexo IV' : 'Gerar Estrutura');
+    if (btn) btn.textContent = isAgenda ? '🖨️ Gerar e Imprimir Agenda' : (isAnexo4Dua ? '✨ Gerar Anexo IV' : (isDocBranco ? '📝 Abrir documento' : 'Gerar Estrutura'));
     // A Agenda Mensal já é um preenchimento mecânico da grade (não passa pela IA nem pela tela de
     // revisão), então não existe versão "manual" dela pra oferecer.
     const btnManual = document.getElementById('btnGerarDocumentoManual');
-    if (btnManual) btnManual.style.display = isAgenda ? 'none' : '';
+    if (btnManual) btnManual.style.display = (isAgenda || isDocBranco) ? 'none' : '';
     // Só a Agenda sai direto daqui; os outros documentos ganham o "📄 PDF" na tela de revisão.
     const btnPdf = document.getElementById('btnGerarAgendaPdf');
     if (btnPdf) btnPdf.style.display = isAgenda ? '' : 'none';
@@ -2113,6 +2125,7 @@ async function gerarDocumentoIA() {
     if (tipo === 'anexo3_paee') return gerarAnexoPaeeEstagiario();
     if (tipo === 'anexo4_pei') return gerarAnexoIVEstagiario();
     if (tipo === 'anexo4_dua') return gerarAnexo4DuaEstagiario();
+    if (tipo === 'doc_branco') return gerarDocBrancoEstagiario();
 
     const form = coletarFormularioPlanoAulaEstagiario();
     if (!form) return;
@@ -2493,6 +2506,7 @@ async function gerarDocumentoManualEstagiario() {
     const tipo = document.getElementById('iaDocTipo').value;
     if (tipo === 'agenda_mensal') return alert('A Agenda Mensal já é montada direto da sua grade horária, sem IA - use o botão "🖨️ Gerar e Imprimir Agenda".');
     if (tipo === 'anexo4_dua') return gerarAnexo4DuaManual();
+    if (tipo === 'doc_branco') return gerarDocBrancoEstagiario();
 
     let form = null;
     let anterior = null;
@@ -4353,4 +4367,213 @@ function abrirAnexo4DuaHistorico(id) {
     const h = (data.historicoDocumentos || []).find(x => x && String(x.id) === String(id));
     if (!h || !h.payload) return alert('O texto deste Anexo IV não está mais guardado (só os mais recentes ficam com o texto).');
     abrirModalAnexo4Dua(h.payload, h.id);
+}
+
+// ===================================================================================================
+// DOCUMENTO EM BRANCO (texto livre com o cabeçalho da escola)
+// ===================================================================================================
+// Para os documentos avulsos (comunicado, ofício, relatório, declaração...): sai com o mesmo cabeçalho
+// do Plano de Aula (logo do Estado, Unidade Regional, nome da escola, e-mail/endereço/telefone, logo
+// da escola) e, no corpo, só o texto que o professor digitou. Não usa IA.
+// Fica no histórico de documentos do professor (data.historicoDocumentos, que vai cifrado para a
+// nuvem) com o texto, para reabrir, continuar editando, baixar em PDF ou imprimir de novo.
+
+const MAX_DOC_BRANCO_COM_TEXTO_HISTORICO = 40;
+const TITULO_PADRAO_DOC_BRANCO = 'DOCUMENTO';
+
+// Só o título, que vai no cabeçalho (onde o Plano de Aula escreve "PLANO DE AULA").
+function coletarFormularioDocBranco() {
+    const campo = document.getElementById('docBrancoTitulo');
+    return { titulo: campo ? campo.value.trim() : '' };
+}
+
+// Botão "📝 Abrir documento" do Estagiário: abre a tela de digitar, em branco.
+function gerarDocBrancoEstagiario() {
+    const form = coletarFormularioDocBranco();
+    closeModal('modalGerarDocumentoIA');
+    abrirModalDocBranco({ titulo: form.titulo, texto: '' }, '');
+}
+
+function escapeTextoDocBranco(texto) {
+    // Cada linha vira um parágrafo (o PDF não corta um parágrafo ao meio entre duas folhas); linha em
+    // branco vira espaço. Espaços seguidos no começo da linha (recuo) são mantidos.
+    return String(texto || '').replace(/\r\n?/g, '\n').split('\n').map(linha => {
+        if (!linha.trim()) return '<p class="doc-linha doc-vazia">&nbsp;</p>';
+        return `<p class="doc-linha">${escapeHtmlEstagiario(linha)}</p>`;
+    }).join('\n');
+}
+
+async function montarHtmlDocBranco(payload) {
+    const cfg = await carregarConfigsDocumentoEstagiario();
+    const titulo = String((payload && payload.titulo) || '').trim() || TITULO_PADRAO_DOC_BRANCO;
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Documento</title>
+<style>
+    @page { size: A4 portrait; margin: 15mm; }
+    body { font-family: Arial, sans-serif; font-size: 12pt; margin: 0; padding: 0; color: #000; }
+    .header-table { border: none; width: 100%; border-collapse: collapse; margin-bottom: 18px; }
+    .header-table td { border: none; text-align: center; vertical-align: middle; padding: 4px; }
+    .header-left { text-align: left; width: 160px; }
+    .header-right { text-align: right; width: 110px; }
+    .header-center { font-weight: bold; font-size: 12pt; }
+    .header-sub { font-weight: normal; font-size: 9pt; margin-top: 3px; }
+    .doc-corpo { line-height: 1.5; text-align: justify; }
+    .doc-linha { margin: 0; white-space: pre-wrap; word-wrap: break-word; }
+</style>
+</head>
+<body>
+    <table class="header-table">
+        <tr>
+            <td class="header-left"><img src="{{LOGO_ESTADO}}" style="max-width: 150px; max-height: 70px;"></td>
+            <td class="header-center">UNIDADE REGIONAL DE ENSINO - ${escapeHtmlEstagiario(cfg.regiao)}<br>${escapeHtmlEstagiario(cfg.nomeCompletoEscola)}<br>${escapeHtmlEstagiario(titulo.toUpperCase())}<div class="header-sub">${escapeHtmlEstagiario(cfg.emailEscola)}<br>${escapeHtmlEstagiario(cfg.enderecoEscola)}<br>Fone: ${escapeHtmlEstagiario(cfg.telefoneEscola)}</div></td>
+            <td class="header-right"><img src="{{LOGO_ESCOLA}}" style="max-width: 100px; max-height: 70px;"></td>
+        </tr>
+    </table>
+    <div class="doc-corpo">
+${escapeTextoDocBranco(payload && payload.texto)}
+    </div>
+</body>
+</html>`
+        .replace('{{LOGO_ESTADO}}', () => cfg.logoEstado)
+        .replace('{{LOGO_ESCOLA}}', () => cfg.logoEscola);
+    const professor = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.nome : '';
+    return definirTituloPdfEstagiario(html, `${sanitizarNomeArquivoEstagiario(titulo) || 'Documento'}_${sanitizarNomeArquivoEstagiario(professor)}_${getTodayString()}`);
+}
+
+function salvarDocBrancoNoHistorico(payload, idExistente) {
+    const titulo = String(payload.titulo || '').trim();
+    const texto = String(payload.texto || '');
+    const primeiraLinha = (texto.split('\n').find(l => l.trim()) || '').trim();
+    const registro = registrarDocumentoNoHistoricoProfessor({
+        tipo: 'doc_branco',
+        titulo: titulo || 'Documento em branco',
+        subtitulo: primeiraLinha.length > 90 ? primeiraLinha.slice(0, 90) + '…' : primeiraLinha,
+        payload: { titulo, texto }
+    }, idExistente);
+    // Mantém o texto só dos mais recentes, para o histórico não crescer sem limite.
+    try {
+        let comTexto = 0;
+        (data.historicoDocumentos || []).forEach(h => {
+            if (!h || h.tipo !== 'doc_branco' || !h.payload) return;
+            comTexto++;
+            if (comTexto > MAX_DOC_BRANCO_COM_TEXTO_HISTORICO) { delete h.payload; h.textoArquivado = true; }
+        });
+    } catch (_) { /* só poda */ }
+    return registro;
+}
+
+function abrirModalDocBranco(payload, historicoId) {
+    let modal = document.getElementById('modalDocBranco');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modalDocBranco';
+        modal.className = 'modal';
+        document.body.appendChild(modal);
+    }
+    modal.dataset.historicoId = historicoId || '';
+    modal.dataset.alterado = '';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 760px;">
+            <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e3e8ef; padding-bottom:10px; margin-bottom:12px;">
+                <h2 style="margin:0; font-size:20px;">📄 Documento em branco</h2>
+                <button class="btn btn-sm btn-danger" style="padding:2px 8px;" onclick="fecharModalDocBranco()">×</button>
+            </div>
+            <p style="margin:0 0 10px 0; font-size:12px; color:#5f6b7f;">Sai com o cabeçalho da escola (o mesmo do Plano de Aula) e o texto abaixo. ${historicoId ? 'Está guardado em Documentos › Histórico.' : 'Ao salvar, baixar ou imprimir, ele fica guardado em Documentos › Histórico.'}</p>
+            <label style="font-weight:bold; display:block; margin-bottom:5px;">Título (vai no cabeçalho):</label>
+            <input type="text" id="docBrancoTituloEdicao" maxlength="120" placeholder="Ex.: Comunicado, Ofício, Relatório" value="${escapeAttrEstagiario(payload.titulo || '')}" oninput="marcarAlteradoDocBranco()" style="width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px; margin-bottom:12px;">
+            <label style="font-weight:bold; display:block; margin-bottom:5px;">Texto:</label>
+            <textarea id="docBrancoTexto" rows="16" placeholder="Digite aqui o documento..." oninput="marcarAlteradoDocBranco()" style="width:100%; min-height:45vh; padding:10px; border:1px solid #cdd5e1; border-radius:4px; font-family:Arial, sans-serif; font-size:14px; line-height:1.5; resize:vertical;">${escapeHtmlEstagiario(payload.texto || '')}</textarea>
+            <div style="margin-top:14px; display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap;">
+                <button class="btn btn-secondary" onclick="fecharModalDocBranco()">Fechar</button>
+                ${botoesSaidaRevisaoEstagiario('exportarDocBrancoEstagiario')}
+            </div>
+        </div>`;
+    showModal('modalDocBranco');
+    const caixa = document.getElementById('docBrancoTexto');
+    if (caixa) setTimeout(() => { try { caixa.focus(); } catch (_) {} }, 50);
+}
+
+function marcarAlteradoDocBranco() {
+    const modal = document.getElementById('modalDocBranco');
+    if (modal) modal.dataset.alterado = '1';
+}
+
+function lerTelaDocBranco() {
+    const t = document.getElementById('docBrancoTituloEdicao');
+    const x = document.getElementById('docBrancoTexto');
+    return { titulo: t ? t.value.trim() : '', texto: x ? x.value : '' };
+}
+
+// 'salvar' só guarda; 'pdf' baixa; 'imprimir' abre a impressão. Os três guardam (ou atualizam) o
+// mesmo registro no histórico.
+async function exportarDocBrancoEstagiario(acao) {
+    acao = acao || 'imprimir';
+    const modal = document.getElementById('modalDocBranco');
+    if (!modal) return;
+    const payload = lerTelaDocBranco();
+    if (!payload.texto.trim()) return alert('Digite o texto do documento antes.');
+
+    travarBotoesSaidaEstagiario('modalDocBranco', true, acao);
+    try {
+        const registro = salvarDocBrancoNoHistorico(payload, modal.dataset.historicoId || '');
+        if (registro) modal.dataset.historicoId = registro.id;
+        modal.dataset.alterado = '';
+        if (typeof renderDocumentosHistorico === 'function' && document.getElementById('tabDocHistorico')) renderDocumentosHistorico();
+
+        if (acao === 'salvar') {
+            alert(registro ? '💾 Documento salvo em Documentos › Histórico.' : 'Não foi possível salvar no Histórico.');
+            return;
+        }
+        await saidaDocumentoEstagiario(await montarHtmlDocBranco(payload), acao);
+    } catch (e) {
+        console.error(e);
+        alert((acao === 'pdf' ? 'Erro ao gerar o PDF: ' : 'Erro ao gerar o documento: ') + e.message);
+    } finally {
+        travarBotoesSaidaEstagiario('modalDocBranco', false);
+    }
+}
+
+// Fechar guarda sozinho o que foi digitado (se tiver texto), para nada se perder.
+function fecharModalDocBranco() {
+    const modal = document.getElementById('modalDocBranco');
+    if (modal && modal.dataset.alterado === '1') {
+        const payload = lerTelaDocBranco();
+        if (payload.texto.trim()) {
+            const registro = salvarDocBrancoNoHistorico(payload, modal.dataset.historicoId || '');
+            if (registro) modal.dataset.historicoId = registro.id;
+            if (typeof renderDocumentosHistorico === 'function' && document.getElementById('tabDocHistorico')) renderDocumentosHistorico();
+        }
+    }
+    closeModal('modalDocBranco');
+}
+
+function lerDocBrancoHistorico(id) {
+    const h = (typeof data !== 'undefined' && data && Array.isArray(data.historicoDocumentos))
+        ? data.historicoDocumentos.find(x => x && String(x.id) === String(id)) : null;
+    if (!h || !h.payload) {
+        alert('O texto deste documento não está mais guardado (só os mais recentes ficam com o texto).');
+        return null;
+    }
+    return h;
+}
+
+// Documentos › Histórico: "✏️ Abrir" reabre o texto para continuar editando.
+function abrirDocBrancoHistorico(id) {
+    const h = lerDocBrancoHistorico(id);
+    if (h) abrirModalDocBranco(h.payload, h.id);
+}
+
+// Documentos › Histórico: "📄 PDF" e "🖨️ Reimprimir" direto, sem abrir a tela.
+async function reimprimirDocBrancoHistorico(id, modo) {
+    const h = lerDocBrancoHistorico(id);
+    if (!h) return;
+    try {
+        await saidaDocumentoEstagiario(await montarHtmlDocBranco(h.payload), modo);
+    } catch (e) {
+        console.error(e);
+        alert((modo === 'pdf' ? 'Erro ao gerar o PDF: ' : 'Erro ao reimprimir: ') + e.message);
+    }
 }
