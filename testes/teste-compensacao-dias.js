@@ -1,6 +1,6 @@
 // COMPENSAÇÕES: DIAS DE FALTA EMBAIXO DO NOME + MENU SATÉLITE.
 //
-// Embaixo do nome aparece "Faltou: 1/10, 7/10 (2 aulas)" com as faltas do mês de
+// Embaixo do mês de referência aparece "dia… 1, 7 (2 aulas)" com as faltas do mês
 // referência. Roda no fuso do Brasil: antes, a falta do dia 1º caía no mês anterior
 // ao gerar as compensações (new Date("AAAA-MM-DD") é meia-noite em UTC).
 const { chromium } = require('playwright');
@@ -80,9 +80,9 @@ const FAKE = () => {
 
   const ok = [
     ['falta do dia 1º conta no mês certo (fuso do Brasil)', r.comps.find(c => c.est == 1)?.qtd === 2 && r.comps.find(c => c.est == 1)?.peso === 3],
-    ['dias de falta embaixo do mês, com aula dupla', r.ana === 'Faltou: 1/10, 7/10 (2 aulas)'],
+    ['dias de falta com aula dupla', r.ana === 'dia… 1, 7 (2 aulas)'],
     ['dias ficam debaixo do mês, não do nome', r.anaDentroDoNome === false && !!r.ana],
-    ['presença não aparece como falta', r.bruno === 'Faltou: 15/10'],
+    ['presença não aparece como falta', r.bruno === 'dia… 15'],
     ['menu satélite com 6 opções, atual destacada', menu.n === 6 && menu.atual === 'pendente'],
     ['opções cabem na tela', menu.dentro],
     ['Esc fecha o menu', fechouEsc],

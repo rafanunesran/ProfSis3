@@ -5622,11 +5622,11 @@ function diasFaltaCompensacaoHtml(c) {
     const dias = diasFaltaCompensacao(c);
     if (!dias.length) return '';
     const textos = dias.map(d => {
-        const [, m, dia] = d.split('-');
+        const dia = parseInt(d.split('-')[2], 10);
         const aulas = getAulasNoDia(c.id_turma, d);
-        return `${parseInt(dia, 10)}/${parseInt(m, 10)}${aulas > 1 ? ` (${aulas} aulas)` : ''}`;
+        return `${dia}${aulas > 1 ? ` (${aulas} aulas)` : ''}`;
     });
-    return `<div class="comp-dias-falta" style="font-size:10px; color:#8a5a14; margin-top:2px;">Faltou: ${textos.join(', ')}</div>`;
+    return `<div class="comp-dias-falta" style="font-size:10px; color:#8a5a14; margin-top:2px;">dia… ${textos.join(', ')}</div>`;
 }
 
 // Menu satélite: as situações aparecem em volta do botão e o toque escolhe direto,
