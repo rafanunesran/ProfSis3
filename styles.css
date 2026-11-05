@@ -3109,3 +3109,98 @@ html.pode-instalar .btn-instalar-app {
     width: 100%;
     margin-top: 16px;
 }
+
+/* ===================== Início do professor =====================
+   Agenda do Dia (cronograma com horários fixos e tutorias), card de
+   Ferramentas e banner rotativo de Novidades (só no computador). */
+.dash-grade-topo { align-items: start; }
+.agd-lista { display: flex; flex-direction: column; gap: 6px; }
+.agd-lista > .btn, .agd-lista > .alert { margin: 0; }
+.agd-aula { width: 100%; text-align: left; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.agd-aula > span:last-child { white-space: nowrap; }
+.agd-item { border-radius: 12px; font-size: 14px; }
+.agd-livre { padding: 8px 14px; color: var(--text-4, #94a0b4); }
+.agd-fixo {
+    padding: 10px 14px; background: var(--surface-3, #eef2f7); color: var(--text-2, #3d4759);
+    border: 1px dashed var(--border-strong, #cdd5e1);
+}
+.agd-tutoria {
+    background: var(--info-soft, #e6f5f8); border: 1px solid color-mix(in srgb, var(--info, #0e7490) 30%, transparent);
+    overflow: hidden;
+}
+.agd-linha, .agd-sub {
+    width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    background: transparent; border: 0; font: inherit; text-align: left; color: var(--info-ink, #155e75);
+}
+.agd-linha { padding: 10px 14px; cursor: pointer; font-size: 14px; }
+.agd-linha > span:last-child, .agd-tutorado > span:last-child { font-weight: 700; white-space: nowrap; font-size: 13px; }
+.agd-sub { padding: 7px 14px 7px 26px; font-size: 13px; border-top: 1px solid color-mix(in srgb, var(--info, #0e7490) 18%, transparent); }
+.agd-tutorado { cursor: pointer; }
+.agd-tutorado:hover, .agd-linha:hover { background: color-mix(in srgb, var(--info, #0e7490) 10%, transparent); }
+.agd-vazio { color: var(--text-3, #5f6b7f); font-style: italic; }
+.agd-agora {
+    display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 800;
+    letter-spacing: .04em; text-transform: uppercase; background: var(--danger, #c53030); color: #fff; vertical-align: 2px;
+}
+.agd-item-agora { box-shadow: 0 0 0 2px var(--accent-ring, rgba(37,99,201,.22)); }
+
+.dash-ferr-grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.dash-ferr-item {
+    display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center;
+    text-align: left; padding: 10px 11px; border-radius: 12px; cursor: pointer; font: inherit;
+    background: var(--surface-2, #f6f8fb); border: 1px solid var(--border, #e3e8ef); color: var(--text, #1c2536);
+    transition: transform .15s, border-color .15s, box-shadow .15s, background .15s;
+}
+.dash-ferr-item:hover, .dash-ferr-item:focus-visible {
+    border-color: var(--accent, #2563c9); background: var(--accent-soft, #edf3fd);
+    transform: translateY(-2px); box-shadow: 0 6px 14px rgba(0,0,0,.07);
+}
+.dash-ferr-emoji {
+    grid-row: 1 / 3; width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; font-size: 20px;
+    background: var(--surface, #fff); box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+.dash-ferr-nome { font-weight: 700; font-size: 13.5px; line-height: 1.2; }
+.dash-ferr-desc { font-size: 11.5px; color: var(--text-3, #5f6b7f); line-height: 1.3; }
+.dash-ferr-todas { width: 100%; margin-top: 10px; }
+
+.dash-novidades {
+    position: relative; overflow: hidden;
+    background: linear-gradient(150deg, var(--accent-soft, #edf3fd), var(--surface, #fff) 70%);
+}
+.nov-topo { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.nov-topo h2 { margin: 0; }
+.nov-setas { display: flex; gap: 6px; }
+.nov-setas button, .nov-pontos button { cursor: pointer; font: inherit; }
+.nov-setas button {
+    width: 30px; height: 30px; border-radius: 999px; border: 1px solid var(--border, #e3e8ef);
+    background: var(--surface, #fff); color: var(--text-2, #3d4759); font-size: 18px; line-height: 1;
+}
+.nov-setas button:hover { border-color: var(--accent, #2563c9); color: var(--accent, #2563c9); }
+.nov-palco { position: relative; min-height: 250px; margin-top: 14px; }
+.nov-slide {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+    opacity: 0; transform: translateX(24px); pointer-events: none; transition: opacity .45s, transform .45s;
+}
+.nov-slide.ativo { opacity: 1; transform: none; pointer-events: auto; }
+.nov-emoji {
+    width: 64px; height: 64px; border-radius: 18px; display: grid; place-items: center; font-size: 34px;
+    background: var(--surface, #fff); box-shadow: 0 6px 18px rgba(0,0,0,.08);
+}
+.nov-selo {
+    font-size: 10px; font-weight: 800; letter-spacing: .08em; padding: 2px 8px; border-radius: 999px;
+    background: var(--accent, #2563c9); color: var(--on-accent, #fff);
+}
+.nov-titulo { margin: 0; font-size: 18px; color: var(--text, #1c2536); }
+.nov-texto { margin: 0 0 6px; font-size: 13.5px; line-height: 1.5; color: var(--text-2, #3d4759); }
+.nov-pontos { display: flex; gap: 6px; justify-content: center; margin-top: 10px; }
+.nov-pontos button {
+    width: 8px; height: 8px; padding: 0; border: 0; border-radius: 999px; background: var(--border-strong, #cdd5e1);
+    transition: width .2s, background .2s;
+}
+.nov-pontos button.ativo { width: 22px; background: var(--accent, #2563c9); }
+/* "No modo PC sobra um espaço ao lado": o banner só aparece quando cabe ao lado dos outros dois. */
+@media (max-width: 1100px) { .dash-novidades { display: none; } }
+@media (prefers-reduced-motion: reduce) { .nov-slide { transition: none; } }
+@media (min-width: 1101px) {
+    .dash-grade-topo { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.15fr) minmax(0, 0.9fr); }
+}

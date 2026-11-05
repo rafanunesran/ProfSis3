@@ -1273,6 +1273,233 @@ function getFaltaBadgeHtml(estudanteId, dateStr) {
 }
 
 // --- DASHBOARD ---
+// ---------------------------------------------------------------------------------------
+// INÍCIO DO PROFESSOR: Agenda do Dia, card de Ferramentas e banner de Novidades
+// ---------------------------------------------------------------------------------------
+
+// Nomes dos horários fixos que a gestão marca na grade (Café, Almoço, Tutoria...). A lista
+// de verdade vem da escola (gestorData.tiposHorarioFixo); esta é só a reserva para escola
+// antiga que ainda não salvou a lista — os mesmos nomes padrão do gestor.js.
+const TIPOS_HORARIO_FIXO_PADRAO = {
+    tutoria: '🎓 Tutoria', almoco: '🍽️ Almoço', cafe: '☕ Café', atpca: '📚 ATPCA',
+    apcg: '📝 APCG', reuniao: '🤝 Reunião', evento: '⭐ Evento / atividade especial'
+};
+
+function escDash(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function nomeHorarioFixo(tipo, tiposFixos) {
+    const t = (tiposFixos || []).find(x => x.id === tipo);
+    if (t && t.nome) return t.nome;
+    return TIPOS_HORARIO_FIXO_PADRAO[tipo] || String(tipo).toUpperCase();
+}
+
+// Monta a "Agenda do Dia": cada horário da grade de hoje vira uma linha, e as tutorias
+// agendadas para hoje entram no mesmo cronograma. Antes, horário fixo (café, almoço,
+// tutoria marcada pela gestão) aparecia como "Livre" e as tutorias ficavam num card à parte.
+//   - horário fixo da gestão  -> o nome do evento (☕ Café, 🍽️ Almoço...) + o rótulo, se houver;
+//   - horário de tutoria      -> "🎓 Tutoria" e, logo abaixo, cada estudante agendado com "Registrar";
+//   - tutoria agendada fora de qualquer horário da grade -> entra na hora dela, na ordem.
+function montarAgendaDoDiaHtml(blocosHoje, minhasAulas, agendamentosHoje, tiposFixos, ehExcecao) {
+    const agora = new Date();
+    const hhmm = String(agora.getHours()).padStart(2, '0') + ':' + String(agora.getMinutes()).padStart(2, '0');
+    const ehAgora = (ini, fim) => !!(ini && fim && ini <= hhmm && hhmm < fim);
+    const seloAgora = (ini, fim) => ehAgora(ini, fim) ? '<span class="agd-agora">agora</span>' : '';
+    const tutorados = data.tutorados || [];
+    const usados = new Set();
+
+    const linhasTutorados = (ini, fim) => {
+        const doHorario = agendamentosHoje.filter(a => !usados.has(a) && a.inicio && a.inicio >= ini && a.inicio < (fim || ini + '~'));
+        doHorario.forEach(a => usados.add(a));
+        if (!doHorario.length) return '<div class="agd-sub agd-vazio">Nenhum estudante agendado neste horário.</div>';
+        return doHorario.map(a => {
+            const t = tutorados.find(x => x.id == a.tutoradoId);
+            return `<button type="button" class="agd-sub agd-tutorado" onclick="registrarEncontroAtalho(${JSON.stringify(a.tutoradoId)})">
+                <span>👤 ${a.inicio !== ini ? a.inicio + ' · ' : ''}${escDash(t ? t.nome_estudante : 'Estudante removido')}</span><span>📝 Registrar</span></button>`;
+        }).join('');
+    };
+
+    const linhaTutoria = (ini, fim, rotulo) => `
+        <div class="agd-item agd-tutoria${ehAgora(ini, fim) ? ' agd-item-agora' : ''}">
+            <button type="button" class="agd-linha" onclick="showScreen('tutoria')">
+                <span><strong>${ini}</strong> - ${escDash(rotulo)}${seloAgora(ini, fim)}</span><span>Tutoria →</span>
+            </button>
+            ${linhasTutorados(ini, fim)}
+        </div>`;
+
+    const itens = (blocosHoje || []).map(bloco => {
+        const ini = bloco.inicio, fim = bloco.fim;
+        const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
+        const rotuloGestor = bloco.label ? ' · ' + bloco.label : '';
+
+        // Horário fixo da gestão: vale o que a gestão marcou (a Minha Agenda mostra o cadeado).
+        if (bloco.tipo) {
+            const nome = nomeHorarioFixo(bloco.tipo, tiposFixos) + rotuloGestor;
+            if (bloco.tipo === 'tutoria') return { ini, html: linhaTutoria(ini, fim, nome) };
+            return { ini, html: `<div class="agd-item agd-fixo${ehAgora(ini, fim) ? ' agd-item-agora' : ''}">
+                <span><strong>${ini}</strong>${fim ? '–' + fim : ''} · ${escDash(nome)}${seloAgora(ini, fim)}</span></div>` };
+        }
+        if (!aula) {
+            return { ini, html: `<div class="agd-item agd-livre"><span>${ini} - Livre${escDash(rotuloGestor)}</span></div>` };
+        }
+        if (aula.tipo === 'aula' && aula.id_turma) {
+            const turma = (data.turmas || []).find(t => t.id == aula.id_turma);
+            return { ini, html: `<button class="btn btn-primary agd-aula${ehAgora(ini, fim) ? ' agd-item-agora' : ''}" onclick="abrirTurma(${JSON.stringify(aula.id_turma)})">
+                <span><strong>${ini}</strong> - ${escDash(turma ? turma.nome + (turma.disciplina ? ' · ' + turma.disciplina : '') : 'Turma Removida')}${seloAgora(ini, fim)}</span>
+                <span>Ir para Turma →</span></button>` };
+        }
+        if (aula.tipo === 'tutoria') return { ini, html: linhaTutoria(ini, fim, '🎓 Tutoria') };
+        // Estudo, Reunião, APCG, etc. (escolhidos pelo professor na Minha Agenda)
+        return { ini, html: `<div class="alert alert-info agd-outro">
+            <strong>${ini}</strong> - ${escDash(String(aula.tipo || '').toUpperCase())} ${aula.tema ? '(' + escDash(aula.tema) + ')' : ''}</div>` };
+    });
+
+    // Tutorias agendadas que não caíram em nenhum horário de tutoria da grade.
+    agendamentosHoje.filter(a => !usados.has(a)).forEach(a => {
+        const t = tutorados.find(x => x.id == a.tutoradoId);
+        itens.push({ ini: a.inicio || '', html: `<div class="agd-item agd-tutoria">
+            <button type="button" class="agd-linha" onclick="registrarEncontroAtalho(${JSON.stringify(a.tutoradoId)})">
+                <span><strong>${a.inicio || ''}</strong> - 🎓 Tutoria · ${escDash(t ? t.nome_estudante : 'Estudante removido')}${seloAgora(a.inicio, a.fim)}</span><span>📝 Registrar</span>
+            </button></div>` });
+    });
+
+    if (!itens.length) return '<p class="empty-state">Sem grade configurada para hoje.</p>';
+    itens.sort((a, b) => String(a.ini).localeCompare(String(b.ini)));
+    return (ehExcecao ? '<div class="alert alert-warning" style="margin-bottom:10px; font-size:12px;">⚠️ Horário Especial Definido pela Gestão</div>' : '')
+        + '<div class="agd-lista">' + itens.map(i => i.html).join('') + '</div>';
+}
+
+// Atalhos do card "Ferramentas" do Início: cada um abre direto a ferramenta, sem passar
+// pelo catálogo. O portão do plano continua no clique (abrirFerramentaPdf/Video/IMG).
+const ATALHOS_DASHBOARD_FERRAMENTAS = [
+    { aba: 'pdf',    emoji: '📕', nome: 'PDF',            desc: 'Juntar, dividir, comprimir' },
+    { aba: 'img',    emoji: '🖼️', nome: 'Imagem',         desc: 'Editar, cortar, ampliar' },
+    { aba: 'atelie', emoji: '🖌️', nome: 'Ateliê',         desc: 'Cartaz, certificado, arte' },
+    { aba: 'video', ferramenta: 'montar', emoji: '🎞️', nome: 'Montar vídeo', desc: 'Editor com linha do tempo' },
+    { aba: 'quiz',   emoji: '🎯', nome: 'Na Mosca!',      desc: 'Quiz ao vivo com a turma' },
+    { aba: 'video', ferramenta: 'baixar-link', emoji: '🔗', nome: 'Baixar vídeo', desc: 'Pelo link do vídeo' },
+    { aba: 'img', ferramenta: 'removerMarca', emoji: '🧽', nome: "Tirar marca d'água", desc: 'Apaga o texto por cima' },
+    { aba: 'poster', emoji: '🧱', nome: 'Pôster',         desc: 'Imagem em várias folhas' }
+];
+
+function htmlAtalhosFerramentas() {
+    return `<div class="dash-ferr-grade">
+        ${ATALHOS_DASHBOARD_FERRAMENTAS.map((a, i) => `
+            <button type="button" class="dash-ferr-item" data-atalho="${i}" onclick="abrirAtalhoFerramenta('${a.aba}', ${a.ferramenta ? `'${a.ferramenta}'` : 'null'})">
+                <span class="dash-ferr-emoji">${a.emoji}</span>
+                <span class="dash-ferr-nome">${escDash(a.nome)}</span>
+                <span class="dash-ferr-desc">${escDash(a.desc)}</span>
+            </button>`).join('')}
+    </div>
+    <button type="button" class="btn btn-sm btn-secondary dash-ferr-todas" onclick="abrirAtalhoFerramenta()">Ver todas as ferramentas →</button>`;
+}
+
+// Abre a tela Ferramentas já na aba (e, se for o caso, já dentro da ferramenta).
+function abrirAtalhoFerramenta(aba, ferramenta) {
+    if (aba && typeof definirAbaFerramentas === 'function') definirAbaFerramentas(aba);
+    const botaoMenu = document.querySelector('#appContainer nav.app-nav button[onclick*="showScreen(\'ferramentas\'"]');
+    showScreen('ferramentas', botaoMenu ? { currentTarget: botaoMenu } : undefined);
+    if (!ferramenta) return;
+    try {
+        if (aba === 'img' && typeof renderImg === 'function') renderImg(ferramenta);
+        else if (aba === 'video' && typeof abrirFerramentaVideo === 'function') abrirFerramentaVideo(ferramenta);
+        else if (aba === 'pdf' && typeof abrirFerramentaPdf === 'function') abrirFerramentaPdf(ferramenta);
+    } catch (e) { console.error('[Início] atalho de ferramenta', e); }
+}
+
+// Banner rotativo de novidades (só no computador: no celular o CSS esconde). Para anunciar
+// algo novo, ponha uma linha NO TOPO desta lista — a mais nova aparece primeiro.
+const NOVIDADES_SISPROF = [
+    { emoji: '🎞️', titulo: 'Montar vídeo de cara nova', texto: 'O editor agora abre em tela cheia, com linha do tempo, textos e transições.', botao: 'Abrir editor', abrir: () => abrirAtalhoFerramenta('video', 'montar') },
+    { emoji: '🃏', titulo: 'Mesa de páginas no PDF', texto: 'Veja todas as páginas de uma vez, arraste para reordenar, gire e apague.', botao: 'Abrir', abrir: () => abrirAtalhoFerramenta('pdf', 'mesa-paginas') },
+    { emoji: '📐', titulo: 'Endireitar foto de folha', texto: 'Tirou foto torta de uma atividade? A folha fica reta, como se fosse escaneada.', botao: 'Experimentar', abrir: () => abrirAtalhoFerramenta('img', 'endireitar') },
+    { emoji: '🖌️', titulo: 'Ateliê com efeitos', texto: 'Sombra, brilho e recortes para deixar cartazes e certificados mais bonitos.', botao: 'Abrir Ateliê', abrir: () => abrirAtalhoFerramenta('atelie') },
+    { emoji: '📘', titulo: 'Anexo IV (novo modelo)', texto: 'O Estagiário monta a atividade DUA da turma com os apoios de cada estudante.', botao: 'Gerar agora', abrir: abrirAnexo4PeloInicio },
+    { emoji: '🧽', titulo: "Remover marca d'água", texto: 'Marque a área e o texto por cima da imagem some.', botao: 'Experimentar', abrir: () => abrirAtalhoFerramenta('img', 'removerMarca') },
+    { emoji: '🔗', titulo: 'Baixar vídeo por link', texto: 'Cole o link do vídeo e baixe para usar na aula.', botao: 'Abrir', abrir: () => abrirAtalhoFerramenta('video', 'baixar-link') },
+    { emoji: '🎯', titulo: 'Na Mosca! — quiz ao vivo', texto: 'Os estudantes respondem pelo celular, sem precisar de conta.', botao: 'Criar quiz', abrir: () => abrirAtalhoFerramenta('quiz') },
+    { emoji: '❓', titulo: 'Tutoriais e botão "?"', texto: 'Manuais de cada página e um tour pela tela em que você está.', botao: 'Ver tutoriais', abrir: () => showScreen('tutoriais') }
+];
+
+async function abrirAnexo4PeloInicio() {
+    if (typeof abrirModalGerarDocumentoIA !== 'function') return;
+    await abrirModalGerarDocumentoIA();
+    const sel = document.getElementById('iaDocTipo');
+    if (sel && sel.querySelector('option[value="anexo4_dua"]')) {
+        sel.value = 'anexo4_dua';
+        if (typeof toggleTipoDocumentoIA === 'function') toggleTipoDocumentoIA();
+    }
+}
+
+let novidadeAtual = 0;
+let novidadesTimer = null;
+
+function htmlNovidadesDashboard() {
+    return `<div class="nov-topo"><h2>✨ Novidades</h2>
+            <div class="nov-setas">
+                <button type="button" aria-label="Novidade anterior" onclick="mudarNovidade(-1, true)">‹</button>
+                <button type="button" aria-label="Próxima novidade" onclick="mudarNovidade(1, true)">›</button>
+            </div></div>
+        <div class="nov-palco">
+            ${NOVIDADES_SISPROF.map((n, i) => `
+                <div class="nov-slide${i === novidadeAtual ? ' ativo' : ''}" data-i="${i}" aria-hidden="${i === novidadeAtual ? 'false' : 'true'}">
+                    <div class="nov-emoji">${n.emoji}</div>
+                    <div class="nov-selo">NOVO</div>
+                    <h3 class="nov-titulo">${escDash(n.titulo)}</h3>
+                    <p class="nov-texto">${escDash(n.texto)}</p>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="abrirNovidade(${i})">${escDash(n.botao)} →</button>
+                </div>`).join('')}
+        </div>
+        <div class="nov-pontos">${NOVIDADES_SISPROF.map((_, i) => `<button type="button" class="${i === novidadeAtual ? 'ativo' : ''}" aria-label="Novidade ${i + 1}" onclick="mudarNovidade(${i - novidadeAtual}, true)"></button>`).join('')}</div>`;
+}
+
+function abrirNovidade(i) {
+    const n = NOVIDADES_SISPROF[i];
+    if (n && typeof n.abrir === 'function') n.abrir();
+}
+
+function mudarNovidade(passo, manual) {
+    const caixa = document.getElementById('novidadesDashboard');
+    if (!caixa) return;
+    const total = NOVIDADES_SISPROF.length;
+    // Os pontos são desenhados com o índice da hora em que nasceram; recalcula pelo clicado.
+    novidadeAtual = ((novidadeAtual + passo) % total + total) % total;
+    caixa.querySelectorAll('.nov-slide').forEach(s => {
+        const ativo = Number(s.dataset.i) === novidadeAtual;
+        s.classList.toggle('ativo', ativo);
+        s.setAttribute('aria-hidden', ativo ? 'false' : 'true');
+    });
+    caixa.querySelectorAll('.nov-pontos button').forEach((b, i) => {
+        b.classList.toggle('ativo', i === novidadeAtual);
+        b.setAttribute('onclick', `mudarNovidade(${i - novidadeAtual}, true)`);
+    });
+    if (manual) iniciarNovidadesDashboard();
+}
+
+function iniciarNovidadesDashboard() {
+    if (novidadesTimer) clearInterval(novidadesTimer);
+    novidadesTimer = null;
+    const caixa = document.getElementById('novidadesDashboard');
+    if (!caixa || caixa.dataset.ligado) { if (caixa) ligarTimerNovidades(); return; }
+    caixa.dataset.ligado = '1';
+    // Para de girar enquanto o mouse está em cima (para dar tempo de ler e clicar).
+    caixa.addEventListener('mouseenter', () => { caixa.dataset.pausa = '1'; });
+    caixa.addEventListener('mouseleave', () => { delete caixa.dataset.pausa; });
+    ligarTimerNovidades();
+}
+
+function ligarTimerNovidades() {
+    if (novidadesTimer) clearInterval(novidadesTimer);
+    novidadesTimer = setInterval(() => {
+        const caixa = document.getElementById('novidadesDashboard');
+        // Saiu do Início (ou o banner está escondido, no celular): para de girar.
+        if (!caixa || !caixa.offsetParent) { clearInterval(novidadesTimer); novidadesTimer = null; return; }
+        if (caixa.dataset.pausa || document.hidden) return;
+        mudarNovidade(1);
+    }, 7000);
+}
+
 async function renderDashboard() {
     const today = getTodayString();
     const dashboardContainer = document.getElementById('dashboard');
@@ -1432,15 +1659,16 @@ async function renderDashboard() {
     // Reconstrói a estrutura HTML padrão caso tenha sido alterada
     if (currentViewMode === 'professor') {
         dashboardContainer.innerHTML = `
-        <div class="grid">
+        <div class="grid dash-grade-topo">
             <div class="card">
                 <h2>📅 Agenda do Dia</h2>
                 <div id="agendaHoje"><p>Carregando...</p></div>
             </div>
-            <div class="card">
-                <h2>👥 Tutorias/Ações</h2>
-                <div id="tutoriasHoje"></div>
+            <div class="card dash-ferr-card">
+                <h2>🧰 Ferramentas</h2>
+                <div id="atalhosFerramentas">${htmlAtalhosFerramentas()}</div>
             </div>
+            <div class="card dash-novidades" id="novidadesDashboard">${htmlNovidadesDashboard()}</div>
         </div>
 
         <div class="card" style="margin-top: 20px; border-left: 4px solid #5f6b7f; background: #f6f8fb;">
@@ -1473,6 +1701,7 @@ async function renderDashboard() {
     // Agenda do Dia (Baseada na Grade)
     let gradeEscola = [];
     let excecoesGrade = [];
+    let tiposFixosEscola = [];
     
     // Busca dados da Escola (Gestor) para sincronizar Avisos e Grade.
     // Os faltosos/atestados são campo pessoal e vêm do retrato cifrado da escola —
@@ -1482,6 +1711,7 @@ async function renderDashboard() {
         if (gestorData) {
             gradeEscola = gestorData.gradeHoraria || [];
             excecoesGrade = gestorData.gradeHorariaExcecoes || [];
+            tiposFixosEscola = gestorData.tiposHorarioFixo || [];
             // [MODIFICAÇÃO] Armazena globalmente para cálculos de nota síncronos
             // Só persiste se algo realmente mudou desde o último save - evita gravação redundante
             // a cada render do dashboard. Sem isso, schoolGrade/schoolExceptions ficavam só em
@@ -1521,63 +1751,10 @@ async function renderDashboard() {
     }
 
     const minhasAulas = data.horariosAulas || [];
-
-    let agendaHtml = '';
-    if (blocosHoje.length === 0) {
-        agendaHtml = '<p class="empty-state">Sem grade configurada para hoje.</p>';
-    } else {
-        if (excecaoHoje) {
-            agendaHtml += `<div class="alert alert-warning" style="margin-bottom:10px; font-size:12px;">⚠️ Horário Especial Definido pela Gestão</div>`;
-        }
-
-        agendaHtml = blocosHoje.map(bloco => {
-            const aula = minhasAulas.find(a => a.id_bloco == bloco.id);
-            
-            if (!aula) {
-                return `<div class="alert alert-secondary" style="opacity:0.6;">${bloco.inicio} - Livre</div>`;
-            }
-            
-            if (aula.tipo === 'aula' && aula.id_turma) {
-                const turma = (data.turmas || []).find(t => t.id == aula.id_turma);
-                return `<button class="btn btn-primary" style="width:100%; margin-bottom:5px; text-align:left; display:flex; justify-content:space-between;" onclick="abrirTurma(${aula.id_turma})">
-                    <span><strong>${bloco.inicio}</strong> - ${turma ? turma.nome + (turma.disciplina ? ' · ' + turma.disciplina : '') : 'Turma Removida'}</span>
-                    <span>Ir para Turma →</span>
-                </button>`;
-            } else if (aula.tipo === 'tutoria') {
-                return `<button class="btn btn-info" style="width:100%; margin-bottom:5px; text-align:left; display:flex; justify-content:space-between;" onclick="showScreen('tutoria')">
-                    <span><strong>${bloco.inicio}</strong> - Tutoria</span>
-                    <span>Registrar →</span>
-                </button>`;
-            } else if (bloco.tipo === 'evento') {
-                return `<div class="alert alert-warning" style="margin-bottom:5px;">
-                    <strong>${bloco.inicio}</strong> - EVENTO / ATIVIDADE ESPECIAL
-                </div>`;
-            } else {
-                // Estudo, Reunião, APCG, etc.
-                return `<div class="alert alert-info" style="margin-bottom:5px;">
-                    <strong>${bloco.inicio}</strong> - ${aula.tipo.toUpperCase()} ${aula.tema ? '('+aula.tema+')' : ''}
-                </div>`;
-            }
-        }).join('');
-    }
-    document.getElementById('agendaHoje').innerHTML = agendaHtml;
-
-    // Tutorias Hoje
     const agendamentosHoje = (data.agendamentos || []).filter(a => a.data === today && a.tutoradoId);
-    agendamentosHoje.sort((a,b) => a.inicio.localeCompare(b.inicio));
-
-    const htmlTutorias = agendamentosHoje.length > 0 ? agendamentosHoje.map(a => {
-        const tutorado = (data.tutorados || []).find(t => t.id == a.tutoradoId);
-        const nome = tutorado ? tutorado.nome_estudante : 'Desconhecido';
-        return `
-            <button class="btn btn-success" style="width:100%; margin-bottom:5px; text-align:left; display:flex; justify-content:space-between; align-items:center;" onclick="registrarEncontroAtalho(${a.tutoradoId})">
-                <span><strong>${a.inicio}</strong> - ${nome}</span>
-                <span>📝 Registrar</span>
-            </button>
-        `;
-    }).join('') : '<p class="empty-state">Nenhum agendamento de tutoria para hoje.</p>';
-
-    document.getElementById('tutoriasHoje').innerHTML = htmlTutorias;
+    document.getElementById('agendaHoje').innerHTML =
+        montarAgendaDoDiaHtml(blocosHoje, minhasAulas, agendamentosHoje, tiposFixosEscola, !!excecaoHoje);
+    iniciarNovidadesDashboard();
     }
 
     // --- AVISOS E ALERTAS POR TURMA ---
