@@ -157,6 +157,15 @@ const PADROES = {
     forma: { forma: 'ret', preench: '#2563c9', borda: '#1c2536', bordaLarg: 0, raio: 0 },
     imagem: { recurso: '', raio: 0, recorte: '', filtro: '', espelhar: false, borda: '#ffffff', bordaLarg: 0 }
 };
+// Modos de mistura (o globalCompositeOperation do canvas), com nome de gente.
+const MISTURAS = {
+    '': 'Normal', multiply: 'Multiplicar (escurece)', screen: 'Tela (clareia)', overlay: 'Sobrepor',
+    'soft-light': 'Luz suave', darken: 'Só o mais escuro', lighten: 'Só o mais claro',
+    'color-burn': 'Queimar cor', difference: 'Diferença', luminosity: 'Só a luz', color: 'Só a cor'
+};
+// Formatos de recorte da foto: '' (retângulo, com cantos) ou uma forma da lista.
+const RECORTES = ['circulo', 'estrela', 'coracao', 'hexagono', 'triangulo', 'losango', 'balao', 'seta'];
+
 const FILTROS = { '': 'Original', pb: 'Preto e branco', sepia: 'Sépia', vivo: 'Cores vivas', suave: 'Suave', escuro: 'Escuro' };
 const FILTROS_CSS = { pb: 'grayscale(1)', sepia: 'sepia(0.85)', vivo: 'saturate(1.6) contrast(1.08)', suave: 'contrast(0.85) brightness(1.08) saturate(0.8)', escuro: 'brightness(0.7)' };
 
@@ -169,7 +178,15 @@ function normalizarElemento(e) {
         x: num(e.x, 0, -20000, 20000), y: num(e.y, 0, -20000, 20000),
         w: num(e.w, 200, 1, 20000), h: num(e.h, 100, 1, 20000),
         rot: ((num(e.rot, 0) % 360) + 360) % 360,
-        opac: num(e.opac, 1, 0, 1), oculto: !!e.oculto, travado: !!e.travado
+        opac: num(e.opac, 1, 0, 1), oculto: !!e.oculto, travado: !!e.travado,
+        // Efeitos (valem para texto, forma e imagem). Medidas em pixels da arte; null nas
+        // da sombra = "automatico" (proporcional ao tamanho, ver parametrosSombra).
+        sombra: !!e.sombra, sombraCor: cor(e.sombraCor, '#000000'), sombraForca: num(e.sombraForca, 35, 0, 100),
+        sombraDesf: e.sombraDesf == null || e.sombraDesf === '' ? null : num(e.sombraDesf, 0, 0, 400),
+        sombraDist: e.sombraDist == null || e.sombraDist === '' ? null : num(e.sombraDist, 0, 0, 400),
+        sombraAng: num(e.sombraAng, 135, 0, 359),
+        brilhoCor: cor(e.brilhoCor, ''), brilhoTam: num(e.brilhoTam, 24, 1, 300),
+        mistura: MISTURAS[e.mistura] != null ? e.mistura : ''
     };
     const p = PADROES[tipo];
     if (tipo === 'texto') {
@@ -181,7 +198,7 @@ function normalizarElemento(e) {
             alinh: ['left', 'center', 'right'].indexOf(e.alinh) >= 0 ? e.alinh : p.alinh,
             entrelinha: num(e.entrelinha, p.entrelinha, 0.6, 4), espaco: num(e.espaco, 0, -20, 200),
             maiusculas: !!e.maiusculas, contornoCor: cor(e.contornoCor, p.contornoCor),
-            contornoLarg: num(e.contornoLarg, 0, 0, 80), sombra: !!e.sombra,
+            contornoLarg: num(e.contornoLarg, 0, 0, 80),
             fundoCor: cor(e.fundoCor, ''), fundoRaio: num(e.fundoRaio, p.fundoRaio, 0, 400)
         });
     }
@@ -197,7 +214,9 @@ function normalizarElemento(e) {
     }
     return Object.assign(base, {
         recurso: txt(e.recurso, 60), raio: num(e.raio, 0, 0, 5000),
-        recorte: e.recorte === 'circulo' ? 'circulo' : '',
+        recorte: RECORTES.indexOf(e.recorte) >= 0 ? e.recorte : '',
+        ajBrilho: num(e.ajBrilho, 0, -100, 100), ajContraste: num(e.ajContraste, 0, -100, 100),
+        ajSat: num(e.ajSat, 0, -100, 100), ajDesf: num(e.ajDesf, 0, 0, 60),
         filtro: FILTROS[e.filtro] != null ? e.filtro : '', espelhar: !!e.espelhar,
         borda: cor(e.borda, p.borda), bordaLarg: num(e.bordaLarg, 0, 0, 200)
     });
@@ -635,10 +654,6 @@ function desenharTexto(ctx, el, subs) {
     ctx.textAlign = el.alinh;
     const x = el.alinh === 'left' ? -el.w / 2 + q.pad : (el.alinh === 'right' ? el.w / 2 - q.pad : 0);
     const topo = -altura / 2 + q.pad;
-    if (el.sombra) {
-        ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = el.tam * 0.18;
-        ctx.shadowOffsetX = el.tam * 0.04; ctx.shadowOffsetY = el.tam * 0.06;
-    }
     q.linhas.forEach((linha, i) => {
         const y = topo + q.alturaLinha * (i + 0.5);
         if (el.contornoLarg > 0) {
@@ -648,7 +663,6 @@ function desenharTexto(ctx, el, subs) {
         ctx.fillStyle = el.cor;
         ctx.fillText(linha, x, y);
     });
-    ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
     if (el.sublinhado) {
         ctx.fillStyle = el.cor;
         q.linhas.forEach((linha, i) => {
@@ -660,19 +674,36 @@ function desenharTexto(ctx, el, subs) {
 }
 
 // `img` e' a imagem ja' carregada (ou null: desenha um quadro cinza no lugar).
+// O contorno da foto: retangulo com cantos, ou uma das formas (estrela, coracao...).
+function caminhoRecorte(ctx, el) {
+    if (el.recorte) { caminhoForma(ctx, { forma: el.recorte, w: el.w, h: el.h, raio: 0 }); return; }
+    ctx.beginPath();
+    caminhoRetangulo(ctx, -el.w / 2, -el.h / 2, el.w, el.h, el.raio);
+}
+
+// O filtro do canvas para a foto: o filtro pronto + os ajustes finos.
+function filtroDaImagem(el) {
+    const f = [];
+    if (el.filtro && FILTROS_CSS[el.filtro]) f.push(FILTROS_CSS[el.filtro]);
+    if (el.ajBrilho) f.push('brightness(' + (1 + el.ajBrilho / 100).toFixed(2) + ')');
+    if (el.ajContraste) f.push('contrast(' + (1 + el.ajContraste / 100).toFixed(2) + ')');
+    if (el.ajSat) f.push('saturate(' + (1 + el.ajSat / 100).toFixed(2) + ')');
+    if (el.ajDesf) f.push('blur(' + el.ajDesf + 'px)');
+    return f.join(' ');
+}
+
 function desenharImagem(ctx, el, img) {
     const w = el.w, h = el.h;
     ctx.save();
-    ctx.beginPath();
-    if (el.recorte === 'circulo') ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
-    else caminhoRetangulo(ctx, -w / 2, -h / 2, w, h, el.raio);
+    caminhoRecorte(ctx, el);
     ctx.clip();
     if (img && (img.naturalWidth || img.width)) {
         const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
         // preencher a caixa sem esticar: corta o que sobra
         const escala = Math.max(w / iw, h / ih);
         const dw = iw * escala, dh = ih * escala;
-        if (el.filtro && FILTROS_CSS[el.filtro] && 'filter' in ctx) ctx.filter = FILTROS_CSS[el.filtro];
+        const filtro = filtroDaImagem(el);
+        if (filtro && 'filter' in ctx) ctx.filter = filtro;
         if (el.espelhar) ctx.scale(-1, 1);
         ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
         if ('filter' in ctx) ctx.filter = 'none';
@@ -684,11 +715,99 @@ function desenharImagem(ctx, el, img) {
     }
     ctx.restore();
     if (el.bordaLarg > 0) {
-        ctx.beginPath();
-        if (el.recorte === 'circulo') ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
-        else caminhoRetangulo(ctx, -w / 2, -h / 2, w, h, el.raio);
-        ctx.strokeStyle = el.borda; ctx.lineWidth = el.bordaLarg; ctx.stroke();
+        caminhoRecorte(ctx, el);
+        ctx.strokeStyle = el.borda; ctx.lineWidth = el.bordaLarg; ctx.lineJoin = 'round'; ctx.stroke();
     }
+}
+
+// Sombra: cor, forca (0..100 = opacidade), desfoque, distancia e angulo (graus; 135 =
+// para baixo e para a direita). Sem medida escolhida, a sombra e' proporcional ao
+// elemento — a mesma que o texto tinha antes desta versao.
+function parametrosSombra(el) {
+    const base = el.tipo === 'texto' ? el.tam : Math.max(4, Math.min(el.w, el.h) * 0.25);
+    const desf = el.sombraDesf != null ? el.sombraDesf : base * 0.18;
+    const dist = el.sombraDist != null ? el.sombraDist : base * 0.072;
+    const ang = (el.sombraAng == null ? 135 : el.sombraAng) * Math.PI / 180;
+    return { cor: el.sombraCor || '#000000', alfa: (el.sombraForca == null ? 35 : el.sombraForca) / 100,
+             desf: desf, dist: dist, ang: ang };
+}
+
+function deslocamentoSombra(p) {
+    // angulo medido como no relogio a partir do "para cima": 90 = direita, 180 = baixo.
+    return { x: Math.sin(p.ang) * p.dist, y: -Math.cos(p.ang) * p.dist };
+}
+
+function rgba(hex, alfa) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || '') || /^#?([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(hex || '');
+    let r = 0, g = 0, b = 0;
+    if (m && m.length === 2) { const n = parseInt(m[1], 16); r = n >> 16 & 255; g = n >> 8 & 255; b = n & 255; }
+    else if (m) { r = parseInt(m[1] + m[1], 16); g = parseInt(m[2] + m[2], 16); b = parseInt(m[3] + m[3], 16); }
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + Math.max(0, Math.min(1, alfa)) + ')';
+}
+
+function temEfeitos(el) { return !!(el.sombra || el.brilhoCor); }
+
+function conteudo(ctx, el, opcoes) {
+    if (el.tipo === 'texto') desenharTexto(ctx, el, opcoes.subs);
+    else if (el.tipo === 'imagem') desenharImagem(ctx, el, opcoes.imagem ? opcoes.imagem(el.recurso) : null);
+    else desenharForma(ctx, el);
+}
+
+// Quanto o desenho passa da caixa do elemento (texto maior que a caixa, contorno, borda).
+function folgaDoConteudo(ctx, el, opcoes) {
+    let altura = el.h;
+    if (el.tipo === 'texto') { try { altura = Math.max(el.h, quebrarLinhas(ctx, el, opcoes.subs).altura); } catch (_) { /* sem medida */ } }
+    const traco = el.tipo === 'texto' ? el.contornoLarg * 2 + el.tam * 0.3 : (el.bordaLarg || 0);
+    return { x: traco + 4, y: (altura - el.h) / 2 + traco + 4 };
+}
+
+// Com sombra ou brilho, o elemento e' desenhado primeiro numa folha a parte (A) e depois
+// "carimbado" na arte com a sombra do canvas. Assim a sombra segue a silhueta de verdade
+// — a foto recortada em estrela, o PNG sem fundo, a letra com contorno — e nao a caixa.
+// A sombra e' feita pelo truque do carimbo "fora da folha": o desenho vai longe e so' a
+// sombra cai no lugar, para a transparencia do elemento nao somar duas vezes.
+function desenharComEfeitos(ctx, el, opcoes) {
+    const T = ctx.getTransform ? ctx.getTransform() : { a: 1, b: 0 };
+    const esc = Math.max(0.05, Math.hypot(T.a, T.b));
+    const folga = folgaDoConteudo(ctx, el, opcoes);
+    const sb = el.sombra ? parametrosSombra(el) : null;
+    // A sombra cai "para baixo" na FOLHA, mesmo com o elemento girado: o deslocamento e'
+    // girado de volta para o sentido do elemento (B e' desenhado ja' girado).
+    let desl = sb ? deslocamentoSombra(sb) : { x: 0, y: 0 };
+    if (el.rot) { const g = girar(desl.x, desl.y, -el.rot); desl = { x: g.x, y: g.y }; }
+    const alcance = Math.max(sb ? sb.desf * 2 + sb.dist : 0, el.brilhoCor ? el.brilhoTam * 2 : 0);
+    const LW = el.w + 2 * (folga.x + alcance), LH = el.h + 2 * (folga.y + alcance);
+    // Limite de memoria: a folha a parte nunca passa de ~4000 px de lado.
+    const k = Math.min(esc, 4000 / Math.max(LW, LH));
+    const doc = (typeof document !== 'undefined') ? document : null;
+    const novoCanvas = (w, h) => {
+        if (doc) { const c = doc.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h)); return c; }
+        return null;
+    };
+    const A = novoCanvas(LW * k, LH * k), B = novoCanvas(LW * k, LH * k);
+    if (!A || !B) { conteudo(ctx, el, opcoes); return; }
+    const a = A.getContext('2d');
+    a.setTransform(k, 0, 0, k, A.width / 2, A.height / 2);
+    conteudo(a, el, opcoes);
+
+    const b = B.getContext('2d');
+    const LONGE = B.width + 100;
+    if (el.brilhoCor) {
+        // Brilho: sombra sem deslocamento, carimbada duas vezes para ficar viva.
+        b.shadowColor = rgba(el.brilhoCor, 0.9);
+        b.shadowBlur = el.brilhoTam * k;
+        b.shadowOffsetX = LONGE; b.shadowOffsetY = 0;
+        b.drawImage(A, -LONGE, 0); b.drawImage(A, -LONGE, 0);
+    }
+    if (sb) {
+        b.shadowColor = rgba(sb.cor, sb.alfa);
+        b.shadowBlur = sb.desf * k;
+        b.shadowOffsetX = LONGE + desl.x * k; b.shadowOffsetY = desl.y * k;
+        b.drawImage(A, -LONGE, 0);
+    }
+    b.shadowColor = 'transparent'; b.shadowBlur = 0; b.shadowOffsetX = 0; b.shadowOffsetY = 0;
+    b.drawImage(A, 0, 0);
+    ctx.drawImage(B, -LW / 2, -LH / 2, LW, LH);
 }
 
 function desenharElemento(ctx, el, opcoes) {
@@ -698,9 +817,9 @@ function desenharElemento(ctx, el, opcoes) {
     ctx.translate(c.x, c.y);
     if (el.rot) ctx.rotate(el.rot * Math.PI / 180);
     ctx.globalAlpha = el.opac;
-    if (el.tipo === 'texto') desenharTexto(ctx, el, opcoes.subs);
-    else if (el.tipo === 'imagem') desenharImagem(ctx, el, opcoes.imagem ? opcoes.imagem(el.recurso) : null);
-    else desenharForma(ctx, el);
+    if (el.mistura && MISTURAS[el.mistura] != null) ctx.globalCompositeOperation = el.mistura;
+    if (temEfeitos(el)) desenharComEfeitos(ctx, el, opcoes);
+    else conteudo(ctx, el, opcoes);
     ctx.restore();
 }
 
@@ -1092,7 +1211,8 @@ function textoDaIA(resposta) {
 
 const ATELIEOPS = {
     VERSAO, FORMATOS, FONTES, FONTE_PADRAO, FORMAS, FORMAS_LINHA, PALETAS, PAPEIS, FIGURINHAS, CAMPOS, MODELOS,
-    FILTROS, FILTROS_CSS, COMO_REESCREVER,
+    FILTROS, FILTROS_CSS, MISTURAS, RECORTES, COMO_REESCREVER,
+    parametrosSombra, deslocamentoSombra, filtroDaImagem, temEfeitos,
     novoId, formato, paleta, fonte, copiar,
     novaArte, normalizarArte, normalizarElemento, novoTexto, novaForma, novaImagem, duplicarElemento, podarRecursos,
     moverCamada, alinharNaPagina,
