@@ -43,6 +43,7 @@ const HOJE = new Date().toISOString().slice(0, 10);
 async function novaAba(browser) {
   const p = await (await browser.newContext()).newPage();
   p.on('dialog', async d => await d.accept());
+  await p.route(/gstatic\.com/, r => r.abort());   // o Firebase de verdade apagaria o banco falso
   await p.addInitScript(FAKE);
   await p.goto(URL, { waitUntil:'domcontentloaded' });
   await p.waitForTimeout(1800);

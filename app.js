@@ -2406,6 +2406,13 @@ function estudanteAtivo(e) {
     }
     return true;
 }
+// Nome do tipo de registro administrativo na tela: o faltoso que a gestão NÃO lançou à mão,
+// e sim a conta automática de presença (gestor.js, calcularFaltososAutomaticos), é "Faltoso A".
+function rotuloTipoRegistro(r) {
+    if (!r) return '';
+    if (r.tipo === 'Faltoso' && r.automatico) return 'Faltoso A';
+    return r.tipo;
+}
 function estudanteAtivoPorId(id) {
     return estudanteAtivo((data.estudantes || []).find(e => e.id == id));
 }
@@ -2543,7 +2550,7 @@ async function renderEstudantes() {
                             <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #742a2a;">
                                 ${faltosos.map(r => {
                                     const est = estudantes.find(e => e.id == r.estudanteId);
-                                    return `<li style="margin-bottom: 3px;"><strong>${est ? est.nome_completo : 'Desconhecido'}</strong></li>`;
+                                    return `<li style="margin-bottom: 3px;"><strong>${est ? est.nome_completo : 'Desconhecido'}</strong>${r.automatico ? ` <span title="${(r.descricao || '').replace(/"/g, '&quot;')}">(Faltoso A${r.presencaPerc != null ? ': ' + r.presencaPerc + '% de presença' : ''})</span>` : ''}</li>`;
                                 }).join('')}
                             </ul>
                         </div>
@@ -2857,7 +2864,7 @@ async function renderChamada() {
                     
                     regsAluno.forEach(r => {
                         if (r.tipo === 'Faltoso') {
-                            badges += `<span style="background:#fed7d7; color:#c53030; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold;">Faltoso</span>`;
+                            badges += `<span style="background:#fed7d7; color:#c53030; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold;"${r.automatico ? ` title="${(r.descricao || 'Menos de 50% de presença').replace(/"/g, '&quot;')}"` : ''}>${rotuloTipoRegistro(r)}</span>`;
                         } else if (r.tipo === 'Observacao') {
                             badges += `<span style="background:#fffaf0; color:#d69e2e; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #fbd38d;" title="${r.descricao || ''}">Obs</span>`;
                         } else if (r.tipo === 'Atestado') {
@@ -3059,39 +3066,30 @@ async function renderRelatorioMensalFaltas() {
     const container = document.getElementById('tabChamada');
     container.innerHTML = '<div class="card"><p>Carregando relatório e dados compartilhados do mês...</p></div>';
 
-    // [NOVO] Busca a lista de usuários para mapear IDs de professores para nomes.
-    let allUsers = [];
-    if (typeof db !== 'undefined' && db) {
-        const usersData = await getData('system', 'users_list');
-        if (usersData && usersData.list) {
-            allUsers = usersData.list;
-        }
-    }
-
     const daysInMonth = new Date(anoAtual, mesAtual + 1, 0).getDate();
-    const allSharedAbsences = {};
-
-    // Apenas busca dados online se o Firebase estiver configurado
-    if (typeof db !== 'undefined' && db && currentUser && currentUser.schoolId) {
-        for (let d = 1; d <= daysInMonth; d++) {
-            const dataStr = `${anoAtual}-${String(mesAtual + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-            const sharedData = await getFaltasCompartilhadas(dataStr);
-            if (Object.keys(sharedData).length > 0) {
-                allSharedAbsences[dataStr] = sharedData;
-            }
-        }
+    // Só os dias úteis entram na tabela, então só eles são buscados na nuvem.
+    const datasUteis = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+        const dw = new Date(anoAtual, mesAtual, d).getDay();
+        if (dw !== 0 && dw !== 6) datasUteis.push(`${anoAtual}-${String(mesAtual + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
     }
+
+    // Antes eram ~31 buscas na nuvem UMA DEPOIS DA OUTRA (cada dia esperava o anterior), e era
+    // isso que travava a abertura. Agora a lista de usuários e todos os dias vão juntos, de uma vez.
+    let allUsers = [];
+    let allSharedAbsences = {};
+    const online = typeof db !== 'undefined' && db;
+    await Promise.all([
+        online ? getData('system', 'users_list').then(u => { if (u && u.list) allUsers = u.list; }).catch(() => {}) : null,
+        (online && currentUser && currentUser.schoolId) ? getFaltasCompartilhadasDoPeriodo(datasUteis).then(m => { allSharedAbsences = m; }) : null
+    ]);
+    const nomeCurtoProf = {};
+    allUsers.forEach(u => { if (u && u.id != null) nomeCurtoProf[String(u.id)] = String(u.nome || '').split(' ')[0] || 'Desconhecido'; });
 
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual && estudanteAtivo(e)).sort((a, b) => a.nome_completo.localeCompare(b.nome_completo));
     const presencas = data.presencas || [];
 
-    // const daysInMonth = new Date(anoAtual, mesAtual + 1, 0).getDate();
-    const diasUteis = [];
-    for (let d = 1; d <= daysInMonth; d++) {
-        const date = new Date(anoAtual, mesAtual, d);
-        const dayOfWeek = date.getDay();
-        if (dayOfWeek !== 0 && dayOfWeek !== 6) diasUteis.push(d); // Apenas dias úteis (Seg-Sex)
-    }
+    const diasUteis = datasUteis.map(ds => parseInt(ds.slice(8), 10)); // Apenas dias úteis (Seg-Sex)
 
     const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 
@@ -3126,11 +3124,7 @@ async function renderRelatorioMensalFaltas() {
                                 const reporterCount = reporters.length;
 
                                 // [MODIFICADO] Mapeia os IDs dos professores que registraram falta para seus nomes.
-                                const reporterNames = reporters.map(reporterId => {
-                                    // Compara IDs de forma flexível (string vs number)
-                                    const user = allUsers.find(u => u.id == reporterId);
-                                    return user ? user.nome.split(' ')[0] : 'Desconhecido'; // Pega só o primeiro nome
-                                }).join(', ');
+                                const reporterNames = reporters.map(reporterId => nomeCurtoProf[String(reporterId)] || 'Desconhecido').join(', '); // só o primeiro nome
 
                                 let cellContent = '<span style="color: #e3e8ef;">•</span>';
                                 let cellStyle = '';
@@ -4729,8 +4723,10 @@ function renderTrabalhos() {
                         
                         // Lógica para exibir tag Faltoso e Atestados
                         const registrosGeral = data.registrosAdministrativos || [];
-                        const isFaltoso = registrosGeral.some(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Faltoso' && !r.arquivado);
-                        const tagFaltoso = isFaltoso ? `<span style="background:#fed7d7; color:#c53030; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #feb2b2;" title="Aluno com alerta de Faltoso na Gestão">Faltoso</span>` : '';
+                        const regFaltoso = registrosGeral.filter(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Faltoso' && !r.arquivado);
+                        const isFaltoso = regFaltoso.length > 0;
+                        const soAutomatico = isFaltoso && regFaltoso.every(r => r.automatico);
+                        const tagFaltoso = isFaltoso ? `<span style="background:#fed7d7; color:#c53030; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #feb2b2;" title="${soAutomatico ? 'Faltoso A (automático): menos de 50% de presença' : 'Aluno com alerta de Faltoso na Gestão'}">${soAutomatico ? 'Faltoso A' : 'Faltoso'}</span>` : '';
 
                         // [CORREÇÃO] Lógica robusta para exibir atestados e faltas no bimestre atual
                         const configAtualBimestre = data.configBimestres.find(c => c.bim === currentBimestreTrabalhos);
@@ -9300,7 +9296,7 @@ async function renderRegistrosProfessor() {
         }
     }
     // Sem rede ou sem a lista da escola: mostra a última cópia que chegou ao aparelho.
-    if (!leuDaGestao) registros = data.registrosAdministrativos || [];
+    if (!leuDaGestao) { registros = data.registrosAdministrativos || []; estudantes = data.estudantes || []; }
 
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -9308,7 +9304,10 @@ async function renderRegistrosProfessor() {
     // Filtra e processa
     let lista = registros.map(r => {
         if (r.arquivado) return null; // Arquivados pela gestão não aparecem aqui (só no Arquivo Histórico do gestor)
-        const est = estudantes.find(e => e.id == r.estudanteId) || { nome_completo: r.nomeEstudante || 'Desconhecido' };
+        const achado = estudantes.find(e => e.id == r.estudanteId);
+        // Só estudante ATIVO: transferido/remanejado/abandono some daqui (como já some na gestão).
+        if (achado && !statusEhAtivo(achado.status)) return null;
+        const est = achado || { nome_completo: r.nomeEstudante || 'Desconhecido' };
         const turma = turmas.find(t => t.id == r.turmaId) || { nome: '?' };
 
         let cor = '#22c55e'; // Verde (Observação/Outros)
@@ -9354,7 +9353,7 @@ async function renderRegistrosProfessor() {
                             <tbody>
                                 ${grupos[turmaNome].map(r => `
                                     <tr>
-                                        <td style="color: ${r.cor}; font-weight: bold;">${r.tipo}</td>
+                                        <td style="color: ${r.cor}; font-weight: bold;">${rotuloTipoRegistro(r)}</td>
                                         <td>${r.estudanteNome}</td>
                                         <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
                                     </tr>

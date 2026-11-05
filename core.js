@@ -527,6 +527,37 @@ async function getFaltasCompartilhadas(dataStr) {
     return mapa;
 }
 
+// Mesma conta de getFaltasCompartilhadas, para VÁRIOS dias de uma vez (relatório mensal).
+// Lê os recortes dos professores UMA vez só e busca os documentos antigos de todos os dias
+// ao mesmo tempo. Devolve { 'AAAA-MM-DD': { idEstudante: [idProfessor, ...] } }, só com os
+// dias que têm alguma falta.
+async function getFaltasCompartilhadasDoPeriodo(datas) {
+    const resultado = {};
+    if (typeof db === 'undefined' || !db || !currentUser || !currentUser.schoolId) return resultado;
+    const somar = (dataStr, origem) => Object.keys(origem || {}).forEach(idEst => {
+        const dia = resultado[dataStr] || (resultado[dataStr] = {});
+        const k = String(idEst);
+        if (!dia[k]) dia[k] = [];
+        (origem[idEst] || []).forEach(p => { if (!dia[k].some(x => String(x) === String(p))) dia[k].push(p); });
+    });
+
+    const contrib = (typeof lerContribuicoesDaEscola === 'function')
+        ? lerContribuicoesDaEscola().catch(e => { console.error("Erro ao buscar faltas da escola:", e); return null; })
+        : Promise.resolve(null);
+    const antigos = Promise.all((datas || []).map(dataStr =>
+        db.collection('shared_attendance').doc(`school_${currentUser.schoolId}_${dataStr}`).get()
+            .then(doc => ({ dataStr, absences: doc.exists ? (doc.data().absences || {}) : null }))
+            .catch(e => { console.error("Erro ao buscar faltas compartilhadas:", e); return { dataStr, absences: null }; })
+    ));
+    const [c, docs] = await Promise.all([contrib, antigos]);
+    (datas || []).forEach(dataStr => {
+        if (c) somar(dataStr, faltasDoDiaNasContribuicoes(c, dataStr));
+    });
+    docs.forEach(d => { if (d.absences) somar(d.dataStr, d.absences); });
+    Object.keys(resultado).forEach(k => { if (!Object.keys(resultado[k]).length) delete resultado[k]; });
+    return resultado;
+}
+
 // --- FIM CONFIGURAÇÃO ---
 
 // --- MODELOS DA IA (Google Gemini) ---

@@ -64,6 +64,10 @@ function renderGestorPanel() {
 
     renderDashboard();
     showScreen('dashboard');
+
+    // Faltoso A: refaz a conta em segundo plano toda vez que a gestão abre o painel, para os
+    // professores receberem quem entrou/saiu sem a gestão precisar abrir a tela de Registros.
+    setTimeout(() => { try { atualizarFaltososAutomaticos(); } catch (e) {} }, 3000);
     
     // Se a tela atual for tutorias, renderiza
     if (document.getElementById('tutoriasGestor').classList.contains('active')) {
@@ -245,7 +249,7 @@ function renderListaArquivados() {
                         <tbody>
                             ${grupos[bimKey][turmaNome].map(r => `
                                 <tr>
-                                    <td style="color: ${r.cor}; font-weight: bold;">${r.tipo}</td>
+                                    <td style="color: ${r.cor}; font-weight: bold;">${rotuloTipoRegistro(r)}</td>
                                     <td><span class="badge" style="background:${r.status === 'Vencido' ? '#e3e8ef' : '#edf3fd'}; color:${r.cor}; font-size:10px;">${r.status}</span></td>
                                     <td>${getAeePrefix((data.estudantes || []).find(e => e.id == r.estudanteId))}${r.estudanteNome}</td>
                                     <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
@@ -455,63 +459,18 @@ async function renderAbaAlertasBuscaAtiva(forceRefresh = false) {
         const daysByTurma = {}; 
         
         try {
-            const marcarDia = (masterId, dia) => {
-                if (!daysByTurma[masterId]) daysByTurma[masterId] = new Set();
-                daysByTurma[masterId].add(dia);
-            };
-            const marcarFalta = (dia, idEst, profId) => {
-                if (!attendanceData[dia]) attendanceData[dia] = {};
-                if (!attendanceData[dia][idEst]) attendanceData[dia][idEst] = [];
-                if (!attendanceData[dia][idEst].some(x => String(x) === String(profId))) attendanceData[dia][idEst].push(profId);
-            };
-
-            // 1. O caminho de hoje: o recorte cifrado que cada professor publica no
-            //    ambiente da escola (listaescola.js). Desde a adequação, `presencas` não
-            //    está mais no documento em claro do professor, e ler só dele dava zero
-            //    falta para a escola inteira.
-            const comRecorte = new Set();
-            if (typeof lerContribuicoesDaEscola === 'function') {
-                const contrib = await lerContribuicoesDaEscola({ forcar: true });
-                contrib.lista.forEach(c => {
-                    comRecorte.add(String(c.autorId));
-                    const d = c.dados || {};
-                    Object.keys(d.chamadas || {}).forEach(masterId => (d.chamadas[masterId] || []).forEach(dia => marcarDia(masterId, dia)));
-                    Object.keys(d.faltas || {}).forEach(dia => (d.faltas[dia] || []).forEach(idEst => marcarFalta(dia, idEst, c.autorId)));
+            // Mesma coleta que a classificação "Faltoso A" usa (coletarFrequenciaDaEscola).
+            const fontes = await coletarFrequenciaDaEscola({ forcar: true });
+            fontes.forEach(f => {
+                Object.keys(f.chamadas || {}).forEach(masterId => {
+                    if (!daysByTurma[masterId]) daysByTurma[masterId] = new Set();
+                    (f.chamadas[masterId] || []).forEach(dia => daysByTurma[masterId].add(dia));
                 });
-            }
-
-            // 2. Conta isenta / antes do corte: o documento em claro ainda traz `presencas`.
-            const usersData = await getData('system', 'users_list');
-            const users = (usersData && usersData.list) ? usersData.list : [];
-            const teachers = users.filter(u => u.schoolId === schoolId && u.role !== 'super_admin' && !comRecorte.has(String(u.id)));
-
-            const promises = teachers.map(async (t) => {
-                const storageKey = (t.uid) ? 'app_data_' + t.uid : 'app_data_' + t.id;
-                const profData = await getData('app_data', storageKey);
-                return { teacherId: t.id, data: profData };
-            });
-
-            const results = await Promise.all(promises);
-
-            results.forEach(res => {
-                if (!res.data) return;
-
-                if (res.data.registrosAula) {
-                    res.data.registrosAula.forEach(r => {
-                        const tProf = (res.data.turmas || []).find(t => t.id == r.id_turma);
-                        const masterId = tProf ? tProf.masterId : null;
-                        if (masterId) marcarDia(masterId, r.data);
-                    });
-                }
-
-                if (res.data.presencas) {
-                    res.data.presencas.forEach(p => {
-                        const studentMaster = allStudents.find(s => s.id == p.id_estudante);
-                        const masterId = studentMaster ? studentMaster.id_turma : null;
-                        if (masterId) marcarDia(masterId, p.data);
-                        if (p.status === 'falta') marcarFalta(p.data, p.id_estudante, res.teacherId);
-                    });
-                }
+                Object.keys(f.faltas || {}).forEach(dia => (f.faltas[dia] || []).forEach(idEst => {
+                    if (!attendanceData[dia]) attendanceData[dia] = {};
+                    if (!attendanceData[dia][idEst]) attendanceData[dia][idEst] = [];
+                    if (!attendanceData[dia][idEst].some(x => String(x) === String(f.autorId))) attendanceData[dia][idEst].push(f.autorId);
+                }));
             });
 
             cacheBuscaAtiva = {
@@ -771,7 +730,7 @@ function marcarComoFaltosoBuscaAtiva(estudanteId, turmaId) {
     
     if (!data.registrosAdministrativos) data.registrosAdministrativos = [];
     
-    const exists = data.registrosAdministrativos.some(r => r.estudanteId == estudanteId && r.tipo === 'Faltoso');
+    const exists = data.registrosAdministrativos.some(r => r.estudanteId == estudanteId && r.tipo === 'Faltoso' && !r.automatico && !r.arquivado);
     if (exists) {
         alert('Este aluno já está marcado como faltoso.');
         return;
@@ -791,7 +750,218 @@ function marcarComoFaltosoBuscaAtiva(estudanteId, turmaId) {
     renderAbaAlertasBuscaAtiva();
 }
 
+// --- FALTOSO A (classificação automática) ---------------------------------------------------
+//
+// Quem tem menos de 50% de presença vira "Faltoso A" (A = Automático) sozinho e sai sozinho
+// quando a presença volta a 50% ou mais. Regras:
+//   - conta por DIA com chamada, não por aula: um dia em que algum professor fez chamada da
+//     turma do aluno conta uma vez só, tenha o aluno 1 ou 6 aulas;
+//   - se no mesmo dia um professor marcou presença e outro falta, vale o que apareceu mais
+//     vezes. EMPATE conta como PRESENÇA: o aluno esteve na escola em parte do dia;
+//   - dia coberto por atestado não entra na conta (nem como falta, nem como presença);
+//   - só começa a classificar quando a turma tem 2 semanas (14 dias) de chamadas, contadas da
+//     primeira chamada do ano - serve tanto para o início do ano quanto para a escola que
+//     começou a usar o sistema no meio dele;
+//   - só estudante ativo; quem já tem "Faltoso" lançado à mão pela gestão não ganha o A.
+// Fica em data.registrosAdministrativos como um Faltoso com `automatico: true`, então chega aos
+// professores pelo mesmo caminho dos faltosos manuais (lista publicada da escola).
+const FALTOSO_A_LIMITE = 0.5;
+const FALTOSO_A_CARENCIA_DIAS = 14;
+
+// Junta, por professor, os dias com chamada (por turma da escola) e as faltas (por dia).
+// Devolve [{ autorId, chamadas: { masterId: [dias] }, faltas: { dia: [idEstudante] } }].
+async function coletarFrequenciaDaEscola(opcoes) {
+    const fontes = [];
+    const schoolId = currentUser && currentUser.schoolId;
+    if (!schoolId) return fontes;
+    const allStudents = data.estudantes || [];
+
+    // 1. O caminho de hoje: o recorte cifrado que cada professor publica no ambiente da escola
+    //    (listaescola.js). Desde a adequação, `presencas` não está mais no documento em claro.
+    const comRecorte = new Set();
+    if (typeof lerContribuicoesDaEscola === 'function') {
+        const contrib = await lerContribuicoesDaEscola({ forcar: !!(opcoes && opcoes.forcar) });
+        (contrib.lista || []).forEach(c => {
+            comRecorte.add(String(c.autorId));
+            const d = c.dados || {};
+            fontes.push({ autorId: c.autorId, chamadas: d.chamadas || {}, faltas: d.faltas || {} });
+        });
+    }
+
+    // 2. Conta isenta / antes do corte: o documento em claro ainda traz `presencas`.
+    const usersData = await getData('system', 'users_list');
+    const users = (usersData && usersData.list) ? usersData.list : [];
+    const teachers = users.filter(u => u.schoolId === schoolId && u.role !== 'super_admin' && !comRecorte.has(String(u.id)));
+    const results = await Promise.all(teachers.map(async (t) => {
+        const storageKey = (t.uid) ? 'app_data_' + t.uid : 'app_data_' + t.id;
+        const profData = await getData('app_data', storageKey);
+        return { teacherId: t.id, data: profData };
+    }));
+    const masterDoAluno = {};
+    allStudents.forEach(s => { masterDoAluno[String(s.id)] = s.id_turma; });
+    results.forEach(res => {
+        if (!res.data) return;
+        const chamadas = {}, faltas = {};
+        const marcarDia = (m, dia) => { const k = String(m); if (!chamadas[k]) chamadas[k] = []; if (chamadas[k].indexOf(dia) === -1) chamadas[k].push(dia); };
+        (res.data.registrosAula || []).forEach(r => {
+            const tProf = (res.data.turmas || []).find(t => t.id == r.id_turma);
+            if (tProf && tProf.masterId) marcarDia(tProf.masterId, r.data);
+        });
+        (res.data.presencas || []).forEach(p => {
+            const m = masterDoAluno[String(p.id_estudante)];
+            if (m == null) return;
+            marcarDia(m, p.data);
+            if (p.status === 'falta') {
+                if (!faltas[p.data]) faltas[p.data] = [];
+                if (faltas[p.data].indexOf(p.id_estudante) === -1) faltas[p.data].push(p.id_estudante);
+            }
+        });
+        if (Object.keys(chamadas).length) fontes.push({ autorId: res.teacherId, chamadas, faltas });
+    });
+    return fontes;
+}
+
+function _diasEntre(a, b) {
+    return Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000);
+}
+
+// Conta pura (sem rede): quem está abaixo de 50%. `hoje` e `inicioAno` em 'AAAA-MM-DD'.
+// Devolve [{ estudanteId, turmaId, presenca (0-1), dias, diasPresente }].
+function calcularFaltososAutomaticos(fontes, estudantes, registros, hoje, inicioAno) {
+    const noPeriodo = (dia) => dia && dia <= hoje && (!inicioAno || dia >= inicioAno);
+    // turma -> dia -> professores que fizeram chamada; dia -> aluno -> professores que deram falta
+    const chamadaPorTurma = {};
+    const faltaPorDia = {};
+    (fontes || []).forEach(f => {
+        const autor = String(f.autorId);
+        Object.keys(f.chamadas || {}).forEach(m => (f.chamadas[m] || []).forEach(dia => {
+            if (!noPeriodo(dia)) return;
+            const t = chamadaPorTurma[String(m)] || (chamadaPorTurma[String(m)] = {});
+            (t[dia] || (t[dia] = new Set())).add(autor);
+        }));
+        Object.keys(f.faltas || {}).forEach(dia => {
+            if (!noPeriodo(dia)) return;
+            (f.faltas[dia] || []).forEach(idEst => {
+                const d = faltaPorDia[dia] || (faltaPorDia[dia] = {});
+                (d[String(idEst)] || (d[String(idEst)] = new Set())).add(autor);
+            });
+        });
+    });
+
+    const atestados = (registros || []).filter(r => r.tipo === 'Atestado' && !r.arquivado && r.data);
+    const diasDeAtestado = (idEst) => {
+        const set = new Set();
+        atestados.filter(r => String(r.estudanteId) === String(idEst)).forEach(r => {
+            const ini = new Date(r.data + 'T12:00:00');
+            for (let i = 0; i < Math.max(1, parseInt(r.dias) || 1); i++) {
+                const d = new Date(ini); d.setDate(d.getDate() + i);
+                set.add(d.toISOString().slice(0, 10));
+            }
+        });
+        return set;
+    };
+
+    const resultado = [];
+    (estudantes || []).forEach(e => {
+        if (!e || !statusEhAtivo(e.status)) return;
+        const porDia = chamadaPorTurma[String(e.id_turma)];
+        if (!porDia) return;
+        const diasTurma = Object.keys(porDia).sort();
+        if (!diasTurma.length || _diasEntre(diasTurma[0], hoje) < FALTOSO_A_CARENCIA_DIAS) return;
+
+        const atest = diasDeAtestado(e.id);
+        let dias = 0, presentes = 0;
+        diasTurma.forEach(dia => {
+            if (atest.has(dia)) return;
+            const profs = porDia[dia];
+            const quemDeuFalta = (faltaPorDia[dia] || {})[String(e.id)];
+            let faltas = 0;
+            if (quemDeuFalta) quemDeuFalta.forEach(p => { if (profs.has(p)) faltas++; });
+            const presencas = profs.size - faltas;
+            dias++;
+            if (presencas >= faltas) presentes++; // empate = presença
+        });
+        if (!dias) return;
+        const presenca = presentes / dias;
+        if (presenca < FALTOSO_A_LIMITE) resultado.push({ estudanteId: e.id, turmaId: e.id_turma, presenca, dias, diasPresente: presentes });
+    });
+    return resultado;
+}
+
+// Põe em data.registrosAdministrativos os Faltoso A da conta e tira quem saiu. Devolve true se mudou.
+function sincronizarFaltososAutomaticos(lista, hoje) {
+    if (!data.registrosAdministrativos) data.registrosAdministrativos = [];
+    const regs = data.registrosAdministrativos;
+    const manual = new Set(regs.filter(r => r.tipo === 'Faltoso' && !r.automatico && !r.arquivado).map(r => String(r.estudanteId)));
+    const alvo = {};
+    (lista || []).forEach(x => { if (!manual.has(String(x.estudanteId))) alvo[String(x.estudanteId)] = x; });
+
+    let mudou = false;
+    const ficam = [];
+    const jaTem = new Set();
+    regs.forEach(r => {
+        if (!(r.tipo === 'Faltoso' && r.automatico)) { ficam.push(r); return; }
+        const x = alvo[String(r.estudanteId)];
+        if (!x || jaTem.has(String(r.estudanteId))) { mudou = true; return; } // saiu (ou duplicado)
+        jaTem.add(String(r.estudanteId));
+        const perc = Math.round(x.presenca * 100);
+        const descricao = `Automático: ${perc}% de presença (${x.diasPresente} de ${x.dias} dias com chamada)`;
+        if (r.presencaPerc !== perc || r.descricao !== descricao || String(r.turmaId) !== String(x.turmaId)) {
+            ficam.push({ ...r, presencaPerc: perc, descricao, turmaId: x.turmaId });
+            mudou = true;
+        } else ficam.push(r);
+    });
+    let seq = 0;
+    Object.keys(alvo).forEach(k => {
+        if (jaTem.has(k)) return;
+        const x = alvo[k];
+        const perc = Math.round(x.presenca * 100);
+        const est = (data.estudantes || []).find(e => String(e.id) === k);
+        ficam.push({
+            id: Date.now() + (seq++), tipo: 'Faltoso', automatico: true,
+            estudanteId: x.estudanteId, turmaId: x.turmaId, data: hoje, dias: 0,
+            nomeEstudante: est ? est.nome_completo : undefined,
+            presencaPerc: perc,
+            descricao: `Automático: ${perc}% de presença (${x.diasPresente} de ${x.dias} dias com chamada)`
+        });
+        mudou = true;
+    });
+    if (mudou) data.registrosAdministrativos = ficam;
+    return mudou;
+}
+
+function _inicioAnoLetivo(hoje) {
+    const inicios = (data.configBimestres || []).filter(c => c && c.inicio && c.fim).map(c => c.inicio).sort();
+    const ano = String(hoje).slice(0, 4);
+    const doAno = inicios.filter(i => i.slice(0, 4) === ano);
+    return doAno[0] || (ano + '-01-01');
+}
+
+// Recalcula em segundo plano (a tela abre na hora com o que já está no painel).
+let _calculandoFaltososA = false;
+async function atualizarFaltososAutomaticos(redesenhar) {
+    if (_calculandoFaltososA || typeof currentViewMode === 'undefined' || currentViewMode !== 'gestor') return;
+    _calculandoFaltososA = true;
+    try {
+        const hoje = getTodayString();
+        const fontes = await coletarFrequenciaDaEscola();
+        const lista = calcularFaltososAutomaticos(fontes, data.estudantes || [], data.registrosAdministrativos || [], hoje, _inicioAnoLetivo(hoje));
+        if (sincronizarFaltososAutomaticos(lista, hoje)) {
+            await persistirDados();
+            if (typeof redesenhar === 'function') redesenhar();
+        }
+    } catch (e) {
+        console.warn('[Faltoso A] Não consegui calcular:', e);
+    } finally {
+        _calculandoFaltososA = false;
+    }
+}
+
 function renderAbaRegistrosAdministrativos() {
+    // Faltoso A: recalcula em segundo plano e redesenha só se alguém entrou ou saiu.
+    atualizarFaltososAutomaticos(() => {
+        if (currentRegistrosTab === 'administrativos' && document.getElementById('registrosGestorContent')) renderAbaRegistrosAdministrativos();
+    });
     const registros = data.registrosAdministrativos || [];
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -799,9 +969,9 @@ function renderAbaRegistrosAdministrativos() {
     // 1. Processar e Filtrar
     let lista = registros.map(r => {
         // Simulação de busca de estudante (em produção buscaria do banco)
-        const estudante = (data.estudantes || []).find(e => e.id == r.estudanteId) || { nome_completo: 'Desconhecido' };
-        
-        if (estudante.status && estudante.status !== 'Ativo') {
+        const estudante = (data.estudantes || []).find(e => e.id == r.estudanteId);
+        // Só estudante ATIVO (e que ainda existe na lista) aparece nos vigentes.
+        if (!estudante || !estudanteAtivo(estudante)) {
             return null;
         }
 
@@ -868,12 +1038,12 @@ function renderAbaRegistrosAdministrativos() {
                             <tbody>
                                 ${grupos[turmaNome].map(r => `
                                     <tr>
-                                        <td style="color: ${r.cor}; font-weight: bold;">${r.tipo}</td>
+                                        <td style="color: ${r.cor}; font-weight: bold;">${rotuloTipoRegistro(r)}</td>
                                         <td>${getAeePrefix((data.estudantes || []).find(e => e.id == r.estudanteId))}${r.estudanteNome}</td>
-                                        <td>${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
+                                        <td>${r.automatico ? 'Desde ' : ''}${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
                                         <td>
-                                            <button class="btn btn-secondary btn-sm" onclick="arquivarRegistroGestao(${r.id})" title="Arquivar (mantém no histórico)">🗄️ Arquivar</button>
-                                            <button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})" title="Excluir permanentemente">🗑️</button>
+                                            ${r.automatico ? `<small style="color:#5f6b7f;" title="Sai sozinho quando a presença chegar a 50%">🤖 automático</small>` : `<button class="btn btn-secondary btn-sm" onclick="arquivarRegistroGestao(${r.id})" title="Arquivar (mantém no histórico)">🗄️ Arquivar</button>
+                                            <button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})" title="Excluir permanentemente">🗑️</button>`}
                                         </td>
                                     </tr>
                                 `).join('')}
@@ -881,6 +1051,7 @@ function renderAbaRegistrosAdministrativos() {
                         </table>
                     `).join('')}
                 ` : '<p class="empty-state">Nenhum registro vigente ou faltoso encontrado.</p>'}
+                <p style="font-size:12px; color:#5f6b7f; margin-top:15px;">🤖 <strong>Faltoso A</strong> (automático): estudante ativo com menos de 50% de presença, contando 1 vez cada dia com chamada (se no mesmo dia teve presença e falta, vale o que apareceu mais; empate conta presença). Dias de atestado não entram. Só começa depois de 2 semanas de chamadas e sai sozinho quando a presença chega a 50%.</p>
             </div>
         </div>
     `;
