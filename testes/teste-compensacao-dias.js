@@ -62,6 +62,7 @@ const FAKE = () => {
   const r = await p.evaluate(() => ({
     comps: data.compensacoes.map(c => ({ est: c.id_estudante, qtd: c.qtd_faltas, peso: c.peso_faltas })),
     ana: document.querySelector('#tabCompensacoes tr[data-nome="Ana Souza"] .comp-dias-falta')?.textContent.trim(),
+    anaDentroDoNome: !!document.querySelector('#tabCompensacoes tr[data-nome="Ana Souza"] td:first-child .comp-dias-falta'),
     bruno: document.querySelector('#tabCompensacoes tr[data-nome="Bruno Lima"] .comp-dias-falta')?.textContent.trim() }));
 
   await p.locator('#tabCompensacoes tr[data-nome="Ana Souza"] td:nth-child(4) button').click();
@@ -79,7 +80,8 @@ const FAKE = () => {
 
   const ok = [
     ['falta do dia 1º conta no mês certo (fuso do Brasil)', r.comps.find(c => c.est == 1)?.qtd === 2 && r.comps.find(c => c.est == 1)?.peso === 3],
-    ['dias de falta embaixo do nome, com aula dupla', r.ana === 'Faltou: 1/10, 7/10 (2 aulas)'],
+    ['dias de falta embaixo do mês, com aula dupla', r.ana === 'Faltou: 1/10, 7/10 (2 aulas)'],
+    ['dias ficam debaixo do mês, não do nome', r.anaDentroDoNome === false && !!r.ana],
     ['presença não aparece como falta', r.bruno === 'Faltou: 15/10'],
     ['menu satélite com 6 opções, atual destacada', menu.n === 6 && menu.atual === 'pendente'],
     ['opções cabem na tela', menu.dentro],
