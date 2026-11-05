@@ -2269,6 +2269,7 @@ async function abrirTurma(id) {
                 }
                 data.estudantes.push(alunoLocal);
             });
+            if (podeReescrever && typeof tirarEstudantesRepetidos === 'function') tirarEstudantesRepetidos(data);
 
             // Sincroniza Registros Administrativos (Atestados/Faltosos) para o Dashboard, gravando o
             // nome do aluno em cada registro (para casar o faltoso por nome se o id divergir).
@@ -3230,7 +3231,9 @@ async function renderOcorrencias() {
 
     const listaExibir = currentTurmaOcorrenciaTab === 'disciplinares' ? disciplinaresFiltradas : rapidas;
 
-    const todosEstudantes = (data.estudantes || []).filter(e => e.id_turma == turmaAtual);
+    // Um aluno só uma vez: o mesmo id repetido na turma é o mesmo registro (sobra de
+    // junção entre aparelhos), nunca duas pessoas. Homônimos têm ids diferentes e ficam.
+    const todosEstudantes = estudantesSemRepetirId((data.estudantes || []).filter(e => e.id_turma == turmaAtual));
     
     const estudantesAtivos = todosEstudantes
         .filter(estudanteAtivo)
@@ -3252,8 +3255,9 @@ async function renderOcorrencias() {
     }
 
     // Filtra estudantes disponíveis e selecionados
-    const disponiveis = estudantesAtivos.filter(e => !tempOcorrenciaIds.includes(e.id));
-    const selecionados = todosEstudantes.filter(e => tempOcorrenciaIds.includes(e.id));
+    const escolhido = (e) => tempOcorrenciaIds.some(id => String(id) === String(e.id));
+    const disponiveis = estudantesAtivos.filter(e => !escolhido(e));
+    const selecionados = todosEstudantes.filter(escolhido);
 
     // Preserva o texto digitado caso haja re-renderização
     const textoAtual = document.getElementById('novaOcorrenciaTexto') ? document.getElementById('novaOcorrenciaTexto').value : '';
@@ -3301,7 +3305,7 @@ async function renderOcorrencias() {
                 <div style="background: #f6f8fb; padding: 10px; border-radius: 4px; border: 1px solid #e3e8ef; min-height: 40px;">
                     ${selecionados.length > 0 ? selecionados.map(e => `
                         <div style="display:inline-block; background:white; padding:2px 8px; border-radius:12px; border:1px solid #cdd5e1; margin-right:5px; margin-bottom:5px; font-size:12px;">
-                            ${isEstudanteFalta(e.id, todayStr) ? '<strong style="color:#e53e3e;">F</strong> ' : ''}${e.nome_completo} <span style="cursor:pointer; color:red; font-weight:bold; margin-left:5px;" onclick="removerEstudanteOcorrencia(${e.id})">×</span>
+                            ${isEstudanteFalta(e.id, todayStr) ? '<strong style="color:#e53e3e;">F</strong> ' : ''}${e.nome_completo} <span style="cursor:pointer; color:red; font-weight:bold; margin-left:5px;" onclick="removerEstudanteOcorrencia('${e.id}')">×</span>
                         </div>
                     `).join('') : '<span style="color:#7a869a; font-size:12px;">Nenhum estudante selecionado.</span>'}
                 </div>
@@ -3507,17 +3511,37 @@ function pedirIDAntigoBusca() {
     }
 }
 
+// Lista sem o mesmo id duas vezes (fica o primeiro).
+function estudantesSemRepetirId(lista) {
+    const vistos = new Set();
+    return (lista || []).filter(e => {
+        if (!e || e.id == null) return true;
+        const k = String(e.id);
+        if (vistos.has(k)) return false;
+        vistos.add(k);
+        return true;
+    });
+}
+
+// O id do estudante como está no cadastro (o valor do <select> é sempre texto, e o
+// parseInt antigo estragava id que não fosse número inteiro).
+function idEstudanteDoSelect(valor) {
+    if (valor === '' || valor == null) return null;
+    const est = (data.estudantes || []).find(e => String(e.id) === String(valor));
+    return est ? est.id : null;
+}
+
 function adicionarEstudanteOcorrencia() {
     const sel = document.getElementById('selEstudanteOcorrencia');
-    const id = parseInt(sel.value);
-    if (id) {
-        tempOcorrenciaIds.push(id);
+    const id = idEstudanteDoSelect(sel.value);
+    if (id != null) {
+        if (!tempOcorrenciaIds.some(x => String(x) === String(id))) tempOcorrenciaIds.push(id);
         renderOcorrencias();
     }
 }
 
 function removerEstudanteOcorrencia(id) {
-    tempOcorrenciaIds = tempOcorrenciaIds.filter(x => x !== id);
+    tempOcorrenciaIds = tempOcorrenciaIds.filter(x => String(x) !== String(id));
     renderOcorrencias();
 }
 
@@ -3560,7 +3584,7 @@ async function salvarOcorrenciaRapida() {
     // Reutiliza a lógica de salvamento, mas com tipo 'rapida'
     // Passamos o ID do estudante como array para manter compatibilidade
     await registrarOcorrenciaNoBanco({
-        ids: [parseInt(idEstudante)],
+        ids: [idEstudanteDoSelect(idEstudante)],
         texto: opcao,
         tipo: 'rapida'
     });

@@ -1749,6 +1749,11 @@ async function carregarDadosUsuario() {
     // recuperação que deu certo. Se depois de as duas tentativas o `data` continua
     // sem NENHUM registro onde este aparelho já teve, não é conta vazia — é leitura
     // que falhou, e gravar por cima apaga o ano letivo do professor.
+    // Sobra de junção antiga: o mesmo aluno duas vezes na mesma turma (shared.js).
+    if (typeof tirarEstudantesRepetidos === 'function') {
+        const saiu = tirarEstudantesRepetidos(data);
+        if (saiu) console.log('[SisProf] Estudantes repetidos na mesma turma retirados:', saiu);
+    }
     const veredito = await _conferirCamadaLocal(key, local, data);
     if (!veredito.ok) {
         window.bloquearEscritaLocal = true;

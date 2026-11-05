@@ -296,6 +296,30 @@ function mesmoEstudante(a, b) {
     return na === nb;
 }
 
+// Tira o estudante que está DUAS VEZES na mesma turma como o mesmo registro: mesmo id,
+// mesma turma e mesmo nome. Isso nunca são duas pessoas (o id é de um aluno só), é a
+// sobra de uma junção antiga entre aparelhos. Fica o editado por último (no empate, o
+// primeiro). Alunos diferentes com o MESMO nome têm ids diferentes e continuam os dois.
+// Muda `dados.estudantes` no lugar e devolve quantos saíram.
+function tirarEstudantesRepetidos(dados) {
+    if (!dados || !Array.isArray(dados.estudantes)) return 0;
+    const chave = (e) => (e && typeof e === 'object' && e.id != null)
+        ? String(e.id) + '|' + String(e.id_turma) + '|' + String(e.nome_completo || '').trim().toUpperCase()
+        : null;
+    const fica = new Map();      // chave -> posição na lista nova
+    const nova = [];
+    dados.estudantes.forEach(e => {
+        const c = chave(e);
+        if (c === null) { nova.push(e); return; }
+        if (!fica.has(c)) { fica.set(c, nova.length); nova.push(e); return; }
+        const pos = fica.get(c);
+        if (_carimboDe(e) > _carimboDe(nova[pos])) nova[pos] = e;
+    });
+    const saiu = dados.estudantes.length - nova.length;
+    if (saiu > 0) dados.estudantes = nova;
+    return saiu;
+}
+
 function _assinaturaEstudante(e) {
     const copia = Object.assign({}, e);
     delete copia.atualizadoEm;
@@ -355,11 +379,31 @@ function unirCamadaPessoal(alvo, vindo) {
             const porId = {};
             const k = (it) => (it && it.id != null) ? String(it.id) : 'js:' + JSON.stringify(it);
             aqui.forEach(it => { (porId[k(it)] = porId[k(it)] || []).push(it); });
-            const mesmo = (chave === 'estudantes') ? mesmoEstudante : mesmoRegistro;
+            const ehEstudante = (chave === 'estudantes');
+            const mesmo = ehEstudante ? mesmoEstudante : mesmoRegistro;
+            // Estudante: o par de cada um que veio é escolhido ANTES, e cada estudante
+            // daqui vale para um só. O professor que dá aula em duas turmas ligadas à
+            // mesma turma da gestão tem o MESMO aluno (mesmo id, mesmo nome) duas vezes,
+            // um em cada turma. Sem isto, o da turma B casava com o da turma A (o
+            // primeiro da lista), tomava o lugar dele, e a turma B ficava com cada
+            // aluno repetido (era o nome duplicado na ocorrência). Primeiro casa na
+            // MESMA turma; só o que sobrar casa em outra (o remanejado continua um só).
+            const parDe = new Map();
+            if (ehEstudante) {
+                const usados = new Set();
+                const mesmaTurma = (a, b) => String(a.id_turma) === String(b.id_turma);
+                const casar = (exigeTurma) => lista.forEach(it => {
+                    if (parDe.has(it)) return;
+                    const c = (porId[k(it)] || []).find(j => !usados.has(j) && (!exigeTurma || mesmaTurma(j, it)) && mesmo(j, it));
+                    if (c) { usados.add(c); parDe.set(it, c); }
+                });
+                casar(true);
+                casar(false);
+            }
             let entraram = 0;
             lista.forEach(it => {
                 const candidatos = porId[k(it)] || [];
-                const igual = candidatos.find(j => mesmo(j, it));
+                const igual = ehEstudante ? parDe.get(it) : candidatos.find(j => mesmo(j, it));
                 if (igual) {
                     // O mesmo registro dos dois lados: vale o editado por último. Sem
                     // isto o daqui mandava sempre, e o aparelho com cópia velha
@@ -377,6 +421,7 @@ function unirCamadaPessoal(alvo, vindo) {
                 aqui.push(it);
                 entraram++;
             });
+            if (ehEstudante) tirarEstudantesRepetidos(alvo);
             if (entraram) { por[chave] = entraram; total += entraram; }
             return;
         }
