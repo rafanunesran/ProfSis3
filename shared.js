@@ -184,7 +184,7 @@ const CAMPOS_PESSOAIS = [
     'encontros', 'agendamentos', // tutoria: relato e agenda por estudante
     'ocorrencias',             // relato + ids_estudantes
     'registrosAdministrativos',// atestados, busca ativa
-    'caderno', 'baixaFrequencia',
+    'caderno', 'baixaFrequencia', 'faltososAutomaticos', // Faltoso A do dia (ids de estudante)
     'notasAvaliacoesGestor', 'notasBimestraisOficiais', 'lotesMapaoGestor',
     'historicoDocumentos'      // histórico do Estagiário: planos de aula e os Anexos III/IV gerados
 ];

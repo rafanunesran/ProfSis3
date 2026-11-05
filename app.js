@@ -1734,6 +1734,9 @@ async function renderDashboard() {
             if (gestorData.avisosMural) data.avisosMural = gestorData.avisosMural;
             if (registrosGestorEnriquecidos) data.registrosAdministrativos = registrosGestorEnriquecidos;
             if (gradeMudou || registrosMudou || avisosMudou) persistirDados();
+            // Faltoso A: conta do dia no próprio aparelho, em segundo plano, 1 vez por dia
+            // (não depende de a gestão abrir o painel).
+            if (typeof atualizarFaltososDoDiaProfessor === 'function') atualizarFaltososDoDiaProfessor();
         }
     } else { gradeEscola = await getGradeEscola(); }
     
@@ -1819,8 +1822,9 @@ async function renderDashboard() {
             // Registros arquivados pela gestão saem dos alertas vigentes (ficam só no Arquivo Histórico do gestor)
             if (r.arquivado) return false;
             // Verifica se o estudante ainda está ativo para exibir este alerta
+            // Só estudante ATIVO e que ainda está na lista (registro de aluno que saiu não aparece).
             const est = (data.estudantes || []).find(e => e.id == r.estudanteId);
-            if (est && est.status && est.status !== 'Ativo') return false;
+            if (!est || !statusEhAtivo(est.status)) return false;
 
             if (r.tipo === 'Atestado') {
                 const parts = r.data.split('-');
@@ -1842,7 +1846,7 @@ async function renderDashboard() {
                         const est = (data.estudantes || []).find(e => e.id == r.estudanteId);
                         const nomeEst = est ? est.nome_completo : 'Estudante';
                         let icon = r.tipo === 'Atestado' ? '🔵' : (r.tipo === 'Faltoso' ? '🔴' : '📝');
-                        return `<li>${icon} ${getAeePrefix(est)} <strong>${nomeEst}</strong>: ${r.tipo}</li>`;
+                        return `<li>${icon} ${getAeePrefix(est)} <strong>${nomeEst}</strong>: ${rotuloTipoRegistro(r)}</li>`;
                     }).join('')}</ul></div>
                 </div>
             `;
@@ -2052,6 +2056,9 @@ async function obterTutoradosDaEscola() {
 // casamento só por id falhava, por ex., quando a lista de alunos foi reimportada).
 function enriquecerRegistrosComNome(registros, estudantesGestor) {
     if (!Array.isArray(registros)) return registros;
+    // Faltoso A: no professor, vale a conta do dia feita no próprio aparelho (gestor.js,
+    // atualizarFaltososDoDiaProfessor) no lugar da que veio da gestão, que pode ser de outro dia.
+    if (currentViewMode === 'professor' && typeof registrosComFaltososDoDia === 'function') registros = registrosComFaltososDoDia(registros);
     return registros.map(r => {
         if ((r.tipo === 'Faltoso' || r.tipo === 'Atestado') && !r.nomeEstudante) {
             const est = (estudantesGestor || []).find(e => e.id == r.estudanteId);
@@ -9330,9 +9337,10 @@ async function renderRegistrosProfessor() {
     // Filtra e processa
     let lista = registros.map(r => {
         if (r.arquivado) return null; // Arquivados pela gestão não aparecem aqui (só no Arquivo Histórico do gestor)
-        const achado = estudantes.find(e => e.id == r.estudanteId);
-        // Só estudante ATIVO: transferido/remanejado/abandono some daqui (como já some na gestão).
-        if (achado && !statusEhAtivo(achado.status)) return null;
+        const achado = estudantes.find(e => e.id == r.estudanteId) || (data.estudantes || []).find(e => e.id == r.estudanteId);
+        // Só estudante ATIVO: transferido/remanejado/abandono, ou quem nem está mais na lista,
+        // some daqui (como já some na gestão). Vale para os lançados à mão pela gestão também.
+        if (!achado || !statusEhAtivo(achado.status)) return null;
         const est = achado || { nome_completo: r.nomeEstudante || 'Desconhecido' };
         const turma = turmas.find(t => t.id == r.turmaId) || { nome: '?' };
 

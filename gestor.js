@@ -889,12 +889,23 @@ function calcularFaltososAutomaticos(fontes, estudantes, registros, hoje, inicio
 }
 
 // Põe em data.registrosAdministrativos os Faltoso A da conta e tira quem saiu. Devolve true se mudou.
-function sincronizarFaltososAutomaticos(lista, hoje) {
-    if (!data.registrosAdministrativos) data.registrosAdministrativos = [];
-    const regs = data.registrosAdministrativos;
+// id fixo por estudante: o mesmo Faltoso A tem o mesmo id em todo aparelho e todo dia, então
+// refazer a conta sem mudança não gera gravação nem "registro novo".
+function idFaltosoA(estudanteId) {
+    let h = 5381;
+    const t = String(estudanteId);
+    for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0;
+    return 800000000000000 + h;
+}
+
+// Conta pura: devolve { regs, mudou } com os Faltoso A de `lista` no lugar dos antigos.
+// `desde` (opcional) = { idEstudante: 'AAAA-MM-DD' } com a data em que cada um entrou.
+function aplicarFaltososAutomaticos(regsEntrada, lista, hoje, desde, estudantes) {
+    const regs = Array.isArray(regsEntrada) ? regsEntrada : [];
     const manual = new Set(regs.filter(r => r.tipo === 'Faltoso' && !r.automatico && !r.arquivado).map(r => String(r.estudanteId)));
     const alvo = {};
     (lista || []).forEach(x => { if (!manual.has(String(x.estudanteId))) alvo[String(x.estudanteId)] = x; });
+    const desc = (x, perc) => `Automático: ${perc}% de presença (${x.diasPresente} de ${x.dias} dias com chamada)`;
 
     let mudou = false;
     const ficam = [];
@@ -905,29 +916,87 @@ function sincronizarFaltososAutomaticos(lista, hoje) {
         if (!x || jaTem.has(String(r.estudanteId))) { mudou = true; return; } // saiu (ou duplicado)
         jaTem.add(String(r.estudanteId));
         const perc = Math.round(x.presenca * 100);
-        const descricao = `Automático: ${perc}% de presença (${x.diasPresente} de ${x.dias} dias com chamada)`;
+        const descricao = desc(x, perc);
         if (r.presencaPerc !== perc || r.descricao !== descricao || String(r.turmaId) !== String(x.turmaId)) {
             ficam.push({ ...r, presencaPerc: perc, descricao, turmaId: x.turmaId });
             mudou = true;
         } else ficam.push(r);
     });
-    let seq = 0;
     Object.keys(alvo).forEach(k => {
         if (jaTem.has(k)) return;
         const x = alvo[k];
         const perc = Math.round(x.presenca * 100);
-        const est = (data.estudantes || []).find(e => String(e.id) === k);
-        ficam.push({
-            id: Date.now() + (seq++), tipo: 'Faltoso', automatico: true,
-            estudanteId: x.estudanteId, turmaId: x.turmaId, data: hoje, dias: 0,
-            nomeEstudante: est ? est.nome_completo : undefined,
-            presencaPerc: perc,
-            descricao: `Automático: ${perc}% de presença (${x.diasPresente} de ${x.dias} dias com chamada)`
-        });
+        const est = (estudantes || []).find(e => String(e.id) === k);
+        const novo = {
+            id: idFaltosoA(k), tipo: 'Faltoso', automatico: true,
+            estudanteId: x.estudanteId, turmaId: x.turmaId, data: (desde && desde[k]) || hoje, dias: 0,
+            presencaPerc: perc, descricao: desc(x, perc)
+        };
+        if (est && est.nome_completo) novo.nomeEstudante = est.nome_completo;
+        ficam.push(novo);
         mudou = true;
     });
-    if (mudou) data.registrosAdministrativos = ficam;
-    return mudou;
+    return { regs: mudou ? ficam : regs, mudou };
+}
+
+// Põe em data.registrosAdministrativos os Faltoso A da conta e tira quem saiu. Devolve true se mudou.
+function sincronizarFaltososAutomaticos(lista, hoje) {
+    const r = aplicarFaltososAutomaticos(data.registrosAdministrativos || [], lista, hoje, null, data.estudantes || []);
+    if (r.mudou || !data.registrosAdministrativos) data.registrosAdministrativos = r.regs;
+    return r.mudou;
+}
+
+// --- Faltoso A no aparelho do PROFESSOR, uma vez por dia --------------------------------------
+// A conta não depende de a gestão abrir o painel: o próprio aparelho do professor, na primeira
+// abertura do dia, lê as chamadas que todos os professores publicaram para a escola (o mesmo
+// recorte cifrado que a chamada já usa para "N falta(s) hoje"), refaz a conta só para os
+// estudantes das turmas dele e guarda em data.faltososAutomaticos = { dia, lista, desde }.
+// Toda vez que os registros da gestão chegam (enriquecerRegistrosComNome), os Faltoso A antigos
+// que vieram junto são trocados por esta conta do dia.
+function registrosComFaltososDoDia(registros) {
+    const fa = (typeof data !== 'undefined' && data) ? data.faltososAutomaticos : null;
+    if (!Array.isArray(registros) || !fa || !Array.isArray(fa.lista)) return registros;
+    return aplicarFaltososAutomaticos(registros, fa.lista, fa.dia, fa.desde || {}, data.estudantes || []).regs;
+}
+
+let _calculandoFaltososAProf = false;
+async function atualizarFaltososDoDiaProfessor(opcoes) {
+    if (_calculandoFaltososAProf || typeof currentViewMode === 'undefined' || currentViewMode !== 'professor') return false;
+    if (!currentUser || !currentUser.schoolId || typeof lerContribuicoesDaEscola !== 'function') return false;
+    const hoje = getTodayString();
+    const fa = data.faltososAutomaticos;
+    if (fa && fa.dia === hoje && !(opcoes && opcoes.forcar)) return false; // já fez hoje
+    _calculandoFaltososAProf = true;
+    try {
+        const contrib = await lerContribuicoesDaEscola();
+        if (!contrib || contrib.estado !== 'ok') return false; // tenta de novo na próxima abertura
+        const fontes = (contrib.lista || []).map(c => ({ autorId: c.autorId, chamadas: (c.dados || {}).chamadas || {}, faltas: (c.dados || {}).faltas || {} }));
+        // Estudantes das turmas do professor, pela turma da ESCOLA (masterId) e sem repetir.
+        const masterDe = {};
+        (data.turmas || []).forEach(t => { if (t && t.masterId != null && t.masterId !== '') masterDe[String(t.id)] = t.masterId; });
+        const vistos = new Set();
+        const estudantes = [];
+        (data.estudantes || []).forEach(e => {
+            const m = masterDe[String(e.id_turma)];
+            if (m == null || vistos.has(String(e.id))) return;
+            vistos.add(String(e.id));
+            estudantes.push({ id: e.id, id_turma: m, status: e.status, nome_completo: e.nome_completo });
+        });
+        const lista = calcularFaltososAutomaticos(fontes, estudantes, data.registrosAdministrativos || [], hoje, _inicioAnoLetivo(hoje));
+        // Data de entrada de cada um: mantém a de quem continua, hoje para quem entrou agora.
+        const desdeAntes = (fa && fa.desde) || {};
+        const desde = {};
+        lista.forEach(x => { const k = String(x.estudanteId); desde[k] = desdeAntes[k] || hoje; });
+        data.faltososAutomaticos = { dia: hoje, lista, desde };
+        data.registrosAdministrativos = registrosComFaltososDoDia(data.registrosAdministrativos || []);
+        await persistirDados();
+        return true;
+    } catch (e) {
+        console.warn('[Faltoso A] Não consegui fazer a conta do dia:', e);
+        return false;
+    } finally {
+        _calculandoFaltososAProf = false;
+    }
 }
 
 function _inicioAnoLetivo(hoje) {
@@ -1051,7 +1120,7 @@ function renderAbaRegistrosAdministrativos() {
                         </table>
                     `).join('')}
                 ` : '<p class="empty-state">Nenhum registro vigente ou faltoso encontrado.</p>'}
-                <p style="font-size:12px; color:#5f6b7f; margin-top:15px;">🤖 <strong>Faltoso A</strong> (automático): estudante ativo com menos de 50% de presença, contando 1 vez cada dia com chamada (se no mesmo dia teve presença e falta, vale o que apareceu mais; empate conta presença). Dias de atestado não entram. Só começa depois de 2 semanas de chamadas e sai sozinho quando a presença chega a 50%.</p>
+                <p style="font-size:12px; color:#5f6b7f; margin-top:15px;">🤖 <strong>Faltoso A</strong> (automático): estudante ativo com menos de 50% de presença, contando 1 vez cada dia com chamada (se no mesmo dia teve presença e falta, vale o que apareceu mais; empate conta presença). Dias de atestado não entram. Só começa depois de 2 semanas de chamadas e sai sozinho quando a presença chega a 50%. A conta é refeita todo dia: no aparelho de cada professor, na primeira abertura do dia, e aqui sempre que esta tela abre.</p>
             </div>
         </div>
     `;

@@ -7,7 +7,8 @@
 //   4. entra e SAI sozinho de data.registrosAdministrativos;
 //   5. a tela de Registros da gestão mostra "Faltoso A" e não mostra inativo;
 //   6. a página Registros do professor esconde estudante inativo e mostra "Faltoso A";
-//   7. o relatório mensal busca os dias ao mesmo tempo (não um depois do outro).
+//   7. o relatório mensal busca os dias ao mesmo tempo (não um depois do outro);
+//   8. o aparelho do professor faz a conta 1 vez por dia sozinho, sem a gestão.
 //
 // Rodar: python3 -m http.server 8877 --bind 127.0.0.1  (na raiz) e depois
 //        PROFSIS_CHROMIUM=/opt/pw-browsers/chromium NODE_PATH=$(npm root -g) node testes/teste-faltoso-a.js
@@ -146,6 +147,42 @@ const ok = (cond, msg, extra) => { console.log((cond ? '  ok     ' : '  FALHOU '
   });
   ok(rel.pico >= 10, 'os 10 dias foram buscados ao mesmo tempo', 'pico de ' + rel.pico + ' buscas simultâneas');
   ok(rel.ms < 900, 'com 150 ms por busca, levou bem menos que 10 × 150 ms', rel.ms + ' ms');
+
+  console.log('8. Conta do dia no aparelho do professor (sem a gestão abrir nada)');
+  const pd = await p.evaluate(async () => {
+    const hoje = getTodayString();
+    const dias = [];
+    const d0 = new Date(hoje + 'T12:00:00'); d0.setDate(d0.getDate() - 30);
+    for (let i = 0; i < 30; i++) { const d = new Date(d0); d.setDate(d.getDate() + i); if (d.getDay() && d.getDay() !== 6) dias.push(d.toISOString().slice(0, 10)); }
+    const faltas = {}; dias.forEach(d => faltas[d] = [1]);
+    let leituras = 0;
+    window.lerContribuicoesDaEscola = async () => { leituras++; return { estado: 'ok', lista: [{ autorId: 'p9', dados: { chamadas: { 10: dias }, faltas } }] }; };
+    currentUser = { id: 'p1', nome: 'P', role: 'professor', schoolId: '77' }; currentViewMode = 'professor';
+    window.dadosCarregados = false; // persistirDados não grava nada no teste
+    data = Object.assign(getInitialData(), {
+      turmas: [{ id: 500, nome: '1A', masterId: 10 }],
+      estudantes: [{ id: 1, id_turma: 500, nome_completo: 'Ana', status: 'Ativo' }, { id: 2, id_turma: 500, nome_completo: 'Bruno', status: 'Ativo' }],
+      // a gestão mandou um Faltoso A velho do Bruno (de outro dia) e nenhum da Ana
+      registrosAdministrativos: [{ id: idFaltosoA(2), tipo: 'Faltoso', automatico: true, estudanteId: 2, turmaId: 10, data: '2026-01-01', presencaPerc: 10 }]
+    });
+    const fez = await atualizarFaltososDoDiaProfessor();
+    const autos = data.registrosAdministrativos.filter(r => r.automatico).map(r => r.estudanteId);
+    const fezDeNovo = await atualizarFaltososDoDiaProfessor();
+    // a gestão sincroniza de novo trazendo o Faltoso A velho: a conta do dia vence
+    const veio = enriquecerRegistrosComNome([{ id: idFaltosoA(2), tipo: 'Faltoso', automatico: true, estudanteId: 2, turmaId: 10, data: '2026-01-01' },
+                                             { id: 5, tipo: 'Faltoso', estudanteId: 99, turmaId: 10, data: '2026-01-01' }], []);
+    data.registrosAdministrativos = veio;
+    // página Registros: o Faltoso manual do estudante 99 (que não está em lista nenhuma) some
+    let sc = document.getElementById('registrosProfessor');
+    currentUser = { id: 'p1', nome: 'P', role: 'professor' };
+    await renderRegistrosProfessor();
+    return { fez, fezDeNovo, leituras, autos, depoisSync: veio.filter(r => r.automatico).map(r => r.estudanteId), dia: data.faltososAutomaticos && data.faltososAutomaticos.dia === hoje, txt: sc.innerText };
+  });
+  ok(pd.fez && JSON.stringify(pd.autos) === '[1]', 'na 1ª abertura do dia o professor calcula: Ana entra, o Faltoso A velho do Bruno sai', JSON.stringify(pd.autos));
+  ok(pd.fezDeNovo === false && pd.leituras === 1, 'na 2ª abertura do mesmo dia não refaz a conta', 'leituras: ' + pd.leituras);
+  ok(JSON.stringify(pd.depoisSync) === '[1]', 'quando os registros da gestão chegam de novo, vale a conta do dia', JSON.stringify(pd.depoisSync));
+  ok(/Ana/.test(pd.txt) && /Faltoso A/.test(pd.txt), 'Registros do professor mostram a Ana como Faltoso A');
+  ok(!/Desconhecido/.test(pd.txt), 'Faltoso lançado pela gestão para estudante que não está na lista não aparece');
 
   await b.close();
   console.log(falhas ? `\n*** ${falhas} FALHA(S) ***` : '\nTudo certo.');

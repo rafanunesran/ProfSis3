@@ -965,7 +965,7 @@ const PAGINAS = [
               'Os dados do cabeçalho vêm do cadastro da escola. Se algo sair errado, peça para a gestão corrigir.'] },
     { id: 'p-registros', icone: '📂', titulo: 'Registros (da gestão)', tour: 'registrosProfessor',
       praQue: 'Faltas justificadas, atestados e alertas que a gestão lançou para os seus estudantes.',
-      passos: ['Só para consulta: quem altera é a gestão.', 'Separado por turma.', 'Só aparecem estudantes ativos (transferidos e remanejados saem da lista).', '"Faltoso A" (A de Automático): o sistema marca sozinho quem tem menos de 50% de presença, contando 1 vez cada dia com chamada (se no mesmo dia teve presença e falta, vale o que apareceu mais; empate conta presença). Só começa depois de 2 semanas de chamadas e sai sozinho quando a presença sobe.'] },
+      passos: ['Só para consulta: quem altera é a gestão.', 'Separado por turma.', 'Só aparecem estudantes ativos (transferidos e remanejados saem da lista).', '"Faltoso A" (A de Automático): o sistema marca sozinho quem tem menos de 50% de presença, contando 1 vez cada dia com chamada (se no mesmo dia teve presença e falta, vale o que apareceu mais; empate conta presença). Só começa depois de 2 semanas de chamadas. A conta é refeita sozinha todo dia, na primeira vez que o aplicativo abre, e o estudante sai quando a presença sobe.'] },
     { id: 'p-aee', icone: '🌟', titulo: 'Painel AEE', tour: 'aeeVisaoGeral',
       praQue: 'Os estudantes acompanhados pelo AEE e os Anexos IV - PEI.',
       passos: ['Veja quem tem acompanhamento.', 'Abra, baixe em PDF ou reimprima o Anexo IV.', 'Para criar um Anexo IV, use o "✨ Estagiário".'] },
@@ -1037,7 +1037,7 @@ const MANUAL_TURMA = [
           { t: 'Avisos na lista', itens: [
               '"Atestado (Xd)": atestado vigente nesse dia. O estudante já vem desmarcado (falta).',
               '"Faltoso" (vermelho) e "Obs" (amarelo): alertas da gestão. Passe o dedo/mouse em "Obs" para ler.',
-              '"Faltoso A" (A de Automático): o sistema marca sozinho quem tem menos de 50% de presença, contando 1 vez cada dia com chamada (se no mesmo dia teve presença e falta, vale o que apareceu mais; empate conta presença). Só começa depois de 2 semanas de chamadas e sai sozinho quando a presença sobe. Passe o dedo/mouse na tag para ver a porcentagem.',
+              '"Faltoso A" (A de Automático): o sistema marca sozinho quem tem menos de 50% de presença, contando 1 vez cada dia com chamada (se no mesmo dia teve presença e falta, vale o que apareceu mais; empate conta presença). Só começa depois de 2 semanas de chamadas. A conta é refeita sozinha todo dia, na primeira vez que o aplicativo abre, e o estudante sai quando a presença sobe. Passe o dedo/mouse na tag para ver a porcentagem.',
               '"1B: 3d": dias de atestado acumulados no bimestre.',
               '"⚠️ N falta(s) hoje": outros professores marcaram falta hoje. Com 2 ou mais, o estudante já vem desmarcado como sugestão; se ele está na sua aula, marque de volta.'] },
           { t: 'Status e avisos da tela', itens: [
