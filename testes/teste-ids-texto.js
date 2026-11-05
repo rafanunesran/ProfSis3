@@ -52,9 +52,20 @@ const FAKE = () => {
     renderCompensacoes();
   });
   const botaoStatus = (nome) => p.locator(`#tabCompensacoes tr[data-nome="${nome}"] td:nth-child(4) button`);
-  await botaoStatus('Ana Texto').click();
-  await botaoStatus('Ana Texto').click();
+  // O botão abre o menu satélite; escolhe direto a situação.
+  const escolher = async (nome, status) => {
+    await botaoStatus(nome).click();
+    await p.waitForTimeout(250);
+    await p.locator(`#compSatelite .comp-sat-item[data-status="${status}"]`).click();
+  };
+  await escolher('Ana Texto', 'entregue');
+  await escolher('Bia Numero', 'notificado');
+  // Escolher a mesma situação de novo não grava histórico; ✕ fecha sem mudar.
+  await escolher('Bia Numero', 'notificado');
   await botaoStatus('Bia Numero').click();
+  await p.locator('#compSatelite .comp-sat-centro').click();
+  const histBia = await p.evaluate(() => ({ n: data.compensacoes.find(c => c.id === 123).historico.length, menu: !!document.getElementById('compSatelite') }));
+  const histAna = await p.evaluate(() => data.compensacoes.find(c => c.id === 'mh01a-zz9x8y').historico.map(h => h.status));
   const comp = await p.evaluate(() => ({
     texto: data.compensacoes.find(c => c.id === 'mh01a-zz9x8y').status,
     numero: data.compensacoes.find(c => c.id === 123).status,
@@ -80,9 +91,11 @@ const FAKE = () => {
   await b.close();
 
   const ok = [
-    ['status da compensação com id de texto avança (2 cliques)', comp.texto === 'entregue'],
+    ['menu satélite escolhe direto (id texto: pendente → entregue)', comp.texto === 'entregue'],
+    ['só a situação escolhida entra no histórico', JSON.stringify(histAna) === '["entregue"]'],
+    ['repetir a mesma situação não grava; ✕ fecha o menu', histBia.n === 1 && !histBia.menu],
     ['rótulo do botão atualiza', /Entregue/.test(comp.rotulo)],
-    ['status da compensação com id numérico avança', comp.numero === 'notificado'],
+    ['menu satélite com id numérico', comp.numero === 'notificado'],
     ['excluir compensação funciona', JSON.stringify(sobrou) === '["mh01a-zz9x8y"]'],
     ['nota salva para aluno de id texto', r.notaTexto && r.notaTexto.valor === '8,5'],
     ['nota salva para aluno de id número (tipo mantido)', r.notaNumero && r.notaNumero.valor === '6'],

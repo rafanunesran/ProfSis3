@@ -5480,7 +5480,7 @@ function renderCompensacoes() {
                         <th>Estudante</th>
                         <th>Ref.</th>
                         <th>Atividade</th>
-                        <th>Status (Clique para alterar)</th>
+                        <th>Status (toque para escolher)</th>
                         <th>Ações</th>
                     </tr>
                 </thead>
@@ -5488,14 +5488,7 @@ function renderCompensacoes() {
                     ${compensacoes.length > 0 ? compensacoes.map(c => {
                         const est = (data.estudantes || []).find(e => e.id == c.id_estudante);
                         const nomeEst = est ? est.nome_completo : 'Excluído';
-                        const statusMap = {
-                            'pendente': { label: '⏳ Pendente', color: '#d69e2e', bg: '#fffaf0' },
-                            'notificado': { label: '📩 Notificado', color: '#2563c9', bg: '#edf3fd' },
-                            'entregue': { label: '✅ Entregue', color: '#2f855a', bg: '#f0fff4' },
-                            'entregue_atraso': { label: '⏰ Entregue c/ Atraso', color: '#f59e0b', bg: '#fffaf0' },
-                            'nao_entregue': { label: '❌ Não Entregue', color: '#e53e3e', bg: '#fff5f5' },
-                            'nao_fez_folha': { label: '📄 Não Fez / S. Folha', color: '#5f6b7f', bg: '#eef2f7' }
-                        };
+                        const statusMap = STATUS_COMPENSACAO;
                         const st = statusMap[c.status] || statusMap['pendente'];
 
                         // [AJUSTE] Mantém Pendente e Notificado visíveis, mas sobrepõe os estados de entrega/finalização
@@ -5518,12 +5511,13 @@ function renderCompensacoes() {
                             <tr data-nome="${escapeHtmlColar(nomeEst)}">
                                 <td>
                                     ${getFaltaBadgeHtml(est ? est.id : null, todayStr)}${getAeePrefix(est)}<strong>${nomeEst}</strong>
+                                    ${diasFaltaCompensacaoHtml(c)}
                                     <div style="font-size:10px; color:#5f6b7f; margin-top:2px;">${logMinimizado}</div>
                                 </td>
                                 <td style="font-size:12px;">${meses[c.mes_referencia]}/${c.ano_referencia}</td>
                                 <td>${c.atividade} <br><span style="font-size:10px; color:#5f6b7f;">Aulas comp.: ${c.peso_faltas || c.qtd_faltas}</span></td>
                                 <td>
-                                    <button onclick="toggleStatusCompensacao('${c.id}')" style="border:1px solid ${st.color}; background:${st.bg}; color:${st.color}; padding:5px 10px; border-radius:15px; font-weight:bold; cursor:pointer; width: 130px;">
+                                    <button onclick="abrirMenuStatusCompensacao('${c.id}', this)" aria-haspopup="true" title="Escolher a situação" style="border:1px solid ${st.color}; background:${st.bg}; color:${st.color}; padding:5px 10px; border-radius:15px; font-weight:bold; cursor:pointer; width: 130px;">
                                         ${st.label}
                                     </button>
                                 </td>
@@ -5547,12 +5541,9 @@ function gerarCompensacoesAutomatico() {
     if (!atividade) return alert('Digite a descrição da atividade.');
 
     // Filtra presenças do mês/ano selecionado
-    const presencas = (data.presencas || []).filter(p => {
-        const d = new Date(p.data);
-        // Ajuste de fuso simples ou apenas comparação de mês/ano
-        // getMonth() é 0-based
-        return d.getMonth() === mes && d.getFullYear() === ano && p.status === 'falta';
-    });
+    // Lê ano e mês direto do texto "AAAA-MM-DD": new Date("AAAA-MM-DD") é meia-noite em
+    // UTC e, no fuso do Brasil, a falta do dia 1º caía no mês anterior.
+    const presencas = (data.presencas || []).filter(p => p.status === 'falta' && dataNoMesCompensacao(p.data, mes, ano));
 
     // Agrupa por estudante calculando quantidade e peso (dobradinhas)
     const mapaFaltas = {};
@@ -5609,19 +5600,120 @@ function gerarCompensacoesAutomatico() {
     renderCompensacoes();
 }
 
-function toggleStatusCompensacao(id) {
-    const comp = data.compensacoes.find(c => c.id == id);
-    if (!comp) return;
+const STATUS_COMPENSACAO = {
+    'pendente': { label: '⏳ Pendente', curto: 'Pendente', icone: '⏳', color: '#d69e2e', bg: '#fffaf0' },
+    'notificado': { label: '📩 Notificado', curto: 'Notificado', icone: '📩', color: '#2563c9', bg: '#edf3fd' },
+    'entregue': { label: '✅ Entregue', curto: 'Entregue', icone: '✅', color: '#2f855a', bg: '#f0fff4' },
+    'entregue_atraso': { label: '⏰ Entregue c/ Atraso', curto: 'C/ atraso', icone: '⏰', color: '#f59e0b', bg: '#fffaf0' },
+    'nao_entregue': { label: '❌ Não Entregue', curto: 'Não entregue', icone: '❌', color: '#e53e3e', bg: '#fff5f5' },
+    'nao_fez_folha': { label: '📄 Não Fez / S. Folha', curto: 'Não fez / s. folha', icone: '📄', color: '#5f6b7f', bg: '#eef2f7' }
+};
 
-    const ciclo = ['pendente', 'notificado', 'entregue', 'entregue_atraso', 'nao_entregue', 'nao_fez_folha'];
-    const atualIdx = ciclo.indexOf(comp.status);
-    const proximoIdx = (atualIdx + 1) % ciclo.length;
-    
-    comp.status = ciclo[proximoIdx];
-    
-    // Adiciona ao histórico
+function dataNoMesCompensacao(dataStr, mes, ano) {
+    const partes = String(dataStr || '').slice(0, 10).split('-');
+    return partes.length === 3 && parseInt(partes[0], 10) === ano && parseInt(partes[1], 10) - 1 === mes;
+}
+
+// Dias em que o estudante faltou no mês de referência da compensação, em ordem.
+function diasFaltaCompensacao(c) {
+    const mes = parseInt(c.mes_referencia, 10), ano = parseInt(c.ano_referencia, 10);
+    const dias = (data.presencas || [])
+        .filter(p => p.status === 'falta' && String(p.id_estudante) === String(c.id_estudante) && dataNoMesCompensacao(p.data, mes, ano))
+        .map(p => String(p.data).slice(0, 10));
+    return [...new Set(dias)].sort();
+}
+
+function diasFaltaCompensacaoHtml(c) {
+    const dias = diasFaltaCompensacao(c);
+    if (!dias.length) return '';
+    const textos = dias.map(d => {
+        const [, m, dia] = d.split('-');
+        const aulas = getAulasNoDia(c.id_turma, d);
+        return `${parseInt(dia, 10)}/${parseInt(m, 10)}${aulas > 1 ? ` (${aulas} aulas)` : ''}`;
+    });
+    return `<div class="comp-dias-falta" style="font-size:10px; color:#8a5a14; margin-top:2px;">Faltou: ${textos.join(', ')}</div>`;
+}
+
+// Menu satélite: as situações aparecem em volta do botão e o toque escolhe direto,
+// sem passar pelas outras (cada passagem gravava uma linha no histórico).
+function fecharMenuStatusCompensacao() {
+    const m = document.getElementById('compSatelite');
+    if (m) m.remove();
+    document.removeEventListener('keydown', teclaMenuStatusCompensacao);
+}
+
+function teclaMenuStatusCompensacao(e) {
+    if (e.key === 'Escape') fecharMenuStatusCompensacao();
+}
+
+function abrirMenuStatusCompensacao(id, botao) {
+    fecharMenuStatusCompensacao();
+    const comp = (data.compensacoes || []).find(c => String(c.id) === String(id));
+    if (!comp || !botao) return;
+
+    const chaves = Object.keys(STATUS_COMPENSACAO);
+    const r = botao.getBoundingClientRect();
+    const raio = 82, folga = 46;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const cx = Math.min(Math.max(r.left + r.width / 2, raio + folga), vw - raio - folga);
+    const cy = Math.min(Math.max(r.top + r.height / 2, raio + folga), vh - raio - folga);
+
+    const itens = chaves.map((k, i) => {
+        const st = STATUS_COMPENSACAO[k];
+        const ang = -Math.PI / 2 + i * (2 * Math.PI / chaves.length);
+        const x = Math.round(Math.cos(ang) * raio), y = Math.round(Math.sin(ang) * raio);
+        const atual = (comp.status || 'pendente') === k;
+        return `<button type="button" class="comp-sat-item${atual ? ' atual' : ''}" data-status="${k}"
+                    onclick="definirStatusCompensacao('${String(comp.id).replace(/'/g, "\\'")}', '${k}')"
+                    title="${st.label}${atual ? ' (atual)' : ''}"
+                    style="--x:${x}px; --y:${y}px; --cor:${st.color}; --fundo:${st.bg};">
+                    <span class="comp-sat-icone">${st.icone}</span>
+                    <span class="comp-sat-rotulo">${st.curto}</span>
+                </button>`;
+    }).join('');
+
+    const menu = document.createElement('div');
+    menu.id = 'compSatelite';
+    menu.setAttribute('role', 'menu');
+    menu.innerHTML = `
+        <style>
+            #compSatelite { position:fixed; inset:0; z-index:995; background:rgba(15,23,42,.18); }
+            #compSatelite .comp-sat-centro { position:fixed; transform:translate(-50%,-50%); width:44px; height:44px; border-radius:50%;
+                border:none; background:#1f2937; color:#fff; font-size:18px; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.25); }
+            #compSatelite .comp-sat-item { position:fixed; transform:translate(-50%,-50%) translate(0,0) scale(.3); opacity:0;
+                width:62px; height:62px; border-radius:50%; border:2px solid var(--cor); background:var(--fundo); color:var(--cor);
+                display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; padding:2px; cursor:pointer;
+                box-shadow:0 4px 12px rgba(0,0,0,.18); transition:transform .18s ease-out, opacity .18s ease-out; font-family:inherit; }
+            #compSatelite.aberto .comp-sat-item { transform:translate(-50%,-50%) translate(var(--x),var(--y)) scale(1); opacity:1; }
+            #compSatelite .comp-sat-item:hover, #compSatelite .comp-sat-item:focus-visible { transform:translate(-50%,-50%) translate(var(--x),var(--y)) scale(1.1); outline:none; }
+            #compSatelite .comp-sat-item.atual { background:var(--cor); color:#fff; }
+            #compSatelite .comp-sat-icone { font-size:18px; line-height:1; }
+            #compSatelite .comp-sat-rotulo { font-size:9px; font-weight:bold; line-height:1.05; text-align:center; max-width:56px; }
+        </style>
+        <button type="button" class="comp-sat-centro" title="Fechar" aria-label="Fechar" style="left:${cx}px; top:${cy}px;">✕</button>
+        <div style="position:fixed; left:${cx}px; top:${cy}px;">${itens}</div>`;
+    // Itens ficam com left/top no centro; o deslocamento vem de --x/--y.
+    menu.querySelectorAll('.comp-sat-item').forEach(b => { b.style.left = cx + 'px'; b.style.top = cy + 'px'; });
+    menu.addEventListener('click', e => {
+        if (e.target === menu || e.target.closest('.comp-sat-centro')) fecharMenuStatusCompensacao();
+    });
+    document.body.appendChild(menu);
+    document.addEventListener('keydown', teclaMenuStatusCompensacao);
+    requestAnimationFrame(() => menu.classList.add('aberto'));
+    const atual = menu.querySelector('.comp-sat-item.atual') || menu.querySelector('.comp-sat-item');
+    if (atual) atual.focus({ preventScroll: true });
+}
+
+function definirStatusCompensacao(id, status) {
+    fecharMenuStatusCompensacao();
+    const comp = (data.compensacoes || []).find(c => String(c.id) === String(id));
+    if (!comp || !STATUS_COMPENSACAO[status]) return;
+    // Escolher a mesma situação não grava nada.
+    if ((comp.status || 'pendente') === status) return;
+
+    comp.status = status;
     if (!comp.historico) comp.historico = [];
-    comp.historico.push({ status: comp.status, data: getTodayString() });
+    comp.historico.push({ status, data: getTodayString() });
 
     persistirDados();
     renderCompensacoes();
