@@ -5531,10 +5531,9 @@ function renderCompensacoes() {
                             <tr data-nome="${escapeHtmlColar(nomeEst)}">
                                 <td>
                                     ${getFaltaBadgeHtml(est ? est.id : null, todayStr)}${getAeePrefix(est)}<strong>${nomeEst}</strong>
-                                    ${diasFaltaCompensacaoHtml(c)}
                                     <div style="font-size:10px; color:#5f6b7f; margin-top:2px;">${logMinimizado}</div>
                                 </td>
-                                <td style="font-size:12px;">${meses[c.mes_referencia]}/${c.ano_referencia}</td>
+                                <td style="font-size:12px;">${meses[c.mes_referencia]}/${c.ano_referencia}${diasFaltaCompensacaoHtml(c)}</td>
                                 <td>${c.atividade} <br><span style="font-size:10px; color:#5f6b7f;">Aulas comp.: ${c.peso_faltas || c.qtd_faltas}</span></td>
                                 <td>
                                     <button onclick="abrirMenuStatusCompensacao('${c.id}', this)" aria-haspopup="true" title="Escolher a situação" style="border:1px solid ${st.color}; background:${st.bg}; color:${st.color}; padding:5px 10px; border-radius:15px; font-weight:bold; cursor:pointer; width: 130px;">
@@ -5647,11 +5646,11 @@ function diasFaltaCompensacaoHtml(c) {
     const dias = diasFaltaCompensacao(c);
     if (!dias.length) return '';
     const textos = dias.map(d => {
-        const [, m, dia] = d.split('-');
+        const dia = parseInt(d.split('-')[2], 10);
         const aulas = getAulasNoDia(c.id_turma, d);
-        return `${parseInt(dia, 10)}/${parseInt(m, 10)}${aulas > 1 ? ` (${aulas} aulas)` : ''}`;
+        return `${dia}${aulas > 1 ? ` (${aulas} aulas)` : ''}`;
     });
-    return `<div class="comp-dias-falta" style="font-size:10px; color:#8a5a14; margin-top:2px;">Faltou: ${textos.join(', ')}</div>`;
+    return `<div class="comp-dias-falta" style="font-size:10px; color:#8a5a14; margin-top:2px;">dia… ${textos.join(', ')}</div>`;
 }
 
 // Menu satélite: as situações aparecem em volta do botão e o toque escolhe direto,
@@ -7804,13 +7803,13 @@ function renderDocumentosHistorico() {
         container.innerHTML = `
             <div class="empty-state">
                 <p>Nenhum documento gerado ainda.</p>
-                <p style="font-size:12px; color:#5f6b7f;">Plano de Aula, Agenda Mensal, Anexo III - PAEE e Anexo IV ficam registrados aqui conforme você os gera pelo "✨ Estagiário".</p>
+                <p style="font-size:12px; color:#5f6b7f;">Plano de Aula, Agenda Mensal, Anexo III - PAEE, Anexo IV e Documento em branco ficam registrados aqui conforme você os gera pelo "✨ Estagiário".</p>
             </div>`;
         return;
     }
 
-    const icones = { plano_aula: '📝', agenda_mensal: '📅', anexo3_paee: '📋', anexo4_pei: '📘', anexo4_dua: '📘' };
-    const nomesTipo = { plano_aula: 'Plano de Aula', agenda_mensal: 'Agenda Mensal', anexo3_paee: 'Anexo III - PAEE', anexo4_pei: 'Anexo IV - PEI', anexo4_dua: 'Anexo IV (novo modelo)' };
+    const icones = { plano_aula: '📝', agenda_mensal: '📅', anexo3_paee: '📋', anexo4_pei: '📘', anexo4_dua: '📘', doc_branco: '📄' };
+    const nomesTipo = { plano_aula: 'Plano de Aula', agenda_mensal: 'Agenda Mensal', anexo3_paee: 'Anexo III - PAEE', anexo4_pei: 'Anexo IV - PEI', anexo4_dua: 'Anexo IV (novo modelo)', doc_branco: 'Documento em branco' };
 
     // Agrupa por mês pra o histórico continuar legível quando o ano avança.
     const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
@@ -7839,6 +7838,9 @@ function renderDocumentosHistorico() {
                         ${h.tipo === 'anexo4_pei' && h.refTutoradoId && h.refAnexoId ? `<button class="btn btn-sm btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${h.refTutoradoId}, ${h.refAnexoId}, 'pdf')">📄 PDF</button>
                             <button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoIVSalvo(${h.refTutoradoId}, ${h.refAnexoId})">🖨️ Reimprimir</button>` : ''}
                         ${h.tipo === 'anexo4_dua' && h.payload ? `<button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="abrirAnexo4DuaHistorico('${escapeAttrEstagiario(h.id)}')">📋 Abrir e copiar</button>` : ''}
+                        ${h.tipo === 'doc_branco' && h.payload ? `<button class="btn btn-sm btn-primary" style="padding:4px 10px; font-size:12px;" onclick="abrirDocBrancoHistorico('${escapeAttrEstagiario(h.id)}')">✏️ Abrir</button>
+                            <button class="btn btn-sm btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="reimprimirDocBrancoHistorico('${escapeAttrEstagiario(h.id)}', 'pdf')">📄 PDF</button>
+                            <button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirDocBrancoHistorico('${escapeAttrEstagiario(h.id)}')">🖨️ Reimprimir</button>` : ''}
                         ${h.tipo === 'anexo3_paee' && h.refTutoradoId ? `<button class="btn btn-sm btn-secondary" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoPaeeSalvo(${h.refTutoradoId}, 'pdf')">📄 PDF</button>
                             <button class="btn btn-sm btn-info" style="padding:4px 10px; font-size:12px;" onclick="reimprimirAnexoPaeeSalvo(${h.refTutoradoId})">🖨️ Reimprimir</button>` : ''}
                     </div>

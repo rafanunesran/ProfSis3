@@ -547,7 +547,7 @@ const TOURS_ABAS = {
             { alvo: maisPerto('#compMes', '.card'), titulo: 'Nova Atribuição', texto: 'Escolha o mês e o ano de referência e descreva a atividade (ex.: "Resumo do Cap. 5").' },
             { alvo: porTexto('#tabCompensacoes', 'Gerar Compensações'), titulo: '🚀 Gerar Compensações', texto: 'O sistema procura todos os estudantes ativos com falta nesse mês e passa a atividade para cada um, com o número de aulas a compensar (aula dupla conta 2). Mostra quantos achou antes de confirmar e não repete a mesma atividade.' },
             { alvo: pai('#filtroCompMes', 2), titulo: 'Controle de Entregas', texto: 'Filtre por mês (ou "Todos") e ano.' },
-            { alvo: naAba('compensacoes', 'table'), titulo: 'A lista de entregas', texto: 'Estudante, mês de referência, atividade e quantas aulas compensa. Embaixo do nome aparecem os dias em que ele faltou no mês ("Faltou: 3/10, 7/10 (2 aulas)") e o histórico das mudanças de situação.' },
+            { alvo: naAba('compensacoes', 'table'), titulo: 'A lista de entregas', texto: 'Estudante, mês de referência, atividade e quantas aulas compensa. Embaixo do mês de referência aparecem os dias em que ele faltou ("dia… 3, 7 (2 aulas)", com o mês logo acima). Embaixo do nome fica o histórico das mudanças de situação.' },
             { opcional: true, alvo: naAba('compensacoes', 'tbody td:nth-child(4) button'), titulo: 'Situação (toque para escolher)', texto: 'O toque abre um menu em volta do botão com as 6 situações: ⏳ Pendente, 📩 Notificado, ✅ Entregue, ⏰ Entregue c/ atraso, ❌ Não entregue e 📄 Não fez / sem folha. Toque direto na certa; só ela entra no histórico. Para fechar sem mudar, toque no ✕ ou fora. Na atividade automática "Compensação de Faltas" (aba Trabalhos), Entregue devolve as aulas, com atraso devolve metade e "Não fez" tira 1 ponto.' }
         ]
     },
@@ -939,7 +939,7 @@ const PAGINAS = [
       praQue: 'Dizer em que horário você está em cada turma.',
       passos: ['A grade vem da gestão.', 'Em cada horário, escolha a turma ou a atividade.', 'Salva sozinho.', 'Opcional: Google Agenda.'] },
     { id: 'p-estagiario', icone: '🤖', titulo: 'Estagiário IA', tour: 'estagiario',
-      praQue: 'Rascunho de plano de aula, Agenda Mensal, Anexo III - PAEE e Anexo IV (novo modelo e PEI antigo).',
+      praQue: 'Rascunho de plano de aula, Agenda Mensal, Documento em branco, Anexo III - PAEE e Anexo IV (novo modelo e PEI antigo).',
       passos: INICIANTE.find(x => x.id === 'i-estagiario').passos },
     { id: 'p-anexo4', icone: '📘', titulo: 'Anexo IV (novo modelo): copiar e colar', tour: 'anexo4Dua',
       praQue: 'Preencher os 4 campos do Anexo IV no documento compartilhado com uma atividade única, que serve para a série e para cada estudante.',
@@ -952,6 +952,16 @@ const PAGINAS = [
       dicas: ['O texto sai curto de propósito. Ajuste na própria caixa antes de copiar; ao fechar, a mudança fica salva.',
               '"✍️ Manual" abre os mesmos campos em branco, sem IA.',
               'O Anexo IV - PEI em Word continua como "(modelo antigo)".'] },
+    { id: 'p-doc-branco', icone: '📄', titulo: 'Documento em branco (texto livre)', tour: 'estagiario',
+      praQue: 'Escrever documentos avulsos (comunicado, ofício, relatório, declaração) com o cabeçalho da escola, o mesmo do Plano de Aula.',
+      passos: ['Toque em "✨ Estagiário" e escolha "📄 Documento em branco".',
+               'Escreva o título (ex.: Comunicado). Ele aparece no cabeçalho, no lugar de "PLANO DE AULA".',
+               'Toque em "📝 Abrir documento" e digite o texto na caixa.',
+               'Toque em "💾 Salvar", "📄 PDF" ou "🖨️ Imprimir". Sai com o logo do Estado, o nome da escola, e-mail, endereço, telefone e o logo da escola.',
+               'Fica guardado em Documentos › Histórico: "✏️ Abrir" reabre o texto para continuar, e dá para baixar o PDF ou reimprimir direto.'],
+      dicas: ['Não usa IA: sai exatamente o que você digitou.',
+              'Ao fechar a tela, o que foi digitado fica salvo sozinho.',
+              'Os dados do cabeçalho vêm do cadastro da escola. Se algo sair errado, peça para a gestão corrigir.'] },
     { id: 'p-registros', icone: '📂', titulo: 'Registros (da gestão)', tour: 'registrosProfessor',
       praQue: 'Faltas justificadas, atestados e alertas que a gestão lançou para os seus estudantes.',
       passos: ['Só para consulta: quem altera é a gestão.', 'Separado por turma.', 'Só aparecem estudantes ativos (transferidos e remanejados saem da lista).', '"Faltoso A" (A de Automático): o sistema marca sozinho quem tem menos de 50% de presença, contando 1 vez cada dia com chamada (se no mesmo dia teve presença e falta, vale o que apareceu mais; empate conta presença). Só começa depois de 2 semanas de chamadas e sai sozinho quando a presença sobe.'] },
@@ -1080,7 +1090,7 @@ const MANUAL_TURMA = [
           { t: 'Controle de Entregas', itens: [
               'Filtre por mês (ou "Todos") e ano; use o filtro de nome em turma grande.',
               'Toque na situação: abre um menu em volta do botão com ⏳ Pendente, 📩 Notificado, ✅ Entregue, ⏰ Entregue c/ atraso, ❌ Não entregue e 📄 Não fez / sem folha. Toque direto na que quer, sem passar pelas outras. A atual fica destacada; ✕ ou tocar fora fecha sem mudar.',
-              'Embaixo do nome aparecem, em letra pequena, os dias em que o estudante faltou no mês de referência (aula dupla mostra "2 aulas") e o histórico de cada mudança, com data.',
+              'Embaixo do mês de referência aparecem, em letra pequena, os dias em que o estudante faltou (aula dupla mostra "2 aulas"). Embaixo do nome fica o histórico de cada mudança, com data.',
               '🗑️ apaga a compensação daquele estudante.'] },
           { t: 'Na nota', itens: ['Crie em Trabalhos uma atividade do tipo "Compensação de Faltas": Entregue devolve as aulas, Entregue com atraso devolve metade e "Não fez / sem folha" tira 1 ponto.'] }
       ],
