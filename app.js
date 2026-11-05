@@ -5507,10 +5507,9 @@ function renderCompensacoes() {
                             <tr data-nome="${escapeHtmlColar(nomeEst)}">
                                 <td>
                                     ${getFaltaBadgeHtml(est ? est.id : null, todayStr)}${getAeePrefix(est)}<strong>${nomeEst}</strong>
-                                    ${diasFaltaCompensacaoHtml(c)}
                                     <div style="font-size:10px; color:#5f6b7f; margin-top:2px;">${logMinimizado}</div>
                                 </td>
-                                <td style="font-size:12px;">${meses[c.mes_referencia]}/${c.ano_referencia}</td>
+                                <td style="font-size:12px;">${meses[c.mes_referencia]}/${c.ano_referencia}${diasFaltaCompensacaoHtml(c)}</td>
                                 <td>${c.atividade} <br><span style="font-size:10px; color:#5f6b7f;">Aulas comp.: ${c.peso_faltas || c.qtd_faltas}</span></td>
                                 <td>
                                     <button onclick="abrirMenuStatusCompensacao('${c.id}', this)" aria-haspopup="true" title="Escolher a situação" style="border:1px solid ${st.color}; background:${st.bg}; color:${st.color}; padding:5px 10px; border-radius:15px; font-weight:bold; cursor:pointer; width: 130px;">
