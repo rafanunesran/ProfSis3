@@ -1289,6 +1289,14 @@ function escDash(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Valor para pôr dentro de onclick="...": número vai como número; texto vai entre aspas
+// SIMPLES. (JSON.stringify punha aspas duplas, que fechavam o atributo onclick e o botão
+// "Ir para Turma" não fazia nada quando o id da turma era texto.)
+function argOnclick(v) {
+    if (typeof v === 'number' && isFinite(v)) return String(v);
+    return "'" + String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/</g, '&lt;') + "'";
+}
+
 function nomeHorarioFixo(tipo, tiposFixos) {
     const t = (tiposFixos || []).find(x => x.id === tipo);
     if (t && t.nome) return t.nome;
@@ -1315,7 +1323,7 @@ function montarAgendaDoDiaHtml(blocosHoje, minhasAulas, agendamentosHoje, tiposF
         if (!doHorario.length) return '<div class="agd-sub agd-vazio">Nenhum estudante agendado neste horário.</div>';
         return doHorario.map(a => {
             const t = tutorados.find(x => x.id == a.tutoradoId);
-            return `<button type="button" class="agd-sub agd-tutorado" onclick="registrarEncontroAtalho(${JSON.stringify(a.tutoradoId)})">
+            return `<button type="button" class="agd-sub agd-tutorado" onclick="registrarEncontroAtalho(${argOnclick(a.tutoradoId)})">
                 <span>👤 ${a.inicio !== ini ? a.inicio + ' · ' : ''}${escDash(t ? t.nome_estudante : 'Estudante removido')}</span><span>📝 Registrar</span></button>`;
         }).join('');
     };
@@ -1345,7 +1353,7 @@ function montarAgendaDoDiaHtml(blocosHoje, minhasAulas, agendamentosHoje, tiposF
         }
         if (aula.tipo === 'aula' && aula.id_turma) {
             const turma = (data.turmas || []).find(t => t.id == aula.id_turma);
-            return { ini, html: `<button class="btn btn-primary agd-aula${ehAgora(ini, fim) ? ' agd-item-agora' : ''}" onclick="abrirTurma(${JSON.stringify(aula.id_turma)})">
+            return { ini, html: `<button class="btn btn-primary agd-aula${ehAgora(ini, fim) ? ' agd-item-agora' : ''}" onclick="abrirTurma(${argOnclick(turma ? turma.id : aula.id_turma)})">
                 <span><strong>${ini}</strong> - ${escDash(turma ? turma.nome + (turma.disciplina ? ' · ' + turma.disciplina : '') : 'Turma Removida')}${seloAgora(ini, fim)}</span>
                 <span>Ir para Turma →</span></button>` };
         }
@@ -1359,7 +1367,7 @@ function montarAgendaDoDiaHtml(blocosHoje, minhasAulas, agendamentosHoje, tiposF
     agendamentosHoje.filter(a => !usados.has(a)).forEach(a => {
         const t = tutorados.find(x => x.id == a.tutoradoId);
         itens.push({ ini: a.inicio || '', html: `<div class="agd-item agd-tutoria">
-            <button type="button" class="agd-linha" onclick="registrarEncontroAtalho(${JSON.stringify(a.tutoradoId)})">
+            <button type="button" class="agd-linha" onclick="registrarEncontroAtalho(${argOnclick(a.tutoradoId)})">
                 <span><strong>${a.inicio || ''}</strong> - 🎓 Tutoria · ${escDash(t ? t.nome_estudante : 'Estudante removido')}${seloAgora(a.inicio, a.fim)}</span><span>📝 Registrar</span>
             </button></div>` });
     });

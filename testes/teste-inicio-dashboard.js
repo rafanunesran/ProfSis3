@@ -37,13 +37,13 @@ async function abrir(browser, viewport) {
         const G = (id, ini, fim, extra) => Object.assign({ id, diaSemana: dia, inicio: ini, fim }, extra || {});
         await window.firebase.firestore().collection('app_data').doc('app_data_school_77_gestor').set({
             turmas: [], tiposHorarioFixo: [{ id: 'tutoria', nome: '🎓 Tutoria' }, { id: 'cafe', nome: '☕ Café' }, { id: 'almoco', nome: '🍽️ Almoço' }],
-            gradeHoraria: [G('b1', '07:00', '07:50'), G('b3', '08:40', '09:00', { tipo: 'cafe' }), G('b4', '09:00', '09:20'),
+            gradeHoraria: [G('b1', '07:00', '07:50'), G('b2', '07:50', '08:40'), G('b3', '08:40', '09:00', { tipo: 'cafe' }), G('b4', '09:00', '09:20'),
                 G('b6', '11:50', '12:50', { tipo: 'almoco' }), G('b7', '14:30', '14:50', { tipo: 'tutoria' }), G('b9', '14:50', '15:10')]
         });
         currentUser = { id: 1, uid: 'u1', nome: 'Maria Prof', email: 'm@e.com', role: 'professor', schoolId: '77' };
         data = Object.assign(getInitialData(), {
-            turmas: [{ id: 5, nome: '7A', disciplina: 'Arte' }],
-            horariosAulas: [{ id_bloco: 'b1', tipo: 'aula', id_turma: 5 }, { id_bloco: 'b4', tipo: 'tutoria' }],
+            turmas: [{ id: 5, nome: '7A', disciplina: 'Arte' }, { id: 'tx7b', nome: '7B', disciplina: 'Arte' }],
+            horariosAulas: [{ id_bloco: 'b1', tipo: 'aula', id_turma: 5 }, { id_bloco: 'b2', tipo: 'aula', id_turma: 'tx7b' }, { id_bloco: 'b4', tipo: 'tutoria' }],
             tutorados: [{ id: 41, nome_estudante: 'Ana Souza' }, { id: 42, nome_estudante: 'Bruno Lima' }, { id: 43, nome_estudante: 'Caio Reis' }],
             agendamentos: [{ id: 1, data: iso, inicio: '14:30', fim: '14:50', tutoradoId: 41 },
                            { id: 2, data: iso, inicio: '09:00', fim: '09:20', tutoradoId: 43 },
@@ -79,6 +79,17 @@ async function abrir(browser, viewport) {
     ok('horário vago continua "Livre"', /Livre/.test(linha('14:50')), linha('14:50'));
     ok('agendamento sem estudante não aparece', !/11:00/.test(ag.texto));
     ok('cada estudante aparece uma vez só', (ag.texto.match(/Ana Souza/g) || []).length === 1);
+
+    // "Ir para Turma" abre a turma — também quando o id da turma é texto (era o defeito:
+    // as aspas do id fechavam o onclick e o botão não fazia nada).
+    for (const nome of ['7A', '7B']) {
+        await page.evaluate(() => showScreen('dashboard')); await page.waitForTimeout(500);
+        await page.click(`#agendaHoje .agd-aula:has-text("${nome} · Arte")`);
+        await page.waitForTimeout(600);
+        const r = await page.evaluate(() => ({ tela: (document.querySelector('#appContainer .screen.active') || {}).id,
+            titulo: (document.getElementById('turmaDetalheTitulo') || {}).textContent }));
+        ok(`"Ir para Turma" da ${nome} abre a turma`, r.tela === 'turmaDetalhe' && r.titulo.indexOf(nome) === 0, JSON.stringify(r));
+    }
 
     console.log('\n3. Card de Ferramentas');
     const cards = await page.evaluate(() => ({
