@@ -2068,6 +2068,10 @@ async function chamarIAEstruturada(promptText, btn) {
 //     responder "quota"/"limit: 0" — aí quem chama cai no desenho em SVG (feito pela IA de
 //     texto, ver atelie.js: criarDesenho).
 //   - chave da OpenAI (sk-...): gpt-image-1.
+//   - SERVIDOR PRÓPRIO (config_ia.servidorImagemUrl + servidorImagemChave): uma máquina do
+//     usuário rodando stable-diffusion.cpp (receita em servidor-imagem/LEIAME.md). É tentado
+//     primeiro. Esse modelo só entende inglês: `opcoes.promptIngles` (função async) devolve o
+//     pedido já em inglês; só é chamada se houver servidor cadastrado.
 // Devolve { src: dataURL, origem }. Lança erro com o motivo de cada chave se nenhuma der.
 // ---------------------------------------------------------------------------
 const MODELOS_IMAGEM_GEMINI_PADRAO = ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview'];
@@ -2078,16 +2082,55 @@ let iaImagemIndisponivelAte = 0;
 
 function iaImagemDisponivel() { return Date.now() >= iaImagemIndisponivelAte; }
 
-async function gerarImagemIA(promptText) {
+// Chama o servidor proprio (OpenAI-compativel do sd-server, atras do Caddy com a chave).
+async function chamarServidorImagem(url, chave, prompt, passos, limiteMs) {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), limiteMs || LIMITE_TEMPO_SERVIDOR_IMAGEM_MS);
+    try {
+        const extra = '<sd_cpp_extra_args>' + JSON.stringify({ sample_params: { sample_method: 'euler_a', sample_steps: passos || 4, guidance: { txt_cfg: 1.0 } } }) + '</sd_cpp_extra_args>';
+        const r = await fetch(String(url).replace(/\/+$/, '') + '/v1/images/generations', {
+            method: 'POST', signal: controller.signal,
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + chave },
+            body: JSON.stringify({ prompt: prompt + ' ' + extra, n: 1, size: '512x512', output_format: 'png' })
+        });
+        if (r.status === 401) throw new Error('chave errada');
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error((j.error && (j.error.message || j.error)) || ('erro ' + r.status));
+        const b64 = j.data && j.data[0] && j.data[0].b64_json;
+        if (!b64) throw new Error('o servidor não devolveu imagem');
+        return 'data:image/' + (j.output_format || 'png') + ';base64,' + b64;
+    } catch (err) {
+        if (err.name === 'AbortError') throw new Error('tempo esgotado (' + Math.round((limiteMs || LIMITE_TEMPO_SERVIDOR_IMAGEM_MS) / 1000) + 's)');
+        if (err instanceof TypeError) throw new Error('não conectou (' + err.message + ') — confira o endereço, o HTTPS e as portas 80/443');
+        throw err;
+    } finally { clearTimeout(t); }
+}
+const LIMITE_TEMPO_SERVIDOR_IMAGEM_MS = 180000;
+
+async function gerarImagemIA(promptText, opcoes) {
+    opcoes = opcoes || {};
     let configData = null;
     try { configData = await getData('system', 'config_ia'); } catch (e) { console.warn('Erro ao buscar chave da IA:', e); }
+    const errosServidor = [];
+    if (configData && configData.servidorImagemUrl && configData.servidorImagemChave) {
+        try {
+            let p = '';
+            try { p = opcoes.promptIngles ? await opcoes.promptIngles() : ''; } catch (_) { /* sem traducao: vai em portugues mesmo */ }
+            const src = await chamarServidorImagem(configData.servidorImagemUrl, configData.servidorImagemChave, p || promptText, Number(configData.servidorImagemPassos) || 4);
+            return { src, origem: 'servidor' };
+        } catch (err) {
+            errosServidor.push('Servidor próprio: ' + String(err.message || err).slice(0, 200));
+            console.warn('Servidor de imagem próprio falhou:', err);
+        }
+    }
     const chaves = configData && configData.apiKey ? configData.apiKey.split(',').map(k => k.trim()).filter(k => k) : [];
+    if (!chaves.length && errosServidor.length) throw new Error(errosServidor.join('\n'));
     if (!chaves.length) throw new Error('⚠️ A chave da API não foi configurada. Peça ao Administrador para cadastrá-la em Super Admin → 🔑 Chaves de IA.');
     const ehOpenAI = (k) => k.startsWith('sk-') && !k.startsWith('sk-ant-') && !k.startsWith('sk-or-');
     const ehGemini = (k) => !k.startsWith('sk-') && !k.startsWith('gsk_') && !k.startsWith('nvapi-');
     const modelos = String((configData && configData.geminiImageModel) || '').split(',').map(m => m.trim()).filter(m => m);
     const modelosGemini = modelos.length ? modelos : MODELOS_IMAGEM_GEMINI_PADRAO.slice();
-    const erros = [];
+    const erros = errosServidor.slice();
     const comTempo = async (fn) => {
         const controller = new AbortController();
         const t = setTimeout(() => controller.abort(), LIMITE_TEMPO_IMAGEM_MS);
@@ -2137,7 +2180,8 @@ async function gerarImagemIA(promptText) {
             erros.push('OpenAI: ' + String(err.message || err).slice(0, 200));
         }
     }
-    iaImagemIndisponivelAte = Date.now() + 15 * 60 * 1000;
+    // so' desiste por 15 min se nao ha' servidor proprio (ele pode so' ter demorado uma vez)
+    if (!errosServidor.length) iaImagemIndisponivelAte = Date.now() + 15 * 60 * 1000;
     throw new Error(erros.length ? 'Nenhuma chave conseguiu gerar imagem.\n' + erros.join('\n') : 'Nenhuma chave cadastrada gera imagem (Gemini ou OpenAI).');
 }
 

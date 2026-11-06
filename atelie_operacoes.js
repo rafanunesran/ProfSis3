@@ -1247,6 +1247,25 @@ function promptDesenhoImagem(descricao, estilo) {
         ' Imagem quadrada, figura centralizada e inteira, sem palavras nem letras.';
 }
 
+// Para o servidor proprio (Stable Diffusion, so' entende ingles): a IA de texto traduz o
+// pedido; aqui junta o estilo em palavras-chave que esse modelo entende.
+const ESTILO_SD = {
+    colorir: 'coloring book page for kids, black and white line art, thick clean black outlines, white background, no shading, no color, simple shapes',
+    ilustracao: 'cute flat illustration for a children textbook, bright colors, clean lines, white background',
+    icone: 'simple flat icon, sticker style, bold outline, solid colors, white background, centered'
+};
+function promptTraduzirDesenho(descricao) {
+    return 'Translate to English this description of a drawing for a school activity, as a short image-generation prompt (max 25 words, only the subject and scene, no style words): "' +
+        txt(descricao, 400).trim() + '". Answer ONLY with valid JSON: {"en": "..."}.';
+}
+function promptDesenhoLocal(descricaoIngles, estilo) {
+    return txt(descricaoIngles, 300).trim() + ', ' + ESTILO_SD[estiloDesenho(estilo)] + ', no text, no letters';
+}
+function inglesDaIA(resposta) {
+    const r = lerJsonDaIA(resposta);
+    return r && typeof r.en === 'string' ? r.en.replace(/<[^>]*>/g, '').trim().slice(0, 300) : '';
+}
+
 function promptDesenhoSvg(descricao, estilo) {
     const e = ESTILOS_DESENHO[estiloDesenho(estilo)];
     return 'Você desenha figuras em SVG para atividades escolares (crianças e adolescentes de escola pública brasileira).' +
@@ -1538,7 +1557,8 @@ const ATELIEOPS = {
     aplicarModelo, aplicarTextos,
     promptCriarComIA, arteDaIA, promptReescrever, promptEscreverTexto, textoDaIA, lerJsonDaIA,
     ESTILOS_DESENHO, PERFIS_ADAPTACAO, TIPOS_QUESTAO, promptDesenhoImagem, promptDesenhoSvg, limparSvgDaIA, svgDaIA,
-    paginaDeDesenho, promptAtividadeAdaptada, atividadeDaIA, alturaEstimada
+    paginaDeDesenho, promptAtividadeAdaptada, atividadeDaIA, alturaEstimada,
+    promptTraduzirDesenho, promptDesenhoLocal, inglesDaIA
 };
 
 if (typeof window !== 'undefined') window.ATELIEOPS = ATELIEOPS;

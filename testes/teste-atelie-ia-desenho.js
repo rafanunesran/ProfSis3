@@ -145,6 +145,7 @@ const ATIVIDADE = {
         try { renderProfessorPanel(); } catch (_) { /* dashboard sem dados */ }
         showScreen('ferramentas');
         showFerramentasTab('atelie');
+        window.__gerarImagemIAReal = window.gerarImagemIA;
     });
 
     // -----------------------------------------------------------------------
@@ -232,6 +233,52 @@ const ATIVIDADE = {
     ok('o desenho entra na arte aberta, selecionado, na proporção da imagem', ed.depois === ed.antes + 1 && ed.sel === 'imagem' && Math.abs(ed.prop - 2 / 3) < 0.02, JSON.stringify(ed).slice(0, 200));
     ok('usou só a IA de imagem, com o estilo colorido', ed.pedidos.join() === 'imagem' && /Ilustração colorida/.test(ed.prompt) && /Feito pela IA de imagem/.test(ed.msg));
     await foto(page, 'desenho-no-editor');
+
+    // -----------------------------------------------------------------------
+    console.log('\n5. Servidor de imagem próprio (gerarImagemIA de verdade, servidor FALSO)');
+    // -----------------------------------------------------------------------
+    let pedidoServidor = null;
+    await page.route('https://img.teste.sisprof/**', async (rota) => {
+        const req = rota.request();
+        const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
+        if (req.method() === 'OPTIONS') return rota.fulfill({ status: 204, headers: cors });
+        pedidoServidor = { url: req.url(), auth: req.headers()['authorization'], corpo: JSON.parse(req.postData() || '{}') };
+        if (req.headers()['authorization'] !== 'Bearer segredo') return rota.fulfill({ status: 401, headers: cors, body: 'chave errada' });
+        // PNG 1x1 vermelho
+        const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
+        return rota.fulfill({ status: 200, headers: Object.assign({ 'Content-Type': 'application/json' }, cors), body: JSON.stringify({ created: 1, output_format: 'png', data: [{ b64_json: png }] }) });
+    });
+    const sv = await page.evaluate(async () => {
+        const getDataOriginal = window.getData;
+        const chamarOriginal = window.chamarIAEstruturada;
+        const geradorFalso = window.gerarImagemIA;
+        const resultado = {};
+        try {
+            window.gerarImagemIA = window.__gerarImagemIAReal;   // volta a funcao de verdade (ia_estagiario.js)
+            let config = { apiKey: '', servidorImagemUrl: 'https://img.teste.sisprof/', servidorImagemChave: 'segredo', servidorImagemPassos: 2 };
+            window.getData = async (c, d) => (c === 'system' && d === 'config_ia') ? config : getDataOriginal(c, d);
+            window.chamarIAEstruturada = async (p) => /Translate to English/.test(p) ? { en: 'a frog sitting on a lily pad' } : { svg: '<svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>' };
+            const r = await gerarImagemIA('pt', { promptIngles: async () => 'a frog sitting on a lily pad, coloring book page' });
+            resultado.origem = r.origem; resultado.png = /^data:image\/png;base64,/.test(r.src);
+            // criarDesenho pelo editor (traduz e manda o estilo em ingles)
+            document.getElementById('atIADesenhoPedido').value = 'um sapo numa vitória-régia';
+            document.getElementById('atIADesenhoEstilo').value = 'colorir';
+            await atIADesenhar();
+            resultado.msg = (document.getElementById('atIADesenhoMsg') || {}).textContent;
+            // chave errada: cai no desenho em linhas, sem erro na tela
+            config = Object.assign({}, config, { servidorImagemChave: 'errada' });
+            document.getElementById('atIADesenhoPedido').value = 'um sapo';
+            await atIADesenhar();
+            resultado.msgErrada = (document.getElementById('atIADesenhoMsg') || {}).textContent;
+        } finally {
+            window.getData = getDataOriginal; window.chamarIAEstruturada = chamarOriginal; window.gerarImagemIA = geradorFalso;
+        }
+        return resultado;
+    });
+    ok('com servidor cadastrado, a imagem vem dele (PNG)', sv.origem === 'servidor' && sv.png, JSON.stringify(sv));
+    ok('o pedido leva a chave, o tamanho 512 e os passos escolhidos', pedidoServidor && /\/v1\/images\/generations$/.test(pedidoServidor.url) && pedidoServidor.corpo.size === '512x512' && /"sample_steps":2/.test(pedidoServidor.corpo.prompt));
+    ok('o Ateliê traduz o pedido para inglês e põe o estilo "coloring book"', /^a frog sitting on a lily pad, coloring book page for kids/.test((pedidoServidor && pedidoServidor.corpo.prompt) || '') && /servidor de imagem próprio/.test(sv.msg || ''), pedidoServidor && pedidoServidor.corpo.prompt.slice(0, 90));
+    ok('chave errada: não trava, cai no desenho em linhas e diz que o servidor falhou', /desenho de linhas/.test(sv.msgErrada || '') && /servidor de imagem próprio não respondeu \(chave errada\)/.test(sv.msgErrada || '') && pedidoServidor.auth === 'Bearer errada', sv.msgErrada);
 
     await browser.close();
     console.log(falhas.length ? '\n' + falhas.length + ' FALHA(S):\n - ' + falhas.join('\n - ') : '\nTudo certo.');

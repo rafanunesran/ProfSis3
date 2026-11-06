@@ -591,10 +591,17 @@ async function svgParaRecurso(svg) {
 async function criarDesenho(descricao, estilo) {
     if (typeof gerarImagemIA === 'function' && (typeof iaImagemDisponivel !== 'function' || iaImagemDisponivel())) {
         try {
-            const r = await gerarImagemIA(A().promptDesenhoImagem(descricao, estilo));
+            const r = await gerarImagemIA(A().promptDesenhoImagem(descricao, estilo), {
+                // so' para o servidor proprio (Stable Diffusion entende ingles)
+                promptIngles: async () => {
+                    let en = '';
+                    try { en = A().inglesDaIA(await pedirIA(A().promptTraduzirDesenho(descricao))); } catch (_) { /* sem traducao */ }
+                    return A().promptDesenhoLocal(en || descricao, estilo);
+                }
+            });
             const img = await imagemParaRecurso(r.src, 1400);
             atUltimoErroImagem = '';
-            return Object.assign(img, { origem: 'imagem' });
+            return Object.assign(img, { origem: r.origem === 'servidor' ? 'servidor' : 'imagem' });
         } catch (e) {
             atUltimoErroImagem = e.message || String(e);
             console.warn('Ateliê: a IA de imagem não deu, vou desenhar em SVG.', atUltimoErroImagem);
@@ -607,8 +614,11 @@ async function criarDesenho(descricao, estilo) {
 }
 
 function notaOrigemDesenho(origem) {
+    if (origem === 'servidor') return 'Feito pelo servidor de imagem próprio.';
     return origem === 'svg'
-        ? 'Feito em desenho de linhas (vetor) pela IA de texto' + (atUltimoErroImagem ? ', porque a chave de IA cadastrada não gera imagens' : '') + '.'
+        ? 'Feito em desenho de linhas (vetor) pela IA de texto' + (!atUltimoErroImagem ? '' : /Servidor próprio/.test(atUltimoErroImagem)
+            ? ', porque o servidor de imagem próprio não respondeu (' + atUltimoErroImagem.split('\n')[0].replace('Servidor próprio: ', '').slice(0, 80) + ')'
+            : ', porque a chave de IA cadastrada não gera imagens') + '.'
         : 'Feito pela IA de imagem.';
 }
 

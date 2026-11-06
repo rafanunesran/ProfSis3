@@ -1744,6 +1744,21 @@ async function renderChavesIAScreen() {
             </div>
 
             <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e3e8ef;">
+                <h3 style="margin:0 0 6px; font-size:15px;">🖥️ Servidor de imagem próprio (opcional, grátis)</h3>
+                <p style="font-size:12px; color:#5f6b7f; margin-bottom:8px;">Uma máquina sua (ex.: Oracle Cloud grátis) rodando a IA de desenho do Ateliê. Receita: pasta <code>servidor-imagem/LEIAME.md</code> do repositório. O Ateliê tenta este servidor primeiro, depois o Gemini/OpenAI e, por fim, o desenho em linhas. A chave fica visível para quem usa o site (vai no pedido do navegador).</p>
+                <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+                    <input type="text" id="servidorImagemUrlInput" value="${(configIA.servidorImagemUrl || '').replace(/"/g, '&quot;')}" placeholder="https://sisprof-img.duckdns.org" style="flex:2; min-width:220px; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
+                    <input type="text" id="servidorImagemChaveInput" value="${(configIA.servidorImagemChave || '').replace(/"/g, '&quot;')}" placeholder="chave mostrada no fim da instalação" style="flex:2; min-width:200px; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
+                    <select id="servidorImagemPassosInput" title="Mais passos = desenho melhor, porém mais lento" style="padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
+                        ${[1, 2, 3, 4].map(n => `<option value="${n}" ${Number(configIA.servidorImagemPassos || 4) === n ? 'selected' : ''}>${n} passo${n > 1 ? 's' : ''}${n === 1 ? ' (mais rápido)' : n === 4 ? ' (melhor)' : ''}</option>`).join('')}
+                    </select>
+                    <button class="btn btn-secondary" onclick="testarServidorImagem()">🧪 Testar</button>
+                    <button class="btn btn-primary" onclick="salvarServidorImagem()">💾 Salvar</button>
+                </div>
+                <div id="servidorImagemTeste" style="margin-top:8px; font-size:13px;"></div>
+            </div>
+
+            <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e3e8ef;">
                 <h3 style="margin:0 0 6px; font-size:15px;">🖍️ Modelo de imagem do Gemini (opcional)</h3>
                 <p style="font-size:12px; color:#5f6b7f; margin-bottom:8px;">Usado pelo Ateliê para desenhar (desenhos para colorir e figuras das atividades). Precisa de uma chave do Gemini com acesso a geração de imagem (no plano gratuito do Google normalmente não tem — aí o Ateliê desenha em linhas/vetor com a IA de texto). Uma chave da OpenAI (<code>sk-…</code>) também serve (gpt-image-1). Deixe em branco para o padrão (<code>${typeof MODELOS_IMAGEM_GEMINI_PADRAO !== 'undefined' ? MODELOS_IMAGEM_GEMINI_PADRAO.join(', ') : 'gemini-2.5-flash-image'}</code>).</p>
                 <div style="display:flex; gap:10px; align-items:flex-end;">
@@ -1771,6 +1786,35 @@ async function salvarModeloGemini() {
     configData.geminiModel = document.getElementById('geminiModelInput').value.trim();
     await saveData('system', 'config_ia', configData);
     alert(configData.geminiModel ? 'Modelo do Gemini salvo!' : `Modelo do Gemini limpo — usando o padrão (${MODELOS_GEMINI_PADRAO.join(', ')}).`);
+}
+
+async function salvarServidorImagem() {
+    const configData = await getData('system', 'config_ia') || {};
+    const url = document.getElementById('servidorImagemUrlInput').value.trim().replace(/\/+$/, '');
+    if (url && !/^https:\/\//i.test(url)) { alert('O endereço precisa começar com https:// (o navegador não deixa o site chamar http).'); return; }
+    configData.servidorImagemUrl = url;
+    configData.servidorImagemChave = document.getElementById('servidorImagemChaveInput').value.trim();
+    configData.servidorImagemPassos = Number(document.getElementById('servidorImagemPassosInput').value) || 4;
+    await saveData('system', 'config_ia', configData);
+    alert(url ? 'Servidor de imagem salvo!' : 'Servidor de imagem removido.');
+}
+
+async function testarServidorImagem() {
+    const url = document.getElementById('servidorImagemUrlInput').value.trim();
+    const chave = document.getElementById('servidorImagemChaveInput').value.trim();
+    const passos = Number(document.getElementById('servidorImagemPassosInput').value) || 4;
+    const caixa = document.getElementById('servidorImagemTeste');
+    if (!url || !chave) { caixa.innerHTML = '<span style="color:#b91c1c;">Preencha o endereço e a chave.</span>'; return; }
+    if (typeof chamarServidorImagem !== 'function') { caixa.textContent = 'O módulo de IA não carregou. Recarregue a página.'; return; }
+    caixa.textContent = 'Gerando uma imagem de teste... ⏳ (a primeira pode demorar mais)';
+    const inicio = Date.now();
+    try {
+        const src = await chamarServidorImagem(url, chave, 'a red apple, simple flat icon, white background, centered', passos);
+        const s = ((Date.now() - inicio) / 1000).toFixed(1);
+        caixa.innerHTML = `<span style="color:#166534;">✅ Funcionou em ${s} s.</span><br><img src="${src}" alt="teste" style="width:128px; height:128px; margin-top:6px; border:1px solid #e3e8ef; border-radius:6px;">`;
+    } catch (e) {
+        caixa.innerHTML = '<span style="color:#b91c1c;">❌ ' + String(e.message || e).replace(/</g, '&lt;') + '</span>';
+    }
 }
 
 async function salvarModeloImagemGemini() {
