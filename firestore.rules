@@ -510,6 +510,50 @@ service cloud.firestore {
       }
     }
 
+    // ---------------- Entregas online (entregas.js + StopMotion RAN) ---------------
+    // O professor cria um link de entrega para uma atividade; o ALUNO NÃO TEM CONTA
+    // (abre o StopMotion pelo link), então aqui há leitura e escrita sem sessão, só no
+    // formato certo:
+    //   - A tarefa é lida pelo código (get), nunca listada: ninguém varre códigos.
+    //     Ela não guarda dado de estudante (título, turma, prazo, aberta, destino).
+    //   - Só o dono muda ou apaga a tarefa, e o dono não muda.
+    //   - A entrega: o aluno cria (só com a tarefa aberta, campos e tamanhos fixos,
+    //     hora do SERVIDOR); ninguém altera; só o professor lê e apaga.
+    function tarefaEntrega(codigo) {
+      return get(/databases/$(database)/documents/entregas_tarefas/$(codigo)).data;
+    }
+    function ehDonoDaTarefa(codigo) {
+      return isSignedIn() && tarefaEntrega(codigo).donoUid == request.auth.uid;
+    }
+    function textoAte(campo, max) {
+      return campo is string && campo.size() <= max;
+    }
+    match /entregas_tarefas/{codigo} {
+      allow get: if true;
+      allow create: if isSignedIn() && codigo.matches('^[A-HJ-NP-Z2-9]{8}$')
+                    && request.resource.data.donoUid == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.donoUid == request.auth.uid
+                    && request.resource.data.donoUid == resource.data.donoUid;
+      allow delete: if isSignedIn() && resource.data.donoUid == request.auth.uid;
+
+      match /entregas/{entregaId} {
+        allow read, delete: if ehDonoDaTarefa(codigo);
+        allow create: if tarefaEntrega(codigo).aberta == true
+                      && request.resource.data.keys().hasOnly(['nome', 'turma', 'projeto', 'arquivoUrl', 'arquivoId', 'quadros', 'segundos', 'em'])
+                      && request.resource.data.keys().hasAll(['nome', 'em'])
+                      && textoAte(request.resource.data.nome, 60)
+                      && request.resource.data.nome.size() >= 2
+                      && (!('turma' in request.resource.data) || textoAte(request.resource.data.turma, 40))
+                      && (!('projeto' in request.resource.data) || textoAte(request.resource.data.projeto, 80))
+                      && (!('arquivoUrl' in request.resource.data) || (textoAte(request.resource.data.arquivoUrl, 500)
+                          && request.resource.data.arquivoUrl.matches('^https://(drive|docs)[.]google[.]com/.*')))
+                      && (!('arquivoId' in request.resource.data) || textoAte(request.resource.data.arquivoId, 200))
+                      && (!('quadros' in request.resource.data) || (request.resource.data.quadros is int && request.resource.data.quadros >= 0 && request.resource.data.quadros <= 5000))
+                      && (!('segundos' in request.resource.data) || (request.resource.data.segundos is number && request.resource.data.segundos >= 0 && request.resource.data.segundos <= 3600))
+                      && request.resource.data.em == request.time;
+      }
+    }
+
     // --------------------- Padrão: nega o resto ------------------------------
     match /{document=**} {
       allow read, write: if false;
