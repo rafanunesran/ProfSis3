@@ -548,7 +548,7 @@ const TOURS_ABAS = {
             { alvo: maisPerto('#compMes', '.card'), titulo: 'Nova Atribuição', texto: 'Escolha o mês e o ano de referência e descreva a atividade (ex.: "Resumo do Cap. 5").' },
             { alvo: porTexto('#tabCompensacoes', 'Gerar Compensações'), titulo: '🚀 Gerar Compensações', texto: 'O sistema procura todos os estudantes ativos com falta nesse mês e passa a atividade para cada um, com o número de aulas a compensar (aula dupla conta 2). Mostra quantos achou antes de confirmar e não repete a mesma atividade.' },
             { alvo: pai('#filtroCompMes', 2), titulo: 'Controle de Entregas', texto: 'Filtre por mês (ou "Todos") e ano.' },
-            { alvo: naAba('compensacoes', 'table'), titulo: 'A lista de entregas', texto: 'Estudante, mês de referência, atividade e quantas aulas compensa. Embaixo do mês de referência aparecem os dias em que ele faltou ("dia… 3, 7 (2 aulas)", com o mês logo acima). Embaixo do nome fica o histórico das mudanças de situação.' },
+            { alvo: naAba('compensacoes', 'table'), titulo: 'A lista de entregas', texto: 'Estudante, mês de referência, atividade e quantas aulas compensa. Embaixo do mês de referência aparecem os dias de aula da turma em que ele faltou ("dia… 3, 7 (2 aulas)", com o mês logo acima). Faltas em dia sem aula dessa turma não entram. Embaixo do nome fica o histórico das mudanças de situação.' },
             { opcional: true, alvo: naAba('compensacoes', 'tbody td:nth-child(4) button'), titulo: 'Situação (toque para escolher)', texto: 'O toque abre um menu em volta do botão com as 6 situações: ⏳ Pendente, 📩 Notificado, ✅ Entregue, ⏰ Entregue c/ atraso, ❌ Não entregue e 📄 Não fez / sem folha. Toque direto na certa; só ela entra no histórico. Para fechar sem mudar, toque no ✕ ou fora. Na atividade automática "Compensação de Faltas" (aba Trabalhos), Entregue devolve as aulas, com atraso devolve metade e "Não fez" tira 1 ponto.' }
         ]
     },
@@ -1102,7 +1102,7 @@ const MANUAL_TURMA = [
           { t: 'Controle de Entregas', itens: [
               'Filtre por mês (ou "Todos") e ano; use o filtro de nome em turma grande.',
               'Toque na situação: abre um menu em volta do botão com ⏳ Pendente, 📩 Notificado, ✅ Entregue, ⏰ Entregue c/ atraso, ❌ Não entregue e 📄 Não fez / sem folha. Toque direto na que quer, sem passar pelas outras. A atual fica destacada; ✕ ou tocar fora fecha sem mudar.',
-              'Embaixo do mês de referência aparecem, em letra pequena, os dias em que o estudante faltou (aula dupla mostra "2 aulas"). Embaixo do nome fica o histórico de cada mudança, com data.',
+              'Embaixo do mês de referência aparecem, em letra pequena, os dias de aula da turma em que o estudante faltou (aula dupla mostra "2 aulas"). Faltas em dia sem aula dessa turma não entram. Embaixo do nome fica o histórico de cada mudança, com data.',
               '🗑️ apaga a compensação daquele estudante.'] },
           { t: 'Na nota', itens: ['Crie em Trabalhos uma atividade do tipo "Compensação de Faltas": Entregue devolve as aulas, Entregue com atraso devolve metade e "Não fez / sem folha" tira 1 ponto.'] }
       ],

@@ -4321,7 +4321,7 @@ function getNotaCompensacao(estudanteId, bimestre) {
     });
 
     comps.forEach(c => {
-        const valorRecuperavel = c.peso_faltas || c.qtd_faltas || 0; 
+        const valorRecuperavel = c.peso_faltas ?? c.qtd_faltas ?? 0; 
         
         if (c.status === 'entregue') {
             notaFinal += valorRecuperavel;
@@ -5988,7 +5988,7 @@ function renderCompensacoes() {
                                     <div style="font-size:10px; color:#5f6b7f; margin-top:2px;">${logMinimizado}</div>
                                 </td>
                                 <td style="font-size:12px;">${meses[c.mes_referencia]}/${c.ano_referencia}${diasFaltaCompensacaoHtml(c)}</td>
-                                <td>${c.atividade} <br><span style="font-size:10px; color:#5f6b7f;">Aulas comp.: ${c.peso_faltas || c.qtd_faltas}</span></td>
+                                <td>${c.atividade} <br><span style="font-size:10px; color:#5f6b7f;">Aulas comp.: ${c.peso_faltas ?? c.qtd_faltas}</span></td>
                                 <td>
                                     <button onclick="abrirMenuStatusCompensacao('${c.id}', this)" aria-haspopup="true" title="Escolher a situação" style="border:1px solid ${st.color}; background:${st.bg}; color:${st.color}; padding:5px 10px; border-radius:15px; font-weight:bold; cursor:pointer; width: 130px;">
                                         ${st.label}
@@ -6019,17 +6019,23 @@ function gerarCompensacoesAutomatico() {
     const presencas = (data.presencas || []).filter(p => p.status === 'falta' && dataNoMesCompensacao(p.data, mes, ano));
 
     // Agrupa por estudante calculando quantidade e peso (dobradinhas)
+    // Só conta falta em dia em que a TURMA tem aula (getAulasNoDia > 0). Falta em dia sem
+    // aula dessa turma não gera compensação nem aparece na lista de dias.
     const mapaFaltas = {};
     presencas.forEach(p => {
-        if (!mapaFaltas[p.id_estudante]) mapaFaltas[p.id_estudante] = { qtd: 0, peso: 0 };
-        mapaFaltas[p.id_estudante].qtd++;
-        mapaFaltas[p.id_estudante].peso += getAulasNoDia(turmaAtual, p.data);
+        const aulas = getAulasNoDia(turmaAtual, p.data);
+        if (aulas <= 0) return;
+        const key = String(p.id_estudante);
+        if (!mapaFaltas[key]) mapaFaltas[key] = { qtd: 0, peso: 0, dias: [] };
+        mapaFaltas[key].qtd++;
+        mapaFaltas[key].peso += aulas;
+        mapaFaltas[key].dias.push({ data: String(p.data).slice(0, 10), aulas });
     });
 
-    // Filtra estudantes da turma atual que têm faltas
+    // Filtra estudantes da turma atual que têm faltas em dia de aula
     const estudantesComFalta = (data.estudantes || [])
-        .filter(e => e.id_turma == turmaAtual && estudanteAtivo(e) && mapaFaltas[e.id])
-        .map(e => ({ ...e, faltas: mapaFaltas[e.id].qtd, peso: mapaFaltas[e.id].peso }))
+        .filter(e => e.id_turma == turmaAtual && estudanteAtivo(e) && mapaFaltas[String(e.id)])
+        .map(e => ({ ...e, faltas: mapaFaltas[String(e.id)].qtd, peso: mapaFaltas[String(e.id)].peso, dias: mapaFaltas[String(e.id)].dias }))
         .sort((a,b) => b.peso - a.peso);
 
     if (estudantesComFalta.length === 0) {
@@ -6061,6 +6067,7 @@ function gerarCompensacoesAutomatico() {
             atividade: atividade,
             qtd_faltas: e.faltas,
             peso_faltas: e.peso, // Armazena o valor total em pontos para recuperação
+            dias_faltas: e.dias.sort((a, b) => a.data.localeCompare(b.data)), // Dias de aula em que faltou, com aulas de cada dia
             status: 'pendente', // pendente -> notificado -> entregue -> nao_entregue
             data_criacao: getTodayString(),
             historico: [{ status: 'pendente', data: getTodayString() }] // Log inicial
@@ -6088,20 +6095,24 @@ function dataNoMesCompensacao(dataStr, mes, ano) {
 }
 
 // Dias em que o estudante faltou no mês de referência da compensação, em ordem.
+// Usa a lista gravada na geração (dias_faltas). Registros antigos, sem a lista, são
+// recalculados pela grade atual, só com dias em que a turma tem aula.
 function diasFaltaCompensacao(c) {
+    if (Array.isArray(c.dias_faltas)) return c.dias_faltas;
     const mes = parseInt(c.mes_referencia, 10), ano = parseInt(c.ano_referencia, 10);
     const dias = (data.presencas || [])
         .filter(p => p.status === 'falta' && String(p.id_estudante) === String(c.id_estudante) && dataNoMesCompensacao(p.data, mes, ano))
         .map(p => String(p.data).slice(0, 10));
-    return [...new Set(dias)].sort();
+    return [...new Set(dias)].sort()
+        .map(d => ({ data: d, aulas: getAulasNoDia(c.id_turma, d) }))
+        .filter(x => x.aulas > 0);
 }
 
 function diasFaltaCompensacaoHtml(c) {
     const dias = diasFaltaCompensacao(c);
     if (!dias.length) return '';
-    const textos = dias.map(d => {
+    const textos = dias.map(({ data: d, aulas }) => {
         const dia = parseInt(d.split('-')[2], 10);
-        const aulas = getAulasNoDia(c.id_turma, d);
         return `${dia}${aulas > 1 ? ` (${aulas} aulas)` : ''}`;
     });
     return `<div class="comp-dias-falta" style="font-size:10px; color:#8a5a14; margin-top:2px;">dia… ${textos.join(', ')}</div>`;

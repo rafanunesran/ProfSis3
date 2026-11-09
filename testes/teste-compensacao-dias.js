@@ -39,7 +39,8 @@ const FAKE = () => {
     data = Object.assign(getInitialData(), {
       turmas: [ { id:500, nome:'1A' } ],
       estudantes: [ { id:1, id_turma:500, nome_completo:'Ana Souza', status:'Ativo' },
-                    { id:2, id_turma:500, nome_completo:'Bruno Lima', status:'Ativo' } ],
+                    { id:2, id_turma:500, nome_completo:'Bruno Lima', status:'Ativo' },
+                    { id:3, id_turma:500, nome_completo:'Carla Dias', status:'Ativo' } ],
       // 2026-10-07 é quarta: a grade tem 2 aulas da turma nesse dia (aula dupla).
       schoolGrade: [ { id:'b1', diaSemana:3 }, { id:'b2', diaSemana:3 }, { id:'b3', diaSemana:4 } ],
       horariosAulas: [ { id_bloco:'b1', tipo:'aula', id_turma:500 }, { id_bloco:'b2', tipo:'aula', id_turma:500 }, { id_bloco:'b3', tipo:'aula', id_turma:500 } ],
@@ -48,7 +49,10 @@ const FAKE = () => {
         { id:2, id_estudante:1, data:'2026-10-07', status:'falta' },
         { id:3, id_estudante:1, data:'2026-09-30', status:'falta' },
         { id:4, id_estudante:2, data:'2026-10-15', status:'falta' },
-        { id:5, id_estudante:2, data:'2026-10-16', status:'presente' } ],
+        { id:5, id_estudante:2, data:'2026-10-16', status:'presente' },
+        // Segunda-feira: a turma não tem aula nesse dia (falta de outra disciplina/turma).
+        { id:6, id_estudante:1, data:'2026-10-05', status:'falta' },
+        { id:7, id_estudante:3, data:'2026-10-05', status:'falta' } ],
       compensacoes: [] });
     turmaAtual = 500;
     document.body.innerHTML = '<div id="tabCompensacoes"></div>';
@@ -61,6 +65,7 @@ const FAKE = () => {
   await p.waitForTimeout(200);
   const r = await p.evaluate(() => ({
     comps: data.compensacoes.map(c => ({ est: c.id_estudante, qtd: c.qtd_faltas, peso: c.peso_faltas })),
+    somaDias: (() => { const c = data.compensacoes.find(x => x.id_estudante == 1); const txt = document.querySelector('#tabCompensacoes tr[data-nome="Ana Souza"] .comp-dias-falta')?.textContent || ''; return [...txt.matchAll(/\((\d+) aulas?\)|(?<=, |…\s)(\d+)(?=,|$)/g)].reduce((t, m) => t + (m[1] ? +m[1] : 1), 0); })(),
     ana: document.querySelector('#tabCompensacoes tr[data-nome="Ana Souza"] .comp-dias-falta')?.textContent.trim(),
     anaDentroDoNome: !!document.querySelector('#tabCompensacoes tr[data-nome="Ana Souza"] td:first-child .comp-dias-falta'),
     bruno: document.querySelector('#tabCompensacoes tr[data-nome="Bruno Lima"] .comp-dias-falta')?.textContent.trim() }));
@@ -79,8 +84,11 @@ const FAKE = () => {
   await b.close();
 
   const ok = [
-    ['falta do dia 1º conta no mês certo (fuso do Brasil)', r.comps.find(c => c.est == 1)?.qtd === 2 && r.comps.find(c => c.est == 1)?.peso === 3],
-    ['dias de falta com aula dupla', r.ana === 'dia… 1, 7 (2 aulas)'],
+    ['falta do dia 1º conta no mês certo (fuso do Brasil)', r.comps.find(c => c.est == 1)?.peso === 3],
+    ['falta em dia sem aula da turma não conta (qtd e aulas)', r.comps.find(c => c.est == 1)?.qtd === 2 && !r.ana.includes('5')],
+    ['aluno só com falta em dia sem aula não recebe compensação', !r.comps.find(c => c.est == 3)],
+    ['aulas listadas batem com "Aulas comp." (soma = peso)', r.somaDias === 3],
+    ['dias de falta com aula dupla (sem o dia 5)', r.ana === 'dia… 1, 7 (2 aulas)'],
     ['dias ficam debaixo do mês, não do nome', r.anaDentroDoNome === false && !!r.ana],
     ['presença não aparece como falta', r.bruno === 'dia… 15'],
     ['menu satélite com 6 opções, atual destacada', menu.n === 6 && menu.atual === 'pendente'],
