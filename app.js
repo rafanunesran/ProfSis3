@@ -4738,6 +4738,7 @@ function renderTrabalhos() {
                                     <button class="btn btn-xs btn-secondary no-print" style="padding:0 5px; font-size:10px; opacity: 0.6;" onclick="abrirModalNovoTrabalho(${t.id})" title="Editar Atividade">✏️</button>
                                     <span style="font-size: 10px; color: #5f6b7f; font-weight: normal;">Peso: ${t.peso}</span>
                                     <button class="btn btn-xs btn-secondary no-print" style="padding:0 5px; font-size:10px; opacity: 0.6;" onclick="copiarNotasAtividade(${t.id}, this)" title="Copiar as notas desta atividade, uma por linha, para colar na Sala do Futuro">📋</button>
+                                    ${atividadeAceitaGrupos(t) ? `<button class="btn btn-xs btn-secondary no-print btn-grupos" style="padding:0 5px; font-size:10px; ${(t.grupos || []).length ? 'opacity:1; background:#efe9fb; border-color:#c9b8f0;' : 'opacity: 0.6;'}" onclick="abrirModalGrupos(${t.id})" title="Grupos: a nota de um vai para todos do grupo">👥${(t.grupos || []).length ? ' ' + t.grupos.length : ''}</button>` : ''}
                                     <button class="btn btn-xs btn-danger no-print" style="padding:0 5px; font-size:10px; border-radius: 50%; opacity: 0.6;" onclick="removerTrabalho(${t.id})" title="Excluir Atividade">×</button>
                                 </div>
                             </th>
@@ -4816,7 +4817,8 @@ function renderTrabalhos() {
                                 const hasValue = (nota && nota.valor !== undefined && nota.valor !== "");
                                 const displayRub = hasValue ? parseFloat(nota.valor).toFixed(1).replace('.0', '').replace('.', ',') : '-';
                                 return `
-                                    <td style="text-align:center; border: 1px solid #e3e8ef; padding: 5px;">
+                                    <td style="text-align:center; border: 1px solid #e3e8ef; padding: 5px; position:relative;">
+                                        ${etiquetaGrupoCelula(t, e.id, nota)}
                                         <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
                                             <div style="display:flex; gap:5px;">
                                                 ${t.rubricas.map(r => `
@@ -4836,8 +4838,9 @@ function renderTrabalhos() {
                             const displayValor = (typeof valor === 'number') ? valor.toFixed(1).replace('.', ',').replace(',0', '') : valor;
 
                             return `
-                                <td style="text-align:center; border: 1px solid #e3e8ef; padding: 0;">
-                                    <input type="text" value="${displayValor}" 
+                                <td style="text-align:center; border: 1px solid #e3e8ef; padding: 0; position:relative;">
+                                    ${etiquetaGrupoCelula(t, e.id, nota)}
+                                    <input type="text" value="${displayValor}" data-nota="${t.id}|${e.id}" 
                                         style="width:100%; border:none; text-align:center; padding: 12px 0; background:transparent; font-size:13px; outline: none;"
                                         placeholder="-"
                                         onfocus="this.parentElement.style.background='#edf3fd';"
@@ -4883,6 +4886,10 @@ function idEstudanteGravado(id) {
 async function salvarNota(trabalhoId, estudanteId, valor) {
     estudanteId = idEstudanteGravado(estudanteId);
     if (!data.notas) data.notas = [];
+    // Estudante num grupo desta atividade (e sem nota própria): a nota vai para o grupo todo
+    const trabalhoDoGrupo = (data.trabalhos || []).find(t => t.id == trabalhoId);
+    const grupo = trabalhoDoGrupo ? grupoDoEstudante(trabalhoDoGrupo, estudanteId) : null;
+    if (grupo) return salvarNotaNoGrupo(trabalhoDoGrupo, grupo, estudanteId, String(valor == null ? '' : valor).trim());
     let nota = data.notas.find(n => n.id_trabalho == trabalhoId && n.id_estudante == estudanteId);
     if (nota) {
         if (String(nota.valor) === String(valor).trim()) return;
@@ -5313,6 +5320,9 @@ async function importarAtividadesSelecionadas() {
 async function toggleRubrica(trabalhoId, estudanteId, rubricId, isChecked) {
     estudanteId = idEstudanteGravado(estudanteId);
     if (!data.notas) data.notas = [];
+    const trabalhoDoGrupo = (data.trabalhos || []).find(t => t.id == trabalhoId);
+    const grupoRub = trabalhoDoGrupo ? grupoDoEstudante(trabalhoDoGrupo, estudanteId) : null;
+    if (grupoRub && !notaPropriaDe(trabalhoId, estudanteId)) return marcarRubricaNoGrupo(trabalhoDoGrupo, grupoRub, estudanteId, rubricId, isChecked);
     let nota = data.notas.find(n => n.id_trabalho == trabalhoId && n.id_estudante == estudanteId);
     const trabalho = data.trabalhos.find(t => t.id == trabalhoId);
     
@@ -5414,6 +5424,435 @@ function removerTrabalho(id) {
         persistirDados();
         renderTrabalhos();
     }
+}
+
+// --- TRABALHO EM GRUPO: A NOTA DE UM VAI PARA O GRUPO TODO ---
+// Cada atividade (Comum, Colar do Excel ou Rubrica) pode ter grupos de estudantes,
+// guardados nela mesma: t.grupos = [{ id, nome, membros: [ids], nota }]. As notas
+// continuam uma por estudante em data.notas (média, cópia e Sala do Futuro não mudam).
+// Lançar a nota de um estudante do grupo lança a mesma para os outros; quem tem
+// "nota própria" (nota.notaPropria) não é mexido e só muda quando o professor digita nele.
+// Logo depois de lançar aparece "Só para Fulano", que desfaz nos outros e deixa a nota
+// própria só nele. Grupos de uma atividade podem ser copiados para outra da turma.
+const TIPOS_COM_GRUPO = ['comum', 'colar', 'rubrica'];
+let avisoGrupoDesfazer = null;
+let avisoGrupoTimer = null;
+
+function atividadeAceitaGrupos(t) {
+    return !!t && TIPOS_COM_GRUPO.includes(t.tipo || 'comum');
+}
+
+function grupoDoEstudante(t, estudanteId) {
+    if (!atividadeAceitaGrupos(t)) return null;
+    return (t.grupos || []).find(g => (g.membros || []).some(m => String(m) === String(estudanteId))) || null;
+}
+
+function notaDoEstudante(trabalhoId, estudanteId) {
+    return (data.notas || []).find(n => n.id_trabalho == trabalhoId && String(n.id_estudante) === String(estudanteId)) || null;
+}
+
+function notaPropriaDe(trabalhoId, estudanteId) {
+    const n = notaDoEstudante(trabalhoId, estudanteId);
+    return !!(n && n.notaPropria);
+}
+
+function nomeCurtoEstudante(id) {
+    const e = (data.estudantes || []).find(x => String(x.id) === String(id));
+    return e ? String(e.nome_completo || '').split(' ')[0] : 'estudante';
+}
+
+// Etiqueta no canto da célula da planilha: nome do grupo e, se for o caso, "✎" de nota própria.
+function etiquetaGrupoCelula(t, estudanteId, nota) {
+    const g = grupoDoEstudante(t, estudanteId);
+    if (!g) return '';
+    const propria = !!(nota && nota.notaPropria);
+    const nome = escapeHtmlColar(String(g.nome || 'Grupo').substring(0, 10));
+    const dica = propria ? `${g.nome}: nota própria (não segue o grupo)` : `${g.nome}: a nota vai para o grupo todo`;
+    return `<span class="etiqueta-grupo no-print" title="${escapeHtmlColar(dica)}" style="position:absolute; top:1px; left:3px; font-size:9px; line-height:1; pointer-events:none; color:${propria ? '#b45309' : '#6b46c1'};">${propria ? '✎ ' : '👥 '}${nome}</span>`;
+}
+
+// Fotografia das notas dos estudantes, para poder desfazer.
+function retratoNotas(trabalhoId, ids) {
+    const r = {};
+    ids.forEach(id => {
+        const n = notaDoEstudante(trabalhoId, id);
+        r[String(id)] = n ? { valor: n.valor, rubricas_marcadas: n.rubricas_marcadas ? n.rubricas_marcadas.slice() : undefined, notaPropria: !!n.notaPropria } : null;
+    });
+    return r;
+}
+
+function voltarRetratoNotas(trabalhoId, retrato) {
+    Object.keys(retrato).forEach(id => {
+        const antes = retrato[id];
+        const n = notaDoEstudante(trabalhoId, id);
+        if (!antes) {
+            if (n) data.notas = data.notas.filter(x => x !== n);
+            return;
+        }
+        if (!n) return;
+        n.valor = antes.valor;
+        if (antes.rubricas_marcadas) n.rubricas_marcadas = antes.rubricas_marcadas.slice(); else delete n.rubricas_marcadas;
+        if (antes.notaPropria) n.notaPropria = true; else delete n.notaPropria;
+    });
+}
+
+function gravarNotaDoEstudante(trabalhoId, estudanteId, valor) {
+    let n = notaDoEstudante(trabalhoId, estudanteId);
+    if (n) { n.valor = valor; return n; }
+    if (valor === '') return null;
+    n = { id: novoId(), id_trabalho: trabalhoId, id_estudante: idEstudanteGravado(estudanteId), valor: valor };
+    data.notas.push(n);
+    return n;
+}
+
+function valorParaCelula(valor) {
+    return (typeof valor === 'number') ? valor.toFixed(1).replace('.', ',').replace(',0', '') : (valor == null ? '' : String(valor));
+}
+
+// Atualiza na tela as células dos colegas sem redesenhar (não perde o foco de quem digita).
+function atualizarCelulasGrupo(t, ids) {
+    ids.forEach(id => {
+        const n = notaDoEstudante(t.id, id);
+        const input = document.querySelector(`#tabTrabalhos input[data-nota="${t.id}|${id}"]`);
+        if (input && document.activeElement !== input) input.value = valorParaCelula(n ? n.valor : '');
+        recalcularMediaUI(idEstudanteGravado(id));
+    });
+}
+
+// Membros que seguem a nota do grupo (sem nota própria), menos o próprio autor.
+function colegasQueSeguemGrupo(t, g, autorId) {
+    return (g.membros || []).filter(m => String(m) !== String(autorId) && !notaPropriaDe(t.id, m));
+}
+
+async function salvarNotaNoGrupo(t, g, autorId, valor) {
+    const atual = notaDoEstudante(t.id, autorId);
+    // Nota própria: muda só ele. Se digitou a mesma do grupo, volta a seguir o grupo.
+    if (atual && atual.notaPropria) {
+        if (String(atual.valor) === valor) return;
+        atual.valor = valor;
+        if (valor !== '' && String(g.nota || '') === valor) delete atual.notaPropria;
+        await persistirDados();
+        recalcularMediaUI(autorId);
+        if (!atual.notaPropria) renderTrabalhos();
+        return;
+    }
+    if ((atual ? String(atual.valor) : '') === valor) return;
+
+    const colegas = colegasQueSeguemGrupo(t, g, autorId);
+    const retrato = retratoNotas(t.id, colegas);
+    const notaGrupoAntes = g.nota;
+    g.nota = valor;
+    gravarNotaDoEstudante(t.id, autorId, valor);
+    colegas.forEach(m => gravarNotaDoEstudante(t.id, m, valor));
+    await persistirDados();
+    recalcularMediaUI(autorId);
+    atualizarCelulasGrupo(t, colegas);
+
+    if (colegas.length) {
+        mostrarAvisoGrupo(
+            `Nota ${valor === '' ? 'apagada' : '<strong>' + escapeHtmlColar(valor) + '</strong> lançada'} para o grupo <strong>${escapeHtmlColar(g.nome)}</strong> (${colegas.length + 1} estudantes).`,
+            `Só para ${escapeHtmlColar(nomeCurtoEstudante(autorId))}`,
+            async () => {
+                voltarRetratoNotas(t.id, retrato);
+                g.nota = notaGrupoAntes;
+                const n = notaDoEstudante(t.id, autorId);
+                if (n) n.notaPropria = true;
+                await persistirDados();
+                renderTrabalhos();
+            });
+    }
+}
+
+async function marcarRubricaNoGrupo(t, g, autorId, rubricId, marcado) {
+    const colegas = colegasQueSeguemGrupo(t, g, autorId);
+    const todos = [autorId].concat(colegas);
+    const retrato = retratoNotas(t.id, todos);
+    const base = notaDoEstudante(t.id, autorId);
+    let marcadas = (base && base.rubricas_marcadas ? base.rubricas_marcadas : []).filter(id => id != rubricId);
+    if (marcado) marcadas.push(rubricId);
+    let total = 0;
+    (t.rubricas || []).forEach(r => { if (marcadas.includes(r.id)) total += parseFloat(String(r.peso).replace(',', '.')) || 0; });
+    todos.forEach(m => {
+        let n = notaDoEstudante(t.id, m);
+        if (!n) { n = { id: novoId(), id_trabalho: t.id, id_estudante: idEstudanteGravado(m), valor: 0 }; data.notas.push(n); }
+        n.rubricas_marcadas = marcadas.slice();
+        n.valor = total;
+    });
+    g.nota = String(total);
+    await persistirDados();
+    renderTrabalhos();
+    if (colegas.length) {
+        mostrarAvisoGrupo(
+            `Critério ${marcado ? 'marcado' : 'desmarcado'} para o grupo <strong>${escapeHtmlColar(g.nome)}</strong> (${todos.length} estudantes).`,
+            `Só para ${escapeHtmlColar(nomeCurtoEstudante(autorId))}`,
+            async () => {
+                const doAutor = notaDoEstudante(t.id, autorId);
+                const copiaAutor = doAutor ? { valor: doAutor.valor, rubricas_marcadas: (doAutor.rubricas_marcadas || []).slice() } : null;
+                const soColegas = {}; colegas.forEach(m => { soColegas[String(m)] = retrato[String(m)]; });
+                voltarRetratoNotas(t.id, soColegas);
+                const n = notaDoEstudante(t.id, autorId);
+                if (n && copiaAutor) { n.valor = copiaAutor.valor; n.rubricas_marcadas = copiaAutor.rubricas_marcadas; n.notaPropria = true; }
+                await persistirDados();
+                renderTrabalhos();
+            });
+    }
+}
+
+// Faixa no rodapé com a ação de desfazer. Some sozinha depois de 15 s.
+function mostrarAvisoGrupo(textoHtml, rotuloBotao, acao) {
+    let el = document.getElementById('avisoGrupoNota');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'avisoGrupoNota';
+        el.className = 'no-print';
+        el.setAttribute('role', 'status');
+        el.style.cssText = 'position:fixed; left:50%; bottom:18px; transform:translateX(-50%); width:max-content; z-index:1100; background:#1c2536; color:#fff; padding:10px 12px; border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,.25); display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:13px; max-width:calc(100vw - 32px);';
+        document.body.appendChild(el);
+    }
+    avisoGrupoDesfazer = acao;
+    el.innerHTML = `<span>👥 ${textoHtml}</span>
+        <button type="button" class="btn btn-sm" style="background:#fbbf24; color:#1c2536; border:none; font-weight:bold;" onclick="desfazerAvisoGrupo()">${rotuloBotao}</button>
+        <button type="button" class="btn btn-sm" style="background:transparent; color:#cbd5e1; border:1px solid #475569;" onclick="fecharAvisoGrupo()">OK</button>`;
+    el.style.display = 'flex';
+    clearTimeout(avisoGrupoTimer);
+    avisoGrupoTimer = setTimeout(fecharAvisoGrupo, 15000);
+}
+
+function fecharAvisoGrupo() {
+    clearTimeout(avisoGrupoTimer);
+    avisoGrupoDesfazer = null;
+    const el = document.getElementById('avisoGrupoNota');
+    if (el) el.style.display = 'none';
+}
+
+async function desfazerAvisoGrupo() {
+    const acao = avisoGrupoDesfazer;
+    fecharAvisoGrupo();
+    if (acao) await acao();
+}
+
+// ---- Janela "👥 Grupos" da atividade
+let grupoTrabalhoAberto = null;
+
+function abrirModalGrupos(trabalhoId) {
+    grupoTrabalhoAberto = trabalhoId;
+    renderModalGrupos();
+    showModal('modalNovoTrabalho');
+}
+
+function trabalhoDosGrupos() {
+    return (data.trabalhos || []).find(t => t.id == grupoTrabalhoAberto) || null;
+}
+
+function renderModalGrupos() {
+    const t = trabalhoDosGrupos();
+    const modal = document.getElementById('modalNovoTrabalho');
+    if (!t || !modal) return;
+    const grupos = t.grupos || [];
+    const estudantes = estudantesPlanilhaTrabalhos();
+    const nomeDe = id => { const e = estudantes.find(x => String(x.id) === String(id)) || (data.estudantes || []).find(x => String(x.id) === String(id)); return e ? e.nome_completo : '(estudante saiu da turma)'; };
+    const semGrupo = estudantes.filter(e => !grupoDoEstudante(t, e.id));
+    const ehRubrica = t.tipo === 'rubrica';
+    const outrasComGrupos = (data.trabalhos || []).filter(x => x.id != t.id && x.id_turma == turmaAtual && (x.grupos || []).length);
+
+    modal.querySelector('.modal-content').innerHTML = `
+        <h3 style="margin-bottom:4px;">👥 Grupos — ${escapeHtmlColar(t.titulo)}</h3>
+        <p style="font-size:12px; color:#5f6b7f; margin:0 0 12px 0;">${ehRubrica ? 'Marque os critérios de um estudante na planilha e eles valem para o grupo todo.' : 'Lance a nota de um estudante na planilha (ou aqui, em "Nota do grupo") e ela vai para o grupo todo.'} Para mudar a nota de um só, use o ✎ ao lado do nome ou o botão "Só para…" que aparece depois de lançar.</p>
+
+        <div id="listaGrupos">
+        ${grupos.length === 0 ? '<p class="empty-state" style="margin:8px 0;">Nenhum grupo ainda. Monte abaixo.</p>' : grupos.map(g => `
+            <div class="grupo-card" data-grupo="${escapeHtmlColar(g.id)}" style="border:1px solid #e3e8ef; border-radius:8px; padding:10px; margin-bottom:10px; background:#faf8ff;">
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <input type="text" value="${escapeHtmlColar(g.nome)}" aria-label="Nome do grupo" onchange="renomearGrupo('${escapeHtmlColar(g.id)}', this.value)" style="flex:1; min-width:120px; font-weight:bold; margin:0;">
+                    ${ehRubrica ? '' : `<div style="display:flex; align-items:center; gap:4px; font-size:12px;">Nota do grupo
+                        <input type="text" class="nota-do-grupo" value="${escapeHtmlColar(g.nota || '')}" placeholder="-" style="width:60px; text-align:center; margin:0;" onchange="lancarNotaDoGrupo('${escapeHtmlColar(g.id)}', this.value)"></div>`}
+                    <button type="button" class="btn btn-xs btn-danger" onclick="excluirGrupo('${escapeHtmlColar(g.id)}')" title="Desfaz o grupo. As notas já lançadas ficam.">Desfazer grupo</button>
+                </div>
+                <ul style="list-style:none; padding:0; margin:8px 0 0 0;">
+                    ${(g.membros || []).map(m => {
+                        const n = notaDoEstudante(t.id, m);
+                        const propria = !!(n && n.notaPropria);
+                        const valor = n && n.valor !== '' && n.valor != null ? valorParaCelula(n.valor) : '-';
+                        return `<li class="membro-grupo" style="display:flex; align-items:center; gap:6px; padding:4px 0; border-bottom:1px dashed #e3e8ef; font-size:13px;">
+                            <span style="flex:1;">${escapeHtmlColar(nomeDe(m))}</span>
+                            <span style="font-weight:bold; min-width:28px; text-align:center; color:${propria ? '#b45309' : '#1c2536'};" title="${propria ? 'Nota própria' : 'Segue o grupo'}">${escapeHtmlColar(valor)}</span>
+                            ${propria
+                                ? `<span style="font-size:11px; color:#b45309;">✎ própria</span><button type="button" class="btn btn-xs btn-secondary" onclick="voltarNotaDoGrupo('${escapeHtmlColar(String(m))}')" title="Volta a receber a nota do grupo">↺ do grupo</button>`
+                                : (ehRubrica ? '' : `<button type="button" class="btn btn-xs btn-secondary" onclick="darNotaPropria('${escapeHtmlColar(String(m))}')" title="Dar uma nota diferente só para este estudante">✎</button>`)}
+                            <button type="button" class="btn btn-xs btn-secondary" onclick="tirarDoGrupo('${escapeHtmlColar(String(m))}')" title="Tirar do grupo (a nota dele fica)">×</button>
+                        </li>`;
+                    }).join('')}
+                </ul>
+            </div>
+        `).join('')}
+        </div>
+
+        <div style="border-top:1px solid #e3e8ef; margin-top:6px; padding-top:10px;">
+            <strong style="font-size:13px;">Estudantes sem grupo (${semGrupo.length})</strong>
+            ${semGrupo.length === 0 ? '<p style="font-size:12px; color:#5f6b7f; margin:6px 0;">Todos já estão em algum grupo.</p>' : `
+                <div id="semGrupoLista" style="max-height:220px; overflow-y:auto; border:1px solid #e3e8ef; border-radius:8px; padding:6px 8px; margin:6px 0;">
+                    ${semGrupo.map(e => `<label style="display:flex; gap:8px; align-items:center; padding:3px 0; cursor:pointer; font-size:13px;"><input type="checkbox" class="sem-grupo-item" value="${escapeHtmlColar(String(e.id))}"> ${escapeHtmlColar(e.nome_completo)}</label>`).join('')}
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                    <button type="button" class="btn btn-sm btn-primary" onclick="criarGrupoComMarcados()">+ Criar grupo com os marcados</button>
+                    ${grupos.length ? `<select id="grupoDestino" style="width:auto; margin:0;">${grupos.map(g => `<option value="${escapeHtmlColar(g.id)}">${escapeHtmlColar(g.nome)}</option>`).join('')}</select>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="colocarMarcadosNoGrupo()">Pôr no grupo</button>` : ''}
+                </div>
+                <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:10px; font-size:12px;">
+                    🎲 Sortear os sem grupo em grupos de
+                    <input type="number" id="tamanhoSorteio" min="2" max="15" value="4" style="width:60px; margin:0;">
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="sortearGrupos()">Sortear</button>
+                </div>`}
+            ${outrasComGrupos.length ? `
+                <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:10px; font-size:12px;">
+                    📋 Usar os grupos de
+                    <select id="copiarGruposDe" style="width:auto; margin:0;">${outrasComGrupos.map(x => `<option value="${x.id}">${escapeHtmlColar(x.titulo)} (${parseInt(x.bimestre) || 1}º bim., ${x.grupos.length} grupos)</option>`).join('')}</select>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="copiarGruposDeOutra()">Copiar</button>
+                </div>` : ''}
+        </div>
+
+        <div style="margin-top:16px; display:flex; justify-content:flex-end;">
+            <button type="button" class="btn btn-primary" onclick="closeModal('modalNovoTrabalho'); renderTrabalhos();">Pronto</button>
+        </div>
+    `;
+}
+
+async function salvarGruposEAtualizar() {
+    await persistirDados();
+    renderModalGrupos();
+    renderTrabalhos();
+}
+
+function proximoNomeGrupo(t) {
+    let n = (t.grupos || []).length + 1;
+    while ((t.grupos || []).some(g => g.nome === 'Grupo ' + n)) n++;
+    return 'Grupo ' + n;
+}
+
+function marcadosSemGrupo() {
+    return Array.from(document.querySelectorAll('#semGrupoLista .sem-grupo-item:checked')).map(c => idEstudanteGravado(c.value));
+}
+
+// Quem entra num grupo que já tem nota recebe essa nota (se não tiver nota própria).
+function aplicarNotaDoGrupoEm(t, g, ids) {
+    if (t.tipo === 'rubrica' || g.nota == null || g.nota === '') return;
+    ids.forEach(id => { if (!notaPropriaDe(t.id, id)) gravarNotaDoEstudante(t.id, id, String(g.nota)); });
+}
+
+async function criarGrupoComMarcados() {
+    const t = trabalhoDosGrupos(); if (!t) return;
+    const ids = marcadosSemGrupo();
+    if (!ids.length) return alert('Marque os estudantes do grupo.');
+    if (!t.grupos) t.grupos = [];
+    t.grupos.push({ id: novoId(), nome: proximoNomeGrupo(t), membros: ids, nota: '' });
+    await salvarGruposEAtualizar();
+}
+
+async function colocarMarcadosNoGrupo() {
+    const t = trabalhoDosGrupos(); if (!t) return;
+    const ids = marcadosSemGrupo();
+    if (!ids.length) return alert('Marque os estudantes.');
+    const g = (t.grupos || []).find(x => String(x.id) === document.getElementById('grupoDestino').value);
+    if (!g) return;
+    g.membros = (g.membros || []).concat(ids);
+    aplicarNotaDoGrupoEm(t, g, ids);
+    await salvarGruposEAtualizar();
+}
+
+async function sortearGrupos() {
+    const t = trabalhoDosGrupos(); if (!t) return;
+    const tam = Math.max(2, parseInt(document.getElementById('tamanhoSorteio').value) || 4);
+    const sobra = estudantesPlanilhaTrabalhos().filter(e => !grupoDoEstudante(t, e.id)).map(e => e.id);
+    if (sobra.length < 2) return alert('Precisa de pelo menos 2 estudantes sem grupo.');
+    for (let i = sobra.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [sobra[i], sobra[j]] = [sobra[j], sobra[i]]; }
+    // Divide por igual: 10 alunos em grupos de 4 viram 4 + 3 + 3, não 4 + 4 + 2.
+    const qtd = Math.ceil(sobra.length / tam);
+    if (!t.grupos) t.grupos = [];
+    const novos = Array.from({ length: qtd }, () => []);
+    sobra.forEach((id, i) => novos[i % qtd].push(id));
+    novos.forEach(membros => t.grupos.push({ id: novoId(), nome: proximoNomeGrupo(t), membros, nota: '' }));
+    await salvarGruposEAtualizar();
+}
+
+async function copiarGruposDeOutra() {
+    const t = trabalhoDosGrupos(); if (!t) return;
+    const origem = (data.trabalhos || []).find(x => String(x.id) === document.getElementById('copiarGruposDe').value);
+    if (!origem) return;
+    if ((t.grupos || []).length && !confirm('Esta atividade já tem grupos. Trocar pelos grupos de "' + origem.titulo + '"? As notas já lançadas ficam.')) return;
+    const daTurma = new Set(estudantesPlanilhaTrabalhos().map(e => String(e.id)));
+    t.grupos = (origem.grupos || []).map(g => ({ id: novoId(), nome: g.nome, membros: (g.membros || []).filter(m => daTurma.has(String(m))), nota: '' }))
+        .filter(g => g.membros.length);
+    await salvarGruposEAtualizar();
+}
+
+async function renomearGrupo(grupoId, nome) {
+    const t = trabalhoDosGrupos(); if (!t) return;
+    const g = (t.grupos || []).find(x => String(x.id) === String(grupoId));
+    if (!g) return;
+    g.nome = String(nome || '').trim() || proximoNomeGrupo(t);
+    await salvarGruposEAtualizar();
+}
+
+async function excluirGrupo(grupoId) {
+    const t = trabalhoDosGrupos(); if (!t) return;
+    if (!confirm('Desfazer este grupo? As notas já lançadas continuam.')) return;
+    t.grupos = (t.grupos || []).filter(x => String(x.id) !== String(grupoId));
+    await salvarGruposEAtualizar();
+}
+
+async function tirarDoGrupo(estudanteId) {
+    const t = trabalhoDosGrupos(); if (!t) return;
+    const g = grupoDoEstudante(t, estudanteId);
+    if (!g) return;
+    g.membros = g.membros.filter(m => String(m) !== String(estudanteId));
+    const n = notaDoEstudante(t.id, estudanteId);
+    if (n) delete n.notaPropria;
+    if (!g.membros.length) t.grupos = t.grupos.filter(x => x !== g);
+    await salvarGruposEAtualizar();
+}
+
+async function lancarNotaDoGrupo(grupoId, valor) {
+    const t = trabalhoDosGrupos(); if (!t) return;
+    const g = (t.grupos || []).find(x => String(x.id) === String(grupoId));
+    if (!g) return;
+    valor = String(valor || '').trim();
+    g.nota = valor;
+    const pulados = [];
+    (g.membros || []).forEach(m => {
+        if (notaPropriaDe(t.id, m)) pulados.push(nomeCurtoEstudante(m));
+        else gravarNotaDoEstudante(t.id, m, valor);
+    });
+    await salvarGruposEAtualizar();
+    if (pulados.length) mostrarAvisoGrupo(`Nota do grupo lançada. Com nota própria, não mudou: ${escapeHtmlColar(pulados.join(', '))}.`, 'Aplicar neles também', async () => {
+        (g.membros || []).forEach(m => { const n = notaDoEstudante(t.id, m); if (n) delete n.notaPropria; gravarNotaDoEstudante(t.id, m, valor); });
+        await salvarGruposEAtualizar();
+    });
+}
+
+async function darNotaPropria(estudanteId) {
+    const t = trabalhoDosGrupos(); if (!t) return;
+    const atual = notaDoEstudante(t.id, estudanteId);
+    const resp = prompt(`Nota só de ${nomeCurtoEstudante(estudanteId)} (o resto do grupo não muda):`, atual ? valorParaCelula(atual.valor) : '');
+    if (resp === null) return;
+    const n = gravarNotaDoEstudante(t.id, estudanteId, String(resp).trim()) ||
+        (data.notas.push({ id: novoId(), id_trabalho: t.id, id_estudante: idEstudanteGravado(estudanteId), valor: '' }), notaDoEstudante(t.id, estudanteId));
+    n.notaPropria = true;
+    await salvarGruposEAtualizar();
+}
+
+async function voltarNotaDoGrupo(estudanteId) {
+    const t = trabalhoDosGrupos(); if (!t) return;
+    const g = grupoDoEstudante(t, estudanteId);
+    const n = notaDoEstudante(t.id, estudanteId);
+    if (!g || !n) return;
+    delete n.notaPropria;
+    if (t.tipo === 'rubrica') {
+        const ref = (g.membros || []).map(m => notaDoEstudante(t.id, m)).find(x => x && x !== n && !x.notaPropria);
+        if (ref) { n.rubricas_marcadas = (ref.rubricas_marcadas || []).slice(); n.valor = ref.valor; }
+    } else if (g.nota != null && g.nota !== '') {
+        n.valor = String(g.nota);
+    }
+    await salvarGruposEAtualizar();
 }
 
 // --- COMPENSAÇÕES DE AUSÊNCIAS ---
