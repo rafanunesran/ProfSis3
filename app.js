@@ -3404,7 +3404,8 @@ async function renderOcorrencias() {
                             </div>
                             <div class="no-print">
                                 <button class="btn btn-sm btn-secondary" onclick="editarOcorrencia(${o.id})" title="Editar" style="padding: 2px 6px;">✏️</button>
-                                <button class="btn btn-sm btn-secondary" onclick="imprimirOcorrencia(${o.id})" title="Imprimir" style="padding: 2px 6px;">🖨️</button>
+                                <button class="btn btn-sm btn-secondary" onclick="imprimirOcorrencia('${o.id}')" title="Imprimir" style="padding: 2px 6px;">🖨️</button>
+                                <button class="btn btn-sm btn-secondary" onclick="baixarPdfOcorrencia('${o.id}', this)" title="Baixar PDF" style="padding: 2px 6px;">📄</button>
                                 <button class="btn btn-sm btn-danger" onclick="removerOcorrencia(${o.id})" title="Excluir" style="padding: 2px 6px;">🗑️</button>
                             </div>
                         </div>
@@ -3713,50 +3714,113 @@ function removerOcorrencia(id) {
     }
 }
 
-function imprimirOcorrencia(id) {
-    const o = data.ocorrencias.find(x => x.id == id);
-    if (!o) return;
+// --- DOCUMENTO DA OCORRÊNCIA (imprimir e baixar PDF; o painel da gestão usa o mesmo) ---
 
-    // Usa o autor e o snapshot da turma salvos na ocorrência
-    const autorOcorrencia = o.autor || 'Professor Desconhecido';
-    const turmaDisplay = o.turma_snapshot || 'Turma Desconhecida';
+// Os envolvidos, um por id. O mesmo aluno existe uma vez em CADA turma do professor ligada à
+// mesma turma da gestão (mesmo id); procurar em todos os estudantes trazia o nome repetido
+// na impressão. Fica o da turma da ocorrência quando existir.
+function estudantesDaOcorrencia(o) {
+    const vistos = new Set();
+    const lista = [];
+    (o && o.ids_estudantes || []).forEach(id => {
+        const k = String(id);
+        if (vistos.has(k)) return;
+        vistos.add(k);
+        const candidatos = (data.estudantes || []).filter(e => String(e.id) === k);
+        const est = candidatos.find(e => o.id_turma != null && e.id_turma == o.id_turma)
+                 || candidatos.find(e => typeof turmaAtual !== 'undefined' && e.id_turma == turmaAtual)
+                 || candidatos[0];
+        lista.push(est || { id: id, nome_completo: 'Excluído', excluido: true });
+    });
+    return lista;
+}
 
-    const estudantes = (data.estudantes || []).filter(e => (o.ids_estudantes || []).includes(e.id));
-    const nomes = estudantes.map(e => e.nome_completo).join(', ');
+function escHtmlOcorrencia(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
+function disciplinaDaOcorrencia(o) {
+    if (o.disciplina) return o.disciplina;
+    const turma = (data.turmas || []).find(t => t.id == o.id_turma);
+    if (turma && turma.disciplina) return turma.disciplina;
+    const snap = String(o.turma_snapshot || '');
+    const i = snap.lastIndexOf(' - ');
+    return i !== -1 ? snap.slice(i + 3).trim() : '';
+}
+
+// Nome do arquivo: primeiro nome dos envolvidos, data e disciplina.
+// Ex.: "Ocorrência - Ana, Bruno - 10-11-2026 - Matemática" (o .pdf tira os acentos).
+function tituloArquivoOcorrencia(o) {
+    const primeiros = [];
+    estudantesDaOcorrencia(o).filter(e => !e.excluido).forEach(e => {
+        const p = String(e.nome_completo || '').trim().split(/\s+/)[0];
+        if (!p) return;
+        const bonito = p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+        if (primeiros.indexOf(bonito) === -1) primeiros.push(bonito);
+    });
+    let nomes = primeiros.join(', ');
+    if (primeiros.length > 4) nomes = primeiros.slice(0, 3).join(', ') + ' e mais ' + (primeiros.length - 3);
+    const dataTxt = String(formatDate(o.data) || '').replace(/\//g, '-');
+    return ['Ocorrência', nomes, dataTxt, disciplinaDaOcorrencia(o)].filter(Boolean).join(' - ');
+}
+
+// Página completa da ocorrência. `autorPadrao`: o que aparece quando ela não tem autor.
+function htmlDocumentoOcorrencia(o, autorPadrao) {
+    const nomes = estudantesDaOcorrencia(o).map(e => escHtmlOcorrencia(e.nome_completo)).join(', ');
     const devolutivaHtml = o.devolutiva ? `
         <hr>
         <h3>Devolutiva da Gestão:</h3>
-        <p style="white-space: pre-wrap; background: #f0fff4; padding: 15px; border: 1px solid #c6f6d5; color: #2f855a; border-radius: 5px;">${o.devolutiva}</p>
+        <p style="white-space: pre-wrap; background: #f0fff4; padding: 15px; border: 1px solid #c6f6d5; color: #2f855a; border-radius: 5px;">${escHtmlOcorrencia(o.devolutiva)}</p>
     ` : '';
-
-    const conteudo = `
-        <div style="font-family: Arial, sans-serif; padding: 40px;">
+    return `<!DOCTYPE html><html style="background:#fff;"><head><meta charset="utf-8"><title>${escHtmlOcorrencia(tituloArquivoOcorrencia(o))}</title></head><body style="margin:0; background:#fff;">
+        <div style="font-family: Arial, sans-serif; padding: 40px; color:#000;">
             <h1 style="text-align: center;">Registro de Ocorrência</h1>
             <hr>
             <p><strong>Data:</strong> ${formatDate(o.data)}</p>
-            <p><strong>Professor/Autor:</strong> ${autorOcorrencia}</p>
-            <p><strong>Turma/Disciplina:</strong> ${turmaDisplay}</p>
-            <p><strong>Estudantes Envolvidos:</strong> ${nomes}</p>
-            <p><strong>Status:</strong> ${o.status ? o.status.toUpperCase() : 'PENDENTE'}</p>
+            <p><strong>Professor/Autor:</strong> ${escHtmlOcorrencia(o.autor || autorPadrao)}</p>
+            <p><strong>Turma/Disciplina:</strong> ${escHtmlOcorrencia(o.turma_snapshot || 'Turma Desconhecida')}</p>
+            <p><strong>Estudantes Envolvidos:</strong> ${nomes || '-'}</p>
+            <p><strong>Status:</strong> ${o.status ? escHtmlOcorrencia(o.status.toUpperCase()) : 'PENDENTE'}</p>
             <hr>
             <h3>Relato:</h3>
-            <p style="white-space: pre-wrap; background: #f9f9f9; padding: 15px; border: 1px solid #cdd5e1; border-radius: 5px;">${o.relato}</p>
+            <p style="white-space: pre-wrap; background: #f9f9f9; padding: 15px; border: 1px solid #cdd5e1; border-radius: 5px;">${escHtmlOcorrencia(o.relato)}</p>
             ${devolutivaHtml}
-            <br><br><br>
-            <div style="display: flex; justify-content: space-between; margin-top: 50px;">
+            <div style="display: flex; justify-content: space-between; margin-top: 90px;">
                 <div style="border-top: 1px solid #000; width: 40%; text-align: center; padding-top: 5px;">Assinatura do Responsável</div>
                 <div style="border-top: 1px solid #000; width: 40%; text-align: center; padding-top: 5px;">Assinatura da Coordenação</div>
             </div>
         </div>
-    `;
+    </body></html>`;
+}
 
+function imprimirDocumentoOcorrencia(o, autorPadrao) {
     const janela = window.open('', '', 'width=800,height=600');
-    janela.document.write('<html><head><title>Imprimir Ocorrência</title></head><body>');
-    janela.document.write(conteudo);
-    janela.document.write('<script>window.print();</script>');
-    janela.document.write('</body></html>');
+    if (!janela) return alert('O navegador bloqueou a janela de impressão. Libere as janelas (pop-ups) deste site e tente de novo.');
+    janela.document.write(htmlDocumentoOcorrencia(o, autorPadrao).replace('</body>', '<script>window.print();<\/script></body>'));
     janela.document.close();
+}
+
+async function baixarPdfDocumentoOcorrencia(o, autorPadrao, botao) {
+    const textoBotao = botao ? botao.textContent : '';
+    if (botao) { botao.disabled = true; botao.textContent = '⏳'; }
+    try {
+        await baixarPdfDocumentoEstagiario(htmlDocumentoOcorrencia(o, autorPadrao));
+    } catch (e) {
+        console.error('[Ocorrência] PDF:', e);
+        alert((e && e.message) || 'Não consegui gerar o PDF. Tente o botão de imprimir e escolha "Salvar como PDF".');
+    } finally {
+        if (botao) { botao.disabled = false; botao.textContent = textoBotao; }
+    }
+}
+
+function imprimirOcorrencia(id) {
+    const o = (data.ocorrencias || []).find(x => x.id == id);
+    if (o) imprimirDocumentoOcorrencia(o, 'Professor Desconhecido');
+}
+
+function baixarPdfOcorrencia(id, botao) {
+    const o = (data.ocorrencias || []).find(x => x.id == id);
+    if (o) return baixarPdfDocumentoOcorrencia(o, 'Professor Desconhecido', botao);
 }
 
 // --- ATRASOS ---

@@ -10,7 +10,9 @@
 //   2. o remanejado (mesmo aluno, turma nova) continua um só;
 //   3. a sobra que já está gravada (mesmo id 2x na mesma turma) é limpa, e dois
 //      alunos DIFERENTES com o mesmo nome (ids diferentes) continuam os dois;
-//   4. na tela, cada aluno aparece uma vez e dá para adicionar aluno de id texto.
+//   4. na tela, cada aluno aparece uma vez e dá para adicionar aluno de id texto;
+//   5. a IMPRESSÃO não repete o nome (o aluno está nas duas turmas do professor) e o
+//      botão 📄 baixa o PDF com o primeiro nome, a data e a disciplina no nome do arquivo.
 const { chromium } = require('playwright');
 
 const URL = (process.env.PROFSIS_URL || 'http://localhost:8877') + '/index.html';
@@ -33,7 +35,7 @@ const ok = (c, msg) => { console.log((c ? '  ok   ' : '  FALHA ') + msg); if (!c
 
 (async () => {
   const b = await chromium.launch({ executablePath: CHROME });
-  const p = await (await b.newContext()).newPage();
+  const p = await (await b.newContext({ acceptDownloads: true })).newPage();
   const erros = [];
   p.on('pageerror', e => erros.push(String(e.message)));
   p.on('dialog', async d => await d.accept());
@@ -112,6 +114,38 @@ const ok = (c, msg) => { console.log((c ? '  ok   ' : '  FALHA ') + msg); if (!c
   await p.evaluate(() => { const x = [...document.querySelectorAll('#tabOcorrencias span')].find(s => s.textContent === '×'); x.click(); });
   await p.waitForTimeout(200);
   ok(await p.evaluate(() => tempOcorrenciaIds.length === 0), 'o × tira o aluno de id texto');
+
+  console.log('5. Impressão e PDF');
+  await p.evaluate(async () => {
+    data.turmas = [{ id: 500, nome: '1A', disciplina: 'Matemática', masterId: 9 }, { id: 501, nome: '1A', disciplina: 'Física', masterId: 9 }];
+    data.estudantes = [
+      { id: 7, id_turma: 500, nome_completo: 'BIA NUMERO SILVA', status: 'Ativo' },
+      { id: 7, id_turma: 501, nome_completo: 'BIA NUMERO SILVA', status: 'Ativo' },
+      { id: 'mg3k2-a1b2c3', id_turma: 500, nome_completo: 'Ana Texto', status: 'Ativo' },
+      { id: 'mg3k2-a1b2c3', id_turma: 501, nome_completo: 'Ana Texto', status: 'Ativo' } ];
+    data.ocorrencias = [{ id: 900, id_turma: 500, data: '2026-11-10', relato: 'Conversa <alta> na aula', ids_estudantes: [7, 'mg3k2-a1b2c3'],
+      autor: 'Prof', status: 'pendente', tipo: 'disciplinar', turma_snapshot: '1A - Matemática', disciplina: 'Matemática' }];
+    currentTurmaOcorrenciaTab = 'disciplinares'; currentTurmaOcorrenciaFiltro = 'todas';
+    window.__impresso = '';
+    window.open = () => ({ document: { write: (h) => { window.__impresso += h; }, close: () => {} } });
+    await renderOcorrencias();
+    document.querySelector('#listaOcorrenciasTurma button[title="Imprimir"]').click();
+  });
+  const imp = await p.evaluate(() => window.__impresso);
+  const linha = (imp.match(/Estudantes Envolvidos:<\/strong>([^<]*)</) || [])[1] || '';
+  ok(linha.trim() === 'BIA NUMERO SILVA, Ana Texto', 'impressão sem nome repetido (' + linha.trim() + ')');
+  ok(imp.includes('Conversa &lt;alta&gt;'), 'relato com < > não quebra a página');
+  ok(imp.includes('<title>Ocorrência - Bia, Ana - 10-11-2026 - Matemática</title>'), 'título da impressão = nome do arquivo');
+  const [dl] = await Promise.all([
+    p.waitForEvent('download', { timeout: 60000 }),
+    p.click('#listaOcorrenciasTurma button[title="Baixar PDF"]')
+  ]);
+  const nomeArq = dl.suggestedFilename();
+  ok(nomeArq === 'Ocorrencia - Bia, Ana - 10-11-2026 - Matematica.pdf', 'nome do PDF (' + nomeArq + ')');
+  const caminho = await dl.path();
+  const ini = require('fs').readFileSync(caminho).slice(0, 5).toString();
+  ok(ini === '%PDF-', 'o arquivo baixado é um PDF');
+  if (process.env.PDF_SAIDA) require('fs').copyFileSync(caminho, process.env.PDF_SAIDA);
 
   ok(erros.length === 0, 'sem erro na página' + (erros.length ? ': ' + erros.join(' | ') : ''));
   await b.close();

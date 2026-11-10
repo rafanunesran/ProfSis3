@@ -1402,7 +1402,8 @@ function renderAbaDisciplinares(lista) {
                                 <td style="border-bottom:none;">${o.autor || 'Gestão'}</td>
                                 <td style="border-bottom:none;">${envolvidos || '-'}</td>
                                 <td style="border-bottom:none;">
-                                    <button class="btn btn-sm btn-secondary" onclick="imprimirOcorrenciaGestor(${o.id})">📄 Baixar PDF</button>
+                                    <button class="btn btn-sm btn-secondary" onclick="imprimirOcorrenciaGestor('${o.id}')" title="Imprimir">🖨️</button>
+                                    <button class="btn btn-sm btn-secondary" onclick="baixarPdfOcorrenciaGestor('${o.id}', this)" title="Baixar PDF">📄 PDF</button>
                                 </td>
                                 <td style="border-bottom:none;">
                                     <button class="btn btn-sm ${isPendente ? 'btn-warning' : 'btn-success'}" onclick="toggleStatusOcorrencia(${o.id})">
@@ -1517,48 +1518,15 @@ function toggleStatusOcorrencia(id) {
     }
 }
 
+// O documento é o mesmo da turma (app.js, htmlDocumentoOcorrencia).
 function imprimirOcorrenciaGestor(id) {
-    const o = data.ocorrencias.find(x => x.id == id);
-    if (!o) return;
+    const o = (data.ocorrencias || []).find(x => x.id == id);
+    if (o) imprimirDocumentoOcorrencia(o, 'Gestão');
+}
 
-    const envolvidos = (o.ids_estudantes || []).map(id => {
-        const est = (data.estudantes || []).find(e => e.id == id);
-        return est ? est.nome_completo : 'Excluído';
-    }).join(', ');
-
-    const devolutivaHtml = o.devolutiva ? `
-        <hr>
-        <h3>Devolutiva da Gestão:</h3>
-        <p style="white-space: pre-wrap; background: #f0fff4; padding: 15px; border: 1px solid #c6f6d5; color: #2f855a; border-radius: 5px;">${o.devolutiva}</p>
-    ` : '';
-
-    const conteudo = `
-        <div style="font-family: Arial, sans-serif; padding: 40px;">
-            <h1 style="text-align: center;">Registro de Ocorrência</h1>
-            <hr>
-            <p><strong>Data:</strong> ${formatDate(o.data)}</p>
-            <p><strong>Professor/Autor:</strong> ${o.autor || 'Gestão'}</p>
-            <p><strong>Turma/Disciplina:</strong> ${o.turma_snapshot || 'N/A'}</p>
-            <p><strong>Estudantes Envolvidos:</strong> ${envolvidos}</p>
-            <p><strong>Status:</strong> ${o.status ? o.status.toUpperCase() : 'PENDENTE'}</p>
-            <hr>
-            <h3>Relato:</h3>
-            <p style="white-space: pre-wrap; background: #f9f9f9; padding: 15px; border: 1px solid #cdd5e1; border-radius: 5px;">${o.relato}</p>
-            ${devolutivaHtml}
-            <br><br><br>
-            <div style="display: flex; justify-content: space-between; margin-top: 50px;">
-                <div style="border-top: 1px solid #000; width: 40%; text-align: center; padding-top: 5px;">Assinatura do Responsável</div>
-                <div style="border-top: 1px solid #000; width: 40%; text-align: center; padding-top: 5px;">Assinatura da Coordenação</div>
-            </div>
-        </div>
-    `;
-
-    const janela = window.open('', '', 'width=800,height=600');
-    janela.document.write('<html><head><title>Ocorrência - ' + formatDate(o.data) + '</title></head><body>');
-    janela.document.write(conteudo);
-    janela.document.write('<script>window.print();</script>');
-    janela.document.write('</body></html>');
-    janela.document.close();
+function baixarPdfOcorrenciaGestor(id, botao) {
+    const o = (data.ocorrencias || []).find(x => x.id == id);
+    if (o) return baixarPdfDocumentoOcorrencia(o, 'Gestão', botao);
 }
 
 async function compartilharRelatorio() {

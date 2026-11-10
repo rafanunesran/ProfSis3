@@ -573,7 +573,7 @@ const TOURS_ABAS = {
             { alvo: '#novaOcorrenciaTexto', titulo: 'Relato', texto: 'Descreva o que aconteceu, com fatos (o que, quando, onde).' },
             { alvo: () => { const r = $('#radioTipoRapida'); return r ? r.closest('label').parentElement.parentElement : null; }, titulo: 'Classificação (obrigatória)', texto: '📝 Registro (Informativo): fica anotado. ⚠️ Atenção da Gestão: pede ação da coordenação. Na nota automática de Participação, o registro tira 2 pontos e o de atenção tira 3.' },
             { alvo: porTexto('#tabOcorrencias', 'Registrar Ocorrência'), titulo: 'Registrar Ocorrência', texto: 'Grava e envia para a gestão. Para corrigir depois, use ✏️ no histórico.' },
-            { alvo: porTexto('#tabOcorrencias', 'Disciplinares'), titulo: 'Histórico', texto: 'Duas listas: ⚠️ Disciplinares e ⚡ Registros rápidos. Cada ocorrência mostra a data, quem registrou, os envolvidos, o relato, a situação (⏳ Pendente ou ✅ Confirmada pela gestão) e a Devolutiva da Gestão. ✏️ edita, 🖨️ imprime, 🗑️ exclui.' }
+            { alvo: porTexto('#tabOcorrencias', 'Disciplinares'), titulo: 'Histórico', texto: 'Duas listas: ⚠️ Disciplinares e ⚡ Registros rápidos. Cada ocorrência mostra a data, quem registrou, os envolvidos, o relato, a situação (⏳ Pendente ou ✅ Confirmada pela gestão) e a Devolutiva da Gestão. ✏️ edita, 🖨️ imprime, 📄 baixa em PDF (o arquivo já sai com o primeiro nome dos envolvidos, a data e a disciplina), 🗑️ exclui.' }
         ]
     },
     aba_mapeamento: {
@@ -1128,7 +1128,7 @@ const MANUAL_TURMA = [
               'Duas listas: "⚠️ Disciplinares" e "⚡ Registros rápidos", com a quantidade.',
               'Cada ocorrência mostra data, professor, envolvidos, relato e a situação: ⏳ Pendente ou ✅ Confirmada pela gestão.',
               '"Devolutiva da Gestão": a resposta da coordenação, quando houver.',
-              '✏️ edita (aparece "💾 Salvar Alterações" e "Cancelar Edição"), 🖨️ imprime, 🗑️ exclui.'] },
+              '✏️ edita (aparece "💾 Salvar Alterações" e "Cancelar Edição"), 🖨️ imprime, 📄 baixa em PDF (nome do arquivo: primeiro nome dos envolvidos, data e disciplina), 🗑️ exclui.'] },
           { t: 'Bom saber', itens: ['As ocorrências chegam à gestão cifradas, pelo ambiente da escola.', 'Na nota automática de Participação, cada ocorrência no bimestre tira 2 (registro) ou 3 (atenção da gestão).', 'Atrasos repetidos viram ocorrência pelo "⚠️ Gerar" da aba Atrasos.'] }
       ] },
     { id: 't-mapeamento', icone: '🗺️', titulo: 'Mapeamento da sala', tour: 'aba_mapeamento',
