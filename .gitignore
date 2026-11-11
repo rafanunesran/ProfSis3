@@ -4,3 +4,4 @@ node_modules/
 
 # impeccable engine binary (platform-specific; the launcher downloads it on demand)
 .claude/skills/impeccable/scripts/bin/
+_site/

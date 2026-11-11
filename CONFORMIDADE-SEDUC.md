@@ -41,7 +41,7 @@ pelo profissional, no ambiente oficial da Secretaria.
 
 O deploy também deixou de publicar o repositório inteiro no GitHub Pages: agora um
 passo do workflow copia uma lista explícita de arquivos do site
-(`.github/workflows/deploy.yml`). Antes disso, todo o código acima era publicamente
+(`scripts/montar-site.sh`, usado pelo `.github/workflows/deploy.yml` e pela Vercel). Antes disso, todo o código acima era publicamente
 baixável.
 
 ## 3. O que foi preservado

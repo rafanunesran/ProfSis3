@@ -265,7 +265,7 @@ const bancoFalso = (inicial) => {
       /allow read, write: if isSuperAdmin\(\);/.test(bloco('financeiro_custos'))
       && /allow read, write: if isSuperAdmin\(\);/.test(bloco('financeiro_config')));
   ok('o site publica o financeiro.js',
-      /financeiro\.js/.test(fs.readFileSync(path.join(RAIZ, '.github/workflows/deploy.yml'), 'utf8'))
+      /financeiro\.js/.test(fs.readFileSync(path.join(RAIZ, 'scripts/montar-site.sh'), 'utf8'))
       && /financeiro\.js/.test(fs.readFileSync(path.join(RAIZ, 'index.html'), 'utf8')));
 
   console.log('\n' + (falhas.length === 0

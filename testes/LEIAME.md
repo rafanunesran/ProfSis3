@@ -1,8 +1,8 @@
 # Testes de navegador
 
 Rodam o site de verdade num Chromium, com o Firebase substituído por um banco em
-memória. Não tocam no Firestore real e não vão ao ar: o passo "Montar _site" do
-`.github/workflows/deploy.yml` copia uma lista explícita de arquivos, e esta pasta
+memória. Não tocam no Firestore real e não vão ao ar: o script
+`scripts/montar-site.sh` (usado no GitHub Pages e na Vercel) copia uma lista explícita de arquivos, e esta pasta
 não está nela.
 
 ## Como rodar
