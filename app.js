@@ -6038,9 +6038,11 @@ function renderCompensacoes() {
                             h.status === 'pendente' || h.status === 'notificado' || idx === lastFinalIdx
                         ).map(h => {
                             if (!h.data) return '';
-                            const d = new Date(h.data);
-                            const dia = d.getDate();
-                            const mes = d.getMonth() + 1;
+                            // Lê dia e mês do texto "AAAA-MM-DD". new Date(texto) vira meia-noite UTC
+                            // e, no fuso do Brasil, mostrava o dia anterior.
+                            const [, mesTxt, diaTxt] = String(h.data).slice(0, 10).split('-');
+                            const dia = parseInt(diaTxt, 10);
+                            const mes = parseInt(mesTxt, 10);
                             const mapSigla = { 'pendente': 'A', 'notificado': 'Notf', 'entregue': 'E', 'entregue_atraso': 'EA', 'nao_entregue': 'X', 'nao_fez_folha': 'NF' };
                             return `<span style="margin-right:4px;">${mapSigla[h.status] || '?'} ${dia}/${mes}</span>`;
                         }).join('');

@@ -70,6 +70,14 @@ const FAKE = () => {
     anaDentroDoNome: !!document.querySelector('#tabCompensacoes tr[data-nome="Ana Souza"] td:first-child .comp-dias-falta'),
     bruno: document.querySelector('#tabCompensacoes tr[data-nome="Bruno Lima"] .comp-dias-falta')?.textContent.trim() }));
 
+  // Data do histórico gravada hoje (12/11) tem de aparecer como 12/11, não 11/11 (fuso).
+  await p.evaluate(() => {
+    const c = data.compensacoes.find(x => x.id_estudante == 1);
+    c.historico = [{ status: 'pendente', data: '2026-11-12' }, { status: 'notificado', data: '2026-11-12' }];
+    c.status = 'notificado';
+    renderCompensacoes();
+  });
+  const linhaHist = await p.evaluate(() => document.querySelector('#tabCompensacoes tr[data-nome="Ana Souza"] td:first-child').textContent);
   await p.locator('#tabCompensacoes tr[data-nome="Ana Souza"] td:nth-child(4) button').click();
   await p.waitForTimeout(300);
   const menu = await p.evaluate(() => {
@@ -90,8 +98,9 @@ const FAKE = () => {
     ['aulas listadas batem com "Aulas comp." (soma = peso)', r.somaDias === 3],
     ['dias de falta com aula dupla (sem o dia 5)', r.ana === 'dia… 1, 7 (2 aulas)'],
     ['dias ficam debaixo do mês, não do nome', r.anaDentroDoNome === false && !!r.ana],
+    ['histórico mostra o dia gravado (12/11, não 11/11)', /A 12\/11/.test(linhaHist) && /Notf 12\/11/.test(linhaHist)],
     ['presença não aparece como falta', r.bruno === 'dia… 15'],
-    ['menu satélite com 6 opções, atual destacada', menu.n === 6 && menu.atual === 'pendente'],
+    ['menu satélite com 6 opções, atual destacada', menu.n === 6 && menu.atual === 'notificado'],
     ['opções cabem na tela', menu.dentro],
     ['Esc fecha o menu', fechouEsc],
     ['nenhum erro na página', erros.length === 0],
