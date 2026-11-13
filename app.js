@@ -111,6 +111,11 @@ async function iniciarApp() {
             try { await trazerListaPublicadaParaGestor(); } catch (e) { console.warn('[SisProf] Lista publicada:', e); }
         }
         if (typeof lembrarRetratoEstudantes === 'function') lembrarRetratoEstudantes(data);
+        if (typeof lembrarRetratoPessoal === 'function') lembrarRetratoPessoal(data);
+        // Atualização automática: o que outro aparelho gravar aparece aqui sozinho (core.js).
+        if (window.dadosCarregados && !window.bloquearEscritaNuvem && typeof escutarOutrosAparelhos === 'function') {
+            try { escutarOutrosAparelhos(getStorageKey(currentUser)); } catch (e) { console.warn('[SisProf] Escuta de outros aparelhos:', e); }
+        }
 
         // Publica a lista da escola assim que o painel da gestão abre (listaescola.js).
         // Sem isto, um gestor que só consulta — sem editar nada — nunca dispararia
@@ -993,6 +998,55 @@ async function confirmarAssumirTerminal(botao) {
         alert('Não consegui assumir a vez: ' + (e && e.message));
         if (botao) { botao.disabled = false; botao.textContent = 'Assumir a vez neste terminal'; }
     }
+}
+
+// Chegou mudança de outro aparelho (core.js: escutarOutrosAparelhos). Redesenha a tela
+// aberta, mas nunca no meio de uma digitação ou com uma janela aberta: espera e tenta de
+// novo. Telas com editor próprio (Ferramentas, Documentos, Estagiário...) não são
+// redesenhadas; pegam o dado novo na próxima vez que forem abertas.
+const RENDER_SINCRONIZAVEL = {
+    dashboard: () => renderDashboard(), turmas: () => renderTurmas(), tutoria: () => renderTutoria(),
+    registrosProfessor: () => renderRegistrosProfessor(), registrosGestor: () => renderRegistrosGestor(),
+    ocorrenciasGestor: () => renderOcorrenciasGestor(), tutoriasGestor: () => renderTutoriasGestor()
+};
+let _timerTelaSincronizada = null;
+function atualizarTelaAposSincronizar() {
+    clearTimeout(_timerTelaSincronizada);
+    const ativo = document.activeElement;
+    const digitando = ativo && (/^(INPUT|TEXTAREA|SELECT)$/.test(ativo.tagName) || ativo.isContentEditable);
+    if (digitando || document.querySelector('.modal.active')) {
+        _timerTelaSincronizada = setTimeout(atualizarTelaAposSincronizar, 3000);
+        return;
+    }
+    const tela = document.querySelector('.screen.active');
+    if (!tela) return;
+    try {
+        if (tela.id === 'turmaDetalhe') {
+            if (!turmaAtual) return;
+            const aba = Array.from(document.querySelectorAll('#turmaDetalhe .turma-tab')).find(t => t.style.display !== 'none');
+            const nome = aba ? aba.id.replace(/^tab/, '') : '';
+            if (nome) showTurmaTab(nome.charAt(0).toLowerCase() + nome.slice(1));
+        } else if (RENDER_SINCRONIZAVEL[tela.id]) {
+            RENDER_SINCRONIZAVEL[tela.id]();
+        } else return;
+        mostrarAvisoSincronizado();
+    } catch (e) { console.warn('[SisProf] Redesenhar após sincronizar:', e); }
+}
+
+function mostrarAvisoSincronizado() {
+    let el = document.getElementById('avisoSincronizado');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'avisoSincronizado';
+        el.className = 'no-print';
+        el.setAttribute('role', 'status');
+        el.style.cssText = 'position:fixed; right:16px; top:16px; z-index:1100; background:#1c2536; color:#fff; padding:8px 12px; border-radius:8px; font-size:13px; box-shadow:0 4px 14px rgba(0,0,0,.2);';
+        document.body.appendChild(el);
+    }
+    el.textContent = '🔄 Atualizado com o que foi feito em outro aparelho';
+    el.style.display = 'block';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.display = 'none'; }, 3500);
 }
 
 // Ao voltar para a aba, confere se a vez continua sendo desta tela. Sem temporizador:
@@ -4958,9 +5012,10 @@ async function salvarNota(trabalhoId, estudanteId, valor) {
     if (nota) {
         if (String(nota.valor) === String(valor).trim()) return;
         nota.valor = String(valor).trim();
+        carimbarRegistro(nota);
     } else {
         if (valor === "" || valor === null || valor === undefined) return;
-        data.notas.push({ id: novoId(), id_trabalho: trabalhoId, id_estudante: estudanteId, valor: String(valor).trim() });
+        data.notas.push(carimbarRegistro({ id: novoId(), id_trabalho: trabalhoId, id_estudante: estudanteId, valor: String(valor).trim() }));
     }
     await persistirDados();
     // Atualiza apenas a média do estudante no DOM para não perder o foco no input
@@ -5233,6 +5288,7 @@ async function salvarTrabalho(e) {
     if (idEdit) {
         const t = data.trabalhos.find(x => x.id == idEdit);
         if (t) {
+            carimbarRegistro(t);
             t.titulo = titulo;
             t.peso = pesoTotal; // Atualiza peso (será 10 para compensação)
             t.rubricas = rubricas; // Atualiza rubricas (vazio para compensação)
@@ -5269,8 +5325,8 @@ async function salvarTrabalho(e) {
         const idT = Number(idTrabalhoSalvo);
         colados.achados.forEach(a => {
             const nota = data.notas.find(n => n.id_trabalho == idT && n.id_estudante == a.estudante.id);
-            if (nota) nota.valor = a.valor;
-            else data.notas.push({ id: novoId(), id_trabalho: idT, id_estudante: a.estudante.id, valor: a.valor });
+            if (nota) { nota.valor = a.valor; carimbarRegistro(nota); }
+            else data.notas.push(carimbarRegistro({ id: novoId(), id_trabalho: idT, id_estudante: a.estudante.id, valor: a.valor }));
         });
     }
     
@@ -5406,6 +5462,7 @@ async function toggleRubrica(trabalhoId, estudanteId, rubricId, isChecked) {
     let total = 0;
     trabalho.rubricas.forEach(r => { if (nota.rubricas_marcadas.includes(r.id)) total += parseFloat(String(r.peso).replace(',', '.')) || 0; });
     nota.valor = total;
+    carimbarRegistro(nota);
 
     const totalEl = document.getElementById(`rub-total-${trabalhoId}-${estudanteId}`);
     if (totalEl) totalEl.textContent = total.toFixed(1).replace('.0', '').replace('.', ',');
@@ -5426,7 +5483,7 @@ async function atualizarNotasRubricaPosEdicao(trabalhoId) {
                     novoTotal += parseFloat(String(r.peso).replace(',', '.')) || 0;
                 }
             });
-            nota.valor = novoTotal;
+            if (nota.valor !== novoTotal) { nota.valor = novoTotal; carimbarRegistro(nota); }
         }
     });
 }
@@ -5499,6 +5556,24 @@ function removerTrabalho(id) {
 // Logo depois de lançar aparece "Só para Fulano", que desfaz nos outros e deixa a nota
 // própria só nele. Grupos de uma atividade podem ser copiados para outra da turma.
 const TIPOS_COM_GRUPO = ['comum', 'colar', 'rubrica'];
+
+// Carimbo de alteração. Na junção entre aparelhos (unirCamadaPessoal, shared.js), quando
+// o mesmo registro existe dos dois lados vale o de `atualizadoEm` mais novo; sem carimbo
+// vale sempre a cópia do aparelho que abre. Por isso a atividade que ganhou grupos (e as
+// notas mudadas) precisam do carimbo, senão o outro aparelho fica com a cópia sem grupos
+// e ainda a sobe de volta para a nuvem.
+function carimbarRegistro(r) {
+    if (r && typeof r === 'object') r.atualizadoEm = new Date().toISOString();
+    return r;
+}
+
+// Carimba a atividade e as notas dos estudantes indicados (ou de todos dos grupos dela).
+function carimbarAtividade(t, ids) {
+    if (!t) return;
+    carimbarRegistro(t);
+    const lista = ids || [].concat(...(t.grupos || []).map(g => g.membros || []));
+    lista.forEach(id => carimbarRegistro(notaDoEstudante(t.id, id)));
+}
 let avisoGrupoDesfazer = null;
 let avisoGrupoTimer = null;
 
@@ -5549,11 +5624,15 @@ function voltarRetratoNotas(trabalhoId, retrato) {
     Object.keys(retrato).forEach(id => {
         const antes = retrato[id];
         const n = notaDoEstudante(trabalhoId, id);
+        if (!n) return;
+        carimbarRegistro(n);
         if (!antes) {
-            if (n) data.notas = data.notas.filter(x => x !== n);
+            // Apagar não passa para o outro aparelho; deixar vazia passa.
+            n.valor = '';
+            delete n.rubricas_marcadas;
+            delete n.notaPropria;
             return;
         }
-        if (!n) return;
         n.valor = antes.valor;
         if (antes.rubricas_marcadas) n.rubricas_marcadas = antes.rubricas_marcadas.slice(); else delete n.rubricas_marcadas;
         if (antes.notaPropria) n.notaPropria = true; else delete n.notaPropria;
@@ -5562,9 +5641,9 @@ function voltarRetratoNotas(trabalhoId, retrato) {
 
 function gravarNotaDoEstudante(trabalhoId, estudanteId, valor) {
     let n = notaDoEstudante(trabalhoId, estudanteId);
-    if (n) { n.valor = valor; return n; }
+    if (n) { n.valor = valor; return carimbarRegistro(n); }
     if (valor === '') return null;
-    n = { id: novoId(), id_trabalho: trabalhoId, id_estudante: idEstudanteGravado(estudanteId), valor: valor };
+    n = carimbarRegistro({ id: novoId(), id_trabalho: trabalhoId, id_estudante: idEstudanteGravado(estudanteId), valor: valor });
     data.notas.push(n);
     return n;
 }
@@ -5595,6 +5674,7 @@ async function salvarNotaNoGrupo(t, g, autorId, valor) {
         if (String(atual.valor) === valor) return;
         atual.valor = valor;
         if (valor !== '' && String(g.nota || '') === valor) delete atual.notaPropria;
+        carimbarRegistro(atual);
         await persistirDados();
         recalcularMediaUI(autorId);
         if (!atual.notaPropria) renderTrabalhos();
@@ -5608,6 +5688,7 @@ async function salvarNotaNoGrupo(t, g, autorId, valor) {
     g.nota = valor;
     gravarNotaDoEstudante(t.id, autorId, valor);
     colegas.forEach(m => gravarNotaDoEstudante(t.id, m, valor));
+    carimbarRegistro(t);
     await persistirDados();
     recalcularMediaUI(autorId);
     atualizarCelulasGrupo(t, colegas);
@@ -5621,6 +5702,7 @@ async function salvarNotaNoGrupo(t, g, autorId, valor) {
                 g.nota = notaGrupoAntes;
                 const n = notaDoEstudante(t.id, autorId);
                 if (n) n.notaPropria = true;
+                carimbarAtividade(t, [autorId].concat(colegas));
                 await persistirDados();
                 renderTrabalhos();
             });
@@ -5643,6 +5725,7 @@ async function marcarRubricaNoGrupo(t, g, autorId, rubricId, marcado) {
         n.valor = total;
     });
     g.nota = String(total);
+    carimbarAtividade(t, todos);
     await persistirDados();
     renderTrabalhos();
     if (colegas.length) {
@@ -5656,6 +5739,7 @@ async function marcarRubricaNoGrupo(t, g, autorId, rubricId, marcado) {
                 voltarRetratoNotas(t.id, soColegas);
                 const n = notaDoEstudante(t.id, autorId);
                 if (n && copiaAutor) { n.valor = copiaAutor.valor; n.rubricas_marcadas = copiaAutor.rubricas_marcadas; n.notaPropria = true; }
+                carimbarAtividade(t, todos);
                 await persistirDados();
                 renderTrabalhos();
             });
@@ -5781,7 +5865,9 @@ function renderModalGrupos() {
     `;
 }
 
-async function salvarGruposEAtualizar() {
+async function salvarGruposEAtualizar(idsExtras) {
+    carimbarAtividade(trabalhoDosGrupos());
+    if (idsExtras) idsExtras.forEach(id => carimbarRegistro(notaDoEstudante(grupoTrabalhoAberto, id)));
     await persistirDados();
     renderModalGrupos();
     renderTrabalhos();
@@ -5872,7 +5958,7 @@ async function tirarDoGrupo(estudanteId) {
     const n = notaDoEstudante(t.id, estudanteId);
     if (n) delete n.notaPropria;
     if (!g.membros.length) t.grupos = t.grupos.filter(x => x !== g);
-    await salvarGruposEAtualizar();
+    await salvarGruposEAtualizar([estudanteId]);
 }
 
 async function lancarNotaDoGrupo(grupoId, valor) {
@@ -10446,13 +10532,20 @@ async function persistirDados() {
     if (currentViewMode === 'gestor' && typeof carimbarEstudantesAlterados === 'function') {
         carimbarEstudantesAlterados(data);
     }
+    // Qualquer outro registro pessoal editado (nota, atividade, ocorrência...) também.
+    if (typeof carimbarPessoalAlterado === 'function') carimbarPessoalAlterado(data);
 
     // A função saveData em core.js já lida com o salvamento no Firebase (se online) ou no LocalStorage (se offline) usando a chave correta.
     if (typeof salvarDadosUsuario === 'function') {
         try {
             // Grava a camada pessoal no aparelho e, quando permitido, a camada
             // que não identifica estudante na nuvem. Ver core.js.
-            await salvarDadosUsuario(key, data);
+            window._gravandoDados = (window._gravandoDados || 0) + 1;
+            try { await salvarDadosUsuario(key, data); }
+            finally {
+                window._gravandoDados--;
+                if (!window._gravandoDados && typeof processarSnapClaroPendente === 'function') processarSnapClaroPendente();
+            }
 
             // [NOVO] Atualização automática do link compartilhado para Gestores
             if (currentViewMode === 'gestor' && typeof atualizarLinkCompartilhamentoGestor === 'function') {

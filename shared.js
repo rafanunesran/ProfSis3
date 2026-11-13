@@ -353,6 +353,50 @@ function carimbarEstudantesAlterados(dados) {
     return n;
 }
 
+// ----------------------------------------------------------------------------
+//  CARIMBO DE QUALQUER EDIÇÃO (professor e gestão)
+//
+//  Na junção abaixo, o mesmo registro dos dois lados fica com o `atualizadoEm` mais
+//  novo; sem carimbo, fica sempre a cópia do aparelho que junta. Só o estudante
+//  (painel da gestão) era carimbado, então editar uma nota, uma atividade (os grupos
+//  de trabalho), uma ocorrência etc. não chegava ao outro aparelho, e o outro ainda
+//  subia a versão velha de volta. Aqui o carimbo vale para todo registro pessoal com
+//  id: ao gravar, compara com o retrato da última gravação e carimba o que mudou.
+// ----------------------------------------------------------------------------
+let _retratoPessoal = null;   // "campo|id|turma" -> assinatura sem o carimbo
+
+function _chaveRetratoPessoal(campo, r) {
+    return campo + '|' + String(r.id) + '|' + (campo === 'estudantes' ? String(r.id_turma) : '');
+}
+
+function lembrarRetratoPessoal(dados) {
+    const mapa = {};
+    Object.keys(dados || {}).forEach(campo => {
+        if (!campoEhPessoal(campo) || !Array.isArray(dados[campo])) return;
+        dados[campo].forEach(r => {
+            if (r && typeof r === 'object' && r.id != null) mapa[_chaveRetratoPessoal(campo, r)] = _assinaturaEstudante(r);
+        });
+    });
+    _retratoPessoal = mapa;
+}
+
+// Carimba o que mudou (ou nasceu) desde o último retrato e tira o retrato novo.
+function carimbarPessoalAlterado(dados) {
+    if (!dados) return 0;
+    if (!_retratoPessoal) { lembrarRetratoPessoal(dados); return 0; }
+    const agora = new Date().toISOString();
+    let n = 0;
+    Object.keys(dados).forEach(campo => {
+        if (!campoEhPessoal(campo) || !Array.isArray(dados[campo])) return;
+        dados[campo].forEach(r => {
+            if (!r || typeof r !== 'object' || r.id == null) return;
+            if (_retratoPessoal[_chaveRetratoPessoal(campo, r)] !== _assinaturaEstudante(r)) { r.atualizadoEm = agora; n++; }
+        });
+    });
+    lembrarRetratoPessoal(dados);
+    return n;
+}
+
 // Junta a camada pessoal de OUTRO aparelho (a que veio cifrada da nuvem) na de agora,
 // registro a registro. Muda `alvo` no lugar e devolve o que entrou.
 //

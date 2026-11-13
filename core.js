@@ -1894,6 +1894,107 @@ async function _juntarPacoteDeOutroAparelho(chave, dados, dek) {
     }
 }
 
+// ============================================================================
+//  ATUALIZAÇÃO AUTOMÁTICA ENTRE APARELHOS
+// ----------------------------------------------------------------------------
+//  Antes, o que um aparelho gravava só aparecia no outro quando ele era reaberto (ou
+//  quando ele mesmo gravava algo). Agora cada aparelho aberto escuta os seus dois
+//  documentos no Firestore (onSnapshot): o pacote pessoal cifrado e o documento em
+//  claro. Quando outro aparelho grava, junta aqui do mesmo jeito da abertura
+//  (unirCamadaPessoal: vale o registro carimbado por último) e redesenha a tela.
+//  A gravação deste próprio aparelho é ignorada (hasPendingWrites, ou o iv que esta
+//  sessão já conhece). Custa uma leitura por gravação de outro aparelho.
+// ============================================================================
+let _pararEscutaOutrosAparelhos = [];
+let _snapClaroPendente = null;
+
+// Os campos em claro, como texto, para reconhecer o eco da própria gravação.
+function _assinaturaClaro(dados) {
+    const o = {};
+    CAMPOS_NUVEM.forEach(c => { if (dados && c in dados) o[c] = dados[c]; });
+    return JSON.stringify(o);
+}
+
+// Chamada por persistirDados quando termina de gravar: aplica o que chegou no meio.
+function processarSnapClaroPendente() {
+    const s = _snapClaroPendente;
+    _snapClaroPendente = null;
+    if (s && typeof s.aplicar === 'function') s.aplicar();
+}
+
+function escutarOutrosAparelhos(chave) {
+    _pararEscutaOutrosAparelhos.forEach(f => { try { f(); } catch (e) {} });
+    _pararEscutaOutrosAparelhos = [];
+    if (typeof db === 'undefined' || !db || typeof db.collection !== 'function') return false;
+    const docRef = (id) => db.collection('app_data').doc(id);
+    const ref = docRef(chave);
+    if (!ref || typeof ref.onSnapshot !== 'function') return false;
+
+    // Documento em claro: os campos que não identificam estudante (turmas, agenda,
+    // bimestres...). Para quem ainda pode guardar tudo em claro, traz também o pessoal.
+    const aplicarClaro = (doc) => {
+        if (window.chaveDosDadosCarregados && window.chaveDosDadosCarregados !== chave) return;
+        // Eco da gravação deste aparelho: nada de novo.
+        if (_assinaturaClaro(doc) === window._ultimoClaroGravado) return;
+        let mudou = 0;
+        CAMPOS_NUVEM.forEach(campo => {
+            if (!(campo in doc)) return;
+            if (JSON.stringify(doc[campo]) !== JSON.stringify(data[campo])) { data[campo] = doc[campo]; mudou++; }
+        });
+        if (typeof podeEnviarDadoPessoal === 'function' && podeEnviarDadoPessoal()) {
+            mudou += unirCamadaPessoal(data, doc).total;
+        }
+        if (mudou) _aplicarMudancaDeOutroAparelho(chave);
+    };
+    _pararEscutaOutrosAparelhos.push(ref.onSnapshot(snap => {
+        if (!snap || !snap.exists || (snap.metadata && snap.metadata.hasPendingWrites)) return;
+        const doc = snap.data() || {};
+        // Gravando agora: aplicar no meio poderia desfazer a edição que está subindo.
+        // Fica para quando a gravação terminar (e aí o eco dela é reconhecido).
+        // Depois relê do banco: o que estava pendente pode ser mais velho do que esta gravação.
+        if (window._gravandoDados > 0) {
+            _snapClaroPendente = { aplicar: () => ref.get().then(s => { if (s && s.exists) aplicarClaro(s.data() || {}); }).catch(() => {}) };
+            return;
+        }
+        aplicarClaro(doc);
+    }, err => console.warn('[SisProf] Escuta do documento:', err)));
+
+    // Pacote pessoal cifrado.
+    const idPessoal = chavePessoalCifrada(chave);
+    let tentativas = 0;
+    const lerPacote = async (snap) => {
+        if (!snap || !snap.exists || (snap.metadata && snap.metadata.hasPendingWrites)) return;
+        const doc = snap.data();
+        if (!doc || !doc.iv || doc.iv === window._ivPessoalConhecido) return;
+        if (window.pessoalCifradoLido !== true) return;
+        const dek = (typeof obterChaveBackup === 'function') ? await obterChaveBackup() : null;
+        if (!dek) return;
+        try {
+            const deLa = await decifrarPacote(doc, dek, async (n) => {
+                const c = await docRef(idPessoal + '_p' + n).get();
+                return c.exists ? c.data() : null;
+            });
+            tentativas = 0;
+            window._ivPessoalConhecido = doc.iv;
+            const entrou = unirCamadaPessoal(data, deLa);
+            if (entrou.total) _aplicarMudancaDeOutroAparelho(chave);
+        } catch (e) {
+            // As partes do pacote grande chegam logo depois da principal: tenta de novo.
+            if (++tentativas <= 3) setTimeout(() => docRef(idPessoal).get().then(lerPacote).catch(() => {}), 1500 * tentativas);
+            else console.warn('[SisProf] Não consegui ler o pacote de outro aparelho:', e);
+        }
+    };
+    _pararEscutaOutrosAparelhos.push(docRef(idPessoal).onSnapshot(s => { lerPacote(s); },
+        err => console.warn('[SisProf] Escuta do pacote pessoal:', err)));
+    return true;
+}
+
+async function _aplicarMudancaDeOutroAparelho(chave) {
+    if (typeof lembrarRetratoPessoal === 'function') lembrarRetratoPessoal(data);
+    try { if (typeof localSet === 'function' && !window.bloquearEscritaLocal) await localSet(chave, data); } catch (e) {}
+    if (typeof atualizarTelaAposSincronizar === 'function') atualizarTelaAposSincronizar();
+}
+
 // Sobe a camada pessoal cifrada.
 //
 // A TRAVA QUE NAO PODE FALTAR: um pacote cifrado vazio e' indistinguivel de um cheio
@@ -2004,6 +2105,7 @@ async function salvarDadosUsuario(chave, dados) {
 
     if (podeEnviarDadoPessoal()) {
         // Antes do corte (ou usuário isento pelo super admin): sobe tudo, como hoje.
+        window._ultimoClaroGravado = _assinaturaClaro(dados);
         await saveData('app_data', chave, dados);
         return;
     }
@@ -2024,6 +2126,7 @@ async function salvarDadosUsuario(chave, dados) {
         return;
     }
 
+    window._ultimoClaroGravado = _assinaturaClaro(dados);
     await saveData('app_data', chave, dividirDados(dados).nuvem);
     if (cifradoOk) {
         window.nuvemTemPessoalEmClaro = false;   // convertida: o pessoal agora é o pacote cifrado

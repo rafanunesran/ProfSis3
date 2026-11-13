@@ -124,6 +124,27 @@ const FAKE = () => {
     out.rubricaGrupo = v(12,1) === '2' && v(12,'ab-2') === '2';
     await desfazerAvisoGrupo();
     out.rubricaSoAna = v(12,1) === '2' && (v(12,'ab-2') === '0' || v(12,'ab-2') === '') && !!data.notas.find(n => n.id_trabalho == 12 && n.id_estudante === 1).notaPropria;
+    // Dois aparelhos: o outro tem a cópia velha (sem grupos, notas antigas). Na junção
+    // (unirCamadaPessoal) os grupos e as notas novas têm que chegar lá, e a cópia velha
+    // não pode apagar os grupos daqui.
+    const velho = JSON.parse(JSON.stringify(data));
+    velho.trabalhos.forEach(t => { delete t.grupos; delete t.atualizadoEm; });
+    velho.notas = velho.notas.filter(n => n.id_trabalho != 11).map(n => { const c = Object.assign({}, n); delete c.atualizadoEm; return c; });
+    const novo = JSON.parse(JSON.stringify(data));
+    out.carimbou = !!novo.trabalhos[0].atualizadoEm && novo.notas.filter(n => n.id_trabalho == 11).every(n => n.atualizadoEm);
+    const outro = JSON.parse(JSON.stringify(velho));
+    unirCamadaPessoal(outro, novo);
+    out.chegouNoOutro = (outro.trabalhos[0].grupos || []).length === 2 && (outro.trabalhos[1].grupos || []).length === 2
+      && outro.notas.filter(n => n.id_trabalho == 11 && n.valor === '6').length === 3;
+    const aqui = JSON.parse(JSON.stringify(novo));
+    unirCamadaPessoal(aqui, velho);
+    out.velhoNaoApaga = (aqui.trabalhos[0].grupos || []).length === 2;
+    // Nota mudada depois (outro aparelho tinha a mesma nota com carimbo antigo)
+    const antigo = JSON.parse(JSON.stringify(data));
+    await salvarNota(11, 4, '8,5');
+    const depois = JSON.parse(JSON.stringify(data));
+    unirCamadaPessoal(antigo, depois);
+    out.notaEditadaChega = antigo.notas.find(n => n.id_trabalho == 11 && n.id_estudante === 4).valor === '8,5';
     // Automática não aceita grupos
     out.autoSemGrupo = !atividadeAceitaGrupos(data.trabalhos[2]);
     return out;
