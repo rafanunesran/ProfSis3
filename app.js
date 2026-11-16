@@ -5802,6 +5802,7 @@ function renderModalGrupos() {
     const semGrupo = estudantes.filter(e => !grupoDoEstudante(t, e.id));
     const ehRubrica = t.tipo === 'rubrica';
     const outrasComGrupos = (data.trabalhos || []).filter(x => x.id != t.id && x.id_turma == turmaAtual && (x.grupos || []).length);
+    const perfis = grupos.length ? perfisParaGrupos(t, [].concat(...grupos.map(g => g.membros || []))) : {};
 
     modal.querySelector('.modal-content').innerHTML = `
         <h3 style="margin-bottom:4px;">👥 Grupos — ${escapeHtmlColar(t.titulo)}</h3>
@@ -5816,6 +5817,7 @@ function renderModalGrupos() {
                         <input type="text" class="nota-do-grupo" value="${escapeHtmlColar(g.nota || '')}" placeholder="-" style="width:60px; text-align:center; margin:0;" onchange="lancarNotaDoGrupo('${escapeHtmlColar(g.id)}', this.value)"></div>`}
                     <button type="button" class="btn btn-xs btn-danger" onclick="excluirGrupo('${escapeHtmlColar(g.id)}')" title="Desfaz o grupo. As notas já lançadas ficam.">Desfazer grupo</button>
                 </div>
+                ${resumoPerfilGrupoHtml(g, perfis)}
                 <ul style="list-style:none; padding:0; margin:8px 0 0 0;">
                     ${(g.membros || []).map(m => {
                         const n = notaDoEstudante(t.id, m);
@@ -5850,7 +5852,11 @@ function renderModalGrupos() {
                     🎲 Sortear os sem grupo em grupos de
                     <input type="number" id="tamanhoSorteio" min="2" max="15" value="4" style="width:60px; margin:0;">
                     <button type="button" class="btn btn-sm btn-secondary" onclick="sortearGrupos()">Sortear</button>
-                </div>`}
+                </div>
+                <label style="display:flex; gap:6px; align-items:flex-start; font-size:12px; margin-top:6px; cursor:pointer;">
+                    <input type="checkbox" id="sorteioEquilibrado" ${sorteioEquilibradoLigado ? 'checked' : ''} onchange="sorteioEquilibradoLigado=this.checked" style="margin-top:2px;">
+                    <span>⚖️ <strong>Equilibrar</strong> pelos registros: notas, caderno, participação, faltas e ocorrências. Continua aleatório, mas cada grupo fica com desempenho parecido e quem tem mais faltas ou ocorrências fica espalhado.</span>
+                </label>`}
             ${outrasComGrupos.length ? `
                 <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:10px; font-size:12px;">
                     📋 Usar os grupos de
@@ -5909,17 +5915,150 @@ async function colocarMarcadosNoGrupo() {
     await salvarGruposEAtualizar();
 }
 
+// ---- Sorteio equilibrado
+// Cada estudante ganha um perfil tirado dos registros da turma: média das notas (todas
+// as atividades do ano, menos esta), Caderno e Participação do bimestre da atividade,
+// faltas no ano e ocorrências (disciplinar conta 2, rápida 1). O sorteio começa
+// aleatório e troca estudantes entre grupos enquanto isso deixar os grupos mais
+// parecidos entre si: desempenho médio igual e faltas/ocorrências espalhadas. Faz
+// várias rodadas e escolhe ao acaso entre as melhores, então sortear de novo dá outra
+// formação, também equilibrada. Sem registro nenhum (começo do ano), é sorteio puro.
+let sorteioEquilibradoLigado = true;
+
+function numeroOuNulo(v) {
+    const n = parseFloat(String(v == null ? '' : v).replace(',', '.'));
+    return isNaN(n) ? null : n;
+}
+
+function perfisParaGrupos(t, ids) {
+    const bim = parseInt(t.bimestre) || 1;
+    const anteriorBim = currentBimestreTrabalhos;
+    const outras = (data.trabalhos || []).filter(x => x.id_turma == turmaAtual && x.id != t.id && (parseFloat(x.peso) || 0) > 0);
+    const perfis = {};
+    ids.forEach(id => {
+        // Média ponderada das atividades com nota (a vazia não conta como zero aqui).
+        let soma = 0, pesos = 0;
+        outras.forEach(x => {
+            currentBimestreTrabalhos = parseInt(x.bimestre) || 1;
+            const v = numeroOuNulo(valorNotaTrabalho(x, id, notaDoEstudante(x.id, id)));
+            if (v === null) return;
+            const p = parseFloat(x.peso) || 0;
+            soma += Math.min(10, Math.max(0, v)) * p; pesos += p;
+        });
+        currentBimestreTrabalhos = bim;
+        let caderno = null, participacao = null;
+        try { caderno = numeroOuNulo(getNotaCaderno(id, bim)); } catch (e) {}
+        try { participacao = numeroOuNulo(getNotaParticipacao(id, bim)); } catch (e) {}
+        const faltas = (data.presencas || []).filter(p => String(p.id_estudante) === String(id) && p.status === 'falta').length;
+        let ocorrencias = 0;
+        (data.ocorrencias || []).forEach(o => {
+            if ((o.ids_estudantes || []).some(x => String(x) === String(id))) ocorrencias += (o.tipo === 'rapida' ? 1 : 2);
+        });
+        perfis[String(id)] = { media: pesos ? soma / pesos : null, caderno, participacao, faltas, ocorrencias };
+    });
+    currentBimestreTrabalhos = anteriorBim;
+    return perfis;
+}
+
+// Desempenho de 0 a 10: média do que existir entre notas, caderno e participação.
+function desempenhoDoPerfil(p) {
+    const v = [p.media, p.caderno, p.participacao].filter(x => x !== null && x !== undefined);
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+}
+
+// Monta os grupos equilibrados. ids: estudantes a dividir; qtd: quantos grupos.
+// Devolve uma lista de listas de ids. `aleatorio` permite repetir o resultado no teste.
+function montarGruposEquilibrados(ids, qtd, perfis, aleatorio) {
+    const rnd = aleatorio || Math.random;
+    const n = ids.length;
+    // Medidas normalizadas (z): desempenho, faltas e ocorrências.
+    const brutos = ids.map(id => {
+        const p = perfis[String(id)] || {};
+        return [desempenhoDoPerfil(p), p.faltas || 0, p.ocorrencias || 0];
+    });
+    const dims = [0, 1, 2].map(d => {
+        const vals = brutos.map(b => b[d]).filter(v => v !== null);
+        const media = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+        const dp = vals.length ? Math.sqrt(vals.reduce((a, b) => a + (b - media) * (b - media), 0) / vals.length) : 0;
+        return brutos.map(b => (b[d] === null || dp === 0) ? 0 : (b[d] - media) / dp);
+    });
+    const pesoDim = [1.0, 0.6, 0.8];
+    const tamanhos = Array.from({ length: qtd }, (_, g) => Math.floor(n / qtd) + (g < n % qtd ? 1 : 0));
+
+    const custo = (grupo) => {
+        // Para cada grupo e medida: (média do grupo)^2, pesado pelo tamanho. Grupos todos
+        // iguais à turma = 0. As ocorrências ganham um extra quando se acumulam.
+        let c = 0;
+        for (let g = 0; g < qtd; g++) {
+            const membros = grupo[g];
+            for (let d = 0; d < 3; d++) {
+                let soma = 0;
+                membros.forEach(i => { soma += dims[d][i]; });
+                const m = soma / membros.length;
+                c += pesoDim[d] * m * m * membros.length;
+            }
+            const comOcorrencia = membros.filter(i => brutos[i][2] > 0).length;
+            if (comOcorrencia > 1) c += 0.5 * (comOcorrencia - 1) * (comOcorrencia - 1);
+        }
+        return c;
+    };
+
+    const rodada = () => {
+        const ordem = ids.map((_, i) => i);
+        for (let i = ordem.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [ordem[i], ordem[j]] = [ordem[j], ordem[i]]; }
+        const grupo = []; let k = 0;
+        tamanhos.forEach(tm => { grupo.push(ordem.slice(k, k + tm)); k += tm; });
+        let atual = custo(grupo);
+        let semMelhora = 0;
+        while (semMelhora < 300) {
+            const a = Math.floor(rnd() * qtd), b = Math.floor(rnd() * qtd);
+            if (a === b) { semMelhora++; continue; }
+            const ia = Math.floor(rnd() * grupo[a].length), ib = Math.floor(rnd() * grupo[b].length);
+            [grupo[a][ia], grupo[b][ib]] = [grupo[b][ib], grupo[a][ia]];
+            const novo = custo(grupo);
+            if (novo < atual - 1e-9) { atual = novo; semMelhora = 0; }
+            else { [grupo[a][ia], grupo[b][ib]] = [grupo[b][ib], grupo[a][ia]]; semMelhora++; }
+        }
+        return { grupo, custo: atual };
+    };
+
+    const resultados = [];
+    for (let r = 0; r < 12; r++) resultados.push(rodada());
+    const melhor = Math.min(...resultados.map(x => x.custo));
+    const bons = resultados.filter(x => x.custo <= melhor * 1.15 + 0.05);
+    const escolhido = bons[Math.floor(rnd() * bons.length)];
+    return escolhido.grupo.map(g => g.map(i => ids[i]));
+}
+
+// Linha embaixo do nome do grupo: como ele ficou.
+function resumoPerfilGrupoHtml(g, perfis) {
+    const membros = (g.membros || []).map(m => perfis[String(m)]).filter(Boolean);
+    if (!membros.length) return '';
+    const desemp = membros.map(desempenhoDoPerfil).filter(v => v !== null);
+    const media = desemp.length ? (desemp.reduce((a, b) => a + b, 0) / desemp.length).toFixed(1).replace('.', ',') : '–';
+    const faltas = membros.reduce((a, p) => a + (p.faltas || 0), 0);
+    const oc = membros.filter(p => p.ocorrencias > 0).length;
+    return `<div class="resumo-grupo" style="font-size:11px; color:#5f6b7f; margin-top:6px;" title="Desempenho = média entre notas, caderno e participação dos estudantes do grupo">📊 Desempenho ${media} · Faltas ${faltas} · Com ocorrência ${oc}</div>`;
+}
+
 async function sortearGrupos() {
     const t = trabalhoDosGrupos(); if (!t) return;
     const tam = Math.max(2, parseInt(document.getElementById('tamanhoSorteio').value) || 4);
     const sobra = estudantesPlanilhaTrabalhos().filter(e => !grupoDoEstudante(t, e.id)).map(e => e.id);
     if (sobra.length < 2) return alert('Precisa de pelo menos 2 estudantes sem grupo.');
-    for (let i = sobra.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [sobra[i], sobra[j]] = [sobra[j], sobra[i]]; }
     // Divide por igual: 10 alunos em grupos de 4 viram 4 + 3 + 3, não 4 + 4 + 2.
     const qtd = Math.ceil(sobra.length / tam);
+    const caixa = document.getElementById('sorteioEquilibrado');
+    const equilibrar = caixa ? caixa.checked : sorteioEquilibradoLigado;
+    let novos;
+    if (equilibrar && qtd > 1) {
+        novos = montarGruposEquilibrados(sobra, qtd, perfisParaGrupos(t, sobra));
+    } else {
+        for (let i = sobra.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [sobra[i], sobra[j]] = [sobra[j], sobra[i]]; }
+        novos = Array.from({ length: qtd }, () => []);
+        sobra.forEach((id, i) => novos[i % qtd].push(id));
+    }
     if (!t.grupos) t.grupos = [];
-    const novos = Array.from({ length: qtd }, () => []);
-    sobra.forEach((id, i) => novos[i % qtd].push(id));
     novos.forEach(membros => t.grupos.push({ id: novoId(), nome: proximoNomeGrupo(t), membros, nota: '' }));
     await salvarGruposEAtualizar();
 }
