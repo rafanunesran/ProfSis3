@@ -973,6 +973,7 @@ async function abrirModalGerarDocumentoIA() {
         <option value="plano_aula">Plano de Aula</option>
         <option value="agenda_mensal">📅 Agenda Mensal</option>
         <option value="doc_branco">📄 Documento em branco</option>
+        <option value="relatorio_comportamental">🧑‍🎓 Relatório comportamental</option>
         ${isAeeView ? '<option value="anexo3_paee">📋 Anexo III - PAEE</option>' : ''}
         ${isProfessorOuAeeView ? '<option value="anexo4_dua">📘 Anexo IV (novo modelo)</option>' : ''}
         ${isProfessorOuAeeView ? '<option value="anexo4_pei">📘 Anexo IV - PEI (modelo antigo)</option>' : ''}
@@ -1127,6 +1128,8 @@ async function abrirModalGerarDocumentoIA() {
                         <p style="font-size:11px; color:#5f6b7f; margin:4px 0 0 0;">Sai com o mesmo cabeçalho da escola do Plano de Aula. No corpo, só o texto que você digitar - sem IA. Fica guardado em Documentos › Histórico.</p>
                     </div>
                 </div>
+
+                ${htmlCamposRelatorioComportamental()}
 
                 <div id="camposAnexoPaee" style="display:none;">
                     <div style="margin-bottom: 15px;">
@@ -1420,13 +1423,17 @@ function toggleTipoDocumentoIA() {
     const isAnexoIV = tipo === 'anexo4_pei';
     const isAnexo4Dua = tipo === 'anexo4_dua';
     const isDocBranco = tipo === 'doc_branco';
+    const isRelatorio = tipo === 'relatorio_comportamental';
 
     const campoSemana = document.getElementById('campoSemanaVigente');
-    if (campoSemana) campoSemana.style.display = (isAgenda || isAnexoPaee || isAnexoIV || isAnexo4Dua || isDocBranco) ? 'none' : '';
+    if (campoSemana) campoSemana.style.display = (isAgenda || isAnexoPaee || isAnexoIV || isAnexo4Dua || isDocBranco || isRelatorio) ? 'none' : '';
     const campoMesAno = document.getElementById('campoMesAnoAgenda');
     if (campoMesAno) campoMesAno.style.display = isAgenda ? 'block' : 'none';
     const camposPlano = document.getElementById('camposPlanoAula');
-    if (camposPlano) camposPlano.style.display = (isAgenda || isAnexoPaee || isAnexoIV || isAnexo4Dua || isDocBranco) ? 'none' : '';
+    if (camposPlano) camposPlano.style.display = (isAgenda || isAnexoPaee || isAnexoIV || isAnexo4Dua || isDocBranco || isRelatorio) ? 'none' : '';
+    const camposRelatorio = document.getElementById('camposRelatorioComportamental');
+    if (camposRelatorio) camposRelatorio.style.display = isRelatorio ? '' : 'none';
+    if (isRelatorio) atualizarAlunosRelatorioComportamental();
     const camposDocBranco = document.getElementById('camposDocBranco');
     if (camposDocBranco) camposDocBranco.style.display = isDocBranco ? '' : 'none';
     const camposAnexo = document.getElementById('camposAnexoPaee');
@@ -1437,7 +1444,7 @@ function toggleTipoDocumentoIA() {
     if (camposAnexo4Dua) camposAnexo4Dua.style.display = isAnexo4Dua ? '' : 'none';
 
     const btn = document.getElementById('btnGerarDocumentoIA');
-    if (btn) btn.textContent = isAgenda ? '🖨️ Gerar e Imprimir Agenda' : (isAnexo4Dua ? '✨ Gerar Anexo IV' : (isDocBranco ? '📝 Abrir documento' : 'Gerar Estrutura'));
+    if (btn) btn.textContent = isAgenda ? '🖨️ Gerar e Imprimir Agenda' : (isAnexo4Dua ? '✨ Gerar Anexo IV' : (isDocBranco ? '📝 Abrir documento' : (isRelatorio ? '✨ Gerar relatório' : 'Gerar Estrutura')));
     // A Agenda Mensal já é um preenchimento mecânico da grade (não passa pela IA nem pela tela de
     // revisão), então não existe versão "manual" dela pra oferecer.
     const btnManual = document.getElementById('btnGerarDocumentoManual');
@@ -2251,6 +2258,7 @@ async function gerarDocumentoIA() {
     if (tipo === 'anexo4_pei') return gerarAnexoIVEstagiario();
     if (tipo === 'anexo4_dua') return gerarAnexo4DuaEstagiario();
     if (tipo === 'doc_branco') return gerarDocBrancoEstagiario();
+    if (tipo === 'relatorio_comportamental') return gerarRelatorioComportamentalEstagiario();
 
     const form = coletarFormularioPlanoAulaEstagiario();
     if (!form) return;
@@ -2632,6 +2640,7 @@ async function gerarDocumentoManualEstagiario() {
     if (tipo === 'agenda_mensal') return alert('A Agenda Mensal já é montada direto da sua grade horária, sem IA - use o botão "🖨️ Gerar e Imprimir Agenda".');
     if (tipo === 'anexo4_dua') return gerarAnexo4DuaManual();
     if (tipo === 'doc_branco') return gerarDocBrancoEstagiario();
+    if (tipo === 'relatorio_comportamental') return gerarRelatorioComportamentalManual();
 
     let form = null;
     let anterior = null;
@@ -4582,24 +4591,39 @@ ${corpoHtml}
         .replace('{{LOGO_ESTADO}}', () => cfg.logoEstado)
         .replace('{{LOGO_ESCOLA}}', () => cfg.logoEscola);
     const professor = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.nome : '';
+    if (payload && payload.tipo === TIPO_RELATORIO_COMPORTAMENTAL) {
+        // Ex.: "Relatorio comportamental - Manuela Veronez - 7A - Arte_2026-11-16"
+        const partes = ['Relatorio comportamental', payload.aluno, payload.turma, payload.disciplina].map(sanitizarNomeArquivoEstagiario).filter(Boolean);
+        return definirTituloPdfEstagiario(html, `${partes.join(' - ')}_${getTodayString()}`);
+    }
     return definirTituloPdfEstagiario(html, `${sanitizarNomeArquivoEstagiario(titulo) || 'Documento'}_${sanitizarNomeArquivoEstagiario(professor)}_${getTodayString()}`);
 }
 
+// O Relatório comportamental usa esta mesma tela e o mesmo histórico, com o tipo próprio e os dados
+// do aluno (aluno/turma/disciplina) guardados junto.
 function salvarDocBrancoNoHistorico(payload, idExistente) {
     const titulo = String(payload.titulo || '').trim();
     const texto = String(payload.texto || '');
     const primeiraLinha = (texto.split('\n').find(l => l.trim()) || '').trim();
+    const ehRelatorio = payload.tipo === TIPO_RELATORIO_COMPORTAMENTAL;
+    const tipo = ehRelatorio ? TIPO_RELATORIO_COMPORTAMENTAL : 'doc_branco';
+    const subtitulo = ehRelatorio
+        ? [payload.aluno, [payload.turma, payload.disciplina].filter(Boolean).join(' - ')].filter(Boolean).join(' · ')
+        : (primeiraLinha.length > 90 ? primeiraLinha.slice(0, 90) + '…' : primeiraLinha);
+    const guardado = ehRelatorio
+        ? { tipo, titulo, texto, aluno: payload.aluno || '', alunoId: payload.alunoId || '', turma: payload.turma || '', turmaId: payload.turmaId || '', disciplina: payload.disciplina || '' }
+        : { titulo, texto };
     const registro = registrarDocumentoNoHistoricoProfessor({
-        tipo: 'doc_branco',
-        titulo: titulo || 'Documento em branco',
-        subtitulo: primeiraLinha.length > 90 ? primeiraLinha.slice(0, 90) + '…' : primeiraLinha,
-        payload: { titulo, texto }
+        tipo,
+        titulo: ehRelatorio ? ('Relatório comportamental — ' + (payload.aluno || 'estudante')) : (titulo || 'Documento em branco'),
+        subtitulo,
+        payload: guardado
     }, idExistente);
     // Mantém o texto só dos mais recentes, para o histórico não crescer sem limite.
     try {
         let comTexto = 0;
         (data.historicoDocumentos || []).forEach(h => {
-            if (!h || h.tipo !== 'doc_branco' || !h.payload) return;
+            if (!h || h.tipo !== tipo || !h.payload) return;
             comTexto++;
             if (comTexto > MAX_DOC_BRANCO_COM_TEXTO_HISTORICO) { delete h.payload; h.textoArquivado = true; }
         });
@@ -4612,7 +4636,14 @@ function salvarDocBrancoNoHistorico(payload, idExistente) {
 let docBrancoAberto = null;
 
 function abrirModalDocBranco(payload, historicoId) {
-    docBrancoAberto = { titulo: String((payload && payload.titulo) || ''), texto: String((payload && payload.texto) || '') };
+    docBrancoAberto = Object.assign({}, payload || {}, { titulo: String((payload && payload.titulo) || ''), texto: String((payload && payload.texto) || '') });
+    const ehRelatorio = docBrancoAberto.tipo === TIPO_RELATORIO_COMPORTAMENTAL;
+    const tituloTela = ehRelatorio ? '🧑‍🎓 Relatório comportamental — revisar e salvar' : '📄 Documento em branco — editar e salvar';
+    const avisoTela = ehRelatorio
+        ? (docBrancoAberto.geradoPorIA
+            ? '✨ Texto preparado pelo assistente com a sua descrição, as ocorrências e os registros do estudante. Leia e corrija o que precisar direto no documento antes de salvar.'
+            : (historicoId ? '✍️ Edite o relatório direto no documento.' : '✍️ Escreva o relatório direto no documento. Os registros do estudante estão listados no texto só para ajudar: apague o que não for usar.'))
+        : '✍️ Sai com o cabeçalho da escola (o mesmo do Plano de Aula). Escreva o título no cabeçalho e o texto no corpo. Nada é gerado por IA.';
     let modal = document.getElementById('modalDocBranco');
     if (!modal) {
         modal = document.createElement('div');
@@ -4625,10 +4656,10 @@ function abrirModalDocBranco(payload, historicoId) {
     modal.innerHTML = `
         <div class="modal-content" style="max-width: 900px; width: 96%; padding: 20px;">
             <div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e3e8ef; padding-bottom:10px; margin-bottom:12px;">
-                <h2 style="margin:0;">📄 Documento em branco — editar e salvar</h2>
+                <h2 style="margin:0;">${tituloTela}</h2>
                 <button class="btn btn-sm btn-danger" style="padding:2px 8px;" onclick="fecharModalDocBranco()">×</button>
             </div>
-            <div style="background:#edf3fd; border:1px solid #a9c6f3; color:#1b4488; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">✍️ Sai com o cabeçalho da escola (o mesmo do Plano de Aula). Escreva o título no cabeçalho e o texto no corpo. Nada é gerado por IA. ${historicoId ? 'Está guardado em Documentos › Histórico.' : 'Ao salvar, baixar ou imprimir, fica guardado em Documentos › Histórico.'}</div>
+            <div style="background:#edf3fd; border:1px solid #a9c6f3; color:#1b4488; padding:8px 12px; border-radius:6px; margin-bottom:12px; font-size:13px;">${avisoTela} ${historicoId ? 'Está guardado em Documentos › Histórico.' : 'Ao salvar, baixar ou imprimir, fica guardado em Documentos › Histórico.'}</div>
             ${blocoPreviaDocumentoEstagiario(ID_PREVIA_DOC_BRANCO_ESTAGIARIO, 'branco')}
             <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; border-top:1px solid #e3e8ef; padding-top:15px;">
                 <button class="btn btn-secondary" onclick="fecharModalDocBranco()">Fechar</button>
@@ -4674,7 +4705,9 @@ function marcarAlteradoDocBranco() {
 // Lê o título e o texto de dentro da prévia. Se ela não carregou, fica o que estava aberto.
 function lerTelaDocBranco() {
     const lido = lerCamposEditadosPreviaEstagiario(ID_PREVIA_DOC_BRANCO_ESTAGIARIO, DOC_BRANCO_CAMPOS, docBrancoAberto || {});
-    return { titulo: String(lido.titulo || '').replace(/\s+/g, ' ').trim(), texto: String(lido.texto || '') };
+    const extras = Object.assign({}, docBrancoAberto || {});
+    delete extras.geradoPorIA;
+    return Object.assign(extras, { titulo: String(lido.titulo || '').replace(/\s+/g, ' ').trim(), texto: String(lido.texto || '') });
 }
 
 // 'salvar' só guarda; 'pdf' baixa; 'imprimir' abre a impressão. Os três guardam (ou atualizam) o
@@ -4733,7 +4766,7 @@ function lerDocBrancoHistorico(id) {
 // Documentos › Histórico: "✏️ Abrir" reabre o texto para continuar editando.
 function abrirDocBrancoHistorico(id) {
     const h = lerDocBrancoHistorico(id);
-    if (h) return abrirModalDocBranco(h.payload, h.id);
+    if (h) return abrirModalDocBranco(Object.assign({}, h.payload, h.tipo === TIPO_RELATORIO_COMPORTAMENTAL ? { tipo: h.tipo } : {}), h.id);
 }
 
 // Documentos › Histórico: "📄 PDF" e "🖨️ Reimprimir" direto, sem abrir a tela.
@@ -4741,9 +4774,354 @@ async function reimprimirDocBrancoHistorico(id, modo) {
     const h = lerDocBrancoHistorico(id);
     if (!h) return;
     try {
-        await saidaDocumentoEstagiario(await montarHtmlDocBranco(h.payload), modo);
+        await saidaDocumentoEstagiario(await montarHtmlDocBranco(Object.assign({}, h.payload, h.tipo === TIPO_RELATORIO_COMPORTAMENTAL ? { tipo: h.tipo } : {})), modo);
     } catch (e) {
         console.error(e);
         alert((modo === 'pdf' ? 'Erro ao gerar o PDF: ' : 'Erro ao reimprimir: ') + e.message);
     }
+}
+
+// ===================================================================================================
+// RELATÓRIO COMPORTAMENTAL (relatório pedagógico e comportamental de um estudante)
+// ===================================================================================================
+// O professor escolhe a turma (que já diz a disciplina), o estudante e o período e escreve o que
+// observou. O assistente junta essa descrição com o que já está registrado no sistema sobre o
+// estudante naquela turma (ocorrências, frequência, caderno/engajamento, atividades e notas,
+// compensações) e escreve o texto. Sai no mesmo documento do "Documento em branco" (cabeçalho da
+// escola + texto editável), com o título RELATÓRIO PEDAGÓGICO E COMPORTAMENTAL, e fica em
+// Documentos › Histórico (data.historicoDocumentos, tipo 'relatorio_comportamental').
+// Para a IA, o nome do estudante vira [ESTUDANTE] e o dos colegas vira "um colega" (o nome real
+// volta no texto depois), como no Anexo IV.
+
+const TIPO_RELATORIO_COMPORTAMENTAL = 'relatorio_comportamental';
+const TITULO_RELATORIO_COMPORTAMENTAL = 'RELATÓRIO PEDAGÓGICO E COMPORTAMENTAL';
+const MARCA_ESTUDANTE_RELATORIO = '[ESTUDANTE]';
+
+function htmlCamposRelatorioComportamental() {
+    const turmas = (typeof data !== 'undefined' && data && Array.isArray(data.turmas)) ? data.turmas : [];
+    const opcoesTurma = turmas.length
+        ? turmas.map(t => `<option value="${escapeAttrEstagiario(t.id)}">${escapeHtmlEstagiario(t.nome || '')}${t.disciplina ? ' - ' + escapeHtmlEstagiario(t.disciplina) : ''}</option>`).join('')
+        : '<option value="">Nenhuma turma cadastrada</option>';
+    const bims = ((typeof data !== 'undefined' && data && data.configBimestres) || []).filter(c => c && c.bim);
+    const bimAtual = bims.find(c => getTodayString() >= c.inicio && getTodayString() <= c.fim);
+    const opcoesPeriodo = '<option value="ano">Ano todo</option>' + bims.map(c =>
+        `<option value="${escapeAttrEstagiario(c.bim)}" ${bimAtual && bimAtual.bim == c.bim ? 'selected' : ''}>${escapeHtmlEstagiario(c.bim)}º bimestre</option>`).join('');
+    const campo = 'width:100%; padding:8px; border:1px solid #cdd5e1; border-radius:4px;';
+    return `
+                <div id="camposRelatorioComportamental" style="display:none;">
+                    <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom: 12px;">
+                        <div style="flex:1; min-width:180px;">
+                            <label style="font-weight:bold; display:block; margin-bottom:5px;">Turma e disciplina:</label>
+                            <select id="relCompTurma" style="${campo}" onchange="atualizarAlunosRelatorioComportamental()">${opcoesTurma}</select>
+                        </div>
+                        <div style="flex:1; min-width:180px;">
+                            <label style="font-weight:bold; display:block; margin-bottom:5px;">Estudante:</label>
+                            <select id="relCompAluno" style="${campo}" onchange="aoTrocarAlunoRelatorioComportamental()"></select>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:12px; flex-wrap:wrap; margin-bottom: 12px;">
+                        <div style="flex:1; min-width:150px;">
+                            <label style="font-weight:bold; display:block; margin-bottom:5px;">Período:</label>
+                            <select id="relCompPeriodo" style="${campo}" onchange="atualizarResumoRelatorioComportamental()">${opcoesPeriodo}</select>
+                        </div>
+                        <div style="flex:1; min-width:150px;">
+                            <label style="font-weight:bold; display:block; margin-bottom:5px;">No texto:</label>
+                            <select id="relCompGenero" style="${campo}">
+                                <option value="a">a estudante</option>
+                                <option value="o">o estudante</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 12px;">
+                        <label style="font-weight:bold; display:block; margin-bottom:5px;">Sua descrição do estudante:</label>
+                        <textarea id="relCompDescricao" rows="5" placeholder="Ex.: Melhorou a convivência com os colegas no 2º semestre. É respeitoso. Tem dificuldade para acompanhar as tarefas sozinho e precisa de apoio mais próximo." style="${campo} font-family:inherit; font-size:13px; line-height:1.4;"></textarea>
+                    </div>
+                    <div id="relCompResumo" style="background:#f6f8fb; border:1px solid #e3e8ef; border-radius:6px; padding:8px 12px; font-size:12px; color:#3d4759; margin-bottom: 12px;"></div>
+                </div>`;
+}
+
+function turmaRelatorioComportamental() {
+    const sel = document.getElementById('relCompTurma');
+    return sel ? (data.turmas || []).find(t => String(t.id) === String(sel.value)) || null : null;
+}
+
+function estudantesTurmaRelatorioComportamental(turma) {
+    if (!turma) return [];
+    const ativo = (e) => (typeof estudanteAtivo === 'function') ? estudanteAtivo(e) : (!e.status || /ativo/i.test(e.status));
+    return (data.estudantes || []).filter(e => e && e.id_turma == turma.id && ativo(e))
+        .sort((a, b) => String(a.nome_completo || '').localeCompare(String(b.nome_completo || '')));
+}
+
+function atualizarAlunosRelatorioComportamental() {
+    const sel = document.getElementById('relCompAluno');
+    if (!sel) return;
+    const anterior = sel.value;
+    const lista = estudantesTurmaRelatorioComportamental(turmaRelatorioComportamental());
+    sel.innerHTML = '<option value="">Selecione...</option>' + lista.map(e =>
+        `<option value="${escapeAttrEstagiario(e.id)}">${escapeHtmlEstagiario(e.nome_completo || '')}</option>`).join('');
+    if (anterior && lista.some(e => String(e.id) === anterior)) sel.value = anterior;
+    aoTrocarAlunoRelatorioComportamental();
+}
+
+// Palpite do "a/o estudante" pelo primeiro nome (o professor pode trocar).
+function aoTrocarAlunoRelatorioComportamental() {
+    const est = estudanteRelatorioComportamental();
+    const gen = document.getElementById('relCompGenero');
+    if (est && gen) {
+        const primeiro = String(est.nome_completo || '').trim().split(/\s+/)[0] || '';
+        gen.value = /a$/i.test(primeiro) ? 'a' : 'o';
+    }
+    atualizarResumoRelatorioComportamental();
+}
+
+function estudanteRelatorioComportamental() {
+    const sel = document.getElementById('relCompAluno');
+    const turma = turmaRelatorioComportamental();
+    if (!sel || !sel.value || !turma) return null;
+    return estudantesTurmaRelatorioComportamental(turma).find(e => String(e.id) === String(sel.value)) || null;
+}
+
+function periodoRelatorioComportamental() {
+    const sel = document.getElementById('relCompPeriodo');
+    const valor = sel ? sel.value : 'ano';
+    if (!valor || valor === 'ano') return { bim: null, inicio: '', fim: '', texto: 'ano letivo' };
+    const c = (data.configBimestres || []).find(x => String(x.bim) === String(valor));
+    return { bim: parseInt(valor, 10), inicio: (c && c.inicio) || '', fim: (c && c.fim) || '', texto: valor + 'º bimestre' };
+}
+
+// Tudo o que o sistema já tem sobre o estudante nesta turma, no período.
+function coletarRegistrosRelatorioComportamental(turma, est, periodo) {
+    const noPeriodo = (d) => !periodo.inicio || (d && d >= periodo.inicio && d <= periodo.fim);
+    const mesmoEst = (id) => String(id) === String(est.id);
+
+    const ocorrencias = (data.ocorrencias || [])
+        .filter(o => o && (o.id_turma == turma.id || (turma.masterId && o.id_turma == turma.masterId))
+            && (o.ids_estudantes || []).some(mesmoEst) && noPeriodo(o.data))
+        .sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')))
+        .map(o => ({
+            data: o.data || '',
+            tipo: o.tipo === 'rapida' ? 'rápida' : 'disciplinar',
+            relato: String(o.relato || '').trim(),
+            devolutiva: String(o.devolutiva || '').trim(),
+            outrosEnvolvidos: Math.max(0, (o.ids_estudantes || []).length - 1)
+        }));
+
+    const presencas = (data.presencas || []).filter(p => p && mesmoEst(p.id_estudante) && noPeriodo(p.data));
+    const faltas = presencas.filter(p => p.status === 'falta').length;
+
+    const caderno = (data.caderno || []).filter(c => c && mesmoEst(c.id_estudante) && (c.id_turma == null || c.id_turma == turma.id) && noPeriodo(c.data));
+    const contar = (lista, campo) => lista.reduce((acc, x) => { const k = x[campo] || ''; if (k) acc[k] = (acc[k] || 0) + 1; return acc; }, {});
+
+    const notas = data.notas || [];
+    const atividades = (data.trabalhos || [])
+        .filter(t => t && t.id_turma == turma.id && (!periodo.bim || (parseInt(t.bimestre, 10) || 1) === periodo.bim))
+        .map(t => {
+            const n = notas.find(x => x.id_trabalho == t.id && mesmoEst(x.id_estudante));
+            const valor = (n && n.valor !== undefined && n.valor !== null) ? String(n.valor).trim() : '';
+            return { titulo: t.titulo || 'Atividade', bimestre: parseInt(t.bimestre, 10) || 1, nota: valor };
+        });
+
+    const compensacoes = (data.compensacoes || []).filter(c => c && mesmoEst(c.id_estudante) && (c.id_turma == null || c.id_turma == turma.id)
+        && (!periodo.inicio || (() => { const d = `${c.ano_referencia}-${String((c.mes_referencia || 0) + 1).padStart(2, '0')}-15`; return d >= periodo.inicio && d <= periodo.fim; })()));
+
+    return {
+        ocorrencias,
+        frequencia: { aulasRegistradas: presencas.length, faltas },
+        caderno: { total: caderno.length, status: contar(caderno, 'status'), engajamento: contar(caderno, 'engajamento') },
+        atividades,
+        compensacoes: { total: compensacoes.length, status: contar(compensacoes, 'status') }
+    };
+}
+
+const ROTULOS_RELATORIO_COMPORTAMENTAL = {
+    completo: 'caderno completo', incompleto: 'caderno incompleto', nao_fez: 'não fez', sem_caderno: 'sem caderno',
+    total: 'participação total', medio: 'participação parcial', nada: 'sem participação',
+    pendente: 'pendente', notificado: 'notificado', entregue: 'entregue', entregue_atraso: 'entregue com atraso',
+    nao_entregue: 'não entregue', nao_fez_folha: 'não fez / sem folha'
+};
+
+function textoContagemRelatorio(contagem) {
+    return Object.keys(contagem).map(k => `${contagem[k]} ${ROTULOS_RELATORIO_COMPORTAMENTAL[k] || k.replace(/_/g, ' ')}`).join(', ');
+}
+
+// Linhas de resumo dos registros (usadas no pedido à IA e no rascunho do "Manual").
+function linhasRegistrosRelatorioComportamental(reg, anonimizar) {
+    const txt = anonimizar || (s => s);
+    const linhas = [];
+    linhas.push('Ocorrências: ' + (reg.ocorrencias.length ? reg.ocorrencias.length : 'nenhuma registrada'));
+    reg.ocorrencias.forEach(o => {
+        linhas.push(`- ${formatarDataRelatorioComportamental(o.data)} (${o.tipo}${o.outrosEnvolvidos ? ', com outros ' + o.outrosEnvolvidos + ' estudante(s)' : ''}): ${txt(o.relato) || 'sem relato'}${o.devolutiva ? ' | Devolutiva: ' + txt(o.devolutiva) : ''}`);
+    });
+    linhas.push(reg.frequencia.aulasRegistradas
+        ? `Frequência: ${reg.frequencia.faltas} falta(s) em ${reg.frequencia.aulasRegistradas} chamada(s) registrada(s).`
+        : 'Frequência: sem chamadas registradas no período.');
+    if (reg.caderno.total) {
+        const partes = [textoContagemRelatorio(reg.caderno.status), textoContagemRelatorio(reg.caderno.engajamento)].filter(Boolean);
+        linhas.push(`Caderno e participação (${reg.caderno.total} registro(s)): ${partes.join('; ')}.`);
+    }
+    const comNota = reg.atividades.filter(a => a.nota !== '');
+    if (reg.atividades.length) {
+        linhas.push(`Atividades e notas (0 a 10): ${comNota.length} de ${reg.atividades.length} com nota.`);
+        reg.atividades.forEach(a => linhas.push(`- ${a.titulo} (${a.bimestre}º bim.): ${a.nota !== '' ? a.nota : 'sem nota'}`));
+    } else {
+        linhas.push('Atividades e notas: nenhuma atividade lançada no período.');
+    }
+    if (reg.compensacoes.total) linhas.push(`Compensações de ausência: ${reg.compensacoes.total} (${textoContagemRelatorio(reg.compensacoes.status)}).`);
+    return linhas;
+}
+
+function formatarDataRelatorioComportamental(d) {
+    const m = String(d || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : String(d || '');
+}
+
+function atualizarResumoRelatorioComportamental() {
+    const box = document.getElementById('relCompResumo');
+    if (!box) return;
+    const turma = turmaRelatorioComportamental();
+    const est = estudanteRelatorioComportamental();
+    if (!turma) { box.innerHTML = 'Cadastre uma turma para fazer o relatório.'; return; }
+    if (!est) { box.innerHTML = 'Escolha o estudante para ver o que o assistente vai usar.'; return; }
+    const reg = coletarRegistrosRelatorioComportamental(turma, est, periodoRelatorioComportamental());
+    const comNota = reg.atividades.filter(a => a.nota !== '').length;
+    box.innerHTML = `📚 O assistente vai juntar sua descrição com: <strong>${reg.ocorrencias.length}</strong> ocorrência(s), `
+        + `<strong>${reg.frequencia.faltas}</strong> falta(s) em ${reg.frequencia.aulasRegistradas} chamada(s), `
+        + `<strong>${reg.caderno.total}</strong> registro(s) de caderno e <strong>${comNota}</strong> atividade(s) com nota`
+        + (reg.compensacoes.total ? `, <strong>${reg.compensacoes.total}</strong> compensação(ões)` : '') + '.';
+}
+
+function coletarFormularioRelatorioComportamental() {
+    const turma = turmaRelatorioComportamental();
+    if (!turma) { alert('Escolha a turma.'); return null; }
+    const est = estudanteRelatorioComportamental();
+    if (!est) { alert('Escolha o estudante.'); return null; }
+    const descEl = document.getElementById('relCompDescricao');
+    const descricao = descEl ? descEl.value.trim() : '';
+    const genEl = document.getElementById('relCompGenero');
+    const periodo = periodoRelatorioComportamental();
+    return {
+        turma, est, descricao, periodo,
+        genero: genEl && genEl.value === 'o' ? 'o' : 'a',
+        registros: coletarRegistrosRelatorioComportamental(turma, est, periodo)
+    };
+}
+
+function escaparRegexRelatorio(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// Troca o nome do estudante por [ESTUDANTE] e o dos colegas da turma por "um colega".
+function criarAnonimizadorRelatorio(turma, est) {
+    const nomeEst = String(est.nome_completo || '').trim();
+    const primeiroEst = nomeEst.split(/\s+/)[0] || '';
+    const colegas = estudantesTurmaRelatorioComportamental(turma).filter(e => String(e.id) !== String(est.id))
+        .map(e => String(e.nome_completo || '').trim()).filter(Boolean);
+    const trocas = [];
+    [nomeEst, ...colegas].sort((a, b) => b.length - a.length)
+        .forEach(n => trocas.push([n, n === nomeEst ? MARCA_ESTUDANTE_RELATORIO : 'um colega']));
+    if (primeiroEst.length >= 3) trocas.push([primeiroEst, MARCA_ESTUDANTE_RELATORIO]);
+    colegas.forEach(n => {
+        const p = n.split(/\s+/)[0] || '';
+        if (p.length >= 3 && p.toLowerCase() !== primeiroEst.toLowerCase()) trocas.push([p, 'um colega']);
+    });
+    const regras = trocas.map(([de, para]) => [new RegExp('(^|[^\\p{L}])' + escaparRegexRelatorio(de) + '(?![\\p{L}])', 'giu'), para]);
+    return (texto) => regras.reduce((t, [re, para]) => t.replace(re, (m, antes) => antes + para), String(texto || ''));
+}
+
+function montarPromptRelatorioComportamental(form) {
+    const anon = criarAnonimizadorRelatorio(form.turma, form.est);
+    const artigo = form.genero === 'o' ? 'o estudante' : 'a estudante';
+    const serie = form.turma.ano_serie ? ` (${form.turma.ano_serie})` : '';
+    return `Você é professor(a) de ${form.turma.disciplina || 'uma disciplina'} de uma escola estadual de São Paulo e vai escrever o texto de um RELATÓRIO PEDAGÓGICO E COMPORTAMENTAL sobre um(a) estudante, para a coordenação e a família.
+
+Dados:
+- Estudante: ${artigo} ${MARCA_ESTUDANTE_RELATORIO} (escreva exatamente "${MARCA_ESTUDANTE_RELATORIO}" onde for citar o nome; o nome real é colocado depois).
+- Turma: ${form.turma.nome || ''}${serie}. Componente curricular: ${form.turma.disciplina || ''}. Período: ${form.periodo.texto}.
+
+DESCRIÇÃO DO PROFESSOR (é a fonte principal; respeite o que ela diz):
+${anon(form.descricao) || '(o professor não escreveu descrição; use só os registros)'}
+
+REGISTROS DO SISTEMA SOBRE ${MARCA_ESTUDANTE_RELATORIO} NESTA TURMA:
+${linhasRegistrosRelatorioComportamental(form.registros, anon).join('\n')}
+
+Como escrever:
+- 2 ou 3 parágrafos corridos, em 3ª pessoa, linguagem formal, clara, objetiva e respeitosa, como num relatório escolar (cerca de 120 a 220 palavras no total).
+- 1º parágrafo: comportamento, convivência, conduta e participação nas aulas (use a descrição e as ocorrências; se não houver ocorrências, pode dizer que não há registros que prejudiquem as aulas).
+- Último parágrafo: desempenho acadêmico (atividades, notas, frequência, caderno) e recomendações/estratégias de apoio.
+- Resuma os registros: não liste datas, notas uma a uma nem copie os relatos; não exponha outros estudantes.
+- Não invente fatos que não estejam na descrição ou nos registros, nem diagnósticos.
+- Não escreva título, nome da escola, turma, saudação, data nem assinatura (já estão no documento).
+- Use ${artigo === 'a estudante' ? 'o feminino (a estudante)' : 'o masculino (o estudante)'}.
+
+Retorne APENAS um JSON válido, sem markdown: {"paragrafos": ["primeiro parágrafo", "segundo parágrafo"]}`;
+}
+
+function cabecalhoTextoRelatorioComportamental(form) {
+    const nome = String(form.est.nome_completo || '').trim();
+    return `Relatório pedagógico e comportamental — ${nome}\nTurma: ${form.turma.nome || ''} | Componente curricular: ${form.turma.disciplina || ''}\n\n`;
+}
+
+function paragrafosDaRespostaRelatorio(resposta) {
+    let lista = [];
+    if (resposta && Array.isArray(resposta.paragrafos)) lista = resposta.paragrafos;
+    else if (resposta && typeof resposta.relatorio === 'string') lista = resposta.relatorio.split(/\n+/);
+    else if (resposta && typeof resposta.texto === 'string') lista = resposta.texto.split(/\n+/);
+    return lista.map(p => String(p || '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+}
+
+// Põe o nome de volta: "[ESTUDANTE]" vira o nome completo (e "a estudante [ESTUDANTE]" fica "a estudante Ana Souza").
+function colocarNomeRelatorio(texto, nome) {
+    return String(texto || '').replace(/\[\s*ESTUDANTE\s*\]/gi, nome);
+}
+
+function payloadRelatorioComportamental(form, texto, geradoPorIA) {
+    return {
+        tipo: TIPO_RELATORIO_COMPORTAMENTAL,
+        titulo: TITULO_RELATORIO_COMPORTAMENTAL,
+        texto,
+        aluno: String(form.est.nome_completo || '').trim(),
+        alunoId: form.est.id,
+        turma: form.turma.nome || '',
+        turmaId: form.turma.id,
+        disciplina: form.turma.disciplina || '',
+        geradoPorIA: !!geradoPorIA
+    };
+}
+
+async function gerarRelatorioComportamentalEstagiario() {
+    const form = coletarFormularioRelatorioComportamental();
+    if (!form) return;
+    if (!form.descricao) {
+        if (!confirm('Você não escreveu a descrição do estudante. Quer que o assistente use só as ocorrências e os registros?')) return;
+    }
+    const btn = document.getElementById('btnGerarDocumentoIA');
+    const original = btn ? btn.textContent : '';
+    if (btn) { btn.textContent = 'Gerando... ⏳'; btn.disabled = true; }
+    try {
+        const resposta = await chamarIAEstruturada(montarPromptRelatorioComportamental(form), btn);
+        const paragrafos = paragrafosDaRespostaRelatorio(resposta);
+        if (!paragrafos.length) throw new Error('A IA não devolveu o texto do relatório. Tente de novo.');
+        const nome = String(form.est.nome_completo || '').trim();
+        const texto = cabecalhoTextoRelatorioComportamental(form) + paragrafos.map(p => colocarNomeRelatorio(p, nome)).join('\n');
+        const payload = payloadRelatorioComportamental(form, texto, true);
+        const registro = salvarDocBrancoNoHistorico(payload);
+        closeModal('modalGerarDocumentoIA');
+        await abrirModalDocBranco(payload, registro ? registro.id : '');
+    } catch (e) {
+        console.error(e);
+        alert('Erro ao gerar o relatório com IA:\n' + e.message);
+    } finally {
+        if (btn) { btn.textContent = original; btn.disabled = false; }
+    }
+}
+
+// "✍️ Manual": abre o documento já com o cabeçalho do aluno, a descrição do professor e os registros
+// listados embaixo, para escrever à mão (sem IA).
+function gerarRelatorioComportamentalManual() {
+    const form = coletarFormularioRelatorioComportamental();
+    if (!form) return;
+    const registros = linhasRegistrosRelatorioComportamental(form.registros);
+    const texto = cabecalhoTextoRelatorioComportamental(form)
+        + (form.descricao ? form.descricao + '\n' : '')
+        + '\n(Registros do estudante — use e apague antes de imprimir)\n' + registros.join('\n');
+    closeModal('modalGerarDocumentoIA');
+    return abrirModalDocBranco(payloadRelatorioComportamental(form, texto, false), '');
 }
