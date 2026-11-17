@@ -4592,9 +4592,9 @@ ${corpoHtml}
         .replace('{{LOGO_ESCOLA}}', () => cfg.logoEscola);
     const professor = (typeof currentUser !== 'undefined' && currentUser) ? currentUser.nome : '';
     if (payload && payload.tipo === TIPO_RELATORIO_COMPORTAMENTAL) {
-        // Ex.: "Relatorio comportamental - Manuela Veronez - 7A - Arte_2026-11-16"
-        const partes = ['Relatorio comportamental', payload.aluno, payload.turma, payload.disciplina].map(sanitizarNomeArquivoEstagiario).filter(Boolean);
-        return definirTituloPdfEstagiario(html, `${partes.join(' - ')}_${getTodayString()}`);
+        // Ex.: "Relatorio - Manuela Veronez - 7A - Arte - Rafael N Figueiredo.pdf"
+        const partes = [payload.aluno, payload.turma, payload.disciplina, professor].map(sanitizarNomeArquivoEstagiario).filter(Boolean);
+        return definirTituloPdfEstagiario(html, ['Relatorio', ...partes].join(' - '));
     }
     return definirTituloPdfEstagiario(html, `${sanitizarNomeArquivoEstagiario(titulo) || 'Documento'}_${sanitizarNomeArquivoEstagiario(professor)}_${getTodayString()}`);
 }

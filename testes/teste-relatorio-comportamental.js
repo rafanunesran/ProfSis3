@@ -149,15 +149,17 @@ const ok = (nome, cond, extra) => { console.log((cond ? '  ok   ' : '  FALHA') +
     const r = { html, txt, n: data.historicoDocumentos.length, h2: document.querySelector('#modalDocBranco h2').textContent, texto: __campo('texto') };
     await reimprimirDocBrancoHistorico(id, 'pdf');
     r.html2 = window.__pdfs[1] || '';
+    r.arquivo = nomeArquivoPdfEstagiario(r.html2);
     if (criado) box.remove(); fecharModalDocBranco();
     return r;
   });
   ok('PDF com título, texto corrigido e nome do arquivo', r3.html.indexOf('<br>RELATÓRIO PEDAGÓGICO E COMPORTAMENTAL<div') !== -1 && r3.html.indexOf('Texto corrigido pelo professor.') !== -1
-     && /<title>Relatorio comportamental - Manuela Veronez - 7A - Arte_2026-11-16<\/title>/.test(r3.html), (r3.html.match(/<title>.*<\/title>/) || [''])[0]);
+     && /<title>Relatorio - Manuela Veronez - 7A - Arte - Professor Teste<\/title>/.test(r3.html), (r3.html.match(/<title>.*<\/title>/) || [''])[0]);
   ok('PDF não duplica o registro', r3.n === 1);
   ok('Histórico mostra o relatório com Abrir/PDF/Reimprimir', r3.txt.indexOf('Relatório comportamental — Manuela Veronez') !== -1 && r3.txt.indexOf('Abrir') !== -1 && r3.txt.indexOf('Reimprimir') !== -1);
   ok('"Abrir" reabre o relatório editado', r3.h2.indexOf('Relatório comportamental') !== -1 && r3.texto.indexOf('Texto corrigido pelo professor.') !== -1);
-  ok('PDF direto do histórico com o nome do relatório', /<title>Relatorio comportamental - Manuela Veronez/.test(r3.html2));
+  ok('arquivo: "Relatorio - aluno - turma - disciplina - professor.pdf"', r3.arquivo === 'Relatorio - Manuela Veronez - 7A - Arte - Professor Teste.pdf', r3.arquivo);
+  ok('PDF direto do histórico com o nome do relatório', /<title>Relatorio - Manuela Veronez - 7A - Arte - Professor Teste<\/title>/.test(r3.html2));
 
   // ============ 4. manual e validações ============
   const r4 = await p.evaluate(async () => {
