@@ -4961,8 +4961,8 @@ function renderTrabalhos() {
                                     <input type="text" value="${displayValor}" data-nota="${t.id}|${e.id}" 
                                         style="width:100%; border:none; text-align:center; padding: 12px 0; background:transparent; font-size:13px; outline: none;"
                                         placeholder="-"
-                                        onfocus="this.parentElement.style.background='#edf3fd';"
-                                        onblur="this.parentElement.style.background='transparent'; salvarNota(${t.id}, '${e.id}', this.value)">
+                                        onfocus="this.parentElement.style.background='#edf3fd'; this.dataset.antes = this.value;"
+                                        onblur="this.parentElement.style.background='transparent'; salvarNota(${t.id}, '${e.id}', this.value, this.dataset.antes)">
                                 </td>
                             `;
                         }).join('');
@@ -5001,9 +5001,13 @@ function idEstudanteGravado(id) {
     return est ? est.id : id;
 }
 
-async function salvarNota(trabalhoId, estudanteId, valor) {
+async function salvarNota(trabalhoId, estudanteId, valor, valorAoEntrar) {
     estudanteId = idEstudanteGravado(estudanteId);
     if (!data.notas) data.notas = [];
+    // Passou pela célula sem digitar nada: não grava. Sem isto, a célula de um colega de
+    // grupo que ainda mostrava vazio (a nota do grupo chegou enquanto o cursor estava
+    // nela) gravava "vazio" ao sair e apagava a nota do grupo inteiro.
+    if (valorAoEntrar !== undefined && String(valor == null ? '' : valor).trim() === String(valorAoEntrar).trim()) return;
     // Estudante num grupo desta atividade (e sem nota própria): a nota vai para o grupo todo
     const trabalhoDoGrupo = (data.trabalhos || []).find(t => t.id == trabalhoId);
     const grupo = trabalhoDoGrupo ? grupoDoEstudante(trabalhoDoGrupo, estudanteId) : null;
@@ -5657,7 +5661,17 @@ function atualizarCelulasGrupo(t, ids) {
     ids.forEach(id => {
         const n = notaDoEstudante(t.id, id);
         const input = document.querySelector(`#tabTrabalhos input[data-nota="${t.id}|${id}"]`);
-        if (input && document.activeElement !== input) input.value = valorParaCelula(n ? n.valor : '');
+        if (input) {
+            const novo = valorParaCelula(n ? n.valor : '');
+            if (document.activeElement !== input) input.value = novo;
+            else if (input.value === (input.dataset.antes || '')) {
+                // O cursor já foi para a célula do colega (Tab) e ele ainda não digitou:
+                // mostra a nota do grupo ali e deixa selecionada, pronta para trocar.
+                input.value = novo;
+                input.dataset.antes = novo;
+                try { input.select(); } catch (e) {}
+            }
+        }
         recalcularMediaUI(idEstudanteGravado(id));
     });
 }
@@ -5689,9 +5703,11 @@ async function salvarNotaNoGrupo(t, g, autorId, valor) {
     gravarNotaDoEstudante(t.id, autorId, valor);
     colegas.forEach(m => gravarNotaDoEstudante(t.id, m, valor));
     carimbarRegistro(t);
-    await persistirDados();
+    // A tela primeiro: gravar na nuvem demora, e nesse meio tempo o professor já está
+    // na célula do próximo colega.
     recalcularMediaUI(autorId);
     atualizarCelulasGrupo(t, colegas);
+    await persistirDados();
 
     if (colegas.length) {
         mostrarAvisoGrupo(
@@ -5824,7 +5840,7 @@ function renderModalGrupos() {
                         const propria = !!(n && n.notaPropria);
                         const valor = n && n.valor !== '' && n.valor != null ? valorParaCelula(n.valor) : '-';
                         return `<li class="membro-grupo" style="display:flex; align-items:center; gap:6px; padding:4px 0; border-bottom:1px dashed #e3e8ef; font-size:13px;">
-                            <span style="flex:1;">${escapeHtmlColar(nomeDe(m))}</span>
+                            <span style="flex:1;">${getAeePrefix((data.estudantes || []).find(x => String(x.id) === String(m)))}${escapeHtmlColar(nomeDe(m))}</span>
                             <span style="font-weight:bold; min-width:28px; text-align:center; color:${propria ? '#b45309' : '#1c2536'};" title="${propria ? 'Nota própria' : 'Segue o grupo'}">${escapeHtmlColar(valor)}</span>
                             ${propria
                                 ? `<span style="font-size:11px; color:#b45309;">✎ própria</span><button type="button" class="btn btn-xs btn-secondary" onclick="voltarNotaDoGrupo('${escapeHtmlColar(String(m))}')" title="Volta a receber a nota do grupo">↺ do grupo</button>`
@@ -5841,7 +5857,7 @@ function renderModalGrupos() {
             <strong style="font-size:13px;">Estudantes sem grupo (${semGrupo.length})</strong>
             ${semGrupo.length === 0 ? '<p style="font-size:12px; color:#5f6b7f; margin:6px 0;">Todos já estão em algum grupo.</p>' : `
                 <div id="semGrupoLista" style="max-height:220px; overflow-y:auto; border:1px solid #e3e8ef; border-radius:8px; padding:6px 8px; margin:6px 0;">
-                    ${semGrupo.map(e => `<label style="display:flex; gap:8px; align-items:center; padding:3px 0; cursor:pointer; font-size:13px;"><input type="checkbox" class="sem-grupo-item" value="${escapeHtmlColar(String(e.id))}"> ${escapeHtmlColar(e.nome_completo)}</label>`).join('')}
+                    ${semGrupo.map(e => `<label style="display:flex; gap:8px; align-items:center; padding:3px 0; cursor:pointer; font-size:13px;"><input type="checkbox" class="sem-grupo-item" value="${escapeHtmlColar(String(e.id))}"> ${getAeePrefix(e)}${escapeHtmlColar(e.nome_completo)}</label>`).join('')}
                 </div>
                 <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                     <button type="button" class="btn btn-sm btn-primary" onclick="criarGrupoComMarcados()">+ Criar grupo com os marcados</button>
@@ -5855,7 +5871,7 @@ function renderModalGrupos() {
                 </div>
                 <label style="display:flex; gap:6px; align-items:flex-start; font-size:12px; margin-top:6px; cursor:pointer;">
                     <input type="checkbox" id="sorteioEquilibrado" ${sorteioEquilibradoLigado ? 'checked' : ''} onchange="sorteioEquilibradoLigado=this.checked" style="margin-top:2px;">
-                    <span>⚖️ <strong>Equilibrar</strong> pelos registros: notas, caderno, participação, faltas e ocorrências. Continua aleatório, mas cada grupo fica com desempenho parecido e quem tem mais faltas ou ocorrências fica espalhado.</span>
+                    <span>⚖️ <strong>Equilibrar</strong> pelos registros: notas, caderno, participação, faltas e ocorrências. Continua aleatório, mas cada grupo fica com desempenho parecido, quem tem mais faltas ou ocorrências fica espalhado e os estudantes AEE ficam em grupos diferentes.</span>
                 </label>`}
             ${outrasComGrupos.length ? `
                 <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:10px; font-size:12px;">
@@ -5954,7 +5970,8 @@ function perfisParaGrupos(t, ids) {
         (data.ocorrencias || []).forEach(o => {
             if ((o.ids_estudantes || []).some(x => String(x) === String(id))) ocorrencias += (o.tipo === 'rapida' ? 1 : 2);
         });
-        perfis[String(id)] = { media: pesos ? soma / pesos : null, caderno, participacao, faltas, ocorrencias };
+        const est = (data.estudantes || []).find(x => String(x.id) === String(id));
+        perfis[String(id)] = { media: pesos ? soma / pesos : null, caderno, participacao, faltas, ocorrencias, aee: estudanteEhAee(est) };
     });
     currentBimestreTrabalhos = anteriorBim;
     return perfis;
@@ -5983,6 +6000,7 @@ function montarGruposEquilibrados(ids, qtd, perfis, aleatorio) {
         return brutos.map(b => (b[d] === null || dp === 0) ? 0 : (b[d] - media) / dp);
     });
     const pesoDim = [1.0, 0.6, 0.8];
+    const ehAee = ids.map(id => !!(perfis[String(id)] || {}).aee);
     const tamanhos = Array.from({ length: qtd }, (_, g) => Math.floor(n / qtd) + (g < n % qtd ? 1 : 0));
 
     const custo = (grupo) => {
@@ -5999,6 +6017,10 @@ function montarGruposEquilibrados(ids, qtd, perfis, aleatorio) {
             }
             const comOcorrencia = membros.filter(i => brutos[i][2] > 0).length;
             if (comOcorrencia > 1) c += 0.5 * (comOcorrencia - 1) * (comOcorrencia - 1);
+            // AEE: um por grupo enquanto houver grupo. Pesa mais que tudo o resto; com mais
+            // estudantes AEE do que grupos, o quadrado divide por igual (2 e 2, não 3 e 1).
+            const aee = membros.filter(i => ehAee[i]).length;
+            if (aee > 1) c += 50 * (aee - 1) * (aee - 1);
         }
         return c;
     };
@@ -6038,7 +6060,8 @@ function resumoPerfilGrupoHtml(g, perfis) {
     const media = desemp.length ? (desemp.reduce((a, b) => a + b, 0) / desemp.length).toFixed(1).replace('.', ',') : '–';
     const faltas = membros.reduce((a, p) => a + (p.faltas || 0), 0);
     const oc = membros.filter(p => p.ocorrencias > 0).length;
-    return `<div class="resumo-grupo" style="font-size:11px; color:#5f6b7f; margin-top:6px;" title="Desempenho = média entre notas, caderno e participação dos estudantes do grupo">📊 Desempenho ${media} · Faltas ${faltas} · Com ocorrência ${oc}</div>`;
+    const aee = membros.filter(p => p.aee).length;
+    return `<div class="resumo-grupo" style="font-size:11px; color:#5f6b7f; margin-top:6px;" title="Desempenho = média entre notas, caderno e participação dos estudantes do grupo">📊 Desempenho ${media} · Faltas ${faltas} · Com ocorrência ${oc}${aee ? ` · <span style="color:#276749; font-weight:bold;">AEE ${aee}</span>` : ''}</div>`;
 }
 
 async function sortearGrupos() {

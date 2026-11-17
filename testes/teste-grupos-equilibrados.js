@@ -47,6 +47,9 @@ const CHROME = process.env.PROFSIS_CHROMIUM || '/opt/pw-browsers/chromium';
       estudantes.forEach((e, i) => presencas.push({ id: 'p' + d + '-' + i, id_estudante: e.id, data: dia, status: (i >= 24 && d % 3 === 0) ? 'falta' : 'presente' }));
     }
     const comOcorrencia = [26, 27, 28, 29, 30, 31];
+    // AEE: 6 estudantes (marcados de jeitos diferentes, como o painel AEE grava), vários fracos.
+    const aeeIds = [3, 12, 25, 27, 30, 32];
+    estudantes.forEach(e => { if (aeeIds.includes(e.id)) { if (e.id % 2) e.aee_diagnostico = 'TEA'; else e.is_aee_mapped = true; } });
     const ocorrencias = comOcorrencia.map((id, k) => ({ id: 900 + k, id_turma: 500, data: '2026-02-10', relato: 'x', ids_estudantes: [id], tipo: k % 2 ? 'rapida' : 'disciplinar' }));
     data = Object.assign(getInitialData(), {
       turmas: [ { id: 500, nome: '1A', disciplina: 'Matematica' } ],
@@ -79,6 +82,8 @@ const CHROME = process.env.PROFSIS_CHROMIUM || '/opt/pw-browsers/chromium';
     out.ocorrenciaEspalhada = Math.max(...g1.map(g => g.filter(id => comOcorrencia.includes(id)).length)) <= 1;
     out.faltososEspalhados = Math.max(...g1.map(g => g.filter(id => id >= 25).length)) <= 2;
     out.resumo = document.querySelectorAll('#modalNovoTrabalho .resumo-grupo').length === 8;
+    out.aeeUmPorGrupo = Math.max(...g1.map(g => g.filter(id => aeeIds.includes(id)).length)) <= 1;
+    out.aeeNoResumo = (document.getElementById('listaGrupos').textContent.match(/AEE 1/g) || []).length === 6;
     t0 = performance.now(); renderModalGrupos(); out.msJanela = Math.round(performance.now() - t0);
 
     // Sorteio puro, para comparar (média de 30 sorteios)
@@ -99,6 +104,17 @@ const CHROME = process.env.PROFSIS_CHROMIUM || '/opt/pw-browsers/chromium';
     const g2 = t.grupos.map(g => g.membros.slice().sort((a, b) => a - b).join('-')).sort().join('|');
     out.outraFormacao = g2 !== g1.map(g => g.slice().sort((a, b) => a - b).join('-')).sort().join('|');
     out.segundoTambemEquilibrado = desvioMedias(t.grupos.map(g => g.membros)) < out.desvioPuro / 3;
+
+    out.aeeUmPorGrupo2 = Math.max(...t.grupos.map(g => g.membros.filter(id => aeeIds.includes(id)).length)) <= 1;
+
+    // Mais AEE (12) do que grupos (8): no máximo 2 por grupo, nenhum grupo com 3.
+    const aeeMuitos = [1, 3, 5, 8, 12, 14, 17, 20, 25, 27, 30, 32];
+    data.estudantes.forEach(e => { delete e.aee_diagnostico; delete e.is_aee_mapped; if (aeeMuitos.includes(e.id)) e.aee_categoria_projeto = 'x'; });
+    t.grupos = []; renderModalGrupos(); document.getElementById('tamanhoSorteio').value = '4';
+    await sortearGrupos();
+    const porGrupo = t.grupos.map(g => g.membros.filter(id => aeeMuitos.includes(id)).length);
+    out.aeeMaisQueGrupos = Math.max(...porGrupo) === 2 && Math.min(...porGrupo) >= 1;
+    data.estudantes.forEach(e => { delete e.aee_categoria_projeto; });
 
     // Desligado = sorteio puro (ainda divide todos)
     t.grupos = [];
@@ -122,7 +138,7 @@ const CHROME = process.env.PROFSIS_CHROMIUM || '/opt/pw-browsers/chromium';
   console.log('tempo do sorteio: ' + r.ms + ' ms; janela: ' + r.msJanela + ' ms; desvio das médias: equilibrado ' + r.desvioEquilibrado.toFixed(2) + ' x puro ' + r.desvioPuro.toFixed(2));
   const checar = { caixaMarcada: r.caixaMarcada, todosUmaVez: r.todosUmaVez, tamanhos: r.tamanhos, bemMaisEquilibrado: r.bemMaisEquilibrado,
     ocorrenciaEspalhada: r.ocorrenciaEspalhada, faltososEspalhados: r.faltososEspalhados, resumo: r.resumo, rapido: r.ms < 3000 && r.msJanela < 1500,
-    outraFormacao: r.outraFormacao, segundoTambemEquilibrado: r.segundoTambemEquilibrado, desligadoDivideTodos: r.desligadoDivideTodos, semRegistros: r.semRegistros };
+    outraFormacao: r.outraFormacao, aeeUmPorGrupo: r.aeeUmPorGrupo && r.aeeUmPorGrupo2, aeeNoResumo: r.aeeNoResumo, aeeMaisQueGrupos: r.aeeMaisQueGrupos, segundoTambemEquilibrado: r.segundoTambemEquilibrado, desligadoDivideTodos: r.desligadoDivideTodos, semRegistros: r.semRegistros };
   let falhou = false;
   Object.entries(checar).forEach(([k, v]) => { console.log((v ? 'OK   ' : 'FALHA') + ' ' + k); if (!v) falhou = true; });
   process.exit(falhou ? 1 : 0);
