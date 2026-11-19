@@ -9029,6 +9029,14 @@ function renderEstudanteGeral() {
     
     ocorrenciasAluno.sort((a,b) => new Date(b.data) - new Date(a.data));
 
+    // Resumo do ano no topo da ficha (só junta o que já está registrado; não muda nenhum dado).
+    let elResumo = document.getElementById('estudanteGeralResumo');
+    if (!elResumo) {
+        const grade = document.querySelector('#estudanteDetalhe .grid');
+        if (grade) { elResumo = document.createElement('div'); elResumo.id = 'estudanteGeralResumo'; grade.parentNode.insertBefore(elResumo, grade); }
+    }
+    if (elResumo) elResumo.innerHTML = montarResumoEstudanteHtml({ nome, todosIds, ocorrencias: ocorrenciasAluno });
+
     const historicoTurmas = todosRegistrosAluno.map(e => {
         const t = data.turmas.find(turma => turma.id == e.id_turma);
         return `<div class="badge badge-info" style="margin-right:5px;">${t ? t.nome : 'Turma Excluída'} (${e.status})</div>`;
@@ -9178,6 +9186,107 @@ function renderEstudanteGeral() {
     if (!divComp.innerHTML || divComp.innerHTML.trim() === '') {
         divComp.innerHTML = '<p class="empty-state">Sem compensações.</p>';
     }
+}
+
+// --- RESUMO DO ESTUDANTE (topo da ficha) ---
+// Junta, só do ano atual, o que já está registrado sobre o estudante: faltas (por bimestre), atrasos,
+// ocorrências (as mesmas que a ficha mostra para este perfil), atestados, relatórios do Estagiário
+// (data.historicoDocumentos: relatório comportamental, Anexo III/IV) e registros de tutoria
+// (data.encontros). Os relatórios são da camada pessoal de quem está usando: os de outros professores
+// não chegam aqui. Não chama IA e não grava nada.
+function montarResumoEstudanteHtml({ nome, todosIds, ocorrencias }) {
+    const esc = escHtmlOcorrencia;
+    const ano = String(getTodayString()).slice(0, 4);
+    const doAno = (d) => String(d || '').slice(0, 4) === ano;
+    const ids = (todosIds || []).map(String);
+    const temId = (id) => ids.includes(String(id));
+    const nomeNorm = String(nome || '').trim().toUpperCase();
+    const mesmoNome = (n) => String(n || '').trim().toUpperCase() === nomeNorm;
+
+    const faltas = (data.presencas || []).filter(p => temId(p.id_estudante) && p.status === 'falta' && doAno(p.data));
+    const atrasos = (data.atrasos || []).filter(a => temId(a.id_estudante) && doAno(a.data));
+    const ocs = (ocorrencias || []).filter(o => doAno(o.data));
+    const disciplinares = ocs.filter(o => o.tipo !== 'rapida').length;
+    const rapidas = ocs.length - disciplinares;
+    const atestados = (data.registrosAdministrativos || [])
+        .filter(r => temId(r.estudanteId) && r.tipo === 'Atestado' && !r.arquivado && doAno(r.data));
+
+    // Faltas por bimestre (calendário da gestão), só os bimestres deste ano.
+    const bims = (data.configBimestres || []).filter(c => c && c.bim && c.inicio && c.fim && (doAno(c.inicio) || doAno(c.fim)))
+        .slice().sort((a, b) => String(a.inicio).localeCompare(String(b.inicio)));
+    const porBim = bims.map(c => ({ bim: c.bim, n: faltas.filter(f => f.data >= c.inicio && f.data <= c.fim).length }));
+
+    // Relatórios do Estagiário sobre este estudante.
+    const TIPOS_REL = { relatorio_comportamental: '🧑‍🎓 Relatório comportamental', anexo3_paee: '🧩 Anexo III - PAEE', anexo4_pei: '🧩 Anexo IV - PEI' };
+    const relatorios = (data.historicoDocumentos || []).filter(h => {
+        if (!h || !TIPOS_REL[h.tipo] || !doAno(h.criadoEm)) return false;
+        if (h.tipo === 'relatorio_comportamental') {
+            const p = h.payload || {};
+            if (p.alunoId !== undefined && p.alunoId !== '') return temId(p.alunoId);
+            return mesmoNome(p.aluno) || mesmoNome(String(h.subtitulo || '').split(' · ')[0]);
+        }
+        return mesmoNome(h.nomeEstudante);
+    });
+
+    // Registros de tutoria (encontros) deste estudante.
+    const idsTutorado = (data.tutorados || []).filter(t => temId(t.id_estudante_origem)).map(t => String(t.id));
+    const encontros = (data.encontros || []).filter(e => idsTutorado.includes(String(e.tutoradoId)) && doAno(e.data));
+
+    // Linha do tempo: o que aconteceu por último.
+    const eventos = [];
+    ocs.forEach(o => eventos.push({ data: o.data, icone: o.tipo === 'rapida' ? '⚡' : '⚠️',
+        texto: `${o.tipo === 'rapida' ? 'Ocorrência rápida' : 'Ocorrência disciplinar'}${o.autor ? ' (' + o.autor + ')' : ''}: ${o.relato || ''}` }));
+    relatorios.forEach(h => eventos.push({ data: h.criadoEm, icone: '📄', id: h.id, abrir: h.tipo === 'relatorio_comportamental' && !!h.payload,
+        texto: `${TIPOS_REL[h.tipo].replace(/^\S+\s/, '')}${h.professor ? ' (' + h.professor + ')' : ''}` }));
+    encontros.forEach(e => eventos.push({ data: e.data, icone: '🎓', texto: `Tutoria${e.tema ? ': ' + e.tema : ''}` }));
+    atestados.forEach(a => eventos.push({ data: a.data, icone: '🏥', texto: `Atestado (${a.dias || '?'} dia(s))${a.descricao ? ': ' + a.descricao : ''}` }));
+    eventos.sort((a, b) => String(b.data).localeCompare(String(a.data)));
+    const ultimos = eventos.slice(0, 5);
+
+    const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+    const partes = [
+        plural(faltas.length, 'falta', 'faltas'),
+        plural(atrasos.length, 'atraso', 'atrasos'),
+        plural(ocs.length, 'ocorrência', 'ocorrências') + (ocs.length ? ` (${disciplinares} disciplinar${disciplinares === 1 ? '' : 'es'}, ${rapidas} rápida${rapidas === 1 ? '' : 's'})` : ''),
+        plural(atestados.length, 'atestado', 'atestados'),
+        plural(relatorios.length, 'relatório', 'relatórios'),
+        plural(encontros.length, 'registro de tutoria', 'registros de tutoria')
+    ];
+    const ultimaData = (lista) => lista.map(x => x.data).filter(Boolean).sort().pop();
+    const ultFalta = ultimaData(faltas), ultAtraso = ultimaData(atrasos);
+    const detalhes = [];
+    if (porBim.some(b => b.n > 0)) detalhes.push('Faltas por bimestre: ' + porBim.map(b => `${b.bim}º: ${b.n}`).join(' · '));
+    if (ultFalta) detalhes.push('Última falta: ' + formatDate(ultFalta));
+    if (ultAtraso) detalhes.push('Último atraso: ' + formatDate(ultAtraso));
+
+    const chip = (valor, rotulo, cor) => `<div class="resumo-est-chip" style="flex:1; min-width:90px; background:#fff; border:1px solid #e3e8ef; border-radius:8px; padding:8px 10px;">
+            <div style="font-size:20px; font-weight:bold; color:${cor};">${valor}</div><div style="font-size:12px; color:#5f6b7f;">${rotulo}</div></div>`;
+    const podeAbrir = typeof abrirDocBrancoHistorico === 'function';
+
+    return `
+        <div class="card" id="resumoEstudanteCard" style="margin:10px 0 20px; border-left:4px solid #2563c9; background:#f6f8fb;">
+            <h3 style="margin-top:0;">📋 Resumo do estudante em ${ano}</h3>
+            <p style="margin:0 0 10px; font-size:14px; color:#1c2536;">${esc(partes.join(', ').replace(/, ([^,]*)$/, ' e $1'))}.</p>
+            <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+                ${chip(faltas.length, 'Faltas', '#e53e3e')}
+                ${chip(atrasos.length, 'Atrasos', '#d69e2e')}
+                ${chip(ocs.length, 'Ocorrências', '#c05621')}
+                ${chip(relatorios.length + encontros.length, 'Relatórios e tutorias', '#2563c9')}
+            </div>
+            ${detalhes.length ? `<p style="margin:0 0 8px; font-size:12px; color:#5f6b7f;">${esc(detalhes.join('  ·  '))}</p>` : ''}
+            ${ultimos.length ? `
+                <div style="font-size:13px;"><strong>Últimos registros:</strong>
+                    <ul style="margin:4px 0 0; padding-left:18px;">
+                        ${ultimos.map(ev => {
+                            const txt = String(ev.texto || '');
+                            const curto = txt.length > 140 ? txt.slice(0, 140) + '…' : txt;
+                            const botao = ev.abrir && podeAbrir ? ` <a href="#" onclick="abrirDocBrancoHistorico('${esc(String(ev.id)).replace(/'/g, '')}'); return false;">✏️ Abrir</a>` : '';
+                            return `<li style="margin-bottom:3px;">${ev.icone} <strong>${ev.data ? formatDate(ev.data) : '-'}</strong> ${esc(curto)}${botao}</li>`;
+                        }).join('')}
+                    </ul>
+                </div>` : '<p style="margin:0; font-size:13px; color:#5f6b7f;">Nenhum registro neste ano.</p>'}
+            <p style="margin:8px 0 0; font-size:11px; color:#8a94a6;">Conta só ${ano}. Ocorrências seguem o que este perfil pode ver; relatórios são os seus (feitos no Estagiário).</p>
+        </div>`;
 }
 
 // Busca as Notas Oficiais (Mapão/Avaliações da Gestão) entre-documentos, para quem não é gestor
