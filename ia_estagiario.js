@@ -5125,3 +5125,165 @@ function gerarRelatorioComportamentalManual() {
     closeModal('modalGerarDocumentoIA');
     return abrirModalDocBranco(payloadRelatorioComportamental(form, texto, false), '');
 }
+
+// =====================================================================================
+// PERFIL DO ESTUDANTE na ficha (app.js: montarResumoEstudanteHtml → #perfilEstudanteIA)
+// A IA lê tudo o que o sistema tem do estudante no ano (ocorrências, frequência, atrasos, atestados,
+// caderno/participação, notas, compensações, tutoria e relatórios dos professores) e escreve um texto
+// comportamental: o perfil do estudante, não a lista de registros. Nomes viram [ESTUDANTE] / "um colega".
+// O texto fica só neste aparelho (localStorage, já sem o nome); "💾 Salvar como relatório" leva para o
+// Relatório comportamental (histórico, nuvem). Não grava nada nos dados da turma.
+// =====================================================================================
+
+const CHAVE_PERFIL_ESTUDANTE = 'profsis_perfil_estudante_';
+
+function chavePerfilEstudante(ctx) {
+    return CHAVE_PERFIL_ESTUDANTE + String(ctx.ano) + '_' + String(ctx.nome || '').trim().toUpperCase().replace(/\s+/g, '_');
+}
+
+function lerPerfilEstudanteGuardado(ctx) {
+    try { const v = JSON.parse(localStorage.getItem(chavePerfilEstudante(ctx)) || 'null'); return v && Array.isArray(v.paragrafos) ? v : null; }
+    catch (_) { return null; }
+}
+
+function generoPerfilEstudante(nome) {
+    const primeiro = String(nome || '').trim().split(/\s+/)[0] || '';
+    return /a$/i.test(primeiro) ? 'a' : 'o';
+}
+
+function htmlPerfilEstudanteFicha(ctx) {
+    if (!ctx) return '';
+    const esc = escapeHtmlEstagiario;
+    const guardado = lerPerfilEstudanteGuardado(ctx);
+    if (!guardado) {
+        return `<p style="margin:0 0 10px; font-size:14px; color:#1c2536;">A IA lê todos os registros de ${esc(ctx.ano)} (ocorrências, faltas, atrasos, caderno, participação, notas, tutoria e relatórios) e escreve o perfil comportamental de ${esc(ctx.nome)}. O nome não é enviado à IA.</p>
+            <button class="btn btn-primary" id="btnPerfilEstudanteIA" onclick="gerarPerfilEstudanteFicha(this)">✨ Traçar perfil com IA</button>`;
+    }
+    const paragrafos = guardado.paragrafos.map(p => colocarNomeRelatorio(p, ctx.nome));
+    return `<div style="font-size:14px; line-height:1.6; color:#1c2536;">${paragrafos.map(p => `<p style="margin:0 0 10px;">${esc(p)}</p>`).join('')}</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <button class="btn btn-sm btn-secondary" onclick="copiarPerfilEstudanteFicha(this)">📋 Copiar</button>
+            <button class="btn btn-sm btn-secondary" onclick="salvarPerfilEstudanteComoRelatorio()">💾 Salvar como relatório</button>
+            <button class="btn btn-sm btn-secondary" id="btnPerfilEstudanteIA" onclick="gerarPerfilEstudanteFicha(this)">🔄 Refazer</button>
+            <span style="font-size:11px; color:#8a94a6;">Feito pela IA em ${esc(formatarDataRelatorioComportamental(guardado.geradoEm))}. Confira antes de usar.</span>
+        </div>`;
+}
+
+// Junta os dados do estudante em todas as turmas dele (remanejado também), no ano.
+function dadosPerfilEstudante(ctx) {
+    const ids = (ctx.todosIds || []).map(String);
+    const registrosEst = (data.estudantes || []).filter(e => ids.includes(String(e.id)));
+    const periodo = { bim: null, inicio: ctx.ano + '-01-01', fim: ctx.ano + '-12-31', texto: 'ano letivo de ' + ctx.ano };
+    const anons = [];
+    const porTurma = [];
+    registrosEst.forEach(est => {
+        const turma = (data.turmas || []).find(t => t.id == est.id_turma);
+        if (!turma) return;
+        anons.push(criarAnonimizadorRelatorio(turma, est));
+        const reg = coletarRegistrosRelatorioComportamental(turma, est, periodo);
+        porTurma.push({ turma, est, reg });
+    });
+    const anon = (t) => anons.reduce((acc, f) => f(acc), String(t || ''));
+    return { porTurma, anon, aee: registrosEst.some(e => typeof estudanteEhAee === 'function' && estudanteEhAee(e)) };
+}
+
+function montarPromptPerfilEstudante(ctx) {
+    const { porTurma, anon, aee } = dadosPerfilEstudante(ctx);
+    const artigo = generoPerfilEstudante(ctx.nome) === 'a' ? 'a estudante' : 'o estudante';
+    const linhas = [];
+    linhas.push(`Faltas no ano: ${ctx.faltas}${(ctx.porBim || []).length ? ' (' + ctx.porBim.map(b => b.bim + 'º bim: ' + b.n).join(', ') + ')' : ''}. Atrasos: ${ctx.atrasos}. Atestados: ${(ctx.atestados || []).length}.`);
+    if (aee) linhas.push('É acompanhad' + (artigo === 'a estudante' ? 'a' : 'o') + ' pelo AEE (não cite diagnóstico).');
+    linhas.push(`Ocorrências no ano: ${(ctx.ocorrencias || []).length}`);
+    (ctx.ocorrencias || []).slice().sort((a, b) => String(a.data).localeCompare(String(b.data))).forEach(o => {
+        linhas.push(`- ${formatarDataRelatorioComportamental(o.data)} (${o.tipo === 'rapida' ? 'rápida' : 'disciplinar'}${o.disciplina ? ', ' + o.disciplina : ''}): ${anon(o.relato) || 'sem relato'}${o.devolutiva ? ' | Devolutiva: ' + anon(o.devolutiva) : ''}`);
+    });
+    porTurma.forEach(({ turma, reg }) => {
+        linhas.push(`\nNa turma ${turma.nome || ''} (${turma.disciplina || 'disciplina não informada'}):`);
+        // Ocorrências já foram listadas acima (com o filtro do perfil); aqui vão o resto dos registros.
+        linhasRegistrosRelatorioComportamental(Object.assign({}, reg, { ocorrencias: [] }), anon)
+            .filter(l => !/^Ocorrências:/.test(l)).forEach(l => linhas.push(l));
+    });
+    if ((ctx.encontros || []).length) {
+        linhas.push(`\nTutoria (${ctx.encontros.length} encontro(s)):`);
+        ctx.encontros.forEach(e => linhas.push(`- ${formatarDataRelatorioComportamental(e.data)}: ${anon(e.tema) || 'sem tema'}${e.resumo ? ' — ' + anon(String(e.resumo).slice(0, 400)) : ''}`));
+    }
+    const comTexto = (ctx.relatorios || []).filter(h => h.payload && h.payload.texto);
+    if (comTexto.length) {
+        linhas.push('\nRelatórios já escritos pelos professores:');
+        comTexto.slice(0, 3).forEach(h => {
+            const corpo = String(h.payload.texto).split('\n').map(l => l.trim()).filter(Boolean)
+                .filter(l => !/^relat[óo]rio pedag[óo]gico/i.test(l) && !/^turma:/i.test(l)).join(' ');
+            linhas.push(`- ${formatarDataRelatorioComportamental(h.criadoEm)}${h.payload.disciplina ? ' (' + h.payload.disciplina + ')' : ''}: ${anon(corpo).slice(0, 900)}`);
+        });
+    }
+
+    return `Você é coordenador(a) pedagógico(a) de uma escola estadual de São Paulo. Com base em TODOS os registros abaixo, trace o PERFIL COMPORTAMENTAL E PEDAGÓGICO de ${artigo} ${MARCA_ESTUDANTE_RELATORIO} e escreva um texto de relatório.
+
+Escreva exatamente "${MARCA_ESTUDANTE_RELATORIO}" onde for citar o nome (o nome real é colocado depois).
+
+REGISTROS DO ANO ${ctx.ano}:
+${linhas.join('\n')}
+
+Como escrever:
+- NÃO é para listar os registros. Interprete-os: que padrões aparecem? Como é a conduta, a convivência com colegas e professores, a relação com regras e combinados, a participação, o compromisso com as tarefas (caderno, entregas), a assiduidade e a pontualidade? Houve mudança ao longo do ano (melhora ou piora)? Em quais disciplinas vai melhor ou pior?
+- 3 parágrafos corridos, 3ª pessoa, linguagem formal, clara e respeitosa (cerca de 180 a 280 palavras no total):
+  1º) perfil de comportamento e convivência;
+  2º) compromisso, participação, frequência e desempenho;
+  3º) pontos fortes, pontos de atenção e sugestões de acompanhamento para a escola e a família.
+- Cite datas, números ou relatos só quando ajudarem a sustentar uma conclusão; não copie relatos inteiros.
+- Se houver poucos registros, diga isso com cuidado e não force conclusões. Não invente fatos nem diagnósticos. Não exponha outros estudantes.
+- Sem título, saudação, data ou assinatura. Use ${artigo === 'a estudante' ? 'o feminino (a estudante)' : 'o masculino (o estudante)'}.
+
+Retorne APENAS um JSON válido, sem markdown: {"paragrafos": ["primeiro", "segundo", "terceiro"]}`;
+}
+
+async function gerarPerfilEstudanteFicha(btn) {
+    const ctx = window.__ctxPerfilEstudante;
+    if (!ctx) return;
+    const original = btn ? btn.textContent : '';
+    if (btn) { btn.textContent = 'Traçando o perfil... ⏳'; btn.disabled = true; }
+    try {
+        const resposta = await chamarIAEstruturada(montarPromptPerfilEstudante(ctx), btn);
+        const paragrafos = paragrafosDaRespostaRelatorio(resposta);
+        if (!paragrafos.length) throw new Error('A IA não devolveu o texto. Tente de novo.');
+        // Guarda sem o nome (a IA respondeu com [ESTUDANTE]); o nome volta na hora de mostrar.
+        try { localStorage.setItem(chavePerfilEstudante(ctx), JSON.stringify({ paragrafos, geradoEm: getTodayString() })); } catch (_) { /* sem espaço: só não guarda */ }
+        if (window.__ctxPerfilEstudante !== ctx) return; // trocou de estudante enquanto a IA respondia
+        const box = document.getElementById('perfilEstudanteIA');
+        if (box) {
+            box.innerHTML = htmlPerfilEstudanteFicha(ctx);
+            // Se não deu para guardar no aparelho, mostra mesmo assim.
+            if (!lerPerfilEstudanteGuardado(ctx)) box.innerHTML = paragrafos.map(p => `<p>${escapeHtmlEstagiario(colocarNomeRelatorio(p, ctx.nome))}</p>`).join('');
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Erro ao traçar o perfil com IA:\n' + e.message);
+        if (btn) { btn.textContent = original; btn.disabled = false; }
+    }
+}
+
+function textoPerfilEstudanteFicha() {
+    const ctx = window.__ctxPerfilEstudante;
+    const g = ctx && lerPerfilEstudanteGuardado(ctx);
+    return g ? g.paragrafos.map(p => colocarNomeRelatorio(p, ctx.nome)) : [];
+}
+
+function copiarPerfilEstudanteFicha(botao) {
+    const texto = textoPerfilEstudanteFicha().join('\n\n');
+    const pronto = () => { if (botao) { const t = botao.textContent; botao.textContent = '✅ Copiado'; setTimeout(() => { botao.textContent = t; }, 1500); } };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(texto).then(pronto, () => prompt('Copie o texto:', texto));
+    else prompt('Copie o texto:', texto);
+}
+
+// Abre a tela do Relatório comportamental (cabeçalho da escola, editar, PDF) com o perfil já escrito.
+function salvarPerfilEstudanteComoRelatorio() {
+    const ctx = window.__ctxPerfilEstudante;
+    const paragrafos = textoPerfilEstudanteFicha();
+    if (!ctx || !paragrafos.length) return;
+    const ids = (ctx.todosIds || []).map(String);
+    const est = (typeof estudanteAtualDetalhe !== 'undefined' && estudanteAtualDetalhe) || (data.estudantes || []).find(e => ids.includes(String(e.id)));
+    const turma = est ? (data.turmas || []).find(t => t.id == est.id_turma) : null;
+    const form = { est: est || { nome_completo: ctx.nome, id: '' }, turma: turma || { nome: '', disciplina: '' } };
+    const texto = cabecalhoTextoRelatorioComportamental(form) + paragrafos.join('\n');
+    return abrirModalDocBranco(payloadRelatorioComportamental(form, texto, true), '');
+}

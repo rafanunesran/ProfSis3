@@ -9306,34 +9306,30 @@ function montarResumoEstudanteHtml({ nome, todosIds, ocorrencias }) {
     }
     paragrafos.push({ titulo: 'Relatórios e acompanhamento', texto: p3 });
 
-    window.__textoResumoEstudante = `Relatório do estudante - ${nome} - ${ano}\n\n` + paragrafos.map(p => `${p.titulo}: ${p.texto}`).join('\n\n');
     const podeAbrir = typeof abrirDocBrancoHistorico === 'function';
     const htmlLinks = podeAbrir && links.length
         ? `<p style="margin:6px 0 0; font-size:13px;">${links.map(h => `<a href="#" onclick="abrirDocBrancoHistorico('${esc(String(h.id)).replace(/'/g, '')}'); return false;">✏️ Abrir relatório de ${formatDate(h.criadoEm)}</a>`).join(' · ')}</p>`
         : '';
 
+    // Guarda o que a IA vai usar para traçar o perfil (ia_estagiario.js: gerarPerfilEstudanteFicha).
+    window.__ctxPerfilEstudante = { nome, ano, todosIds: ids, ocorrencias: ocs, faltas: faltas.length, atrasos: atrasos.length,
+        atestados, relatorios, encontros, porBim };
+
+    const perfilHtml = (typeof htmlPerfilEstudanteFicha === 'function') ? htmlPerfilEstudanteFicha(window.__ctxPerfilEstudante) : '';
+
     return `
         <div class="card" id="resumoEstudanteCard" style="margin:10px 0 20px; border-left:4px solid #2563c9; background:#f6f8fb;">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
-                <h3 style="margin:0;">📋 Relatório do estudante (${ano})</h3>
-                <button class="btn btn-sm btn-secondary" onclick="copiarResumoEstudante(this)">📋 Copiar texto</button>
-            </div>
-            <div style="margin-top:10px; font-size:14px; line-height:1.55; color:#1c2536;">
-                ${paragrafos.map(p => `<p style="margin:0 0 10px;"><strong>${esc(p.titulo)}.</strong> ${esc(p.texto)}</p>`).join('')}
-            </div>
-            ${htmlLinks}
-            <p style="margin:8px 0 0; font-size:11px; color:#8a94a6;">Texto montado automaticamente com os registros de ${ano}. Ocorrências seguem o que este perfil pode ver; relatórios são os seus (feitos no Estagiário).</p>
+            <h3 style="margin:0;">📋 Perfil do estudante (${ano})</h3>
+            <div id="perfilEstudanteIA" style="margin-top:10px;">${perfilHtml}</div>
+            <details style="margin-top:10px;">
+                <summary style="cursor:pointer; font-size:13px; color:#2563c9;">Ver os registros usados</summary>
+                <div style="margin-top:8px; font-size:13px; line-height:1.5; color:#1c2536;">
+                    ${paragrafos.map(p => `<p style="margin:0 0 8px;"><strong>${esc(p.titulo)}.</strong> ${esc(p.texto)}</p>`).join('')}
+                </div>
+                ${htmlLinks}
+            </details>
+            <p style="margin:8px 0 0; font-size:11px; color:#8a94a6;">Usa os registros de ${ano}. Ocorrências seguem o que este perfil pode ver; relatórios são os seus (feitos no Estagiário).</p>
         </div>`;
-}
-
-function copiarResumoEstudante(botao) {
-    const texto = window.__textoResumoEstudante || '';
-    const pronto = () => { if (botao) { const t = botao.textContent; botao.textContent = '✅ Copiado'; setTimeout(() => { botao.textContent = t; }, 1500); } };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(texto).then(pronto, () => prompt('Copie o texto:', texto));
-    } else {
-        prompt('Copie o texto:', texto);
-    }
 }
 
 // Busca as Notas Oficiais (Mapão/Avaliações da Gestão) entre-documentos, para quem não é gestor

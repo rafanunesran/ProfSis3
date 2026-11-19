@@ -76,7 +76,7 @@ const ok = (nome, cond, extra) => { console.log((cond ? '  ok   ' : '  FALHA') +
   const r = await p.evaluate(() => {
     abrirEstudanteDetalhe(11);
     const card = document.getElementById('resumoEstudanteCard');
-    const r = { existe: !!card, texto: card ? card.innerText : '', html: card ? card.innerHTML : '' };
+    const r = { existe: !!card, texto: card ? card.textContent.replace(/\s+/g, ' ') : '', html: card ? card.innerHTML : '' };
     const tela = document.getElementById('estudanteDetalhe');
     const resumo = document.getElementById('estudanteGeralResumo');
     r.acima = !!resumo && !!(resumo.compareDocumentPosition(tela.querySelector('.grid')) & Node.DOCUMENT_POSITION_FOLLOWING);
@@ -85,7 +85,6 @@ const ok = (nome, cond, extra) => { console.log((cond ? '  ok   ' : '  FALHA') +
     if (link) link.click();
     r.abriu = window.__abriu;
     r.ocTabela = document.getElementById('estudanteGeralOcorrencias').innerText;
-    r.copia = window.__textoResumoEstudante || '';
     r.dadosIntactos = data.presencas.length === 5 && data.ocorrencias.length === 5 && data.historicoDocumentos.length === 5;
     return r;
   });
@@ -97,11 +96,48 @@ const ok = (nome, cond, extra) => { console.log((cond ? '  ok   ' : '  FALHA') +
   ok('relatórios e tutoria em texto, com trecho do relatório',
      r.texto.indexOf('Relatórios e acompanhamento. Foram produzidos 2 relatórios: Relatório comportamental de Professor Teste (15/11/2026) e Anexo III - PAEE de Professor Teste (01/06/2026). No relatório comportamental mais recente consta: "A estudante demonstrou evolução na convivência." Na tutoria, houve 1 encontro registrado (01/11/2026, Projeto de vida).') !== -1, r.texto);
   ok('fora: ano passado, outro professor, outro aluno', !/Do ano passado|De outro professor|Só do Bruno|Antigo|Bruno Lima/.test(r.texto), r.texto);
-  ok('botão copiar com o texto', r.copia.indexOf('Relatório do estudante - Manuela Veronez - 2026') === 0 && r.copia.indexOf('Comportamento: Foram registradas') !== -1, r.copia);
+  ok('botão "Traçar perfil com IA" aparece antes de gerar', r.html.indexOf('Traçar perfil com IA') !== -1);
   ok('relato escapado (sem HTML do texto)', r.html.indexOf('&lt;b&gt;colega&lt;/b&gt;') !== -1);
   ok('"Abrir" abre o relatório comportamental', r.abriu === 'doc-a', r.abriu);
   ok('tabela de ocorrências antiga continua', r.ocTabela.indexOf('Discutiu com') !== -1);
   ok('não mexe nos dados', r.dadosIntactos);
+
+
+  // ============ perfil com IA ============
+  const r3 = await p.evaluate(async () => {
+    localStorage.clear();
+    data.caderno = [ { id:1, id_estudante:11, id_turma:1, data:'2026-10-02', status:'incompleto', engajamento:'medio' } ];
+    data.trabalhos = [ { id:100, id_turma:1, titulo:'Releitura de obra', tipo:'comum', peso:10, bimestre:4 } ];
+    data.notas = [ { id:1, id_trabalho:100, id_estudante:11, valor:'6,5' } ];
+    data.encontros[0].resumo = 'Manuela falou que quer ser veterinária.';
+    window.__prompts = [];
+    chamarIAEstruturada = async (prompt) => { window.__prompts.push(prompt);
+      return { paragrafos: ['[ESTUDANTE] mostra perfil comunicativo, com conflitos pontuais.', 'Tem frequência boa.', 'Sugere-se acompanhar a convivência.'] }; };
+    abrirEstudanteDetalhe(11);
+    await gerarPerfilEstudanteFicha(document.getElementById('btnPerfilEstudanteIA'));
+    const box = document.getElementById('perfilEstudanteIA');
+    const r = { prompt: window.__prompts[0] || '', texto: box.innerText, guardado: JSON.stringify(Object.keys(localStorage).map(k => localStorage.getItem(k))) };
+    abrirEstudanteDetalhe(11); // reabrir mostra o perfil guardado sem chamar a IA de novo
+    r.reaberto = document.getElementById('perfilEstudanteIA').innerText;
+    r.chamadas = window.__prompts.length;
+    await salvarPerfilEstudanteComoRelatorio();
+    const modal = document.getElementById('modalDocBranco');
+    r.modal = !!modal && modal.style.display !== 'none' && document.querySelector('#modalDocBranco h2').textContent;
+    r.docTexto = docBrancoAberto ? docBrancoAberto.texto : '';
+    if (typeof fecharModalDocBranco === 'function') fecharModalDocBranco();
+    return r;
+  });
+  ok('pedido à IA sem nomes', r3.prompt && !/Manuela|Veronez|Bruno|Lima/.test(r3.prompt), r3.prompt);
+  ok('pedido traz ocorrências, faltas, caderno, nota, tutoria e relatório', r3.prompt.indexOf('Discutiu com') !== -1 && r3.prompt.indexOf('Faltas no ano: 2') !== -1
+     && r3.prompt.indexOf('caderno incompleto') !== -1 && r3.prompt.indexOf('Releitura de obra (4º bim.): 6,5') !== -1
+     && r3.prompt.indexOf('Projeto de vida — [ESTUDANTE] falou que quer ser veterinária') !== -1 && r3.prompt.indexOf('demonstrou evolução na convivência') !== -1, r3.prompt);
+  ok('pedido pede perfil, não lista', r3.prompt.indexOf('NÃO é para listar os registros') !== -1);
+  ok('pedido sem ano passado nem outro professor', r3.prompt.indexOf('Do ano passado') === -1 && r3.prompt.indexOf('De outro professor') === -1);
+  ok('perfil aparece com o nome', r3.texto.indexOf('Manuela Veronez mostra perfil comunicativo') !== -1 && r3.texto.indexOf('Salvar como relatório') !== -1, r3.texto);
+  ok('guardado no aparelho sem o nome', r3.guardado.indexOf('[ESTUDANTE] mostra') !== -1 && r3.guardado.indexOf('Manuela') === -1, r3.guardado);
+  ok('reabrir a ficha mostra o perfil sem chamar a IA', r3.reaberto.indexOf('Manuela Veronez mostra perfil') !== -1 && r3.chamadas === 1);
+  ok('"Salvar como relatório" abre o Relatório comportamental com o texto', String(r3.modal).indexOf('Relatório comportamental') !== -1
+     && r3.docTexto.indexOf('Turma: 7A | Componente curricular: Arte') !== -1 && r3.docTexto.indexOf('Manuela Veronez mostra perfil comunicativo') !== -1, r3);
 
   if (process.env.PROFSIS_FOTO) {
     await p.screenshot({ path: process.env.PROFSIS_FOTO });
@@ -114,7 +150,7 @@ const ok = (nome, cond, extra) => { console.log((cond ? '  ok   ' : '  FALHA') +
   const r2 = await p.evaluate(() => {
     data.estudantes.push({ id:99, id_turma:1, nome_completo:'Zé Novo', status:'Ativo' });
     abrirEstudanteDetalhe(99);
-    return document.getElementById('resumoEstudanteCard').innerText;
+    return document.getElementById('resumoEstudanteCard').textContent.replace(/\s+/g, ' ');
   });
   ok('estudante sem registros', r2.indexOf('Em 2026, Zé Novo não tem faltas nem atrasos registrados.') !== -1 && r2.indexOf('Não há ocorrências registradas sobre Zé Novo neste ano.') !== -1 && r2.indexOf('Ainda não há relatórios nem registros de tutoria sobre Zé Novo neste ano.') !== -1, r2);
 
