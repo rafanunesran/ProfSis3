@@ -4,6 +4,39 @@ function getTodayString() {
     return new Date().toISOString().split('T')[0];
 }
 
+// --- VIRADA DE ANO (preparação) ----------------------------------------------
+// Os registros NOVOS (turma, trabalho, ocorrência) passam a nascer com `anoLetivo`,
+// e o estudante que sai ganha `saiuEm`. NADA lê esses campos ainda: nenhuma tela,
+// conta de nota ou média muda por causa deles. Eles existem para, na virada, o
+// sistema saber de que ano é cada coisa (ver anoletivo.js) e quando o estudante
+// que saiu completa o ano de arquivo.
+//
+// Ano letivo de hoje: o do calendário, salvo quando hoje cai dentro dos bimestres
+// cadastrados e eles começaram no ano anterior (escola que termina em janeiro).
+function anoLetivoDeHoje(configBimestres) {
+    const hoje = getTodayString();
+    const bims = (configBimestres || (typeof data !== 'undefined' && data && data.configBimestres) || [])
+        .filter(b => b && b.inicio && b.fim);
+    if (bims.length) {
+        const inicio = bims.reduce((m, b) => (b.inicio < m ? b.inicio : m), bims[0].inicio);
+        const fim = bims.reduce((m, b) => (b.fim > m ? b.fim : m), bims[0].fim);
+        if (hoje >= inicio && hoje <= fim) return parseInt(inicio.slice(0, 4), 10);
+    }
+    return parseInt(hoje.slice(0, 4), 10);
+}
+
+// Troca o status do estudante e cuida da data de saída: saiu → guarda o dia (e
+// mantém a primeira data se só trocou de uma saída para outra); voltou a Ativo →
+// tira a data. Mexe no próprio objeto, como o código fazia com `est.status = ...`.
+function definirStatusEstudante(est, novoStatus) {
+    if (!est) return;
+    const ativo = s => !s || String(s).trim().toLowerCase() === 'ativo';
+    const eraAtivo = ativo(est.status);
+    est.status = novoStatus;
+    if (ativo(novoStatus)) delete est.saiuEm;
+    else if (eraAtivo || !est.saiuEm) est.saiuEm = getTodayString();
+}
+
 function formatDate(dateStr) {
     if (!dateStr) return '';
     const [y, m, d] = dateStr.split('-');

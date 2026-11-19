@@ -2551,13 +2551,14 @@ function aplicarArquivoImportMassa(estudantes, turmaId, alunos, novoId, opcoes) 
     alunos.forEach(aluno => {
         const existente = porChave.get(aluno.chave);
         if (!existente) {
-            const novo = { id: novoId(), id_turma: turmaId, nome_completo: aluno.nome, status: aluno.status };
+            const novo = { id: novoId(), id_turma: turmaId, nome_completo: aluno.nome };
+            definirStatusEstudante(novo, aluno.status);
             estudantes.push(novo);
             porChave.set(aluno.chave, novo);
             criados.push({ nome: aluno.nome, status: aluno.status });
         } else if ((existente.status || 'Ativo') !== aluno.status) {
             alterados.push({ nome: existente.nome_completo, de: existente.status || 'Ativo', para: aluno.status, chave: aluno.chave });
-            existente.status = aluno.status;
+            definirStatusEstudante(existente, aluno.status);
         }
         if (aluno.status === 'Ativo' && ativosFora.has(aluno.chave)) {
             ativosEmOutra.push({ nome: aluno.nome, turmaId: ativosFora.get(aluno.chave).id_turma });
@@ -2574,7 +2575,7 @@ function aplicarArquivoImportMassa(estudantes, turmaId, alunos, novoId, opcoes) 
         ativos.forEach(e => {
             const chave = normalizarNomeImportMassa(e.nome_completo);
             if (!chavesArquivo.has(chave)) {
-                e.status = 'Transferido';
+                definirStatusEstudante(e, 'Transferido');
                 sumiram.push({ nome: e.nome_completo, chave: chave });
             }
         });

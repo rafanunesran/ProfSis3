@@ -2259,7 +2259,7 @@ function salvarTurma(e) {
     } else {
         if (!data.turmas) data.turmas = [];
         // masterId serve para vincular a turma do professor à turma original da escola
-        const nova = { id: Date.now(), nome, ano_serie: nome, disciplina, turno, masterId: masterId };
+        const nova = { id: Date.now(), nome, ano_serie: nome, disciplina, turno, masterId: masterId, anoLetivo: anoLetivoDeHoje() };
         if (ehEletiva) nova.tipo = 'eletiva';
         if (professorParceiro) nova.professor_parceiro = professorParceiro;
         data.turmas.push(nova);
@@ -2725,12 +2725,9 @@ function salvarEstudante(e) {
     const status = (currentViewMode === 'gestor') ? document.getElementById('estudanteStatus').value : 'Ativo';
     
     if (!data.estudantes) data.estudantes = [];
-    data.estudantes.push({
-        id: Date.now(),
-        id_turma: turmaAtual,
-        nome_completo: nome,
-        status: status
-    });
+    const novoEstudante = { id: Date.now(), id_turma: turmaAtual, nome_completo: nome };
+    definirStatusEstudante(novoEstudante, status);
+    data.estudantes.push(novoEstudante);
     persistirDados();
     closeModal('modalNovoEstudante');
     renderEstudantes();
@@ -2859,7 +2856,7 @@ function htmlSeletorStatusEstudante(e) {
 function alterarStatusEstudante(id, novoStatus) {
     const est = (data.estudantes || []).find(e => e.id == id);
     if (!est || (est.status || 'Ativo') === novoStatus) return;
-    est.status = novoStatus;
+    definirStatusEstudante(est, novoStatus);
     persistirDados();
     renderEstudantes();
 }
@@ -2871,7 +2868,7 @@ function reativarTodosTransferidosTurma() {
     if (afetados.length === 0) return;
     const nomes = afetados.map(e => `• ${e.nome_completo} (${e.status})`).join('\n');
     if (!confirm(`Reativar ${afetados.length} estudante(s) desta turma?\n\n${nomes}\n\nTodos voltarão para o status "Ativo".`)) return;
-    afetados.forEach(e => { e.status = 'Ativo'; });
+    afetados.forEach(e => { definirStatusEstudante(e, 'Ativo'); });
     persistirDados();
     renderEstudantes();
 }
@@ -3688,6 +3685,13 @@ async function salvarOcorrencia() {
 }
 
 // Função auxiliar para centralizar o salvamento
+function anoLetivoDaOcorrenciaEditada(idToUpdate) {
+    const antiga = idToUpdate ? (data.ocorrencias || []).find(o => o.id == idToUpdate) : null;
+    if (antiga && antiga.anoLetivo) return antiga.anoLetivo;
+    if (antiga && /^\d{4}-/.test(String(antiga.data || ''))) return parseInt(String(antiga.data).slice(0, 4), 10);
+    return anoLetivoDeHoje();
+}
+
 async function registrarOcorrenciaNoBanco({ ids, texto, tipo, idToUpdate = null }) {
     // Identifica a turma correta para o contexto (Local vs Gestão)
     const turmaObj = (data.turmas || []).find(t => t.id == turmaAtual);
@@ -3705,7 +3709,9 @@ async function registrarOcorrenciaNoBanco({ ids, texto, tipo, idToUpdate = null 
         status: tipo === 'rapida' ? 'registrada' : 'pendente', // Rápidas não ficam pendentes
         tipo: tipo, // 'rapida' ou 'disciplinar'
         turma_snapshot: nomeTurmaCompleto, // Salva o nome como está agora
-        disciplina: disciplina
+        disciplina: disciplina,
+        // Editar não muda o ano da ocorrência: fica o que ela já tinha.
+        anoLetivo: anoLetivoDaOcorrenciaEditada(idToUpdate)
     };
 
     if (!data.ocorrencias) data.ocorrencias = [];
@@ -5316,7 +5322,8 @@ async function salvarTrabalho(e) {
             tipo: tipo,
             peso: pesoTotal,
             rubricas: rubricas,
-            bimestre: bimestre
+            bimestre: bimestre,
+            anoLetivo: anoLetivoDeHoje()
         };
         if (tipo === 'avaliacao_gestor') novoTrabalho.id_avaliacao_gestor = idAvaliacaoGestor;
         data.trabalhos.push(novoTrabalho);
@@ -5425,7 +5432,8 @@ async function importarAtividadesSelecionadas() {
             tipo: orig.tipo || 'comum',
             peso: orig.peso,
             rubricas: (orig.rubricas || []).map(r => ({ id: r.id, nome: r.nome, peso: r.peso })),
-            bimestre: destinoBim === 'mesmo' ? (parseInt(orig.bimestre) || 1) : parseInt(destinoBim)
+            bimestre: destinoBim === 'mesmo' ? (parseInt(orig.bimestre) || 1) : parseInt(destinoBim),
+            anoLetivo: anoLetivoDeHoje()
         };
         if (orig.tipo === 'avaliacao_gestor') copia.id_avaliacao_gestor = orig.id_avaliacao_gestor;
         data.trabalhos.push(copia);
