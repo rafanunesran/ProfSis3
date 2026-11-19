@@ -44,7 +44,7 @@ const ok = (nome, cond, extra) => { console.log((cond ? '  ok   ' : '  FALHA') +
       estudantes: [ { id:11, id_turma:1, nome_completo:'Manuela Veronez', status:'Ativo' }, { id:31, id_turma:2, nome_completo:'Manuela Veronez', status:'Remanejado' },
                     { id:12, id_turma:1, nome_completo:'Bruno Lima', status:'Ativo' } ],
       ocorrencias: [
-        { id:1, id_turma:1, data:'2026-10-05', relato:'Discutiu com <b>colega</b>.', ids_estudantes:[11,12], tipo:'disciplinar', autor:'Professor Teste' },
+        { id:1, id_turma:1, data:'2026-10-05', relato:'Discutiu com <b>colega</b>.', ids_estudantes:[11,12], tipo:'disciplinar', autor:'Professor Teste', devolutiva:'Conversa feita.' },
         { id:2, id_turma:2, data:'2026-03-05', relato:'Sem material.', ids_estudantes:[31], tipo:'rapida', autor:'Professor Teste' },
         { id:3, id_turma:1, data:'2025-10-06', relato:'Do ano passado.', ids_estudantes:[11], tipo:'rapida', autor:'Professor Teste' },
         { id:4, id_turma:1, data:'2026-10-06', relato:'De outro professor.', ids_estudantes:[11], tipo:'rapida', autor:'Outro' },
@@ -58,7 +58,7 @@ const ok = (nome, cond, extra) => { console.log((cond ? '  ok   ' : '  FALHA') +
       encontros: [ { id:1, tutoradoId:500, data:'2026-11-01', tema:'Projeto de vida' }, { id:2, tutoradoId:500, data:'2025-11-01', tema:'Antigo' } ],
       historicoDocumentos: [
         { id:'doc-a', tipo:'relatorio_comportamental', criadoEm:'2026-11-15', professor:'Professor Teste', titulo:'Relatório comportamental — Manuela Veronez',
-          subtitulo:'Manuela Veronez · 7A - Arte', payload:{ tipo:'relatorio_comportamental', titulo:'RELATÓRIO', texto:'Texto do relatório', aluno:'Manuela Veronez', alunoId:11 } },
+          subtitulo:'Manuela Veronez · 7A - Arte', payload:{ tipo:'relatorio_comportamental', titulo:'RELATÓRIO', texto:'Relatório pedagógico e comportamental — Manuela Veronez\nTurma: 7A | Componente curricular: Arte\nA estudante demonstrou evolução na convivência.\nSegundo parágrafo.', aluno:'Manuela Veronez', alunoId:11 } },
         { id:'doc-b', tipo:'relatorio_comportamental', criadoEm:'2026-11-15', titulo:'Relatório comportamental — Bruno Lima', subtitulo:'Bruno Lima · 7A - Arte', payload:{ aluno:'Bruno Lima', alunoId:12 } },
         { id:'doc-c', tipo:'relatorio_comportamental', criadoEm:'2025-11-15', subtitulo:'Manuela Veronez · 7A - Arte', textoArquivado:true },
         { id:'doc-d', tipo:'anexo3_paee', criadoEm:'2026-06-01', nomeEstudante:'manuela veronez', professor:'Professor Teste' },
@@ -85,16 +85,19 @@ const ok = (nome, cond, extra) => { console.log((cond ? '  ok   ' : '  FALHA') +
     if (link) link.click();
     r.abriu = window.__abriu;
     r.ocTabela = document.getElementById('estudanteGeralOcorrencias').innerText;
+    r.copia = window.__textoResumoEstudante || '';
     r.dadosIntactos = data.presencas.length === 5 && data.ocorrencias.length === 5 && data.historicoDocumentos.length === 5;
     return r;
   });
   ok('resumo aparece acima de Frequência/Atrasos', r.existe && r.acima && r.visivel);
-  ok('frase do resumo com contagens só de 2026 (inclui turma remanejada)',
-     r.texto.indexOf('2 faltas, 1 atraso, 2 ocorrências (1 disciplinar, 1 rápida), 1 atestado, 2 relatórios e 1 registro de tutoria.') !== -1, r.texto);
-  ok('faltas por bimestre', r.texto.indexOf('Faltas por bimestre: 1º: 1 · 4º: 1') !== -1, r.texto);
-  ok('última falta e último atraso', r.texto.indexOf('Última falta: 02/10/2026') !== -1 && r.texto.indexOf('Último atraso: 10/11/2026') !== -1, r.texto);
-  ok('últimos registros em ordem (relatório, tutoria, ocorrência...)', /15\/11\/2026 Relatório comportamental \(Professor Teste\)[\s\S]*01\/11\/2026 Tutoria: Projeto de vida[\s\S]*05\/10\/2026 Ocorrência disciplinar/.test(r.texto), r.texto);
+  ok('frequência em texto, só 2026 (inclui turma remanejada)',
+     r.texto.indexOf('Frequência. Em 2026, Manuela Veronez registrou 2 faltas (1 no 1º bimestre e 1 no 4º bimestre), a mais recente em 02/10/2026, e 1 atraso, o último em 10/11/2026. Apresentou 1 atestado (01/09/2026, 2 dias, Gripe).') !== -1, r.texto);
+  ok('comportamento em texto com relato e devolutiva',
+     r.texto.indexOf('Comportamento. Foram registradas 2 ocorrências (1 disciplinar e 1 rápida). Em 05/10/2026 (Professor Teste): "Discutiu com <b>colega</b>". Devolutiva: Conversa feita. Em 05/03/2026 (Professor Teste): "Sem material".') !== -1, r.texto);
+  ok('relatórios e tutoria em texto, com trecho do relatório',
+     r.texto.indexOf('Relatórios e acompanhamento. Foram produzidos 2 relatórios: Relatório comportamental de Professor Teste (15/11/2026) e Anexo III - PAEE de Professor Teste (01/06/2026). No relatório comportamental mais recente consta: "A estudante demonstrou evolução na convivência." Na tutoria, houve 1 encontro registrado (01/11/2026, Projeto de vida).') !== -1, r.texto);
   ok('fora: ano passado, outro professor, outro aluno', !/Do ano passado|De outro professor|Só do Bruno|Antigo|Bruno Lima/.test(r.texto), r.texto);
+  ok('botão copiar com o texto', r.copia.indexOf('Relatório do estudante - Manuela Veronez - 2026') === 0 && r.copia.indexOf('Comportamento: Foram registradas') !== -1, r.copia);
   ok('relato escapado (sem HTML do texto)', r.html.indexOf('&lt;b&gt;colega&lt;/b&gt;') !== -1);
   ok('"Abrir" abre o relatório comportamental', r.abriu === 'doc-a', r.abriu);
   ok('tabela de ocorrências antiga continua', r.ocTabela.indexOf('Discutiu com') !== -1);
@@ -113,7 +116,7 @@ const ok = (nome, cond, extra) => { console.log((cond ? '  ok   ' : '  FALHA') +
     abrirEstudanteDetalhe(99);
     return document.getElementById('resumoEstudanteCard').innerText;
   });
-  ok('estudante sem registros', r2.indexOf('Nenhum registro neste ano.') !== -1 && r2.indexOf('0 faltas, 0 atrasos, 0 ocorrências, 0 atestados, 0 relatórios e 0 registros de tutoria.') !== -1, r2);
+  ok('estudante sem registros', r2.indexOf('Em 2026, Zé Novo não tem faltas nem atrasos registrados.') !== -1 && r2.indexOf('Não há ocorrências registradas sobre Zé Novo neste ano.') !== -1 && r2.indexOf('Ainda não há relatórios nem registros de tutoria sobre Zé Novo neste ano.') !== -1, r2);
 
   ok('sem erros na página', erros.length === 0, erros);
   await b.close();

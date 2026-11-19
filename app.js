@@ -9232,61 +9232,108 @@ function montarResumoEstudanteHtml({ nome, todosIds, ocorrencias }) {
     const idsTutorado = (data.tutorados || []).filter(t => temId(t.id_estudante_origem)).map(t => String(t.id));
     const encontros = (data.encontros || []).filter(e => idsTutorado.includes(String(e.tutoradoId)) && doAno(e.data));
 
-    // Linha do tempo: o que aconteceu por último.
-    const eventos = [];
-    ocs.forEach(o => eventos.push({ data: o.data, icone: o.tipo === 'rapida' ? '⚡' : '⚠️',
-        texto: `${o.tipo === 'rapida' ? 'Ocorrência rápida' : 'Ocorrência disciplinar'}${o.autor ? ' (' + o.autor + ')' : ''}: ${o.relato || ''}` }));
-    relatorios.forEach(h => eventos.push({ data: h.criadoEm, icone: '📄', id: h.id, abrir: h.tipo === 'relatorio_comportamental' && !!h.payload,
-        texto: `${TIPOS_REL[h.tipo].replace(/^\S+\s/, '')}${h.professor ? ' (' + h.professor + ')' : ''}` }));
-    encontros.forEach(e => eventos.push({ data: e.data, icone: '🎓', texto: `Tutoria${e.tema ? ': ' + e.tema : ''}` }));
-    atestados.forEach(a => eventos.push({ data: a.data, icone: '🏥', texto: `Atestado (${a.dias || '?'} dia(s))${a.descricao ? ': ' + a.descricao : ''}` }));
-    eventos.sort((a, b) => String(b.data).localeCompare(String(a.data)));
-    const ultimos = eventos.slice(0, 5);
-
+    // Texto corrido de relatório, montado só com os registros (sem IA).
     const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
-    const partes = [
-        plural(faltas.length, 'falta', 'faltas'),
-        plural(atrasos.length, 'atraso', 'atrasos'),
-        plural(ocs.length, 'ocorrência', 'ocorrências') + (ocs.length ? ` (${disciplinares} disciplinar${disciplinares === 1 ? '' : 'es'}, ${rapidas} rápida${rapidas === 1 ? '' : 's'})` : ''),
-        plural(atestados.length, 'atestado', 'atestados'),
-        plural(relatorios.length, 'relatório', 'relatórios'),
-        plural(encontros.length, 'registro de tutoria', 'registros de tutoria')
-    ];
-    const ultimaData = (lista) => lista.map(x => x.data).filter(Boolean).sort().pop();
-    const ultFalta = ultimaData(faltas), ultAtraso = ultimaData(atrasos);
-    const detalhes = [];
-    if (porBim.some(b => b.n > 0)) detalhes.push('Faltas por bimestre: ' + porBim.map(b => `${b.bim}º: ${b.n}`).join(' · '));
-    if (ultFalta) detalhes.push('Última falta: ' + formatDate(ultFalta));
-    if (ultAtraso) detalhes.push('Último atraso: ' + formatDate(ultAtraso));
+    const listaE = (itens) => itens.length <= 1 ? (itens[0] || '') : itens.slice(0, -1).join(', ') + ' e ' + itens[itens.length - 1];
+    const curto = (t, max) => { const x = String(t || '').replace(/\s+/g, ' ').trim(); return x.length > max ? x.slice(0, max).replace(/\s+\S*$/, '') + '…' : x; };
+    const recentes = (lista) => lista.slice().sort((x, y) => String(y.data || y.criadoEm).localeCompare(String(x.data || x.criadoEm)));
+    const paragrafos = [];
 
-    const chip = (valor, rotulo, cor) => `<div class="resumo-est-chip" style="flex:1; min-width:90px; background:#fff; border:1px solid #e3e8ef; border-radius:8px; padding:8px 10px;">
-            <div style="font-size:20px; font-weight:bold; color:${cor};">${valor}</div><div style="font-size:12px; color:#5f6b7f;">${rotulo}</div></div>`;
+    // 1. Frequência e pontualidade
+    let p1;
+    if (!faltas.length && !atrasos.length) {
+        p1 = `Em ${ano}, ${nome} não tem faltas nem atrasos registrados.`;
+    } else {
+        const bimsComFalta = porBim.filter(x => x.n > 0).map(x => `${x.n} no ${x.bim}º bimestre`);
+        const ultFalta = recentes(faltas)[0];
+        const ultAtraso = recentes(atrasos)[0];
+        const partesF = faltas.length
+            ? `${plural(faltas.length, 'falta', 'faltas')}${bimsComFalta.length ? ' (' + listaE(bimsComFalta) + ')' : ''}, a mais recente em ${formatDate(ultFalta.data)}`
+            : 'nenhuma falta';
+        const partesA = atrasos.length
+            ? `${plural(atrasos.length, 'atraso', 'atrasos')}, o último em ${formatDate(ultAtraso.data)}`
+            : 'nenhum atraso';
+        p1 = `Em ${ano}, ${nome} registrou ${partesF}, e ${partesA}.`;
+    }
+    if (atestados.length) {
+        const at = recentes(atestados).map(x => `${formatDate(x.data)}${x.dias ? ', ' + plural(Number(x.dias) || 0, 'dia', 'dias') : ''}${x.descricao ? ', ' + curto(x.descricao, 60) : ''}`);
+        p1 += ` Apresentou ${plural(atestados.length, 'atestado', 'atestados')} (${listaE(at)}).`;
+    }
+    paragrafos.push({ titulo: 'Frequência', texto: p1 });
+
+    // 2. Comportamento (ocorrências)
+    let p2;
+    if (!ocs.length) {
+        p2 = `Não há ocorrências registradas sobre ${nome} neste ano.`;
+    } else {
+        const tipos = [];
+        if (disciplinares) tipos.push(plural(disciplinares, 'disciplinar', 'disciplinares'));
+        if (rapidas) tipos.push(plural(rapidas, 'rápida', 'rápidas'));
+        p2 = `Foram registradas ${plural(ocs.length, 'ocorrência', 'ocorrências')} (${listaE(tipos)}).`;
+        const mostrar = recentes(ocs).slice(0, 4);
+        mostrar.forEach(o => {
+            const quem = [o.autor, o.disciplina].filter(Boolean).join(', ');
+            p2 += ` Em ${formatDate(o.data)}${quem ? ' (' + quem + ')' : ''}: "${curto(o.relato, 180).replace(/[.!?;,]+$/, '')}".`;
+            if (o.devolutiva) p2 += ` Devolutiva: ${curto(o.devolutiva, 140).replace(/[.!?;,]+$/, '')}.`;
+        });
+        if (ocs.length > mostrar.length) p2 += ` As outras ${ocs.length - mostrar.length} estão na lista de ocorrências abaixo.`;
+    }
+    paragrafos.push({ titulo: 'Comportamento', texto: p2 });
+
+    // 3. Relatórios e acompanhamento
+    const links = [];
+    let p3;
+    if (!relatorios.length && !encontros.length) {
+        p3 = `Ainda não há relatórios nem registros de tutoria sobre ${nome} neste ano.`;
+    } else {
+        p3 = '';
+        if (relatorios.length) {
+            const descr = recentes(relatorios).map(h => `${TIPOS_REL[h.tipo].replace(/^\S+\s/, '')}${h.professor ? ' de ' + h.professor : ''} (${formatDate(h.criadoEm)})`);
+            p3 += `${relatorios.length === 1 ? 'Foi produzido 1 relatório' : 'Foram produzidos ' + relatorios.length + ' relatórios'}: ${listaE(descr)}.`;
+            const comTexto = recentes(relatorios).find(h => h.tipo === 'relatorio_comportamental' && h.payload && h.payload.texto);
+            if (comTexto) {
+                // Pula as linhas de cabeçalho ("Relatório pedagógico..." e "Turma: ...") e pega o 1º parágrafo.
+                const linhas = String(comTexto.payload.texto).split('\n').map(l => l.trim()).filter(Boolean)
+                    .filter(l => !/^relat[óo]rio pedag[óo]gico/i.test(l) && !/^turma:/i.test(l));
+                if (linhas[0]) p3 += ` No relatório comportamental mais recente consta: "${curto(linhas[0], 320)}"`;
+            }
+            recentes(relatorios).filter(h => h.tipo === 'relatorio_comportamental' && h.payload).forEach(h => links.push(h));
+        }
+        if (encontros.length) {
+            const temas = recentes(encontros).slice(0, 3).map(e => `${formatDate(e.data)}${e.tema ? ', ' + curto(e.tema, 60) : ''}`);
+            p3 += `${p3 ? ' ' : ''}Na tutoria, houve ${plural(encontros.length, 'encontro registrado', 'encontros registrados')} (${listaE(temas)}${encontros.length > 3 ? ' e outros' : ''}).`;
+        }
+    }
+    paragrafos.push({ titulo: 'Relatórios e acompanhamento', texto: p3 });
+
+    window.__textoResumoEstudante = `Relatório do estudante - ${nome} - ${ano}\n\n` + paragrafos.map(p => `${p.titulo}: ${p.texto}`).join('\n\n');
     const podeAbrir = typeof abrirDocBrancoHistorico === 'function';
+    const htmlLinks = podeAbrir && links.length
+        ? `<p style="margin:6px 0 0; font-size:13px;">${links.map(h => `<a href="#" onclick="abrirDocBrancoHistorico('${esc(String(h.id)).replace(/'/g, '')}'); return false;">✏️ Abrir relatório de ${formatDate(h.criadoEm)}</a>`).join(' · ')}</p>`
+        : '';
 
     return `
         <div class="card" id="resumoEstudanteCard" style="margin:10px 0 20px; border-left:4px solid #2563c9; background:#f6f8fb;">
-            <h3 style="margin-top:0;">📋 Resumo do estudante em ${ano}</h3>
-            <p style="margin:0 0 10px; font-size:14px; color:#1c2536;">${esc(partes.join(', ').replace(/, ([^,]*)$/, ' e $1'))}.</p>
-            <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
-                ${chip(faltas.length, 'Faltas', '#e53e3e')}
-                ${chip(atrasos.length, 'Atrasos', '#d69e2e')}
-                ${chip(ocs.length, 'Ocorrências', '#c05621')}
-                ${chip(relatorios.length + encontros.length, 'Relatórios e tutorias', '#2563c9')}
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                <h3 style="margin:0;">📋 Relatório do estudante (${ano})</h3>
+                <button class="btn btn-sm btn-secondary" onclick="copiarResumoEstudante(this)">📋 Copiar texto</button>
             </div>
-            ${detalhes.length ? `<p style="margin:0 0 8px; font-size:12px; color:#5f6b7f;">${esc(detalhes.join('  ·  '))}</p>` : ''}
-            ${ultimos.length ? `
-                <div style="font-size:13px;"><strong>Últimos registros:</strong>
-                    <ul style="margin:4px 0 0; padding-left:18px;">
-                        ${ultimos.map(ev => {
-                            const txt = String(ev.texto || '');
-                            const curto = txt.length > 140 ? txt.slice(0, 140) + '…' : txt;
-                            const botao = ev.abrir && podeAbrir ? ` <a href="#" onclick="abrirDocBrancoHistorico('${esc(String(ev.id)).replace(/'/g, '')}'); return false;">✏️ Abrir</a>` : '';
-                            return `<li style="margin-bottom:3px;">${ev.icone} <strong>${ev.data ? formatDate(ev.data) : '-'}</strong> ${esc(curto)}${botao}</li>`;
-                        }).join('')}
-                    </ul>
-                </div>` : '<p style="margin:0; font-size:13px; color:#5f6b7f;">Nenhum registro neste ano.</p>'}
-            <p style="margin:8px 0 0; font-size:11px; color:#8a94a6;">Conta só ${ano}. Ocorrências seguem o que este perfil pode ver; relatórios são os seus (feitos no Estagiário).</p>
+            <div style="margin-top:10px; font-size:14px; line-height:1.55; color:#1c2536;">
+                ${paragrafos.map(p => `<p style="margin:0 0 10px;"><strong>${esc(p.titulo)}.</strong> ${esc(p.texto)}</p>`).join('')}
+            </div>
+            ${htmlLinks}
+            <p style="margin:8px 0 0; font-size:11px; color:#8a94a6;">Texto montado automaticamente com os registros de ${ano}. Ocorrências seguem o que este perfil pode ver; relatórios são os seus (feitos no Estagiário).</p>
         </div>`;
+}
+
+function copiarResumoEstudante(botao) {
+    const texto = window.__textoResumoEstudante || '';
+    const pronto = () => { if (botao) { const t = botao.textContent; botao.textContent = '✅ Copiado'; setTimeout(() => { botao.textContent = t; }, 1500); } };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(pronto, () => prompt('Copie o texto:', texto));
+    } else {
+        prompt('Copie o texto:', texto);
+    }
 }
 
 // Busca as Notas Oficiais (Mapão/Avaliações da Gestão) entre-documentos, para quem não é gestor
