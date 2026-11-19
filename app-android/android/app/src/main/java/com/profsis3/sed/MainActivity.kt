@@ -179,6 +179,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        private const val PROFSIS_START_URL = "https://rafanunesran.github.io/ProfSis3/"
+        // Endereço novo (EdiProf). O github.io é bloqueado no wi-fi de muitas escolas.
+        private const val PROFSIS_START_URL = "https://ediprof.vercel.app/"
     }
 }

@@ -28,18 +28,32 @@ import kotlin.concurrent.thread
  */
 object UpdateChecker {
 
-    private const val VERSION_URL = "https://rafanunesran.github.io/ProfSis3/app-android/dist/version.json"
+    // Tenta o endereço novo primeiro; se não tiver o arquivo (a Vercel não gera o APK) ou
+    // estiver fora, cai no github.io (que pode estar bloqueado no wi-fi da escola).
+    private val VERSION_URLS = listOf(
+        "https://ediprof.vercel.app/app-android/dist/version.json",
+        "https://rafanunesran.github.io/ProfSis3/app-android/dist/version.json"
+    )
     private const val APK_FILE_NAME = "profsis3-update.apk"
 
     fun checkForUpdate(activity: Activity) {
         thread {
             try {
-                val json = (URL(VERSION_URL).openConnection() as HttpURLConnection).run {
-                    connectTimeout = 8000
-                    readTimeout = 8000
-                    inputStream.bufferedReader().use { it.readText() }
+                var remote: JSONObject? = null
+                for (url in VERSION_URLS) {
+                    try {
+                        val json = (URL(url).openConnection() as HttpURLConnection).run {
+                            connectTimeout = 8000
+                            readTimeout = 8000
+                            inputStream.bufferedReader().use { it.readText() }
+                        }
+                        remote = JSONObject(json)
+                        break
+                    } catch (e: Exception) {
+                        // tenta o próximo endereço
+                    }
                 }
-                val remote = JSONObject(json)
+                if (remote == null) return@thread
                 val remoteVersionCode = remote.getInt("versionCode")
                 val remoteVersionName = remote.optString("versionName", "")
                 val apkUrl = remote.getString("apkUrl")

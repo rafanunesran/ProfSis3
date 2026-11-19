@@ -6,7 +6,8 @@
 //   2. o cartão não cobre a tela (o resto do site continua clicável);
 //   3. fechar guarda no aparelho: recarregando, não aparece de novo;
 //   4. quem assina um plano vê o destaque de assinante (mesmo tendo fechado o aviso comum);
-//   5. no ediprof.vercel.app e no app Android (WebView) não aparece;
+//   5. no ediprof.vercel.app não aparece; no app Android antigo (WebView no github.io) pede
+//      para atualizar o app, e no app novo (que abre ediprof.vercel.app) não aparece;
 //   6. o nome visível é EdiProf (título, marca do menu).
 //
 // Como rodar: python3 -m http.server 8877 --bind 127.0.0.1 &  e  node testes/teste-aviso-endereco.js
@@ -102,9 +103,14 @@ async function abrir(ctx, url) {
     ok('no endereço novo não aparece', (await page.locator('#avisoEndereco').count()) === 0);
     ok('marca do menu diz EdiProf', await page.evaluate(() => !document.querySelector('.nav-marca-nome') || document.querySelector('.nav-marca-nome').textContent === 'EdiProf'));
     await ctxV.close();
-    const ctxApk = await contexto(browser, { userAgent: 'Mozilla/5.0 (Linux; Android 13; Pixel 7; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0 Mobile Safari/537.36' });
+    const ctxApk = await contexto(browser, { viewport: { width: 390, height: 780 }, userAgent: 'Mozilla/5.0 (Linux; Android 13; Pixel 7; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0 Mobile Safari/537.36' });
     page = await abrir(ctxApk, GH);
-    ok('no app Android (github.io por dentro) não aparece', (await page.locator('#avisoEndereco').count()) === 0);
+    ok('no app Android antigo (github.io por dentro) pede para atualizar o app', /Atualize o app/.test(await page.locator('#avisoEndereco').innerText()));
+    await page.screenshot({ path: path.join(process.env.PROFSIS_FOTOS || '/tmp', 'aviso-endereco-app-antigo.png') });
+    const ctxApkNovo = await contexto(browser, { viewport: { width: 390, height: 780 }, userAgent: 'Mozilla/5.0 (Linux; Android 13; Pixel 7; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0 Mobile Safari/537.36' });
+    const pNovo = await abrir(ctxApkNovo, 'https://ediprof.vercel.app/');
+    ok('no app Android novo (ediprof.vercel.app) não aparece', (await pNovo.locator('#avisoEndereco').count()) === 0);
+    await ctxApkNovo.close();
     await ctxApk.close();
 
     await browser.close();

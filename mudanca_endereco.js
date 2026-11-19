@@ -5,8 +5,8 @@
 // tela: o resto do site segue clicável por trás.
 //
 // Quando aparece:
-//   - só no github.io, no navegador (no endereço novo, no app Android e em qualquer
-//     outro lugar não aparece);
+//   - só no github.io (no endereço novo e em qualquer outro lugar não aparece);
+//   - no app Android antigo (que ainda abre o github.io) o texto pede para atualizar o app;
 //   - uma vez por aparelho (fica guardado no localStorage);
 //   - se a pessoa já tinha visto o aviso comum e depois entra com uma conta que
 //     assina um plano, aparece de novo UMA vez, na versão para assinantes.
@@ -20,11 +20,13 @@
     const CHAVE_VISTO = 'ediprof_aviso_endereco_v1';   // '' | 'geral' | 'assinante'
 
     function noEnderecoAntigo() {
-        if (!/(^|\.)github\.io$/i.test(location.hostname)) return false;
-        // O app Android (APK) ainda abre o github.io por dentro. Lá o aviso só confundiria:
-        // o botão levaria para o endereço novo e, na próxima abertura, o app voltaria ao antigo.
-        if (/; wv\)/.test(navigator.userAgent || '')) return false;
-        return true;
+        return /(^|\.)github\.io$/i.test(location.hostname);
+    }
+
+    // App Android (APK) antigo: ele abre o github.io por dentro. O app novo já abre o
+    // endereço novo, então quem vê o aviso aqui precisa ATUALIZAR o app.
+    function noAppAntigo() {
+        return /; wv\)/.test(navigator.userAgent || '');
     }
 
     function ler() { try { return localStorage.getItem(CHAVE_VISTO) || ''; } catch (e) { return ''; } }
@@ -104,18 +106,26 @@
         el.innerHTML =
             '<button type="button" class="ae-fechar" aria-label="Fechar aviso">×</button>' +
             '<p class="ae-titulo" id="avisoEnderecoTitulo">📢 O SisProf agora é EdiProf</p>' +
-            '<p class="ae-texto">Mudamos de nome e de endereço. Este endereço continua funcionando por enquanto, ' +
-            'e o novo abre também nas escolas que bloqueiam o antigo. Salve o novo nos favoritos:</p>' +
+            (noAppAntigo()
+                ? '<p class="ae-texto">Mudamos de nome e de endereço. O endereço novo abre também nas escolas que bloqueiam o antigo:</p>'
+                : '<p class="ae-texto">Mudamos de nome e de endereço. Este endereço continua funcionando por enquanto, ' +
+                  'e o novo abre também nas escolas que bloqueiam o antigo. Salve o novo nos favoritos:</p>') +
             '<a class="ae-endereco" href="' + ENDERECO_NOVO + '">ediprof.vercel.app</a>' +
+            (noAppAntigo()
+                ? '<ol class="ae-passos"><li><b>Atualize o app:</b> fora da escola (no wi-fi de casa ou nos dados móveis), ' +
+                  'feche e abra o app. Quando aparecer "Nova versão disponível", toque em <b>Atualizar</b>.</li>' +
+                  '<li>O app novo já abre o endereço novo, que funciona no wi-fi da escola.</li>' +
+                  '<li>Entre com o <b>mesmo e-mail e senha</b>. Seus dados vêm da nuvem.</li></ol>'
+                : '') +
             (assinante
                 ? '<div class="ae-assinante"><b>💛 Sua assinatura' + (plano ? ' (' + plano + ')' : '') +
                   ' continua valendo.</b> Entre no endereço novo com o <b>mesmo e-mail e senha</b>: o plano, as turmas ' +
                   'e os dados vão junto. Não precisa pagar de novo.</div>'
-                : '<ol class="ae-passos"><li>Abra <b>ediprof.vercel.app</b>.</li>' +
+                : noAppAntigo() ? '' : '<ol class="ae-passos"><li>Abra <b>ediprof.vercel.app</b>.</li>' +
                   '<li>Entre com o <b>mesmo e-mail e senha</b> de sempre.</li>' +
                   '<li>Seus dados vêm da nuvem. Se instalou o app na tela inicial, instale de novo pelo endereço novo.</li></ol>') +
             '<div class="ae-botoes">' +
-                '<a class="ae-ir" href="' + ENDERECO_NOVO + '">Ir para o EdiProf</a>' +
+                '<a class="ae-ir" href="' + ENDERECO_NOVO + '">' + (noAppAntigo() ? 'Abrir o endereço novo agora' : 'Ir para o EdiProf') + '</a>' +
                 '<button type="button" class="ae-depois">Agora não</button>' +
                 (logado && typeof exportarArquivoProfsis === 'function'
                     ? '<button type="button" class="ae-copia">💾 Antes, baixar minha cópia de segurança</button>' : '') +
