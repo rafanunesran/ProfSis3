@@ -1,4 +1,4 @@
-// icones.js — galeria de ícones do SisProf (estilo "vidro": forma de destaque atrás,
+// icones.js — galeria de ícones do EdiProf (estilo "vidro": forma de destaque atrás,
 // forma cinza translúcida na frente, e um brilho desfocado onde as duas se cruzam).
 //
 // Os ícones seguem o tema: a forma de trás usa --ic-a (a cor de destaque do tema), a da

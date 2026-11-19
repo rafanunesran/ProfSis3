@@ -1,4 +1,4 @@
-// localdb.js — Armazenamento local do SisProf (IndexedDB)
+// localdb.js — Armazenamento local do EdiProf (IndexedDB)
 // ============================================================================
 //  POR QUE ESTE ARQUIVO EXISTE
 //    A partir da adequação de setembro/2026, o dado pessoal do estudante não vai

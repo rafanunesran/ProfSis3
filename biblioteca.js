@@ -671,7 +671,7 @@ async function bibliotecaImprimirMaterial(id) {
     </style></head><body>
       <header>
         ${logoEscola ? `<img src="${logoEscola}" alt="Logo">` : ''}
-        <div>${nomeEscola ? `<div style="font-weight:bold;">${esc(nomeEscola)}</div>` : ''}<div style="font-size:12px;color:#5f6b7f;">Biblioteca de Apoio — SisProf</div></div>
+        <div>${nomeEscola ? `<div style="font-weight:bold;">${esc(nomeEscola)}</div>` : ''}<div style="font-size:12px;color:#5f6b7f;">Biblioteca de Apoio — EdiProf</div></div>
       </header>
       <h1>${esc(m.titulo || 'Material')}</h1>
       <div class="meta">

@@ -133,7 +133,7 @@ async function carregarConfigCorte() {
             const d = new Date(cfg.dataCorte);
             if (!isNaN(d.getTime())) _dataCorte = d;
         }
-    } catch (e) { console.warn('[SisProf] Não foi possível ler a data de corte:', e); }
+    } catch (e) { console.warn('[EdiProf] Não foi possível ler a data de corte:', e); }
 }
 
 // O super admin pode marcar contas específicas para seguirem 100% online (ver
@@ -168,9 +168,9 @@ async function carregarIsencaoOnline() {
         // Grava os dois desfechos: é assim que o super admin consegue TIRAR a isenção
         // de uma conta e o aparelho obedecer na abertura seguinte.
         try { if (typeof metaSet === 'function') await metaSet(_chaveIsencao(fbUser.uid), isento); } catch (e) {}
-        if (isento) console.log('[SisProf] Conta isenta do corte (modo online completo).');
+        if (isento) console.log('[EdiProf] Conta isenta do corte (modo online completo).');
     } catch (e) {
-        console.warn('[SisProf] Não consegui ler o documento de acesso; vale a última resposta conhecida ' +
+        console.warn('[EdiProf] Não consegui ler o documento de acesso; vale a última resposta conhecida ' +
                      '(isenta: ' + lembrada + '):', e);
     }
 }
@@ -181,8 +181,8 @@ async function carregarIsencaoOnline() {
 // se não fosse isenta: modal de transição, estudante saindo da nuvem, cara de conta
 // offline. Por isso iniciarApp() chama isto de novo, já com a sessão de pé.
 async function prepararRegraDoCorte() {
-    try { await carregarConfigCorte(); } catch (e) { console.warn('[SisProf] Configuração do corte:', e); }
-    try { await carregarIsencaoOnline(); } catch (e) { console.warn('[SisProf] Isenção do corte:', e); }
+    try { await carregarConfigCorte(); } catch (e) { console.warn('[EdiProf] Configuração do corte:', e); }
+    try { await carregarIsencaoOnline(); } catch (e) { console.warn('[EdiProf] Isenção do corte:', e); }
 }
 
 // Três estados, um lugar só. Consultado pela guarda, pela persistência e pela interface.
@@ -318,7 +318,7 @@ async function getData(collectionName, docId) {
             window.ultimaLeituraNegada = !!(error && error.code === 'permission-denied');
             console.error(`Erro ao buscar ${collectionName}/${docId}:`, error && error.code, error);
             if (error && error.code === 'permission-denied') {
-                console.warn('[SisProf] Leitura negada pelas Regras do Firestore (não é falta de internet).');
+                console.warn('[EdiProf] Leitura negada pelas Regras do Firestore (não é falta de internet).');
             } else {
                 alert("Erro de conexão ao buscar dados. Verifique sua internet.");
             }
@@ -380,7 +380,7 @@ async function _lembrarGravacaoRecusada(colecao, docId, erro) {
         };
         await metaSet(RECUSADAS_CHAVE, fila);
         window.temGravacaoRecusada = true;
-    } catch (e) { console.warn('[SisProf] Não consegui anotar a gravação recusada:', e); }
+    } catch (e) { console.warn('[EdiProf] Não consegui anotar a gravação recusada:', e); }
 }
 
 async function _esquecerGravacaoRecusada(docId) {
@@ -600,7 +600,7 @@ function aguardarAuthPronto(timeoutMs) {
         try {
             const unsub = firebase.auth().onAuthStateChanged(() => { if (unsub) unsub(); done(); });
         } catch (e) {
-            console.warn('[SisProf] Falha ao aguardar o Auth:', e);
+            console.warn('[EdiProf] Falha ao aguardar o Auth:', e);
             return done();
         }
         setTimeout(done, timeoutMs || 8000);
@@ -611,7 +611,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Armazenamento local primeiro: é dele que sai a marca de transição já feita, e é
     // para ele que o espelho antigo do localStorage é trazido.
     if (typeof localdbPreparar === 'function') {
-        try { await localdbPreparar(); } catch (e) { console.warn('[SisProf] localdb:', e); }
+        try { await localdbPreparar(); } catch (e) { console.warn('[EdiProf] localdb:', e); }
     }
     try {
         if (typeof metaGet === 'function') window.dadosMigradosLocalmente = !!(await metaGet('migracaoV2'));
@@ -1065,7 +1065,7 @@ async function prepararBackupCifrado(senha) {
         if (!fbUser || !senha) return;
         await desbloquearChaveBackup(fbUser.uid, senha);
     } catch (e) {
-        console.warn('[SisProf] Não foi possível preparar a chave de backup:', e);
+        console.warn('[EdiProf] Não foi possível preparar a chave de backup:', e);
     }
 }
 
@@ -1450,7 +1450,7 @@ async function confirmarAceiteTermos() {
 }
 
 function recusarTermos() {
-    alert('Para utilizar o SisProf é necessário concordar com os Termos de Uso.\nO acesso será encerrado.');
+    alert('Para utilizar o EdiProf é necessário concordar com os Termos de Uso.\nO acesso será encerrado.');
     const modal = document.getElementById('modalAceiteTermos');
     if (modal) modal.style.display = 'none';
     if (typeof logout === 'function') logout();
@@ -1639,7 +1639,7 @@ async function carregarDadosUsuario() {
     //    transição, é a fonte da verdade.
     let local = null;
     try { if (typeof localGet === 'function') local = await localGet(key); }
-    catch (e) { console.warn('[SisProf] Não consegui ler a cópia local:', e); }
+    catch (e) { console.warn('[EdiProf] Não consegui ler a cópia local:', e); }
 
     // 2) Camada NUVEM — turmas, agenda, planos de aula, documentação.
     const nuvem = await getData('app_data', key);
@@ -1656,7 +1656,7 @@ async function carregarDadosUsuario() {
         // travamos só a escrita na NUVEM — o trabalho local continua podendo ser salvo.
         window.bloquearEscritaNuvem = true;
         data = juntarDados(local, null);
-        console.warn('[SisProf] Nuvem não respondeu. Trabalhando com a cópia deste aparelho; envio para a nuvem bloqueado.');
+        console.warn('[EdiProf] Nuvem não respondeu. Trabalhando com a cópia deste aparelho; envio para a nuvem bloqueado.');
         return !!local;
     }
 
@@ -1694,7 +1694,7 @@ async function carregarDadosUsuario() {
         // Grava no aparelho já: é o que faz o trabalho sobreviver mesmo que a conversão
         // para cifrado não aconteça hoje (sem a chave, por exemplo).
         try { if (typeof localSet === 'function') await localSet(key, data); } catch (e) {}
-        console.log('[SisProf] Conta ainda não convertida: dado pessoal em claro adotado da nuvem.');
+        console.log('[EdiProf] Conta ainda não convertida: dado pessoal em claro adotado da nuvem.');
     }
 
     // [FASE 7] A camada pessoal cifrada. É ela que faz uma máquina nova funcionar sem
@@ -1716,7 +1716,7 @@ async function carregarDadosUsuario() {
         if (localVazio) {
             data = juntarDados(remoto.dados, nuvem);
             try { if (typeof localSet === 'function') await localSet(key, data); } catch (e) {}
-            console.log('[SisProf] Camada pessoal recuperada da nuvem (cifrada).');
+            console.log('[EdiProf] Camada pessoal recuperada da nuvem (cifrada).');
         } else {
             // O aparelho tem cópia própria: JUNTA com a da nuvem, registro a registro,
             // em vez de ignorá-la. Era aqui que um aparelho desatualizado apagava o que
@@ -1725,7 +1725,7 @@ async function carregarDadosUsuario() {
             if (entrou.total) {
                 try { if (typeof localSet === 'function') await localSet(key, data); } catch (e) {}
                 window.pessoalRecuperadoDaNuvem = entrou.por;
-                console.log('[SisProf] Registros de outro aparelho juntados a este:', entrou.por);
+                console.log('[EdiProf] Registros de outro aparelho juntados a este:', entrou.por);
             }
             // O caminho inverso é o que devolve a perda: o que só este aparelho tem
             // volta para a nuvem já na abertura, sem esperar o professor clicar em algo.
@@ -1733,15 +1733,15 @@ async function carregarDadosUsuario() {
                 JSON.parse(JSON.stringify(dividirDados(remoto.dados).local)), dividirDados(data).local);
             if (faltaNaNuvem.total) {
                 window.pessoalFaltaNaNuvem = faltaNaNuvem.por;
-                console.log('[SisProf] Registros deste aparelho que a nuvem perdeu:', faltaNaNuvem.por);
+                console.log('[EdiProf] Registros deste aparelho que a nuvem perdeu:', faltaNaNuvem.por);
             }
         }
         window._ivPessoalConhecido = remoto.iv;
     } else if (remoto.estado === 'sem-chave') {
         window.pessoalSemChave = true;
-        console.warn('[SisProf] Há dados cifrados na nuvem, mas a chave não está neste aparelho.');
+        console.warn('[EdiProf] Há dados cifrados na nuvem, mas a chave não está neste aparelho.');
     } else {
-        console.warn('[SisProf] Camada pessoal cifrada não pôde ser lida; envio suspenso.');
+        console.warn('[EdiProf] Camada pessoal cifrada não pôde ser lida; envio suspenso.');
     }
 
     // Última conferência, e de propósito só aqui: a camada pessoal pode ter vindo do
@@ -1752,14 +1752,14 @@ async function carregarDadosUsuario() {
     // Sobra de junção antiga: o mesmo aluno duas vezes na mesma turma (shared.js).
     if (typeof tirarEstudantesRepetidos === 'function') {
         const saiu = tirarEstudantesRepetidos(data);
-        if (saiu) console.log('[SisProf] Estudantes repetidos na mesma turma retirados:', saiu);
+        if (saiu) console.log('[EdiProf] Estudantes repetidos na mesma turma retirados:', saiu);
     }
     const veredito = await _conferirCamadaLocal(key, local, data);
     if (!veredito.ok) {
         window.bloquearEscritaLocal = true;
         window.bloquearEscritaNuvem = true;
         window.perdaLocalDetectada = veredito;
-        console.error('[SisProf] A cópia deste aparelho voltou vazia, mas tinha ' +
+        console.error('[EdiProf] A cópia deste aparelho voltou vazia, mas tinha ' +
             veredito.anterior.total + ' registro(s). Salvamento BLOQUEADO.');
         return false;
     }
@@ -1773,7 +1773,7 @@ async function carregarDadosUsuario() {
 async function lerDocUsuario(chave) {
     let local = null;
     try { if (typeof localGet === 'function') local = await localGet(chave); }
-    catch (e) { console.warn('[SisProf] Cópia local de ' + chave + ':', e); }
+    catch (e) { console.warn('[EdiProf] Cópia local de ' + chave + ':', e); }
 
     const nuvem = await getData('app_data', chave);
 
@@ -1862,7 +1862,7 @@ async function lerCamadaPessoalCifrada(chave) {
         const dados = await decifrarPacote(doc, dek, (n) => getData('app_data', id + '_p' + n));
         return { estado: 'ok', dados: dados, iv: doc.iv || null };
     } catch (e) {
-        console.error('[SisProf] Não consegui decifrar a camada pessoal:', e);
+        console.error('[EdiProf] Não consegui decifrar a camada pessoal:', e);
         return { estado: 'erro', erro: e.message };
     }
 }
@@ -1887,10 +1887,10 @@ async function _juntarPacoteDeOutroAparelho(chave, dados, dek) {
         window._ivPessoalConhecido = doc.iv;
         if (entrou.total) {
             try { if (typeof localSet === 'function') await localSet(chave, dados); } catch (e) {}
-            console.log('[SisProf] Outro aparelho gravou no meio; registros juntados:', entrou.por);
+            console.log('[EdiProf] Outro aparelho gravou no meio; registros juntados:', entrou.por);
         }
     } catch (e) {
-        console.warn('[SisProf] Não consegui conferir o pacote de outro aparelho:', e);
+        console.warn('[EdiProf] Não consegui conferir o pacote de outro aparelho:', e);
     }
 }
 
@@ -1957,7 +1957,7 @@ function escutarOutrosAparelhos(chave) {
             return;
         }
         aplicarClaro(doc);
-    }, err => console.warn('[SisProf] Escuta do documento:', err)));
+    }, err => console.warn('[EdiProf] Escuta do documento:', err)));
 
     // Pacote pessoal cifrado.
     const idPessoal = chavePessoalCifrada(chave);
@@ -1981,11 +1981,11 @@ function escutarOutrosAparelhos(chave) {
         } catch (e) {
             // As partes do pacote grande chegam logo depois da principal: tenta de novo.
             if (++tentativas <= 3) setTimeout(() => docRef(idPessoal).get().then(lerPacote).catch(() => {}), 1500 * tentativas);
-            else console.warn('[SisProf] Não consegui ler o pacote de outro aparelho:', e);
+            else console.warn('[EdiProf] Não consegui ler o pacote de outro aparelho:', e);
         }
     };
     _pararEscutaOutrosAparelhos.push(docRef(idPessoal).onSnapshot(s => { lerPacote(s); },
-        err => console.warn('[SisProf] Escuta do pacote pessoal:', err)));
+        err => console.warn('[EdiProf] Escuta do pacote pessoal:', err)));
     return true;
 }
 
@@ -2003,7 +2003,7 @@ async function _aplicarMudancaDeOutroAparelho(chave) {
 // decifrou, ou porque confirmou que nao existe nada.
 async function enviarCamadaPessoalCifrada(chave, dados) {
     if (window.pessoalCifradoLido !== true) {
-        console.warn('[SisProf] Camada pessoal não enviada: esta sessão não confirmou o que há na nuvem.');
+        console.warn('[EdiProf] Camada pessoal não enviada: esta sessão não confirmou o que há na nuvem.');
         return false;
     }
     const dek = (typeof obterChaveBackup === 'function') ? await obterChaveBackup() : null;
@@ -2024,7 +2024,7 @@ async function enviarCamadaPessoalCifrada(chave, dados) {
         const antes = window._partesPessoal || 1;
         for (let i = pacote.principal.partes + 1; i <= antes; i++) {
             try { await db.collection('app_data').doc(id + '_p' + i).delete(); }
-            catch (e) { console.warn('[SisProf] Sobra da camada pessoal não removida:', e); }
+            catch (e) { console.warn('[EdiProf] Sobra da camada pessoal não removida:', e); }
         }
         window._partesPessoal = pacote.principal.partes;
         window._ivPessoalConhecido = pacote.principal.iv;
@@ -2037,18 +2037,18 @@ async function enviarCamadaPessoalCifrada(chave, dados) {
             try {
                 const volta = await lerCamadaPessoalCifrada(chave);
                 if (volta.estado !== 'ok') {
-                    console.error('[SisProf] O pacote cifrado não voltou legível:', volta.estado);
+                    console.error('[EdiProf] O pacote cifrado não voltou legível:', volta.estado);
                     return false;
                 }
                 window._pessoalConferidoNestaSessao = true;
             } catch (e) {
-                console.error('[SisProf] Não consegui conferir o pacote cifrado:', e);
+                console.error('[EdiProf] Não consegui conferir o pacote cifrado:', e);
                 return false;
             }
         }
         return true;
     } catch (e) {
-        console.error('[SisProf] Falha ao enviar a camada pessoal cifrada:', e);
+        console.error('[EdiProf] Falha ao enviar a camada pessoal cifrada:', e);
         return false;
     }
 }
@@ -2059,7 +2059,7 @@ async function salvarDadosUsuario(chave, dados) {
     // local, nem nuvem. Gravar aqui é exatamente o que apagaria o que ainda dá para
     // recuperar.
     if (window.bloquearEscritaLocal) {
-        console.warn('[SisProf] Gravação bloqueada: a cópia deste aparelho não carregou por inteiro.');
+        console.warn('[EdiProf] Gravação bloqueada: a cópia deste aparelho não carregou por inteiro.');
         return;
     }
 
@@ -2074,7 +2074,7 @@ async function salvarDadosUsuario(chave, dados) {
     // sempre a mesma do carregamento. Divergiu: alguma coisa saiu do lugar, e o certo
     // é não gravar. O trabalho continua na tela e na cópia do aparelho.
     if (window.chaveDosDadosCarregados && chave !== window.chaveDosDadosCarregados) {
-        console.error('[SisProf] Gravação RECUSADA: os dados na tela vieram de "' +
+        console.error('[EdiProf] Gravação RECUSADA: os dados na tela vieram de "' +
             window.chaveDosDadosCarregados + '" e a gravação iria para "' + chave + '".');
         window.gravacaoEmChaveErrada = { de: window.chaveDosDadosCarregados, para: chave };
         if (!window._avisouChaveErrada) {
@@ -2098,7 +2098,7 @@ async function salvarDadosUsuario(chave, dados) {
             if (typeof metaSet === 'function' && typeof censoPessoal === 'function') {
                 await metaSet(_chaveCenso(chave), censoPessoal(dados));
             }
-        } catch (e) { console.warn('[SisProf] Não consegui gravar o censo local:', e); }
+        } catch (e) { console.warn('[EdiProf] Não consegui gravar o censo local:', e); }
     }
 
     if (window.bloquearEscritaNuvem) return;
@@ -2121,7 +2121,7 @@ async function salvarDadosUsuario(chave, dados) {
         // entrou. Reescrever o documento agora apagaria a única cópia que existe lá.
         // Melhor um documento desatualizado do que nenhum: o trabalho está salvo no
         // aparelho e a faixa do topo avisa.
-        console.warn('[SisProf] Documento em claro preservado: a cópia cifrada não foi gravada.');
+        console.warn('[EdiProf] Documento em claro preservado: a cópia cifrada não foi gravada.');
         window.pessoalNaoSincronizou = true;
         return;
     }

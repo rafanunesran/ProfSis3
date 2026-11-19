@@ -262,7 +262,7 @@ async function descobrirEscola() {
     } catch (_) { /* sem escola */ }
     if (!atEscola) {
         const h = document.querySelector('#appContainer h1');
-        const m = h && /SisProf\s*-\s*(.+)$/.exec(h.textContent.trim());
+        const m = h && /EdiProf\s*-\s*(.+)$/.exec(h.textContent.trim());
         if (m && m[1] && m[1].trim() !== 'Escola') atEscola = m[1].trim();
     }
     return atEscola;

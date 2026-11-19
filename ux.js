@@ -1,4 +1,4 @@
-// ux.js — camada de experiência do SisProf (estrutura do tema Híbrido e atalhos).
+// ux.js — camada de experiência do EdiProf (estrutura do tema Híbrido e atalhos).
 //
 // Nada aqui salva, apaga ou calcula dado. Toda ação passa pelo que já existe: clicar
 // no próprio botão do menu (que chama showScreen) ou chamar as funções de sempre
@@ -73,7 +73,7 @@
         // Topo do menu lateral: marca e o botão de recolher/abrir
         const marca = document.createElement('div');
         marca.className = 'nav-marca';
-        marca.innerHTML = '<span class="nav-marca-selo" aria-hidden="true">S</span><span class="nav-marca-nome">SisProf</span>' +
+        marca.innerHTML = '<span class="nav-marca-selo" aria-hidden="true">E</span><span class="nav-marca-nome">EdiProf</span>' +
             '<button type="button" class="nav-recolher" aria-label="Recolher o menu" title="Recolher o menu">' +
             '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
             '<rect x="3.5" y="4" width="17" height="16" rx="3"/><path d="M9.5 4v16"/><path d="m15.5 10-2 2 2 2"/></svg></button>';
@@ -353,8 +353,8 @@
         if (it.aviso) return;
         fecharPaleta();
         try {
-            Promise.resolve(it.fazer()).catch(err => console.warn('[SisProf] Busca rápida:', err));
-        } catch (err) { console.warn('[SisProf] Busca rápida:', err); }
+            Promise.resolve(it.fazer()).catch(err => console.warn('[EdiProf] Busca rápida:', err));
+        } catch (err) { console.warn('[EdiProf] Busca rápida:', err); }
     }
 
     function fecharPaleta() {
@@ -460,7 +460,7 @@
             try {
                 if (b.dataset.acao === 'buscar') abrirPaleta();
                 else if (b.dataset.acao === 'estagiario') window.abrirModalGerarDocumentoIA();
-            } catch (err) { console.warn('[SisProf] Atalho do início:', err); }
+            } catch (err) { console.warn('[EdiProf] Atalho do início:', err); }
         });
         dash.insertBefore(secao, dash.firstChild);
     }

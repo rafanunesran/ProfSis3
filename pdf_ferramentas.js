@@ -1,4 +1,4 @@
-// pdf_ferramentas.js — A TELA "PDF": a primeira funcao premium do SisProf.
+// pdf_ferramentas.js — A TELA "PDF": a primeira funcao premium do EdiProf.
 //
 // POR QUE ISTO EXISTE
 //   Todo professor acaba num site de PDF gratuito: juntar dois anexos, tirar uma
@@ -2602,7 +2602,7 @@ function pdfRenderCatalogo() {
             ${premium ? '' : `
                 <div style="background:#fffaf0; border:1px solid #fbd38d; border-radius:8px; padding:12px 14px; margin:12px 0; font-size:13px; color:#744210; line-height:1.6;">
                     ⭐ Estas ferramentas fazem parte do <strong>plano Professor</strong>. Você pode ver tudo o que
-                    existe aqui; para usar, é preciso assinar — é o que paga servidor, banco e IA do SisProf.
+                    existe aqui; para usar, é preciso assinar — é o que paga servidor, banco e IA do EdiProf.
                     <div style="margin-top:8px;">
                         <button class="btn btn-sm btn-primary" onclick="abrirModalApoie({ destaque: 'professor' })">
                             Ver o plano Professor</button>

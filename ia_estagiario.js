@@ -1640,7 +1640,7 @@ async function gerarAgendaMensalEstagiario(modo) {
             .replace(/{{Ano}}/g, ano);
 
         // 4. Carrega a grade fixa (definida pelo Gestor), exceções (dias atípicos) e as aulas que o
-        // próprio professor organizou em sua Grade de Horários dentro do SisProf.
+        // próprio professor organizou em sua Grade de Horários dentro do EdiProf.
         const gradeEscola = await getGradeEscola();
         if (gradeEscola.length === 0) return alert('A grade de horários ainda não foi configurada pela gestão.');
 
@@ -1885,7 +1885,7 @@ async function chamarIAEstruturada(promptText, btn) {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${currentKey}`,
                             'HTTP-Referer': 'https://rafanunesran.github.io/ProfSis3/',
-                            'X-Title': 'ProfSis3'
+                            'X-Title': 'EdiProf'
                         },
                         body: JSON.stringify({
                             model: modeloOR,

@@ -1,4 +1,4 @@
-// sw.js — Service Worker mínimo do SisProf.
+// sw.js — Service Worker mínimo do EdiProf.
 // Objetivo: permitir a instalação como app (PWA) no iPhone/iPad e Android e oferecer um
 // "shell" offline básico. Estratégia network-first para evitar servir JS/versões desatualizadas.
 

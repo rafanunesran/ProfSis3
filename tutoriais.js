@@ -1,7 +1,7 @@
 // tutoriais.js — A TELA "TUTORIAIS" e o BOTÃO "?" (tour na tela), no perfil professor.
 //
 // POR QUE ISTO EXISTE
-//   O SisProf cresceu: turmas com nove abas, Documentos, Tutoria, Estagiário, Biblioteca e
+//   O EdiProf cresceu: turmas com nove abas, Documentos, Tutoria, Estagiário, Biblioteca e
 //   seis Ferramentas. Quem chega agora não sabe por onde começar, e quem já usa não sabe
 //   o que cada botão faz. Duas ajudas, que se completam:
 //
@@ -147,7 +147,7 @@ const TOURS = {
         nome: 'Início e menu',
         preparar: () => irPara('dashboard'),
         passos: [
-            { titulo: 'Bem-vindo ao SisProf 👋', texto: 'Este tour mostra onde fica cada coisa. Use "Próximo" (ou a seta → do teclado) para avançar e "Sair" (ou Esc) para fechar a qualquer momento.' },
+            { titulo: 'Bem-vindo ao EdiProf 👋', texto: 'Este tour mostra onde fica cada coisa. Use "Próximo" (ou a seta → do teclado) para avançar e "Sair" (ou Esc) para fechar a qualquer momento.' },
             { alvo: '#appContainer nav.app-nav', titulo: 'O menu', texto: 'Todas as páginas ficam aqui, agrupadas por assunto: Dia a dia, Registros e Recursos. No celular, o menu fica embaixo e o botão "Mais" mostra o resto.' },
             { alvo: '#dashboard .ux-inicio', titulo: 'Início', texto: 'A saudação do dia e os atalhos: a busca rápida e o Estagiário.' },
             { alvo: cartaoDe('#agendaHoje'), titulo: '📅 Agenda do Dia', texto: 'O cronograma de hoje: as aulas (da sua agenda em Documentos › Minha Agenda), os horários fixos da escola (café, almoço...) e as tutorias marcadas, cada uma no seu horário, com "Registrar". Se está vazio, a agenda ainda não foi montada.' },
@@ -617,7 +617,7 @@ async function iniciarTour(id, opcoes) {
     if (typeof fecharTudoAntes === 'function') fecharTudoAntes();
 
     let preparo = null;
-    try { preparo = def.preparar ? await def.preparar() : null; } catch (e) { console.warn('[SisProf] Tour:', e); }
+    try { preparo = def.preparar ? await def.preparar() : null; } catch (e) { console.warn('[EdiProf] Tour:', e); }
     let aviso = null;
     if (preparo && preparo.trocarPara && TOURS[preparo.trocarPara]) {
         aviso = preparo.aviso;
@@ -843,7 +843,7 @@ const INICIANTE = [
                'O Início mostra a agenda e as tutorias do dia, os avisos da gestão e a cópia de segurança.',
                'Em qualquer página, o botão "?" no topo explica a tela em que você está.'] },
     { id: 'i-turmas', titulo: 'Cadastre suas turmas', tour: 'novaTurma',
-      praQue: 'Tudo no SisProf parte das turmas: chamada, notas, agenda e documentos.',
+      praQue: 'Tudo no EdiProf parte das turmas: chamada, notas, agenda e documentos.',
       passos: ['Abra "Turmas" e toque em "+ Nova Turma".',
                'Escolha a turma da escola (a lista vem da gestão), escreva a disciplina e o turno, e salve.',
                'Repita para cada turma. Se você dá duas disciplinas na mesma turma, cadastre as duas.',
@@ -1189,7 +1189,7 @@ function garantirTelaTutoriais() {
         '<div class="card tut-cabeca">' +
             '<div class="tut-cabeca-linha"><h2>📘 Tutoriais</h2>' +
             '<button type="button" class="btn btn-sm btn-secondary" id="tutTourAqui">? Como usar esta página</button></div>' +
-            '<p class="tut-sub">Manuais de todas as páginas e ferramentas do SisProf. Em cada um, "▶ Mostrar na tela" abre a página e destaca onde fica cada coisa. Em qualquer página, o botão "?" no topo faz o mesmo.</p>' +
+            '<p class="tut-sub">Manuais de todas as páginas e ferramentas do EdiProf. Em cada um, "▶ Mostrar na tela" abre a página e destaca onde fica cada coisa. Em qualquer página, o botão "?" no topo faz o mesmo.</p>' +
             '<input type="search" id="tutBusca" class="tut-busca" placeholder="🔎 Buscar: chamada, notas, PDF, certificado, agenda…" autocomplete="off">' +
             '<nav id="tutNav" class="tut-nav" aria-label="Seções dos tutoriais"></nav>' +
         '</div>' +

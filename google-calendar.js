@@ -1,7 +1,7 @@
 // google-calendar.js — Integração com o Google Agenda (client-side, sem servidor).
 //
 // Fluxo: o professor conecta a conta Google (OAuth via Google Identity Services), o sistema cria
-// um calendário dedicado "SisProf — Agenda Escolar" e mantém nele os blocos da grade (aulas,
+// um calendário dedicado "EdiProf — Agenda Escolar" e mantém nele os blocos da grade (aulas,
 // almoço, café, reunião, tutoria, etc.) como EVENTOS RECORRENTES semanais — um por bloco, com o
 // período indo até o fim do ano letivo e com EXDATE (exceções) para feriados, férias e recessos.
 //
@@ -23,10 +23,10 @@
     const GOOGLE_OAUTH_CLIENT_ID_PADRAO = '411519047707-gmomve1rn249lt0743qrbp10j0b14qcu.apps.googleusercontent.com';
 
     const SCOPES = 'https://www.googleapis.com/auth/calendar';
-    const CAL_SUMMARY = 'SisProf — Agenda Escolar';
+    const CAL_SUMMARY = 'EdiProf — Agenda Escolar';
     const TIMEZONE = 'America/Sao_Paulo';
     const API = 'https://www.googleapis.com/calendar/v3';
-    const DESC = 'Criado automaticamente pelo SisProf. Não edite manualmente — será sobrescrito na próxima sincronização.';
+    const DESC = 'Criado automaticamente pelo EdiProf. Não edite manualmente — será sobrescrito na próxima sincronização.';
 
     // Títulos dos blocos fixos — texto puro, sem emojis.
     const MAP_FIXO = {
@@ -192,7 +192,7 @@
         // 3) Nenhum existe: cria um.
         const criado = await apiFetch('/calendars', {
             method: 'POST',
-            body: { summary: CAL_SUMMARY, timeZone: TIMEZONE, description: 'Grade, blocos fixos e tutorias sincronizados pelo SisProf.' }
+            body: { summary: CAL_SUMMARY, timeZone: TIMEZONE, description: 'Grade, blocos fixos e tutorias sincronizados pelo EdiProf.' }
         });
         return criado.id;
     }
@@ -401,7 +401,7 @@
     // RECONCILIAÇÃO
     // =========================================================================
     async function listarEventosSisprof(calendarId) {
-        // Como o calendário é DEDICADO ao SisProf, listamos TODOS os eventos dele (sem filtrar por
+        // Como o calendário é DEDICADO ao EdiProf, listamos TODOS os eventos dele (sem filtrar por
         // dono — o id do usuário podia variar entre sessões e gerar duplicados). Casamos pela
         // sisprofKey. singleEvents=false pega as séries (não expande em instâncias); sem timeMin
         // para achar também séries cujo início já ficou no passado.
@@ -528,7 +528,7 @@
     }
 
     async function desconectar() {
-        const apagar = confirm('Deseja também APAGAR do Google Agenda os eventos criados pelo SisProf?\n\nOK = apagar os eventos.\nCancelar = manter os eventos, apenas desconectar.');
+        const apagar = confirm('Deseja também APAGAR do Google Agenda os eventos criados pelo EdiProf?\n\nOK = apagar os eventos.\nCancelar = manter os eventos, apenas desconectar.');
         try {
             if (apagar && gcalConectado()) {
                 atualizarStatus('⏳ Removendo eventos…');
@@ -553,7 +553,7 @@
     // Apaga o calendário dedicado inteiro (1 chamada) e recria do zero — útil para limpar eventos
     // antigos/duplicados sem precisar apagar centenas um a um.
     async function recriarCalendario() {
-        if (!confirm('Isso vai APAGAR o calendário "SisProf — Agenda Escolar" atual (removendo de uma vez todos os eventos que o app criou) e recriar do zero com eventos recorrentes.\n\nSeus outros calendários não são afetados. Continuar?')) return;
+        if (!confirm('Isso vai APAGAR o calendário "EdiProf — Agenda Escolar" atual (removendo de uma vez todos os eventos que o app criou) e recriar do zero com eventos recorrentes.\n\nSeus outros calendários não são afetados. Continuar?')) return;
         try {
             await pedirToken(true);
             if (data.googleCalendar && data.googleCalendar.calendarId) {
@@ -615,10 +615,10 @@
     function ajudaIOS() {
         alert(
             '📱 Usando no iPhone / iPad\n\n' +
-            '1) Abra o SisProf no Safari e toque em Compartilhar → "Adicionar à Tela de Início" para instalar o app.\n\n' +
+            '1) Abra o EdiProf no Safari e toque em Compartilhar → "Adicionar à Tela de Início" para instalar o app.\n\n' +
             '2) Toque em "Conectar Google Agenda" e autorize com sua conta Google.\n\n' +
             '3) Para os eventos aparecerem no app Calendário da Apple: abra Ajustes → Calendário → Contas → Adicionar Conta → Google e ative "Calendários".\n\n' +
-            'Pronto: a agenda "SisProf — Agenda Escolar" aparecerá no seu iPhone/iPad e será atualizada automaticamente.'
+            'Pronto: a agenda "EdiProf — Agenda Escolar" aparecerá no seu iPhone/iPad e será atualizada automaticamente.'
         );
     }
 

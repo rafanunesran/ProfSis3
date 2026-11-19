@@ -1,6 +1,6 @@
 {
-  "name": "SisProf — Sistema Escolar",
-  "short_name": "SisProf",
+  "name": "EdiProf — Sistema Escolar",
+  "short_name": "EdiProf",
   "description": "Gestão de turmas, tutorias e agenda escolar com sincronização para o Google Agenda.",
   "start_url": "./index.html",
   "scope": "./",

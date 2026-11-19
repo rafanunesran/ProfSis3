@@ -3,18 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SisProf</title>
+    <title>EdiProf</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&display=swap">
-    <link rel="stylesheet" href="styles.css?v=5.5">
+    <link rel="stylesheet" href="styles.css?v=5.5.1">
     <!-- PWA / iOS (iPhone e iPad) -->
-    <link rel="manifest" href="manifest.webmanifest?v=3">
+    <link rel="manifest" href="manifest.webmanifest?v=4">
     <meta name="theme-color" content="#16171b">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="SisProf">
+    <meta name="apple-mobile-web-app-title" content="EdiProf">
     <link rel="apple-touch-icon" href="resources/apple-touch-icon.png?v=2">
     <link rel="icon" type="image/png" sizes="192x192" href="resources/icon-192.png?v=2">
     <script>
@@ -40,7 +40,7 @@
             });
             window.instalarApp = function () {
                 if (jaInstalado) {
-                    alert('Você já está usando o SisProf como app. 👍');
+                    alert('Você já está usando o EdiProf como app. 👍');
                     return;
                 }
                 if (avisoInstalacao) {
@@ -53,25 +53,25 @@
                           '1. Abra este site no Safari.\n' +
                           '2. Toque em Compartilhar (o quadrado com a seta para cima).\n' +
                           '3. Escolha "Adicionar à Tela de Início".\n\n' +
-                          'Se já houver um ícone "SisProf" na tela de início, é só tocar nele.');
+                          'Se já houver um ícone "EdiProf" na tela de início, é só tocar nele.');
                     return;
                 }
                 // Sem o aviso do navegador: ou ele já considera o app instalado, ou o
                 // navegador não instala sites (ex.: alguns navegadores de fabricante).
                 var ehAndroid = /android/i.test(navigator.userAgent);
                 if (ehAndroid) {
-                    alert('O navegador indica que o SisProf já está instalado (ou não permite instalar por aqui).\n\n' +
+                    alert('O navegador indica que o EdiProf já está instalado (ou não permite instalar por aqui).\n\n' +
                           'PARA ABRIR:\n' +
-                          '• Procure o ícone "SisProf" na tela inicial ou na gaveta de apps (deslize para cima e pesquise "SisProf").\n' +
+                          '• Procure o ícone "EdiProf" na tela inicial ou na gaveta de apps (deslize para cima e pesquise "EdiProf").\n' +
                           '• Ou, no Chrome, toque no menu ⋮ e escolha "Abrir app".\n\n' +
                           'NÃO ENCONTROU? Reinstale:\n' +
-                          '1. Toque e segure o ícone antigo do SisProf (se houver) e escolha "Desinstalar" ou "Remover".\n' +
+                          '1. Toque e segure o ícone antigo do EdiProf (se houver) e escolha "Desinstalar" ou "Remover".\n' +
                           '2. Ou, no Chrome: menu ⋮ → Configurações → Configurações do site → Todos os sites → este site → "Limpar e redefinir".\n' +
                           '3. Volte a este site no Chrome, recarregue a página e toque de novo em "Instalar".\n\n' +
                           'Dica: use o Google Chrome — alguns navegadores não instalam sites.');
                 } else {
-                    alert('O navegador indica que o SisProf já está instalado (ou não permite instalar por aqui).\n\n' +
-                          'PARA ABRIR: procure "SisProf" no menu Iniciar / Launchpad, ou no Chrome digite chrome://apps na barra de endereço.\n\n' +
+                    alert('O navegador indica que o EdiProf já está instalado (ou não permite instalar por aqui).\n\n' +
+                          'PARA ABRIR: procure "EdiProf" no menu Iniciar / Launchpad, ou no Chrome digite chrome://apps na barra de endereço.\n\n' +
                           'PARA INSTALAR: no Chrome ou Edge, clique no ícone de instalar na barra de endereço, ou menu ⋮ → "Transmitir, salvar e compartilhar" → "Instalar página como app".');
                 }
             };
@@ -79,13 +79,13 @@
     </script>
     <script src="shared.js?v=3.22"></script>
     <!-- Galeria de ícones: troca os emojis do menu, abas, títulos e botões pelo desenho -->
-    <script src="icones.js?v=1.5" defer></script>
+    <script src="icones.js?v=1.5.1" defer></script>
     <!-- Experiência: menu agrupado, "Mais" no celular, busca rápida (Ctrl+K), tela atual no topo -->
-    <script src="ux.js?v=1.6" defer></script>
+    <script src="ux.js?v=1.6.1" defer></script>
     <!-- Armazenamento local (IndexedDB): onde o dado pessoal do estudante passa a viver -->
-    <script src="localdb.js?v=1.0"></script>
+    <script src="localdb.js?v=1.0.1"></script>
     <!-- Backup cifrado (WebCrypto): o Firestore so guarda bloco ilegivel -->
-    <script src="cripto.js?v=1.0" defer></script>
+    <script src="cripto.js?v=1.0.1" defer></script>
     <!-- Espacos com codigo de convite: a escola deixa de ser uma linha em schools_list -->
     <script src="espacos.js?v=1.3"></script>
 
@@ -103,20 +103,20 @@
     <!-- Leitura de .docx no navegador (Anexo III-PAEE importado de Word) -->
     <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
     <!-- Assinatura: planos, cobranca mensal no cartao (Mercado Pago) e o portao premium -->
-    <script src="assinatura.js?v=1.6.2" defer></script>
+    <script src="assinatura.js?v=1.6.2.1" defer></script>
     <!-- App Scripts -->
-    <script src="core.js?v=3.45" defer></script>
-    <script src="admin.js?v=3.46.0" defer></script>
-    <script src="financeiro.js?v=1.2" defer></script>
-    <script src="gestor.js?v=3.36" defer></script>
-    <script src="app.js?v=3.90" defer></script>
+    <script src="core.js?v=3.45.1" defer></script>
+    <script src="admin.js?v=3.46.0.1" defer></script>
+    <script src="financeiro.js?v=1.2.1" defer></script>
+    <script src="gestor.js?v=3.36.1" defer></script>
+    <script src="app.js?v=3.90.1" defer></script>
     <!-- Transicao para a versao local + aviso da data de corte -->
-    <script src="migracao.js?v=1.4.1" defer></script>
+    <script src="migracao.js?v=1.4.1.1" defer></script>
 
     <!-- Central de Resgate: procura dados em todas as origens que sobraram (ver resgate.js). -->
     <script src="resgate.js?v=1.4.1" defer></script>
-    <script src="ia_estagiario.js?v=3.47.0" defer></script>
-    <script src="biblioteca.js?v=1.3.2" defer></script>
+    <script src="ia_estagiario.js?v=3.47.0.1" defer></script>
+    <script src="biblioteca.js?v=1.3.2.1" defer></script>
     <!-- FERRAMENTAS (funcao premium): a tela com abas onde mora o trabalho de arquivo que
          o professor faria num site gratuito qualquer — e que, naquele site, custaria
          mandar o arquivo de uma crianca para o servidor de um terceiro.
@@ -133,14 +133,14 @@
          Nos dois casos a conta roda SO' no navegador: nenhum arquivo do professor sai do
          aparelho. As bibliotecas pesadas sao baixadas sob demanda, no uso. -->
     <script src="ferramentas.js?v=1.5" defer></script>
-    <script src="pdf_operacoes.js?v=1.0" defer></script>
-    <script src="pdf_ferramentas.js?v=1.0.1" defer></script>
+    <script src="pdf_operacoes.js?v=1.0.1" defer></script>
+    <script src="pdf_ferramentas.js?v=1.0.1.1" defer></script>
     <script src="ampliar_operacoes.js?v=1.0" defer></script>
     <script src="ampliar.js?v=1.0.3" defer></script>
     <script src="img_operacoes.js?v=1.0" defer></script>
     <script src="img.js?v=1.1" defer></script>
     <script src="poster_operacoes.js?v=1.0" defer></script>
-    <script src="poster.js?v=1.1" defer></script>
+    <script src="poster.js?v=1.1.1" defer></script>
     <script src="video_operacoes.js?v=1.2" defer></script>
     <script src="montagem_operacoes.js?v=1.0" defer></script>
     <script src="montagem.js?v=1.2" defer></script>
@@ -150,12 +150,14 @@
     <script src="quiz.js?v=1.2" defer></script>
     <!-- Ateliê: editor de artes da escola (cartaz, certificado, convite, slide...) -->
     <script src="atelie_operacoes.js?v=1.0" defer></script>
-    <script src="atelie.js?v=1.1" defer></script>
+    <script src="atelie.js?v=1.1.1" defer></script>
     <!-- Tutoriais (manuais + aba Iniciante) e o botão "?" com o tour de cada tela -->
-    <script src="tutoriais.js?v=1.7" defer></script>
+    <script src="tutoriais.js?v=1.7.1" defer></script>
     <!-- Calendário escolar + sincronização com o Google Agenda -->
     <script src="feriados.js?v=1.0" defer></script>
-    <script src="google-calendar.js?v=2.1.1" defer></script>
+    <script src="google-calendar.js?v=2.1.1.1" defer></script>
+    <!-- Aviso de endereço novo (só aparece no github.io) -->
+    <script src="mudanca_endereco.js?v=1.0" defer></script>
 </head>
 <body>
     <!-- TELA DE LOGIN/CADASTRO -->
@@ -503,7 +505,7 @@
             <hr style="border: 0; border-top: 1px solid #e3e8ef; margin: 15px 0;">
             <h3>📲 App no celular</h3>
             <p style="font-size: 13px; color: #5f6b7f; margin: 0 0 10px;">
-                Instale o SisProf como app para abrir direto da tela inicial, em tela cheia.
+                Instale o EdiProf como app para abrir direto da tela inicial, em tela cheia.
             </p>
             <button class="btn btn-primary" style="width: 100%;" onclick="instalarApp()">📲 Instalar / abrir o app</button>
             <button class="btn btn-secondary" style="width: 100%; margin-top: 20px;" onclick="closeModal('modalPerfilUsuario')">Fechar</button>
@@ -514,7 +516,7 @@
     <div id="modalAceiteTermos" class="aceite-overlay" style="display:none;">
         <div class="aceite-box">
             <h2>📄 Termos de Uso — Aceite necessário</h2>
-            <p class="aceite-intro">Atualizamos os <strong>Termos de Uso</strong> do SisProf. Para continuar utilizando a plataforma, é necessário ler e concordar com os termos abaixo.</p>
+            <p class="aceite-intro">Atualizamos os <strong>Termos de Uso</strong> do EdiProf. Para continuar utilizando a plataforma, é necessário ler e concordar com os termos abaixo.</p>
             <ul class="aceite-pontos">
                 <li>Os dados são de <strong>caráter auxiliar e não oficiais</strong> — não refletem a realidade sistêmica; os registros oficiais devem ser lançados no sistema oficial da rede.</li>
                 <li>As informações são <strong>confidenciais</strong> e <strong>não podem ser usadas de forma pública</strong>.</li>

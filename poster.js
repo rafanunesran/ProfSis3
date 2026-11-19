@@ -395,7 +395,7 @@ async function posGerar() {
         const doc = await PDFLib.PDFDocument.create();
         const fonte = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
         doc.setTitle(emLote ? 'Pôsteres — ' + lote.length + ' imagens' : 'Pôster — ' + lote[0].nome);
-        doc.setProducer('SisProf — Ferramentas');
+        doc.setProducer('EdiProf — Ferramentas');
 
         const resumo = [];
         let feitas = 0;

@@ -669,7 +669,7 @@ async function abrirModalAssinaturasAdmin() {
                     <strong style="font-size:13px;">Pagamentos sem dono</strong>
                     <p style="font-size:11px; color:#5f6b7f; margin:4px 0 8px 0;">
                         Dinheiro que entrou sem dar para saber de quem é — quase sempre porque a pessoa pagou
-                        com um e-mail do Mercado Pago diferente do que usa no SisProf. Vincule à conta certa e o
+                        com um e-mail do Mercado Pago diferente do que usa no EdiProf. Vincule à conta certa e o
                         plano sai na hora; as próximas cobranças da mesma assinatura já vão direto para ela.
                     </p>
                     <div id="listaSemDonoAdmin" style="font-size:12px; color:#5f6b7f;">Carregando...</div>
@@ -734,9 +734,9 @@ async function carregarPagamentosSemDonoAdmin() {
                             <button class="btn btn-sm btn-primary" onclick="vincularPagamentoSemDonoAdmin('${String(i._id).replace(/[^A-Za-z0-9_-]/g, '')}')">
                                 Vincular a uma conta
                             </button>
-                            <button class="btn btn-sm btn-secondary" title="Não é do SisProf (outra automação da mesma conta do Mercado Pago)"
+                            <button class="btn btn-sm btn-secondary" title="Não é do EdiProf (outra automação da mesma conta do Mercado Pago)"
                                     onclick="descartarPagamentoSemDonoAdmin('${String(i._id).replace(/[^A-Za-z0-9_-]/g, '')}')">
-                                Não é do SisProf
+                                Não é do EdiProf
                             </button>
                         </div>
                     </div>`;
@@ -755,7 +755,7 @@ function escaparAdminTexto(t) {
 // servico guardou aqui por engano. Hoje o servico ja' nem olha para eles; isto so'
 // limpa o que ficou.
 async function descartarPagamentoSemDonoAdmin(docId) {
-    if (!confirm('Descartar este registro?\n\nUse quando o pagamento não é do SisProf ' +
+    if (!confirm('Descartar este registro?\n\nUse quando o pagamento não é do EdiProf ' +
                  '(veio de outra automação da mesma conta do Mercado Pago). Nada é cobrado nem estornado.')) return;
     try {
         await db.collection('assinaturas_sem_dono').doc(String(docId)).delete();
@@ -770,7 +770,7 @@ async function vincularPagamentoSemDonoAdmin(docId) {
     const parado = (await refParado.get()).data();
     if (!parado) { alert('Este registro não existe mais.'); return; }
 
-    const email = (prompt('E-mail da conta no SisProf que fez este pagamento' +
+    const email = (prompt('E-mail da conta no EdiProf que fez este pagamento' +
         (parado.email ? ' (o pagador usou ' + parado.email + ')' : '') + ':') || '').trim().toLowerCase();
     if (!email) return;
 

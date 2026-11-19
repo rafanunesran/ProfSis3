@@ -30,7 +30,7 @@ const PLANOS_SISPROF = {
         valor: 0,
         emoji: '🆓',
         premium: false,
-        resumo: 'Tudo que o SisProf sempre teve, de graca.',
+        resumo: 'Tudo que o EdiProf sempre teve, de graca.',
         itens: [
             'Turmas, chamada, notas e ocorrencias',
             'Estagiario, documentos e impressao',
@@ -495,7 +495,7 @@ async function conferirPagamentoAgora() {
     if (document.getElementById('modalApoie')) renderConteudoModalApoie();
     const depois = planoDoUsuario();
     if (depois !== 'free' && depois !== antes) {
-        alert('Pagamento encontrado! Plano ' + infoPlanoAtual().nome + ' liberado. Obrigado por apoiar o SisProf 💛');
+        alert('Pagamento encontrado! Plano ' + infoPlanoAtual().nome + ' liberado. Obrigado por apoiar o EdiProf 💛');
     } else if (depois !== 'free') {
         alert('Seu plano ' + infoPlanoAtual().nome + ' ja esta ativo. Obrigado! 💛');
     } else if (!rodou) {
@@ -504,7 +504,7 @@ async function conferirPagamentoAgora() {
     } else {
         alert('Ainda nao encontrei um pagamento aprovado nesta conta.\n\n' +
               'O Pix costuma cair em segundos; o cartao pode levar alguns minutos. ' +
-              'Se voce pagou com um e-mail diferente do que usa no SisProf, avise a administracao ' +
+              'Se voce pagou com um e-mail diferente do que usa no EdiProf, avise a administracao ' +
               'para vincular o pagamento a sua conta.');
     }
 }
@@ -530,7 +530,7 @@ function marcarEsperandoConfirmacao(planoId) {
             atualizarBotaoApoie();
             if (typeof atualizarBannerApoio === 'function') atualizarBannerApoio();
             if (document.getElementById('modalApoie')) renderConteudoModalApoie();
-            alert('Assinatura confirmada! Obrigado por apoiar o SisProf 💛');
+            alert('Assinatura confirmada! Obrigado por apoiar o EdiProf 💛');
         } else if (tentativas >= 20) { // ~10 minutos
             clearInterval(relogio);
         }
@@ -551,7 +551,7 @@ async function conferirAssinaturaAposCheckout() {
     atualizarBotaoApoie();
     if (typeof atualizarBannerApoio === 'function') atualizarBannerApoio();
     if (_assinaturaAtual && _assinaturaAtual.status === 'ativa') {
-        alert('Assinatura confirmada! Obrigado por apoiar o SisProf 💛');
+        alert('Assinatura confirmada! Obrigado por apoiar o EdiProf 💛');
     } else {
         alert('Recebemos seu retorno do Mercado Pago. A confirmacao do cartao pode levar alguns ' +
               'minutos — assim que ela chegar, seu plano aparece sozinho aqui.');
@@ -967,7 +967,7 @@ function renderConteudoModalApoie(opcoes) {
     alvo.innerHTML = `
         ${aviso}
         <p style="font-size:14px; color:#3d4759; line-height:1.5;">
-            O SisProf e' e sempre sera' gratuito para dar aula. Os custos de servidor, banco de dados
+            O EdiProf e' e sempre sera' gratuito para dar aula. Os custos de servidor, banco de dados
             e IA sao pagos por quem assina — escolha como voce quer participar.
         </p>
         <div id="assinaturaEstado" style="margin:12px 0;">${descreverAssinatura()}</div>
@@ -984,7 +984,7 @@ function renderConteudoModalApoie(opcoes) {
         </div>
         <p style="font-size:11px; color:#5f6b7f; margin-top:12px;">
             🔒 Cobranca mensal automatica no cartao, pelo Mercado Pago. O numero do cartao fica com eles —
-            o SisProf nunca ve nem guarda esse dado. Cancele quando quiser, sem multa.
+            o EdiProf nunca ve nem guarda esse dado. Cancele quando quiser, sem multa.
         </p>
         ${secaoPixHtml()}
         ${temAssinaturaViva ? `
@@ -1093,7 +1093,7 @@ function atualizarBannerApoio() {
         banner = document.createElement('div');
         banner.id = 'bannerApoio';
         banner.style.cssText = 'position:sticky; top:0; z-index:9998; background:#f6e05e; color:#5a4b00; padding:9px 16px; text-align:center; font-weight:bold; font-size:14px; box-shadow:0 2px 6px rgba(0,0,0,0.15); cursor:pointer;';
-        banner.innerHTML = '💛 Esta gostando do sistema? A partir de R$ 10,00/mes voce ajuda a manter o SisProf no ar. <span style="text-decoration:underline;">Conheca os planos</span>.';
+        banner.innerHTML = '💛 Esta gostando do sistema? A partir de R$ 10,00/mes voce ajuda a manter o EdiProf no ar. <span style="text-decoration:underline;">Conheca os planos</span>.';
         banner.onclick = () => abrirModalApoie();
         document.body.insertBefore(banner, document.body.firstChild);
     }
@@ -1129,7 +1129,7 @@ async function carregarContribuintesApoie() {
         });
 
         if (nomes.length === 0) {
-            alvo.innerHTML = '<p style="font-size:13px; color:#5f6b7f;">Seja o primeiro a apoiar e ajude a manter o SisProf sempre melhorando! 💛</p>';
+            alvo.innerHTML = '<p style="font-size:13px; color:#5f6b7f;">Seja o primeiro a apoiar e ajude a manter o EdiProf sempre melhorando! 💛</p>';
             return;
         }
         nomes.sort((a, b) => a.localeCompare(b, 'pt'));

@@ -80,7 +80,7 @@ async function importarArquivoProfsis(evento) {
     // Um professor de AEE pode não ter turma nenhuma, só tutorados: exigir turmas ou
     // estudantes recusaria justamente o arquivo dele.
     if (!dados || (!dados.turmas && !dados.estudantes && !dados.tutorados && !dados.ocorrencias)) {
-        return alert('Este arquivo não parece um backup do SisProf.');
+        return alert('Este arquivo não parece um backup do EdiProf.');
     }
 
     // Sem conta aberta não há onde gravar: getStorageKey() nasce do usuário. Gravar

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   SisProf — sistema visual
+   EdiProf — sistema visual
    --------------------------------------------------------------------------
    Todas as cores e medidas saem dos tokens em :root. Os temas do Perfil
    (app.js: aplicarTemaSalvo) trocam só os tokens, então cada componente
@@ -1025,9 +1025,9 @@ label {
     animation: modalIn 320ms var(--ease-out);
 }
 
-/* Marca "SisProf" no alto da caixa (a caixa é reescrita pelo core.js, por isso vem do CSS) */
+/* Marca "EdiProf" no alto da caixa (a caixa é reescrita pelo core.js, por isso vem do CSS) */
 .auth-box::before {
-    content: 'SisProf';
+    content: 'EdiProf';
     display: block;
     text-align: center;
     font-size: 13px;
@@ -1701,7 +1701,7 @@ html[data-tema="ambar-noturno"] .auth-box {
 }
 
 html[data-estilo="ambar"] .auth-box::before {
-    content: 'SisProf';
+    content: 'EdiProf';
     width: max-content;
     margin: 0 auto 10px;
     padding: 5px 12px;

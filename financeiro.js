@@ -123,7 +123,7 @@ function resumoAssinantes(assinaturas, agoraMs, diasTolerancia) {
 //   1. o super admin marcou a mao;
 //   2. o Pix gerado pelo sistema traz o uid na referencia;
 //   3. a cobranca do cartao e' de uma assinatura que ja' esta' em `assinaturas/<uid>`;
-//   4. o e-mail do pagador e' o e-mail de uma conta do SisProf (ou o gravado na
+//   4. o e-mail do pagador e' o e-mail de uma conta do EdiProf (ou o gravado na
 //      assinatura dela).
 // Sem nada disso, volta null — e a tela oferece "Marcar usuario".
 function identificarUsuarioDaEntrada(entrada, dados) {
@@ -433,7 +433,7 @@ function entradasFinHtml(r) {
         const formulario = marcando ? `<tr><td colspan="8" style="white-space:normal; background:#f7fafc;">
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; padding:6px 0;">
                 <div style="flex:1; min-width:260px;">
-                    <label style="display:block; font-size:12px; font-weight:bold; margin-bottom:4px;" for="finMarcarEmail">Quem do SisProf fez este pagamento? (e-mail da conta)</label>
+                    <label style="display:block; font-size:12px; font-weight:bold; margin-bottom:4px;" for="finMarcarEmail">Quem do EdiProf fez este pagamento? (e-mail da conta)</label>
                     <input type="email" id="finMarcarEmail" list="finUsuariosLista" placeholder="comece a digitar o nome ou e-mail"
                            value="${escaparFin((_fin.marcacoes[id] && _fin.marcacoes[id].email) || '')}" style="${campo} width:100%;">
                     <datalist id="finUsuariosLista">
@@ -462,13 +462,13 @@ function entradasFinHtml(r) {
     return `<div class="card" style="margin-top:16px;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
             <h3 style="margin:0; font-size:16px;">Entradas de ${nomeDoMesFin(_fin.mes)}
-                ${semUsuario ? `<span class="badge badge-danger" title="Pagamentos sem usuário do SisProf">${semUsuario} sem usuário</span>` : ''}</h3>
+                ${semUsuario ? `<span class="badge badge-danger" title="Pagamentos sem usuário do EdiProf">${semUsuario} sem usuário</span>` : ''}</h3>
             ${ocultasNoMes ? `<button class="btn btn-sm btn-secondary" onclick="alternarOcultasFinanceiro()">
                 ${_fin.mostrarOcultas ? 'Esconder' : 'Mostrar'} ocultas (${ocultasNoMes})</button>` : ''}
         </div>
         <div style="overflow-x:auto;">
         <table style="width:100%; font-variant-numeric:tabular-nums;">
-            <thead><tr><th>Data</th><th>Meio</th><th>Plano</th><th>Usuário do SisProf</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Taxa</th><th style="text-align:right;">Líquido</th><th></th></tr></thead>
+            <thead><tr><th>Data</th><th>Meio</th><th>Plano</th><th>Usuário do EdiProf</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Taxa</th><th style="text-align:right;">Líquido</th><th></th></tr></thead>
             <tbody>${corpo}</tbody>
         </table>
         </div>
@@ -615,7 +615,7 @@ async function buscarEntradasNoMercadoPago() {
         await carregarDadosFinanceiros();
         renderTelaFinanceira();
         alert('Mercado Pago consultado: ' + dados.lidos + ' pagamento(s) lido(s), ' +
-              dados.gravados + ' do SisProf no livro-caixa' +
+              dados.gravados + ' do EdiProf no livro-caixa' +
               (dados.deFora ? ', ' + dados.deFora + ' de fora (outras automações da conta) ignorado(s)' : '') + '.');
     } catch (e) {
         alert('Não consegui falar com o serviço (' + _fin.servico + '): ' + (e && e.message ? e.message : e));
@@ -643,7 +643,7 @@ function abrirMarcacaoUsuarioFinanceiro(id) {
 async function salvarMarcacaoUsuarioFinanceiro(id) {
     const email = String((document.getElementById('finMarcarEmail') || {}).value || '').trim().toLowerCase();
     const usuario = _fin.usuarios.find(u => u.email === email);
-    if (!usuario) { alert('Escolha uma conta da lista (e-mail de quem usa o SisProf).'); return; }
+    if (!usuario) { alert('Escolha uma conta da lista (e-mail de quem usa o EdiProf).'); return; }
     const marcacao = {
         uid: usuario.uid, email: usuario.email, nome: usuario.nome,
         marcadoPor: (typeof currentUser !== 'undefined' && currentUser && currentUser.email) || 'super_admin',

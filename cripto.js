@@ -1,4 +1,4 @@
-// cripto.js — Backup cifrado do SisProf (WebCrypto puro, sem dependência nova)
+// cripto.js — Backup cifrado do EdiProf (WebCrypto puro, sem dependência nova)
 // ============================================================================
 //  O DESENHO, EM UMA FRASE
 //    Cada backup é cifrado com uma chave aleatória do professor (a DEK), e essa

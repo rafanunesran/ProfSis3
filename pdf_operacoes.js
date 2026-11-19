@@ -1,4 +1,4 @@
-// pdf_operacoes.js — O MOTOR das Ferramentas PDF (a primeira funcao premium do SisProf).
+// pdf_operacoes.js — O MOTOR das Ferramentas PDF (a primeira funcao premium do EdiProf).
 //
 // A regra que manda em tudo aqui: O ARQUIVO NAO SAI DO APARELHO. Nenhuma operacao
 // deste arquivo faz upload. O PDF e' lido em memoria, transformado no proprio
@@ -501,7 +501,7 @@ async function juntar(e, prog) {
         paginas.forEach(p => saida.addPage(p));
         total += paginas.length;
     }
-    saida.setProducer('SisProf — Ferramentas PDF');
+    saida.setProducer('EdiProf — Ferramentas PDF');
     saida.setCreationDate(new Date());
     if (prog) prog(98, 'Gravando');
     return {
@@ -559,7 +559,7 @@ async function dividir(e, prog) {
         const novo = await PDFLib.PDFDocument.create();
         const paginas = await novo.copyPages(doc, grupos[g]);
         paginas.forEach(p => novo.addPage(p));
-        novo.setProducer('SisProf — Ferramentas PDF');
+        novo.setProducer('EdiProf — Ferramentas PDF');
         const rotulo = grupos[g].length === 1
             ? String(grupos[g][0] + 1)
             : (grupos[g][0] + 1) + '-' + (grupos[g][grupos[g].length - 1] + 1);
@@ -589,7 +589,7 @@ async function reorganizar(e, prog) {
     const novo = await PDFLib.PDFDocument.create();
     const paginas = await novo.copyPages(doc, indices);
     paginas.forEach(p => novo.addPage(p));
-    novo.setProducer('SisProf — Ferramentas PDF');
+    novo.setProducer('EdiProf — Ferramentas PDF');
     if (prog) prog(95, 'Gravando');
     const faltando = total - new Set(indices).size;
     return {
@@ -649,7 +649,7 @@ async function montarMesa(e, prog) {
             const { width, height } = pg.getSize();
             ultimoTamanho = [width, height];
         }
-        novo.setProducer('SisProf — Ferramentas PDF');
+        novo.setProducer('EdiProf — Ferramentas PDF');
         const nome = pedacos.length > 1 ? base + '_parte' + (k + 1) + '.pdf' : base + '_montado.pdf';
         saidas.push({ nome: nome, bytes: await novo.save(), tipo: 'application/pdf' });
     }
@@ -679,7 +679,7 @@ async function removerPaginas(e, prog) {
 
     // De tras para frente: remover a pagina 2 primeiro mudaria o indice da 5.
     remover.slice().sort((a, b) => b - a).forEach(i => doc.removePage(i));
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     if (prog) prog(95, 'Gravando');
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_sem-paginas.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
@@ -702,7 +702,7 @@ async function extrairPaginas(e, prog) {
             const novo = await PDFLib.PDFDocument.create();
             const [p] = await novo.copyPages(doc, [indices[k]]);
             novo.addPage(p);
-            novo.setProducer('SisProf — Ferramentas PDF');
+            novo.setProducer('EdiProf — Ferramentas PDF');
             saidas.push({ nome: base + '_pag' + (indices[k] + 1) + '.pdf', bytes: await novo.save(), tipo: 'application/pdf' });
         }
         return { arquivos: saidas, mensagem: indices.length + ' paginas extraidas, uma por arquivo.' };
@@ -711,7 +711,7 @@ async function extrairPaginas(e, prog) {
     const novo = await PDFLib.PDFDocument.create();
     const paginas = await novo.copyPages(doc, indices);
     paginas.forEach(p => novo.addPage(p));
-    novo.setProducer('SisProf — Ferramentas PDF');
+    novo.setProducer('EdiProf — Ferramentas PDF');
     if (prog) prog(95, 'Gravando');
     return {
         arquivos: [{ nome: base + '_extraido.pdf', bytes: await novo.save(), tipo: 'application/pdf' }],
@@ -734,7 +734,7 @@ async function rotacionar(e, prog) {
         const atual = pagina.getRotation().angle || 0;
         pagina.setRotation(PDFLib.degrees(((atual + giro) % 360 + 360) % 360));
     });
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     if (prog) prog(95, 'Gravando');
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_girado.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
@@ -792,7 +792,7 @@ async function paginasPorFolha(e, prog) {
             }
         }
     }
-    saida.setProducer('SisProf — Ferramentas PDF');
+    saida.setProducer('EdiProf — Ferramentas PDF');
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_' + porFolha + 'por-folha.pdf', bytes: await saida.save(), tipo: 'application/pdf' }],
         mensagem: total + ' paginas couberam em ' + Math.ceil(total / porFolha) + ' folhas (' + colunas + '×' + linhas + ').'
@@ -824,7 +824,7 @@ async function cortarAoMeio(e, prog) {
             nova.setRotation(p.getRotation());
         }
     }
-    saida.setProducer('SisProf — Ferramentas PDF');
+    saida.setProducer('EdiProf — Ferramentas PDF');
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_cortado-ao-meio.pdf', bytes: await saida.save(), tipo: 'application/pdf' }],
         mensagem: paginas.length + ' paginas viraram ' + (paginas.length * 2) + ' (corte ' + (vertical ? 'vertical' : 'horizontal') + ').'
@@ -879,7 +879,7 @@ async function marcadores(e, prog) {
 
     doc.catalog.set(PDFName.of('Outlines'), refRaiz);
     if (e.abrirSumario !== false) doc.catalog.set(PDFName.of('PageMode'), PDFName.of('UseOutlines'));
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     if (prog) prog(95, 'Gravando');
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_com-marcadores.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
@@ -1062,7 +1062,7 @@ async function marcaDagua(e, prog) {
         }
     }
 
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_marca-dagua.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
         mensagem: 'Marca d\'agua aplicada em ' + indices.length + ' pagina(s).'
@@ -1096,7 +1096,7 @@ async function numerosPagina(e, prog) {
         pagina.drawText(texto, { x: x, y: y, size: tamanho, font: fonte, color: cor });
     });
 
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_numerado.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
         mensagem: indices.length + ' pagina(s) numeradas, comecando em ' + comecaEm + '.'
@@ -1134,7 +1134,7 @@ async function sobrepor(e, prog) {
         pagina.drawPage(emb, { x: x, y: y, width: l, height: a, opacity: opacidade });
     }
 
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_sobreposto.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
         mensagem: 'Sobreposicao aplicada em ' + total + ' pagina(s).'
@@ -1163,7 +1163,7 @@ async function cortar(e, prog) {
         pagina.setCropBox(x, y, l, a);
     });
 
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     if (prog) prog(95, 'Gravando');
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_cortado.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
@@ -1195,7 +1195,7 @@ async function tamanhoPagina(e, prog) {
         const l = emb.width * f, a = emb.height * f;
         nova.drawPage(emb, { x: (L - l) / 2, y: (A - a) / 2, width: l, height: a });
     }
-    saida.setProducer('SisProf — Ferramentas PDF');
+    saida.setProducer('EdiProf — Ferramentas PDF');
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_' + (e.tamanho || 'A4') + '.pdf', bytes: await saida.save(), tipo: 'application/pdf' }],
         mensagem: paginas.length + ' pagina(s) reajustadas para ' + (e.tamanho || 'A4') + '.'
@@ -1290,7 +1290,7 @@ async function anotar(e, prog) {
         }
     }
 
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_anotado.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
         mensagem: itens.length + ' anotacao(oes) gravadas no PDF.'
@@ -1394,7 +1394,7 @@ async function montarPdfDeBlocos(blocos, opcoes) {
 
     if (o.titulo) doc.setTitle(String(o.titulo));
     if (o.autor) doc.setAuthor(String(o.autor));
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     doc.setCreationDate(new Date());
     return doc;
 }
@@ -1608,7 +1608,7 @@ async function imagensParaPdf(e, prog) {
             pagina.drawImage(img, { x: (L - l) / 2, y: (A - a) / 2, width: l, height: a });
         }
     }
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     doc.setCreationDate(new Date());
     return {
         arquivos: [{ nome: (e.nomeSaida || 'imagens') + '.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
@@ -1842,7 +1842,7 @@ async function montarDocx(paragrafos, titulo) {
         '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" ' +
         'xmlns:dc="http://purl.org/dc/elements/1.1/">' +
         '<dc:title>' + escXml(titulo || 'Documento') + '</dc:title>' +
-        '<dc:creator>SisProf</dc:creator>' +
+        '<dc:creator>EdiProf</dc:creator>' +
         '</cp:coreProperties>');
 
     zip.folder('word').file('styles.xml',
@@ -2058,7 +2058,7 @@ async function rasterizarParaPdf(arquivo, opcoes, prog) {
         pagina.drawImage(img, { x: 0, y: 0, width: L, height: A });
         canvas.width = canvas.height = 0;
     }
-    saida.setProducer('SisProf — Ferramentas PDF');
+    saida.setProducer('EdiProf — Ferramentas PDF');
     return saida;
 }
 
@@ -2098,7 +2098,7 @@ async function comprimir(e, prog) {
             doc.setAuthor(original.getAuthor() || '');
             doc.setSubject(original.getSubject() || '');
         }
-        doc.setProducer('SisProf — Ferramentas PDF');
+        doc.setProducer('EdiProf — Ferramentas PDF');
         if (prog) prog(90, 'Gravando');
         bytes = await doc.save({ useObjectStreams: true });
         observacao = 'Compressao sem perda: o texto continua pesquisavel. ' +
@@ -2130,7 +2130,7 @@ async function otimizarWeb(e, prog) {
     const paginas = await doc.copyPages(original, original.getPageIndices());
     paginas.forEach(p => doc.addPage(p));
     doc.setTitle(original.getTitle() || semExtensao(arquivo.nome));
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     // Titulo na barra do navegador em vez do nome do arquivo: e' o detalhe que faz
     // o PDF parecer "publicado" e nao "anexado".
     const prefs = doc.catalog.getOrCreateViewerPreferences();
@@ -2162,7 +2162,7 @@ async function reparar(e, prog) {
         const paginas = await doc.copyPages(original, original.getPageIndices());
         paginas.forEach(p => doc.addPage(p));
         if (!doc.getPageCount()) throw new Error('nenhuma pagina legivel');
-        doc.setProducer('SisProf — Ferramentas PDF');
+        doc.setProducer('EdiProf — Ferramentas PDF');
         return {
             arquivos: [{ nome: semExtensao(arquivo.nome) + '_reparado.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
             mensagem: 'Estrutura reconstruida: ' + doc.getPageCount() + ' pagina(s) recuperadas, com o texto intacto.'
@@ -2233,7 +2233,7 @@ async function achatar(e, prog) {
         });
     }
 
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     if (prog) prog(92, 'Gravando');
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_achatado.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
@@ -2257,7 +2257,7 @@ async function paraPdfA(e, prog) {
                         'aponta para uma fonte do sistema nao pode ser convertido sem redesenhar. Nesse caso, ' +
                         'passe o arquivo por "Rasterizar PDF" e converta o resultado.');
     }
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     if (prog) prog(90, 'Gravando');
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_PDFA-' + nivel + '.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
@@ -2337,7 +2337,7 @@ async function ocr(e, prog) {
             canvas.width = canvas.height = 0;
         }
 
-        saida.setProducer('SisProf — Ferramentas PDF');
+        saida.setProducer('EdiProf — Ferramentas PDF');
         if (prog) prog(96, 'Gravando');
         const textoTotal = textos.join('\n\n');
         const arquivos = [{ nome: semExtensao(arquivo.nome) + '_ocr.pdf', bytes: await saida.save(), tipo: 'application/pdf' }];
@@ -2448,7 +2448,7 @@ async function desbloquear(e, prog) {
     paginas.forEach(p => doc.addPage(p));
     doc.setTitle(original.getTitle() || '');
     doc.setAuthor(original.getAuthor() || '');
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
 
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_sem-senha.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
@@ -2560,7 +2560,7 @@ async function censurar(e, prog) {
                 pagina.drawPage(emb, { x: 0, y: 0, width: emb.width, height: emb.height });
             }
         }
-        montado.setProducer('SisProf — Ferramentas PDF');
+        montado.setProducer('EdiProf — Ferramentas PDF');
         return {
             arquivos: [{ nome: semExtensao(arquivo.nome) + '_censurado.pdf', bytes: await montado.save(), tipo: 'application/pdf' }],
             mensagem: indices.length + ' pagina(s) censuradas de verdade (redesenhadas: o texto sob a tarja ' +
@@ -2774,7 +2774,7 @@ function relatorioComparacao(nomeA, nomeB, linhas, iguais, diferentes) {
         '<div style="margin-top:8px"><strong>' + diferentes + '</strong> pagina(s) com diferenca, <strong>' +
         iguais + '</strong> igual(is).</div></div>' + corpo +
         '<footer>Comparacao pelo TEXTO das paginas. Mudanca somente visual (cor, posicao, imagem) nao aparece aqui. ' +
-        'Gerado no proprio navegador pelas Ferramentas PDF do SisProf.</footer></body></html>\n';
+        'Gerado no proprio navegador pelas Ferramentas PDF do EdiProf.</footer></body></html>\n';
 }
 
 async function preferenciasVisualizador(e, prog) {
@@ -2802,7 +2802,7 @@ async function preferenciasVisualizador(e, prog) {
     if (disposicoes[e.disposicao]) doc.catalog.set(PDFName.of('PageLayout'), PDFName.of(disposicoes[e.disposicao]));
 
     if (String(e.titulo || '').trim()) doc.setTitle(String(e.titulo).trim());
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     if (prog) prog(92, 'Gravando');
 
     return {
@@ -3025,7 +3025,7 @@ async function criarFormulario(e, prog) {
         }
     });
 
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     if (prog) prog(95, 'Gravando');
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_formulario.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
@@ -3080,7 +3080,7 @@ async function preencher(e, prog) {
         try { form.updateFieldAppearances(await fonteHelvetica(doc, false)); } catch (_) { /* segue */ }
     }
 
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     if (prog) prog(92, 'Gravando');
     return {
         arquivos: [{
@@ -3150,7 +3150,7 @@ async function assinar(e, prog) {
         });
     });
 
-    doc.setProducer('SisProf — Ferramentas PDF');
+    doc.setProducer('EdiProf — Ferramentas PDF');
     return {
         arquivos: [{ nome: semExtensao(arquivo.nome) + '_assinado.pdf', bytes: await doc.save(), tipo: 'application/pdf' }],
         mensagem: 'Assinatura aplicada em ' + indices.length + ' pagina(s). ' +

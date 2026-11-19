@@ -92,13 +92,13 @@ async function iniciarApp() {
         // Este aparelho tem registros que a nuvem perdeu (outro aparelho, com cópia
         // velha, gravou por cima). Sobe já a união, para os outros aparelhos recebê-los.
         if (window.dadosCarregados && window.pessoalFaltaNaNuvem && !window.bloquearEscritaNuvem) {
-            try { await persistirDados(); } catch (e) { console.warn('[SisProf] Reenvio da união:', e); }
+            try { await persistirDados(); } catch (e) { console.warn('[EdiProf] Reenvio da união:', e); }
         }
 
         // [ADEQUAÇÃO SEDUC] Antes do corte, lembra o professor duas vezes por dia.
         // Depois do corte, leva o dado pessoal para o aparelho antes de qualquer coisa.
         if (typeof aplicarRegraDoCorte === 'function') {
-            try { await aplicarRegraDoCorte(); } catch (e) { console.warn('[SisProf] Regra do corte:', e); }
+            try { await aplicarRegraDoCorte(); } catch (e) { console.warn('[EdiProf] Regra do corte:', e); }
         }
 
         // [AUTO-BACKUP] Cria no máximo 1 backup por dia; mantém histórico dos últimos 15 dias
@@ -108,13 +108,13 @@ async function iniciarApp() {
         // publicado: a mudança feita em outro aparelho, ou por outra conta da gestão,
         // entra aqui em vez de ser desfeita pela cópia velha deste aparelho.
         if (currentViewMode === 'gestor' && window.dadosCarregados && typeof trazerListaPublicadaParaGestor === 'function') {
-            try { await trazerListaPublicadaParaGestor(); } catch (e) { console.warn('[SisProf] Lista publicada:', e); }
+            try { await trazerListaPublicadaParaGestor(); } catch (e) { console.warn('[EdiProf] Lista publicada:', e); }
         }
         if (typeof lembrarRetratoEstudantes === 'function') lembrarRetratoEstudantes(data);
         if (typeof lembrarRetratoPessoal === 'function') lembrarRetratoPessoal(data);
         // Atualização automática: o que outro aparelho gravar aparece aqui sozinho (core.js).
         if (window.dadosCarregados && !window.bloquearEscritaNuvem && typeof escutarOutrosAparelhos === 'function') {
-            try { escutarOutrosAparelhos(getStorageKey(currentUser)); } catch (e) { console.warn('[SisProf] Escuta de outros aparelhos:', e); }
+            try { escutarOutrosAparelhos(getStorageKey(currentUser)); } catch (e) { console.warn('[EdiProf] Escuta de outros aparelhos:', e); }
         }
 
         // Publica a lista da escola assim que o painel da gestão abre (listaescola.js).
@@ -160,12 +160,12 @@ async function iniciarApp() {
         const headerTitle = document.querySelector('#appContainer h1');
         if (headerTitle) {
             if (logoEscola) {
-                headerTitle.innerHTML = `<img src="${logoEscola}" style="height: 40px; vertical-align: middle; margin-right: 10px; border-radius: 4px;"> SisProf - ${nomeEscola}`;
+                headerTitle.innerHTML = `<img src="${logoEscola}" style="height: 40px; vertical-align: middle; margin-right: 10px; border-radius: 4px;"> EdiProf - ${nomeEscola}`;
                 // O logo da escola fica só no cabeçalho. A miniatura da aba (favicon) e o
-                // ícone de atalho no celular são sempre o ícone do SisProf, igual para todas
+                // ícone de atalho no celular são sempre o ícone do EdiProf, igual para todas
                 // as escolas (definidos no index.html e no manifest).
             } else {
-                headerTitle.textContent = `SisProf - ${nomeEscola}`;
+                headerTitle.textContent = `EdiProf - ${nomeEscola}`;
             }
         }
 
@@ -442,7 +442,7 @@ async function abrirModalPerfil() {
         </div>
         <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cdd5e1;">
             <h4 style="color:#1b4488; margin-bottom:5px; font-size:14px;">🔒 Sistemas da SEDUC</h4>
-            <p style="font-size:11px; color:#5f6b7f; margin-bottom:0;">O ProfSis3 não possui extensão, integração ou automação com a Secretaria Escolar Digital / Sala do Futuro. O lançamento nos sistemas da SEDUC é sempre feito manualmente pelo profissional, no ambiente oficial da Secretaria.</p>
+            <p style="font-size:11px; color:#5f6b7f; margin-bottom:0;">O EdiProf não possui extensão, integração ou automação com a Secretaria Escolar Digital / Sala do Futuro. O lançamento nos sistemas da SEDUC é sempre feito manualmente pelo profissional, no ambiente oficial da Secretaria.</p>
         </div>
     `;
 
@@ -1030,7 +1030,7 @@ function atualizarTelaAposSincronizar() {
             RENDER_SINCRONIZAVEL[tela.id]();
         } else return;
         mostrarAvisoSincronizado();
-    } catch (e) { console.warn('[SisProf] Redesenhar após sincronizar:', e); }
+    } catch (e) { console.warn('[EdiProf] Redesenhar após sincronizar:', e); }
 }
 
 function mostrarAvisoSincronizado() {
@@ -2086,7 +2086,7 @@ async function obterDadosGestor(opcoes) {
 
     // Não deu para ler: devolve o documento em claro SEM `estudantes`, e quem chama
     // entende isso como "não mexa na lista da turma" (ver abrirTurma).
-    if (lista.estado === 'erro') console.warn('[SisProf] Lista da escola não pôde ser lida:', lista.erro);
+    if (lista.estado === 'erro') console.warn('[EdiProf] Lista da escola não pôde ser lida:', lista.erro);
     return gestorData;
 }
 
@@ -2313,7 +2313,7 @@ async function abrirTurma(id) {
             const podeReescrever = alunosGestor.length > 0 || locaisDaTurma.length === 0;
 
             if (!podeReescrever) {
-                console.warn('[SisProf] Sincronização adiada: a gestão não trouxe nenhum aluno para esta turma ' +
+                console.warn('[EdiProf] Sincronização adiada: a gestão não trouxe nenhum aluno para esta turma ' +
                              'e o professor tem ' + locaisDaTurma.length + '. A lista atual foi mantida.');
             }
 
@@ -7900,7 +7900,7 @@ function imprimirRelatorioTutorado(id, nome) {
     if (encontros.length === 0) return alert('Nenhum registro encontrado para este período.');
 
     // Nome da Escola (Pega do cabeçalho)
-    const nomeEscola = document.querySelector('header h1') ? document.querySelector('header h1').textContent.replace('SisProf - ', '') : 'Escola';
+    const nomeEscola = document.querySelector('header h1') ? document.querySelector('header h1').textContent.replace('EdiProf - ', '') : 'Escola';
 
     const html = `
         <html>

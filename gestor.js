@@ -3371,7 +3371,7 @@ function imprimirRelatorioTutoriaGestorSimplificado(profNome, alunoNome) {
     filtrados.sort((a,b) => new Date(a.data) - new Date(b.data));
 
     // Nome da Escola (Pega do cabeçalho da aplicação)
-    const nomeEscola = document.querySelector('header h1') ? document.querySelector('header h1').textContent.replace('SisProf - ', '') : 'Escola';
+    const nomeEscola = document.querySelector('header h1') ? document.querySelector('header h1').textContent.replace('EdiProf - ', '') : 'Escola';
     
     // Texto do Semestre
     let semLabel = semestreVal === 'todos' ? `Ano de ${currentYear}` : `${semestreVal}º Semestre de ${currentYear}`;
@@ -3462,7 +3462,7 @@ async function imprimirTodosRelatoriosTutoriaGestor(profId, profNome) {
     tutorados.sort((a,b) => a.nome_estudante.localeCompare(b.nome_estudante));
 
     // Nome da Escola
-    const nomeEscola = document.querySelector('header h1') ? document.querySelector('header h1').textContent.replace('SisProf - ', '') : 'Escola';
+    const nomeEscola = document.querySelector('header h1') ? document.querySelector('header h1').textContent.replace('EdiProf - ', '') : 'Escola';
     const semLabel = `${semestre}º Semestre de ${ano}`;
 
     let html = `
