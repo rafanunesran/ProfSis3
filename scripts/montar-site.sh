@@ -30,10 +30,31 @@ cp tutoriais.js mudanca_endereco.js _site/
 # e' codigo de servidor, roda no Cloudflare Worker e nao tem o que fazer no navegador.
 cp styles.css manifest.webmanifest _site/
 cp -r resources Docs _site/
-# O APK so existe quando o GitHub Actions conseguiu compila-lo (na Vercel nao existe).
+# O APK so existe quando o GitHub Actions conseguiu compila-lo.
 if [ -d app-android/dist ]; then
   mkdir -p _site/app-android
   cp -r app-android/dist _site/app-android/dist
+elif [ -n "$VERCEL" ]; then
+  # Na Vercel nao da para compilar o APK (nao tem Android SDK). Entao copiamos o ultimo APK
+  # que o GitHub Actions publicou no github.io, para que o app tambem se atualize pelo
+  # endereco da Vercel (o github.io e' bloqueado no wi-fi de muitas escolas). O version.json
+  # e o APK vem do MESMO lugar, entao sempre combinam; so' o apkUrl e' trocado para a Vercel.
+  # Se o download falhar, o site e' publicado mesmo assim (sem o APK desta vez).
+  ORIGEM_APK="https://rafanunesran.github.io/ProfSis3/app-android/dist"
+  DESTINO_APK="https://ediprof.vercel.app/app-android/dist"
+  TMP_APK="$(mktemp -d)"
+  if curl -fsSL --retry 3 -o "$TMP_APK/version.json" "$ORIGEM_APK/version.json" \
+     && curl -fsSL --retry 3 -o "$TMP_APK/profsis3-debug.apk" "$ORIGEM_APK/profsis3-debug.apk" \
+     && grep -q '"versionCode"' "$TMP_APK/version.json" \
+     && [ "$(head -c 2 "$TMP_APK/profsis3-debug.apk")" = "PK" ]; then
+    sed -i "s#$ORIGEM_APK/profsis3-debug.apk#$DESTINO_APK/profsis3-debug.apk#" "$TMP_APK/version.json"
+    mkdir -p _site/app-android/dist
+    cp "$TMP_APK/version.json" "$TMP_APK/profsis3-debug.apk" _site/app-android/dist/
+    echo "APK copiado do github.io: $(cat _site/app-android/dist/version.json)"
+  else
+    echo "Nao deu para copiar o APK do github.io - publicando o site sem ele desta vez."
+  fi
+  rm -rf "$TMP_APK"
 fi
 echo "Conteudo publicado:"
 find _site -maxdepth 2 -type f | sort
