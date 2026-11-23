@@ -53,7 +53,11 @@ jobs:
         continue-on-error: true
         run: |
           (
-            VERSION_CODE=$(git rev-list --count HEAD)
+            # BASE_VERSAO: soma 10000 ao numero de commits. Assim QUALQUER app ja instalado
+            # (todos tem versionCode abaixo de 10000) ve a versao nova como maior e oferece
+            # "Atualizar" - inclusive os apps antigos que ainda abrem o github.io.
+            BASE_VERSAO=10000
+            VERSION_CODE=$(( BASE_VERSAO + $(git rev-list --count HEAD) ))
             VERSION_NAME="1.0.$VERSION_CODE"
             # versionCode "nativo": congelado no ULTIMO commit que tocou o codigo Android nativo
             # (app-android/android/ - Kotlin, AndroidManifest, build.gradle, res, gradle). O app e' uma
@@ -61,7 +65,7 @@ jobs:
             # exige reinstalar - por isso o version.json (checado pelo UpdateChecker) anuncia esse
             # numero, e nao o total de commits, senao o app pediria APK novo a cada commit do site.
             NATIVE_COMMIT=$(git log -1 --format=%H -- app-android/android/)
-            NATIVE_VERSION_CODE=$(git rev-list --count "${NATIVE_COMMIT:-HEAD}")
+            NATIVE_VERSION_CODE=$(( BASE_VERSAO + $(git rev-list --count "${NATIVE_COMMIT:-HEAD}") ))
             NATIVE_VERSION_NAME="1.0.$NATIVE_VERSION_CODE"
             cd app-android
             npm ci
