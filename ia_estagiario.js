@@ -4906,8 +4906,7 @@ function coletarRegistrosRelatorioComportamental(turma, est, periodo) {
             outrosEnvolvidos: Math.max(0, (o.ids_estudantes || []).length - 1)
         }));
 
-    const presencas = (data.presencas || []).filter(p => p && mesmoEst(p.id_estudante) && noPeriodo(p.data));
-    const faltas = presencas.filter(p => p.status === 'falta').length;
+    const frequencia = frequenciaRelatorioComportamental(turma, est, noPeriodo);
 
     const caderno = (data.caderno || []).filter(c => c && mesmoEst(c.id_estudante) && (c.id_turma == null || c.id_turma == turma.id) && noPeriodo(c.data));
     const contar = (lista, campo) => lista.reduce((acc, x) => { const k = x[campo] || ''; if (k) acc[k] = (acc[k] || 0) + 1; return acc; }, {});
@@ -4926,11 +4925,98 @@ function coletarRegistrosRelatorioComportamental(turma, est, periodo) {
 
     return {
         ocorrencias,
-        frequencia: { aulasRegistradas: presencas.length, faltas },
+        frequencia,
         caderno: { total: caderno.length, status: contar(caderno, 'status'), engajamento: contar(caderno, 'engajamento') },
         atividades,
         compensacoes: { total: compensacoes.length, status: contar(compensacoes, 'status') }
     };
+}
+
+// --- Frequência do relatório: só dias em que houve chamada, de TODOS os professores da turma ---
+// A chamada grava só as faltas (e "presente" só para faltoso/baixa frequência), então um dia com
+// chamada é: dia com algum registro de presença/falta de um aluno da turma ou com registro de aula.
+// As chamadas dos colegas vêm do recorte cifrado que cada professor publica para a escola
+// (listaescola.js: chamadas por turma da escola + faltas por dia, os mesmos dados do Faltoso A).
+// Só dá para juntar quando a turma está ligada à turma da escola (masterId).
+let _frequenciaEscolaRelatorio = null; // { estado, lista, falhas }
+
+async function carregarFrequenciaEscolaRelatorio() {
+    if (typeof lerContribuicoesDaEscola !== 'function') return _frequenciaEscolaRelatorio;
+    try {
+        const limite = new Promise(res => setTimeout(() => res(null), 8000));
+        const c = await Promise.race([lerContribuicoesDaEscola(), limite]);
+        if (c && c.estado === 'ok') _frequenciaEscolaRelatorio = { estado: 'ok', lista: c.lista || [], falhas: c.falhas || 0 };
+        else if (!_frequenciaEscolaRelatorio) _frequenciaEscolaRelatorio = { estado: (c && c.estado) || 'erro', lista: [], falhas: 0 };
+    } catch (e) {
+        console.warn('[Relatório] Não consegui ler as chamadas dos colegas:', e);
+        if (!_frequenciaEscolaRelatorio) _frequenciaEscolaRelatorio = { estado: 'erro', lista: [], falhas: 0 };
+    }
+    return _frequenciaEscolaRelatorio;
+}
+
+function frequenciaRelatorioComportamental(turma, est, noPeriodo) {
+    const idEst = String(est.id);
+    const idsTurma = new Set((data.estudantes || []).filter(e => e && e.id_turma == turma.id).map(e => String(e.id)));
+    idsTurma.add(idEst);
+    const meusDias = new Set();
+    const minhasFaltas = new Set();
+    (data.presencas || []).forEach(p => {
+        if (!p || !p.data || !noPeriodo(p.data) || !idsTurma.has(String(p.id_estudante))) return;
+        meusDias.add(p.data);
+        if (String(p.id_estudante) === idEst && p.status === 'falta') minhasFaltas.add(p.data);
+    });
+    (data.registrosAula || []).forEach(r => { if (r && r.data && r.id_turma == turma.id && noPeriodo(r.data)) meusDias.add(r.data); });
+
+    const autores = [{ dias: meusDias, faltas: minhasFaltas }];
+    const meuId = (typeof currentUser !== 'undefined' && currentUser) ? String(currentUser.id) : '';
+    const fontes = _frequenciaEscolaRelatorio;
+    const master = turma.masterId != null && turma.masterId !== '' ? String(turma.masterId) : '';
+    let deTodos = false, motivo = '';
+    if (!master) motivo = 'a turma não está ligada à turma da escola';
+    else if (!fontes) motivo = 'as chamadas dos colegas ainda não foram lidas';
+    else if (fontes.estado !== 'ok') motivo = 'não foi possível ler as chamadas dos colegas';
+    else {
+        deTodos = true;
+        if (fontes.falhas) motivo = 'as chamadas de ' + fontes.falhas + ' professor(es) não puderam ser lidas';
+        fontes.lista.forEach(c => {
+            if (!c || String(c.autorId) === meuId) return; // as minhas vêm do próprio aparelho (mais novas)
+            const d = c.dados || {};
+            const dias = new Set(((d.chamadas || {})[master] || []).filter(dia => noPeriodo(dia)));
+            if (!dias.size) return;
+            const faltas = new Set([...dias].filter(dia => ((d.faltas || {})[dia] || []).some(id => String(id) === idEst)));
+            autores.push({ dias, faltas });
+        });
+    }
+
+    const diasComChamada = new Set();
+    const diasComFalta = new Set();
+    let chamadas = 0, faltas = 0, professores = 0;
+    autores.forEach(a => {
+        if (a.dias.size) professores++;
+        chamadas += a.dias.size;
+        a.faltas.forEach(dia => { if (a.dias.has(dia)) { faltas++; diasComFalta.add(dia); } });
+        a.dias.forEach(dia => diasComChamada.add(dia));
+    });
+    let diasFaltouTodas = 0;
+    diasComFalta.forEach(dia => {
+        const comChamada = autores.filter(a => a.dias.has(dia));
+        if (comChamada.every(a => a.faltas.has(dia))) diasFaltouTodas++;
+    });
+    return { chamadas, faltas, diasComChamada: diasComChamada.size, diasComFalta: diasComFalta.size, diasFaltouTodas, professores, deTodos, motivo };
+}
+
+function linhaFrequenciaRelatorio(f) {
+    if (!f.chamadas) {
+        return 'Frequência: nenhuma chamada registrada para a turma no período' + (f.deTodos ? '' : ' (' + (f.motivo || 'só as chamadas deste professor') + ')')
+            + '. Não há dados para avaliar a assiduidade (isso não significa boa frequência).';
+    }
+    const fonte = f.deTodos
+        ? `chamadas de todos os professores da turma${f.professores > 1 ? ' (' + f.professores + ' professores)' : ''}${f.motivo ? '; ' + f.motivo : ''}`
+        : `só as chamadas deste professor; ${f.motivo}`;
+    let t = `Frequência (${fonte}; contando apenas os dias em que houve chamada): ${f.faltas} falta(s) em ${f.chamadas} chamada(s) registrada(s)`;
+    t += `; faltou em ${f.diasComFalta} de ${f.diasComChamada} dia(s) com chamada`;
+    if (f.diasComFalta && f.professores > 1) t += ` (em ${f.diasFaltouTodas} desses dias faltou em todas as aulas com chamada)`;
+    return t + '.';
 }
 
 const ROTULOS_RELATORIO_COMPORTAMENTAL = {
@@ -4952,12 +5038,12 @@ function linhasRegistrosRelatorioComportamental(reg, anonimizar) {
     reg.ocorrencias.forEach(o => {
         linhas.push(`- ${formatarDataRelatorioComportamental(o.data)} (${o.tipo}${o.outrosEnvolvidos ? ', com outros ' + o.outrosEnvolvidos + ' estudante(s)' : ''}): ${txt(o.relato) || 'sem relato'}${o.devolutiva ? ' | Devolutiva: ' + txt(o.devolutiva) : ''}`);
     });
-    linhas.push(reg.frequencia.aulasRegistradas
-        ? `Frequência: ${reg.frequencia.faltas} falta(s) em ${reg.frequencia.aulasRegistradas} chamada(s) registrada(s).`
-        : 'Frequência: sem chamadas registradas no período.');
+    linhas.push(linhaFrequenciaRelatorio(reg.frequencia));
     if (reg.caderno.total) {
         const partes = [textoContagemRelatorio(reg.caderno.status), textoContagemRelatorio(reg.caderno.engajamento)].filter(Boolean);
         linhas.push(`Caderno e participação (${reg.caderno.total} registro(s)): ${partes.join('; ')}.`);
+    } else {
+        linhas.push('Caderno e participação: nenhum registro no período.');
     }
     const comNota = reg.atividades.filter(a => a.nota !== '');
     if (reg.atividades.length) {
@@ -4985,9 +5071,16 @@ function atualizarResumoRelatorioComportamental() {
     const reg = coletarRegistrosRelatorioComportamental(turma, est, periodoRelatorioComportamental());
     const comNota = reg.atividades.filter(a => a.nota !== '').length;
     box.innerHTML = `📚 O assistente vai juntar sua descrição com: <strong>${reg.ocorrencias.length}</strong> ocorrência(s), `
-        + `<strong>${reg.frequencia.faltas}</strong> falta(s) em ${reg.frequencia.aulasRegistradas} chamada(s), `
+        + `<strong>${reg.frequencia.faltas}</strong> falta(s) em ${reg.frequencia.chamadas} chamada(s), `
         + `<strong>${reg.caderno.total}</strong> registro(s) de caderno e <strong>${comNota}</strong> atividade(s) com nota`
-        + (reg.compensacoes.total ? `, <strong>${reg.compensacoes.total}</strong> compensação(ões)` : '') + '.';
+        + (reg.compensacoes.total ? `, <strong>${reg.compensacoes.total}</strong> compensação(ões)` : '') + '.'
+        + `<br><span style="font-size:12px;">Faltas: só dias em que houve chamada (${reg.frequencia.diasComChamada} dia(s)), `
+        + (reg.frequencia.deTodos ? 'contando as chamadas de todos os professores da turma.' : 'só com as suas chamadas (' + reg.frequencia.motivo + ').')
+        + '</span>';
+    if (!_frequenciaEscolaRelatorio && !atualizarResumoRelatorioComportamental._lendo) {
+        atualizarResumoRelatorioComportamental._lendo = true;
+        carregarFrequenciaEscolaRelatorio().then(() => { atualizarResumoRelatorioComportamental._lendo = false; atualizarResumoRelatorioComportamental(); });
+    }
 }
 
 function coletarFormularioRelatorioComportamental() {
@@ -5026,6 +5119,11 @@ function criarAnonimizadorRelatorio(turma, est) {
     return (texto) => regras.reduce((t, [re, para]) => t.replace(re, (m, antes) => antes + para), String(texto || ''));
 }
 
+// Regra pedida pelo professor: falta de registro não é elogio.
+const REGRAS_SEM_REGISTRO_RELATORIO = `- MUITO IMPORTANTE: não ter ocorrência, falta ou outro registro NÃO significa boa conduta, boa frequência nem bom desempenho; significa só que não há registro. Nesses casos escreva apenas que não há registros (ex.: "não constam ocorrências registradas no período") e NÃO tire conclusão positiva (nada de "comportamento adequado", "boa convivência", "assíduo", "respeitoso" sem prova).
+- Não elogie à toa: elogio só quando a descrição do professor ou um registro concreto sustentar (ex.: notas boas, caderno completo, participação total), e com moderação. Evite palavras como "exemplar", "excelente", "ótimo", "muito dedicado".
+- Frequência: use só os números de chamadas e faltas informados (contam apenas dias em que houve chamada). Se não houver chamadas, diga que não há dados de frequência suficientes.`;
+
 function montarPromptRelatorioComportamental(form) {
     const anon = criarAnonimizadorRelatorio(form.turma, form.est);
     const artigo = form.genero === 'o' ? 'o estudante' : 'a estudante';
@@ -5044,8 +5142,9 @@ ${linhasRegistrosRelatorioComportamental(form.registros, anon).join('\n')}
 
 Como escrever:
 - 2 ou 3 parágrafos corridos, em 3ª pessoa, linguagem formal, clara, objetiva e respeitosa, como num relatório escolar (cerca de 120 a 220 palavras no total).
-- 1º parágrafo: comportamento, convivência, conduta e participação nas aulas (use a descrição e as ocorrências; se não houver ocorrências, pode dizer que não há registros que prejudiquem as aulas).
+- 1º parágrafo: comportamento, convivência, conduta e participação nas aulas (use a descrição e as ocorrências).
 - Último parágrafo: desempenho acadêmico (atividades, notas, frequência, caderno) e recomendações/estratégias de apoio.
+${REGRAS_SEM_REGISTRO_RELATORIO}
 - Resuma os registros: não liste datas, notas uma a uma nem copie os relatos; não exponha outros estudantes.
 - Não invente fatos que não estejam na descrição ou nos registros, nem diagnósticos.
 - Não escreva título, nome da escola, turma, saudação, data nem assinatura (já estão no documento).
@@ -5087,6 +5186,7 @@ function payloadRelatorioComportamental(form, texto, geradoPorIA) {
 }
 
 async function gerarRelatorioComportamentalEstagiario() {
+    await carregarFrequenciaEscolaRelatorio();
     const form = coletarFormularioRelatorioComportamental();
     if (!form) return;
     if (!form.descricao) {
@@ -5115,7 +5215,8 @@ async function gerarRelatorioComportamentalEstagiario() {
 
 // "✍️ Manual": abre o documento já com o cabeçalho do aluno, a descrição do professor e os registros
 // listados embaixo, para escrever à mão (sem IA).
-function gerarRelatorioComportamentalManual() {
+async function gerarRelatorioComportamentalManual() {
+    await carregarFrequenciaEscolaRelatorio();
     const form = coletarFormularioRelatorioComportamental();
     if (!form) return;
     const registros = linhasRegistrosRelatorioComportamental(form.registros);
@@ -5191,7 +5292,7 @@ function montarPromptPerfilEstudante(ctx) {
     const { porTurma, anon, aee } = dadosPerfilEstudante(ctx);
     const artigo = generoPerfilEstudante(ctx.nome) === 'a' ? 'a estudante' : 'o estudante';
     const linhas = [];
-    linhas.push(`Faltas no ano: ${ctx.faltas}${(ctx.porBim || []).length ? ' (' + ctx.porBim.map(b => b.bim + 'º bim: ' + b.n).join(', ') + ')' : ''}. Atrasos: ${ctx.atrasos}. Atestados: ${(ctx.atestados || []).length}.`);
+    linhas.push(`Faltas no ano (lançadas por este professor; as de todos os professores estão por turma, abaixo): ${ctx.faltas}${(ctx.porBim || []).length ? ' (' + ctx.porBim.map(b => b.bim + 'º bim: ' + b.n).join(', ') + ')' : ''}. Atrasos: ${ctx.atrasos}. Atestados: ${(ctx.atestados || []).length}.`);
     if (aee) linhas.push('É acompanhad' + (artigo === 'a estudante' ? 'a' : 'o') + ' pelo AEE (não cite diagnóstico).');
     linhas.push(`Ocorrências no ano: ${(ctx.ocorrencias || []).length}`);
     (ctx.ocorrencias || []).slice().sort((a, b) => String(a.data).localeCompare(String(b.data))).forEach(o => {
@@ -5232,6 +5333,7 @@ Como escrever:
   3º) pontos fortes, pontos de atenção e sugestões de acompanhamento para a escola e a família.
 - Cite datas, números ou relatos só quando ajudarem a sustentar uma conclusão; não copie relatos inteiros.
 - Se houver poucos registros, diga isso com cuidado e não force conclusões. Não invente fatos nem diagnósticos. Não exponha outros estudantes.
+${REGRAS_SEM_REGISTRO_RELATORIO}
 - Sem título, saudação, data ou assinatura. Use ${artigo === 'a estudante' ? 'o feminino (a estudante)' : 'o masculino (o estudante)'}.
 
 Retorne APENAS um JSON válido, sem markdown: {"paragrafos": ["primeiro", "segundo", "terceiro"]}`;
@@ -5243,6 +5345,7 @@ async function gerarPerfilEstudanteFicha(btn) {
     const original = btn ? btn.textContent : '';
     if (btn) { btn.textContent = 'Traçando o perfil... ⏳'; btn.disabled = true; }
     try {
+        await carregarFrequenciaEscolaRelatorio();
         const resposta = await chamarIAEstruturada(montarPromptPerfilEstudante(ctx), btn);
         const paragrafos = paragrafosDaRespostaRelatorio(resposta);
         if (!paragrafos.length) throw new Error('A IA não devolveu o texto. Tente de novo.');

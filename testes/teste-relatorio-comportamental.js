@@ -181,6 +181,43 @@ const ok = (nome, cond, extra) => { console.log((cond ? '  ok   ' : '  FALHA') +
      && r4.texto.indexOf('Prova 1 (1º bim.): 8') !== -1 && r4.texto.indexOf('2 falta(s) em 3 chamada(s)') !== -1 && r4.texto.indexOf('Manuela e Bruno Lima discutiram') !== -1, r4.texto);
   ok('Manual só vai para o histórico quando salvar', r4.n === 1, r4.n);
 
+  // ============ 5. faltas de todos os professores, só dias com chamada; regra de não elogiar ============
+  const r5 = await p.evaluate(async () => {
+    window.__prompts = [];
+    data.turmas[0].masterId = 'M7A';
+    // Outro professor (p2): chamada em 3 dias do 4º bim; falta da Manuela em 2 deles (um é 02/10, em que eu também dei falta).
+    // Um dia (05/09) é do 3º bim e não entra. Também tem falta de outro aluno, que não conta.
+    lerContribuicoesDaEscola = async () => ({ estado: 'ok', falhas: 0, lista: [
+      { autorId: 'p1', dados: { chamadas: { M7A: ['2026-10-02', '2026-10-03', '2026-10-09'] }, faltas: { '2026-10-09': [11] } } }, // cópia velha minha: ignorada
+      { autorId: 'p2', dados: { chamadas: { M7A: ['2026-10-02', '2026-10-07', '2026-10-08', '2026-09-05'], OUTRA: ['2026-10-20'] },
+                                faltas: { '2026-10-02': [11], '2026-10-07': [11, 12], '2026-09-05': [11], '2026-10-20': [11] } } } ] });
+    _frequenciaEscolaRelatorio = null;
+    await abrirModalGerarDocumentoIA();
+    document.getElementById('iaDocTipo').value = 'relatorio_comportamental'; toggleTipoDocumentoIA();
+    document.getElementById('relCompTurma').value = '1'; atualizarAlunosRelatorioComportamental();
+    document.getElementById('relCompAluno').value = '11';
+    document.getElementById('relCompPeriodo').value = '4'; aoTrocarAlunoRelatorioComportamental();
+    await new Promise(r => setTimeout(r, 50));
+    const resumo = document.getElementById('relCompResumo').textContent;
+    document.getElementById('relCompDescricao').value = 'Teste.';
+    await gerarDocumentoIA();
+    fecharModalDocBranco();
+    // Sem vínculo com a turma da escola: avisa que são só as minhas chamadas.
+    delete data.turmas[0].masterId;
+    const reg = coletarRegistrosRelatorioComportamental(data.turmas[0], data.estudantes[0], { bim: 4, inicio: '2026-10-01', fim: '2026-12-20' });
+    // Bruno: sem nenhum registro de falta/ocorrência no período e nenhuma chamada própria só dele.
+    const semChamada = linhasRegistrosRelatorioComportamental(coletarRegistrosRelatorioComportamental({ id: 9, nome: 'X' }, { id: 99 }, { bim: 4, inicio: '2026-10-01', fim: '2026-12-20' })).join('\n');
+    return { resumo, prompt: window.__prompts[0] || '', linha: linhaFrequenciaRelatorio(reg.frequencia), semChamada };
+  });
+  ok('resumo: 3 faltas em 5 chamadas (minhas 2 + colega 3), de todos os professores', /3 falta\(s\) em 5 chamada\(s\)/.test(r5.resumo) && r5.resumo.indexOf('todos os professores') !== -1, r5.resumo);
+  ok('pedido: faltou em 2 de 4 dias com chamada, 2 professores, só dias com chamada',
+     r5.prompt.indexOf('chamadas de todos os professores da turma (2 professores); contando apenas os dias em que houve chamada): 3 falta(s) em 5 chamada(s) registrada(s); faltou em 2 de 4 dia(s) com chamada (em 2 desses dias faltou em todas as aulas com chamada)') !== -1,
+     (r5.prompt.match(/Frequência.*$/m) || [''])[0]);
+  ok('pedido manda não elogiar por falta de registro', r5.prompt.indexOf('NÃO significa boa conduta') !== -1 && r5.prompt.indexOf('Não elogie à toa') !== -1);
+  ok('turma sem vínculo: avisa que são só as chamadas deste professor', r5.linha.indexOf('só as chamadas deste professor; a turma não está ligada') !== -1 && r5.linha.indexOf('1 falta(s) em 2 chamada(s)') !== -1, r5.linha);
+  ok('sem chamada: diz que não há dados (não é boa frequência)', r5.semChamada.indexOf('nenhuma chamada registrada') !== -1 && r5.semChamada.indexOf('não significa boa frequência') !== -1
+     && r5.semChamada.indexOf('Ocorrências: nenhuma registrada') !== -1 && r5.semChamada.indexOf('Caderno e participação: nenhum registro') !== -1, r5.semChamada);
+
   ok('sem erros na página', erros.length === 0);
   if (erros.length) console.log(erros);
 

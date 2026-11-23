@@ -128,7 +128,7 @@ const ok = (nome, cond, extra) => { console.log((cond ? '  ok   ' : '  FALHA') +
     return r;
   });
   ok('pedido à IA sem nomes', r3.prompt && !/Manuela|Veronez|Bruno|Lima/.test(r3.prompt), r3.prompt);
-  ok('pedido traz ocorrências, faltas, caderno, nota, tutoria e relatório', r3.prompt.indexOf('Discutiu com') !== -1 && r3.prompt.indexOf('Faltas no ano: 2') !== -1
+  ok('pedido traz ocorrências, faltas, caderno, nota, tutoria e relatório', r3.prompt.indexOf('Discutiu com') !== -1 && r3.prompt.indexOf('Faltas no ano (lançadas por este professor; as de todos os professores estão por turma, abaixo): 2') !== -1
      && r3.prompt.indexOf('caderno incompleto') !== -1 && r3.prompt.indexOf('Releitura de obra (4º bim.): 6,5') !== -1
      && r3.prompt.indexOf('Projeto de vida — [ESTUDANTE] falou que quer ser veterinária') !== -1 && r3.prompt.indexOf('demonstrou evolução na convivência') !== -1, r3.prompt);
   ok('pedido pede perfil, não lista', r3.prompt.indexOf('NÃO é para listar os registros') !== -1);
