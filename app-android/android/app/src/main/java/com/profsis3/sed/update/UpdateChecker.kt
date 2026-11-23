@@ -28,15 +28,21 @@ import kotlin.concurrent.thread
  */
 object UpdateChecker {
 
-    // Tenta o endereço novo primeiro; se não tiver o arquivo (a Vercel não gera o APK) ou
-    // estiver fora, cai no github.io (que pode estar bloqueado no wi-fi da escola).
+    // Lê os dois endereços e fica com o que anuncia a versão MAIOR: a cópia da Vercel pode
+    // ficar um envio atrás do github.io, e o github.io pode estar bloqueado no wi-fi da escola.
     private val VERSION_URLS = listOf(
         "https://ediprof.vercel.app/app-android/dist/version.json",
         "https://rafanunesran.github.io/ProfSis3/app-android/dist/version.json"
     )
     private const val APK_FILE_NAME = "profsis3-update.apk"
 
-    fun checkForUpdate(activity: Activity) {
+    /**
+     * [manual] = true quando a pessoa tocou em "Verificar atualização" no site (ver
+     * webview/AppBridge). Aí sempre dá uma resposta na tela: oferece atualizar, ou diz que
+     * já está na versão mais nova e oferece instalar de novo mesmo assim (forçar).
+     */
+    fun checkForUpdate(activity: Activity, manual: Boolean = false) {
+        if (manual) Toast.makeText(activity, "Verificando atualização...", Toast.LENGTH_SHORT).show()
         thread {
             try {
                 var remote: JSONObject? = null
@@ -47,24 +53,42 @@ object UpdateChecker {
                             readTimeout = 8000
                             inputStream.bufferedReader().use { it.readText() }
                         }
-                        remote = JSONObject(json)
-                        break
+                        val lido = JSONObject(json)
+                        if (remote == null || lido.getInt("versionCode") > remote.getInt("versionCode")) remote = lido
                     } catch (e: Exception) {
                         // tenta o próximo endereço
                     }
                 }
-                if (remote == null) return@thread
+                if (remote == null) {
+                    if (manual) activity.runOnUiThread {
+                        Toast.makeText(activity, "Não deu para verificar agora. Confira a internet e tente de novo.", Toast.LENGTH_LONG).show()
+                    }
+                    return@thread
+                }
                 val remoteVersionCode = remote.getInt("versionCode")
                 val remoteVersionName = remote.optString("versionName", "")
                 val apkUrl = remote.getString("apkUrl")
 
                 if (remoteVersionCode > BuildConfig.VERSION_CODE) {
                     activity.runOnUiThread { showUpdateDialog(activity, remoteVersionName, apkUrl) }
+                } else if (manual) {
+                    activity.runOnUiThread { showUpToDateDialog(activity, apkUrl) }
                 }
             } catch (e: Exception) {
                 // Sem conexão ou version.json fora do ar - ignora, tenta de novo na próxima abertura.
             }
         }
+    }
+
+    private fun showUpToDateDialog(activity: Activity, apkUrl: String) {
+        AlertDialog.Builder(activity)
+            .setTitle("O app está atualizado")
+            .setMessage("Você já tem a versão mais nova (${BuildConfig.VERSION_NAME}).\n\n" +
+                "Se algo não estiver funcionando, dá para baixar e instalar o app de novo.")
+            .setPositiveButton("Instalar de novo") { _, _ -> downloadAndInstall(activity, apkUrl) }
+            .setNegativeButton("Fechar", null)
+            .setCancelable(true)
+            .show()
     }
 
     private fun showUpdateDialog(activity: Activity, versionName: String, apkUrl: String) {

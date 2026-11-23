@@ -16,8 +16,10 @@ import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.profsis3.sed.BuildConfig
 import com.profsis3.sed.diagnostics.CrashLogger
 import com.profsis3.sed.update.UpdateChecker
+import com.profsis3.sed.webview.AppBridge
 import com.profsis3.sed.webview.ProfSisWebViewClient
 
 /**
@@ -84,6 +86,9 @@ class MainActivity : AppCompatActivity() {
         )
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
+        // O site reconhece o app por aqui e troca "Instalar app" por "Verificar atualização".
+        webView.settings.userAgentString = webView.settings.userAgentString + " EdiProfApp/" + BuildConfig.VERSION_NAME
+        webView.addJavascriptInterface(AppBridge(this), "EdiProfApp")
         // NAO habilitar setSupportMultipleWindows/javaScriptCanOpenWindowsAutomatically nem
         // usar um WebChromeClient com onCreateWindow aqui: a versao anterior (sem nenhum dos
         // dois) nunca fechava sozinha; assim que isso foi habilitado (pra tentar suportar

@@ -3102,7 +3102,8 @@ html[data-tema="ambar-noturno"] .planilha-notas thead .col-faltas-fixa {
 .btn-instalar-app {
     display: none;
 }
-html.pode-instalar .btn-instalar-app {
+html.pode-instalar .btn-instalar-app,
+html.no-app-android .btn-instalar-app {
     display: inline-block;
 }
 .auth-box .btn-instalar-app {

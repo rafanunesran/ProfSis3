@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&display=swap">
-    <link rel="stylesheet" href="styles.css?v=5.5.1">
+    <link rel="stylesheet" href="styles.css?v=5.5.2">
     <!-- PWA / iOS (iPhone e iPad) -->
     <link rel="manifest" href="manifest.webmanifest?v=4">
     <meta name="theme-color" content="#16171b">
@@ -38,7 +38,42 @@
                 avisoInstalacao = null;
                 document.documentElement.classList.remove('pode-instalar');
             });
+            // App Android (APK): ele abre o site numa WebView. O app novo se identifica com
+            // "EdiProfApp/" no navegador e tem a ponte window.EdiProfApp; nele o botão vira
+            // "Verificar atualização". O app antigo só tem o "; wv)" do Android.
+            var noAppNovo = /EdiProfApp\//.test(navigator.userAgent) && !!window.EdiProfApp;
+            var noAppAntigo = !noAppNovo && /android/i.test(navigator.userAgent) && /; wv\)/.test(navigator.userAgent);
+            if (noAppNovo || noAppAntigo) document.documentElement.classList.add('no-app-android');
+            function trocarTextoDosBotoes() {
+                var bs = document.querySelectorAll('.btn-instalar-app, [onclick="instalarApp()"]');
+                for (var i = 0; i < bs.length; i++) {
+                    if (bs[i].dataset.textoApp) continue;
+                    bs[i].dataset.textoApp = '1';
+                    bs[i].textContent = '🔄 Verificar atualização do app';
+                }
+            }
+            if (noAppNovo || noAppAntigo) {
+                document.addEventListener('DOMContentLoaded', function () {
+                    trocarTextoDosBotoes();
+                    // As telas de login e o perfil são redesenhadas pelo JS: troca de novo.
+                    new MutationObserver(trocarTextoDosBotoes).observe(document.body, { childList: true, subtree: true });
+                });
+            }
             window.instalarApp = function () {
+                if (noAppNovo) {
+                    try { window.EdiProfApp.verificarAtualizacao(); return; } catch (e) { /* cai no aviso abaixo */ }
+                }
+                if (noAppNovo || noAppAntigo) {
+                    alert('Esta versão do app não consegue verificar sozinha por aqui.\n\n' +
+                          'PARA ATUALIZAR:\n' +
+                          '1. Saia do wi-fi da escola (use os dados móveis ou o wi-fi de casa).\n' +
+                          '2. Feche o app de vez e abra de novo.\n' +
+                          '3. Quando aparecer "Nova versão disponível", toque em Atualizar e depois em Instalar.\n\n' +
+                          'Se não aparecer, abra no navegador do celular:\n' +
+                          'ediprof.vercel.app/app-android/dist/profsis3-debug.apk\n' +
+                          'e instale por cima.');
+                    return;
+                }
                 if (jaInstalado) {
                     alert('Você já está usando o EdiProf como app. 👍');
                     return;
