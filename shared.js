@@ -235,6 +235,7 @@ const CAMPOS_NUVEM = [
     'eventos',                 // compromissos gerais (a agenda de tutoria é `agendamentos`)
     'registrosAula', 'avisosMural',
     'configBimestres', 'feriadosEscolares', 'opcoesOcorrenciaRapida',
+    'presencaMinima',          // % mínima de presença da escola (Faltoso A), definida pela gestão
     'avaliacoesGestor',        // a DEFINIÇÃO da avaliação; as notas são pessoais
     'mapeamentos',             // só {id_turma, linhas, colunas, assentos:{"3-2": idEstudante}}
     'googleCalendar', 'escolaUF', 'escolaCidade'

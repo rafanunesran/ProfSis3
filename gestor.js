@@ -1,6 +1,6 @@
 // --- LÓGICA DO GESTOR ---
 
-let currentRegistrosTab = 'administrativos'; // 'administrativos', 'busca_ativa', 'bimestres', 'arquivados' ou 'limpeza'
+let currentRegistrosTab = 'administrativos'; // 'administrativos', 'busca_ativa', 'arquivados' ou 'configuracoes'
 let currentBuscaAtivaSubTab = 'consecutive'; // 'consecutive', 'weekly', 'percentage'
 let cacheBuscaAtiva = null;
 let stateArqBimestre = 0;
@@ -78,7 +78,7 @@ function renderGestorPanel() {
 function renderRegistrosGestor() {
     const html = `
         <div class="card">
-            <div style="margin-bottom: 20px; border-bottom: 1px solid #e3e8ef; display: flex; gap: 10px;">
+            <div style="margin-bottom: 20px; border-bottom: 1px solid #e3e8ef; display: flex; gap: 10px; flex-wrap: wrap; padding-bottom: 10px;">
                 <button class="btn ${currentRegistrosTab === 'administrativos' ? 'btn-primary' : 'btn-secondary'}" 
                         onclick="currentRegistrosTab='administrativos'; renderRegistrosGestor()">
                     📂 Vigentes
@@ -91,17 +91,9 @@ function renderRegistrosGestor() {
                         onclick="currentRegistrosTab='busca_ativa'; renderRegistrosGestor()">
                     🚨 Alertas Busca Ativa
                 </button>
-                <button class="btn ${currentRegistrosTab === 'bimestres' ? 'btn-primary' : 'btn-secondary'}"
-                        onclick="currentRegistrosTab='bimestres'; renderRegistrosGestor()">
-                    📅 Config. Bimestres
-                </button>
-                <button class="btn ${currentRegistrosTab === 'feriados' ? 'btn-primary' : 'btn-secondary'}"
-                        onclick="currentRegistrosTab='feriados'; renderRegistrosGestor()">
-                    🎉 Feriados e Recessos
-                </button>
-                <button class="btn ${currentRegistrosTab === 'limpeza' ? 'btn-primary' : 'btn-secondary'}"
-                        onclick="currentRegistrosTab='limpeza'; renderRegistrosGestor()">
-                    🧹 Limpeza de Duplicados
+                <button class="btn ${currentRegistrosTab === 'configuracoes' ? 'btn-primary' : 'btn-secondary'}"
+                        onclick="currentRegistrosTab='configuracoes'; renderRegistrosGestor()">
+                    ⚙️ Configurações
                 </button>
             </div>
 
@@ -112,20 +104,92 @@ function renderRegistrosGestor() {
     `;
     document.getElementById('registrosGestor').innerHTML = html;
 
+    // As antigas abas Config. Bimestres, Feriados e Limpeza viraram seções de Configurações.
+    if (['bimestres', 'feriados', 'limpeza'].indexOf(currentRegistrosTab) !== -1) currentRegistrosTab = 'configuracoes';
+
     // Agora, chama o renderizador correto para a aba ativa
     if (currentRegistrosTab === 'administrativos') {
         renderAbaRegistrosAdministrativos();
     } else if (currentRegistrosTab === 'busca_ativa') {
         renderAbaAlertasBuscaAtiva();
-    } else if (currentRegistrosTab === 'bimestres') {
-        renderAbaConfigBimestres();
-    } else if (currentRegistrosTab === 'feriados') {
-        renderAbaFeriados();
+    } else if (currentRegistrosTab === 'configuracoes') {
+        renderAbaConfiguracoes();
     } else if (currentRegistrosTab === 'arquivados') {
         renderAbaRegistrosArquivados();
-    } else if (currentRegistrosTab === 'limpeza') {
-        renderAbaLimpezaDados();
     }
+}
+
+// --- CONFIGURAÇÕES (uma página só com: presença mínima, bimestres, feriados e limpeza) ---
+// Cada seção tem a própria caixa e o próprio botão de salvar. As funções de cada seção
+// desenham dentro da caixa dela (alvoSecaoConfig) e, fora desta página, no conteúdo da aba.
+function alvoSecaoConfig(idSecao) {
+    return document.getElementById(idSecao) || document.getElementById('registrosGestorContent');
+}
+
+function irParaSecaoConfig(idSecao) {
+    const el = document.getElementById(idSecao);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderAbaConfiguracoes() {
+    const secoes = [
+        ['cfgPresenca', '📊 Presença mínima'],
+        ['cfgBimestres', '📅 Bimestres'],
+        ['cfgFeriados', '🎉 Feriados e Recessos'],
+        ['cfgLimpeza', '🧹 Limpeza de Duplicados']
+    ];
+    const caixa = 'padding:18px; border:1px solid #e3e8ef; border-radius:10px; margin-bottom:22px; scroll-margin-top:80px;';
+    document.getElementById('registrosGestorContent').innerHTML = `
+        <div id="configuracoesGestor">
+            <h2 style="margin-top:0;">⚙️ Configurações</h2>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px;">
+                ${secoes.map(([id, nome]) => `<button type="button" class="btn btn-secondary btn-sm" onclick="irParaSecaoConfig('${id}')">${nome}</button>`).join('')}
+            </div>
+            ${secoes.map(([id]) => `<section id="${id}" style="${caixa}"></section>`).join('')}
+        </div>
+    `;
+    renderSecaoPresencaMinima();
+    renderAbaConfigBimestres();
+    renderAbaFeriados();
+    renderAbaLimpezaDados();
+}
+
+function renderSecaoPresencaMinima() {
+    const perc = presencaMinimaPerc();
+    alvoSecaoConfig('cfgPresenca').innerHTML = `
+        <div>
+            <h2>📊 Porcentagem mínima de presença</h2>
+            <form onsubmit="salvarPresencaMinima(event)" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap;">
+                <label style="min-width:160px;">
+                    <span style="font-size:12px; font-weight:bold;">Presença mínima (%):</span><br>
+                    <input type="number" id="cfgPresencaMinima" min="1" max="100" step="1" value="${perc}" required style="width:120px; padding:8px; font-size:16px;">
+                </label>
+                <button type="submit" class="btn btn-primary">💾 Salvar presença mínima</button>
+            </form>
+            <p style="color:#5f6b7f; font-size:14px; margin:14px 0 0;">
+                🤖 Estudante ativo com presença <strong>abaixo de <span id="cfgPresencaTexto">${perc}</span>%</strong> vira
+                <strong>aluno faltoso automaticamente</strong> ("Faltoso A") e sai sozinho quando a presença chega a esse valor.
+                Conta 1 vez cada dia com chamada (se no mesmo dia teve presença e falta, vale o que apareceu mais; empate conta presença).
+                Dias de atestado não entram. Só começa depois de 2 semanas de chamadas da turma.
+                O padrão é ${Math.round(FALTOSO_A_LIMITE * 100)}%.
+            </p>
+        </div>
+    `;
+    const campo = document.getElementById('cfgPresencaMinima');
+    const texto = document.getElementById('cfgPresencaTexto');
+    if (campo && texto) campo.addEventListener('input', () => { texto.textContent = campo.value || '…'; });
+}
+
+async function salvarPresencaMinima(e) {
+    if (e) e.preventDefault();
+    const v = parseInt(document.getElementById('cfgPresencaMinima').value, 10);
+    if (!(v >= 1 && v <= 100)) return alert('Digite um número de 1 a 100.');
+    data.presencaMinima = v;
+    await persistirDados();
+    // Refaz a conta já com o novo limite (entra e sai quem mudou de lado).
+    try { await atualizarFaltososAutomaticos(); } catch (err) {}
+    alert(`Presença mínima salva: ${v}%.\nQuem estiver abaixo disso vira faltoso automaticamente. Os professores recebem a mudança na próxima vez que abrirem o aplicativo.`);
+    renderRegistrosGestor();
 }
 
 function renderAbaRegistrosArquivados() {
@@ -296,7 +360,7 @@ function renderAbaConfigBimestres() {
             </form>
         </div>
     `;
-    document.getElementById('registrosGestorContent').innerHTML = html;
+    alvoSecaoConfig('cfgBimestres').innerHTML = html;
 }
 
 function salvarConfigBimestres(e) {
@@ -355,7 +419,7 @@ function renderAbaFeriados() {
             <button type="button" class="btn btn-primary" style="margin-top:20px; width:100%; padding:12px;" onclick="salvarFeriados()">💾 Salvar Feriados e Recessos</button>
         </div>
     `;
-    document.getElementById('registrosGestorContent').innerHTML = html;
+    alvoSecaoConfig('cfgFeriados').innerHTML = html;
 }
 
 function linhaFeriadoHTML(dataVal, nomeVal, idx) {
@@ -765,8 +829,16 @@ function marcarComoFaltosoBuscaAtiva(estudanteId, turmaId) {
 //   - só estudante ativo; quem já tem "Faltoso" lançado à mão pela gestão não ganha o A.
 // Fica em data.registrosAdministrativos como um Faltoso com `automatico: true`, então chega aos
 // professores pelo mesmo caminho dos faltosos manuais (lista publicada da escola).
-const FALTOSO_A_LIMITE = 0.5;
+const FALTOSO_A_LIMITE = 0.5; // padrão, quando a gestão não definiu a presença mínima
 const FALTOSO_A_CARENCIA_DIAS = 14;
+
+// Presença mínima definida pela gestão em Registros › Configurações (data.presencaMinima, em %).
+// Chega aos professores junto com o resto da escola (app.js). Sem valor válido, vale o padrão.
+function presencaMinimaPerc(valor) {
+    const v = Number(valor !== undefined ? valor : (typeof data !== 'undefined' && data ? data.presencaMinima : undefined));
+    return (v >= 1 && v <= 100) ? Math.round(v) : Math.round(FALTOSO_A_LIMITE * 100);
+}
+function limiteFaltosoA() { return presencaMinimaPerc() / 100; }
 
 // Junta, por professor, os dias com chamada (por turma da escola) e as faltas (por dia).
 // Devolve [{ autorId, chamadas: { masterId: [dias] }, faltas: { dia: [idEstudante] } }].
@@ -825,9 +897,11 @@ function _diasEntre(a, b) {
     return Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000);
 }
 
-// Conta pura (sem rede): quem está abaixo de 50%. `hoje` e `inicioAno` em 'AAAA-MM-DD'.
+// Conta pura (sem rede): quem está abaixo da presença mínima. `hoje` e `inicioAno` em 'AAAA-MM-DD'.
+// `limite` (0-1, opcional) = presença mínima; sem ele, vale a da gestão (limiteFaltosoA).
 // Devolve [{ estudanteId, turmaId, presenca (0-1), dias, diasPresente }].
-function calcularFaltososAutomaticos(fontes, estudantes, registros, hoje, inicioAno) {
+function calcularFaltososAutomaticos(fontes, estudantes, registros, hoje, inicioAno, limite) {
+    const limiteUsado = (typeof limite === 'number' && limite > 0) ? limite : limiteFaltosoA();
     const noPeriodo = (dia) => dia && dia <= hoje && (!inicioAno || dia >= inicioAno);
     // turma -> dia -> professores que fizeram chamada; dia -> aluno -> professores que deram falta
     const chamadaPorTurma = {};
@@ -883,7 +957,7 @@ function calcularFaltososAutomaticos(fontes, estudantes, registros, hoje, inicio
         });
         if (!dias) return;
         const presenca = presentes / dias;
-        if (presenca < FALTOSO_A_LIMITE) resultado.push({ estudanteId: e.id, turmaId: e.id_turma, presenca, dias, diasPresente: presentes });
+        if (presenca < limiteUsado) resultado.push({ estudanteId: e.id, turmaId: e.id_turma, presenca, dias, diasPresente: presentes });
     });
     return resultado;
 }
@@ -965,7 +1039,9 @@ async function atualizarFaltososDoDiaProfessor(opcoes) {
     if (!currentUser || !currentUser.schoolId || typeof lerContribuicoesDaEscola !== 'function') return false;
     const hoje = getTodayString();
     const fa = data.faltososAutomaticos;
-    if (fa && fa.dia === hoje && !(opcoes && opcoes.forcar)) return false; // já fez hoje
+    const limitePerc = presencaMinimaPerc();
+    // Já fez hoje com a mesma presença mínima. Se a gestão mudou o valor, refaz na hora.
+    if (fa && fa.dia === hoje && (fa.limite || Math.round(FALTOSO_A_LIMITE * 100)) === limitePerc && !(opcoes && opcoes.forcar)) return false;
     _calculandoFaltososAProf = true;
     try {
         const contrib = await lerContribuicoesDaEscola();
@@ -987,7 +1063,7 @@ async function atualizarFaltososDoDiaProfessor(opcoes) {
         const desdeAntes = (fa && fa.desde) || {};
         const desde = {};
         lista.forEach(x => { const k = String(x.estudanteId); desde[k] = desdeAntes[k] || hoje; });
-        data.faltososAutomaticos = { dia: hoje, lista, desde };
+        data.faltososAutomaticos = { dia: hoje, lista, desde, limite: limitePerc };
         data.registrosAdministrativos = registrosComFaltososDoDia(data.registrosAdministrativos || []);
         await persistirDados();
         return true;
@@ -1111,7 +1187,7 @@ function renderAbaRegistrosAdministrativos() {
                                         <td>${getAeePrefix((data.estudantes || []).find(e => e.id == r.estudanteId))}${r.estudanteNome}</td>
                                         <td>${r.automatico ? 'Desde ' : ''}${formatDate(r.data)} ${r.tipo === 'Atestado' ? `(${r.dias} dias)` : ''} ${r.descricao ? `<br><small>${r.descricao}</small>` : ''}</td>
                                         <td>
-                                            ${r.automatico ? `<small style="color:#5f6b7f;" title="Sai sozinho quando a presença chegar a 50%">🤖 automático</small>` : `<button class="btn btn-secondary btn-sm" onclick="arquivarRegistroGestao(${r.id})" title="Arquivar (mantém no histórico)">🗄️ Arquivar</button>
+                                            ${r.automatico ? `<small style="color:#5f6b7f;" title="Sai sozinho quando a presença chegar a ${presencaMinimaPerc()}%">🤖 automático</small>` : `<button class="btn btn-secondary btn-sm" onclick="arquivarRegistroGestao(${r.id})" title="Arquivar (mantém no histórico)">🗄️ Arquivar</button>
                                             <button class="btn btn-danger btn-sm" onclick="removerRegistroGestao(${r.id})" title="Excluir permanentemente">🗑️</button>`}
                                         </td>
                                     </tr>
@@ -1120,7 +1196,7 @@ function renderAbaRegistrosAdministrativos() {
                         </table>
                     `).join('')}
                 ` : '<p class="empty-state">Nenhum registro vigente ou faltoso encontrado.</p>'}
-                <p style="font-size:12px; color:#5f6b7f; margin-top:15px;">🤖 <strong>Faltoso A</strong> (automático): estudante ativo com menos de 50% de presença, contando 1 vez cada dia com chamada (se no mesmo dia teve presença e falta, vale o que apareceu mais; empate conta presença). Dias de atestado não entram. Só começa depois de 2 semanas de chamadas e sai sozinho quando a presença chega a 50%. A conta é refeita todo dia: no aparelho de cada professor, na primeira abertura do dia, e aqui sempre que esta tela abre.</p>
+                <p style="font-size:12px; color:#5f6b7f; margin-top:15px;">🤖 <strong>Faltoso A</strong> (automático): estudante ativo com menos de ${presencaMinimaPerc()}% de presença (a presença mínima fica em ⚙️ Configurações), contando 1 vez cada dia com chamada (se no mesmo dia teve presença e falta, vale o que apareceu mais; empate conta presença). Dias de atestado não entram. Só começa depois de 2 semanas de chamadas e sai sozinho quando a presença chega a ${presencaMinimaPerc()}%. A conta é refeita todo dia: no aparelho de cada professor, na primeira abertura do dia, e aqui sempre que esta tela abre.</p>
             </div>
         </div>
     `;
@@ -1279,7 +1355,7 @@ function renderOcorrenciasGestorTela() {
 
     const html = `
         <div class="card">
-            <div style="margin-bottom: 20px; border-bottom: 1px solid #e3e8ef; display: flex; gap: 10px;">
+            <div style="margin-bottom: 20px; border-bottom: 1px solid #e3e8ef; display: flex; gap: 10px; flex-wrap: wrap; padding-bottom: 10px;">
                 <button class="btn ${currentOcorrenciaTab === 'disciplinares' ? 'btn-primary' : 'btn-secondary'}" 
                         onclick="currentOcorrenciaTab='disciplinares'; renderOcorrenciasGestor()">
                     ⚠️ Disciplinares
@@ -1773,7 +1849,7 @@ function renderAbaLimpezaDados() {
             </div>
         </div>
     `;
-    document.getElementById('registrosGestorContent').innerHTML = html;
+    alvoSecaoConfig('cfgLimpeza').innerHTML = html;
 }
 
 async function executarDiagnosticoOrfaos() {
@@ -2840,7 +2916,7 @@ function renderPreviaImportMassa() {
             }
         }
         if (p && p.duplicados.length) {
-            resumo += `<div style="color:#b7791f; margin-top:4px;">⚠️ Esta turma já tem ${p.duplicados.length} nome(s) repetido(s) — use Registros › Limpeza de Duplicados.</div>`;
+            resumo += `<div style="color:#b7791f; margin-top:4px;">⚠️ Esta turma já tem ${p.duplicados.length} nome(s) repetido(s) — use Registros › Configurações › Limpeza de Duplicados.</div>`;
         }
         if (p && p.ativosEmOutra.length) {
             resumo += `<div style="color:#1f55ad; margin-top:4px;">ℹ️ ${p.ativosEmOutra.length} aluno(s) desta lista seguem ativos em outra turma (${escaparHtmlImportMassa([...new Set(p.ativosEmOutra.map(a => a.turma))].join(', '))}) — importe a lista dela também para concluir o remanejamento.</div>`;
@@ -2988,7 +3064,7 @@ function mostrarRelatorioImportMassa(relatorio, destinos) {
                 </ul>`);
         }
         if (r.resultado.duplicados && r.resultado.duplicados.length) {
-            partes.push(`<div style="color:#b7791f; margin-top:6px; font-size:12px;">⚠️ A turma já tinha ${r.resultado.duplicados.length} nome(s) repetido(s): use Registros › Limpeza de Duplicados.</div>`);
+            partes.push(`<div style="color:#b7791f; margin-top:6px; font-size:12px;">⚠️ A turma já tinha ${r.resultado.duplicados.length} nome(s) repetido(s): use Registros › Configurações › Limpeza de Duplicados.</div>`);
         }
         if (partes.length === 0) partes.push('<div style="color:#5f6b7f; margin-top:6px; font-size:12px;">Nada mudou.</div>');
 

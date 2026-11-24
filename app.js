@@ -1791,11 +1791,14 @@ async function renderDashboard() {
                 && JSON.stringify(data.registrosAdministrativos || []) !== JSON.stringify(registrosGestorEnriquecidos);
             const avisosMudou = !!gestorData.avisosMural
                 && JSON.stringify(data.avisosMural || []) !== JSON.stringify(gestorData.avisosMural);
+            // Presença mínima da escola (Faltoso A), definida pela gestão em Configurações.
+            const presencaMinimaMudou = gestorData.presencaMinima != null && data.presencaMinima !== gestorData.presencaMinima;
+            if (presencaMinimaMudou) data.presencaMinima = gestorData.presencaMinima;
             data.schoolGrade = gradeEscola;
             data.schoolExceptions = excecoesGrade;
             if (gestorData.avisosMural) data.avisosMural = gestorData.avisosMural;
             if (registrosGestorEnriquecidos) data.registrosAdministrativos = registrosGestorEnriquecidos;
-            if (gradeMudou || registrosMudou || avisosMudou) persistirDados();
+            if (gradeMudou || registrosMudou || avisosMudou || presencaMinimaMudou) persistirDados();
             // Faltoso A: conta do dia no próprio aparelho, em segundo plano, 1 vez por dia
             // (não depende de a gestão abrir o painel).
             if (typeof atualizarFaltososDoDiaProfessor === 'function') atualizarFaltososDoDiaProfessor();
@@ -2351,6 +2354,7 @@ async function abrirTurma(id) {
             if (gestorData.configBimestres) {
                 data.configBimestres = gestorData.configBimestres;
             }
+            if (gestorData.presencaMinima != null) data.presencaMinima = gestorData.presencaMinima;
             
             // [NOVO] Sincroniza Status e Devolutivas das Ocorrências
             if (gestorData.ocorrencias) {
@@ -2931,7 +2935,7 @@ async function renderChamada() {
                     
                     regsAluno.forEach(r => {
                         if (r.tipo === 'Faltoso') {
-                            badges += `<span style="background:#fed7d7; color:#c53030; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold;"${r.automatico ? ` title="${(r.descricao || 'Menos de 50% de presença').replace(/"/g, '&quot;')}"` : ''}>${rotuloTipoRegistro(r)}</span>`;
+                            badges += `<span style="background:#fed7d7; color:#c53030; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold;"${r.automatico ? ` title="${(r.descricao || 'Abaixo da presença mínima').replace(/"/g, '&quot;')}"` : ''}>${rotuloTipoRegistro(r)}</span>`;
                         } else if (r.tipo === 'Observacao') {
                             badges += `<span style="background:#fffaf0; color:#d69e2e; font-size:11px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #fbd38d;" title="${r.descricao || ''}">Obs</span>`;
                         } else if (r.tipo === 'Atestado') {
@@ -4328,7 +4332,8 @@ function calcularTotalAulasPrevistas(turmaId, inicio, fim) {
     return totalAulas;
 }
 
-// Recalcula quem está com <50% de presença no ANO LETIVO (acumulado até hoje), DESCONTANDO atestados,
+// Recalcula quem está abaixo da presença mínima da escola (padrão 50%; a gestão muda em
+// Registros › Configurações) no ANO LETIVO (acumulado até hoje), DESCONTANDO atestados,
 // e grava em data.baixaFrequencia = [{id, nome}]. Esses alunos entram na regra de falta padrão mesmo
 // SEM estarem classificados como "Faltoso" pela gestão (regra complementar).
 // Piso: só aciona a partir de 10 aulas previstas no período (evita falso-positivo no começo do ano).
@@ -4339,6 +4344,7 @@ function recalcularBaixaFrequencia() {
     const inicioAno = configs.map(c => c.inicio).sort()[0];
     const hoje = getTodayString();
     if (hoje < inicioAno) { data.baixaFrequencia = []; return; }
+    const limiteBaixa = (typeof limiteFaltosoA === 'function') ? limiteFaltosoA() : 0.5;
 
     const estudantes = (data.estudantes || []);
     const presencas = (data.presencas || []);
@@ -4388,7 +4394,7 @@ function recalcularBaixaFrequencia() {
         const base = totalAulas - aulasAtestado;
         if (base <= 0) return;
         const presenca = (base - faltasEfetivas) / base;
-        if (presenca < 0.5) resultado.push({ id: e.id, nome: e.nome_completo });
+        if (presenca < limiteBaixa) resultado.push({ id: e.id, nome: e.nome_completo });
     });
 
     data.baixaFrequencia = resultado;
@@ -4890,7 +4896,7 @@ function renderTrabalhos() {
                         const regFaltoso = registrosGeral.filter(r => String(r.estudanteId) === String(e.id) && r.tipo === 'Faltoso' && !r.arquivado);
                         const isFaltoso = regFaltoso.length > 0;
                         const soAutomatico = isFaltoso && regFaltoso.every(r => r.automatico);
-                        const tagFaltoso = isFaltoso ? `<span style="background:#fed7d7; color:#c53030; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #feb2b2;" title="${soAutomatico ? 'Faltoso A (automático): menos de 50% de presença' : 'Aluno com alerta de Faltoso na Gestão'}">${soAutomatico ? 'Faltoso A' : 'Faltoso'}</span>` : '';
+                        const tagFaltoso = isFaltoso ? `<span style="background:#fed7d7; color:#c53030; font-size:10px; padding:2px 6px; border-radius:4px; margin-left:8px; font-weight:bold; border:1px solid #feb2b2;" title="${soAutomatico ? 'Faltoso A (automático): menos de ' + (typeof presencaMinimaPerc === 'function' ? presencaMinimaPerc() : 50) + '% de presença' : 'Aluno com alerta de Faltoso na Gestão'}">${soAutomatico ? 'Faltoso A' : 'Faltoso'}</span>` : '';
 
                         // [CORREÇÃO] Lógica robusta para exibir atestados e faltas no bimestre atual
                         const configAtualBimestre = data.configBimestres.find(c => c.bim === currentBimestreTrabalhos);
@@ -8801,7 +8807,7 @@ async function importarEstudantes(e) {
         aviso += `\n\n${r.ativosEmOutra.length} aluno(s) seguem ativos também em outra turma ` +
                  `(${[...new Set(r.ativosEmOutra.map(a => a.turma))].join(', ')}): importe a lista dela para concluir o remanejamento.`;
     }
-    if (r.duplicados.length) aviso += `\n\nA turma já tinha ${r.duplicados.length} nome(s) repetido(s): use Registros › Limpeza de Duplicados.`;
+    if (r.duplicados.length) aviso += `\n\nA turma já tinha ${r.duplicados.length} nome(s) repetido(s): use Registros › Configurações › Limpeza de Duplicados.`;
     alert(`Importação concluída${destino.rotulo ? ' em ' + destino.rotulo : ''}!\n\n${r.criados.length} aluno(s) adicionado(s)\n${r.alterados.length} com a situação atualizada${aviso}`);
     closeModal('modalImportarEstudantes');
     document.getElementById('arquivoEstudantes').value = '';

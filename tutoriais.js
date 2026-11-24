@@ -316,7 +316,7 @@ const TOURS = {
         nome: 'Registros da gestão',
         preparar: async () => { await irPara('registrosProfessor'); await esperar(400); },
         passos: [
-            { alvo: botaoMenu('registrosProfessor'), titulo: '📂 Registros', texto: 'O que a gestão registrou sobre os seus estudantes: faltas justificadas, atestados e alertas de faltoso (inclusive o "Faltoso A", automático, de quem tem menos de 50% de presença).' },
+            { alvo: botaoMenu('registrosProfessor'), titulo: '📂 Registros', texto: 'O que a gestão registrou sobre os seus estudantes: faltas justificadas, atestados e alertas de faltoso (inclusive o "Faltoso A", automático, de quem tem abaixo da presença mínima da escola, 50% se a gestão não mudou).' },
             { alvo: '#registrosProfessor .card', titulo: 'Registros vigentes', texto: 'Separados por turma. Serve para você saber, antes da chamada, quem está com atestado ou em acompanhamento. Só a gestão altera esses registros.' }
         ]
     },
@@ -500,7 +500,7 @@ const TOURS_ABAS = {
             { alvo: '#chamadaData', titulo: 'Data', texto: 'Já vem com hoje. Mude para lançar ou corrigir a chamada de outro dia: o que já foi salvo naquele dia aparece marcado. Se o dia não tem aula desta turma na sua agenda, aparece um aviso azul, mas a chamada continua liberada.' },
             { alvo: () => { const d = $('#chamadaData'); return d ? d.closest('.form-row').lastElementChild : null; }, titulo: 'Status do dia', texto: '"Pendente / Todos Presentes" (laranja) quando ainda não há falta salva nesse dia; "Registrada (Faltas)" (verde) depois que você salva faltas.' },
             { alvo: () => { const c = $('#tabChamada .presenca-check'); return c ? c.closest('td') : null; }, titulo: 'Presença', texto: 'Marcado (P verde) = presente. Toque para desmarcar = falta. Todo mundo começa presente, então você só toca em quem faltou.' },
-            { alvo: naAba('chamada', 'table'), titulo: 'Avisos ao lado do nome', texto: '"Atestado (3d)": tem atestado nesse dia e já vem como falta. "Faltoso" e "Obs": alertas da gestão. "Faltoso A": menos de 50% de presença, marcado sozinho pelo sistema. "⚠️ 2 falta(s) hoje": outros professores já marcaram falta hoje; com 2 ou mais, o estudante já vem desmarcado como sugestão (confira antes de salvar).' },
+            { alvo: naAba('chamada', 'table'), titulo: 'Avisos ao lado do nome', texto: '"Atestado (3d)": tem atestado nesse dia e já vem como falta. "Faltoso" e "Obs": alertas da gestão. "Faltoso A": abaixo da presença mínima da escola (padrão 50%), marcado sozinho pelo sistema. "⚠️ 2 falta(s) hoje": outros professores já marcaram falta hoje; com 2 ou mais, o estudante já vem desmarcado como sugestão (confira antes de salvar).' },
             { alvo: '#chamadaRegistroAula', titulo: '📝 Registro da Aula', texto: 'O diário de classe: escreva o conteúdo ou as atividades da aula. Fica guardado na aba Registros, na data da chamada.' },
             { alvo: '#btnSalvarChamada', titulo: '💾 Confirmar e Salvar', texto: 'Só aqui a chamada é gravada. As faltas também seguem (cifradas) para a escola: os colegas veem na chamada deles e a gestão usa na Busca Ativa. Se a escola não receber na hora, o sistema avisa e tenta de novo no próximo salvamento.' },
             { alvo: porTexto('#tabChamada', 'Relatório Mensal'), titulo: '📅 Relatório Mensal de Faltas', texto: 'A grade do mês inteiro (dias úteis × estudantes) com o total de faltas de cada um, incluindo as marcadas por outros professores. Escolha mês e ano e imprima pelo 🖨️.' }
@@ -538,7 +538,7 @@ const TOURS_ABAS = {
             { opcional: true, alvo: naAba('trabalhos', '.btn-grupos'), titulo: '👥 Trabalho em grupo', texto: 'Monte grupos na atividade (marcando os nomes ou sorteando; o sorteio equilibrado usa notas, caderno, participação, faltas e ocorrências para formar grupos parecidos). Depois, a nota que você lança para um estudante vai para o grupo todo. Para mudar só a de um, toque em "Só para…" no aviso que aparece embaixo, ou no ✎ ao lado do nome dentro do 👥. Quem tem nota própria não é trocado pela nota do grupo.' },
             { alvo: naAba('trabalhos', '.planilha-notas-box'), titulo: 'A planilha', texto: 'Toque na célula e digite a nota (pode usar vírgula); salva sozinho quando sai da célula. Nas atividades automáticas a nota já vem calculada; se você digitar por cima, vale a sua.' },
             { alvo: naAba('trabalhos', '.planilha-titulos .col-media-fixa'), titulo: 'MÉDIA', texto: 'Média ponderada pelos pesos das atividades do bimestre. Fica vermelha abaixo de 5.' },
-            { alvo: naAba('trabalhos', '.planilha-titulos .col-faltas-fixa'), titulo: 'FALTAS/AT.', texto: 'Faltas do estudante no bimestre e, entre parênteses, os dias de atestado. A tag "Faltoso" ao lado do nome vem da gestão; "Faltoso A" é a marcação automática de quem tem menos de 50% de presença.' }
+            { alvo: naAba('trabalhos', '.planilha-titulos .col-faltas-fixa'), titulo: 'FALTAS/AT.', texto: 'Faltas do estudante no bimestre e, entre parênteses, os dias de atestado. A tag "Faltoso" ao lado do nome vem da gestão; "Faltoso A" é a marcação automática de quem está abaixo da presença mínima da escola (padrão 50%).' }
         ]
     },
     aba_compensacoes: {
@@ -978,7 +978,7 @@ const PAGINAS = [
               'A IA não deve inventar fatos, mas sempre confira o texto antes de entregar.'] },
     { id: 'p-registros', icone: '📂', titulo: 'Registros (da gestão)', tour: 'registrosProfessor',
       praQue: 'Faltas justificadas, atestados e alertas que a gestão lançou para os seus estudantes.',
-      passos: ['Só para consulta: quem altera é a gestão.', 'Separado por turma.', 'Só aparecem estudantes ativos (transferidos e remanejados saem da lista).', '"Faltoso A" (A de Automático): o sistema marca sozinho quem tem menos de 50% de presença, contando 1 vez cada dia com chamada (se no mesmo dia teve presença e falta, vale o que apareceu mais; empate conta presença). Só começa depois de 2 semanas de chamadas. A conta é refeita sozinha todo dia, na primeira vez que o aplicativo abre, e o estudante sai quando a presença sobe.'] },
+      passos: ['Só para consulta: quem altera é a gestão.', 'Separado por turma.', 'Só aparecem estudantes ativos (transferidos e remanejados saem da lista).', '"Faltoso A" (A de Automático): o sistema marca sozinho quem está abaixo da presença mínima que a gestão definiu (padrão 50%), contando 1 vez cada dia com chamada (se no mesmo dia teve presença e falta, vale o que apareceu mais; empate conta presença). Só começa depois de 2 semanas de chamadas. A conta é refeita sozinha todo dia, na primeira vez que o aplicativo abre, e o estudante sai quando a presença sobe.'] },
     { id: 'p-aee', icone: '🌟', titulo: 'Painel AEE', tour: 'aeeVisaoGeral',
       praQue: 'Os estudantes acompanhados pelo AEE e os Anexos IV - PEI.',
       passos: ['Veja quem tem acompanhamento.', 'Abra, baixe em PDF ou reimprima o Anexo IV.', 'Para criar um Anexo IV, use o "✨ Estagiário".'] },
@@ -1053,7 +1053,7 @@ const MANUAL_TURMA = [
           { t: 'Avisos na lista', itens: [
               '"Atestado (Xd)": atestado vigente nesse dia. O estudante já vem desmarcado (falta).',
               '"Faltoso" (vermelho) e "Obs" (amarelo): alertas da gestão. Passe o dedo/mouse em "Obs" para ler.',
-              '"Faltoso A" (A de Automático): o sistema marca sozinho quem tem menos de 50% de presença, contando 1 vez cada dia com chamada (se no mesmo dia teve presença e falta, vale o que apareceu mais; empate conta presença). Só começa depois de 2 semanas de chamadas. A conta é refeita sozinha todo dia, na primeira vez que o aplicativo abre, e o estudante sai quando a presença sobe. Passe o dedo/mouse na tag para ver a porcentagem.',
+              '"Faltoso A" (A de Automático): o sistema marca sozinho quem está abaixo da presença mínima que a gestão definiu (padrão 50%), contando 1 vez cada dia com chamada (se no mesmo dia teve presença e falta, vale o que apareceu mais; empate conta presença). Só começa depois de 2 semanas de chamadas. A conta é refeita sozinha todo dia, na primeira vez que o aplicativo abre, e o estudante sai quando a presença sobe. Passe o dedo/mouse na tag para ver a porcentagem.',
               '"1B: 3d": dias de atestado acumulados no bimestre.',
               '"⚠️ N falta(s) hoje": outros professores marcaram falta hoje. Com 2 ou mais, o estudante já vem desmarcado como sugestão; se ele está na sua aula, marque de volta.'] },
           { t: 'Status e avisos da tela', itens: [
