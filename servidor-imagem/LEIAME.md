@@ -19,7 +19,7 @@ Ateliê (navegador)  ──HTTPS + chave──▶  Caddy (porta 443)  ──▶ 
   `http`. O Caddy tira o certificado sozinho (Let's Encrypt), de graça. Para isso
   precisa de um nome: um subdomínio grátis do **DuckDNS** serve.
 - **Proteção:** pede uma chave (gerada na instalação), só aceita pedidos vindos de
-  `https://rafanunesran.github.io` e só deixa passar a rota de gerar imagem. A chave
+  `https://ediprof.vercel.app` e `https://rafanunesran.github.io` e só deixa passar a rota de gerar imagem. A chave
   fica visível para quem abre o site (vai no pedido do navegador), como no servidor de
   vídeo: a proteção real é a origem + a máquina fazer uma imagem por vez.
 - **Tempo:** depende da máquina. Ampere com 4 núcleos: algo como 10 a 30 s por imagem

@@ -1832,6 +1832,25 @@ async function chamarIAEstruturada(promptText, btn) {
         console.warn('Erro ao buscar chave da IA:', e);
     }
 
+    // SERVIDOR DE IA PRÓPRIO (config_ia.servidorIaUrl + servidorIaChave): uma máquina do usuário
+    // (ex.: Oracle grátis, receita em servidor-ia/LEIAME.md) que recebe o pedido, chama o Gemini
+    // com as chaves guardadas SÓ nela e devolve o texto. Serve para redes de escola que bloqueiam
+    // a API do Google e para as chaves não irem ao navegador. Se falhar e ainda houver chaves
+    // cadastradas no painel, segue pelo caminho de sempre.
+    let erroServidorIA = '';
+    if (configData && configData.servidorIaUrl && configData.servidorIaChave) {
+        try {
+            if (btn) btn.textContent = 'Gerando estrutura... ⏳ (servidor próprio)';
+            const r = await chamarServidorIA(configData.servidorIaUrl, configData.servidorIaChave, promptText, listarModelosGemini(configData));
+            return extrairJsonDaIA(r.texto);
+        } catch (err) {
+            if (err && err.respostaInvalida) throw err;
+            erroServidorIA = err.message || String(err);
+            console.warn('⚠️ Servidor de IA próprio falhou:', erroServidorIA);
+            if (apiKeys.length === 0) throw new Error(`A Inteligência Artificial falhou.\nMotivo (servidor de IA próprio): ${erroServidorIA}`);
+        }
+    }
+
     if (apiKeys.length === 0) throw new Error('⚠️ A chave da API não foi configurada. Peça ao Administrador para entrar no painel Super Admin e adicioná-la em 🔑 Chaves de IA (e deixá-la Ativa).');
 
     // Tenta as chaves do Gemini antes das de OpenAI/Groq (mesmo se o Administrador tiver deixado mais
@@ -1847,6 +1866,7 @@ async function chamarIAEstruturada(promptText, btn) {
     // aconteceu com cada uma - antes só aparecia o erro da última chave tentada, e parecia que as
     // outras (ex: as do Gemini) nem tinham sido usadas.
     const errosPorChave = new Map();
+    if (erroServidorIA) errosPorChave.set('Servidor de IA próprio', erroServidorIA);
     const nomeDaChave = (k) => {
         const c = configData && Array.isArray(configData.chaves) ? configData.chaves.find(x => x && x.chave === k) : null;
         const fim = k.length > 4 ? '…' + k.slice(-4) : '';
@@ -2051,8 +2071,12 @@ async function chamarIAEstruturada(promptText, btn) {
         throw new Error(`A Inteligência Artificial falhou ou rejeitou o pedido.\nMotivo: ${lastError}${detalhes}`);
     }
 
-    // Limpa potenciais blocos markdown que a IA possa enviar por teimosia e converte para objeto
-    let jsonLimpo = respostaTexto.replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').trim();
+    return extrairJsonDaIA(respostaTexto);
+}
+
+// Limpa potenciais blocos markdown que a IA possa enviar por teimosia e converte para objeto.
+function extrairJsonDaIA(respostaTexto) {
+    let jsonLimpo = String(respostaTexto || '').replace(/```[a-zA-Z]*\n?/g, '').replace(/```/g, '').trim();
 
     const jsonMatch = jsonLimpo.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
@@ -2063,8 +2087,41 @@ async function chamarIAEstruturada(promptText, btn) {
         return JSON.parse(jsonLimpo);
     } catch (parseErr) {
         console.error("Erro no JSON retornado pela IA:", respostaTexto);
-        throw new Error("A IA não retornou os dados no formato esperado. Por favor, tente gerar novamente.");
+        const e = new Error("A IA não retornou os dados no formato esperado. Por favor, tente gerar novamente.");
+        e.respostaInvalida = true;
+        throw e;
     }
+}
+
+// Chama o servidor de IA próprio (servidor-ia/servidor.py atrás do Caddy). O servidor já tenta
+// todas as chaves e modelos dele (até ~80 s); aqui só esperamos um pouco mais que isso.
+const LIMITE_TEMPO_SERVIDOR_IA_MS = 90000;
+async function chamarServidorIA(url, chave, prompt, modelos, limiteMs) {
+    const limite = limiteMs || LIMITE_TEMPO_SERVIDOR_IA_MS;
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), limite);
+    try {
+        const r = await fetch(String(url).trim().replace(/\/+$/, '') + '/v1/gerar', {
+            method: 'POST', signal: controller.signal,
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + chave },
+            body: JSON.stringify({ prompt, modelos: modelos || [], temperatura: 0.7 })
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 401) throw new Error('chave do servidor errada (confira em Super Admin → 🔑 Chaves de IA)');
+        if (r.status === 403) throw new Error('o servidor recusou este site (confira ORIGENS na instalação)');
+        if (!r.ok) {
+            const det = Array.isArray(j.detalhes) && j.detalhes.length
+                ? ' — ' + j.detalhes.map(d => `${d.chave ? 'chave ' + d.chave + ', ' : ''}${d.modelo || ''}: ${d.erro}`).join('; ')
+                : '';
+            throw new Error((j.erro || ('erro ' + r.status)) + det);
+        }
+        if (typeof j.texto !== 'string' || !j.texto) throw new Error('o servidor não devolveu texto');
+        return j;
+    } catch (err) {
+        if (err.name === 'AbortError') throw new Error(`o servidor não respondeu em ${Math.round(limite / 1000)} s`);
+        if (err instanceof TypeError) throw new Error(`não conectou no servidor (${err.message}) — a rede pode estar bloqueando o endereço, ou o servidor está desligado`);
+        throw err;
+    } finally { clearTimeout(t); }
 }
 
 // ---------------------------------------------------------------------------

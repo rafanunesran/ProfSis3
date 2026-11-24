@@ -1744,6 +1744,18 @@ async function renderChavesIAScreen() {
             </div>
 
             <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e3e8ef;">
+                <h3 style="margin:0 0 6px; font-size:15px;">🛰️ Servidor de IA próprio (opcional, grátis)</h3>
+                <p style="font-size:12px; color:#5f6b7f; margin-bottom:8px;">Uma máquina sua (ex.: Oracle Cloud grátis) que recebe os pedidos de texto do Estagiário, Biblioteca, Na Mosca! e Ateliê, chama o Gemini com as chaves guardadas <strong>só nela</strong> e devolve a resposta. Útil quando a rede da escola bloqueia a IA. Receita: pasta <code>servidor-ia/LEIAME.md</code> do repositório. Com ele configurado, ele é tentado primeiro; as chaves da tabela acima só são usadas se ele falhar (pode deixar a tabela vazia, assim nenhuma chave do Gemini vai para o navegador). A chave abaixo é só do servidor, não é a do Gemini.</p>
+                <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+                    <input type="text" id="servidorIaUrlInput" value="${(configIA.servidorIaUrl || '').replace(/"/g, '&quot;')}" placeholder="https://sisprof-ia.duckdns.org" style="flex:2; min-width:220px; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
+                    <input type="text" id="servidorIaChaveInput" value="${(configIA.servidorIaChave || '').replace(/"/g, '&quot;')}" placeholder="chave mostrada no fim da instalação" style="flex:2; min-width:200px; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
+                    <button class="btn btn-secondary" onclick="testarServidorIA()">🧪 Testar</button>
+                    <button class="btn btn-primary" onclick="salvarServidorIA()">💾 Salvar</button>
+                </div>
+                <div id="servidorIaTeste" style="margin-top:8px; font-size:13px;"></div>
+            </div>
+
+            <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e3e8ef;">
                 <h3 style="margin:0 0 6px; font-size:15px;">🖥️ Servidor de imagem próprio (opcional, grátis)</h3>
                 <p style="font-size:12px; color:#5f6b7f; margin-bottom:8px;">Uma máquina sua (ex.: Oracle Cloud grátis) rodando a IA de desenho do Ateliê. Receita: pasta <code>servidor-imagem/LEIAME.md</code> do repositório. O Ateliê tenta este servidor primeiro, depois o Gemini/OpenAI e, por fim, o desenho em linhas. A chave fica visível para quem usa o site (vai no pedido do navegador).</p>
                 <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
@@ -1786,6 +1798,55 @@ async function salvarModeloGemini() {
     configData.geminiModel = document.getElementById('geminiModelInput').value.trim();
     await saveData('system', 'config_ia', configData);
     alert(configData.geminiModel ? 'Modelo do Gemini salvo!' : `Modelo do Gemini limpo — usando o padrão (${MODELOS_GEMINI_PADRAO.join(', ')}).`);
+}
+
+async function salvarServidorIA() {
+    const configData = await getData('system', 'config_ia') || {};
+    const url = document.getElementById('servidorIaUrlInput').value.trim().replace(/\/+$/, '');
+    if (url && !/^https:\/\//i.test(url)) { alert('O endereço precisa começar com https:// (o navegador não deixa o site chamar http).'); return; }
+    configData.servidorIaUrl = url;
+    configData.servidorIaChave = url ? document.getElementById('servidorIaChaveInput').value.trim() : '';
+    if (url && !configData.servidorIaChave) { alert('Preencha também a chave mostrada no fim da instalação.'); return; }
+    await saveData('system', 'config_ia', configData);
+    alert(url ? 'Servidor de IA salvo! A IA de texto vai passar por ele.' : 'Servidor de IA removido. A IA volta a usar as chaves da tabela.');
+}
+
+// Testa em 2 passos: (1) alcance - /saude, sem chave: mostra se ESTA rede chega no servidor;
+// (2) um pedido de verdade, pequeno, com a chave.
+async function testarServidorIA() {
+    const url = document.getElementById('servidorIaUrlInput').value.trim().replace(/\/+$/, '');
+    const chave = document.getElementById('servidorIaChaveInput').value.trim();
+    const caixa = document.getElementById('servidorIaTeste');
+    const esc = (t) => String(t).replace(/</g, '&lt;');
+    if (!url) { caixa.innerHTML = '<span style="color:#b91c1c;">Preencha o endereço.</span>'; return; }
+    if (!/^https:\/\//i.test(url)) { caixa.innerHTML = '<span style="color:#b91c1c;">O endereço precisa começar com https://</span>'; return; }
+    caixa.textContent = '1/2 Testando se esta rede chega no servidor... ⏳';
+    let saude;
+    try {
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), 15000);
+        const r = await fetch(url + '/saude', { signal: ctl.signal, cache: 'no-store' });
+        clearTimeout(t);
+        saude = await r.json();
+    } catch (e) {
+        caixa.innerHTML = '<span style="color:#b91c1c;">❌ Esta rede não chegou no servidor (' + esc(e.name === 'AbortError' ? 'sem resposta em 15 s' : e.message) + '). Se em casa funciona e na escola não, a escola está bloqueando o endereço.</span>';
+        return;
+    }
+    if (!saude || !saude.ok) { caixa.innerHTML = '<span style="color:#b91c1c;">❌ O endereço respondeu, mas não é o servidor de IA do EdiProf.</span>'; return; }
+    if (!saude.chaves) { caixa.innerHTML = '<span style="color:#b45309;">⚠️ A rede chega no servidor, mas ele não tem nenhuma chave do Gemini. Na máquina: <code>sudo nano /opt/sisprof-ia/chaves-gemini.txt</code></span>'; return; }
+    if (!chave) { caixa.innerHTML = '<span style="color:#166534;">✅ Esta rede chega no servidor (' + saude.chaves + ' chave(s) do Gemini lá).</span> Preencha a chave para testar um pedido.'; return; }
+    if (typeof chamarServidorIA !== 'function') { caixa.textContent = 'O módulo de IA não carregou. Recarregue a página.'; return; }
+    caixa.textContent = '2/2 Alcance ok. Pedindo uma resposta de teste à IA... ⏳';
+    const inicio = Date.now();
+    try {
+        const r = await chamarServidorIA(url, chave, 'Responda apenas com o JSON {"ok": true, "frase": "<uma frase curta de boas-vindas a professores>"}', typeof listarModelosGemini === 'function' ? listarModelosGemini(await getData('system', 'config_ia') || {}) : []);
+        const s = ((Date.now() - inicio) / 1000).toFixed(1);
+        let frase = r.texto;
+        try { frase = JSON.parse(r.texto).frase || r.texto; } catch (_) {}
+        caixa.innerHTML = '<span style="color:#166534;">✅ Funcionou em ' + s + ' s (modelo ' + esc(r.modelo || '?') + '):</span> <em>' + esc(String(frase).slice(0, 200)) + '</em>';
+    } catch (e) {
+        caixa.innerHTML = '<span style="color:#b91c1c;">❌ A rede chega no servidor, mas o pedido falhou: ' + esc(e.message || e) + '</span>';
+    }
 }
 
 async function salvarServidorImagem() {

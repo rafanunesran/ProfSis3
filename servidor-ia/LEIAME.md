@@ -1,0 +1,116 @@
+# Servidor de IA de texto do EdiProf (passa os pedidos para o Gemini)
+
+Esta pasta **não vai para o site** (o `scripts/montar-site.sh` copia uma lista fixa de
+arquivos). É a receita para pôr uma máquina sua — pensada para a **Oracle Cloud (Always
+Free)** — no meio do caminho entre o EdiProf e o Gemini.
+
+## Para que serve
+
+- **Rede da escola que bloqueia ou limita a IA:** o navegador só fala com o endereço da
+  sua máquina; quem fala com o Google é a máquina.
+- **Chaves do Gemini fora do navegador:** hoje as chaves cadastradas no Super Admin vão
+  para o navegador de quem usa a IA. Com o servidor, elas ficam **só na máquina**
+  (`/opt/sisprof-ia/chaves-gemini.txt`) e a tabela de chaves do Super Admin pode ficar vazia.
+
+```
+EdiProf (navegador) ──HTTPS + chave do app──▶ Caddy (443) ──▶ servidor.py (127.0.0.1:7862) ──▶ Gemini
+                                                                └ chaves do Gemini ficam aqui
+```
+
+- Usado por tudo que gera texto com IA (Estagiário, Biblioteca ⚡ Rápido, Na Mosca!, Ateliê).
+  O desenho do Ateliê continua com o servidor de imagem (`servidor-imagem/`).
+- O app só usa o servidor se o endereço estiver cadastrado. Se o servidor falhar e ainda
+  houver chaves na tabela do Super Admin, o app tenta do jeito antigo.
+- **Proteção:** a "chave do app" (gerada na instalação) é exigida em todo pedido e só
+  pedidos vindos de `https://ediprof.vercel.app` e `https://rafanunesran.github.io` são
+  aceitos pelo navegador. Essa chave do app fica visível para quem usa o site (como a do
+  servidor de imagem); ela **não** é a chave do Gemini.
+- Só usa o Python 3 que já vem no Ubuntu. Não compila nada: a instalação leva 1 a 3 minutos.
+
+## Passo a passo
+
+### 0. Entrar na máquina (SSH)
+
+No console da Oracle: **Compute → Instances →** a sua máquina → copie o **Public IP address**.
+No computador (PowerShell no Windows, ou Terminal), use a chave `.key` que a Oracle baixou
+quando a máquina foi criada:
+
+```bash
+ssh -i caminho/da/chave.key ubuntu@IP_PUBLICO
+```
+
+(Na imagem Oracle Linux o usuário é `opc` em vez de `ubuntu`. Pelo celular dá com o Termux:
+`pkg install openssh` e o mesmo comando.)
+
+### 1. Um nome grátis (DuckDNS)
+
+1. Entre em [duckdns.org](https://www.duckdns.org) (login com Google/GitHub).
+2. Crie um subdomínio, ex.: `sisprof-ia` → fica `sisprof-ia.duckdns.org`.
+3. Em **current ip**, ponha o IP público da máquina e clique **update ip**.
+
+Se a escola bloquear o `duckdns.org` (alguns filtros bloqueiam "DNS dinâmico"), dá para
+usar o próprio IP com o `sslip.io`, sem cadastro: `IP-COM-TRAÇOS.sslip.io`
+(ex.: IP `129.151.10.20` → `129-151-10-20.sslip.io`). Basta rodar a instalação de novo com esse nome.
+
+### 2. Abrir as portas 80 e 443 na Oracle
+
+No console da Oracle: **Networking → Virtual Cloud Networks →** (a rede da máquina)
+**→ Security Lists → Default Security List → Add Ingress Rules**:
+
+| Source CIDR | IP Protocol | Destination Port |
+|---|---|---|
+| `0.0.0.0/0` | TCP | `80` |
+| `0.0.0.0/0` | TCP | `443` |
+
+(Se o servidor de imagem já está nessa máquina, isso já foi feito.)
+
+### 3. Instalar
+
+Na máquina (por SSH):
+
+```bash
+git clone --depth 1 https://github.com/rafanunesran/ProfSis3.git || (cd ProfSis3 && git pull)
+cd ProfSis3/servidor-ia
+sudo bash instalar.sh sisprof-ia.duckdns.org
+```
+
+Ele pede as chaves do Gemini (cole uma, Enter; Enter vazio termina; o que você cola não
+aparece). No fim mostra o **endereço** e a **chave do app**.
+
+Para pôr ou tirar chaves do Gemini depois: `sudo nano /opt/sisprof-ia/chaves-gemini.txt`
+(uma por linha; vale na hora, sem reiniciar).
+
+### 4. Teste de alcance (na escola)
+
+No wi-fi da escola, abra no navegador: `https://sisprof-ia.duckdns.org/saude`
+
+- Apareceu `{"ok": true, ...}` → a escola deixa passar. Siga para o passo 5.
+- Não abriu, mas em casa (ou no 4G) abre → a escola bloqueia esse endereço. Tente o
+  nome `sslip.io` do passo 1.
+
+### 5. Ligar no EdiProf
+
+**Painel Super Admin → 🔑 Chaves de IA → 🛰️ Servidor de IA próprio**: cole o endereço e
+a chave do app → **🧪 Testar** (mostra se a rede chega e faz um pedido de verdade) →
+**💾 Salvar**.
+
+Depois que funcionar, você pode **excluir** as chaves do Gemini da tabela do Super Admin:
+assim elas param de ir para o navegador. (Se fizer isso e o servidor cair, a IA do app
+para até ele voltar.)
+
+## Conferir e consertar
+
+```bash
+systemctl status sisprof-ia caddy             # os dois devem estar "active (running)"
+journalctl -u sisprof-ia -n 50                # pedidos (só rota e código, sem o texto)
+curl https://sisprof-ia.duckdns.org/saude     # {"ok": true, "chaves": N}
+```
+
+- **"chave do servidor errada":** copie de novo de `sudo cat /opt/sisprof-ia/chave.txt`.
+- **"Todas as chaves do servidor falharam":** a mensagem traz o erro de cada chave (cota,
+  chave inválida, modelo aposentado...). É o mesmo problema que daria direto no Gemini.
+- **Testar diz que não chegou:** confira o DuckDNS (IP certo) e as portas 80/443 (passo 2).
+  O Caddy só tira o certificado com a 80 aberta: `journalctl -u caddy -n 50`.
+- **Atualizar o servidor:** `cd ProfSis3 && git pull && sudo bash servidor-ia/instalar.sh sisprof-ia.duckdns.org`
+  (mantém a chave do app e as chaves do Gemini).
+- **Outro site/endereço do app:** `sudo ORIGENS=https://site1,https://site2 bash instalar.sh ...`

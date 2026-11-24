@@ -20,7 +20,8 @@ if [ -z "$DOMINIO" ]; then echo "Uso: sudo bash instalar.sh seu-nome.duckdns.org
 if [ "$(id -u)" != "0" ]; then echo "Rode com sudo."; exit 1; fi
 
 VERSAO_SDCPP="${VERSAO_SDCPP:-master-1052-f5df5f8}"
-ORIGEM_SITE="${ORIGEM_SITE:-https://rafanunesran.github.io}"
+# Sites que podem chamar (expressão regular do cabeçalho Origin): o EdiProf novo e o endereço antigo.
+ORIGENS_RE="${ORIGENS_RE:-^https://(ediprof\\.vercel\\.app|rafanunesran\\.github\\.io)$}"
 PASTA=/opt/sisprof-imagem
 MODELO_URL="${MODELO_URL:-https://huggingface.co/stabilityai/sd-turbo/resolve/main/sd_turbo.safetensors}"
 NUCLEOS="$(nproc)"
@@ -99,10 +100,12 @@ if ! command -v caddy >/dev/null; then
     curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' > /etc/apt/sources.list.d/caddy-stable.list
     apt-get update -y && apt-get install -y caddy
 fi
-cat > /etc/caddy/Caddyfile <<CADDY
+BLOCO="$(cat <<CADDY
+# >>> sisprof-imagem (gerado por servidor-imagem/instalar.sh)
 $DOMINIO {
+	@origemok header_regexp Origin "$ORIGENS_RE"
+	header @origemok Access-Control-Allow-Origin "{http.request.header.Origin}"
 	header {
-		Access-Control-Allow-Origin "$ORIGEM_SITE"
 		Access-Control-Allow-Methods "GET, POST, OPTIONS"
 		Access-Control-Allow-Headers "Content-Type, Authorization"
 		Access-Control-Max-Age "86400"
@@ -135,7 +138,17 @@ $DOMINIO {
 		respond "não encontrado" 404
 	}
 }
+# <<< sisprof-imagem
 CADDY
+)"
+# Troca só o nosso bloco; o resto do Caddyfile (ex.: servidor de IA de texto) fica.
+CF=/etc/caddy/Caddyfile
+touch "$CF"
+if grep -q '^:80' "$CF" && ! grep -q '>>> sisprof' "$CF"; then : > "$CF"; fi
+# Tira o nosso bloco marcado e também o bloco sem marca de uma instalação antiga (mesmo domínio).
+awk -v d="$DOMINIO {" '/^# >>> sisprof-imagem/{pular=1} $0==d{velho=1} !pular && !velho{print} /^# <<< sisprof-imagem/{pular=0} velho && /^}/{velho=0}' "$CF" > "$CF.novo"
+printf '%s\n' "$BLOCO" >> "$CF.novo"
+mv "$CF.novo" "$CF"
 systemctl enable caddy >/dev/null 2>&1 || true
 systemctl restart caddy
 
