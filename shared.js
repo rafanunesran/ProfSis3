@@ -13,6 +13,12 @@ function getTodayString() {
 //
 // Ano letivo de hoje: o do calendário, salvo quando hoje cai dentro dos bimestres
 // cadastrados e eles começaram no ano anterior (escola que termina em janeiro).
+// Ordem alfabética de nomes (estudantes, turmas) em português: ignora acento e maiúscula,
+// e "2º A" vem antes de "10º A". Usada nas listas de faltosos/registros.
+function compararNomes(a, b) {
+    return String(a || '').localeCompare(String(b || ''), 'pt-BR', { sensitivity: 'base', numeric: true });
+}
+
 function anoLetivoDeHoje(configBimestres) {
     const hoje = getTodayString();
     const bims = (configBimestres || (typeof data !== 'undefined' && data && data.configBimestres) || [])

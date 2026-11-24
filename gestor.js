@@ -218,7 +218,7 @@ function renderAbaRegistrosArquivados() {
                         <span style="font-size: 12px; font-weight: bold;">Turma:</span><br>
                         <select id="filtroArqTurma" onchange="atualizarFiltrosArquivados()" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #cdd5e1;">
                             <option value="0" ${stateArqTurma === 0 ? 'selected' : ''}>Todas</option>
-                            ${(data.turmas || []).map(t => `<option value="${t.id}" ${stateArqTurma == t.id ? 'selected' : ''}>${t.nome}</option>`).join('')}
+                            ${(data.turmas || []).slice().sort((x, y) => compararNomes(x.nome, y.nome)).map(t => `<option value="${t.id}" ${stateArqTurma == t.id ? 'selected' : ''}>${t.nome}</option>`).join('')}
                         </select>
                     </label>
                     <label style="flex: 2; min-width: 200px;">
@@ -306,12 +306,12 @@ function renderListaArquivados() {
 
     const html = bimestresOrdenados.length > 0 ? bimestresOrdenados.map(bimKey => `
                 <h3 style="margin-top: 20px; border-bottom: 2px solid #e3e8ef; padding-bottom: 5px; color: #1c2536;">${bimKey}</h3>
-                ${Object.keys(grupos[bimKey]).sort().map(turmaNome => `
+                ${Object.keys(grupos[bimKey]).sort(compararNomes).map(turmaNome => `
                     <h4 style="margin-top: 15px; color: #3d4759; background: #eef2f7; padding: 5px 10px; border-radius: 4px;">${turmaNome}</h4>
                     <table>
                         <thead><tr><th>Tipo</th><th>Status</th><th>Estudante</th><th>Data/Detalhes</th><th>Ações</th></tr></thead>
                         <tbody>
-                            ${grupos[bimKey][turmaNome].map(r => `
+                            ${grupos[bimKey][turmaNome].slice().sort((a, b) => compararNomes(a.estudanteNome, b.estudanteNome)).map(r => `
                                 <tr>
                                     <td style="color: ${r.cor}; font-weight: bold;">${rotuloTipoRegistro(r)}</td>
                                     <td><span class="badge" style="background:${r.status === 'Vencido' ? '#e3e8ef' : '#edf3fd'}; color:${r.cor}; font-size:10px;">${r.status}</span></td>
@@ -1155,8 +1155,10 @@ function renderAbaRegistrosAdministrativos() {
         if (!grupos[item.turmaNome]) grupos[item.turmaNome] = [];
         grupos[item.turmaNome].push(item);
     });
+    // Dentro de cada turma, em ordem alfabética do estudante.
+    Object.values(grupos).forEach(g => g.sort((a, b) => compararNomes(a.estudanteNome, b.estudanteNome)));
 
-    const turmasOrdenadas = Object.keys(grupos).sort();
+    const turmasOrdenadas = Object.keys(grupos).sort(compararNomes);
 
     const html = `
         <div class="card">

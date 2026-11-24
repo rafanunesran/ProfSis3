@@ -1877,7 +1877,7 @@ async function renderDashboard() {
         gruposTurmas[key].ids.push(t.id);
     });
 
-    Object.values(gruposTurmas).forEach(grupo => {
+    Object.values(gruposTurmas).sort((a, b) => compararNomes(a.nomeBase, b.nomeBase)).forEach(grupo => {
         const registrosTurma = registros.filter(r => 
             (grupo.masterId && r.turmaId == grupo.masterId) || 
             grupo.ids.includes(r.turmaId)
@@ -1899,6 +1899,9 @@ async function renderDashboard() {
             }
             return true; 
         });
+        // Em ordem alfabética do estudante.
+        const nomeDoRegistro = (r) => { const e = (data.estudantes || []).find(x => x.id == r.estudanteId); return e ? e.nome_completo : (r.nomeEstudante || ''); };
+        ativos.sort((a, b) => compararNomes(nomeDoRegistro(a), nomeDoRegistro(b)));
 
         if (ativos.length > 0) {
             temAvisosTurma = true;
@@ -2589,9 +2592,12 @@ async function renderEstudantes() {
 
     let muralHtml = '';
     if (avisosTurma.length > 0 || avisosMural.length > 0) {
-        const atestados = avisosTurma.filter(r => r.tipo === 'Atestado');
-        const faltosos = avisosTurma.filter(r => r.tipo === 'Faltoso');
-        const observacoes = avisosTurma.filter(r => r.tipo === 'Observacao');
+        // Cada lista em ordem alfabética do estudante.
+        const nomeNaTurma = (r) => { const e = estudantes.find(x => x.id == r.estudanteId); return e ? e.nome_completo : ''; };
+        const porNome = (a, b) => compararNomes(nomeNaTurma(a), nomeNaTurma(b));
+        const atestados = avisosTurma.filter(r => r.tipo === 'Atestado').sort(porNome);
+        const faltosos = avisosTurma.filter(r => r.tipo === 'Faltoso').sort(porNome);
+        const observacoes = avisosTurma.filter(r => r.tipo === 'Observacao').sort(porNome);
 
         muralHtml = `
             <div class="card" style="background: #f6f8fb; border: 1px solid #e3e8ef; margin-bottom: 20px;">
@@ -10267,7 +10273,12 @@ async function renderRegistrosProfessor() {
         }
     }
     // Sem rede ou sem a lista da escola: mostra a última cópia que chegou ao aparelho.
-    if (!leuDaGestao) { registros = data.registrosAdministrativos || []; estudantes = data.estudantes || []; }
+    if (!leuDaGestao) {
+        registros = data.registrosAdministrativos || []; estudantes = data.estudantes || [];
+        // As turmas do professor apontam para a da escola em masterId; com elas o agrupamento
+        // por turma continua funcionando sem a lista da escola (antes tudo caía em "?").
+        turmas = (data.turmas || []).map(t => ({ id: t.masterId != null && t.masterId !== '' ? t.masterId : t.id, nome: t.nome }));
+    }
 
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -10305,7 +10316,9 @@ async function renderRegistrosProfessor() {
         if (!grupos[item.turmaNome]) grupos[item.turmaNome] = [];
         grupos[item.turmaNome].push(item);
     });
-    const turmasOrdenadas = Object.keys(grupos).sort();
+    // Dentro de cada turma, em ordem alfabética do estudante.
+    Object.values(grupos).forEach(g => g.sort((a, b) => compararNomes(a.estudanteNome, b.estudanteNome)));
+    const turmasOrdenadas = Object.keys(grupos).sort(compararNomes);
 
     const html = `
         <div class="card">
