@@ -2903,17 +2903,22 @@ html[data-estilo="ambar"] #appContainer #headerUserArea .date-info {
 .ux-clima-mm { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
 .ux-clima-mm small { margin-left: 3px; font-weight: 500; color: var(--text-4); }
 
-/* Tela média: atalhos ao lado da saudação, relógio e tempo numa linha embaixo */
-@media (max-width: 1280px) {
-    .ux-inicio {
-        grid-template-columns: minmax(0, auto) minmax(0, 1fr);
-        grid-template-areas: "ola atalhos" "tempo tempo";
-    }
-    .ux-inicio-tempo {
-        padding: 14px 0 0;
-        border-right: 0;
-        border-top: 1px solid var(--border);
-    }
+/* Notebook: tudo numa linha só (saudação, relógio, tempo de hoje, atalhos); sem os próximos dias */
+@media (max-width: 1440px) {
+    .ux-inicio { gap: 14px 20px; padding: 20px 20px; }
+    .ux-inicio-ola { padding-right: 20px; }
+    .ux-inicio-ola h2 { font-size: 21px; }
+    .ux-inicio-tempo { gap: 14px; padding-right: 20px; }
+    .ux-relogio-hora { font-size: 26px; }
+    .ux-clima { padding-left: 14px; }
+    .ux-clima-emoji, .ux-clima-temp { font-size: 24px; }
+    .ux-clima-dias { display: none; }
+    .ux-inicio .ux-chip kbd { display: none; }
+}
+
+@media (max-width: 1100px) {
+    .ux-clima-info small { white-space: normal; }
+    .ux-relogio small { display: none; }
 }
 
 .ux-inicio-ola h2 {
@@ -3012,28 +3017,29 @@ html[data-estilo="ambar"] #appContainer #headerUserArea .date-info {
     }
 
     .ux-inicio-tempo {
-        flex-wrap: wrap;
-        gap: 12px 14px;
-        padding-top: 12px;
+        gap: 12px;
+        padding: 12px 0 0;
+        border-right: 0;
+        border-top: 1px solid var(--border);
     }
 
-    .ux-relogio-hora { font-size: 26px; }
+    .ux-relogio-hora { font-size: 22px; }
+    .ux-relogio-seg { font-size: 12px; }
 
     .ux-clima {
-        flex-wrap: wrap;
-        gap: 10px;
-        flex: 1 1 170px;
-        padding-left: 14px;
+        flex: 1 1 auto;
+        gap: 8px;
+        padding-left: 12px;
     }
+
+    .ux-clima-emoji, .ux-clima-temp { font-size: 22px; }
+    .ux-clima-info b { font-size: 12.5px; }
+    .ux-clima-info small { font-size: 11.5px; }
 
     .ux-clima-info b,
     .ux-clima-info small { white-space: normal; }
 
-    .ux-clima-dias {
-        flex: 1 1 100%;
-    }
-
-    .ux-clima-dias li { flex: 1; }
+    .ux-clima-dias { display: none; }
 
     .ux-chip kbd {
         display: none;

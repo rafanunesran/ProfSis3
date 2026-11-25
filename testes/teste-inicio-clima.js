@@ -97,9 +97,20 @@ async function abrir(browser, viewport, opcoes) {
     await page.evaluate(() => renderProfessorPanel());
     await page.waitForTimeout(800);
     ok('redesenhar usa o que já foi buscado (sem novo pedido)', pedidos.length === n, pedidos.length + ' x ' + n);
-    await page.setViewportSize({ width: 1180, height: 900 });
-    await page.waitForTimeout(300);
-    await page.screenshot({ path: path.join(fotos, 'inicio-clima-notebook.png'), clip: { x: 0, y: 0, width: 1180, height: 400 } });
+    for (const largura of [1366, 1180, 1024]) {
+        await page.setViewportSize({ width: largura, height: 900 });
+        await page.waitForTimeout(300);
+        const l = await page.evaluate(() => {
+            const r = s => document.querySelector('#dashboard .ux-inicio ' + s).getBoundingClientRect();
+            const caixa = document.querySelector('#dashboard .ux-inicio').getBoundingClientRect();
+            const partes = ['.ux-inicio-ola', '.ux-relogio', '.ux-clima-agora', '.ux-inicio-bloco'].map(r);
+            return { emLinha: partes.every((p, i) => i === 0 || partes[i - 1].right <= p.left + 1),
+                dentro: partes.every(p => p.right <= caixa.right + 1), dias: getComputedStyle(document.querySelector('.ux-clima-dias')).display };
+        });
+        ok('notebook ' + largura + 'px: tudo numa linha só, sem passar do cartão', l.emLinha && l.dentro, JSON.stringify(l));
+        ok('notebook ' + largura + 'px: só o tempo de hoje', l.dias === 'none');
+        if (largura !== 1024) await page.screenshot({ path: path.join(fotos, 'inicio-clima-notebook-' + largura + '.png'), clip: { x: 0, y: 0, width: largura, height: 300 } });
+    }
     await ctx.close();
 
     console.log('\n4. Sem cidade e fora do ar');
@@ -133,6 +144,8 @@ async function abrir(browser, viewport, opcoes) {
     });
     ok('nada passa da tela', !larg.passa.length, larg.passa.join(','));
     const ordem = await page.evaluate(() => ['.ux-inicio-ola', '.ux-inicio-tempo', '.ux-inicio-bloco'].map(s => document.querySelector('#dashboard ' + s).getBoundingClientRect().top));
+    ok('celular: só o tempo de hoje', await page.evaluate(() => getComputedStyle(document.querySelector('.ux-clima-dias')).display === 'none'));
+    ok('celular: relógio e tempo na mesma linha', await page.evaluate(() => Math.abs(document.querySelector('.ux-relogio').getBoundingClientRect().top - document.querySelector('.ux-clima').getBoundingClientRect().top) < 30));
     ok('saudação, depois tempo, depois atalhos', ordem[0] < ordem[1] && ordem[1] < ordem[2], ordem.join(','));
     const sec = await page.locator('#dashboard .ux-inicio').boundingBox();
     await page.screenshot({ path: path.join(fotos, 'inicio-clima-celular.png'), clip: { x: 0, y: 0, width: 390, height: Math.min(844, sec.y + sec.height + 16) } });
