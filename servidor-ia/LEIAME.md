@@ -27,6 +27,19 @@ EdiProf (navegador) ──HTTPS + chave do app──▶ Caddy (443) ──▶ se
   servidor de imagem); ela **não** é a chave do Gemini.
 - Só usa o Python 3 que já vem no Ubuntu. Não compila nada: a instalação leva 1 a 3 minutos.
 
+## Atalho: máquina nova pelo Cloud Shell
+
+Sem a chave `.key` da máquina antiga? No site da Oracle, abra o **Cloud Shell** (ícone `>_`
+no topo) e cole:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rafanunesran/ProfSis3/main/servidor-ia/criar-maquina-oracle.sh | bash
+```
+
+Ele cria uma chave nova dentro do Cloud Shell, abre as portas 80/443 da rede
+`rede-antigravity` e cria a máquina grátis `ediprof-ia` (Ubuntu 24.04). No fim mostra o
+comando para entrar e o de instalar (já com o endereço `IP.sslip.io`, sem DuckDNS).
+
 ## Passo a passo
 
 ### 0. Entrar na máquina (SSH)
