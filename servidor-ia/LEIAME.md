@@ -55,6 +55,13 @@ pedidos por dia.
 Se a escola bloquear o `workers.dev`, dá para ligar um domínio próprio no Worker
 (Settings → Domains & Routes), ou usar uma máquina (abaixo).
 
+### Ler fotos (📥 Aviso da gestão)
+
+Desde nov/2026 o servidor também lê prints junto com o texto (até 4 fotos por pedido), para a
+tela "📥 Aviso da gestão". Quem colou o código antes disso precisa **colar o código novo** do
+`cloudflare-worker.js` no editor da Cloudflare e clicar em Deploy (as chaves e o binding continuam).
+Sem isso o app avisa: "o servidor ainda não lê fotos". Texto continua funcionando igual.
+
 ## Atalho: máquina nova pelo Cloud Shell
 
 Sem a chave `.key` da máquina antiga? No site da Oracle, abra o **Cloud Shell** (ícone `>_`

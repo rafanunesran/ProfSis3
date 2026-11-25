@@ -1473,6 +1473,7 @@ function abrirAtalhoFerramenta(aba, ferramenta) {
 // Banner rotativo de novidades (só no computador: no celular o CSS esconde). Para anunciar
 // algo novo, ponha uma linha NO TOPO desta lista — a mais nova aparece primeiro.
 const NOVIDADES_SISPROF = [
+    { emoji: '📥', titulo: 'Aviso da gestão com IA', texto: 'Cole a mensagem ou o print do WhatsApp: a IA lança compromissos e lembretes na sua agenda.', botao: 'Experimentar', abrir: () => abrirAvisoGestaoIA() },
     { emoji: '🎞️', titulo: 'Editor de vídeo de cara nova', texto: 'O editor agora abre em tela cheia, com linha do tempo, textos e música.', botao: 'Abrir editor', abrir: () => abrirAtalhoFerramenta('video', 'montar') },
     { emoji: '🃏', titulo: 'Mesa de páginas no PDF', texto: 'Veja todas as páginas de uma vez, arraste para reordenar, gire e apague.', botao: 'Abrir', abrir: () => abrirAtalhoFerramenta('pdf', 'mesa-paginas') },
     { emoji: '📐', titulo: 'Endireitar foto de folha', texto: 'Tirou foto torta de uma atividade? A folha fica reta, como se fosse escaneada.', botao: 'Experimentar', abrir: () => abrirAtalhoFerramenta('img', 'endireitar') },
@@ -1617,6 +1618,7 @@ async function renderDashboard() {
                 </div>
                 <button class="btn btn-primary btn-sm" onclick="abrirModalNovoAviso()">+ Novo Aviso</button>
             </div>
+            <div class="card" id="agendaEscolaGestor" style="margin-top: 20px;">${typeof htmlAgendaEscolaGestor === 'function' ? htmlAgendaEscolaGestor() : ''}</div>
             <div class="card" style="margin-top: 20px;">
                 <h2>📊 Resumo da Escola</h2>
                 <p>Total de Turmas: ${(data.turmas || []).length}</p>
@@ -1789,14 +1791,18 @@ async function renderDashboard() {
             const registrosGestorEnriquecidos = enriquecerRegistrosComNome(gestorData.registrosAdministrativos, gestorData.estudantes);
             const registrosMudou = !!registrosGestorEnriquecidos
                 && JSON.stringify(data.registrosAdministrativos || []) !== JSON.stringify(registrosGestorEnriquecidos);
-            const avisosMudou = !!gestorData.avisosMural
-                && JSON.stringify(data.avisosMural || []) !== JSON.stringify(gestorData.avisosMural);
+            const avisosMudou = (!!gestorData.avisosMural
+                && JSON.stringify(data.avisosMural || []) !== JSON.stringify(gestorData.avisosMural))
+                || (Array.isArray(gestorData.eventosEscola)
+                && JSON.stringify(data.eventosEscola || []) !== JSON.stringify(gestorData.eventosEscola));
             // Presença mínima da escola (Faltoso A), definida pela gestão em Configurações.
             const presencaMinimaMudou = gestorData.presencaMinima != null && data.presencaMinima !== gestorData.presencaMinima;
             if (presencaMinimaMudou) data.presencaMinima = gestorData.presencaMinima;
             data.schoolGrade = gradeEscola;
             data.schoolExceptions = excecoesGrade;
             if (gestorData.avisosMural) data.avisosMural = gestorData.avisosMural;
+            // Compromissos que a gestão publicou para todos (📥 Aviso da gestão, avisos_ia.js).
+            if (Array.isArray(gestorData.eventosEscola)) data.eventosEscola = gestorData.eventosEscola;
             if (registrosGestorEnriquecidos) data.registrosAdministrativos = registrosGestorEnriquecidos;
             if (gradeMudou || registrosMudou || avisosMudou || presencaMinimaMudou) persistirDados();
             // Faltoso A: conta do dia no próprio aparelho, em segundo plano, 1 vez por dia
@@ -1821,7 +1827,8 @@ async function renderDashboard() {
     const minhasAulas = data.horariosAulas || [];
     const agendamentosHoje = (data.agendamentos || []).filter(a => a.data === today && a.tutoradoId);
     document.getElementById('agendaHoje').innerHTML =
-        montarAgendaDoDiaHtml(blocosHoje, minhasAulas, agendamentosHoje, tiposFixosEscola, !!excecaoHoje);
+        montarAgendaDoDiaHtml(blocosHoje, minhasAulas, agendamentosHoje, tiposFixosEscola, !!excecaoHoje)
+        + (typeof htmlCompromissosDashboard === 'function' ? htmlCompromissosDashboard() : '');
     iniciarNovidadesDashboard();
     }
 
@@ -2354,6 +2361,7 @@ async function abrirTurma(id) {
             if (gestorData.avisosMural) {
                 data.avisosMural = gestorData.avisosMural;
             }
+            if (Array.isArray(gestorData.eventosEscola)) data.eventosEscola = gestorData.eventosEscola;
             if (gestorData.configBimestres) {
                 data.configBimestres = gestorData.configBimestres;
             }
@@ -8398,6 +8406,7 @@ async function showDocumentosTab(aba) {
     });
 
     if (def.id === 'agenda') {
+        if (typeof renderCompromissosAgenda === 'function') renderCompromissosAgenda();
         await renderGradeHorariaProfessor();
         // Card de integração com o Google Agenda + tentativa de sincronização silenciosa ao abrir.
         if (typeof gcalAoAbrirAgenda === 'function') gcalAoAbrirAgenda();
