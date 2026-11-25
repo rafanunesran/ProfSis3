@@ -97,6 +97,7 @@ async function abrir(browser, viewport, modo) {
             { tipo: 'compromisso', titulo: 'Reunião pedagógica', data: somarDiasAviso(hoje, 1), inicio: '18:30', fim: '', local: 'Sala dos professores', descricao: '', paraTodos: true, lembrete: 'no_dia' },
             { tipo: 'lembrete', titulo: 'Entregar notas do bimestre', data: somarDiasAviso(hoje, 2), lembrete: '2_dias' },
             { tipo: 'faltoso', nome: 'Manu Veronez', turma: '7A', observacao: '' },
+            { tipo: 'atestado', nome: 'Bruno', turma: '7A', dataInicio: hoje, dias: 3 },
             { tipo: 'compromisso', titulo: 'Formação sem data', data: 'quinta', inicio: '25:00' },
             { tipo: 'compromisso', titulo: 'Conselho de classe', data: somarDiasAviso(hoje, 3), inicio: '18:00' },
             { tipo: 'qualquer', titulo: 'x' }
@@ -115,11 +116,12 @@ async function abrir(browser, viewport, modo) {
     ok('pedido leva o texto e a foto (JPEG)', /Reunião pedagógica amanhã/.test(r1.prompt) && r1.nImgs === 1 && r1.mime === 'image/jpeg');
     ok('pedido leva os nomes das turmas', /7º Ano A/.test(r1.prompt) && /8B/.test(r1.prompt));
     ok('pedido NÃO leva a lista de estudantes', !/Bruno|Pedro|Silva|Carlos/.test(r1.prompt));
-    ok('abre a revisão', /Confira/.test(r1.titulo) && r1.cards === 5, r1.cards);
+    ok('abre a revisão', /Confira/.test(r1.titulo) && r1.cards === 6, r1.cards);
     const it = (t) => r1.itens.find(i => i.titulo.indexOf(t) === 0) || {};
     ok('compromisso com dia e hora', it('Reunião').data && it('Reunião').inicio === '18:30' && it('Reunião').usar);
     ok('professor não publica para todos', it('Reunião').paraTodos === false && !r1.temTodos);
     ok('faltoso vira lembrete do professor', it('Faltosos avisados').tipo === 'lembrete' && /Manu Veronez \(7A\)/.test(it('Faltosos avisados').titulo) && /Só a gestão/.test(it('Faltosos avisados').avisos.join()));
+    ok('atestado vira lembrete do professor', it('Atestados avisados').tipo === 'lembrete' && /Bruno \(7A\) — 3 dia\(s\)/.test(it('Atestados avisados').titulo) && /Só a gestão lança atestado/.test(it('Atestados avisados').avisos.join()));
     ok('data e hora inválidas ficam vazias com aviso', it('Formação').data === '' && it('Formação').inicio === '' && /data/.test(it('Formação').avisos.join()));
     ok('o que a gestão já publicou vem desmarcado', it('Conselho').usar === false && /gestão já colocou/.test(it('Conselho').avisos.join()));
     ok('tipo desconhecido é ignorado', !r1.itens.some(i => i.titulo === 'x'));
@@ -147,8 +149,8 @@ async function abrir(browser, viewport, modo) {
         return r;
     });
     ok('não salva com item sem data', r2.recusou);
-    ok('botão conta os marcados', /Salvar 3 itens/.test(r2.botao), r2.botao);
-    ok('salva 3 itens em data.compromissos, com id e atualizadoEm', r2.comp.length === 3 && r2.comp.every(c => c.id && c.atualizadoEm), JSON.stringify(r2.comp));
+    ok('botão conta os marcados', /Salvar 4 itens/.test(r2.botao), r2.botao);
+    ok('salva 4 itens em data.compromissos, com id e atualizadoEm', r2.comp.length === 4 && r2.comp.every(c => c.id && c.atualizadoEm), JSON.stringify(r2.comp));
     ok('professor não mexe na agenda da escola', r2.escola === 1);
     ok('fecha e grava', r2.fechou && r2.persistiu >= 1);
     ok('Início: lembrete do faltoso em Hoje', /Hoje.*Faltosos avisados/.test(r2.dash), r2.dash);
@@ -201,17 +203,21 @@ async function abrir(browser, viewport, modo) {
             { tipo: 'faltoso', nome: 'Manu Veronez', turma: '7º A', observacao: 'busca ativa' },
             { tipo: 'faltoso', nome: 'Pedro', turma: '' },
             { tipo: 'faltoso', nome: 'Fulano Inexistente', turma: '9C' },
+            { tipo: 'atestado', nome: 'Bruno Lima', turma: '7º A', dataInicio: somarDiasAviso(hoje, -1), dias: 5, observacao: 'atestado entregue na secretaria' },
+            { tipo: 'atestado', nome: 'Pedro Henrique', turma: '8B', dataInicio: 'ontem', dias: 'x' },
             { tipo: 'compromisso', titulo: 'ATPC geral', data: somarDiasAviso(hoje, 2), inicio: '17:00', paraTodos: true, lembrete: '1_dia' },
             { tipo: 'lembrete', titulo: 'Conferir diários', data: somarDiasAviso(hoje, 5), paraTodos: false, lembrete: '1_dia' }
         ] };
         await lerAvisoComIA();
         r.itens = avisoIA.itens.map(i => ({ tipo: i.tipo, nome: i.nome, est: i.estudanteId, cands: i.candidatos.map(c => c.nome), usar: i.usar, paraTodos: i.paraTodos, avisos: i.avisos }));
         r.temTodos = /todos os professores/.test(document.getElementById('avisoIAItens').textContent);
+        r.temAtestadoUI = /Atestado médico/.test(document.getElementById('avisoIAItens').textContent) && /Dias de atestado/.test(document.getElementById('avisoIAItens').textContent);
         const pedro = avisoIA.itens.find(i => i.nome === 'Pedro');
         r.salvouSemPedro = (salvarAvisoIA(), (data.registrosAdministrativos || []).length);
         mudarItemAviso(pedro.uid, 'estudanteId', '14');
         salvarAvisoIA();
-        r.regs = data.registrosAdministrativos.map(x => ({ est: x.estudanteId, turma: x.turmaId, tipo: x.tipo, desc: x.descricao }));
+        r.regs = data.registrosAdministrativos.map(x => ({ est: x.estudanteId, turma: x.turmaId, tipo: x.tipo, desc: x.descricao, data: x.data, dias: x.dias }));
+        r.hoje = hoje; r.ontem = somarDiasAviso(hoje, -1);
         r.escola = data.eventosEscola.map(e => e.titulo);
         r.meus = (data.compromissos || []).map(e => e.titulo);
         await renderDashboard();
@@ -226,12 +232,17 @@ async function abrir(browser, viewport, modo) {
     ok('transferido não entra como candidato', !r4.itens.some(i => i.cands.includes('Carlos Saiu')));
     ok('gestão vê "agenda de todos os professores"; ATPC já marcado', r4.temTodos && r4.itens.find(i => i.tipo === 'compromisso').paraTodos === true);
     ok('não salva faltoso sem estudante escolhido', r4.salvouSemPedro === 0);
-    ok('faltosos em registrosAdministrativos (Manuela e Pedro Alves)', r4.regs.length === 2 && r4.regs.some(x => x.est === 11 && x.turma === 1 && x.tipo === 'Faltoso' && x.desc === 'busca ativa') && r4.regs.some(x => x.est === 14 && x.turma === 2), JSON.stringify(r4.regs));
+    ok('revisão mostra o atestado com "Dias de atestado"', r4.temAtestadoUI);
+    const atest = r4.regs.filter(x => x.tipo === 'Atestado');
+    ok('atestado do Bruno: 5 dias desde ontem, com observação', atest.some(x => x.est === 12 && x.turma === 1 && x.dias === 5 && x.data === r4.ontem && /secretaria/.test(x.desc)), JSON.stringify(atest));
+    ok('atestado sem data/dias válidos: hoje e 1 dia', atest.some(x => x.est === 13 && x.dias === 1 && x.data === r4.hoje), JSON.stringify(atest));
+    ok('faltosos em registrosAdministrativos (Manuela e Pedro Alves)', r4.regs.filter(x => x.tipo === 'Faltoso').length === 2 && r4.regs.some(x => x.est === 11 && x.turma === 1 && x.tipo === 'Faltoso' && x.desc === 'busca ativa') && r4.regs.some(x => x.est === 14 && x.turma === 2), JSON.stringify(r4.regs));
     ok('perguntou antes de publicar para todos', page.__dialogos.some(d => /TODOS os professores/.test(d) && /ATPC geral/.test(d)));
     ok('ATPC em eventosEscola; lembrete só da gestão em compromissos', r4.escola.join() === 'ATPC geral' && r4.meus.join() === 'Conferir diários');
     ok('card mostra os dois, com 🏫 no da escola', /🏫 ATPC geral/.test(r4.cardTxt) && /Conferir diários/.test(r4.cardTxt), r4.cardTxt);
     if (FOTOS) { await page.evaluate(() => { abrirAvisoGestaoIA(); abrirRevisaoAvisoIA(normalizarAcoesAvisoIA({ acoes: [
         { tipo: 'faltoso', nome: 'Manu Veronez', turma: '7º A', observacao: 'busca ativa' }, { tipo: 'faltoso', nome: 'Pedro', turma: '' },
+        { tipo: 'atestado', nome: 'Bruno Lima', turma: '7º A', dataInicio: hojeLocalAviso(), dias: 3, observacao: 'entregue na secretaria' },
         { tipo: 'compromisso', titulo: 'Conselho de classe', data: somarDiasAviso(hojeLocalAviso(), 6), inicio: '18:00', paraTodos: true, lembrete: '2_dias' }] })); });
         await page.waitForTimeout(800); await page.screenshot({ path: path.join(FOTOS, 'revisao-gestao.png') }); }
 

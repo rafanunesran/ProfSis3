@@ -2,7 +2,7 @@
 // WhatsApp, ou o print dela, e a IA monta a lista do que lançar no EdiProf:
 //   - compromisso (reunião, conselho, ATPC, entrega...) com data, hora e lembrete;
 //   - lembrete (prazo, "não esquecer de...");
-//   - estudante faltoso (só a gestão marca faltoso; no professor vira lembrete).
+//   - estudante faltoso ou com atestado médico (só a gestão registra; no professor vira lembrete).
 // NADA é salvo antes de a pessoa conferir item por item na tela de revisão.
 //
 // Onde fica cada coisa:
@@ -22,6 +22,8 @@ const LEMBRETE_OPCOES_AVISO = [
 ];
 const DIAS_LEMBRETE_AVISO = { no_dia: 0, '1_dia': 1, '2_dias': 2, '1_semana': 7 };
 const MAX_FOTOS_AVISO = 4;
+// Itens que viram registro administrativo de um estudante (gestor.js salvarRegistroGestao).
+const TIPOS_ESTUDANTE_AVISO = { faltoso: 'Faltoso', atestado: 'Atestado' };
 
 let avisoIA = { texto: '', imagens: [], itens: [] };
 
@@ -172,7 +174,7 @@ function renderEntradaAvisoIA() {
     corpo.innerHTML = `
         <p style="margin-top:0; color:#3d4759; font-size:14px;">
             Cole aqui a mensagem que chegou${gestao ? '' : ' da gestão'} pelo WhatsApp, ou anexe o print.
-            A IA monta a lista do que lançar: ${gestao ? 'estudantes faltosos, compromissos (para você ou para todos os professores) e lembretes' : 'compromissos na sua agenda e lembretes'}.
+            A IA monta a lista do que lançar: ${gestao ? 'estudantes faltosos, atestados, compromissos (para você ou para todos os professores) e lembretes' : 'compromissos na sua agenda e lembretes'}.
             <strong>Nada é salvo antes de você conferir.</strong>
         </p>
         <textarea id="avisoIATexto" rows="7" style="width:100%; box-sizing:border-box;" placeholder="Ex.: Bom dia, professores! Reunião pedagógica quinta (27) às 18h30 na sala dos professores. Entregar as notas do 4º bimestre até dia 5/12."
@@ -263,6 +265,8 @@ Devolva APENAS um JSON neste formato: {"acoes": [ ... ]}
 Cada ação é um destes objetos:
 1) Estudante faltoso (um item POR estudante citado como faltoso, com muitas faltas, em busca ativa ou que precisa de contato por faltas):
    {"tipo":"faltoso","nome":"nome do estudante exatamente como está escrito","turma":"turma como está escrita, ou \\"\\"","observacao":"detalhe curto do aviso, ou \\"\\""}
+1b) Estudante com atestado médico / falta justificada por documento (um item POR estudante):
+   {"tipo":"atestado","nome":"nome como está escrito","turma":"turma como está escrita, ou \\"\\"","dataInicio":"AAAA-MM-DD do primeiro dia do afastamento, ou \\"\\"","dias":número de dias (se disser "até dia X", conte os dias corridos incluindo o primeiro e o último; se não disser, 1),"observacao":"curto, ou \\"\\" (não escreva doença/CID)"}
 2) Compromisso com dia marcado (reunião, ATPC, conselho de classe, formação, evento, prova, plantão, entrega com hora):
    {"tipo":"compromisso","titulo":"curto, até 60 letras","data":"AAAA-MM-DD","inicio":"HH:MM ou \\"\\"","fim":"HH:MM ou \\"\\"","local":"ou \\"\\"","descricao":"o que levar/fazer, curto, ou \\"\\"","paraTodos":true ou false,"lembrete":"nenhum|no_dia|1_dia|2_dias|1_semana"}
    paraTodos = true quando o aviso vale para todos os professores (reunião geral, ATPC, conselho, prazo de notas, evento da escola).
@@ -274,7 +278,7 @@ Regras:
 - Se a data não estiver clara, deixe "data": "" (não invente).
 - Horas no formato 24h: "18h30" vira "18:30".
 - Lembrete padrão: compromisso no mesmo dia ou no dia seguinte = "no_dia"; mais longe = "1_dia"; prazo de entrega = "2_dias".
-- No título, na descrição e no local de compromissos e lembretes NÃO escreva nomes de estudantes (vão para a agenda de todos). Nomes de estudantes só nos itens "faltoso".
+- No título, na descrição e no local de compromissos e lembretes NÃO escreva nomes de estudantes (vão para a agenda de todos). Nomes de estudantes só nos itens "faltoso" e "atestado".
 - Ignore saudações, figurinhas e conversa que não pede nada.
 - Se não houver nada para lançar, devolva {"acoes": []}.
 
@@ -289,7 +293,7 @@ function itemVazioAviso(tipo) {
         uid: 'i' + Math.random().toString(36).slice(2, 9), tipo, usar: true,
         titulo: '', data: tipo === 'lembrete' ? hojeLocalAviso() : '', inicio: '', fim: '', local: '', descricao: '',
         paraTodos: false, lembrete: tipo === 'lembrete' ? '1_dia' : 'no_dia',
-        nome: '', turma: '', observacao: '', estudanteId: '', candidatos: [], dataInicio: hojeLocalAviso(), avisos: []
+        nome: '', turma: '', observacao: '', estudanteId: '', candidatos: [], dataInicio: hojeLocalAviso(), dias: 1, avisos: []
     };
 }
 
@@ -302,14 +306,23 @@ function normalizarAcoesAvisoIA(resposta) {
     const gestao = ehGestaoAviso();
     const itens = [];
     const faltososProf = [];
+    const atestadosProf = [];
     acoes.forEach(a => {
         if (!a || typeof a !== 'object') return;
         const tipo = String(a.tipo || '').toLowerCase();
-        if (tipo === 'faltoso') {
+        if (TIPOS_ESTUDANTE_AVISO[tipo]) {
             const nome = String(a.nome || '').trim();
             if (!nome) return;
-            if (!gestao) { faltososProf.push(a.turma ? `${nome} (${String(a.turma).trim()})` : nome); return; }
-            const it = itemVazioAviso('faltoso');
+            const dias = Math.max(1, Math.min(120, parseInt(a.dias, 10) || 1));
+            const inicio = DATA_OK_AVISO(a.dataInicio) ? a.dataInicio : '';
+            if (!gestao) {
+                const rotulo = (a.turma ? `${nome} (${String(a.turma).trim()})` : nome)
+                    + (tipo === 'atestado' ? ` — ${dias} dia(s)${inicio ? ' a partir de ' + formatarDataAviso(inicio, false) : ''}` : '');
+                (tipo === 'atestado' ? atestadosProf : faltososProf).push(rotulo);
+                return;
+            }
+            const it = itemVazioAviso(tipo);
+            if (tipo === 'atestado') { it.dias = dias; if (inicio) it.dataInicio = inicio; }
             it.nome = nome.slice(0, 120);
             it.turma = String(a.turma || '').trim().slice(0, 40);
             it.observacao = String(a.observacao || '').trim().slice(0, 300);
@@ -317,8 +330,11 @@ function normalizarAcoesAvisoIA(resposta) {
             it.estudanteId = escolherEstudanteAviso(it.candidatos);
             if (!it.candidatos.length) { it.usar = false; it.avisos.push('Não achei esse nome na lista de estudantes. Escolha na lista abaixo.'); }
             else if (!it.estudanteId) it.avisos.push('Achei mais de um nome parecido. Confira quem é.');
-            const jaFaltoso = it.estudanteId && ((data.registrosAdministrativos || []).some(r => r.tipo === 'Faltoso' && !r.arquivado && String(r.estudanteId) === String(it.estudanteId)));
-            if (jaFaltoso) { it.usar = false; it.avisos.push('Este estudante já está marcado como faltoso.'); }
+            const regs = data.registrosAdministrativos || [];
+            const jaTem = it.estudanteId && (tipo === 'faltoso'
+                ? regs.some(r => r.tipo === 'Faltoso' && !r.arquivado && String(r.estudanteId) === String(it.estudanteId))
+                : regs.some(r => r.tipo === 'Atestado' && !r.arquivado && String(r.estudanteId) === String(it.estudanteId) && r.data === it.dataInicio));
+            if (jaTem) { it.usar = false; it.avisos.push(tipo === 'faltoso' ? 'Este estudante já está marcado como faltoso.' : 'Já existe atestado deste estudante com essa data.'); }
             itens.push(it);
             return;
         }
@@ -349,6 +365,13 @@ function normalizarAcoesAvisoIA(resposta) {
         it.avisos.push('Só a gestão marca estudante faltoso no EdiProf. Guardo como lembrete só para você.');
         itens.push(it);
     }
+    if (atestadosProf.length) {
+        const it = itemVazioAviso('lembrete');
+        it.titulo = ('Atestados avisados pela gestão: ' + atestadosProf.join(', ')).slice(0, 400);
+        it.lembrete = 'no_dia';
+        it.avisos.push('Só a gestão lança atestado no EdiProf (aí a falta fica justificada na sua chamada). Guardo como lembrete só para você.');
+        itens.push(it);
+    }
     return itens;
 }
 
@@ -364,7 +387,7 @@ async function lerAvisoComIA() {
             { imagens: avisoIA.imagens.map(i => ({ mime: i.mime, dados: i.dados })) });
         const itens = normalizarAcoesAvisoIA(resp);
         if (!itens.length) {
-            alert('A IA não achou nada para lançar nesse aviso (nenhum compromisso, prazo ou faltoso). Se tiver, você pode criar à mão em "✍️ Criar compromisso sem IA".');
+            alert('A IA não achou nada para lançar nesse aviso (nenhum compromisso, prazo, faltoso ou atestado). Se tiver, você pode criar à mão em "✍️ Criar compromisso sem IA".');
             return;
         }
         abrirRevisaoAvisoIA(itens);
@@ -417,14 +440,15 @@ function htmlItemAviso(it, i) {
     const u = escAviso(it.uid);
     const campo = (rotulo, conteudo, largo) => `<label style="display:block; font-size:12px; color:#3d4759; margin:0; ${largo ? 'grid-column:1 / -1;' : ''}">${rotulo}${conteudo}</label>`;
     const inp = (nome, tipo, extra) => `<input type="${tipo}" value="${escAviso(it[nome])}" oninput="mudarItemAviso('${u}', '${nome}', this.value)" style="width:100%; box-sizing:border-box;" ${extra || ''}>`;
-    const rot = { faltoso: '🚸 Estudante faltoso', compromisso: '📅 Compromisso', lembrete: '🔔 Lembrete' }[it.tipo];
+    const rot = { faltoso: '🚸 Estudante faltoso', atestado: '🩺 Atestado médico', compromisso: '📅 Compromisso', lembrete: '🔔 Lembrete' }[it.tipo];
     let corpo = '';
-    if (it.tipo === 'faltoso') {
+    if (TIPOS_ESTUDANTE_AVISO[it.tipo]) {
         corpo = `
             <p style="font-size:12px; color:#5f6b7f; margin:0 0 6px; grid-column:1 / -1;">Na mensagem: <strong>${escAviso(it.nome)}</strong>${it.turma ? ' · turma ' + escAviso(it.turma) : ''}</p>
             ${campo('Estudante', `<select onchange="mudarItemAviso('${u}', 'estudanteId', this.value)" style="width:100%;">${opcoesEstudanteAviso(it)}</select>`, true)}
-            ${campo('Desde', inp('dataInicio', 'date'))}
-            ${campo('Observação', inp('observacao', 'text', 'placeholder="opcional"'))}`;
+            ${campo(it.tipo === 'atestado' ? 'Primeiro dia' : 'Desde', inp('dataInicio', 'date'))}
+            ${it.tipo === 'atestado' ? campo('Dias de atestado', inp('dias', 'number', 'min="1" max="120"')) : ''}
+            ${campo('Observação', inp('observacao', 'text', 'placeholder="opcional"'), it.tipo === 'atestado')}`;
     } else {
         corpo = `
             ${campo(it.tipo === 'lembrete' ? 'O que lembrar' : 'Título', inp('titulo', 'text'), true)}
@@ -462,7 +486,8 @@ function renderRevisaoAvisoIA() {
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
             <button class="btn btn-sm btn-secondary" onclick="adicionarItemAviso('compromisso')">+ Compromisso</button>
             <button class="btn btn-sm btn-secondary" onclick="adicionarItemAviso('lembrete')">+ Lembrete</button>
-            ${gestao ? `<button class="btn btn-sm btn-secondary" onclick="adicionarItemAviso('faltoso')">+ Faltoso</button>` : ''}
+            ${gestao ? `<button class="btn btn-sm btn-secondary" onclick="adicionarItemAviso('faltoso')">+ Faltoso</button>
+                        <button class="btn btn-sm btn-secondary" onclick="adicionarItemAviso('atestado')">+ Atestado</button>` : ''}
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:space-between;">
             <button class="btn btn-secondary" onclick="renderEntradaAvisoIA()">← Voltar ao aviso</button>
@@ -475,30 +500,33 @@ function salvarAvisoIA() {
     const marcados = avisoIA.itens.filter(i => i.usar);
     if (!marcados.length) return alert('Marque pelo menos um item.');
     for (const it of marcados) {
-        if (it.tipo === 'faltoso') {
-            if (!it.estudanteId) return alert(`Escolha o estudante de "${it.nome || 'faltoso'}".`);
-            if (!DATA_OK_AVISO(it.dataInicio)) return alert('Preencha o dia de início do faltoso.');
+        if (TIPOS_ESTUDANTE_AVISO[it.tipo]) {
+            if (!it.estudanteId) return alert(`Escolha o estudante de "${it.nome || it.tipo}".`);
+            if (!DATA_OK_AVISO(it.dataInicio)) return alert(`Preencha o primeiro dia (${it.tipo}).`);
+            if (it.tipo === 'atestado' && !(parseInt(it.dias, 10) >= 1)) return alert('Preencha quantos dias de atestado.');
         } else {
             if (!String(it.titulo || '').trim()) return alert('Há um item sem título.');
             if (!DATA_OK_AVISO(it.data)) return alert(`Preencha o dia de "${it.titulo}".`);
         }
     }
-    const paraTodos = gestao ? marcados.filter(i => i.tipo !== 'faltoso' && i.paraTodos) : [];
+    const paraTodos = gestao ? marcados.filter(i => !TIPOS_ESTUDANTE_AVISO[i.tipo] && i.paraTodos) : [];
     if (paraTodos.length && !confirm(`${paraTodos.length} item(ns) vão aparecer na agenda de TODOS os professores da escola:\n\n${paraTodos.map(i => '• ' + formatarDataAviso(i.data) + ' — ' + i.titulo).join('\n')}\n\nConfirmar?`)) return;
 
     const agora = new Date().toISOString();
     const autor = (typeof currentUser !== 'undefined' && currentUser && (currentUser.nome || currentUser.email)) || '';
-    let nFalt = 0, nMeus = 0, nEscola = 0, base = Date.now();
+    let nFalt = 0, nAtest = 0, nMeus = 0, nEscola = 0, base = Date.now();
     marcados.forEach(it => {
-        if (it.tipo === 'faltoso') {
+        if (TIPOS_ESTUDANTE_AVISO[it.tipo]) {
             const est = (data.estudantes || []).find(e => String(e.id) === String(it.estudanteId));
             if (!est) return;
             if (!data.registrosAdministrativos) data.registrosAdministrativos = [];
+            const atestado = it.tipo === 'atestado';
             data.registrosAdministrativos.push({
-                id: base++, turmaId: est.id_turma, estudanteId: est.id, tipo: 'Faltoso',
-                data: it.dataInicio, dias: 0, descricao: it.observacao || '', origem: 'aviso-ia'
+                id: base++, turmaId: est.id_turma, estudanteId: est.id, tipo: TIPOS_ESTUDANTE_AVISO[it.tipo],
+                data: it.dataInicio, dias: atestado ? Math.max(1, parseInt(it.dias, 10) || 1) : 0,
+                descricao: it.observacao || '', origem: 'aviso-ia'
             });
-            nFalt++;
+            if (atestado) nAtest++; else nFalt++;
             return;
         }
         const reg = {
@@ -523,6 +551,7 @@ function salvarAvisoIA() {
     if (nMeus) partes.push(`${nMeus} na sua agenda`);
     if (nEscola) partes.push(`${nEscola} na agenda de todos os professores`);
     if (nFalt) partes.push(`${nFalt} faltoso(s) em Registros`);
+    if (nAtest) partes.push(`${nAtest} atestado(s) em Registros`);
     alert('Pronto! Salvo: ' + partes.join(', ') + '.');
     atualizarTelasAviso();
 }
