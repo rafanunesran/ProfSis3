@@ -162,7 +162,10 @@ function juntarRegistrosEquipeAviso(registros) {
 }
 
 function todosCompromissosAviso() {
-    const meus = ((data && data.compromissos) || []).map(c => Object.assign({}, c, { _origem: 'meu', _campo: 'compromissos' }));
+    // Item que passou para a equipe e reapareceu em compromissos (junção com outro aparelho
+    // antigo): vale o da equipe, sem repetir.
+    const idsEquipe = new Set(((data && data.compromissosEquipe) || []).map(c => String(c.id)));
+    const meus = ((data && data.compromissos) || []).filter(c => !idsEquipe.has(String(c.id))).map(c => Object.assign({}, c, { _origem: 'meu', _campo: 'compromissos' }));
     const meusEquipe = ((data && data.compromissosEquipe) || []).map(c => Object.assign({}, c, { _origem: 'equipeMeu', _campo: 'compromissosEquipe' }));
     const escola = ((data && data.eventosEscola) || []).map(c => Object.assign({}, c, { _origem: 'escola', _campo: ehGestaoAviso() ? 'eventosEscola' : '' }));
     const colegas = equipeAviso.compromissos.map(c => Object.assign({}, c, { _origem: 'equipe', _campo: '' }));
@@ -632,10 +635,54 @@ function linhaCompromissoAviso(c, opcoes) {
                 ${c.local || c.descricao ? `<div style="font-size:12px; color:#5f6b7f;">${escAviso([c.local, c.descricao].filter(Boolean).join(' · '))}</div>` : ''}
             </div>
             <div style="display:flex; gap:4px;">
+                ${c._origem === 'meu' ? `<button class="btn btn-xs btn-secondary" style="padding:1px 6px;" title="Compartilhar com a equipe" aria-label="Compartilhar com a equipe" onclick="compartilharCompromissoAviso('${id}')">👥</button>` : ''}
                 ${c._origem === 'meu' && c.tipo === 'lembrete' ? `<button class="btn btn-xs btn-secondary" style="padding:1px 6px;" title="${c.feito ? 'Desfazer' : 'Feito'}" onclick="marcarFeitoCompromissoAviso('${id}')">${c.feito ? '↺' : '✓'}</button>` : ''}
                 ${podeApagar ? `<button class="btn btn-xs btn-danger" style="padding:1px 6px;" title="Apagar" onclick="apagarCompromissoAviso('${id}', '${c._campo}')">×</button>` : ''}
             </div>
         </div>`;
+}
+
+// Passa itens que estavam só na agenda da pessoa para a equipe (mesmo id; nada é apagado de fato:
+// o item muda de lista). Professor → compromissosEquipe (vai no recorte); gestão → eventosEscola.
+function meusSoMeusAviso() {
+    const idsEquipe = new Set(((data && data.compromissosEquipe) || []).map(c => String(c.id)));
+    return ((data && data.compromissos) || []).filter(c => c && c.id != null && !idsEquipe.has(String(c.id)));
+}
+
+function passarParaEquipeAviso(ids) {
+    const alvo = ehGestaoAviso() ? 'eventosEscola' : 'compromissosEquipe';
+    const autor = (typeof currentUser !== 'undefined' && currentUser && (currentUser.nome || currentUser.email)) || '';
+    const agora = new Date().toISOString();
+    const conjunto = new Set(ids.map(String));
+    const mover = (data.compromissos || []).filter(c => conjunto.has(String(c.id)));
+    if (!mover.length) return 0;
+    if (!data[alvo]) data[alvo] = [];
+    mover.forEach(c => {
+        if (!data[alvo].some(x => String(x.id) === String(c.id))) {
+            data[alvo].push(Object.assign({}, c, { autor: c.autor || autor, autorNome: c.autorNome || autor, compartilhadoEm: agora, atualizadoEm: agora }));
+        }
+    });
+    // tira também cópias antigas de itens que já estão na equipe
+    const naEquipe = new Set(data[alvo].map(c => String(c.id)));
+    data.compromissos = (data.compromissos || []).filter(c => !conjunto.has(String(c.id)) && !naEquipe.has(String(c.id)));
+    persistirDados();
+    atualizarTelasAviso();
+    return mover.length;
+}
+
+function compartilharCompromissoAviso(id) {
+    const c = (data.compromissos || []).find(x => String(x.id) === String(id));
+    if (!c) return;
+    if (!confirm(`Compartilhar "${c.titulo}" com a equipe (professores e gestão)?`)) return;
+    passarParaEquipeAviso([c.id]);
+}
+
+function compartilharTodosAviso() {
+    const lista = meusSoMeusAviso();
+    if (!lista.length) return alert('Não há itens só seus para compartilhar.');
+    if (!confirm(`Compartilhar com a equipe (professores e gestão) os ${lista.length} item(ns) que estão só na sua agenda?\n\n${lista.slice(0, 15).map(c => '• ' + formatarDataAviso(c.data) + ' — ' + c.titulo).join('\n')}${lista.length > 15 ? '\n…' : ''}`)) return;
+    const n = passarParaEquipeAviso(lista.map(c => c.id));
+    alert(`Pronto: ${n} item(ns) agora estão compartilhados com a equipe.`);
 }
 
 function marcarFeitoCompromissoAviso(id) {
@@ -695,6 +742,7 @@ function htmlCompromissosDashboard(semCarregar) {
                 <strong style="font-size:14px; color:#1c2536;">📌 Compromissos e lembretes</strong>
                 <button class="btn btn-sm btn-primary" onclick="abrirAvisoGestaoIA()" title="Cole a mensagem ou o print da gestão e a IA lança na agenda">📥 Aviso da gestão</button>
             </div>
+            ${meusSoMeusAviso().length ? `<div style="font-size:12px; color:#234e52; background:#e6fffa; border-radius:6px; padding:5px 8px; margin-top:6px;">${meusSoMeusAviso().length} item(ns) estão só na sua agenda. <a href="#" onclick="compartilharTodosAviso(); return false;" style="color:#234e52; font-weight:bold;">👥 Compartilhar todos com a equipe</a></div>` : ''}
             ${vazio ? '<p style="font-size:12px; color:#7a869a; margin:6px 0 0;">Nada para os próximos 7 dias.</p>' : ''}
             ${bloco('Hoje', deHoje)}
             ${bloco('🔔 Lembretes', lembretes, { semSino: true })}
@@ -716,6 +764,7 @@ function renderCompromissosAgenda(semCarregar) {
             <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
                 <h3 style="margin:0;">📌 Compromissos e lembretes</h3>
                 <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    ${meusSoMeusAviso().length ? `<button class="btn btn-sm btn-secondary" id="btnCompartilharTodosAviso" onclick="compartilharTodosAviso()">👥 Compartilhar todos (${meusSoMeusAviso().length})</button>` : ''}
                     <button class="btn btn-sm btn-secondary" onclick="abrirRevisaoAvisoIA([itemVazioAviso('compromisso')])">+ Novo</button>
                     <button class="btn btn-sm btn-primary" onclick="abrirAvisoGestaoIA()">📥 Aviso da gestão (IA)</button>
                 </div>

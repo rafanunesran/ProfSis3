@@ -196,6 +196,36 @@ async function abrir(browser, viewport, modo) {
     ok('professor não apaga o da gestão', r3.escolaFicou);
     ok('Minha Agenda lista o da gestão e o do colega, sem botão de apagar os deles', /Compromissos e lembretes/.test(r3.agenda) && /Conselho de classe/.test(r3.agenda) && /Feira de ciências/.test(r3.agenda) && r3.botoesApagar === 1, r3.agenda + ' botões:' + r3.botoesApagar);
 
+    const r7 = await page.evaluate(async () => {
+        const r = {}; const hoje = hojeLocalAviso();
+        data.compromissos.push({ id: 'velho1', tipo: 'compromisso', titulo: 'Reunião antiga', data: somarDiasAviso(hoje, 2), lembrete: 'no_dia' },
+                               { id: 'velho2', tipo: 'lembrete', titulo: 'Faltosos avisados pela gestão: Fulano', data: hoje, lembrete: 'no_dia' });
+        r.antes = data.compromissos.length;
+        await renderDashboard(); await new Promise(res => setTimeout(res, 500));
+        r.dica = /só na sua agenda.*Compartilhar todos/.test(document.getElementById('compromissosDashboard').textContent);
+        await showDocumentosTab('agenda'); await new Promise(res => setTimeout(res, 300));
+        r.botaoTodos = (document.getElementById('btnCompartilharTodosAviso') || {}).textContent || '';
+        r.botoes1 = document.querySelectorAll('#compromissosAgenda button[title="Compartilhar com a equipe"]').length;
+        compartilharCompromissoAviso('velho1');
+        r.um = data.compromissosEquipe.some(c => c.id === 'velho1' && c.autorNome === 'Maria Prof') && !data.compromissos.some(c => c.id === 'velho1');
+        // junção de outro aparelho trouxe de volta o antigo: não repete
+        data.compromissos.push({ id: 'velho1', tipo: 'compromisso', titulo: 'Reunião antiga', data: somarDiasAviso(hoje, 2) });
+        r.semRepetir = todosCompromissosAviso().filter(c => c.id === 'velho1').length === 1;
+        compartilharTodosAviso();
+        r.depois = { meus: data.compromissos.length, equipe: data.compromissosEquipe.map(c => c.id) };
+        r.recorte = recorteDoProfessor(data, currentUser).compromissosEquipe.map(c => c.id);
+        await showDocumentosTab('agenda'); await new Promise(res => setTimeout(res, 300));
+        r.botaoSumiu = !document.getElementById('btnCompartilharTodosAviso');
+        return r;
+    });
+    ok('Início avisa que há itens só seus e oferece compartilhar todos', r7.dica);
+    ok('Minha Agenda: botão "Compartilhar todos" e 👥 em cada item só seu', /Compartilhar todos \(3\)/.test(r7.botaoTodos) && r7.botoes1 === 3, r7.botaoTodos + ' / ' + r7.botoes1);
+    ok('👥 passa um item para a equipe, com autor', r7.um);
+    ok('item que voltou de outro aparelho não aparece duas vezes', r7.semRepetir);
+    ok('"Compartilhar todos" passa tudo (inclusive os lembretes antigos) e nada some', r7.depois.meus === 0 && ['velho1', 'velho2'].every(i => r7.depois.equipe.includes(i)) && r7.depois.equipe.length === 3, JSON.stringify(r7.depois));
+    ok('vai no recorte para a escola', r7.recorte.includes('velho2'));
+    ok('botão some quando não há mais nada só seu', r7.botaoSumiu);
+
     // celular
     await page.setViewportSize({ width: 390, height: 844 });
     await page.evaluate(() => { abrirAvisoGestaoIA({ texto: 'Reunião amanhã 18h30' }); abrirRevisaoAvisoIA(normalizarAcoesAvisoIA({ acoes: [
