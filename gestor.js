@@ -1292,6 +1292,12 @@ function salvarRegistroGestao(e) {
 
 function removerRegistroGestao(id) {
     if (confirm('Excluir este registro?')) {
+        // Lançado por um professor (📥 Aviso da gestão): guarda o id para não voltar na próxima leitura.
+        const reg = data.registrosAdministrativos.find(r => r.id == id);
+        if (reg && reg.origem === 'equipe') {
+            if (!data.registrosEquipeRemovidos) data.registrosEquipeRemovidos = [];
+            if (data.registrosEquipeRemovidos.indexOf(reg.id) === -1) data.registrosEquipeRemovidos.push(reg.id);
+        }
         data.registrosAdministrativos = data.registrosAdministrativos.filter(r => r.id !== id);
         persistirDados();
         renderRegistrosGestor();
@@ -1328,7 +1334,8 @@ async function atualizarOcorrenciasDosProfessores(redesenhar) {
     if (_buscandoOcorrenciasProfessores || typeof trazerOcorrenciasDosProfessores !== 'function') return;
     _buscandoOcorrenciasProfessores = true;
     try {
-        const mudou = await trazerOcorrenciasDosProfessores();
+        let mudou = await trazerOcorrenciasDosProfessores();
+        if (typeof trazerRegistrosEquipeDosProfessores === 'function') mudou += await trazerRegistrosEquipeDosProfessores();
         if (mudou > 0) {
             await persistirDados();
             if (typeof redesenhar === 'function') redesenhar();

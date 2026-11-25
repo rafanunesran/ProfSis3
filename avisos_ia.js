@@ -2,11 +2,18 @@
 // WhatsApp, ou o print dela, e a IA monta a lista do que lançar no EdiProf:
 //   - compromisso (reunião, conselho, ATPC, entrega...) com data, hora e lembrete;
 //   - lembrete (prazo, "não esquecer de...");
-//   - estudante faltoso ou com atestado médico (só a gestão registra; no professor vira lembrete).
+//   - estudante faltoso ou com atestado médico.
+// Tudo é COMPARTILHADO COM A EQUIPE por padrão (pedido do Rafael, 25/11/2026): quem lançou pode
+// desmarcar "Compartilhar com a equipe" num compromisso/lembrete para ficar só seu.
 // NADA é salvo antes de a pessoa conferir item por item na tela de revisão.
 //
 // Onde fica cada coisa:
-//   data.compromissos  — compromissos/lembretes da própria pessoa (campo pessoal, vai cifrado).
+//   data.compromissos  — compromissos/lembretes só da própria pessoa (campo pessoal, vai cifrado).
+//   data.compromissosEquipe / data.registrosEquipe — no PROFESSOR: o que ele compartilhou com a
+//                        equipe (compromissos/lembretes e faltosos/atestados). Vão cifrados no
+//                        recorte dele para a escola (listaescola.js recorteDoProfessor); os colegas
+//                        leem com lerContribuicoesDaEscola e a gestão traz os faltosos/atestados
+//                        para Registros (trazerRegistrosEquipeDosProfessores).
 //   data.eventosEscola — na GESTÃO: compromissos publicados para todos os professores da escola
 //                        (campo de nuvem, em claro: por isso o título não leva nome de estudante).
 //                        No PROFESSOR é a cópia que chega da gestão (app.js, junto com o mural).
@@ -111,10 +118,55 @@ function escolherEstudanteAviso(cands) {
 // ---------------------------------------------------------------------------
 // Compromissos guardados
 // ---------------------------------------------------------------------------
+// O que os COLEGAS publicaram (lido do recorte de cada um). Fica só na memória.
+let equipeAviso = { quando: 0, compromissos: [], registros: [], carregando: null };
+const EQUIPE_AVISO_CACHE_MS = 60000;
+
+function meuIdAviso() { return (typeof currentUser !== 'undefined' && currentUser && currentUser.id != null) ? String(currentUser.id) : ''; }
+
+async function carregarEquipeAviso(forcar) {
+    if (typeof lerContribuicoesDaEscola !== 'function') return false;
+    if (!forcar && Date.now() - equipeAviso.quando < EQUIPE_AVISO_CACHE_MS) return false;
+    if (equipeAviso.carregando) return equipeAviso.carregando;
+    equipeAviso.carregando = (async () => {
+        try {
+            const r = await lerContribuicoesDaEscola(forcar ? { forcar: true } : undefined);
+            const eu = meuIdAviso();
+            const comps = [], regs = [];
+            ((r && r.lista) || []).forEach(c => {
+                if (String(c.autorId) === eu) return;
+                ((c.dados && c.dados.compromissosEquipe) || []).forEach(x => { if (x && x.id != null) comps.push(Object.assign({}, x, { autorNome: x.autorNome || c.autorNome || '' })); });
+                ((c.dados && c.dados.registrosEquipe) || []).forEach(x => { if (x && x.id != null) regs.push(Object.assign({}, x, { origem: 'equipe', autorNome: x.autorNome || c.autorNome || '' })); });
+            });
+            const antes = JSON.stringify([equipeAviso.compromissos, equipeAviso.registros]);
+            equipeAviso.compromissos = comps; equipeAviso.registros = regs; equipeAviso.quando = Date.now();
+            const mudou = antes !== JSON.stringify([comps, regs]);
+            if (typeof data !== 'undefined' && data && !ehGestaoAviso()) data.registrosAdministrativos = juntarRegistrosEquipeAviso(data.registrosAdministrativos || []);
+            return mudou;
+        } catch (e) { console.warn('[Aviso] não deu para ler o que a equipe publicou:', e); equipeAviso.quando = Date.now(); return false; }
+        finally { equipeAviso.carregando = null; }
+    })();
+    return equipeAviso.carregando;
+}
+
+// Professor: junta aos registros que vieram da gestão os faltosos/atestados que ele e os colegas
+// lançaram e que a gestão ainda não trouxe (nem excluiu). Chamada por enriquecerRegistrosComNome.
+function juntarRegistrosEquipeAviso(registros) {
+    if (!Array.isArray(registros) || typeof data === 'undefined' || !data || ehGestaoAviso()) return registros;
+    const removidos = new Set((data.registrosEquipeRemovidos || []).map(String));
+    const ids = new Set(registros.map(x => String(x.id)));
+    const extras = [...(data.registrosEquipe || []), ...equipeAviso.registros]
+        .filter(x => x && x.id != null && !ids.has(String(x.id)) && !removidos.has(String(x.id)) && (ids.add(String(x.id)), true))
+        .map(x => Object.assign({}, x, { origem: 'equipe' }));
+    return extras.length ? [...registros, ...extras] : registros;
+}
+
 function todosCompromissosAviso() {
-    const meus = ((data && data.compromissos) || []).map(c => Object.assign({}, c, { _origem: 'meu' }));
-    const escola = ((data && data.eventosEscola) || []).map(c => Object.assign({}, c, { _origem: 'escola' }));
-    return [...meus, ...escola].sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')) || String(a.inicio || '').localeCompare(String(b.inicio || '')));
+    const meus = ((data && data.compromissos) || []).map(c => Object.assign({}, c, { _origem: 'meu', _campo: 'compromissos' }));
+    const meusEquipe = ((data && data.compromissosEquipe) || []).map(c => Object.assign({}, c, { _origem: 'equipeMeu', _campo: 'compromissosEquipe' }));
+    const escola = ((data && data.eventosEscola) || []).map(c => Object.assign({}, c, { _origem: 'escola', _campo: ehGestaoAviso() ? 'eventosEscola' : '' }));
+    const colegas = equipeAviso.compromissos.map(c => Object.assign({}, c, { _origem: 'equipe', _campo: '' }));
+    return [...meus, ...meusEquipe, ...escola, ...colegas].sort((a, b) => String(a.data || '').localeCompare(String(b.data || '')) || String(a.inicio || '').localeCompare(String(b.inicio || '')));
 }
 
 // O lembrete está "tocando" hoje? (de N dias antes até o próprio dia)
@@ -174,7 +226,8 @@ function renderEntradaAvisoIA() {
     corpo.innerHTML = `
         <p style="margin-top:0; color:#3d4759; font-size:14px;">
             Cole aqui a mensagem que chegou${gestao ? '' : ' da gestão'} pelo WhatsApp, ou anexe o print.
-            A IA monta a lista do que lançar: ${gestao ? 'estudantes faltosos, atestados, compromissos (para você ou para todos os professores) e lembretes' : 'compromissos na sua agenda e lembretes'}.
+            A IA monta a lista do que lançar: compromissos, lembretes, estudantes faltosos e atestados.
+            Tudo fica <strong>compartilhado com a equipe</strong> (professores e gestão), a não ser o que você desmarcar.
             <strong>Nada é salvo antes de você conferir.</strong>
         </p>
         <textarea id="avisoIATexto" rows="7" style="width:100%; box-sizing:border-box;" placeholder="Ex.: Bom dia, professores! Reunião pedagógica quinta (27) às 18h30 na sala dos professores. Entregar as notas do 4º bimestre até dia 5/12."
@@ -269,7 +322,7 @@ Cada ação é um destes objetos:
    {"tipo":"atestado","nome":"nome como está escrito","turma":"turma como está escrita, ou \\"\\"","dataInicio":"AAAA-MM-DD do primeiro dia do afastamento, ou \\"\\"","dias":número de dias (se disser "até dia X", conte os dias corridos incluindo o primeiro e o último; se não disser, 1),"observacao":"curto, ou \\"\\" (não escreva doença/CID)"}
 2) Compromisso com dia marcado (reunião, ATPC, conselho de classe, formação, evento, prova, plantão, entrega com hora):
    {"tipo":"compromisso","titulo":"curto, até 60 letras","data":"AAAA-MM-DD","inicio":"HH:MM ou \\"\\"","fim":"HH:MM ou \\"\\"","local":"ou \\"\\"","descricao":"o que levar/fazer, curto, ou \\"\\"","paraTodos":true ou false,"lembrete":"nenhum|no_dia|1_dia|2_dias|1_semana"}
-   paraTodos = true quando o aviso vale para todos os professores (reunião geral, ATPC, conselho, prazo de notas, evento da escola).
+   paraTodos = true quando o aviso vale para a equipe (quase sempre: reunião, ATPC, conselho, prazo de notas, evento da escola); false só se for claramente algo pessoal de quem recebeu.
 3) Lembrete (prazo ou tarefa sem hora: entregar diário, lançar notas, preencher formulário, levar documento):
    {"tipo":"lembrete","titulo":"o que fazer, curto","data":"AAAA-MM-DD (o prazo ou o dia de lembrar)","inicio":"","paraTodos":true ou false,"lembrete":"no_dia|1_dia|2_dias|1_semana"}
 
@@ -292,7 +345,7 @@ function itemVazioAviso(tipo) {
     return {
         uid: 'i' + Math.random().toString(36).slice(2, 9), tipo, usar: true,
         titulo: '', data: tipo === 'lembrete' ? hojeLocalAviso() : '', inicio: '', fim: '', local: '', descricao: '',
-        paraTodos: false, lembrete: tipo === 'lembrete' ? '1_dia' : 'no_dia',
+        paraTodos: true, lembrete: tipo === 'lembrete' ? '1_dia' : 'no_dia',
         nome: '', turma: '', observacao: '', estudanteId: '', candidatos: [], dataInicio: hojeLocalAviso(), dias: 1, avisos: []
     };
 }
@@ -305,8 +358,6 @@ function normalizarAcoesAvisoIA(resposta) {
     const acoes = (resposta && Array.isArray(resposta.acoes)) ? resposta.acoes : [];
     const gestao = ehGestaoAviso();
     const itens = [];
-    const faltososProf = [];
-    const atestadosProf = [];
     acoes.forEach(a => {
         if (!a || typeof a !== 'object') return;
         const tipo = String(a.tipo || '').toLowerCase();
@@ -315,12 +366,6 @@ function normalizarAcoesAvisoIA(resposta) {
             if (!nome) return;
             const dias = Math.max(1, Math.min(120, parseInt(a.dias, 10) || 1));
             const inicio = DATA_OK_AVISO(a.dataInicio) ? a.dataInicio : '';
-            if (!gestao) {
-                const rotulo = (a.turma ? `${nome} (${String(a.turma).trim()})` : nome)
-                    + (tipo === 'atestado' ? ` — ${dias} dia(s)${inicio ? ' a partir de ' + formatarDataAviso(inicio, false) : ''}` : '');
-                (tipo === 'atestado' ? atestadosProf : faltososProf).push(rotulo);
-                return;
-            }
             const it = itemVazioAviso(tipo);
             if (tipo === 'atestado') { it.dias = dias; if (inicio) it.dataInicio = inicio; }
             it.nome = nome.slice(0, 120);
@@ -347,31 +392,18 @@ function normalizarAcoesAvisoIA(resposta) {
         it.fim = HORA_OK_AVISO(a.fim) ? a.fim : '';
         it.local = String(a.local || '').trim().slice(0, 120);
         it.descricao = String(a.descricao || '').trim().slice(0, 500);
-        it.paraTodos = gestao && a.paraTodos === true;
+        it.paraTodos = a.paraTodos !== false;
         it.lembrete = DIAS_LEMBRETE_AVISO[a.lembrete] != null || a.lembrete === 'nenhum' ? a.lembrete : (tipo === 'lembrete' ? '1_dia' : 'no_dia');
         if (!it.data) it.avisos.push('A IA não achou a data. Preencha antes de salvar.');
         else if (it.data < hojeLocalAviso()) it.avisos.push('Essa data já passou. Confira.');
         const igual = it.data && jaExisteCompromissoAviso(it);
         if (igual) {
             it.usar = false;
-            it.avisos.push(igual._origem === 'escola' && !gestao ? 'A gestão já colocou isso na agenda da escola.' : 'Parece que isso já está na agenda.');
+            it.avisos.push(igual._origem === 'escola' && !gestao ? 'A gestão já colocou isso na agenda da escola.'
+                : igual._origem === 'equipe' ? `${igual.autorNome || 'Um colega'} já colocou isso na agenda da equipe.` : 'Parece que isso já está na agenda.');
         }
         itens.push(it);
     });
-    if (faltososProf.length) {
-        const it = itemVazioAviso('lembrete');
-        it.titulo = ('Faltosos avisados pela gestão: ' + faltososProf.join(', ')).slice(0, 400);
-        it.lembrete = 'no_dia';
-        it.avisos.push('Só a gestão marca estudante faltoso no EdiProf. Guardo como lembrete só para você.');
-        itens.push(it);
-    }
-    if (atestadosProf.length) {
-        const it = itemVazioAviso('lembrete');
-        it.titulo = ('Atestados avisados pela gestão: ' + atestadosProf.join(', ')).slice(0, 400);
-        it.lembrete = 'no_dia';
-        it.avisos.push('Só a gestão lança atestado no EdiProf (aí a falta fica justificada na sua chamada). Guardo como lembrete só para você.');
-        itens.push(it);
-    }
     return itens;
 }
 
@@ -448,7 +480,8 @@ function htmlItemAviso(it, i) {
             ${campo('Estudante', `<select onchange="mudarItemAviso('${u}', 'estudanteId', this.value)" style="width:100%;">${opcoesEstudanteAviso(it)}</select>`, true)}
             ${campo(it.tipo === 'atestado' ? 'Primeiro dia' : 'Desde', inp('dataInicio', 'date'))}
             ${it.tipo === 'atestado' ? campo('Dias de atestado', inp('dias', 'number', 'min="1" max="120"')) : ''}
-            ${campo('Observação', inp('observacao', 'text', 'placeholder="opcional"'), it.tipo === 'atestado')}`;
+            ${campo('Observação', inp('observacao', 'text', 'placeholder="opcional"'), it.tipo === 'atestado')}
+            <p style="grid-column:1 / -1; font-size:12px; color:#5f6b7f; margin:0;">👥 ${gestao ? 'Vai para Registros e chega a todos os professores.' : 'Vai para a gestão (Registros) e aparece para os professores da escola.'}</p>`;
     } else {
         corpo = `
             ${campo(it.tipo === 'lembrete' ? 'O que lembrar' : 'Título', inp('titulo', 'text'), true)}
@@ -459,9 +492,9 @@ function htmlItemAviso(it, i) {
                 ${campo('Termina', inp('fim', 'time'))}
                 ${campo('Local', inp('local', 'text', 'placeholder="opcional"'), true)}
                 ${campo('Detalhes', inp('descricao', 'text', 'placeholder="opcional"'), true)}` : ''}
-            ${gestao ? `<label style="grid-column:1 / -1; display:flex; gap:6px; align-items:center; font-size:13px; margin:2px 0 0; color:#1b4488;">
+            <label style="grid-column:1 / -1; display:flex; gap:6px; align-items:center; font-size:13px; margin:2px 0 0; color:#1b4488;">
                 <input type="checkbox" ${it.paraTodos ? 'checked' : ''} onchange="mudarItemAviso('${u}', 'paraTodos', this.checked)" style="width:auto;">
-                🏫 Colocar na agenda de <strong>todos os professores</strong> da escola</label>` : ''}`;
+                👥 Compartilhar com a equipe <span style="color:#5f6b7f;">(${gestao ? 'aparece na agenda de todos os professores' : 'professores e gestão veem'})</span></label>`;
     }
     return `
         <div class="aviso-ia-item" data-uid="${u}" style="border:1px solid ${it.usar ? '#9fb7e3' : '#e3e8ef'}; background:${it.usar ? '#fff' : '#f6f8fb'}; border-radius:8px; padding:10px 12px; margin-bottom:10px;">
@@ -486,8 +519,8 @@ function renderRevisaoAvisoIA() {
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
             <button class="btn btn-sm btn-secondary" onclick="adicionarItemAviso('compromisso')">+ Compromisso</button>
             <button class="btn btn-sm btn-secondary" onclick="adicionarItemAviso('lembrete')">+ Lembrete</button>
-            ${gestao ? `<button class="btn btn-sm btn-secondary" onclick="adicionarItemAviso('faltoso')">+ Faltoso</button>
-                        <button class="btn btn-sm btn-secondary" onclick="adicionarItemAviso('atestado')">+ Atestado</button>` : ''}
+            <button class="btn btn-sm btn-secondary" onclick="adicionarItemAviso('faltoso')">+ Faltoso</button>
+            <button class="btn btn-sm btn-secondary" onclick="adicionarItemAviso('atestado')">+ Atestado</button>
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:space-between;">
             <button class="btn btn-secondary" onclick="renderEntradaAvisoIA()">← Voltar ao aviso</button>
@@ -509,8 +542,11 @@ function salvarAvisoIA() {
             if (!DATA_OK_AVISO(it.data)) return alert(`Preencha o dia de "${it.titulo}".`);
         }
     }
-    const paraTodos = gestao ? marcados.filter(i => !TIPOS_ESTUDANTE_AVISO[i.tipo] && i.paraTodos) : [];
-    if (paraTodos.length && !confirm(`${paraTodos.length} item(ns) vão aparecer na agenda de TODOS os professores da escola:\n\n${paraTodos.map(i => '• ' + formatarDataAviso(i.data) + ' — ' + i.titulo).join('\n')}\n\nConfirmar?`)) return;
+    const compartilhados = marcados.filter(i => TIPOS_ESTUDANTE_AVISO[i.tipo] || i.paraTodos);
+    const descrever = (i) => TIPOS_ESTUDANTE_AVISO[i.tipo]
+        ? `• ${i.tipo === 'atestado' ? 'Atestado' : 'Faltoso'}: ${((data.estudantes || []).find(e => String(e.id) === String(i.estudanteId)) || {}).nome_completo || i.nome}`
+        : `• ${formatarDataAviso(i.data)} — ${i.titulo}`;
+    if (compartilhados.length && !confirm(`${compartilhados.length} item(ns) vão ficar visíveis para a EQUIPE da escola (professores e gestão):\n\n${compartilhados.map(descrever).join('\n')}\n\nConfirmar?`)) return;
 
     const agora = new Date().toISOString();
     const autor = (typeof currentUser !== 'undefined' && currentUser && (currentUser.nome || currentUser.email)) || '';
@@ -521,11 +557,20 @@ function salvarAvisoIA() {
             if (!est) return;
             if (!data.registrosAdministrativos) data.registrosAdministrativos = [];
             const atestado = it.tipo === 'atestado';
-            data.registrosAdministrativos.push({
+            const registro = {
                 id: base++, turmaId: est.id_turma, estudanteId: est.id, tipo: TIPOS_ESTUDANTE_AVISO[it.tipo],
                 data: it.dataInicio, dias: atestado ? Math.max(1, parseInt(it.dias, 10) || 1) : 0,
                 descricao: it.observacao || '', origem: 'aviso-ia'
-            });
+            };
+            if (!gestao) {
+                // Professor: a turma da escola (masterId) e o nome vão junto, para a gestão e os colegas casarem.
+                const t = (data.turmas || []).find(x => x.id == est.id_turma);
+                if (t && t.masterId != null && t.masterId !== '') registro.turmaId = t.masterId;
+                Object.assign(registro, { origem: 'equipe', nomeEstudante: est.nome_completo, autorNome: autor, criadoEm: agora });
+                if (!data.registrosEquipe) data.registrosEquipe = [];
+                data.registrosEquipe.push(registro);
+            }
+            data.registrosAdministrativos.push(registro);
             if (atestado) nAtest++; else nFalt++;
             return;
         }
@@ -536,10 +581,11 @@ function salvarAvisoIA() {
             local: String(it.local || '').trim(), descricao: String(it.descricao || '').trim(),
             lembrete: it.lembrete || 'nenhum', origem: 'aviso-ia', criadoEm: agora, atualizadoEm: agora
         };
-        if (gestao && it.paraTodos) {
-            reg.autor = autor;
-            if (!data.eventosEscola) data.eventosEscola = [];
-            data.eventosEscola.push(reg); nEscola++;
+        if (it.paraTodos) {
+            reg.autor = autor; reg.autorNome = autor;
+            const campo = gestao ? 'eventosEscola' : 'compromissosEquipe';
+            if (!data[campo]) data[campo] = [];
+            data[campo].push(reg); nEscola++;
         } else {
             if (!data.compromissos) data.compromissos = [];
             data.compromissos.push(reg); nMeus++;
@@ -548,10 +594,11 @@ function salvarAvisoIA() {
     persistirDados();
     closeModal('modalAvisoIA');
     const partes = [];
-    if (nMeus) partes.push(`${nMeus} na sua agenda`);
-    if (nEscola) partes.push(`${nEscola} na agenda de todos os professores`);
-    if (nFalt) partes.push(`${nFalt} faltoso(s) em Registros`);
-    if (nAtest) partes.push(`${nAtest} atestado(s) em Registros`);
+    if (nEscola) partes.push(`${nEscola} na agenda da equipe`);
+    if (nMeus) partes.push(`${nMeus} só na sua agenda`);
+    if (nFalt) partes.push(`${nFalt} faltoso(s)`);
+    if (nAtest) partes.push(`${nAtest} atestado(s)`);
+    if (!gestao && (nFalt || nAtest)) partes.push('a gestão recebe os faltosos/atestados em Registros quando abrir o painel');
     alert('Pronto! Salvo: ' + partes.join(', ') + '.');
     atualizarTelasAviso();
 }
@@ -570,7 +617,7 @@ function linhaCompromissoAviso(c, opcoes) {
     opcoes = opcoes || {};
     const hoje = hojeLocalAviso();
     const hora = c.inicio ? (c.fim ? `${c.inicio}–${c.fim}` : c.inicio) : '';
-    const podeApagar = c._origem === 'meu' || ehGestaoAviso();
+    const podeApagar = !!c._campo;
     const tocando = lembreteAtivoAviso(c, hoje);
     const id = escAviso(String(c.id)).replace(/'/g, '');
     return `
@@ -578,13 +625,15 @@ function linhaCompromissoAviso(c, opcoes) {
             <div style="min-width:74px; font-size:12px; color:${c.data === hoje ? '#c53030' : '#1b4488'}; font-weight:bold;">${c.data === hoje ? 'Hoje' : formatarDataAviso(c.data)}${hora ? `<br><span style="font-weight:normal; color:#5f6b7f;">${escAviso(hora)}</span>` : ''}</div>
             <div style="flex:1; font-size:13px; color:#1c2536;">
                 ${c.tipo === 'lembrete' ? '🔔 ' : ''}${c.feito ? '<s>' : ''}${escAviso(c.titulo)}${c.feito ? '</s>' : ''}
-                ${c._origem === 'escola' && !ehGestaoAviso() ? '<span style="font-size:11px; background:#e8f0fe; color:#1b4488; border-radius:4px; padding:1px 5px; margin-left:4px;">🏫 escola</span>' : ''}
+                ${c._origem === 'escola' && !ehGestaoAviso() ? '<span style="font-size:11px; background:#e8f0fe; color:#1b4488; border-radius:4px; padding:1px 5px; margin-left:4px;">🏫 gestão</span>' : ''}
+                ${c._origem === 'equipe' ? `<span style="font-size:11px; background:#e6fffa; color:#234e52; border-radius:4px; padding:1px 5px; margin-left:4px;">👥 ${escAviso(c.autorNome || 'equipe')}</span>` : ''}
+                ${c._origem === 'equipeMeu' || (c._origem === 'escola' && ehGestaoAviso()) ? '<span style="font-size:11px; background:#e6fffa; color:#234e52; border-radius:4px; padding:1px 5px; margin-left:4px;">👥 compartilhado</span>' : ''}
                 ${tocando && !opcoes.semSino ? '<span style="font-size:11px; background:#fefcbf; color:#744210; border-radius:4px; padding:1px 5px; margin-left:4px;">lembrete</span>' : ''}
                 ${c.local || c.descricao ? `<div style="font-size:12px; color:#5f6b7f;">${escAviso([c.local, c.descricao].filter(Boolean).join(' · '))}</div>` : ''}
             </div>
             <div style="display:flex; gap:4px;">
                 ${c._origem === 'meu' && c.tipo === 'lembrete' ? `<button class="btn btn-xs btn-secondary" style="padding:1px 6px;" title="${c.feito ? 'Desfazer' : 'Feito'}" onclick="marcarFeitoCompromissoAviso('${id}')">${c.feito ? '↺' : '✓'}</button>` : ''}
-                ${podeApagar ? `<button class="btn btn-xs btn-danger" style="padding:1px 6px;" title="Apagar" onclick="apagarCompromissoAviso('${id}', '${c._origem}')">×</button>` : ''}
+                ${podeApagar ? `<button class="btn btn-xs btn-danger" style="padding:1px 6px;" title="Apagar" onclick="apagarCompromissoAviso('${id}', '${c._campo}')">×</button>` : ''}
             </div>
         </div>`;
 }
@@ -598,22 +647,39 @@ function marcarFeitoCompromissoAviso(id) {
     atualizarTelasAviso();
 }
 
-function apagarCompromissoAviso(id, origem) {
-    // O que veio da gestão só a gestão apaga (no professor é cópia e voltaria na próxima sincronização).
-    if (origem === 'escola' && !ehGestaoAviso()) return;
-    const campo = origem === 'escola' ? 'eventosEscola' : 'compromissos';
+// campo = de qual lista é: compromissos (só meu), compromissosEquipe (compartilhei), eventosEscola
+// (gestão). O que veio da gestão ou de um colega só quem lançou apaga (aqui é cópia e voltaria).
+function apagarCompromissoAviso(id, campo) {
+    if (campo === 'eventosEscola' && !ehGestaoAviso()) return;
+    if (['compromissos', 'compromissosEquipe', 'eventosEscola'].indexOf(campo) === -1) return;
     const lista = data[campo] || [];
     const c = lista.find(x => String(x.id) === String(id));
     if (!c) return;
-    const msg = origem === 'escola' ? `Apagar "${c.titulo}" da agenda de TODOS os professores?` : `Apagar "${c.titulo}"?`;
+    const msg = campo !== 'compromissos' ? `Apagar "${c.titulo}" da agenda de toda a equipe?` : `Apagar "${c.titulo}"?`;
     if (!confirm(msg)) return;
     data[campo] = lista.filter(x => String(x.id) !== String(id));
     persistirDados();
     atualizarTelasAviso();
 }
 
+// Lê o que a equipe publicou e, se mudou, redesenha só os blocos de compromissos.
+function pedirEquipeAviso() {
+    setTimeout(() => {
+        carregarEquipeAviso().then(mudou => { if (mudou) redesenharBlocosAviso(); }).catch(() => {});
+    }, 0);
+}
+
+function redesenharBlocosAviso() {
+    const d = document.getElementById('compromissosDashboard');
+    if (d) d.outerHTML = htmlCompromissosDashboard(true);
+    renderCompromissosAgenda(true);
+    const g = document.getElementById('agendaEscolaGestor');
+    if (g) g.innerHTML = htmlAgendaEscolaGestor(true);
+}
+
 // Bloco que entra no card "Agenda do Dia" do Início do professor.
-function htmlCompromissosDashboard() {
+function htmlCompromissosDashboard(semCarregar) {
+    if (!semCarregar) pedirEquipeAviso();
     const hoje = hojeLocalAviso();
     const ate = somarDiasAviso(hoje, 7);
     const todos = todosCompromissosAviso();
@@ -637,9 +703,10 @@ function htmlCompromissosDashboard() {
 }
 
 // Minha Agenda (Documentos › Minha Agenda): a lista completa, com os passados recentes.
-function renderCompromissosAgenda() {
+function renderCompromissosAgenda(semCarregar) {
     const caixa = document.getElementById('compromissosAgenda');
     if (!caixa) return;
+    if (!semCarregar) pedirEquipeAviso();
     const hoje = hojeLocalAviso();
     const todos = todosCompromissosAviso();
     const futuros = todos.filter(c => c.data >= hoje);
@@ -659,7 +726,8 @@ function renderCompromissosAgenda() {
 }
 
 // Card do painel da gestão: o que foi publicado para todos os professores.
-function htmlAgendaEscolaGestor() {
+function htmlAgendaEscolaGestor(semCarregar) {
+    if (!semCarregar) pedirEquipeAviso();
     const hoje = hojeLocalAviso();
     const lista = todosCompromissosAviso().filter(c => c.data >= hoje);
     return `
@@ -667,9 +735,9 @@ function htmlAgendaEscolaGestor() {
             <h2 style="margin:0;">📅 Agenda da escola</h2>
             <button class="btn btn-sm btn-primary" onclick="abrirAvisoGestaoIA()">📥 Lançar aviso com IA</button>
         </div>
-        <p style="font-size:12px; color:#5f6b7f; margin:4px 0 6px;">Os itens com 🏫 aparecem na agenda de todos os professores. Os outros são só seus.</p>
+        <p style="font-size:12px; color:#5f6b7f; margin:4px 0 6px;">👥 = compartilhado com a equipe (o nome diz qual professor lançou). Sem 👥 é só seu.</p>
         <div id="listaAgendaEscolaGestor" style="max-height:260px; overflow-y:auto;">
-            ${lista.length ? lista.map(c => linhaCompromissoAviso(Object.assign({}, c, { titulo: (c._origem === 'escola' ? '🏫 ' : '') + c.titulo }))).join('') : '<p class="empty-state">Nenhum compromisso marcado.</p>'}
+            ${lista.length ? lista.map(c => linhaCompromissoAviso(c)).join('') : '<p class="empty-state">Nenhum compromisso marcado.</p>'}
         </div>`;
 }
 

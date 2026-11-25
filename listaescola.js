@@ -454,12 +454,16 @@ function recorteDoProfessor(dados, autor) {
         geradoEm: new Date().toISOString(),
         ocorrencias: ocorrencias,
         faltas: faltas,
-        chamadas: chamadas
+        chamadas: chamadas,
+        // 📥 Aviso da gestão (avisos_ia.js): o que o professor lançou "para a equipe".
+        compromissosEquipe: (d.compromissosEquipe || []).filter(c => c && c.id != null),
+        registrosEquipe: (d.registrosEquipe || []).filter(x => x && x.id != null)
     };
 }
 
 function _contribuicaoVazia(r) {
-    return !r || (!(r.ocorrencias || []).length && !Object.keys(r.faltas || {}).length && !Object.keys(r.chamadas || {}).length);
+    return !r || (!(r.ocorrencias || []).length && !Object.keys(r.faltas || {}).length && !Object.keys(r.chamadas || {}).length
+        && !(r.compromissosEquipe || []).length && !(r.registrosEquipe || []).length);
 }
 
 // Devolve { estado } como publicarListaEscola: 'ok', 'igual', 'recusado', 'erro',
@@ -474,7 +478,8 @@ async function publicarContribuicaoProfessor(dados, opcoes) {
 
     const d = dados || {};
     // Professor sem nenhuma turma da gestão não tem o que devolver para a escola.
-    if (!(d.turmas || []).some(t => t && t.masterId != null && t.masterId !== '')) return { estado: 'sem-vinculo' };
+    const temEquipe = (d.compromissosEquipe || []).length || (d.registrosEquipe || []).length;
+    if (!temEquipe && !(d.turmas || []).some(t => t && t.masterId != null && t.masterId !== '')) return { estado: 'sem-vinculo' };
 
     const id = docContribuicaoProfessor(schoolId, u.id);
     const recorte = recorteDoProfessor(d, u);
@@ -612,6 +617,29 @@ async function trazerOcorrenciasDosProfessores(opcoes) {
         });
     });
 
+    return mudou;
+}
+
+// --- Gestor: trazer os faltosos/atestados que os professores lançaram ------------
+// (📥 Aviso da gestão no professor → recorte.registrosEquipe). Entram em
+// registrosAdministrativos com o mesmo id; o que a gestão já excluiu
+// (registrosEquipeRemovidos) não volta. Devolve quantos entraram.
+async function trazerRegistrosEquipeDosProfessores(opcoes) {
+    if (typeof currentViewMode === 'undefined' || currentViewMode !== 'gestor') return 0;
+    if (typeof data === 'undefined' || !data) return 0;
+    const contrib = await lerContribuicoesDaEscola(opcoes);
+    if (!contrib.lista.length) return 0;
+    if (!data.registrosAdministrativos) data.registrosAdministrativos = [];
+    const removidos = new Set((data.registrosEquipeRemovidos || []).map(String));
+    let mudou = 0;
+    contrib.lista.forEach(c => {
+        ((c.dados && c.dados.registrosEquipe) || []).forEach(x => {
+            if (!x || x.id == null || removidos.has(String(x.id))) return;
+            if (data.registrosAdministrativos.some(r => String(r.id) === String(x.id))) return;
+            data.registrosAdministrativos.push(Object.assign({}, x, { origem: 'equipe', autorId: c.autorId, autorNome: x.autorNome || c.autorNome || '' }));
+            mudou++;
+        });
+    });
     return mudou;
 }
 

@@ -1788,6 +1788,7 @@ async function renderDashboard() {
             // ou os avisos. Sem isso, um novo faltoso classificado pela gestão ficava só em memória
             // (o persistirDados abaixo só rodava se a grade mudasse) e nunca chegava ao localStorage
             // que as telas de chamada leem -> faltoso não era destacado.
+            if (Array.isArray(gestorData.registrosEquipeRemovidos)) data.registrosEquipeRemovidos = gestorData.registrosEquipeRemovidos;
             const registrosGestorEnriquecidos = enriquecerRegistrosComNome(gestorData.registrosAdministrativos, gestorData.estudantes);
             const registrosMudou = !!registrosGestorEnriquecidos
                 && JSON.stringify(data.registrosAdministrativos || []) !== JSON.stringify(registrosGestorEnriquecidos);
@@ -2134,6 +2135,8 @@ function enriquecerRegistrosComNome(registros, estudantesGestor) {
     // Faltoso A: no professor, vale a conta do dia feita no próprio aparelho (gestor.js,
     // atualizarFaltososDoDiaProfessor) no lugar da que veio da gestão, que pode ser de outro dia.
     if (currentViewMode === 'professor' && typeof registrosComFaltososDoDia === 'function') registros = registrosComFaltososDoDia(registros);
+    // Faltosos/atestados que professores lançaram pelo 📥 Aviso da gestão (avisos_ia.js).
+    if (currentViewMode === 'professor' && typeof juntarRegistrosEquipeAviso === 'function') registros = juntarRegistrosEquipeAviso(registros);
     return registros.map(r => {
         if ((r.tipo === 'Faltoso' || r.tipo === 'Atestado') && !r.nomeEstudante) {
             const est = (estudantesGestor || []).find(e => e.id == r.estudanteId);
@@ -2355,6 +2358,7 @@ async function abrirTurma(id) {
 
             // Sincroniza Registros Administrativos (Atestados/Faltosos) para o Dashboard, gravando o
             // nome do aluno em cada registro (para casar o faltoso por nome se o id divergir).
+            if (Array.isArray(gestorData.registrosEquipeRemovidos)) data.registrosEquipeRemovidos = gestorData.registrosEquipeRemovidos;
             if (gestorData.registrosAdministrativos) {
                 data.registrosAdministrativos = enriquecerRegistrosComNome(gestorData.registrosAdministrativos, gestorData.estudantes);
             }
