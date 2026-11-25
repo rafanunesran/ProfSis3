@@ -452,6 +452,10 @@
         secao.innerHTML =
             '<div class="ux-inicio-ola"><h2>' + saudacao() + (primeiroNome ? ', ' + esc(primeiroNome) : '') + '</h2>' +
             '<p>' + esc(hoje.charAt(0).toUpperCase() + hoje.slice(1)) + '</p></div>' +
+            '<div class="ux-inicio-tempo">' +
+                '<div class="ux-relogio" aria-label="Hora certa (horário de Brasília)"><span class="ux-relogio-hora">' + horaAgora().hm + '</span><span class="ux-relogio-seg">' + horaAgora().s + '</span><small>Horário de Brasília</small></div>' +
+                '<div class="ux-clima" aria-live="polite"><span class="ux-clima-aviso">Carregando o tempo…</span></div>' +
+            '</div>' +
             '<div class="ux-inicio-bloco"><span class="ux-inicio-rotulo">Atalhos</span><div class="ux-inicio-chips">' + acoes.join('') + '</div></div>';
 
         secao.addEventListener('click', (e) => {
@@ -463,7 +467,190 @@
             } catch (err) { console.warn('[EdiProf] Atalho do início:', err); }
         });
         dash.insertBefore(secao, dash.firstChild);
+        ligarRelogio();
+        mostrarClima(secao.querySelector('.ux-clima'));
     }
+
+    // ------------------------------------------------ 6b. Início: relógio e tempo da cidade da escola
+    // O relógio usa o fuso de São Paulo. O tempo vem do Open-Meteo (grátis, sem chave),
+    // chamado pelo navegador só com o NOME DA CIDADE (para achar as coordenadas) e as
+    // coordenadas (para a previsão): nada da escola, do professor ou dos estudantes sai daqui.
+    // A cidade vem da gestão (Configurações → Feriados: cidade e UF) ou, se faltar, do fim do
+    // endereço da escola ("..., Osasco – SP").
+    const FUSO = 'America/Sao_Paulo';
+    const CLIMA_VALIDADE_MS = 30 * 60 * 1000;
+    const ESTADOS = { AC: 'Acre', AL: 'Alagoas', AP: 'Amapá', AM: 'Amazonas', BA: 'Bahia', CE: 'Ceará', DF: 'Distrito Federal',
+        ES: 'Espírito Santo', GO: 'Goiás', MA: 'Maranhão', MT: 'Mato Grosso', MS: 'Mato Grosso do Sul', MG: 'Minas Gerais',
+        PA: 'Pará', PB: 'Paraíba', PR: 'Paraná', PE: 'Pernambuco', PI: 'Piauí', RJ: 'Rio de Janeiro', RN: 'Rio Grande do Norte',
+        RS: 'Rio Grande do Sul', RO: 'Rondônia', RR: 'Roraima', SC: 'Santa Catarina', SP: 'São Paulo', SE: 'Sergipe', TO: 'Tocantins' };
+
+    function horaAgora() {
+        try {
+            const p = {};
+            new Intl.DateTimeFormat('pt-BR', { timeZone: FUSO, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+                .formatToParts(new Date()).forEach(x => { p[x.type] = x.value; });
+            return { hm: p.hour + ':' + p.minute, s: ':' + p.second };
+        } catch (e) {
+            const d = new Date(); const z = n => String(n).padStart(2, '0');
+            return { hm: z(d.getHours()) + ':' + z(d.getMinutes()), s: ':' + z(d.getSeconds()) };
+        }
+    }
+
+    let relogioTimer = null;
+    let climaBuscadoEm = 0;
+    function ligarRelogio() {
+        if (relogioTimer) return;
+        relogioTimer = setInterval(() => {
+            const caixas = document.querySelectorAll('.ux-relogio');
+            if (!caixas.length) { clearInterval(relogioTimer); relogioTimer = null; return; }
+            const h = horaAgora();
+            caixas.forEach(c => {
+                const a = c.querySelector('.ux-relogio-hora'), b = c.querySelector('.ux-relogio-seg');
+                if (a && a.textContent !== h.hm) a.textContent = h.hm;
+                if (b) b.textContent = h.s;
+            });
+            // O tempo é renovado a cada 30 minutos enquanto o Início fica aberto.
+            if (climaBuscadoEm && Date.now() - climaBuscadoEm > CLIMA_VALIDADE_MS) {
+                const caixa = document.querySelector('#dashboard .ux-clima');
+                if (caixa && document.visibilityState !== 'hidden') mostrarClima(caixa);
+            }
+        }, 1000);
+    }
+
+
+    // "Av. X, 560 – Jd. Elvira, Osasco – SP, 06000-000" → { cidade: 'Osasco', uf: 'SP' }
+    function cidadeDoEndereco(endereco) {
+        const texto = String(endereco || '').replace(/\bCEP\b:?/gi, ' ').replace(/\d{2}\.?\d{3}-?\d{3}/g, ' ');
+        const partes = texto.split(/[,;\n]/).map(p => p.replace(/\s+/g, ' ').trim()).filter(Boolean);
+        for (let i = partes.length - 1; i >= 0; i--) {
+            const p = partes[i].replace(/[.\s–—-]+$/, '');
+            let m = p.match(/^(.*?)\s*[–—\/-]\s*([A-Za-z]{2})$/);
+            if (m && ESTADOS[m[2].toUpperCase()]) {
+                const cidade = m[1].split(/\s[–—-]\s/).pop().trim();
+                if (cidade && !/\d/.test(cidade)) return { cidade, uf: m[2].toUpperCase() };
+            }
+            if (/^[A-Za-z]{2}$/.test(p) && ESTADOS[p.toUpperCase()] && i > 0) {
+                const cidade = partes[i - 1].split(/\s[–—-]\s/).pop().trim();
+                if (cidade && !/\d/.test(cidade)) return { cidade, uf: p.toUpperCase() };
+            }
+        }
+        return null;
+    }
+
+    async function localDaEscola() {
+        const u = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : null;
+        if (!u || typeof getData !== 'function') return null;
+        try {
+            if (u.schoolId) {
+                const g = await getData('app_data', 'app_data_school_' + u.schoolId + '_gestor');
+                if (g && g.escolaCidade) return { cidade: String(g.escolaCidade).trim(), uf: String(g.escolaUF || '').trim().toUpperCase() };
+            }
+        } catch (e) { /* segue para o endereço */ }
+        try {
+            const escola = (typeof resolverEscolaAtual === 'function') ? await resolverEscolaAtual() : null;
+            if (escola && escola.endereco) return cidadeDoEndereco(escola.endereco);
+        } catch (e) { /* sem endereço */ }
+        return null;
+    }
+
+    function lerCache(chave) { try { return JSON.parse(localStorage.getItem(chave) || 'null'); } catch (e) { return null; } }
+    function gravarCache(chave, v) { try { localStorage.setItem(chave, JSON.stringify(v)); } catch (e) { /* sem espaço: tudo bem */ } }
+
+    async function buscarJson(url) {
+        const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        const t = ctrl ? setTimeout(() => ctrl.abort(), 12000) : null;
+        try {
+            const r = await fetch(url, ctrl ? { signal: ctrl.signal } : undefined);
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return await r.json();
+        } finally { if (t) clearTimeout(t); }
+    }
+
+    async function coordenadas(local) {
+        const chave = semAcento(String(local.cidade).trim()) + '|' + (local.uf || '');
+        const guardado = lerCache('ediprof_clima_local');
+        if (guardado && guardado.chave === chave && guardado.lat != null) return guardado;
+        const url = 'https://geocoding-api.open-meteo.com/v1/search?count=10&language=pt&format=json&countryCode=BR&name=' + encodeURIComponent(local.cidade);
+        const r = await buscarJson(url);
+        const lista = (r && r.results) || [];
+        const estado = local.uf && ESTADOS[local.uf] ? semAcento(ESTADOS[local.uf]) : '';
+        const achado = (estado && lista.find(x => semAcento(x.admin1 || '') === estado)) || (!estado && lista[0]) || null;
+        if (!achado) return null;
+        const c = { chave, lat: achado.latitude, lon: achado.longitude, nome: achado.name };
+        gravarCache('ediprof_clima_local', c);
+        return c;
+    }
+
+    async function previsao(c) {
+        const guardado = lerCache('ediprof_clima_dados');
+        if (guardado && guardado.chave === c.chave && Date.now() - guardado.em < CLIMA_VALIDADE_MS) return guardado.dados;
+        const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + c.lat + '&longitude=' + c.lon +
+            '&current=temperature_2m,apparent_temperature,weather_code,is_day' +
+            '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
+            '&timezone=' + encodeURIComponent(FUSO) + '&forecast_days=4';
+        const dados = await buscarJson(url);
+        if (!dados || !dados.current || !dados.daily) throw new Error('resposta sem previsão');
+        gravarCache('ediprof_clima_dados', { chave: c.chave, em: Date.now(), dados });
+        return dados;
+    }
+
+    // Códigos do tempo (padrão WMO usado pelo Open-Meteo) em português simples.
+    function descreverTempo(codigo, dia) {
+        const c = Number(codigo);
+        const sol = dia === false ? '🌙' : '☀️';
+        if (c === 0) return { emoji: sol, texto: dia === false ? 'Céu limpo' : 'Ensolarado' };
+        if (c === 1) return { emoji: dia === false ? '🌙' : '🌤️', texto: 'Poucas nuvens' };
+        if (c === 2) return { emoji: '⛅', texto: 'Parcialmente nublado' };
+        if (c === 3) return { emoji: '☁️', texto: 'Nublado' };
+        if (c === 45 || c === 48) return { emoji: '🌫️', texto: 'Neblina' };
+        if (c >= 51 && c <= 57) return { emoji: '🌦️', texto: 'Garoa' };
+        if ((c >= 61 && c <= 67) || (c >= 80 && c <= 82)) return { emoji: '🌧️', texto: c === 65 || c === 82 ? 'Chuva forte' : 'Chuva' };
+        if ((c >= 71 && c <= 77) || c === 85 || c === 86) return { emoji: '❄️', texto: 'Neve' };
+        if (c >= 95) return { emoji: '⛈️', texto: 'Trovoadas' };
+        return { emoji: '🌡️', texto: 'Tempo' };
+    }
+
+    function grau(v) { return (v == null || isNaN(v)) ? '–' : Math.round(v) + '°'; }
+
+    function htmlClima(dados, nomeCidade) {
+        const atual = dados.current, d = dados.daily;
+        const agora = descreverTempo(atual.weather_code, atual.is_day !== 0);
+        const chuva = d.precipitation_probability_max && d.precipitation_probability_max[0];
+        const dias = [];
+        for (let i = 1; i < Math.min(4, (d.time || []).length); i++) {
+            const nome = new Date(d.time[i] + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
+            const t = descreverTempo(d.weather_code[i], true);
+            dias.push('<li title="' + esc(t.texto) + '"><span class="ux-clima-dia">' + esc(nome.charAt(0).toUpperCase() + nome.slice(1)) + '</span>' +
+                '<span class="ux-clima-ico">' + t.emoji + '</span><span class="ux-clima-mm">' + grau(d.temperature_2m_max[i]) + '<small>' + grau(d.temperature_2m_min[i]) + '</small></span></li>');
+        }
+        return '<div class="ux-clima-agora">' +
+                '<span class="ux-clima-emoji" aria-hidden="true">' + agora.emoji + '</span>' +
+                '<span class="ux-clima-temp">' + grau(atual.temperature_2m) + '</span>' +
+                '<span class="ux-clima-info"><b>' + esc(agora.texto) + ' · ' + esc(nomeCidade) + '</b>' +
+                '<small>Máx ' + grau(d.temperature_2m_max[0]) + ' · Mín ' + grau(d.temperature_2m_min[0]) +
+                (chuva != null ? ' · Chuva ' + chuva + '%' : '') + '</small></span>' +
+            '</div>' +
+            (dias.length ? '<ul class="ux-clima-dias" aria-label="Próximos dias">' + dias.join('') + '</ul>' : '');
+    }
+
+    async function mostrarClima(caixa) {
+        if (!caixa) return;
+        climaBuscadoEm = Date.now();
+        const aviso = (t) => { if (caixa.isConnected) caixa.innerHTML = '<span class="ux-clima-aviso">' + esc(t) + '</span>'; };
+        let local = null;
+        try { local = await localDaEscola(); } catch (e) { local = null; }
+        if (!local || !local.cidade) return aviso('Tempo: a gestão ainda não informou a cidade da escola.');
+        try {
+            const c = await coordenadas(local);
+            if (!c) return aviso('Não achamos a cidade "' + local.cidade + '" para mostrar o tempo.');
+            const dados = await previsao(c);
+            if (caixa.isConnected) caixa.innerHTML = htmlClima(dados, c.nome || local.cidade);
+        } catch (e) {
+            console.warn('[EdiProf] Tempo do início:', e);
+            aviso('Não foi possível ver o tempo agora.');
+        }
+    }
+    window.uxClima = { cidadeDoEndereco, descreverTempo, horaAgora };
 
     // ------------------------------------------------ 7. Minhas turmas: o cartão inteiro abre a turma
     document.addEventListener('click', (e) => {
