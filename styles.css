@@ -2762,8 +2762,9 @@ html[data-estilo="ambar"] #appContainer #headerUserArea .date-info {
    ========================================================================== */
 .ux-inicio {
     display: grid;
-    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
-    gap: 16px 32px;
+    grid-template-columns: minmax(0, auto) minmax(0, auto) minmax(0, 1fr);
+    grid-template-areas: "ola tempo atalhos";
+    gap: 16px 28px;
     align-items: center;
     padding: 22px 24px;
     margin-bottom: 20px;
@@ -2774,9 +2775,145 @@ html[data-estilo="ambar"] #appContainer #headerUserArea .date-info {
 }
 
 .ux-inicio-ola {
-    grid-row: span 2;
+    grid-area: ola;
     padding-right: 24px;
     border-right: 1px solid var(--border);
+}
+
+.ux-inicio > .ux-inicio-bloco { grid-area: atalhos; }
+
+/* Relógio (à esquerda) e tempo da cidade da escola */
+.ux-inicio-tempo {
+    grid-area: tempo;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    min-width: 0;
+    padding-right: 24px;
+    border-right: 1px solid var(--border);
+}
+
+.ux-relogio {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: baseline;
+    column-gap: 1px;
+    flex: none;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+}
+
+.ux-relogio-hora {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
+}
+
+.ux-relogio-seg {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-3);
+}
+
+.ux-relogio small {
+    grid-column: 1 / -1;
+    margin-top: 5px;
+    font-size: 11px;
+    color: var(--text-4);
+}
+
+.ux-clima {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-width: 0;
+    padding-left: 18px;
+    border-left: 1px solid var(--border);
+}
+
+.ux-clima-aviso {
+    font-size: 13px;
+    color: var(--text-3);
+    max-width: 240px;
+}
+
+.ux-clima-agora {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.ux-clima-emoji { font-size: 28px; line-height: 1; }
+
+.ux-clima-temp {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+
+.ux-clima-info {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    margin-left: 2px;
+}
+
+.ux-clima-info b {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ux-clima-info small {
+    font-size: 12px;
+    color: var(--text-3);
+    white-space: nowrap;
+}
+
+.ux-clima-dias {
+    display: flex;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ux-clima-dias li {
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+    min-width: 46px;
+    padding: 5px 6px;
+    border-radius: 10px;
+    background: var(--surface-2);
+    font-size: 12px;
+    color: var(--text-3);
+}
+
+.ux-clima-dia { font-weight: 600; }
+.ux-clima-ico { font-size: 16px; line-height: 1.2; }
+.ux-clima-mm { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.ux-clima-mm small { margin-left: 3px; font-weight: 500; color: var(--text-4); }
+
+/* Tela média: atalhos ao lado da saudação, relógio e tempo numa linha embaixo */
+@media (max-width: 1280px) {
+    .ux-inicio {
+        grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+        grid-template-areas: "ola atalhos" "tempo tempo";
+    }
+    .ux-inicio-tempo {
+        padding: 14px 0 0;
+        border-right: 0;
+        border-top: 1px solid var(--border);
+    }
 }
 
 .ux-inicio-ola h2 {
@@ -2858,6 +2995,7 @@ html[data-estilo="ambar"] #appContainer #headerUserArea .date-info {
 @media (max-width: 760px) {
     .ux-inicio {
         grid-template-columns: 1fr;
+        grid-template-areas: "ola" "tempo" "atalhos";
         padding: 18px 16px;
         gap: 14px;
         margin-bottom: 14px;
@@ -2872,6 +3010,30 @@ html[data-estilo="ambar"] #appContainer #headerUserArea .date-info {
     .ux-inicio-ola h2 {
         font-size: 21px;
     }
+
+    .ux-inicio-tempo {
+        flex-wrap: wrap;
+        gap: 12px 14px;
+        padding-top: 12px;
+    }
+
+    .ux-relogio-hora { font-size: 26px; }
+
+    .ux-clima {
+        flex-wrap: wrap;
+        gap: 10px;
+        flex: 1 1 170px;
+        padding-left: 14px;
+    }
+
+    .ux-clima-info b,
+    .ux-clima-info small { white-space: normal; }
+
+    .ux-clima-dias {
+        flex: 1 1 100%;
+    }
+
+    .ux-clima-dias li { flex: 1; }
 
     .ux-chip kbd {
         display: none;

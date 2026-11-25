@@ -149,7 +149,7 @@ const TOURS = {
         passos: [
             { titulo: 'Bem-vindo ao EdiProf 👋', texto: 'Este tour mostra onde fica cada coisa. Use "Próximo" (ou a seta → do teclado) para avançar e "Sair" (ou Esc) para fechar a qualquer momento.' },
             { alvo: '#appContainer nav.app-nav', titulo: 'O menu', texto: 'Todas as páginas ficam aqui, agrupadas por assunto: Dia a dia, Registros e Recursos. No celular, o menu fica embaixo e o botão "Mais" mostra o resto.' },
-            { alvo: '#dashboard .ux-inicio', titulo: 'Início', texto: 'A saudação do dia e os atalhos: a busca rápida e o Estagiário.' },
+            { alvo: '#dashboard .ux-inicio', titulo: 'Início', texto: 'A saudação do dia, o relógio (horário de Brasília), o tempo na cidade da escola com a previsão dos próximos dias e os atalhos: a busca rápida e o Estagiário.' },
             { alvo: cartaoDe('#agendaHoje'), titulo: '📅 Agenda do Dia', texto: 'O cronograma de hoje: as aulas (da sua agenda em Documentos › Minha Agenda), os horários fixos da escola (café, almoço...) e as tutorias marcadas, cada uma no seu horário, com "Registrar". Se está vazio, a agenda ainda não foi montada.' },
             { alvo: cartaoDe('#atalhosFerramentas'), titulo: '🧰 Ferramentas', texto: 'Atalhos direto para as ferramentas: PDF, Imagem, Ateliê, Editor de vídeo, Na Mosca!, Baixar vídeo e mais. Um toque e a ferramenta já abre.' },
             { alvo: '#novidadesDashboard', opcional: true, titulo: '✨ Novidades', texto: 'No computador, este quadro vai mostrando o que chegou de novo no sistema. Use as setas para passar e o botão para abrir a novidade.' },
