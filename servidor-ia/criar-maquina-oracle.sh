@@ -22,7 +22,9 @@ command -v oci >/dev/null || falha "Comando oci não encontrado. Rode no Cloud S
 
 echo "== 1/4 Chave SSH"
 mkdir -p ~/.ssh && chmod 700 ~/.ssh
-[ -f ~/.ssh/ediprof ] || ssh-keygen -t ed25519 -N "" -q -f ~/.ssh/ediprof -C ediprof-ia
+# O Cloud Shell roda em modo FIPS, que não aceita chave ed25519: usa RSA 4096.
+[ -f ~/.ssh/ediprof ] && [ -f ~/.ssh/ediprof.pub ] || { rm -f ~/.ssh/ediprof ~/.ssh/ediprof.pub; ssh-keygen -t rsa -b 4096 -N "" -q -f ~/.ssh/ediprof -C ediprof-ia; }
+[ -s ~/.ssh/ediprof.pub ] || falha "Não consegui criar a chave SSH."
 echo "   chave em ~/.ssh/ediprof (fica só no seu Cloud Shell)"
 
 echo "== 2/4 Rede $REDE"
@@ -89,7 +91,9 @@ else
             ID=$(echo "$ID" | grep -o 'ocid1\.instance[^" ]*' | head -1)
             [ -n "$ID" ] && break
         fi
-        echo "   não deu: $(grep -o '"message": "[^"]*' ~/erro-criar.txt | head -1 | cut -d'"' -f4)"
+        MSG=$(grep -o '"message": "[^"]*' ~/erro-criar.txt | head -1 | cut -d'"' -f4)
+        [ -n "$MSG" ] || MSG=$(grep -v '^\s*$' ~/erro-criar.txt | tail -2 | tr '\n' ' ')
+        echo "   não deu: $MSG"
         ID=""
     done
     [ -n "$ID" ] || falha "Não consegui criar a máquina (detalhes em ~/erro-criar.txt). Mande um print para o Claude."
