@@ -25,7 +25,7 @@ cp video_operacoes.js video.js _site/
 cp montagem_operacoes.js montagem.js _site/
 cp quiz_operacoes.js quiz.js jogar.html _site/
 cp atelie_operacoes.js atelie.js _site/
-cp tutoriais.js mudanca_endereco.js _site/
+cp tutoriais.js mudanca_endereco.js avisos_ia.js _site/
 # A PASTA assinatura/ (webhook do Mercado Pago) NAO vai para o site:
 # e' codigo de servidor, roda no Cloudflare Worker e nao tem o que fazer no navegador.
 cp styles.css manifest.webmanifest _site/

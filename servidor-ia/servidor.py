@@ -11,7 +11,8 @@ Só usa a biblioteca padrão do Python 3 (nada para instalar). Ver LEIAME.md.
 
 Rotas:
   GET  /saude       -> {"ok": true, "chaves": N}   (sem chave; serve de teste de alcance)
-  POST /v1/gerar    -> corpo {"prompt": "...", "modelos": ["gemini-..."], "temperatura": 0.7}
+  POST /v1/gerar    -> corpo {"prompt": "...", "modelos": ["gemini-..."], "temperatura": 0.7,
+                              "imagens": [{"mime": "image/jpeg", "dados": "<base64>"}] (opcional, até 4)}
                        cabeçalho Authorization: Bearer <chave do app>
                        resposta {"texto": "...", "modelo": "..."} ou
                        {"erro": "...", "detalhes": [{"chave": "…abcd", "modelo": "...", "erro": "..."}]}
@@ -34,7 +35,8 @@ ORIGENS = [o.strip().rstrip('/') for o in os.environ.get(
     'SISPROF_IA_ORIGENS', 'https://ediprof.vercel.app,https://rafanunesran.github.io').split(',') if o.strip()]
 GEMINI_URL = os.environ.get('SISPROF_IA_GEMINI_URL', 'https://generativelanguage.googleapis.com')
 MODELOS_PADRAO = ['gemini-3.6-flash', 'gemini-2.5-flash']
-LIMITE_CORPO = 2 * 1024 * 1024        # prompts grandes (Anexo IV com fichas do AEE) cabem folgado
+LIMITE_CORPO = 8 * 1024 * 1024
+MIME_IMAGEM_OK = re.compile(r'^image/(jpeg|png|webp|heic|heif)$')        # prompts grandes (Anexo IV com fichas do AEE) cabem folgado
 LIMITE_POR_CHAMADA_S = float(os.environ.get('SISPROF_IA_LIMITE_CHAMADA', '40'))
 LIMITE_TOTAL_S = float(os.environ.get('SISPROF_IA_LIMITE_TOTAL', '80'))  # o app espera 90 s
 MAX_SIMULTANEOS = int(os.environ.get('SISPROF_IA_SIMULTANEOS', '6'))
@@ -72,9 +74,10 @@ def fim_da_chave(k):
     return '…' + k[-4:] if len(k) > 4 else '…'
 
 
-def chamar_gemini(chave, modelo, prompt, temperatura, limite_s):
+def chamar_gemini(chave, modelo, prompt, temperatura, limite_s, imagens=None):
+    partes_pedido = [{'text': prompt}] + [{'inline_data': {'mime_type': i['mime'], 'data': i['dados']}} for i in (imagens or [])]
     corpo = json.dumps({
-        'contents': [{'parts': [{'text': prompt}]}],
+        'contents': [{'parts': partes_pedido}],
         'generationConfig': {'temperature': temperatura, 'response_mime_type': 'application/json'},
         # Mesmos limiares do app: documentos sobre deficiência/apoio a estudantes são legítimos.
         'safetySettings': [
@@ -119,7 +122,7 @@ def substituto(msg):
     return m.group(1) if m else None
 
 
-def gerar(prompt, modelos, temperatura):
+def gerar(prompt, modelos, temperatura, imagens=None):
     chaves = ler_chaves()
     if not chaves:
         return 503, {'erro': 'O servidor não tem nenhuma chave do Gemini. Ponha as chaves em '
@@ -139,8 +142,11 @@ def gerar(prompt, modelos, temperatura):
                 detalhes.append({'chave': '', 'modelo': modelo, 'erro': f'tempo total esgotado ({int(LIMITE_TOTAL_S)} s)'})
                 return 502, {'erro': 'Nenhuma chave respondeu a tempo.', 'detalhes': detalhes}
             try:
-                texto = chamar_gemini(chave, modelo, prompt, temperatura, min(LIMITE_POR_CHAMADA_S, resta))
-                return 200, {'texto': texto, 'modelo': modelo}
+                texto = chamar_gemini(chave, modelo, prompt, temperatura, min(LIMITE_POR_CHAMADA_S, resta), imagens)
+                resp = {'texto': texto, 'modelo': modelo}
+                if imagens:
+                    resp['leuImagens'] = len(imagens)
+                return 200, resp
             except RuntimeError as e:
                 msg = str(e)
                 detalhes.append({'chave': fim_da_chave(chave), 'modelo': modelo, 'erro': msg})
@@ -219,10 +225,15 @@ class Tratador(BaseHTTPRequestHandler):
             temperatura = max(0.0, min(2.0, float(pedido.get('temperatura', 0.7))))
         except (TypeError, ValueError):
             temperatura = 0.7
+        imagens = pedido.get('imagens') or []
+        if (not isinstance(imagens, list) or len(imagens) > 4 or any(
+                not isinstance(i, dict) or not isinstance(i.get('dados'), str) or not i.get('dados')
+                or not MIME_IMAGEM_OK.match(str(i.get('mime') or '')) for i in imagens)):
+            return self._responder(400, {'erro': 'imagens inválidas (até 4, jpeg/png/webp)'})
         if not _vagas.acquire(timeout=20):
             return self._responder(503, {'erro': 'servidor ocupado, tente de novo em instantes'})
         try:
-            codigo, resp = gerar(prompt, modelos, temperatura)
+            codigo, resp = gerar(prompt, modelos, temperatura, [{'mime': i['mime'], 'dados': i['dados']} for i in imagens])
         finally:
             _vagas.release()
         self._responder(codigo, resp)

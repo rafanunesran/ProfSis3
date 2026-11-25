@@ -239,6 +239,7 @@ const CAMPOS_NUVEM = [
     'gradeHoraria', 'gradeHorariaExcecoes', 'tiposHorarioFixo',
     'schoolGrade', 'schoolExceptions',
     'eventos',                 // compromissos gerais (a agenda de tutoria é `agendamentos`)
+    'eventosEscola',           // compromissos que a gestão publicou para todos os professores (avisos_ia.js; sem nome de estudante)
     'registrosAula', 'avisosMural',
     'configBimestres', 'feriadosEscolares', 'opcoesOcorrenciaRapida',
     'presencaMinima',          // % mínima de presença da escola (Faltoso A), definida pela gestão

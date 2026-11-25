@@ -2,7 +2,9 @@
 // Faz o mesmo que o servidor.py: recebe o pedido do app, chama o Gemini com as chaves
 // guardadas SÓ na Cloudflare e devolve o texto. Mesmas rotas, então o app não muda:
 //   GET  /saude    -> {"ok": true, "chaves": N}            (sem chave; teste de alcance)
-//   POST /v1/gerar -> {"prompt", "modelos", "temperatura"}  (Authorization: Bearer CHAVE_APP)
+//   POST /v1/gerar -> {"prompt", "modelos", "temperatura", "imagens"?}  (Authorization: Bearer CHAVE_APP)
+//        "imagens" (opcional): até 4 fotos [{"mime": "image/jpeg", "dados": "<base64>"}] que o
+//        Gemini lê junto com o texto (ex.: print de aviso da gestão no WhatsApp).
 //   POST /v1/imagem -> {"prompt", "passos"} -> {"imagem": "data:image/...;base64,...", "modelo"}
 //        Desenha com a IA de imagem da própria Cloudflare (Workers AI, modelo Flux schnell; plano
 //        grátis = 10 mil "neurons"/dia, uns 200 desenhos). Precisa ligar em Settings → Bindings →
@@ -17,7 +19,8 @@
 
 const ORIGENS_PADRAO = 'https://ediprof.vercel.app,https://rafanunesran.github.io';
 const MODELOS_PADRAO = ['gemini-3.6-flash', 'gemini-2.5-flash'];
-const LIMITE_CORPO = 2 * 1024 * 1024;
+const LIMITE_CORPO = 8 * 1024 * 1024; // cabe até 4 fotos já reduzidas pelo app
+const MIME_IMAGEM_OK = /^image\/(jpeg|png|webp|heic|heif)$/;
 const LIMITE_POR_CHAMADA_MS = 40000;
 const LIMITE_TOTAL_MS = 80000; // o app espera 90 s
 const MODELO_OK = /^[A-Za-z0-9._-]{1,80}$/;
@@ -27,7 +30,7 @@ const MODELOS_IMAGEM_GEMINI = ['gemini-2.5-flash-image'];
 const lista = (s) => String(s || '').split(/[,\n]/).map(x => x.split('#')[0].trim()).filter(Boolean);
 const fimDaChave = (k) => (k.length > 4 ? '…' + k.slice(-4) : '…');
 
-async function chamarGemini(base, chave, modelo, prompt, temperatura, limiteMs) {
+async function chamarGemini(base, chave, modelo, prompt, temperatura, limiteMs, imagens) {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), limiteMs);
     let r;
@@ -36,7 +39,7 @@ async function chamarGemini(base, chave, modelo, prompt, temperatura, limiteMs) 
             method: 'POST', signal: ctl.signal,
             headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
             body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
+                contents: [{ parts: [{ text: prompt }, ...(imagens || []).map(i => ({ inline_data: { mime_type: i.mime, data: i.dados } }))] }],
                 generationConfig: { temperature: temperatura, response_mime_type: 'application/json' },
                 // Mesmos limiares do app: documentos sobre deficiência/apoio a estudantes são legítimos.
                 safetySettings: ['HARM_CATEGORY_HARASSMENT', 'HARM_CATEGORY_HATE_SPEECH',
@@ -60,7 +63,7 @@ async function chamarGemini(base, chave, modelo, prompt, temperatura, limiteMs) 
     return texto;
 }
 
-async function gerar(env, prompt, modelos, temperatura) {
+async function gerar(env, prompt, modelos, temperatura, imagens) {
     const chaves = lista(env.GEMINI_KEYS);
     if (!chaves.length) return [503, { erro: 'O servidor não tem nenhuma chave do Gemini (GEMINI_KEYS na Cloudflare).' }];
     const base = env.GEMINI_URL || 'https://generativelanguage.googleapis.com';
@@ -79,8 +82,8 @@ async function gerar(env, prompt, modelos, temperatura) {
                 return [502, { erro: 'Nenhuma chave respondeu a tempo.', detalhes }];
             }
             try {
-                const texto = await chamarGemini(base, chave, modelo, prompt, temperatura, Math.min(LIMITE_POR_CHAMADA_MS, resta));
-                return [200, { texto, modelo }];
+                const texto = await chamarGemini(base, chave, modelo, prompt, temperatura, Math.min(LIMITE_POR_CHAMADA_MS, resta), imagens);
+                return [200, Object.assign({ texto, modelo }, (imagens && imagens.length) ? { leuImagens: imagens.length } : {})];
             } catch (e) {
                 detalhes.push({ chave: fimDaChave(chave), modelo, erro: e.message });
                 // Modelo aposentado: o próprio Google diz qual usar.
@@ -175,7 +178,11 @@ export default {
         let temperatura = Number(pedido.temperatura);
         if (!Number.isFinite(temperatura)) temperatura = 0.7;
         temperatura = Math.max(0, Math.min(2, temperatura));
-        const [codigo, resp] = await gerar(env, prompt, modelos.length ? modelos : MODELOS_PADRAO, temperatura);
+        const imagens = Array.isArray(pedido.imagens) ? pedido.imagens : [];
+        if (imagens.length > 4 || imagens.some(i => !i || typeof i.dados !== 'string' || !i.dados || !MIME_IMAGEM_OK.test(String(i.mime || ''))))
+            return responder(400, { erro: 'imagens inválidas (até 4, jpeg/png/webp)' });
+        const [codigo, resp] = await gerar(env, prompt, modelos.length ? modelos : MODELOS_PADRAO, temperatura,
+            imagens.map(i => ({ mime: i.mime, dados: i.dados })));
         return responder(codigo, resp);
     }
 };

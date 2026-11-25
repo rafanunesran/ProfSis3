@@ -112,7 +112,7 @@
             };
         })();
     </script>
-    <script src="shared.js?v=3.22"></script>
+    <script src="shared.js?v=3.23"></script>
     <!-- Galeria de ícones: troca os emojis do menu, abas, títulos e botões pelo desenho -->
     <script src="icones.js?v=1.5.1" defer></script>
     <!-- Experiência: menu agrupado, "Mais" no celular, busca rápida (Ctrl+K), tela atual no topo -->
@@ -144,13 +144,13 @@
     <script src="admin.js?v=3.46.0.1" defer></script>
     <script src="financeiro.js?v=1.2.1" defer></script>
     <script src="gestor.js?v=3.36.1" defer></script>
-    <script src="app.js?v=3.90.1" defer></script>
+    <script src="app.js?v=3.91" defer></script>
     <!-- Transicao para a versao local + aviso da data de corte -->
     <script src="migracao.js?v=1.4.1.1" defer></script>
 
     <!-- Central de Resgate: procura dados em todas as origens que sobraram (ver resgate.js). -->
     <script src="resgate.js?v=1.4.1" defer></script>
-    <script src="ia_estagiario.js?v=3.47.0.1" defer></script>
+    <script src="ia_estagiario.js?v=3.48" defer></script>
     <script src="biblioteca.js?v=1.3.2.1" defer></script>
     <!-- FERRAMENTAS (funcao premium): a tela com abas onde mora o trabalho de arquivo que
          o professor faria num site gratuito qualquer — e que, naquele site, custaria
@@ -187,7 +187,8 @@
     <script src="atelie_operacoes.js?v=1.0" defer></script>
     <script src="atelie.js?v=1.1.1" defer></script>
     <!-- Tutoriais (manuais + aba Iniciante) e o botão "?" com o tour de cada tela -->
-    <script src="tutoriais.js?v=1.7.1" defer></script>
+    <script src="avisos_ia.js?v=1.0" defer></script>
+    <script src="tutoriais.js?v=1.7.2" defer></script>
     <!-- Calendário escolar + sincronização com o Google Agenda -->
     <script src="feriados.js?v=1.0" defer></script>
     <script src="google-calendar.js?v=2.1.1.1" defer></script>
@@ -302,6 +303,7 @@
 
                     <div id="tabDocAgenda" class="documentos-tab">
                         <div id="gcalCard"></div>
+                        <div id="compromissosAgenda"></div>
                         <div id="containerGradeHoraria"></div>
                     </div>
                     <div id="tabDocPlanos" class="documentos-tab" style="display:none;"></div>
@@ -573,7 +575,7 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js?v=2').catch(err => console.warn('SW não registrado:', err));
+                navigator.serviceWorker.register('sw.js?v=3').catch(err => console.warn('SW não registrado:', err));
             });
         }
     </script>

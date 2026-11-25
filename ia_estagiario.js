@@ -1820,7 +1820,11 @@ async function gerarAgendaMensalEstagiario(modo) {
 // não devolver um JSON válido.
 const LIMITE_TEMPO_IA_MS = 45000;
 
-async function chamarIAEstruturada(promptText, btn) {
+// opcoes.imagens (opcional): [{mime, dados (base64 sem o "data:")}] — fotos que a IA lê junto com
+// o texto (ex.: print de aviso da gestão). Só o servidor próprio e as chaves do Gemini leem imagem;
+// as outras chaves (OpenAI/Groq/Nvidia/OpenRouter) são puladas quando há foto.
+async function chamarIAEstruturada(promptText, btn, opcoes) {
+    const imagensIA = (opcoes && Array.isArray(opcoes.imagens)) ? opcoes.imagens.filter(i => i && i.dados) : [];
     let apiKeys = [];
     let configData = null;
     try {
@@ -1841,7 +1845,9 @@ async function chamarIAEstruturada(promptText, btn) {
     if (configData && configData.servidorIaUrl && configData.servidorIaChave) {
         try {
             if (btn) btn.textContent = 'Gerando estrutura... ⏳ (servidor próprio)';
-            const r = await chamarServidorIA(configData.servidorIaUrl, configData.servidorIaChave, promptText, listarModelosGemini(configData));
+            const r = await chamarServidorIA(configData.servidorIaUrl, configData.servidorIaChave, promptText, listarModelosGemini(configData), undefined, imagensIA);
+            // Servidor antigo ignora as fotos sem avisar: responderia só pelo texto.
+            if (imagensIA.length && r.leuImagens !== imagensIA.length) throw new Error('o servidor ainda não lê fotos — cole o código novo do Worker (servidor-ia/cloudflare-worker.js) na Cloudflare');
             return extrairJsonDaIA(r.texto);
         } catch (err) {
             if (err && err.respostaInvalida) throw err;
@@ -1858,6 +1864,10 @@ async function chamarIAEstruturada(promptText, btn) {
     // paga/preferida. Sort estável: preserva a ordem relativa dentro de cada grupo.
     const ehChaveGemini = (k) => !(k.startsWith('sk-') && !k.startsWith('sk-ant-')) && !k.startsWith('gsk_') && !k.startsWith('nvapi-');
     apiKeys = [...apiKeys.filter(ehChaveGemini), ...apiKeys.filter(k => !ehChaveGemini(k))];
+    if (imagensIA.length) {
+        apiKeys = apiKeys.filter(ehChaveGemini);
+        if (apiKeys.length === 0) throw new Error('Para ler foto, a IA precisa do servidor de IA próprio ou de uma chave do Gemini (as outras chaves cadastradas não leem imagem).' + (erroServidorIA ? `\nMotivo (servidor de IA próprio): ${erroServidorIA}` : ''));
+    }
 
     let success = false;
     let lastError = '';
@@ -1997,7 +2007,7 @@ async function chamarIAEstruturada(promptText, btn) {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            contents: [{ parts: [{ text: promptText }] }],
+                            contents: [{ parts: [{ text: promptText }, ...imagensIA.map(i => ({ inline_data: { mime_type: i.mime || 'image/jpeg', data: i.dados } }))] }],
                             generationConfig: { temperature: 0.7, response_mime_type: "application/json" },
                             // Limiares no mínimo - o sistema processa documentos sobre deficiência/apoio
                             // de estudantes (Anexo III/IV), conteúdo legítimo que os limiares padrão do
@@ -2096,7 +2106,7 @@ function extrairJsonDaIA(respostaTexto) {
 // Chama o servidor de IA próprio (servidor-ia/servidor.py atrás do Caddy). O servidor já tenta
 // todas as chaves e modelos dele (até ~80 s); aqui só esperamos um pouco mais que isso.
 const LIMITE_TEMPO_SERVIDOR_IA_MS = 90000;
-async function chamarServidorIA(url, chave, prompt, modelos, limiteMs) {
+async function chamarServidorIA(url, chave, prompt, modelos, limiteMs, imagens) {
     const limite = limiteMs || LIMITE_TEMPO_SERVIDOR_IA_MS;
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), limite);
@@ -2104,7 +2114,8 @@ async function chamarServidorIA(url, chave, prompt, modelos, limiteMs) {
         const r = await fetch(String(url).trim().replace(/\/+$/, '') + '/v1/gerar', {
             method: 'POST', signal: controller.signal,
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + chave },
-            body: JSON.stringify({ prompt, modelos: modelos || [], temperatura: 0.7 })
+            body: JSON.stringify(Object.assign({ prompt, modelos: modelos || [], temperatura: 0.7 },
+                (imagens && imagens.length) ? { imagens: imagens.map(i => ({ mime: i.mime || 'image/jpeg', dados: i.dados })) } : {}))
         });
         const j = await r.json().catch(() => ({}));
         if (r.status === 401) throw new Error('chave do servidor errada (confira em Super Admin → 🔑 Chaves de IA)');
