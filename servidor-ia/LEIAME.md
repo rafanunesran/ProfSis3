@@ -44,6 +44,9 @@ pedidos por dia.
    - Type **Secret**, Name `CHAVE_APP`, Value: uma senha longa inventada (ex.: gere em
      <https://www.random.org/strings/?num=1&len=32&digits=on&upperalpha=on&loweralpha=on&unique=on&format=html&rnd=new>).
    → **Deploy**.
+   Para o Worker também **desenhar** (Ateliê): **Settings → Bindings → + Add → Workers AI**,
+   Variable name `AI` → **Deploy**. Usa o modelo Flux schnell da Cloudflare (o grátis dá
+   uns 200 desenhos por dia). `/saude` passa a mostrar `"imagem": true`.
 5. O endereço aparece no Worker (ex.: `https://ediprof-ia.seu-nome.workers.dev`). Teste de
    alcance: abra `.../saude` em casa e no wi-fi da escola.
 6. EdiProf → Super Admin → 🔑 Chaves de IA → 🛰️ Servidor de IA próprio: endereço + a

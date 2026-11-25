@@ -15,6 +15,13 @@ http.createServer(async (req, res) => {
         GEMINI_KEYS: fs.readFileSync(path.join(pasta, 'chaves-gemini.txt'), 'utf8'),
         ORIGENS: process.env.SISPROF_IA_ORIGENS, GEMINI_URL: process.env.SISPROF_IA_GEMINI_URL
     };
+    // Workers AI falsa: liga/desliga pelo arquivo sem-ai.txt (o teste cria para simular "não ligada").
+    if (!fs.existsSync(path.join(pasta, 'sem-ai.txt'))) {
+        env.AI = { run: async (modelo, entrada) => {
+            fs.appendFileSync(path.join(pasta, 'ai.log'), JSON.stringify({ modelo, entrada }) + '\n');
+            return { image: Buffer.from('jpeg-falso').toString('base64') };
+        } };
+    }
     const r = await worker.fetch(new Request('http://x' + req.url, {
         method: req.method, headers: req.headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : corpo
     }), env);

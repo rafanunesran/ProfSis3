@@ -3,6 +3,11 @@
 // guardadas SÓ na Cloudflare e devolve o texto. Mesmas rotas, então o app não muda:
 //   GET  /saude    -> {"ok": true, "chaves": N}            (sem chave; teste de alcance)
 //   POST /v1/gerar -> {"prompt", "modelos", "temperatura"}  (Authorization: Bearer CHAVE_APP)
+//   POST /v1/imagem -> {"prompt", "passos"} -> {"imagem": "data:image/...;base64,...", "modelo"}
+//        Desenha com a IA de imagem da própria Cloudflare (Workers AI, modelo Flux schnell; plano
+//        grátis = 10 mil "neurons"/dia, uns 200 desenhos). Precisa ligar em Settings → Bindings →
+//        + Add → Workers AI, com o nome AI. Sem isso (ou se falhar), tenta os modelos de imagem
+//        do Gemini com as GEMINI_KEYS (a chave grátis normalmente não tem acesso).
 //
 // Configuração no painel da Cloudflare (Worker → Settings → Variables and Secrets):
 //   CHAVE_APP   (Secret)  chave que o app manda; invente uma longa (ver LEIAME.md)
@@ -16,6 +21,8 @@ const LIMITE_CORPO = 2 * 1024 * 1024;
 const LIMITE_POR_CHAMADA_MS = 40000;
 const LIMITE_TOTAL_MS = 80000; // o app espera 90 s
 const MODELO_OK = /^[A-Za-z0-9._-]{1,80}$/;
+const MODELO_IMAGEM_CF = '@cf/black-forest-labs/flux-1-schnell';
+const MODELOS_IMAGEM_GEMINI = ['gemini-2.5-flash-image'];
 
 const lista = (s) => String(s || '').split(/[,\n]/).map(x => x.split('#')[0].trim()).filter(Boolean);
 const fimDaChave = (k) => (k.length > 4 ? '…' + k.slice(-4) : '…');
@@ -85,6 +92,46 @@ async function gerar(env, prompt, modelos, temperatura) {
     return [502, { erro: 'Todas as chaves do servidor falharam.', detalhes }];
 }
 
+async function gerarImagem(env, prompt, passos) {
+    const erros = [];
+    if (env.AI && typeof env.AI.run === 'function') {
+        try {
+            const r = await env.AI.run(MODELO_IMAGEM_CF, { prompt: prompt.slice(0, 2048), steps: passos });
+            const b64 = r && (r.image || (r.result && r.result.image));
+            if (!b64) throw new Error('a IA de imagem não devolveu imagem');
+            return [200, { imagem: 'data:image/jpeg;base64,' + b64, modelo: 'flux-1-schnell' }];
+        } catch (e) {
+            erros.push({ chave: '', modelo: 'flux-1-schnell', erro: String(e.message || e).slice(0, 300) });
+        }
+    } else {
+        erros.push({ chave: '', modelo: 'flux-1-schnell', erro: 'Workers AI não está ligada (Settings → Bindings → Workers AI, nome AI)' });
+    }
+    const base = env.GEMINI_URL || 'https://generativelanguage.googleapis.com';
+    for (const modelo of MODELOS_IMAGEM_GEMINI) {
+        for (const chave of lista(env.GEMINI_KEYS)) {
+            const ctl = new AbortController();
+            const t = setTimeout(() => ctl.abort(), 60000);
+            try {
+                const r = await fetch(`${base}/v1beta/models/${modelo}:generateContent`, {
+                    method: 'POST', signal: ctl.signal,
+                    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': chave },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } })
+                });
+                const j = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(`Gemini ${r.status}: ${(j.error && j.error.message) || r.statusText}`);
+                const partes = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
+                const p = partes.find(x => x.inlineData || x.inline_data);
+                if (!p) throw new Error('o modelo não devolveu imagem');
+                const d = p.inlineData || p.inline_data;
+                return [200, { imagem: 'data:' + (d.mimeType || d.mime_type || 'image/png') + ';base64,' + d.data, modelo }];
+            } catch (e) {
+                erros.push({ chave: fimDaChave(chave), modelo, erro: e.name === 'AbortError' ? 'tempo esgotado (60 s)' : String(e.message || e).slice(0, 300) });
+            } finally { clearTimeout(t); }
+        }
+    }
+    return [502, { erro: 'Não consegui gerar a imagem.', detalhes: erros }];
+}
+
 export default {
     async fetch(req, env) {
         const url = new URL(req.url);
@@ -104,9 +151,10 @@ export default {
                 'Access-Control-Max-Age': '86400' }, cors) : {} });
         }
         if (req.method === 'GET' && url.pathname === '/saude') {
-            return responder(200, { ok: true, servico: 'EdiProf IA', chaves: lista(env.GEMINI_KEYS).length });
+            return responder(200, { ok: true, servico: 'EdiProf IA', chaves: lista(env.GEMINI_KEYS).length, imagem: !!(env.AI && env.AI.run) });
         }
-        if (req.method !== 'POST' || url.pathname !== '/v1/gerar') return responder(404, { erro: 'não encontrado' });
+        const rota = url.pathname;
+        if (req.method !== 'POST' || (rota !== '/v1/gerar' && rota !== '/v1/imagem')) return responder(404, { erro: 'não encontrado' });
         if (origemPedido && !origem) return responder(403, { erro: 'site não autorizado' });
         const chaveApp = String(env.CHAVE_APP || '').trim();
         if (!chaveApp || req.headers.get('Authorization') !== 'Bearer ' + chaveApp) return responder(401, { erro: 'chave errada' });
@@ -117,6 +165,11 @@ export default {
         try { pedido = JSON.parse(bruto); } catch (_) { return responder(400, { erro: 'pedido inválido' }); }
         const prompt = pedido && pedido.prompt;
         if (typeof prompt !== 'string' || !prompt.trim()) return responder(400, { erro: 'faltou o prompt' });
+        if (rota === '/v1/imagem') {
+            const passos = Math.max(1, Math.min(8, Math.round(Number(pedido.passos) || 4)));
+            const [c, r] = await gerarImagem(env, prompt, passos);
+            return responder(c, r);
+        }
         const modelos = (Array.isArray(pedido.modelos) ? pedido.modelos : [])
             .filter(m => typeof m === 'string' && MODELO_OK.test(m)).slice(0, 4);
         let temperatura = Number(pedido.temperatura);

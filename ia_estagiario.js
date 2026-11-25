@@ -2171,6 +2171,32 @@ async function chamarServidorImagem(url, chave, prompt, passos, limiteMs) {
 }
 const LIMITE_TEMPO_SERVIDOR_IMAGEM_MS = 180000;
 
+// Imagem pelo servidor de IA próprio (rota /v1/imagem do cloudflare-worker.js).
+async function chamarServidorIAImagem(url, chave, prompt, passos) {
+    const limite = 120000;
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), limite);
+    try {
+        const r = await fetch(String(url).trim().replace(/\/+$/, '') + '/v1/imagem', {
+            method: 'POST', signal: controller.signal,
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + chave },
+            body: JSON.stringify({ prompt, passos: passos || 4 })
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 401) throw new Error('chave do servidor errada');
+        if (!r.ok) {
+            const det = Array.isArray(j.detalhes) && j.detalhes.length ? ' — ' + j.detalhes.map(d => `${d.modelo || ''}: ${d.erro}`).join('; ') : '';
+            throw new Error((j.erro || ('erro ' + r.status)) + det);
+        }
+        if (!/^data:image\//.test(j.imagem || '')) throw new Error('o servidor não devolveu imagem');
+        return j.imagem;
+    } catch (err) {
+        if (err.name === 'AbortError') throw new Error(`o servidor não respondeu em ${limite / 1000} s`);
+        if (err instanceof TypeError) throw new Error(`não conectou no servidor (${err.message})`);
+        throw err;
+    } finally { clearTimeout(t); }
+}
+
 async function gerarImagemIA(promptText, opcoes) {
     opcoes = opcoes || {};
     let configData = null;
@@ -2185,6 +2211,19 @@ async function gerarImagemIA(promptText, opcoes) {
         } catch (err) {
             errosServidor.push('Servidor próprio: ' + String(err.message || err).slice(0, 200));
             console.warn('Servidor de imagem próprio falhou:', err);
+        }
+    }
+    // Servidor de IA próprio (Cloudflare Worker): desenha com a IA de imagem da Cloudflare (Flux),
+    // sem precisar de chave com acesso a imagem. Também prefere o pedido em inglês.
+    if (configData && configData.servidorIaUrl && configData.servidorIaChave) {
+        try {
+            let p = '';
+            try { p = opcoes.promptIngles ? await opcoes.promptIngles() : ''; } catch (_) { /* vai em portugues mesmo */ }
+            const src = await chamarServidorIAImagem(configData.servidorIaUrl, configData.servidorIaChave, p || promptText, Number(configData.servidorImagemPassos) || 4);
+            return { src, origem: 'servidor' };
+        } catch (err) {
+            errosServidor.push('Servidor de IA próprio: ' + String(err.message || err).slice(0, 300));
+            console.warn('Servidor de IA próprio (imagem) falhou:', err);
         }
     }
     const chaves = configData && configData.apiKey ? configData.apiKey.split(',').map(k => k.trim()).filter(k => k) : [];

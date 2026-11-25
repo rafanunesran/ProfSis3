@@ -167,6 +167,28 @@ const gemini = http.createServer((req, res) => {
         ok('Testar com chave: faz um pedido de verdade', /Funcionou em .* s \(modelo/.test(teste.completo) && /Olá/.test(teste.completo), teste.completo);
         ok('Testar com rede bloqueando: diz que a escola pode estar bloqueando', /não chegou no servidor/.test(teste.bloqueado) && /escola/.test(teste.bloqueado), teste.bloqueado);
 
+        // 9. imagem (só o Worker tem a rota /v1/imagem: IA de imagem da Cloudflare)
+        if (comoWorker) {
+            const sa = await (await fetch(IA + '/saude')).json();
+            ok('worker: /saude diz que a imagem está ligada', sa.imagem === true, JSON.stringify(sa));
+            const img = await page.evaluate(async (IA) => {
+                const orig = window.getData;
+                window.getData = async (c, d) => (c === 'system' && d === 'config_ia') ? { apiKey: '', servidorIaUrl: IA, servidorIaChave: 'segredo-app', servidorImagemPassos: 3 } : orig(c, d);
+                try { const r = await gerarImagemIA('um sapo', { promptIngles: async () => 'a frog, coloring page' }); return { origem: r.origem, src: r.src.slice(0, 40) }; }
+                catch (e) { return { erro: e.message }; }
+                finally { window.getData = orig; }
+            }, IA);
+            const log = fs.readFileSync(path.join(pasta, 'ai.log'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+            ok('worker: gerarImagemIA usa o servidor (Flux), sem chave no app', img.origem === 'servidor' && /^data:image\/jpeg;base64,/.test(img.src || ''), JSON.stringify(img));
+            ok('worker: manda o pedido em inglês e os passos escolhidos', log[0].modelo === '@cf/black-forest-labs/flux-1-schnell' && log[0].entrada.prompt === 'a frog, coloring page' && log[0].entrada.steps === 3, JSON.stringify(log[0]));
+            fs.writeFileSync(path.join(pasta, 'sem-ai.txt'), '1');
+            const r9 = await fetch(IA + '/v1/imagem', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer segredo-app' }, body: JSON.stringify({ prompt: 'x' }) });
+            const j9 = await r9.json();
+            ok('worker: sem Workers AI ligada, erro diz como ligar', r9.status === 502 && /Workers AI não está ligada/.test(JSON.stringify(j9)), JSON.stringify(j9).slice(0, 200));
+            const r10 = await fetch(IA + '/v1/imagem', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer errada' }, body: JSON.stringify({ prompt: 'x' }) });
+            ok('worker: imagem também exige a chave do app', r10.status === 401);
+        }
+
         await browser.close();
     } finally {
         py.kill(); gemini.close();
