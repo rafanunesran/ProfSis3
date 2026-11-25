@@ -27,6 +27,31 @@ EdiProf (navegador) ──HTTPS + chave do app──▶ Caddy (443) ──▶ se
   servidor de imagem); ela **não** é a chave do Gemini.
 - Só usa o Python 3 que já vem no Ubuntu. Não compila nada: a instalação leva 1 a 3 minutos.
 
+## Jeito mais fácil: Cloudflare Worker (grátis, sem máquina)
+
+O arquivo `cloudflare-worker.js` faz o mesmo que o `servidor.py`, mas roda na
+Cloudflare. As chaves do Gemini ficam guardadas como "Secret" lá. Plano grátis: 100 mil
+pedidos por dia.
+
+1. Entre em [dash.cloudflare.com](https://dash.cloudflare.com) (crie conta grátis se precisar).
+2. **Workers & Pages → Create → Start with Hello World** (ou "Create Worker") →
+   nome `ediprof-ia` → **Deploy**.
+3. **Edit code**: apague tudo, cole o conteúdo de
+   <https://raw.githubusercontent.com/rafanunesran/ProfSis3/main/servidor-ia/cloudflare-worker.js>
+   → **Deploy**.
+4. Volte ao Worker → **Settings → Variables and Secrets → + Add**:
+   - Type **Secret**, Name `GEMINI_KEYS`, Value: as chaves do Gemini separadas por vírgula.
+   - Type **Secret**, Name `CHAVE_APP`, Value: uma senha longa inventada (ex.: gere em
+     <https://www.random.org/strings/?num=1&len=32&digits=on&upperalpha=on&loweralpha=on&unique=on&format=html&rnd=new>).
+   → **Deploy**.
+5. O endereço aparece no Worker (ex.: `https://ediprof-ia.seu-nome.workers.dev`). Teste de
+   alcance: abra `.../saude` em casa e no wi-fi da escola.
+6. EdiProf → Super Admin → 🔑 Chaves de IA → 🛰️ Servidor de IA próprio: endereço + a
+   `CHAVE_APP` → Testar → Salvar.
+
+Se a escola bloquear o `workers.dev`, dá para ligar um domínio próprio no Worker
+(Settings → Domains & Routes), ou usar uma máquina (abaixo).
+
 ## Atalho: máquina nova pelo Cloud Shell
 
 Sem a chave `.key` da máquina antiga? No site da Oracle, abra o **Cloud Shell** (ícone `>_`

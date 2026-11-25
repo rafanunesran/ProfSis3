@@ -1745,9 +1745,9 @@ async function renderChavesIAScreen() {
 
             <div style="margin-top:20px; padding-top:15px; border-top:1px solid #e3e8ef;">
                 <h3 style="margin:0 0 6px; font-size:15px;">🛰️ Servidor de IA próprio (opcional, grátis)</h3>
-                <p style="font-size:12px; color:#5f6b7f; margin-bottom:8px;">Uma máquina sua (ex.: Oracle Cloud grátis) que recebe os pedidos de texto do Estagiário, Biblioteca, Na Mosca! e Ateliê, chama o Gemini com as chaves guardadas <strong>só nela</strong> e devolve a resposta. Útil quando a rede da escola bloqueia a IA. Receita: pasta <code>servidor-ia/LEIAME.md</code> do repositório. Com ele configurado, ele é tentado primeiro; as chaves da tabela acima só são usadas se ele falhar (pode deixar a tabela vazia, assim nenhuma chave do Gemini vai para o navegador). A chave abaixo é só do servidor, não é a do Gemini.</p>
+                <p style="font-size:12px; color:#5f6b7f; margin-bottom:8px;">Um Worker grátis da Cloudflare (ou uma máquina sua) que recebe os pedidos de texto do Estagiário, Biblioteca, Na Mosca! e Ateliê, chama o Gemini com as chaves guardadas <strong>só nela</strong> e devolve a resposta. Útil quando a rede da escola bloqueia a IA. Receita: pasta <code>servidor-ia/LEIAME.md</code> do repositório. Com ele configurado, ele é tentado primeiro; as chaves da tabela acima só são usadas se ele falhar (pode deixar a tabela vazia, assim nenhuma chave do Gemini vai para o navegador). A chave abaixo é só do servidor, não é a do Gemini.</p>
                 <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
-                    <input type="text" id="servidorIaUrlInput" value="${(configIA.servidorIaUrl || '').replace(/"/g, '&quot;')}" placeholder="https://sisprof-ia.duckdns.org" style="flex:2; min-width:220px; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
+                    <input type="text" id="servidorIaUrlInput" value="${(configIA.servidorIaUrl || '').replace(/"/g, '&quot;')}" placeholder="https://ediprof-ia.SEU-NOME.workers.dev" style="flex:2; min-width:220px; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                     <input type="text" id="servidorIaChaveInput" value="${(configIA.servidorIaChave || '').replace(/"/g, '&quot;')}" placeholder="chave mostrada no fim da instalação" style="flex:2; min-width:200px; padding:8px; border:1px solid #cdd5e1; border-radius:4px;">
                     <button class="btn btn-secondary" onclick="testarServidorIA()">🧪 Testar</button>
                     <button class="btn btn-primary" onclick="salvarServidorIA()">💾 Salvar</button>
@@ -1833,7 +1833,7 @@ async function testarServidorIA() {
         return;
     }
     if (!saude || !saude.ok) { caixa.innerHTML = '<span style="color:#b91c1c;">❌ O endereço respondeu, mas não é o servidor de IA do EdiProf.</span>'; return; }
-    if (!saude.chaves) { caixa.innerHTML = '<span style="color:#b45309;">⚠️ A rede chega no servidor, mas ele não tem nenhuma chave do Gemini. Na máquina: <code>sudo nano /opt/sisprof-ia/chaves-gemini.txt</code></span>'; return; }
+    if (!saude.chaves) { caixa.innerHTML = '<span style="color:#b45309;">⚠️ A rede chega no servidor, mas ele não tem nenhuma chave do Gemini. Na Cloudflare: Settings → Variables and Secrets → <code>GEMINI_KEYS</code> (numa máquina: <code>/opt/sisprof-ia/chaves-gemini.txt</code>).</span>'; return; }
     if (!chave) { caixa.innerHTML = '<span style="color:#166534;">✅ Esta rede chega no servidor (' + saude.chaves + ' chave(s) do Gemini lá).</span> Preencha a chave para testar um pedido.'; return; }
     if (typeof chamarServidorIA !== 'function') { caixa.textContent = 'O módulo de IA não carregou. Recarregue a página.'; return; }
     caixa.textContent = '2/2 Alcance ok. Pedindo uma resposta de teste à IA... ⏳';

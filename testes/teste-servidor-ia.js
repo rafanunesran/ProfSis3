@@ -53,7 +53,10 @@ const gemini = http.createServer((req, res) => {
     const pasta = fs.mkdtempSync(path.join(os.tmpdir(), 'sisprof-ia-'));
     fs.writeFileSync(path.join(pasta, 'chave.txt'), 'segredo-app\n');
     fs.writeFileSync(path.join(pasta, 'chaves-gemini.txt'), '# comentário\nAIzaRUIM\n\nAIzaBOA  # a boa\n');
-    const py = spawn('python3', [path.join(__dirname, '..', 'servidor-ia', 'servidor.py')], {
+    // SERVIDOR_IA=worker testa o cloudflare-worker.js (no Node) em vez do servidor.py.
+    const comoWorker = process.env.SERVIDOR_IA === 'worker';
+    console.log('Testando: ' + (comoWorker ? 'servidor-ia/cloudflare-worker.js' : 'servidor-ia/servidor.py'));
+    const py = spawn(comoWorker ? process.execPath : 'python3', [path.join(__dirname, comoWorker ? 'rodar-worker-ia.mjs' : path.join('..', 'servidor-ia', 'servidor.py'))], {
         env: Object.assign({}, process.env, {
             SISPROF_IA_PASTA: pasta, SISPROF_IA_PORTA: String(PORTA_IA),
             SISPROF_IA_ORIGENS: SITE + ',https://ediprof.vercel.app',
