@@ -7603,8 +7603,10 @@ function abrirFichaTutorado(id) {
                         <div><label style="font-size:12px; font-weight:bold; display:block;">Eletiva (1º Semestre):</label><input type="text" id="tutEletiva1" value="${t.eletiva_1 || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;"></div>
                         <div><label style="font-size:12px; font-weight:bold; display:block;">Eletiva (2º Semestre):</label><input type="text" id="tutEletiva2" value="${t.eletiva_2 || ''}" onblur="salvarDadosTutorado(${t.id})" style="width:100%; padding:5px; border:1px solid #cdd5e1; border-radius:4px;"></div>
                     </div>
+                    <div id="boletimTutoradoFicha" style="margin-top:15px;"></div>
                 </div>
             `;
+            preencherBoletimTutorado(t);
         }
 
         // Preencher listas (Agendamentos e Histórico)
@@ -7887,6 +7889,28 @@ function salvarDadosAee(id) {
 
     persistirDados();
     sincronizarTutoradoComPainelAeeCompartilhado(t).catch(e => console.warn('Erro ao sincronizar com Painel AEE:', e));
+}
+
+// Boletim (mapões da gestão) dentro da "Ficha do Estudante" da tela de Tutoria. Os dados vêm do
+// painel da gestão: quem é gestor já os tem em `data`; o professor recebe pela lista publicada da
+// escola (obterDadosGestor). Só na tela — o relatório impresso não leva o boletim.
+async function preencherBoletimTutorado(t) {
+    const el = document.getElementById('boletimTutoradoFicha');
+    if (!el || !t || typeof montarTabelaNotasOficiaisHtml !== 'function') return;
+    el.innerHTML = '';
+    let fonte = null;
+    try {
+        fonte = (typeof currentViewMode !== 'undefined' && currentViewMode === 'gestor') ? data : await obterDadosGestor();
+    } catch (e) { console.warn('[Tutoria] Boletim não carregou:', e); }
+    if (!fonte) return;
+    const html = montarTabelaNotasOficiaisHtml({
+        notasBimestraisOficiais: fonte.notasBimestraisOficiais,
+        avaliacoesGestor: fonte.avaliacoesGestor,
+        notasAvaliacoesGestor: fonte.notasAvaliacoesGestor
+    }, t.nome_estudante);
+    // O professor pode ter aberto outro tutorado enquanto a busca rodava.
+    const atual = document.getElementById('boletimTutoradoFicha');
+    if (atual && atual === el) el.innerHTML = html ? `<div style="border-top:1px solid #e3e8ef; padding-top:12px;">${html}</div>` : '';
 }
 
 async function imprimirRelatorioTutorado(id, nome) {

@@ -239,6 +239,14 @@ function htmlMapao(turma, fechamento, alunos, comNomes) {
   });
   ok('ficha de tutoria na tela mostra o boletim (professor)', /Boletim/.test(cardTutoria) && /Matematica/.test(cardTutoria), cardTutoria.slice(0, 200));
 
+  const telaTutoria = await p.evaluate(async () => {
+    abrirFichaTutorado(700);
+    for (let i = 0; i < 20; i++) { await new Promise(r => setTimeout(r, 50)); const el = document.getElementById('boletimTutoradoFicha'); if (el && el.textContent.trim()) return el.textContent.replace(/\s+/g, ' '); }
+    const el = document.getElementById('boletimTutoradoFicha'); return el ? 'vazio' : 'sem lugar';
+  });
+  ok('tela de Tutoria (Ficha do Estudante do tutorado) mostra o boletim', /Boletim/.test(telaTutoria) && /Matematica/.test(telaTutoria), telaTutoria.slice(0, 200));
+  if (FOTOS) { await p.evaluate(() => document.getElementById('boletimTutoradoFicha').scrollIntoView()); await p.screenshot({ path: path.join(FOTOS, 'boletim-tela-tutoria.png') }); }
+
   const [janela] = await Promise.all([
     p.waitForEvent('popup', { timeout: 8000 }).catch(() => null),
     p.evaluate(() => { window.print = () => {}; imprimirRelatorioTutorado(700, 'Ana Carolina de Souza Lima'); })
