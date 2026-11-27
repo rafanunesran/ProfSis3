@@ -297,7 +297,38 @@ function htmlMapao(turma, fechamento, alunos, comNomes) {
   ok('Fechamentos: todos os estudantes, com lançada e estimada', fech.linhas && fech.linhas.length === 3
     && fech.linhas[0] === 'AnaCarolinadeSouzaLima|6|–|45f|≥5|5' && fech.linhas[1] === 'CaioVictorioMendes|6|–|9|✓|8' && fech.linhas[2] === 'ZecaSemMapão|–|–|–|–|–', JSON.stringify(fech.linhas));
   if (FOTOS) { await p.evaluate(() => document.getElementById('fechamentosTurma').scrollIntoView()); await p.screenshot({ path: path.join(FOTOS, 'fechamentos-turma.png') }); }
-  await p.evaluate(() => { verFechamentosTrabalhos = false; });
+  const seletorProf = await p.evaluate(() => !!document.querySelector('#fechamentosTurma select'));
+  ok('Fechamentos do professor: disciplina travada (sem seletor)', !seletorProf);
+
+  // Planilha do 4º bimestre: meta embaixo da MÉDIA (pelos mapões do 1º e 3º).
+  const metas = await p.evaluate(async () => {
+    verFechamentosTrabalhos = false; currentBimestreTrabalhos = 4;
+    data.configBimestres = data.configBimestres || []; data.chamadas = data.chamadas || []; data.trabalhos = [{ id: 501, id_turma: 5, bimestre: 4, titulo: 'Prova', peso: 10, tipo: 'comum' }];
+    data.notas = [{ id: 1, id_trabalho: 501, id_estudante: 1, valor: '4' }, { id: 2, id_trabalho: 501, id_estudante: 9, valor: '7' }];
+    renderTrabalhos();
+    for (let i = 0; i < 30; i++) { await new Promise(r => setTimeout(r, 50)); if (document.querySelector('#tabTrabalhos .meta-bim .meta-chip')) break; }
+    const ler = () => Array.from(document.querySelectorAll('#tabTrabalhos .meta-bim')).map(d => d.dataset.est + ':' + d.textContent.trim().replace(/\s+/g, ' ') + ':' + ((d.querySelector('.meta-chip') || {}).className || ''));
+    const antes = ler();
+    salvarNota(501, 1, '6');
+    await new Promise(r => setTimeout(r, 100));
+    return { antes, depois: ler() };
+  });
+  const achar = (lista, id) => (lista || []).find(x => x.startsWith(id + ':')) || '';
+  ok('meta na MÉDIA: Ana precisa ≥5 e tem 4 → ✕', /meta ≥5 ✕/.test(achar(metas.antes, 1)) && /meta-ruim/.test(achar(metas.antes, 1)), JSON.stringify(metas));
+  ok('meta na MÉDIA: Caio já garantido', /garantida/.test(achar(metas.antes, 3)), achar(metas.antes, 3));
+  ok('meta na MÉDIA: sem mapão antes, meta 5 (Zeca 7 → ✓)', /meta ≥5 ✓/.test(achar(metas.antes, 9)), achar(metas.antes, 9));
+  ok('meta atualiza ao digitar nota (Ana 6 → ✓)', /meta ≥5 ✓/.test(achar(metas.depois, 1)), achar(metas.depois, 1));
+  if (FOTOS) { await p.evaluate(async () => { renderTrabalhos(); await new Promise(r => setTimeout(r, 500)); document.querySelector('#tabTrabalhos table').scrollIntoView(); }); await p.screenshot({ path: path.join(FOTOS, 'meta-media-trabalhos.png') }); }
+
+  const seletorGestor = await p.evaluate(async () => {
+    currentViewMode = 'gestor'; data.notasBimestraisOficiais = (await obterDadosGestor()).notasBimestraisOficiais;
+    verFechamentosTrabalhos = true; renderTrabalhos();
+    for (let i = 0; i < 30; i++) { await new Promise(r => setTimeout(r, 50)); if (document.querySelector('#fechamentosTurma .bol-tabela')) break; }
+    const tem = !!document.querySelector('#fechamentosTurma select');
+    currentViewMode = 'professor'; verFechamentosTrabalhos = false;
+    return tem;
+  });
+  ok('Fechamentos do gestor: pode trocar a disciplina', seletorGestor);
 
   const [janela] = await Promise.all([
     p.waitForEvent('popup', { timeout: 8000 }).catch(() => null),

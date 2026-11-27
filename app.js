@@ -5031,8 +5031,8 @@ function renderTrabalhos() {
                             <tr data-nome="${escapeHtmlColar(e.nome_completo)}" onmouseover="this.style.background='#f6f8fb'" onmouseout="this.style.background='transparent'">
                             <td class="col-nome-fixa" style="border-bottom: 1px solid #e3e8ef; font-weight:bold; padding: 10px 15px; border-right: 2px solid #cdd5e1;">${getFaltaBadgeHtml(e.id, todayStr)}${getAeePrefix(e)}${e.nome_completo} ${tagFaltoso}</td>
                                 ${gradeCells}                                
-                                <td id="media-est-current-${e.id}" style="text-align:center; font-weight:bold; color: ${corMedia}; background: #f6f8fb; border-bottom: 1px solid #e3e8ef; position: sticky; right: 80px; z-index: 5; border-left: 2px solid #cdd5e1;">
-                                    ${media}
+                                <td id="media-est-current-${e.id}" data-media="${media}" style="text-align:center; font-weight:bold; color: ${corMedia}; background: #f6f8fb; border-bottom: 1px solid #e3e8ef; position: sticky; right: 80px; z-index: 5; border-left: 2px solid #cdd5e1;">
+                                    <span class="media-valor">${media}</span><div class="meta-bim" data-est="${e.id}"></div>
                                 </td>
                                 <td style="text-align:center; background: #f6f8fb; border-bottom: 1px solid #e3e8ef; position: sticky; right: 0; z-index: 5; border-left: 1px solid #cdd5e1; font-size: 12px; color: #3d4759;">
                                     <span style="color: ${totalFaltasBimestre > 0 ? '#e53e3e' : 'inherit'}; font-weight: bold;">${totalFaltasBimestre}</span>
@@ -5048,6 +5048,8 @@ function renderTrabalhos() {
     `;
     document.getElementById('tabTrabalhos').innerHTML = html;
     filtrarAlunosNaTela('tabTrabalhos', filtroAlunosTexto['tabTrabalhos:' + turmaAtual]);
+    // Meta do bimestre (nota mínima pelos mapões da SED, mapao.js) embaixo de cada média.
+    if (typeof carregarMetasTrabalhos === 'function') carregarMetasTrabalhos();
 }
 
 // Os botões e campos passam o id entre aspas: ids gerados por novoId() têm letras e
@@ -5582,8 +5584,11 @@ function recalcularMediaUI(estudanteId) {
     const el = document.getElementById(`media-est-current-${estudanteId}`);
 
     if (el) {
-        el.textContent = media;
+        const span = el.querySelector('.media-valor');
+        if (span) span.textContent = media; else el.textContent = media;
+        el.dataset.media = media;
         el.style.color = (media !== '-' && parseFloat(media) < 5) ? '#e53e3e' : '#1c2536';
+        if (typeof pintarMetasTrabalhos === 'function') pintarMetasTrabalhos(estudanteId);
     }
 }
 

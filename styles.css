@@ -3412,3 +3412,9 @@ html.no-app-android .btn-instalar-app {
 .bol-legenda { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
 .bol-legenda .bol-est, .bol-legenda .bol-nota { font-size: 10.5px; min-width: 0; }
 .bol-tabela thead th:last-child, .bol-tabela td:last-child { border-left: 1px solid var(--border); }
+/* Meta do bimestre embaixo da MÉDIA (Trabalhos) */
+.meta-bim { margin-top: 2px; line-height: 1.1; font-weight: 500; }
+.meta-chip { display: inline-block; font-size: 10px; padding: 1px 5px; border-radius: 999px; border: 1px dashed var(--border-strong); color: var(--text-3, #5f6b7f); font-style: italic; white-space: nowrap; }
+.meta-chip.meta-ok { color: #276749; border-color: #48bb78; background: #f0fff4; }
+.meta-chip.meta-ruim { color: #c53030; border-color: #fc8181; background: #fff5f5; }
+.meta-sed { display: block; font-size: 9.5px; color: var(--text-3, #7a869a); font-weight: 600; margin-top: 1px; }

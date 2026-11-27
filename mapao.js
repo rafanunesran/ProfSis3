@@ -818,16 +818,20 @@ async function renderFechamentosTurma() {
         return;
     }
 
-    const escolhida = _fechamentoDisciplinaEscolhida[turmaAtual];
+    // Professor: travado na disciplina da turma. Só a gestão troca a disciplina mostrada.
+    const ehGestor = typeof currentViewMode !== 'undefined' && currentViewMode === 'gestor';
+    const escolhida = ehGestor ? _fechamentoDisciplinaEscolhida[turmaAtual] : '';
     const disciplina = (escolhida && disponiveis.indexOf(escolhida) !== -1) ? escolhida : disciplinaDaTurmaNoMapao(turma.disciplina, disponiveis);
-    const seletor = `<label style="font-size:12px; display:inline-flex; align-items:center; gap:6px;">Disciplina no mapão:
+    const seletor = !ehGestor ? '' : `<label style="font-size:12px; display:inline-flex; align-items:center; gap:6px;">Disciplina no mapão:
         <select onchange="escolherDisciplinaFechamento(this.value)" style="width:auto; padding:4px 8px; font-size:13px;">
             ${disciplina ? '' : '<option value="">— escolha —</option>'}
             ${disponiveis.map(d => `<option value="${escMapao(d)}" ${d === disciplina ? 'selected' : ''}>${escMapao(nomeDisciplinaBoletim(d))}</option>`).join('')}
         </select></label>`;
 
     if (!disciplina) {
-        alvo.innerHTML = `<div class="card" style="padding:16px;"><p style="margin:0 0 8px;">Não achei "${escMapao(turma.disciplina || '')}" no mapão. Escolha qual disciplina do mapão é a sua:</p>${seletor}</div>`;
+        alvo.innerHTML = ehGestor
+            ? `<div class="card" style="padding:16px;"><p style="margin:0 0 8px;">Não achei "${escMapao(turma.disciplina || '')}" no mapão. Escolha qual disciplina do mapão mostrar:</p>${seletor}</div>`
+            : `<div class="card" style="padding:16px;"><p class="empty-state" style="margin:0;">A disciplina desta turma (${escMapao(turma.disciplina || 'sem disciplina')}) não aparece nos mapões enviados pela gestão. Confira se o nome da disciplina na turma é o mesmo do mapão da SED.</p></div>`;
         return;
     }
 
@@ -898,6 +902,69 @@ async function renderFechamentosTurma() {
                 <div class="bol-legenda">Estimativa: 5º conceito = média dos 4 bimestres, aprovação com ${MEDIA_APROVACAO_BOLETIM}. É só uma conta; o conselho de classe decide.</div>
             </div>
         </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// 6. Meta do bimestre na planilha de Trabalhos: embaixo da MÉDIA, a nota mínima que o
+//    estudante precisa NESTE bimestre (pelos mapões dos bimestres anteriores) e se já atingiu.
+// ---------------------------------------------------------------------------
+
+let _metasTrabalhos = { chave: '', porEst: {} };
+
+async function carregarMetasTrabalhos() {
+    const turmaId = turmaAtual, bim = currentBimestreTrabalhos;
+    const chave = turmaId + '_' + bim;
+    const turma = (data.turmas || []).find(t => t.id == turmaId) || {};
+    let fonte = null;
+    try {
+        fonte = (typeof currentViewMode !== 'undefined' && currentViewMode === 'gestor') ? data : await obterDadosGestor();
+    } catch (e) { /* sem lista da escola: fica a meta padrão (5) */ }
+    if (turmaAtual !== turmaId || currentBimestreTrabalhos !== bim) return;
+
+    const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaId);
+    const nomes = new Set(estudantes.map(e => normNomeNotasOficiais(e.nome_completo)));
+    const todas = ((fonte && fonte.notasBimestraisOficiais) || []).filter(n => nomes.has(normNomeNotasOficiais(n.nome_estudante_norm)));
+    const disponiveis = Array.from(new Set(todas.map(n => n.disciplina).filter(d => d && d !== MAPAO_DISCIPLINA_TOTAL)));
+    const disciplina = disciplinaDaTurmaNoMapao(turma.disciplina, disponiveis);
+    const notasDisc = disciplina ? todas.filter(n => n.disciplina === disciplina) : [];
+    const num = (v) => { const x = parseFloat(String(v).replace(',', '.')); return isNaN(x) ? null : x; };
+
+    const porEst = {};
+    estudantes.forEach(e => {
+        const k = normNomeNotasOficiais(e.nome_completo);
+        const minhas = notasDisc.filter(n => normNomeNotasOficiais(n.nome_estudante_norm) === k);
+        const oficial = minhas.find(n => n.bimestre == bim && num(n.valor) !== null);
+        const anteriores = {};
+        minhas.filter(n => Number(n.bimestre) < bim).forEach(n => { anteriores[n.bimestre] = n; });
+        const est = estimativaBoletim(anteriores, bim - 1);
+        const x = est.porBim[bim];
+        let meta;
+        if (x && x.tipo === 'estimada') meta = { tipo: 'estimada', valor: x.valor };
+        else if (x && x.tipo === 'garantida') meta = { tipo: 'garantida' };
+        else if (x && x.tipo === 'impossivel') meta = { tipo: 'impossivel' };
+        else meta = { tipo: 'estimada', valor: MEDIA_APROVACAO_BOLETIM }; // sem mapão antes: a meta é a média
+        meta.oficial = oficial ? oficial.valor : '';
+        porEst[String(e.id)] = meta;
+    });
+    _metasTrabalhos = { chave, porEst };
+    pintarMetasTrabalhos();
+}
+
+function pintarMetasTrabalhos(soEstudanteId) {
+    if (_metasTrabalhos.chave !== turmaAtual + '_' + currentBimestreTrabalhos) return;
+    document.querySelectorAll('#tabTrabalhos .meta-bim').forEach(div => {
+        if (soEstudanteId !== undefined && String(div.dataset.est) !== String(soEstudanteId)) return;
+        const meta = _metasTrabalhos.porEst[String(div.dataset.est)];
+        if (!meta) { div.innerHTML = ''; return; }
+        const td = div.closest('td');
+        const media = td ? parseFloat(String(td.dataset.media).replace(',', '.')) : NaN;
+        const sed = meta.oficial !== '' ? `<span class="meta-sed" title="Nota do mapão da SED neste bimestre">SED ${escMapao(meta.oficial)}</span>` : '';
+        if (meta.tipo === 'garantida') { div.innerHTML = `<span class="meta-chip meta-ok" title="A média 5 do ano já está garantida pelos bimestres anteriores">✓ garantida</span>${sed}`; return; }
+        if (meta.tipo === 'impossivel') { div.innerHTML = `<span class="meta-chip meta-ruim" title="Mesmo com 10 neste e nos próximos bimestres, a média do ano não chega a 5">✕ sem chance</span>${sed}`; return; }
+        const atingiu = !isNaN(media) && media >= meta.valor;
+        const dica = `Meta: nota mínima estimada neste bimestre para a média do ano chegar a ${MEDIA_APROVACAO_BOLETIM} (pelos mapões dos bimestres anteriores).`;
+        div.innerHTML = `<span class="meta-chip ${isNaN(media) ? '' : (atingiu ? 'meta-ok' : 'meta-ruim')}" title="${dica}">meta ≥${meta.valor} ${isNaN(media) ? '' : (atingiu ? '✓' : '✕')}</span>${sed}`;
+    });
 }
 
 if (typeof module !== 'undefined' && module.exports) {
