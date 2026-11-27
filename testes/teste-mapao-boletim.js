@@ -214,7 +214,7 @@ function htmlMapao(turma, fechamento, alunos, comNomes) {
     const el = document.getElementById('estudanteGeralNotas');
     return el ? el.textContent.replace(/\s+/g, ' ') : '';
   });
-  ok('ficha do estudante mostra o boletim', /Boletim/.test(ficha) && /Matematica/.test(ficha) && /Frequência geral/.test(ficha) && /97%/.test(ficha), ficha.slice(0, 300));
+  ok('ficha do estudante mostra o boletim', /Boletim/.test(ficha) && /Matematica/.test(ficha) && /Frequência/.test(ficha) && /97%/.test(ficha), ficha.slice(0, 300));
   if (FOTOS) {
     await p.evaluate(() => document.getElementById('estudanteGeralNotas').scrollIntoView());
     await p.screenshot({ path: path.join(FOTOS, 'boletim-ficha-estudante.png') });

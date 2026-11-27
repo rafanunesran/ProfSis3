@@ -3657,10 +3657,8 @@ function nomeDisciplinaBoletim(d) {
 // na ficha de tutoria (card na tela e as fichas impressas, do professor e da gestão).
 // `dadosGestor` é sempre o formato {notasBimestraisOficiais, avaliacoesGestor, notasAvaliacoesGestor},
 // vindo do `data` do próprio gestor ou da lista publicada da escola quando quem vê é professor/tutor.
-// `opcoes.impressao` tira cores de fundo (sai bem na impressora em preto e branco).
 function montarTabelaNotasOficiaisHtml(dadosGestor, nomeNorm, opcoes) {
     const alvo = normNomeNotasOficiais(nomeNorm);
-    const impressao = !!(opcoes && opcoes.impressao);
     const mapaoTudo = (dadosGestor.notasBimestraisOficiais || []).filter(n => normNomeNotasOficiais(n.nome_estudante_norm) === alvo);
     const notasAvaliacoes = (dadosGestor.notasAvaliacoesGestor || []).filter(n => normNomeNotasOficiais(n.nome_estudante_norm) === alvo);
 
@@ -3672,55 +3670,63 @@ function montarTabelaNotasOficiaisHtml(dadosGestor, nomeNorm, opcoes) {
     const totais = mapaoTudo.filter(n => n.disciplina === NOTAS_OFICIAIS_TOTAL);
     if (mapao.length > 0 || totais.length > 0) {
         const porDisciplina = {};
-        const temFaltas = mapao.some(n => n.faltas !== undefined && n.faltas !== '');
-        const bimestres = [1, 2, 3, 4];
-        if (mapaoTudo.some(n => n.bimestre == 5)) bimestres.push(5);
         mapao.forEach(n => {
             if (!porDisciplina[n.disciplina]) porDisciplina[n.disciplina] = {};
             porDisciplina[n.disciplina][n.bimestre] = n;
         });
         const porBimTotal = {};
         totais.forEach(n => { porBimTotal[n.bimestre] = n; });
-        const nota = (v) => {
-            const s = (v === undefined || v === null || v === '') ? '-' : String(v);
-            const num = parseFloat(s.replace(',', '.'));
-            const baixa = !isNaN(num) && num < 5;
-            return baixa ? `<strong style="color:#c53030;">${escNotasOficiais(s)}</strong>` : escNotasOficiais(s);
-        };
+        const vazio = (v) => v === undefined || v === null || v === '' || v === '-';
+        // Só as colunas de bimestre que têm alguma coisa: sem mapão do 4º, a coluna nem aparece.
+        const bimestres = [1, 2, 3, 4, 5].filter(b => mapaoTudo.some(n => n.bimestre == b && (!vazio(n.valor) || !vazio(n.faltas))));
+        if (!bimestres.length) bimestres.push(...new Set(mapaoTudo.map(n => Number(n.bimestre)).filter(Boolean)));
+        const ultimo = bimestres[bimestres.length - 1];
+        const numero = (v) => { const x = parseFloat(String(v).replace(',', '.')); return isNaN(x) ? null : x; };
+        const baixa = (v) => { const x = numero(v); return x !== null && x < 5; };
+        const temFalta = (f) => !vazio(f) && f !== '0';
+
         const celula = (n) => {
-            if (!n) return '<td style="text-align:center; color:#a0aec0;">-</td>';
-            const f = (temFaltas && n.faltas !== undefined && n.faltas !== '' && n.faltas !== '0' && n.faltas !== '-')
-                ? `<span style="font-size:10px; color:#5f6b7f;"> · ${escNotasOficiais(n.faltas)}f</span>` : '';
-            return `<td style="text-align:center; white-space:nowrap;">${nota(n.valor)}${f}</td>`;
+            if (!n || (vazio(n.valor) && !temFalta(n.faltas))) return '<td class="bol-vazio">–</td>';
+            const v = vazio(n.valor) ? '–' : escNotasOficiais(n.valor);
+            return `<td><span class="bol-nota${baixa(n.valor) ? ' bol-baixa' : ''}">${v}</span>${temFalta(n.faltas) ? `<span class="bol-f">${escNotasOficiais(n.faltas)}f</span>` : ''}</td>`;
         };
-        const rotuloBim = (b) => b === 5 ? 'Final' : b + 'º Bim';
+        const rotuloBim = (b) => b === 5 ? 'Final' : b + 'º';
+
+        // Resumo do bimestre mais recente, em chips.
+        const tUlt = porBimTotal[ultimo];
+        const baixasUlt = Object.keys(porDisciplina).filter(d => porDisciplina[d][ultimo] && baixa(porDisciplina[d][ultimo].valor)).length;
+        const freqNum = tUlt ? numero(String(tUlt.valor).replace('%', '')) : null;
+        const chips = [
+            `<span class="bol-chip">${ultimo === 5 ? 'Final' : ultimo + 'º bimestre'}</span>`,
+            tUlt && !vazio(tUlt.valor) ? `<span class="bol-chip${freqNum !== null && freqNum < 75 ? ' bol-chip-alerta' : ''}">Freq. ${escNotasOficiais(tUlt.valor)}</span>` : '',
+            `<span class="bol-chip${baixasUlt ? ' bol-chip-alerta' : ' bol-chip-ok'}">${baixasUlt ? baixasUlt + ' abaixo de 5' : 'nenhuma abaixo de 5'}</span>`
+        ].join('');
+
         const linhaTotal = totais.length ? `
-            <tr style="${impressao ? 'font-weight:bold;' : 'background:#edf3fd; font-weight:bold;'}">
-                <td>Frequência geral</td>
+            <tr class="bol-total">
+                <th scope="row">Frequência</th>
                 ${bimestres.map(b => {
                     const t = porBimTotal[b];
-                    if (!t) return '<td style="text-align:center; color:#a0aec0;">-</td>';
-                    return `<td style="text-align:center; white-space:nowrap;">${escNotasOficiais(t.valor || '-')}${t.faltas ? `<span style="font-size:10px; font-weight:normal;"> · ${escNotasOficiais(t.faltas)}f</span>` : ''}</td>`;
+                    if (!t || vazio(t.valor)) return '<td class="bol-vazio">–</td>';
+                    return `<td><span class="bol-nota">${escNotasOficiais(t.valor)}</span>${temFalta(t.faltas) ? `<span class="bol-f">${escNotasOficiais(t.faltas)}f</span>` : ''}</td>`;
                 }).join('')}
             </tr>` : '';
+
         html += `
-            <div class="boletim-mapao" style="margin-bottom:15px;">
-                <p style="font-weight:bold; font-size:13px; margin-bottom:5px;">📋 Boletim (Mapão da SED)</p>
-                <div style="overflow-x:auto;">
-                <table style="font-size:12px; width:100%; border-collapse:collapse;" border="${impressao ? 1 : 0}" cellpadding="${impressao ? 3 : 0}">
-                    <thead><tr><th style="text-align:left;">Disciplina</th>${bimestres.map(b => `<th>${rotuloBim(b)}</th>`).join('')}</tr></thead>
+            <div class="boletim">
+                <div class="bol-topo"><strong>📋 Boletim</strong><span class="bol-chips">${chips}</span></div>
+                <div class="bol-rolagem">
+                <table class="bol-tabela">
+                    <thead><tr><th scope="col">Disciplina</th>${bimestres.map(b => `<th scope="col">${rotuloBim(b)}</th>`).join('')}</tr></thead>
                     <tbody>
                         ${Object.keys(porDisciplina).sort().map(disc => `
-                            <tr>
-                                <td>${escNotasOficiais(nomeDisciplinaBoletim(disc))}</td>
-                                ${bimestres.map(b => celula(porDisciplina[disc][b])).join('')}
-                            </tr>
+                            <tr><th scope="row">${escNotasOficiais(nomeDisciplinaBoletim(disc))}</th>${bimestres.map(b => celula(porDisciplina[disc][b])).join('')}</tr>
                         `).join('')}
                         ${linhaTotal}
                     </tbody>
                 </table>
                 </div>
-                ${temFaltas ? '<p style="font-size:10px; color:#5f6b7f; margin:3px 0 0;">Nota do fechamento · f = faltas no bimestre. Nota abaixo de 5 em vermelho.</p>' : ''}
+                <div class="bol-legenda">Mapão da SED · nota do fechamento · <span class="bol-f">f</span> = faltas</div>
             </div>
         `;
     }

@@ -3373,3 +3373,33 @@ html.no-app-android .btn-instalar-app {
 @media (min-width: 1101px) {
     .dash-grade-topo { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.15fr) minmax(0, 0.9fr); }
 }
+
+/* Boletim (mapão da SED) — ficha do estudante e ficha de tutoria. Compacto: linhas baixas,
+   números alinhados, só os bimestres que existem; no celular rola de lado com a disciplina fixa. */
+.boletim { margin: 4px 0 12px; max-width: 560px; }
+.bol-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; font-size: 13.5px; }
+.bol-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.bol-chip { font-size: 11px; line-height: 1; padding: 4px 8px; border-radius: 999px; background: var(--surface-3); color: var(--text-3, #5f6b7f); white-space: nowrap; }
+.bol-chip-ok { background: #e9f7ef; color: #276749; }
+.bol-chip-alerta { background: #fdecec; color: #c53030; }
+.bol-rolagem { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-sm, 8px); -webkit-overflow-scrolling: touch; }
+.bol-tabela { margin: 0; width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.bol-tabela th, .bol-tabela td { padding: 4px 8px; font-size: 12.5px; line-height: 1.35; border-bottom: 1px solid var(--border); }
+.bol-tabela thead th { font-size: 11px; text-transform: uppercase; letter-spacing: .03em; text-align: center; padding-top: 6px; padding-bottom: 6px; }
+.bol-tabela thead th:first-child, .bol-tabela tbody th { text-align: left; }
+.bol-tabela tbody th { font-weight: 500; color: var(--text, #1c2536); background: var(--surface); position: sticky; left: 0; white-space: nowrap; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; }
+.bol-tabela td { text-align: center; white-space: nowrap; width: 1%; min-width: 46px; }
+.bol-tabela tbody tr:nth-child(even) th, .bol-tabela tbody tr:nth-child(even) td { background: var(--surface-2); }
+.bol-tabela tbody tr:last-child th, .bol-tabela tbody tr:last-child td { border-bottom: 0; }
+.bol-nota { font-weight: 600; }
+.bol-baixa { color: #c53030; }
+.bol-f { font-size: 10px; color: var(--text-3, #7a869a); margin-left: 3px; font-weight: 400; }
+.bol-vazio { color: var(--border-strong); }
+.bol-total th, .bol-total td { background: var(--accent-soft) !important; font-weight: 600; }
+.bol-legenda { font-size: 10.5px; color: var(--text-3, #7a869a); margin-top: 4px; }
+@media (max-width: 640px) {
+    .bol-tabela th, .bol-tabela td { padding: 4px 5px; font-size: 12px; }
+    .bol-tabela tbody th { white-space: normal; max-width: 38vw; min-width: 96px; line-height: 1.2; }
+    .bol-tabela td { min-width: 34px; }
+    .bol-tabela .bol-f { display: block; margin: 0; line-height: 1; }
+}
