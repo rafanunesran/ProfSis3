@@ -766,6 +766,140 @@ async function gravarMapoes() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// 5. Trabalhos › 📋 Fechamentos (professor): o boletim da SUA disciplina, turma inteira,
+//    com a nota mínima estimada (estimativaBoletim, gestor.js) para não reprovar.
+// ---------------------------------------------------------------------------
+
+const _fechamentoDisciplinaEscolhida = {}; // turmaId -> disciplina escolhida à mão
+
+function chaveDisciplinaMapao(d) {
+    return semAcentoMapao(d).toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+}
+
+// "Matemática" (turma) ↔ "MATEMATICA" (mapão). Primeiro igual; depois uma contém a outra
+// ("Língua Portuguesa" ↔ "LINGUA PORTUGUESA"; "Port." não casa e a pessoa escolhe).
+function disciplinaDaTurmaNoMapao(disciplinaTurma, disponiveis) {
+    const alvo = chaveDisciplinaMapao(disciplinaTurma);
+    if (!alvo) return '';
+    const igual = disponiveis.find(d => chaveDisciplinaMapao(d) === alvo);
+    if (igual) return igual;
+    const parecidas = disponiveis.filter(d => { const k = chaveDisciplinaMapao(d); return k.indexOf(alvo) === 0 || alvo.indexOf(k) === 0; });
+    // "MATEMATICA" também está dentro de "ORIENTACAO DE ESTUDO - MATEMATICA": fica a mais curta.
+    parecidas.sort((a, b) => a.length - b.length);
+    return parecidas[0] || '';
+}
+
+function escolherDisciplinaFechamento(valor) {
+    _fechamentoDisciplinaEscolhida[turmaAtual] = valor;
+    renderFechamentosTurma();
+}
+
+async function renderFechamentosTurma() {
+    const alvo = document.getElementById('fechamentosTurma');
+    if (!alvo) return;
+    const turma = (data.turmas || []).find(t => t.id == turmaAtual) || {};
+    const estudantes = (typeof estudantesPlanilhaTrabalhos === 'function' ? estudantesPlanilhaTrabalhos() : [])
+        .slice().sort((a, b) => (typeof compararNomes === 'function' ? compararNomes(a.nome_completo, b.nome_completo) : a.nome_completo.localeCompare(b.nome_completo)));
+
+    let fonte = null;
+    try {
+        fonte = (typeof currentViewMode !== 'undefined' && currentViewMode === 'gestor') ? data : await obterDadosGestor();
+    } catch (e) { console.warn('[Fechamentos] não carregou:', e); }
+    if (document.getElementById('fechamentosTurma') !== alvo) return; // trocou de tela enquanto buscava
+
+    const todas = (fonte && fonte.notasBimestraisOficiais) || [];
+    const nomes = new Set(estudantes.map(e => normNomeNotasOficiais(e.nome_completo)));
+    const daTurma = todas.filter(n => nomes.has(normNomeNotasOficiais(n.nome_estudante_norm)));
+    const disponiveis = Array.from(new Set(daTurma.map(n => n.disciplina).filter(d => d && d !== MAPAO_DISCIPLINA_TOTAL))).sort();
+
+    if (!daTurma.length) {
+        alvo.innerHTML = `<div class="card" style="padding:16px;"><p class="empty-state" style="margin:0;">Ainda não há mapão desta turma. Os fechamentos aparecem aqui quando a gestão enviar os mapões da SED (Painel da Gestão › 📋 Mapões → Boletim).</p></div>`;
+        return;
+    }
+
+    const escolhida = _fechamentoDisciplinaEscolhida[turmaAtual];
+    const disciplina = (escolhida && disponiveis.indexOf(escolhida) !== -1) ? escolhida : disciplinaDaTurmaNoMapao(turma.disciplina, disponiveis);
+    const seletor = `<label style="font-size:12px; display:inline-flex; align-items:center; gap:6px;">Disciplina no mapão:
+        <select onchange="escolherDisciplinaFechamento(this.value)" style="width:auto; padding:4px 8px; font-size:13px;">
+            ${disciplina ? '' : '<option value="">— escolha —</option>'}
+            ${disponiveis.map(d => `<option value="${escMapao(d)}" ${d === disciplina ? 'selected' : ''}>${escMapao(nomeDisciplinaBoletim(d))}</option>`).join('')}
+        </select></label>`;
+
+    if (!disciplina) {
+        alvo.innerHTML = `<div class="card" style="padding:16px;"><p style="margin:0 0 8px;">Não achei "${escMapao(turma.disciplina || '')}" no mapão. Escolha qual disciplina do mapão é a sua:</p>${seletor}</div>`;
+        return;
+    }
+
+    const notasDisc = daTurma.filter(n => n.disciplina === disciplina);
+    const comDado = [1, 2, 3, 4].filter(b => notasDisc.some(n => n.bimestre == b && String(n.valor || '').trim() && n.valor !== '-'));
+    const ultimo = comDado.length ? comDado[comDado.length - 1] : 0;
+    const num = (v) => { const x = parseFloat(String(v).replace(',', '.')); return isNaN(x) ? null : x; };
+    const temFalta = (f) => f !== undefined && f !== null && f !== '' && f !== '-' && f !== '0';
+
+    let abaixo = 0, risco = 0, semMapao = 0, impossivel = 0;
+    const linhas = estudantes.map(e => {
+        const k = normNomeNotasOficiais(e.nome_completo);
+        const porBim = {};
+        notasDisc.filter(n => normNomeNotasOficiais(n.nome_estudante_norm) === k).forEach(n => { porBim[n.bimestre] = n; });
+        if (!Object.keys(porBim).length) semMapao++;
+        const est = estimativaBoletim(porBim, ultimo);
+        if (est.risco) risco++;
+        if (Object.values(est.porBim).some(x => x.tipo === 'impossivel')) impossivel++;
+        if (porBim[ultimo] && num(porBim[ultimo].valor) !== null && num(porBim[ultimo].valor) < MEDIA_APROVACAO_BOLETIM) abaixo++;
+        const celulas = [1, 2, 3, 4, 5].map(b => {
+            const n = porBim[b];
+            if (n && num(n.valor) !== null) {
+                const baixa = num(n.valor) < MEDIA_APROVACAO_BOLETIM;
+                return `<td><span class="bol-nota${baixa ? ' bol-baixa' : ''}">${escMapao(n.valor)}</span>${temFalta(n.faltas) ? `<span class="bol-f">${escMapao(n.faltas)}f</span>` : ''}</td>`;
+            }
+            const x = est.porBim[b];
+            if (!x) return '<td class="bol-vazio">–</td>';
+            if (x.tipo === 'garantida') return '<td><span class="bol-est bol-est-ok" title="Média 5 já garantida">✓</span></td>';
+            if (x.tipo === 'impossivel') return '<td><span class="bol-est bol-est-ruim" title="Nem com 10 chega à média 5">✕</span></td>';
+            const cls = x.tipo === 'final' ? (x.valor < MEDIA_APROVACAO_BOLETIM ? ' bol-est-ruim' : '') : (x.valor >= 7 ? ' bol-est-alerta' : '');
+            return `<td><span class="bol-est${cls}" title="${x.tipo === 'final' ? '5º conceito estimado' : 'Nota mínima estimada para a média 5'}">${x.tipo === 'final' ? '' : '≥'}${x.valor}</span></td>`;
+        }).join('');
+        return `<tr data-risco="${est.risco ? 1 : 0}"><th scope="row">${escMapao(e.nome_completo)}</th>${celulas}</tr>`;
+    }).join('');
+
+    const chips = [
+        ultimo ? `<span class="bol-chip">até o ${ultimo}º bimestre</span>` : '',
+        `<span class="bol-chip">${estudantes.length} estudantes</span>`,
+        `<span class="bol-chip${abaixo ? ' bol-chip-alerta' : ' bol-chip-ok'}">${abaixo} abaixo de 5 no ${ultimo || '-'}º</span>`,
+        risco ? `<span class="bol-chip bol-chip-alerta" title="Precisam de 7 ou mais, ou já não alcançam 5">${risco} em risco${impossivel ? ` (${impossivel} sem chance)` : ''}</span>` : '<span class="bol-chip bol-chip-ok">ninguém em risco</span>',
+        semMapao ? `<span class="bol-chip" title="Nome da lista que não apareceu no mapão desta disciplina">${semMapao} sem mapão</span>` : ''
+    ].join('');
+
+    alvo.innerHTML = `
+        <div class="card" style="padding:14px;">
+            <div class="boletim" style="max-width:720px;">
+                <div class="bol-topo">
+                    <strong>📋 Fechamentos — ${escMapao(nomeDisciplinaBoletim(disciplina))}</strong>
+                    ${seletor}
+                </div>
+                <div class="bol-chips" style="margin-bottom:8px;">${chips}
+                    ${risco ? `<label style="font-size:11px; display:inline-flex; align-items:center; gap:4px; cursor:pointer; margin-left:4px;"><input type="checkbox" style="width:auto; margin:0;" onchange="document.querySelectorAll('#fechamentosTurma tr[data-risco]').forEach(tr => tr.style.display = (this.checked && tr.dataset.risco !== '1') ? 'none' : '')"> só em risco</label>` : ''}
+                </div>
+                <div class="bol-rolagem">
+                    <table class="bol-tabela">
+                        <thead><tr><th scope="col">Estudante</th><th scope="col">1º</th><th scope="col">2º</th><th scope="col">3º</th><th scope="col">4º</th><th scope="col" title="5º conceito (nota final do ano)">5º C.</th></tr></thead>
+                        <tbody>${linhas}</tbody>
+                    </table>
+                </div>
+                <div class="bol-legenda">
+                    <span><span class="bol-nota">7</span> lançada (mapão)</span>
+                    <span><span class="bol-est">≥6</span> mínima estimada</span>
+                    <span><span class="bol-est">5</span> 5º conceito estimado</span>
+                    <span><span class="bol-est bol-est-ok">✓</span> média garantida</span>
+                    <span><span class="bol-est bol-est-ruim">✕</span> não alcança 5</span>
+                    <span><span class="bol-f">f</span> faltas</span>
+                </div>
+                <div class="bol-legenda">Estimativa: 5º conceito = média dos 4 bimestres, aprovação com ${MEDIA_APROVACAO_BOLETIM}. É só uma conta; o conselho de classe decide.</div>
+            </div>
+        </div>`;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { analisarItensMapao, bimestreDoTextoMapao, juntarPedacosMapao, codigoTurmaMapao, idDaPastaDriveMapao, aplicarNotasMapao, itensSituacaoMapao, MAPAO_DISCIPLINA_TOTAL };
+    module.exports = { disciplinaDaTurmaNoMapao, analisarItensMapao, bimestreDoTextoMapao, juntarPedacosMapao, codigoTurmaMapao, idDaPastaDriveMapao, aplicarNotasMapao, itensSituacaoMapao, MAPAO_DISCIPLINA_TOTAL };
 }

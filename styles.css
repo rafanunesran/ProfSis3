@@ -3389,6 +3389,7 @@ html.no-app-android .btn-instalar-app {
 .bol-tabela thead th:first-child, .bol-tabela tbody th { text-align: left; }
 .bol-tabela tbody th { font-weight: 500; color: var(--text, #1c2536); background: var(--surface); position: sticky; left: 0; white-space: nowrap; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; }
 .bol-tabela td { text-align: center; white-space: nowrap; width: 1%; min-width: 46px; }
+.bol-tabela tbody td { background: var(--surface); }
 .bol-tabela tbody tr:nth-child(even) th, .bol-tabela tbody tr:nth-child(even) td { background: var(--surface-2); }
 .bol-tabela tbody tr:last-child th, .bol-tabela tbody tr:last-child td { border-bottom: 0; }
 .bol-nota { font-weight: 600; }

@@ -4843,7 +4843,31 @@ function renderSugestaoSalaFuturo(estudantes, trabalhos) {
         </div>`;
 }
 
+// Abas do topo de Trabalhos: os 4 bimestres + "Fechamentos" (boletim da turma, mapao.js).
+let verFechamentosTrabalhos = false;
+function abasBimestreTrabalhosHtml() {
+    return `
+        <div style="margin-bottom: 15px; display: flex; gap: 5px; background: #f1f5f9; padding: 5px; border-radius: 8px; flex-wrap: wrap;" class="no-print">
+            ${[1, 2, 3, 4].map(b => `
+                <button class="btn btn-sm ${!verFechamentosTrabalhos && currentBimestreTrabalhos === b ? 'btn-primary' : 'btn-secondary'}"
+                        style="flex:1; font-weight:bold;"
+                        onclick="verFechamentosTrabalhos=false; currentBimestreTrabalhos=${b}; renderTrabalhos()">
+                    ${b}º Bimestre
+                </button>
+            `).join('')}
+            <button class="btn btn-sm ${verFechamentosTrabalhos ? 'btn-primary' : 'btn-secondary'}" style="flex:1; font-weight:bold;"
+                    onclick="verFechamentosTrabalhos=true; renderTrabalhos()" title="Notas dos mapões da SED da sua disciplina, com a nota mínima para não reprovar">
+                📋 Fechamentos
+            </button>
+        </div>`;
+}
+
 function renderTrabalhos() {
+    if (verFechamentosTrabalhos && typeof renderFechamentosTurma === 'function') {
+        document.getElementById('tabTrabalhos').innerHTML = abasBimestreTrabalhosHtml() + '<div id="fechamentosTurma"><p class="empty-state">Carregando os fechamentos...</p></div>';
+        renderFechamentosTurma();
+        return;
+    }
     const estudantes = estudantesPlanilhaTrabalhos();
     const trabalhos = trabalhosPlanilhaTrabalhos();
     const notas = data.notas || [];
@@ -4854,15 +4878,7 @@ function renderTrabalhos() {
     const todayStr = getTodayString();
 
     const html = `
-        <div style="margin-bottom: 15px; display: flex; gap: 5px; background: #f1f5f9; padding: 5px; border-radius: 8px;" class="no-print">
-            ${[1, 2, 3, 4].map(b => `
-                <button class="btn btn-sm ${currentBimestreTrabalhos === b ? 'btn-primary' : 'btn-secondary'}" 
-                        style="flex:1; font-weight:bold;"
-                        onclick="currentBimestreTrabalhos=${b}; renderTrabalhos()">
-                    ${b}º Bimestre
-                </button>
-            `).join('')}
-        </div>
+        ${abasBimestreTrabalhosHtml()}
 
         <div class="no-print" style="margin-bottom:15px;">
             <label style="display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:bold;">

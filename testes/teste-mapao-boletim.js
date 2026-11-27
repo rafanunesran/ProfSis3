@@ -275,6 +275,30 @@ function htmlMapao(turma, fechamento, alunos, comNomes) {
   ok('tela de Tutoria (Ficha do Estudante do tutorado) mostra o boletim', /Boletim/.test(telaTutoria) && /Matematica/.test(telaTutoria), telaTutoria.slice(0, 200));
   if (FOTOS) { await p.evaluate(() => document.getElementById('boletimTutoradoFicha').scrollIntoView()); await p.screenshot({ path: path.join(FOTOS, 'boletim-tela-tutoria.png') }); }
 
+  // Trabalhos › 📋 Fechamentos: só a disciplina da turma (Matemática), todos os estudantes, com estimativa.
+  const fech = await p.evaluate(async () => {
+    data.estudantes.push({ id: 3, id_turma: 5, nome_completo: 'Caio Victorio Mendes', status: 'Ativo' }, { id: 9, id_turma: 5, nome_completo: 'Zeca Sem Mapão', status: 'Ativo' });
+    turmaAtual = 5;
+    document.querySelectorAll('.screen').forEach(x => x.classList.remove('active'));
+    const tela = document.getElementById('tabTrabalhos'); let pai = tela; while (pai && !pai.classList.contains('screen')) pai = pai.parentElement; if (pai) pai.classList.add('active');
+    tela.style.display = 'block';
+    verFechamentosTrabalhos = true; renderTrabalhos();
+    for (let i = 0; i < 30; i++) { await new Promise(r => setTimeout(r, 50)); if (document.querySelector('#fechamentosTurma .bol-tabela')) break; }
+    const t = document.querySelector('#fechamentosTurma .bol-tabela');
+    if (!t) return { erro: document.getElementById('fechamentosTurma').textContent };
+    return {
+      titulo: document.querySelector('#fechamentosTurma .bol-topo strong').textContent,
+      linhas: Array.from(t.querySelectorAll('tbody tr')).map(tr => Array.from(tr.children).map(c => c.textContent.trim().replace(/\s+/g, '')).join('|')),
+      abaAtiva: Array.from(document.querySelectorAll('#tabTrabalhos button.btn-primary')).map(b => b.textContent.trim())
+    };
+  });
+  ok('Fechamentos: aba própria em Trabalhos', fech.abaAtiva && fech.abaAtiva.some(x => /Fechamentos/.test(x)), JSON.stringify(fech));
+  ok('Fechamentos: só a disciplina da turma (Matemática)', /Matematica/.test(fech.titulo || ''), fech.titulo);
+  ok('Fechamentos: todos os estudantes, com lançada e estimada', fech.linhas && fech.linhas.length === 3
+    && fech.linhas[0] === 'AnaCarolinadeSouzaLima|6|–|45f|≥5|5' && fech.linhas[1] === 'CaioVictorioMendes|6|–|9|✓|8' && fech.linhas[2] === 'ZecaSemMapão|–|–|–|–|–', JSON.stringify(fech.linhas));
+  if (FOTOS) { await p.evaluate(() => document.getElementById('fechamentosTurma').scrollIntoView()); await p.screenshot({ path: path.join(FOTOS, 'fechamentos-turma.png') }); }
+  await p.evaluate(() => { verFechamentosTrabalhos = false; });
+
   const [janela] = await Promise.all([
     p.waitForEvent('popup', { timeout: 8000 }).catch(() => null),
     p.evaluate(() => { window.print = () => {}; imprimirRelatorioTutorado(700, 'Ana Carolina de Souza Lima'); })
