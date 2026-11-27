@@ -3637,43 +3637,98 @@ async function imprimirTodosRelatoriosTutoriaGestor(profId, profNome) {
 // do estudante e na de tutoria, por isso ficam só as duas funções de exibição abaixo.
 
 function normNomeNotasOficiais(s) {
-    // Mesma convenção de normalização de nome usada no resto do app (gestor.js:1938, app.js:6460)
-    return (s || '').trim().toUpperCase();
+    // Sem acento, sem pontuação e espaço único: "VICTÓRIA" do mapão e "Victoria" da lista são a
+    // mesma pessoa. Dados antigos (só trim+maiúscula) continuam batendo, porque os dois lados da
+    // comparação passam sempre por aqui.
+    return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
 }
 
-// Monta o HTML de notas oficiais (mapão + avaliações da gestão) de um único aluno, reaproveitado
-// tanto na ficha do estudante (app.js:renderEstudanteGeral/preencherNotasOficiaisEstudante) quanto
-// na ficha de tutoria (card inline e relatório imprimível do gestor). `dadosGestor` é sempre o
-// formato {notasBimestraisOficiais, avaliacoesGestor, notasAvaliacoesGestor}, vindo do `data` do
-// próprio gestor ou buscado entre-documentos quando quem vê é professor/tutor.
-function montarTabelaNotasOficiaisHtml(dadosGestor, nomeNorm) {
-    const mapao = (dadosGestor.notasBimestraisOficiais || []).filter(n => normNomeNotasOficiais(n.nome_estudante_norm) === nomeNorm);
-    const notasAvaliacoes = (dadosGestor.notasAvaliacoesGestor || []).filter(n => normNomeNotasOficiais(n.nome_estudante_norm) === nomeNorm);
+// Disciplina "de mentira" que o mapão usa para guardar a frequência geral do bimestre (mapao.js).
+const NOTAS_OFICIAIS_TOTAL = '__FREQUENCIA_GERAL__';
 
-    if (mapao.length === 0 && notasAvaliacoes.length === 0) return '';
+function escNotasOficiais(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Nome de disciplina como vem da SED ("LINGUA PORTUGUESA", "ORIENTAÇAO DE ESTUDO - MATEMATICA")
+// → "Lingua Portuguesa", "Orientaçao de Estudo - Matematica".
+function nomeDisciplinaBoletim(d) {
+    const minusc = ['de', 'da', 'do', 'das', 'dos', 'e'];
+    return String(d || '').toLowerCase().split(' ').map((p, i) =>
+        (i > 0 && minusc.indexOf(p) !== -1) ? p : p.replace(/(^|-)([a-zà-ú])/g, (m, a, l) => a + l.toUpperCase())
+    ).join(' ');
+}
+
+// Monta o HTML de notas oficiais (boletim do mapão + avaliações da gestão) de um único aluno,
+// reaproveitado na ficha do estudante (app.js:renderEstudanteGeral/preencherNotasOficiaisEstudante),
+// na ficha de tutoria (card na tela e as fichas impressas, do professor e da gestão).
+// `dadosGestor` é sempre o formato {notasBimestraisOficiais, avaliacoesGestor, notasAvaliacoesGestor},
+// vindo do `data` do próprio gestor ou da lista publicada da escola quando quem vê é professor/tutor.
+// `opcoes.impressao` tira cores de fundo (sai bem na impressora em preto e branco).
+function montarTabelaNotasOficiaisHtml(dadosGestor, nomeNorm, opcoes) {
+    const alvo = normNomeNotasOficiais(nomeNorm);
+    const impressao = !!(opcoes && opcoes.impressao);
+    const mapaoTudo = (dadosGestor.notasBimestraisOficiais || []).filter(n => normNomeNotasOficiais(n.nome_estudante_norm) === alvo);
+    const notasAvaliacoes = (dadosGestor.notasAvaliacoesGestor || []).filter(n => normNomeNotasOficiais(n.nome_estudante_norm) === alvo);
+
+    if (mapaoTudo.length === 0 && notasAvaliacoes.length === 0) return '';
 
     let html = '';
 
-    if (mapao.length > 0) {
+    const mapao = mapaoTudo.filter(n => n.disciplina !== NOTAS_OFICIAIS_TOTAL);
+    const totais = mapaoTudo.filter(n => n.disciplina === NOTAS_OFICIAIS_TOTAL);
+    if (mapao.length > 0 || totais.length > 0) {
         const porDisciplina = {};
+        const temFaltas = mapao.some(n => n.faltas !== undefined && n.faltas !== '');
+        const bimestres = [1, 2, 3, 4];
+        if (mapaoTudo.some(n => n.bimestre == 5)) bimestres.push(5);
         mapao.forEach(n => {
             if (!porDisciplina[n.disciplina]) porDisciplina[n.disciplina] = {};
-            porDisciplina[n.disciplina][n.bimestre] = n.valor;
+            porDisciplina[n.disciplina][n.bimestre] = n;
         });
+        const porBimTotal = {};
+        totais.forEach(n => { porBimTotal[n.bimestre] = n; });
+        const nota = (v) => {
+            const s = (v === undefined || v === null || v === '') ? '-' : String(v);
+            const num = parseFloat(s.replace(',', '.'));
+            const baixa = !isNaN(num) && num < 5;
+            return baixa ? `<strong style="color:#c53030;">${escNotasOficiais(s)}</strong>` : escNotasOficiais(s);
+        };
+        const celula = (n) => {
+            if (!n) return '<td style="text-align:center; color:#a0aec0;">-</td>';
+            const f = (temFaltas && n.faltas !== undefined && n.faltas !== '' && n.faltas !== '0' && n.faltas !== '-')
+                ? `<span style="font-size:10px; color:#5f6b7f;"> · ${escNotasOficiais(n.faltas)}f</span>` : '';
+            return `<td style="text-align:center; white-space:nowrap;">${nota(n.valor)}${f}</td>`;
+        };
+        const rotuloBim = (b) => b === 5 ? 'Final' : b + 'º Bim';
+        const linhaTotal = totais.length ? `
+            <tr style="${impressao ? 'font-weight:bold;' : 'background:#edf3fd; font-weight:bold;'}">
+                <td>Frequência geral</td>
+                ${bimestres.map(b => {
+                    const t = porBimTotal[b];
+                    if (!t) return '<td style="text-align:center; color:#a0aec0;">-</td>';
+                    return `<td style="text-align:center; white-space:nowrap;">${escNotasOficiais(t.valor || '-')}${t.faltas ? `<span style="font-size:10px; font-weight:normal;"> · ${escNotasOficiais(t.faltas)}f</span>` : ''}</td>`;
+                }).join('')}
+            </tr>` : '';
         html += `
-            <div style="margin-bottom:15px;">
-                <p style="font-weight:bold; font-size:13px; margin-bottom:5px;">📋 Notas Oficiais (Mapão Bimestral)</p>
-                <table style="font-size:12px;">
-                    <thead><tr><th>Disciplina</th><th>1º Bim</th><th>2º Bim</th><th>3º Bim</th><th>4º Bim</th></tr></thead>
+            <div class="boletim-mapao" style="margin-bottom:15px;">
+                <p style="font-weight:bold; font-size:13px; margin-bottom:5px;">📋 Boletim (Mapão da SED)</p>
+                <div style="overflow-x:auto;">
+                <table style="font-size:12px; width:100%; border-collapse:collapse;" border="${impressao ? 1 : 0}" cellpadding="${impressao ? 3 : 0}">
+                    <thead><tr><th style="text-align:left;">Disciplina</th>${bimestres.map(b => `<th>${rotuloBim(b)}</th>`).join('')}</tr></thead>
                     <tbody>
                         ${Object.keys(porDisciplina).sort().map(disc => `
                             <tr>
-                                <td>${disc}</td>
-                                ${[1, 2, 3, 4].map(b => `<td style="text-align:center;">${porDisciplina[disc][b] || '-'}</td>`).join('')}
+                                <td>${escNotasOficiais(nomeDisciplinaBoletim(disc))}</td>
+                                ${bimestres.map(b => celula(porDisciplina[disc][b])).join('')}
                             </tr>
                         `).join('')}
+                        ${linhaTotal}
                     </tbody>
                 </table>
+                </div>
+                ${temFaltas ? '<p style="font-size:10px; color:#5f6b7f; margin:3px 0 0;">Nota do fechamento · f = faltas no bimestre. Nota abaixo de 5 em vermelho.</p>' : ''}
             </div>
         `;
     }

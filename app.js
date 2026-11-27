@@ -1618,6 +1618,13 @@ async function renderDashboard() {
                 </div>
                 <button class="btn btn-primary btn-sm" onclick="abrirModalNovoAviso()">+ Novo Aviso</button>
             </div>
+            <div class="card" style="margin-top: 20px; border-left: 4px solid #2563c9;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <h2 style="margin:0;">📋 Mapões → Boletim</h2>
+                    <button class="btn btn-sm btn-primary" onclick="abrirMapoesGestor()">Enviar mapões</button>
+                </div>
+                <p style="font-size:12px; color:#5f6b7f; margin:6px 0 0;">Vários PDFs da SED ou o link da pasta do Drive. Monta o boletim na ficha do estudante e na ficha de tutoria, e pode atualizar a situação dos estudantes nas listas.${(data.lotesMapaoGestor || []).length ? ` Último envio: ${new Date(data.lotesMapaoGestor[data.lotesMapaoGestor.length - 1].em).toLocaleDateString('pt-BR')}.` : ''}</p>
+            </div>
             <div class="card" id="agendaEscolaGestor" style="margin-top: 20px;">${typeof htmlAgendaEscolaGestor === 'function' ? htmlAgendaEscolaGestor() : ''}</div>
             <div class="card" style="margin-top: 20px;">
                 <h2>📊 Resumo da Escola</h2>
@@ -1957,6 +1964,10 @@ function renderTurmas() {
         ? `<div style="margin-bottom: 15px; padding: 10px; background: #edf3fd; border: 1px solid #d3e2fa; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
              <span>📂 Atualização de Estudantes em Massa (várias listas CSV)</span>
              <button class="btn btn-primary" onclick="abrirModalImportacaoMassa()">Importar Arquivos</button>
+           </div>
+           <div style="margin-bottom: 15px; padding: 10px; background: #edf3fd; border: 1px solid #d3e2fa; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; gap:8px; flex-wrap:wrap;">
+             <span>📋 Mapões da SED (PDF ou pasta do Drive): boletim e situação dos estudantes</span>
+             <button class="btn btn-primary" onclick="abrirMapoesGestor()">Enviar mapões</button>
            </div>` 
         : '';
         
@@ -7878,7 +7889,7 @@ function salvarDadosAee(id) {
     sincronizarTutoradoComPainelAeeCompartilhado(t).catch(e => console.warn('Erro ao sincronizar com Painel AEE:', e));
 }
 
-function imprimirRelatorioTutorado(id, nome) {
+async function imprimirRelatorioTutorado(id, nome) {
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().getMonth(); // 0-11
     const defaultSem = currentMonth < 6 ? 1 : 2;
@@ -7926,6 +7937,25 @@ function imprimirRelatorioTutorado(id, nome) {
     // Nome da Escola (Pega do cabeçalho)
     const nomeEscola = document.querySelector('header h1') ? document.querySelector('header h1').textContent.replace('EdiProf - ', '') : 'Escola';
 
+    // A janela abre já (antes de qualquer espera), senão o navegador a bloqueia como pop-up.
+    const win = window.open('', '', 'width=900,height=800');
+    if (!win) return alert('O navegador bloqueou a janela de impressão. Permita pop-ups para este site.');
+    win.document.write('<p style="font-family:Arial; padding:40px;">Montando o relatório...</p>');
+
+    // Boletim (mapão da gestão): o mesmo da ficha de tutoria na tela. Quem não é gestor
+    // recebe pela lista publicada da escola (obterDadosGestor).
+    let notasHtml = '';
+    try {
+        const fonte = (typeof currentViewMode !== 'undefined' && currentViewMode === 'gestor') ? data : await obterDadosGestor();
+        if (fonte && typeof montarTabelaNotasOficiaisHtml === 'function') {
+            notasHtml = montarTabelaNotasOficiaisHtml({
+                notasBimestraisOficiais: fonte.notasBimestraisOficiais,
+                avaliacoesGestor: fonte.avaliacoesGestor,
+                notasAvaliacoesGestor: fonte.notasAvaliacoesGestor
+            }, t ? t.nome_estudante : nome, { impressao: true });
+        }
+    } catch (e) { console.warn('[Tutoria] Boletim não entrou no relatório:', e); }
+
     const html = `
         <html>
         <head>
@@ -7967,6 +7997,8 @@ function imprimirRelatorioTutorado(id, nome) {
                 </div>
             </div>
 
+            ${notasHtml ? `<div class="info">${notasHtml}</div>` : ''}
+
             ${encontros.map(e => `
                 <div class="registro">
                     <div class="registro-titulo">${e.tema || 'Sem Título'}</div>
@@ -7979,7 +8011,7 @@ function imprimirRelatorioTutorado(id, nome) {
         </html>
     `;
 
-    const win = window.open('', '', 'width=900,height=800');
+    win.document.open();
     win.document.write(html);
     win.document.close();
 }
