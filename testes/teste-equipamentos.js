@@ -161,9 +161,17 @@ async function ate(fn, ms) {
                  abas: Array.from(document.querySelectorAll('#navFerramentas [data-aba], #navFerramentas button')).map(b => b.textContent.trim()).join('|') };
     });
     await page.waitForTimeout(300);
-    const vazio = await page.evaluate(() => /Comece cadastrando/.test(document.getElementById('tabFerramentasEquip').textContent));
+    const vazio = await page.evaluate(() => /A gestão ainda não cadastrou/.test(document.getElementById('tabFerramentasEquip').textContent));
+    const profCad = await page.evaluate(async () => { eqVista('cadastro'); await new Promise(r => setTimeout(r, 200));
+        return { form: !!document.getElementById('eqLoteBase'), aviso: /Quem cadastra, renomeia e exclui os equipamentos é a gestão/.test(document.getElementById('tabFerramentasEquip').textContent) }; });
+    ok('professor nao cadastra: ve o aviso e nao tem o formulario', !profCad.form && profCad.aviso);
+    // a GESTAO cadastra
+    await page.evaluate(() => { currentUser.role = 'gestor'; eqVista('agenda'); });
+    await page.waitForTimeout(200);
+    const gestorVazio = await page.evaluate(() => /Comece cadastrando/.test(document.getElementById('tabFerramentasEquip').textContent));
+    ok('gestao: sem cadastro, convida a cadastrar', gestorVazio);
     ok('a aba "Equipamentos" abre dentro de Ferramentas', montar.visivel && /Equipamentos/.test(montar.abas), montar.abas);
-    ok('sem cadastro, convida a cadastrar', vazio);
+    ok('professor sem cadastro: "A gestão ainda não cadastrou"', vazio);
 
     await page.evaluate(() => eqVista('cadastro'));
     await page.waitForSelector('#eqLoteBase');
@@ -181,6 +189,32 @@ async function ate(fn, ms) {
     const def = await page.evaluate(() => document.getElementById('tabFerramentasEquip').textContent);
     ok('marcar com defeito aparece no aviso do cadastro', /Com defeito agora: Notebook 15/.test(def));
     await foto(page, 'equip-1-cadastro');
+
+    // A gestao posta a foto da grade horaria
+    const png = await page.evaluate(() => { const c = document.createElement('canvas'); c.width = 2400; c.height = 1600; const x = c.getContext('2d');
+        x.fillStyle = '#fff'; x.fillRect(0, 0, 2400, 1600); x.fillStyle = '#123'; x.font = '120px sans-serif'; x.fillText('GRADE HORÁRIA', 200, 300);
+        for (let i = 0; i < 4000; i++) { x.fillStyle = 'hsl(' + (i % 360) + ',70%,50%)'; x.fillRect(Math.random() * 2400, Math.random() * 1600, 20, 20); }
+        return c.toDataURL('image/png').split(',')[1]; });
+    await page.evaluate(() => eqVista('agenda'));
+    await page.waitForSelector('.eq-grade-foto input[type=file]', { state: 'attached' });
+    await page.setInputFiles('.eq-grade-foto input[type=file]', { name: 'grade.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+    await ate(() => page.evaluate(() => !!(window.__fakeBanco.docs['app_data/equip_grade_school_77'] || {}).foto));
+    const fotoDoc = await page.evaluate(() => { const d = window.__fakeBanco.docs['app_data/equip_grade_school_77']; return { tam: d.foto.length, jpeg: d.foto.startsWith('data:image/jpeg'), por: d.por }; });
+    ok('gestao posta a foto da grade (reduzida a JPEG, menos de 1 MB)', fotoDoc.jpeg && fotoDoc.tam < 900 * 1024 && fotoDoc.por === 'Maria Prof', JSON.stringify(fotoDoc));
+    await foto(page, 'equip-1b-foto-grade');
+    // volta a ser professora: ve a foto, nao troca, nao exclui equipamento, mas avisa defeito
+    const visao = await page.evaluate(async () => {
+        currentUser.role = 'professor';
+        await eqRecarregar();
+        const el = document.getElementById('tabFerramentasEquip');
+        const r = { foto: !!el.querySelector('.eq-grade-foto img'), trocar: !!el.querySelector('.eq-grade-foto input[type=file]') };
+        eqVista('cadastro'); await new Promise(x => setTimeout(x, 200));
+        r.excluir = !!el.querySelector('button[title="Excluir"]'); r.defeito = !!Array.from(el.querySelectorAll('button')).find(b => /Defeito/.test(b.textContent));
+        r.consertado = !!Array.from(el.querySelectorAll('button')).find(b => /Consertado/.test(b.textContent));
+        return r;
+    });
+    ok('professor ve a foto da grade, mas nao troca', visao.foto && !visao.trocar);
+    ok('professor avisa defeito, mas nao exclui nem marca consertado', visao.defeito && !visao.excluir && !visao.consertado, JSON.stringify(visao));
 
     // -----------------------------------------------------------------------
     console.log('\n3. Reservar pela disponibilidade');

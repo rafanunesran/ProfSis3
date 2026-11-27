@@ -5,7 +5,9 @@
 //     📅 Agenda      ver o que esta' livre em cada aula do dia e reservar (com reserva
 //                    para troca); a reserva aparece no Inicio, embaixo da aula da turma.
 //     🖥️ Cadastro    os equipamentos da escola ("Notebook 01 a 30, Carrinho 1") e quais
-//                    estao com defeito.
+//                    estao com defeito. Quem cadastra e' a GESTAO (ehGestao); o professor
+//                    ve e avisa defeito. A gestao tambem posta a foto da grade horaria,
+//                    que aparece no alto da Agenda (app_data/equip_grade_school_<escola>).
 //     📊 Relatório   quem usou o que no dia, com as trocas e os defeitos. Imprime e CSV.
 //   Na aula, "📲 Link para os alunos" abre um painel com QR code: o estudante abre
 //   equipamento.html no celular ou no proprio notebook, toca o NUMERO dele na chamada e o
@@ -35,6 +37,7 @@ const st = {
     cadastro: null,           // [equipamentos]
     reservas: {},             // { 'AAAA-MM': [reservas] }
     usos: {},                 // { 'AAAA-MM-DD': { reservaId: { registros } } }
+    fotoGrade: undefined,     // { foto (dataURL), em, por } | null
     carregando: false,
     erro: '',
     aula: null                // painel da aula aberto (ver abrirPainelAula)
@@ -61,6 +64,17 @@ function dono() {
 function idCadastro() { return 'equip_' + dono(); }
 function idReservas(mes) { return 'equip_reservas_' + dono() + '_' + mes; }
 function idUso(dia) { return 'equip_uso_' + dono() + '_' + dia; }
+function idFotoGrade() { return 'equip_grade_' + dono(); }
+
+// Quem cuida do cadastro e da foto da grade e' a GESTAO. O professor ve, reserva e
+// avisa defeito (o estudante tambem avisa, pelo link), mas nao cadastra nem apaga.
+// Conta sem escola nao tem gestao: ela mesma cuida do proprio cadastro.
+function ehGestao() {
+    if (typeof currentUser === 'undefined' || !currentUser) return false;
+    if (!currentUser.schoolId) return true;
+    if (currentUser.role === 'gestor' || currentUser.role === 'super_admin') return true;
+    return typeof currentViewMode !== 'undefined' && currentViewMode === 'gestor';
+}
 function hoje() { return E().dataLocal(); }
 
 function linkDoAluno(codigo) {
@@ -113,6 +127,13 @@ async function carregarCadastro(forcar) {
     st.cadastro = Array.isArray(d.equipamentos) ? d.equipamentos : [];
     return st.cadastro;
 }
+async function carregarFotoGrade(forcar) {
+    if (st.fotoGrade !== undefined && !forcar) return st.fotoGrade;
+    const d = await lerDoc(idFotoGrade());
+    st.fotoGrade = (d && d.foto) ? d : null;
+    return st.fotoGrade;
+}
+
 async function carregarReservas(mes, forcar) {
     if (st.reservas[mes] && !forcar) return st.reservas[mes];
     const d = await lerDoc(idReservas(mes));
@@ -294,6 +315,7 @@ async function desenharVista() {
     try {
         await carregarCadastro();
         if (st.vista !== 'cadastro') await carregarReservas(E().mesDe(st.dia));
+        if (st.vista === 'agenda') await carregarFotoGrade();
         if (st.vista === 'relatorio') await carregarUsos(st.dia);
     } catch (e) {
         console.error('[Equipamentos]', e);
@@ -328,11 +350,14 @@ function nomeTipo(t) { const x = E().TIPOS[t]; return x ? x.icone + ' ' + x.nome
 
 function htmlAgenda() {
     if (!(st.cadastro || []).length) {
-        return `<div class="card" style="margin:0;">
+        return htmlFotoGrade() + (ehGestao() ? `<div class="card" style="margin:0;">
             <h3 style="margin-top:0;">Comece cadastrando os equipamentos da escola</h3>
-            <p style="font-size:14px; color:#3d4759;">Ex.: "Notebook 01 a 30, Carrinho 1" e "Tablet 01 a 20". O cadastro é da escola: qualquer professor vê e reserva.</p>
+            <p style="font-size:14px; color:#3d4759;">Ex.: "Notebook 01 a 30, Carrinho 1" e "Tablet 01 a 20". O cadastro é da escola: todos os professores veem e reservam.</p>
             <button class="btn btn-primary" onclick="eqVista('cadastro')">🖥️ Cadastrar equipamentos</button>
-        </div>`;
+        </div>` : `<div class="card" style="margin:0;">
+            <h3 style="margin-top:0;">A gestão ainda não cadastrou os equipamentos</h3>
+            <p style="font-size:14px; color:#3d4759;">Quem cadastra os notebooks e tablets da escola é a gestão. Assim que ela cadastrar, a agenda aparece aqui para você reservar.</p>
+        </div>`);
     }
     const dia = st.dia;
     const reservas = st.reservas[E().mesDe(dia)] || [];
@@ -363,7 +388,7 @@ function htmlAgenda() {
     const doDia = reservas.filter(r => r.data === dia).sort((a, b) => String(a.inicio).localeCompare(String(b.inicio)));
     const eu = uidAtual();
     const cards = doDia.length ? doDia.map(r => htmlCardReserva(r, eu, reservas)).join('') : '<p class="eq-vazio">Nenhuma reserva neste dia.</p>';
-    return seletorDia() + `
+    return htmlFotoGrade() + seletorDia() + `
         <div class="card" style="margin:0 0 14px;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
                 <h3 style="margin:0;">Disponível em cada aula</h3>
@@ -663,7 +688,9 @@ function htmlCadastro() {
     lista.forEach(e => { (grupos[e.grupo || 'Sem grupo'] = grupos[e.grupo || 'Sem grupo'] || []).push(e); });
     const tiposOpc = Object.keys(E().TIPOS).map(t => `<option value="${t}">${esc(nomeTipo(t))}</option>`).join('');
     const comDefeito = lista.filter(e => !E().funciona(e));
-    return `
+    const gestao = ehGestao();
+    return (gestao ? '' : `<div class="eq-aviso" style="margin-bottom:14px; background:#eef4fd; border-color:#c9daf5; color:#1b4488;">
+            Quem cadastra, renomeia e exclui os equipamentos é a gestão. Aqui você vê a lista e pode avisar quando um deles der defeito.</div>`) + (gestao ? `
         <div class="card" style="margin:0 0 14px;">
             <h3 style="margin:0 0 8px;">➕ Adicionar equipamentos</h3>
             <div class="eq-form">
@@ -675,7 +702,7 @@ function htmlCadastro() {
             </div>
             <div class="eq-rodape"><button class="btn btn-primary" onclick="eqAdicionarLote()">Adicionar</button></div>
             <p class="eq-legenda">Ex.: Nome "Notebook", do 1 ao 30 → Notebook 01 … Notebook 30. Use o número que está na etiqueta do aparelho.</p>
-        </div>
+        </div>` : '') + `
         ${comDefeito.length ? `<div class="eq-aviso" style="margin-bottom:14px;">🔧 Com defeito agora: ${comDefeito.map(e => esc(e.rotulo)).join(', ')}. Eles não entram nas reservas até alguém marcar como consertado.</div>` : ''}
         <div class="card" style="margin:0;">
             <h3 style="margin:0 0 4px;">Equipamentos da escola (${lista.length})</h3>
@@ -687,15 +714,16 @@ function htmlCadastro() {
                     <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
                         ${E().funciona(e)
                             ? `<button class="btn btn-sm btn-secondary" onclick="eqMarcarDefeito(${arg(e.id)})">🔧 Defeito</button>`
-                            : `<button class="btn btn-sm btn-success" onclick="eqMarcarConsertado(${arg(e.id)})">✅ Consertado</button>`}
-                        <button class="btn btn-sm btn-secondary" onclick="eqRenomear(${arg(e.id)})" title="Renomear">✏️</button>
-                        <button class="btn btn-sm btn-danger" onclick="eqExcluirEquip(${arg(e.id)})" title="Excluir">🗑️</button>
+                            : (gestao ? `<button class="btn btn-sm btn-success" onclick="eqMarcarConsertado(${arg(e.id)})">✅ Consertado</button>` : '')}
+                        ${gestao ? `<button class="btn btn-sm btn-secondary" onclick="eqRenomear(${arg(e.id)})" title="Renomear">✏️</button>
+                        <button class="btn btn-sm btn-danger" onclick="eqExcluirEquip(${arg(e.id)})" title="Excluir">🗑️</button>` : ''}
                     </div></div>`).join('')}`).join('')
-            : '<p class="eq-vazio">Nenhum equipamento cadastrado ainda.</p>'}
+            : `<p class="eq-vazio">Nenhum equipamento cadastrado ainda.${gestao ? '' : ' A gestão cadastra.'}</p>`}
         </div>`;
 }
 
 async function eqAdicionarLote() {
+    if (!ehGestao()) { alert('Quem cadastra os equipamentos é a gestão.'); return; }
     const v = id => (document.getElementById(id) || {}).value;
     const tipo = v('eqLoteTipo');
     const opc = { tipo, base: v('eqLoteBase') || E().TIPOS[tipo].nome, de: v('eqLoteDe'), ate: v('eqLoteAte'), grupo: v('eqLoteGrupo') };
@@ -733,9 +761,11 @@ function eqMarcarDefeito(id, obs) {
     return mudarEquip(id, e => Object.assign(e, { situacao: 'defeito', defeito: { obs: String(texto).slice(0, 200), em: Date.now(), por: meuNome() } }));
 }
 function eqMarcarConsertado(id) {
+    if (!ehGestao()) { alert('Quem marca como consertado é a gestão.'); return; }
     return mudarEquip(id, e => { e.situacao = 'ok'; delete e.defeito; return e; });
 }
 function eqRenomear(id) {
+    if (!ehGestao()) return;
     const e = (st.cadastro || []).find(x => x.id === id);
     if (!e) return;
     const nome = prompt('Novo nome:', e.rotulo);
@@ -745,9 +775,107 @@ function eqRenomear(id) {
     return mudarEquip(id, x => { x.rotulo = E().limparRotulo(nome) || x.rotulo; x.grupo = E().limparRotulo(grupo); return x; });
 }
 function eqExcluirEquip(id) {
+    if (!ehGestao()) return;
     const e = (st.cadastro || []).find(x => x.id === id);
     if (!e || !confirm('Excluir "' + e.rotulo + '" do cadastro da escola?')) return;
     return mudarEquip(id, () => false);
+}
+
+// --- 🗓️ Foto da grade horária ---------------------------------------------------
+// A gestao posta a foto da grade (ou da agenda de papel dos equipamentos); todos os
+// professores veem no alto da Agenda. Vai reduzida (JPEG ate' ~1600 px) num documento
+// proprio, para nao pesar o cadastro nem as reservas.
+
+const MAX_FOTO_GRADE = 850 * 1024;   // o Firestore aceita 1 MB por documento
+
+function htmlFotoGrade() {
+    const f = st.fotoGrade;
+    const gestao = ehGestao();
+    if (!f && !gestao) return '';
+    return `<div class="card eq-grade-foto" style="margin:0 0 14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+            <h3 style="margin:0;">🗓️ Grade horária</h3>
+            ${gestao ? `<div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <label class="btn btn-sm ${f ? 'btn-secondary' : 'btn-primary'}" style="margin:0; cursor:pointer;">📷 ${f ? 'Trocar foto' : 'Postar foto da grade'}
+                    <input type="file" accept="image/*" style="display:none" onchange="eqPostarFotoGrade(this)"></label>
+                ${f ? '<button class="btn btn-sm btn-danger" onclick="eqRemoverFotoGrade()">Remover</button>' : ''}
+            </div>` : ''}
+        </div>
+        ${f ? `<button type="button" onclick="eqVerFotoGrade()" title="Ver grande" style="display:block; margin-top:10px; padding:0; border:1px solid #e3e8ef; border-radius:10px; background:#fff; cursor:zoom-in; max-width:100%;">
+                <img src="${esc(f.foto)}" alt="Foto da grade horária" style="display:block; max-width:100%; max-height:260px; border-radius:10px;"></button>
+            <p class="eq-legenda">Postada por ${esc(f.por || 'gestão')} em ${esc(new Date(f.em || Date.now()).toLocaleDateString('pt-BR'))}. Toque para ver grande.</p>`
+        : '<p class="eq-legenda">Poste uma foto da grade horária (ou da agenda de papel dos equipamentos) para todos os professores consultarem aqui.</p>'}
+        <div class="eq-erro" id="eqErroFoto"></div>
+    </div>`;
+}
+
+function reduzirFoto(arquivo) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(arquivo);
+        const img = new Image();
+        img.onload = () => {
+            try {
+                let lado = 1600, qual = 0.82, saida = '';
+                for (let t = 0; t < 7; t++) {
+                    const k = Math.min(1, lado / Math.max(img.naturalWidth, img.naturalHeight));
+                    const c = document.createElement('canvas');
+                    c.width = Math.max(1, Math.round(img.naturalWidth * k));
+                    c.height = Math.max(1, Math.round(img.naturalHeight * k));
+                    const ctx = c.getContext('2d');
+                    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+                    ctx.drawImage(img, 0, 0, c.width, c.height);
+                    saida = c.toDataURL('image/jpeg', qual);
+                    if (saida.length <= MAX_FOTO_GRADE) break;
+                    if (qual > 0.6) qual -= 0.1; else lado = Math.round(lado * 0.8);
+                }
+                URL.revokeObjectURL(url);
+                if (saida.length > MAX_FOTO_GRADE) reject(new Error('a foto ficou grande demais')); else resolve(saida);
+            } catch (e) { URL.revokeObjectURL(url); reject(e); }
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('não consegui abrir esta imagem')); };
+        img.src = url;
+    });
+}
+
+async function eqPostarFotoGrade(input) {
+    const arq = input && input.files && input.files[0];
+    if (!arq || !ehGestao()) return;
+    const erro = document.getElementById('eqErroFoto');
+    if (erro) erro.textContent = 'Enviando a foto...';
+    try {
+        const foto = await reduzirFoto(arq);
+        const doc = { foto, em: Date.now(), por: meuNome() };
+        await mudarDoc(idFotoGrade(), () => doc);
+        st.fotoGrade = doc;
+    } catch (e) {
+        console.error('[Equipamentos] foto da grade', e);
+        if (erro) erro.textContent = 'Não consegui postar a foto: ' + (e && e.message || e);
+        return;
+    }
+    redesenhar();
+}
+
+async function eqRemoverFotoGrade() {
+    if (!ehGestao() || !confirm('Remover a foto da grade horária?')) return;
+    try {
+        await mudarDoc(idFotoGrade(), () => ({ foto: '', em: Date.now(), por: meuNome() }));
+        st.fotoGrade = null;
+    } catch (e) { alert('Não consegui remover: ' + (e && e.message || e)); return; }
+    redesenhar();
+}
+
+function eqVerFotoGrade() {
+    const f = st.fotoGrade;
+    if (!f) return;
+    const m = document.createElement('div');
+    m.className = 'eq-modal';
+    m.id = 'eqFotoGrande';
+    m.style.alignItems = 'center';
+    m.innerHTML = `<div style="position:relative; max-width:100%;">
+        <img src="${esc(f.foto)}" alt="Foto da grade horária" style="display:block; max-width:96vw; max-height:90vh; border-radius:10px; background:#fff;">
+        <button class="btn btn-sm btn-secondary" style="position:absolute; top:8px; right:8px;" onclick="document.getElementById('eqFotoGrande').remove()">✕ Fechar</button></div>`;
+    m.addEventListener('click', ev => { if (ev.target === m) m.remove(); });
+    document.body.appendChild(m);
 }
 
 // --- 📊 Relatório ------------------------------------------------------------
@@ -1228,7 +1356,7 @@ function eqMudarDia(delta) {
     eqIrDia(E().dataLocal(d));
 }
 async function eqRecarregar() {
-    st.cadastro = null; st.reservas = {}; st.usos = {};
+    st.cadastro = null; st.reservas = {}; st.usos = {}; st.fotoGrade = undefined;
     await desenharVista();
 }
 
@@ -1237,7 +1365,7 @@ function eqEstado() { return st; }
 Object.assign(window, {
     renderEquipamentos, eqVista, eqIrDia, eqMudarDia, eqRecarregar,
     eqNovaReserva, eqEditarReserva, eqCampo, eqBloco, eqAlternarChip, eqFecharForm, eqSalvarReserva, eqCancelarReserva, eqAplicarTrocas,
-    eqAdicionarLote, eqMarcarDefeito, eqMarcarConsertado, eqRenomear, eqExcluirEquip,
+    eqAdicionarLote, eqPostarFotoGrade, eqRemoverFotoGrade, eqVerFotoGrade, eqMarcarDefeito, eqMarcarConsertado, eqRenomear, eqExcluirEquip,
     eqImprimirRelatorio, eqBaixarCsv,
     eqAbrirAula, eqAbrirLink, eqLancar, eqLancarDefeito, eqProjetar, eqEncerrarLink, eqFecharAula, eqCopiarLink,
     equipPreencherAgendaDoDia, eqReservarDoInicio, eqEstado
