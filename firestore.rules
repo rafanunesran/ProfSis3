@@ -510,6 +510,46 @@ service cloud.firestore {
       }
     }
 
+    // ------------- Equipamentos: o link da aula (equipamentos.js) -------------
+    // O ESTUDANTE NÃO TEM CONTA (abre equipamento.html pelo QR code). Ele lê a sessão
+    // pelo código (get, nunca list) e cria UM registro por toque: número da chamada +
+    // equipamento. Nada de nome: o número só vira nome no aparelho do professor.
+    // A sessão vence sozinha (expiraEm = fim da aula + folga) e só o professor que a
+    // abriu lê os registros, muda a sessão ou apaga tudo.
+    function sessaoEquip(codigo) {
+      return get(/databases/$(database)/documents/equip_sessoes/$(codigo)).data;
+    }
+    match /equip_sessoes/{codigo} {
+      allow get: if true;
+      allow create: if isSignedIn() && codigo.matches('^[A-HJKMNP-TV-Z2-9]{6}$')
+                    && request.resource.data.hostUid == request.auth.uid
+                    && request.resource.data.total is int
+                    && request.resource.data.total >= 1 && request.resource.data.total <= 80
+                    && request.resource.data.expiraEm is timestamp
+                    && request.resource.data.expiraEm < request.time + duration.value(18, 'h');
+      allow update: if isSignedIn() && resource.data.hostUid == request.auth.uid
+                    && request.resource.data.hostUid == resource.data.hostUid;
+      allow delete: if isSignedIn() && resource.data.hostUid == request.auth.uid;
+
+      match /registros/{registroId} {
+        allow get, list, delete: if isSignedIn() && sessaoEquip(codigo).hostUid == request.auth.uid;
+        allow create: if sessaoEquip(codigo).aberta == true
+                      && request.time < sessaoEquip(codigo).expiraEm
+                      && request.resource.data.keys().hasOnly(['num', 'equip', 'tipo', 'anterior', 'em'])
+                      && request.resource.data.keys().hasAll(['num', 'equip', 'tipo', 'em'])
+                      && request.resource.data.num is int
+                      && request.resource.data.num >= 1
+                      && request.resource.data.num <= sessaoEquip(codigo).total
+                      && request.resource.data.equip is string
+                      && request.resource.data.equip.size() >= 1
+                      && request.resource.data.equip.size() <= 60
+                      && request.resource.data.tipo in ['pegou', 'troca', 'defeito', 'devolveu']
+                      && (!('anterior' in request.resource.data)
+                          || (request.resource.data.anterior is string && request.resource.data.anterior.size() <= 60))
+                      && request.resource.data.em == request.time;
+      }
+    }
+
     // --------------------- Padrão: nega o resto ------------------------------
     match /{document=**} {
       allow read, write: if false;

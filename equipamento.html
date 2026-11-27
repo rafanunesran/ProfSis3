@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>EdiProf — Qual equipamento você pegou?</title>
+    <meta name="theme-color" content="#1b4488">
+    <!-- A pagina do ESTUDANTE na agenda de equipamentos (o lado do professor e' equipamentos.js).
+         Nao pede conta nem instala nada: o estudante toca o NUMERO dele na chamada e o
+         equipamento que pegou. Leva menos de um minuto. Nao pergunta nome: o link e o banco
+         guardam so' o numero (quem sabe o nome e' o aparelho do professor).
+         So' carrega o Firestore — nada de Auth, Analytics ou o resto do sistema. -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="equipamentos_operacoes.js?v=1.0"></script>
+    <style>
+        :root { --fundo:#1b4488; --cartao:#ffffff; --texto:#13223f; --azul:#2563c9; }
+        * { box-sizing: border-box; }
+        html, body { margin:0; min-height:100%; }
+        body { background: var(--fundo); color:#fff; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+        .tela { min-height: 100vh; min-height: 100dvh; display:flex; flex-direction:column; align-items:center; padding: 18px 14px calc(18px + env(safe-area-inset-bottom)); text-align:center; }
+        .marca { font-size: 15px; font-weight: 700; opacity: .85; margin-bottom: 6px; }
+        .turma { font-size: 15px; background: rgba(255,255,255,.14); border-radius: 999px; padding: 5px 14px; font-weight:700; margin-bottom: 12px; }
+        h1 { font-size: 24px; margin: 4px 0 14px; line-height: 1.2; }
+        .caixa { background: var(--cartao); color: var(--texto); border-radius: 16px; padding: 18px; width: min(420px, 100%); display:flex; flex-direction:column; gap:12px; }
+        input { font: inherit; font-size: 22px; font-weight: 700; text-align:center; padding: 12px; border: 2px solid #c9d3e1; border-radius: 10px; width:100%; color: var(--texto); text-transform: uppercase; }
+        input.livre { text-transform: none; font-size: 18px; }
+        button { font: inherit; border:none; cursor:pointer; }
+        .btn { background: var(--azul); color:#fff; font-size: 19px; font-weight: 800; padding: 14px; border-radius: 12px; width: min(420px, 100%); }
+        .btn.sec { background: rgba(255,255,255,.16); font-size: 16px; font-weight: 700; }
+        .btn.alerta { background: #b45309; }
+        .btn:disabled { opacity: .5; }
+        .grade { display:grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; width: min(560px, 100%); }
+        .grade.eq { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+        .n { background:#fff; color: var(--texto); font-size: 24px; font-weight: 800; border-radius: 12px; padding: 14px 0; min-height: 60px; }
+        .n small { display:block; font-size: 11px; font-weight: 600; color:#5f6b7f; margin-top: 2px; }
+        .n.atual { outline: 4px solid #fbbf24; }
+        .n:active { transform: scale(.96); }
+        .erro { color:#fecaca; font-size:15px; min-height: 20px; margin-top: 10px; }
+        .caixa .erro { color:#b91c1c; margin:0; }
+        .selo { font-size: 70px; line-height: 1; margin: 18px 0 6px; }
+        .grande { font-size: 26px; font-weight: 800; margin: 6px 0 2px; }
+        .info { font-size: 16px; opacity: .9; max-width: 460px; line-height: 1.4; margin: 6px 0 16px; }
+        .acoes { display:flex; flex-direction:column; gap: 10px; width: min(420px, 100%); align-items:center; }
+        .link { color:#dbe6ff; font-size: 14px; background:none; text-decoration: underline; margin-top: 14px; }
+        .rodape { font-size: 12px; opacity: .65; margin-top: 18px; max-width: 360px; }
+    </style>
+</head>
+<body>
+<div id="app" class="tela"></div>
+<script>
+(function () {
+'use strict';
+
+// Mesma configuracao do core.js (a chave web do Firebase e' publica por desenho — quem
+// protege os dados sao as Regras do Firestore: ver equip_sessoes em firestore.rules).
+const firebaseConfig = {
+    apiKey: "AIzaSyCOP_TE6YvVkg9E2DFuwfF7jDkBgxyc8ls",
+    authDomain: "profsis3.firebaseapp.com",
+    projectId: "profsis3",
+    storageBucket: "profsis3.firebasestorage.app",
+    messagingSenderId: "944272675889",
+    appId: "1:944272675889:web:2afc6a869f363aefedf110"
+};
+const Q = window.EQUIPOPS;
+
+let db = null;
+try { firebase.initializeApp(firebaseConfig); db = firebase.firestore(); } catch (e) { console.error(e); }
+
+const app = document.getElementById('app');
+const estado = { codigo: '', sessao: null, num: 0, equip: '', modo: 'pegou' };
+
+function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function chave() { return 'ediprof_equip_' + estado.codigo; }
+function lembrar() { try { localStorage.setItem(chave(), JSON.stringify({ num: estado.num, equip: estado.equip })); } catch (_) {} }
+function lembrado() { try { return JSON.parse(localStorage.getItem(chave()) || 'null'); } catch (_) { return null; } }
+
+function cabecalho() {
+    const s = estado.sessao || {};
+    return '<div class="marca">💻 EdiProf · Equipamentos</div>' +
+        (s.turma ? `<div class="turma">${esc(s.turma)}${s.horario ? ' · ' + esc(s.horario) : ''}</div>` : '');
+}
+function rotulo(id) {
+    const e = ((estado.sessao || {}).equipamentos || []).find(x => x.id === id);
+    if (e) return e.rotulo;
+    return String(id || '').replace(/^txt:/, '');
+}
+// "Notebook 07" -> grande "07", pequeno "Notebook"
+function botaoEquip(e, atual) {
+    const m = String(e.rotulo).match(/^(.*?)\s*(\d+)$/);
+    const grande = m ? m[2] : e.rotulo;
+    const peq = m ? m[1] : '';
+    return `<button class="n${e.id === atual ? ' atual' : ''}" data-eq="${esc(e.id)}">${esc(grande)}${peq ? `<small>${esc(peq)}</small>` : ''}</button>`;
+}
+
+// --- 0. Codigo -----------------------------------------------------------------
+function telaCodigo(msg) {
+    app.innerHTML = cabecalho() + `
+        <h1>Digite o código que está na lousa</h1>
+        <form class="caixa" id="fCod">
+            <input id="iCod" autocomplete="off" maxlength="8" placeholder="Ex.: K7M2PQ" aria-label="Código">
+            <button class="btn" type="submit" style="width:100%">Entrar</button>
+            <div class="erro" id="eCod">${esc(msg || '')}</div>
+        </form>`;
+    const inp = document.getElementById('iCod');
+    inp.focus();
+    document.getElementById('fCod').onsubmit = ev => { ev.preventDefault(); abrir(Q.limparCodigo(inp.value)); };
+}
+
+async function abrir(codigo) {
+    if (!Q.codigoValido(codigo)) { telaCodigo('O código tem 6 letras e números.'); return; }
+    if (!db) { telaCodigo('Sem conexão. Confira a internet e recarregue.'); return; }
+    app.innerHTML = cabecalho() + '<div class="info">Abrindo...</div>';
+    try {
+        const s = await db.collection('equip_sessoes').doc(codigo).get();
+        const d = s.exists ? s.data() : null;
+        const expira = d && d.expiraEm && typeof d.expiraEm.toMillis === 'function' ? d.expiraEm.toMillis() : 0;
+        if (!d || d.aberta === false || (expira && expira < Date.now())) { telaCodigo('Este link já fechou ou o código está errado. Confira com o professor.'); return; }
+        estado.codigo = codigo;
+        estado.sessao = d;
+        const salvo = lembrado();
+        if (salvo && salvo.num) { estado.num = salvo.num; estado.equip = salvo.equip || ''; }
+        if (estado.num && estado.equip) telaPronto();
+        else if (estado.num) telaEquip();
+        else telaNumero();
+    } catch (e) {
+        console.error(e);
+        telaCodigo('Não consegui abrir. Confira a internet e tente de novo.');
+    }
+}
+
+// --- 1. Numero da chamada --------------------------------------------------------
+function telaNumero() {
+    const total = Math.max(1, parseInt((estado.sessao || {}).total, 10) || 40);
+    let bts = '';
+    for (let n = 1; n <= total; n++) bts += `<button class="n${n === estado.num ? ' atual' : ''}" data-n="${n}">${n}</button>`;
+    app.innerHTML = cabecalho() + `<h1>Toque no seu número na chamada</h1><div class="grade">${bts}</div>
+        <div class="rodape">Não sabe o número? Ele está na lista que o professor mostra.</div>`;
+    app.querySelectorAll('[data-n]').forEach(b => b.onclick = async () => {
+        const novo = parseInt(b.getAttribute('data-n'), 10);
+        // Corrigindo o numero depois de ja' ter informado: o equipamento sai do numero
+        // errado e vai para o certo, sem pedir de novo.
+        if (estado.corrigirDe && estado.equip && novo !== estado.corrigirDe) {
+            app.querySelectorAll('button').forEach(x => { x.disabled = true; });
+            try {
+                const regs = db.collection('equip_sessoes').doc(estado.codigo).collection('registros');
+                const ts = firebase.firestore.FieldValue.serverTimestamp();
+                await regs.add({ num: estado.corrigirDe, equip: '-', tipo: 'devolveu', em: ts });
+                await regs.add({ num: novo, equip: estado.equip, tipo: 'pegou', em: ts });
+            } catch (e) {
+                console.error(e);
+                app.querySelectorAll('button').forEach(x => { x.disabled = false; });
+                return;
+            }
+            estado.corrigirDe = 0;
+            estado.num = novo;
+            lembrar();
+            telaPronto();
+            return;
+        }
+        estado.corrigirDe = 0;
+        estado.num = novo;
+        lembrar();
+        if (estado.equip) telaPronto(); else telaEquip();
+    });
+}
+
+// --- 2. Equipamento --------------------------------------------------------------
+function telaEquip(modo) {
+    estado.modo = modo || 'pegou';
+    const equips = ((estado.sessao || {}).equipamentos || []).filter(e => estado.modo === 'pegou' || e.id !== estado.equip);
+    const titulo = estado.modo === 'pegou' ? 'Qual equipamento você pegou?' : 'Para qual equipamento você trocou?';
+    app.innerHTML = cabecalho() + `<h1>Nº ${estado.num} · ${titulo}</h1>
+        ${estado.modo === 'defeito' ? `<div class="info">O ${esc(rotulo(estado.equip))} vai ficar marcado com defeito.</div>` : ''}
+        <div class="grade eq">${equips.map(e => botaoEquip(e, estado.modo === 'pegou' ? estado.equip : '')).join('')}</div>
+        <div class="acoes" style="margin-top:14px;">
+            <button class="btn sec" id="bOutro">Não está na lista</button>
+        </div>
+        <button class="link" id="bNum">${estado.modo === 'pegou' ? 'Errei meu número' : 'Voltar'}</button>
+        <div class="erro" id="eEq"></div>`;
+    app.querySelectorAll('[data-eq]').forEach(b => b.onclick = () => enviar(b.getAttribute('data-eq')));
+    document.getElementById('bOutro').onclick = telaOutro;
+    document.getElementById('bNum').onclick = () => { if (estado.modo === 'pegou') telaNumero(); else telaPronto(); };
+}
+
+function telaOutro() {
+    app.innerHTML = cabecalho() + `<h1>Escreva o número da etiqueta</h1>
+        <form class="caixa" id="fOut">
+            <input id="iOut" class="livre" maxlength="40" autocomplete="off" placeholder="Ex.: Notebook 31" aria-label="Equipamento">
+            <button class="btn" type="submit" style="width:100%">Enviar</button>
+            <div class="erro" id="eOut"></div>
+        </form>
+        <button class="link" id="bVolta">Voltar</button>`;
+    const inp = document.getElementById('iOut');
+    inp.focus();
+    document.getElementById('bVolta').onclick = () => telaEquip(estado.modo);
+    document.getElementById('fOut').onsubmit = ev => {
+        ev.preventDefault();
+        const t = Q.limparRotulo(inp.value);
+        if (t.length < 1) { document.getElementById('eOut').textContent = 'Escreva o nome ou número do equipamento.'; return; }
+        enviar('txt:' + t);
+    };
+}
+
+async function enviar(equip) {
+    const tipo = estado.modo;
+    const reg = { num: estado.num, equip: String(equip).slice(0, 60), tipo: tipo, em: firebase.firestore.FieldValue.serverTimestamp() };
+    if (tipo !== 'pegou' && estado.equip) reg.anterior = estado.equip;
+    app.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    try {
+        await db.collection('equip_sessoes').doc(estado.codigo).collection('registros').add(reg);
+        estado.equip = reg.equip;
+        lembrar();
+        telaPronto(tipo === 'defeito' ? 'Obrigado por avisar! O professor já sabe do defeito.' : '');
+    } catch (e) {
+        console.error(e);
+        app.querySelectorAll('button').forEach(b => { b.disabled = false; });
+        const el = document.getElementById('eEq') || document.getElementById('eOut');
+        const msg = (e && e.code === 'permission-denied') ? 'O link fechou. Avise o professor.' : 'Não consegui enviar. Confira a internet e toque de novo.';
+        if (el) el.textContent = msg;
+    }
+}
+
+// --- 3. Pronto -------------------------------------------------------------------
+function telaPronto(msg) {
+    app.innerHTML = cabecalho() + `
+        <div class="selo">✅</div>
+        <div class="grande">Pronto!</div>
+        <div class="info">Nº ${estado.num} · <strong>${esc(rotulo(estado.equip))}</strong>${msg ? '<br>' + esc(msg) : ''}</div>
+        <div class="acoes">
+            <button class="btn alerta" id="bDef">⚠️ Não funciona, vou trocar</button>
+            <button class="btn sec" id="bTroca">🔁 Troquei por outro</button>
+        </div>
+        <button class="link" id="bNum">Errei meu número</button>
+        <div class="rodape">Pode fechar esta página. Se trocar de equipamento, abra o link de novo.</div>`;
+    document.getElementById('bDef').onclick = () => telaEquip('defeito');
+    document.getElementById('bTroca').onclick = () => telaEquip('troca');
+    document.getElementById('bNum').onclick = () => { estado.corrigirDe = estado.num; telaNumero(); };
+}
+
+const codigoUrl = Q.limparCodigo(new URLSearchParams(location.search).get('c') || '');
+if (codigoUrl) abrir(codigoUrl); else telaCodigo();
+
+})();
+</script>
+</body>
+</html>

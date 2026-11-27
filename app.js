@@ -1409,7 +1409,7 @@ function montarAgendaDoDiaHtml(blocosHoje, minhasAulas, agendamentosHoje, tiposF
             const turma = (data.turmas || []).find(t => t.id == aula.id_turma);
             return { ini, html: `<button class="btn btn-primary agd-aula${ehAgora(ini, fim) ? ' agd-item-agora' : ''}" onclick="abrirTurma(${argOnclick(turma ? turma.id : aula.id_turma)})">
                 <span><strong>${ini}</strong> - ${escDash(turma ? turma.nome + (turma.disciplina ? ' · ' + turma.disciplina : '') : 'Turma Removida')}${seloAgora(ini, fim)}</span>
-                <span>Ir para Turma →</span></button>` };
+                <span>Ir para Turma →</span></button>${turma ? `<div class="agd-equip" data-eq-turma="${escDash(turma.id)}" data-eq-ini="${escDash(ini)}" data-eq-fim="${escDash(fim || '')}"></div>` : ''}` };
         }
         if (aula.tipo === 'tutoria') return { ini, html: linhaTutoria(ini, fim, '🎓 Tutoria') };
         // Estudo, Reunião, APCG, etc. (escolhidos pelo professor na Minha Agenda)
@@ -1473,6 +1473,7 @@ function abrirAtalhoFerramenta(aba, ferramenta) {
 // Banner rotativo de novidades (só no computador: no celular o CSS esconde). Para anunciar
 // algo novo, ponha uma linha NO TOPO desta lista — a mais nova aparece primeiro.
 const NOVIDADES_SISPROF = [
+    { emoji: '💻', titulo: 'Agenda de notebooks e tablets', texto: 'Reserve os equipamentos da escola para a aula e deixe cada estudante informar qual pegou pelo link, em menos de 1 minuto.', botao: 'Abrir agenda', abrir: () => abrirAtalhoFerramenta('equip') },
     { emoji: '📥', titulo: 'Aviso da gestão com IA', texto: 'Cole a mensagem ou o print do WhatsApp: a IA lança compromissos e lembretes na sua agenda.', botao: 'Experimentar', abrir: () => abrirAvisoGestaoIA() },
     { emoji: '🎞️', titulo: 'Editor de vídeo de cara nova', texto: 'O editor agora abre em tela cheia, com linha do tempo, textos e música.', botao: 'Abrir editor', abrir: () => abrirAtalhoFerramenta('video', 'montar') },
     { emoji: '🃏', titulo: 'Mesa de páginas no PDF', texto: 'Veja todas as páginas de uma vez, arraste para reordenar, gire e apague.', botao: 'Abrir', abrir: () => abrirAtalhoFerramenta('pdf', 'mesa-paginas') },
@@ -1837,6 +1838,8 @@ async function renderDashboard() {
     document.getElementById('agendaHoje').innerHTML =
         montarAgendaDoDiaHtml(blocosHoje, minhasAulas, agendamentosHoje, tiposFixosEscola, !!excecaoHoje)
         + (typeof htmlCompromissosDashboard === 'function' ? htmlCompromissosDashboard() : '');
+    // Equipamentos reservados para a aula (equipamentos.js): preenche embaixo de cada turma.
+    if (typeof equipPreencherAgendaDoDia === 'function') equipPreencherAgendaDoDia(document.getElementById('agendaHoje'));
     iniciarNovidadesDashboard();
     }
 
