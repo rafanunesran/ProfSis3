@@ -3652,6 +3652,48 @@ function nomeDisciplinaBoletim(d) {
     ).join(' ');
 }
 
+// Média para não reprovar e a conta das notas mínimas do boletim.
+const MEDIA_APROVACAO_BOLETIM = 5;
+
+// porBim: {1: {valor}, 2: ..., 5: ...} de UMA disciplina; ultimo: último bimestre que já tem mapão.
+// Conta: o 5º conceito é a média dos 4 bimestres. Bimestres até `ultimo` sem nota (o estudante
+// ainda não estava na turma, por exemplo) ficam fora da média. Para os bimestres que faltam, a
+// nota mínima é a mesma em todos: ceil((5 × total − soma das lançadas) / quantos faltam).
+// Devolve { porBim: {bim: {tipo, valor}}, risco }.
+//   tipo: 'estimada' (nota mínima), 'garantida' (qualquer nota serve), 'impossivel' (nem com 10),
+//         'final' (5º conceito estimado).
+function estimativaBoletim(porBim, ultimo) {
+    const num = (n) => { if (!n) return null; const x = parseFloat(String(n.valor).replace(',', '.')); return isNaN(x) ? null : x; };
+    const saida = { porBim: {}, risco: false };
+    if (num(porBim[5]) !== null) return saida; // 5º conceito já lançado: nada a estimar
+    const lancadas = [1, 2, 3, 4].map(b => num(porBim[b])).filter(x => x !== null);
+    if (!lancadas.length) return saida;        // disciplina sem nota (ex.: eletiva sem menção)
+    const futuros = [1, 2, 3, 4].filter(b => b > (ultimo || 0) && num(porBim[b]) === null);
+    const soma = lancadas.reduce((a, x) => a + x, 0);
+    const total = lancadas.length + futuros.length;
+    if (!futuros.length) {
+        saida.porBim[5] = { tipo: 'final', valor: Math.round(soma / total) };
+        saida.risco = soma / total < MEDIA_APROVACAO_BOLETIM;
+        return saida;
+    }
+    const precisa = Math.ceil((MEDIA_APROVACAO_BOLETIM * total - soma) / futuros.length - 1e-9);
+    let finalEst;
+    if (precisa <= 0) {
+        futuros.forEach(b => { saida.porBim[b] = { tipo: 'garantida' }; });
+        finalEst = Math.round(soma / lancadas.length);
+    } else if (precisa > 10) {
+        futuros.forEach(b => { saida.porBim[b] = { tipo: 'impossivel' }; });
+        finalEst = Math.round((soma + 10 * futuros.length) / total);
+        saida.risco = true;
+    } else {
+        futuros.forEach(b => { saida.porBim[b] = { tipo: 'estimada', valor: precisa }; });
+        finalEst = Math.max(MEDIA_APROVACAO_BOLETIM, Math.round((soma + precisa * futuros.length) / total));
+        saida.risco = precisa >= 7;
+    }
+    saida.porBim[5] = { tipo: 'final', valor: finalEst };
+    return saida;
+}
+
 // Monta o HTML de notas oficiais (boletim do mapão + avaliações da gestão) de um único aluno,
 // reaproveitado na ficha do estudante (app.js:renderEstudanteGeral/preencherNotasOficiaisEstudante),
 // na ficha de tutoria (card na tela e as fichas impressas, do professor e da gestão).
@@ -3678,28 +3720,50 @@ function montarTabelaNotasOficiaisHtml(dadosGestor, nomeNorm, opcoes) {
         totais.forEach(n => { porBimTotal[n.bimestre] = n; });
         const vazio = (v) => v === undefined || v === null || v === '' || v === '-';
         // Só as colunas de bimestre que têm alguma coisa: sem mapão do 4º, a coluna nem aparece.
-        const bimestres = [1, 2, 3, 4, 5].filter(b => mapaoTudo.some(n => n.bimestre == b && (!vazio(n.valor) || !vazio(n.faltas))));
-        if (!bimestres.length) bimestres.push(...new Set(mapaoTudo.map(n => Number(n.bimestre)).filter(Boolean)));
-        const ultimo = bimestres[bimestres.length - 1];
+        // Sempre os 4 bimestres + o 5º conceito (final). O que ainda não veio no mapão vira estimativa.
+        const bimestres = [1, 2, 3, 4, 5];
+        const comDado = [1, 2, 3, 4].filter(b => mapaoTudo.some(n => n.bimestre == b && (!vazio(n.valor) || !vazio(n.faltas))));
+        const ultimo = comDado.length ? comDado[comDado.length - 1] : 0;
         const numero = (v) => { const x = parseFloat(String(v).replace(',', '.')); return isNaN(x) ? null : x; };
-        const baixa = (v) => { const x = numero(v); return x !== null && x < 5; };
+        const baixa = (v) => { const x = numero(v); return x !== null && x < MEDIA_APROVACAO_BOLETIM; };
         const temFalta = (f) => !vazio(f) && f !== '0';
 
-        const celula = (n) => {
+        const celLancada = (n) => {
             if (!n || (vazio(n.valor) && !temFalta(n.faltas))) return '<td class="bol-vazio">–</td>';
             const v = vazio(n.valor) ? '–' : escNotasOficiais(n.valor);
             return `<td><span class="bol-nota${baixa(n.valor) ? ' bol-baixa' : ''}">${v}</span>${temFalta(n.faltas) ? `<span class="bol-f">${escNotasOficiais(n.faltas)}f</span>` : ''}</td>`;
         };
-        const rotuloBim = (b) => b === 5 ? 'Final' : b + 'º';
+        const celEstimada = (e) => {
+            if (!e) return '<td class="bol-vazio">–</td>';
+            if (e.tipo === 'garantida') return `<td><span class="bol-est bol-est-ok" title="A média 5 já está garantida nesta disciplina, com qualquer nota daqui para frente.">✓</span></td>`;
+            if (e.tipo === 'impossivel') return `<td><span class="bol-est bol-est-ruim" title="Mesmo tirando 10 nos bimestres que faltam, a média não chega a 5. Precisa de recuperação/conselho.">✕</span></td>`;
+            const dica = e.tipo === 'final' ? 'Estimativa do 5º conceito: média dos bimestres (lançados + mínimos estimados).' : `Nota mínima estimada neste bimestre para a média chegar a ${MEDIA_APROVACAO_BOLETIM}.`;
+            return `<td><span class="bol-est${e.tipo === 'final' && e.valor < MEDIA_APROVACAO_BOLETIM ? ' bol-est-ruim' : (e.tipo !== 'final' && e.valor >= 7 ? ' bol-est-alerta' : '')}" title="${dica}">${e.tipo === 'final' ? '' : '≥'}${e.valor}</span></td>`;
+        };
+        const rotuloBim = (b) => b === 5 ? '5º C.' : b + 'º';
+
+        let emRisco = 0;
+        const linhasDisc = Object.keys(porDisciplina).sort().map(disc => {
+            const est = estimativaBoletim(porDisciplina[disc], ultimo);
+            if (est.risco) emRisco++;
+            const celulas = bimestres.map(bm => {
+                const n = porDisciplina[disc][bm];
+                if (n && numero(n.valor) !== null) return celLancada(n);
+                if (est.porBim[bm]) return celEstimada(est.porBim[bm]);
+                return celLancada(n);
+            }).join('');
+            return `<tr><th scope="row">${escNotasOficiais(nomeDisciplinaBoletim(disc))}</th>${celulas}</tr>`;
+        }).join('');
 
         // Resumo do bimestre mais recente, em chips.
         const tUlt = porBimTotal[ultimo];
         const baixasUlt = Object.keys(porDisciplina).filter(d => porDisciplina[d][ultimo] && baixa(porDisciplina[d][ultimo].valor)).length;
         const freqNum = tUlt ? numero(String(tUlt.valor).replace('%', '')) : null;
         const chips = [
-            `<span class="bol-chip">${ultimo === 5 ? 'Final' : ultimo + 'º bimestre'}</span>`,
-            tUlt && !vazio(tUlt.valor) ? `<span class="bol-chip${freqNum !== null && freqNum < 75 ? ' bol-chip-alerta' : ''}">Freq. ${escNotasOficiais(tUlt.valor)}</span>` : '',
-            `<span class="bol-chip${baixasUlt ? ' bol-chip-alerta' : ' bol-chip-ok'}">${baixasUlt ? baixasUlt + ' abaixo de 5' : 'nenhuma abaixo de 5'}</span>`
+            ultimo ? `<span class="bol-chip">${ultimo}º bimestre</span>` : '',
+            tUlt && !vazio(tUlt.valor) ? `<span class="bol-chip${freqNum !== null && freqNum < 75 ? ' bol-chip-alerta' : ''}" title="Abaixo de 75% de frequência reprova por falta.">Freq. ${escNotasOficiais(tUlt.valor)}</span>` : '',
+            `<span class="bol-chip${baixasUlt ? ' bol-chip-alerta' : ' bol-chip-ok'}">${baixasUlt ? baixasUlt + ' abaixo de 5' : 'nenhuma abaixo de 5'}</span>`,
+            emRisco ? `<span class="bol-chip bol-chip-alerta" title="Disciplinas que precisam de 7 ou mais nos próximos bimestres, ou que já não alcançam a média.">${emRisco} em risco</span>` : ''
         ].join('');
 
         const linhaTotal = totais.length ? `
@@ -3717,16 +3781,22 @@ function montarTabelaNotasOficiaisHtml(dadosGestor, nomeNorm, opcoes) {
                 <div class="bol-topo"><strong>📋 Boletim</strong><span class="bol-chips">${chips}</span></div>
                 <div class="bol-rolagem">
                 <table class="bol-tabela">
-                    <thead><tr><th scope="col">Disciplina</th>${bimestres.map(b => `<th scope="col">${rotuloBim(b)}</th>`).join('')}</tr></thead>
+                    <thead><tr><th scope="col">Disciplina</th>${bimestres.map(b => `<th scope="col"${b === 5 ? ' title="5º conceito (nota final do ano)"' : ''}>${rotuloBim(b)}</th>`).join('')}</tr></thead>
                     <tbody>
-                        ${Object.keys(porDisciplina).sort().map(disc => `
-                            <tr><th scope="row">${escNotasOficiais(nomeDisciplinaBoletim(disc))}</th>${bimestres.map(b => celula(porDisciplina[disc][b])).join('')}</tr>
-                        `).join('')}
+                        ${linhasDisc}
                         ${linhaTotal}
                     </tbody>
                 </table>
                 </div>
-                <div class="bol-legenda">Mapão da SED · nota do fechamento · <span class="bol-f">f</span> = faltas</div>
+                <div class="bol-legenda">
+                    <span><span class="bol-nota">7</span> lançada (mapão)</span>
+                    <span><span class="bol-est">≥6</span> mínima estimada</span>
+                    <span><span class="bol-est">5</span> 5º conceito estimado</span>
+                    <span><span class="bol-est bol-est-ok">✓</span> média já garantida</span>
+                    <span><span class="bol-est bol-est-ruim">✕</span> não alcança 5</span>
+                    <span><span class="bol-f">f</span> faltas</span>
+                </div>
+                <div class="bol-legenda">Estimativa: 5º conceito = média dos 4 bimestres, aprovação com ${MEDIA_APROVACAO_BOLETIM}. É só uma conta; o conselho de classe decide.</div>
             </div>
         `;
     }

@@ -220,6 +220,34 @@ function htmlMapao(turma, fechamento, alunos, comNomes) {
     await p.screenshot({ path: path.join(FOTOS, 'boletim-ficha-estudante.png') });
   }
 
+  // Notas mínimas estimadas (5º conceito = média dos 4 bimestres, aprovação com 5).
+  const est = await p.evaluate(() => {
+    const v = (arr) => { const o = {}; arr.forEach((x, i) => { if (x !== null) o[i + 1] = { valor: String(x) }; }); return o; };
+    const r = (arr, ult) => { const e = estimativaBoletim(v(arr), ult); return Object.keys(e.porBim).map(b => b + ':' + e.porBim[b].tipo + (e.porBim[b].valor !== undefined ? '=' + e.porBim[b].valor : '')).join(' ') + (e.risco ? ' RISCO' : ''); };
+    return {
+      metade: r([6, 6, null, null], 2),
+      impossivel: r([2, 2, 2, null], 3),
+      garantida: r([9, 9, 9, null], 3),
+      alto: r([4, 5, 3, null], 3),
+      pulou: r([6, '-', 6, null], 3),
+      completo: r([5, 4, 6, 5], 4),
+      quintoLancado: r([5, 4, 6, 5, 7], 4),
+      semNota: r(['-', '-', null, null], 2)
+    };
+  });
+  ok('mínima: 6 e 6 → precisa 4 no 3º e 4º, 5º estimado 5', est.metade === '3:estimada=4 4:estimada=4 5:final=5', est.metade);
+  ok('mínima: não alcança 5 nem com 10', est.impossivel === '4:impossivel 5:final=4 RISCO', est.impossivel);
+  ok('mínima: média já garantida', est.garantida === '4:garantida 5:final=9', est.garantida);
+  ok('mínima alta (≥7) conta como risco', est.alto === '4:estimada=8 5:final=5 RISCO', est.alto);
+  ok('bimestre passado sem nota fica fora da conta', est.pulou === '4:estimada=3 5:final=5', est.pulou);
+  ok('4 bimestres lançados: só o 5º estimado', est.completo === '5:final=5', est.completo);
+  ok('5º conceito lançado: nada estimado', est.quintoLancado === '', est.quintoLancado);
+  ok('disciplina sem nota: nada estimado', est.semNota === '', est.semNota);
+
+  const cab = await p.evaluate(() => { abrirEstudanteDetalhe(1); const t = document.querySelector('#estudanteGeralNotas .bol-tabela'); return t ? { th: Array.from(t.querySelectorAll('thead th')).map(x => x.textContent), est: t.querySelectorAll('.bol-est').length, lanc: t.querySelectorAll('.bol-nota').length } : null; });
+  ok('sempre 4 bimestres + 5º conceito, com estimadas separadas das lançadas', cab && cab.th.join('|') === 'Disciplina|1º|2º|3º|4º|5º C.' && cab.est > 0 && cab.lanc > 0, JSON.stringify(cab));
+  if (FOTOS) { await p.evaluate(() => document.getElementById('estudanteGeralNotas').scrollIntoView()); await p.screenshot({ path: path.join(FOTOS, 'boletim-estimativa.png') }); }
+
   // --- 5. Professor: ficha de tutoria na tela e impressa ------------------------
   const dadosGestor = await p.evaluate(() => JSON.parse(JSON.stringify({ notasBimestraisOficiais: data.notasBimestraisOficiais })));
   await p.evaluate((dg) => {

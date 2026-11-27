@@ -3403,3 +3403,11 @@ html.no-app-android .btn-instalar-app {
     .bol-tabela td { min-width: 34px; }
     .bol-tabela .bol-f { display: block; margin: 0; line-height: 1; }
 }
+/* Nota estimada (mínima para a média 5): contorno tracejado e itálico, para não confundir com a lançada. */
+.bol-est { display: inline-block; min-width: 22px; padding: 0 4px; font-style: italic; font-weight: 500; color: var(--accent-ink, #1b4488); border: 1px dashed var(--accent, #2563c9); border-radius: 6px; background: transparent; line-height: 1.4; }
+.bol-est-alerta { color: #b7791f; border-color: #d69e2e; }
+.bol-est-ok { color: #276749; border-color: #48bb78; font-style: normal; }
+.bol-est-ruim { color: #c53030; border-color: #fc8181; font-style: normal; }
+.bol-legenda { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.bol-legenda .bol-est, .bol-legenda .bol-nota { font-size: 10.5px; min-width: 0; }
+.bol-tabela thead th:last-child, .bol-tabela td:last-child { border-left: 1px solid var(--border); }
