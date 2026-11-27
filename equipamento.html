@@ -12,7 +12,7 @@
          So' carrega o Firestore — nada de Auth, Analytics ou o resto do sistema. -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="equipamentos_operacoes.js?v=1.0"></script>
+    <script src="equipamentos_operacoes.js?v=1.1"></script>
     <style>
         :root { --fundo:#1b4488; --cartao:#ffffff; --texto:#13223f; --azul:#2563c9; }
         * { box-sizing: border-box; }
@@ -23,7 +23,7 @@
         .turma { font-size: 15px; background: rgba(255,255,255,.14); border-radius: 999px; padding: 5px 14px; font-weight:700; margin-bottom: 12px; }
         h1 { font-size: 24px; margin: 4px 0 14px; line-height: 1.2; }
         .caixa { background: var(--cartao); color: var(--texto); border-radius: 16px; padding: 18px; width: min(420px, 100%); display:flex; flex-direction:column; gap:12px; }
-        input { font: inherit; font-size: 22px; font-weight: 700; text-align:center; padding: 12px; border: 2px solid #c9d3e1; border-radius: 10px; width:100%; color: var(--texto); text-transform: uppercase; }
+        input { font: inherit; font-size: 22px; font-weight: 700; text-align:center; padding: 12px; border: 2px solid #c9d3e1; border-radius: 10px; width:100%; color: var(--texto); }
         input.livre { text-transform: none; font-size: 18px; }
         button { font: inherit; border:none; cursor:pointer; }
         .btn { background: var(--azul); color:#fff; font-size: 19px; font-weight: 800; padding: 14px; border-radius: 12px; width: min(420px, 100%); }
@@ -98,9 +98,9 @@ function botaoEquip(e, atual) {
 // --- 0. Codigo -----------------------------------------------------------------
 function telaCodigo(msg) {
     app.innerHTML = cabecalho() + `
-        <h1>Digite o código que está na lousa</h1>
+        <h1>Digite o número que está na lousa</h1>
         <form class="caixa" id="fCod">
-            <input id="iCod" autocomplete="off" maxlength="8" placeholder="Ex.: K7M2PQ" aria-label="Código">
+            <input id="iCod" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="12" placeholder="Ex.: 482913" aria-label="Código">
             <button class="btn" type="submit" style="width:100%">Entrar</button>
             <div class="erro" id="eCod">${esc(msg || '')}</div>
         </form>`;
@@ -110,7 +110,7 @@ function telaCodigo(msg) {
 }
 
 async function abrir(codigo) {
-    if (!Q.codigoValido(codigo)) { telaCodigo('O código tem 6 letras e números.'); return; }
+    if (!Q.codigoValido(codigo)) { telaCodigo('O código tem 6 números.'); return; }
     if (!db) { telaCodigo('Sem conexão. Confira a internet e recarregue.'); return; }
     app.innerHTML = cabecalho() + '<div class="info">Abrindo...</div>';
     try {

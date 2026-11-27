@@ -1029,7 +1029,7 @@ const FERRAMENTAS = [
                '"📅 Agenda": escolha o dia e veja quantos estão livres em cada aula. Toque no número para reservar naquele horário.',
                'Na reserva, a sua turma já vem marcada, a quantidade é o número de estudantes e o sistema separa 1 a cada 10 como reserva para troca. Dá para escolher quais, tocando nos nomes.',
                'No Início, embaixo da aula da turma, aparece o que foi reservado, com "📲 Link alunos" e "✍️ Lançar".',
-               '"📲 Link alunos" abre o QR code e um código de 6 letras. O estudante abre no celular ou no próprio notebook, toca o número dele na chamada e o equipamento que pegou: menos de 1 minuto.',
+               '"📲 Link alunos" abre o QR code e o link curto is.gd/ com um código de 6 números. O estudante abre no celular ou no próprio notebook, toca o número dele na chamada e o equipamento que pegou: menos de 1 minuto.',
                'Se o equipamento não funcionar, o estudante toca "⚠️ Não funciona, vou trocar" e escolhe outro. O equipamento fica marcado com defeito e sai da agenda até alguém marcar "✅ Consertado".',
                '"✍️ Lançar" (ou a tabela do painel) serve para o professor preencher à mão. "📽️ Tela para projetar" mostra só número e nome, para cada um achar o seu número.',
                '"📊 Relatório do dia": todas as reservas do dia, quem usou qual, trocas e defeitos. Imprima/salve em PDF ou baixe a planilha (CSV).',

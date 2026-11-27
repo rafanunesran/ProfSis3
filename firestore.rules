@@ -512,7 +512,8 @@ service cloud.firestore {
 
     // ------------- Equipamentos: o link da aula (equipamentos.js) -------------
     // O ESTUDANTE NÃO TEM CONTA (abre equipamento.html pelo QR code). Ele lê a sessão
-    // pelo código (get, nunca list) e cria UM registro por toque: número da chamada +
+    // pelo código de 6 números, o mesmo do link curto is.gd/<código> (get, nunca
+    // list) e cria UM registro por toque: número da chamada +
     // equipamento. Nada de nome: o número só vira nome no aparelho do professor.
     // A sessão vence sozinha (expiraEm = fim da aula + folga) e só o professor que a
     // abriu lê os registros, muda a sessão ou apaga tudo.
@@ -521,7 +522,7 @@ service cloud.firestore {
     }
     match /equip_sessoes/{codigo} {
       allow get: if true;
-      allow create: if isSignedIn() && codigo.matches('^[A-HJKMNP-TV-Z2-9]{6}$')
+      allow create: if isSignedIn() && codigo.matches('^[1-9][0-9]{5}$')
                     && request.resource.data.hostUid == request.auth.uid
                     && request.resource.data.total is int
                     && request.resource.data.total >= 1 && request.resource.data.total <= 80

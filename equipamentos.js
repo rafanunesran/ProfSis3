@@ -252,7 +252,7 @@ const ESTILO = `
 .eq-aula .corpo { display:grid; grid-template-columns: 300px 1fr; gap: 16px; padding: 16px; max-width: 1200px; margin: 0 auto; }
 .eq-aula .lado { background:#fff; border:1px solid #e3e8ef; border-radius: 12px; padding: 14px; text-align:center; align-self:start; }
 .eq-aula .qr { width: 220px; height: 220px; margin: 6px auto; background:#fff; }
-.eq-aula .codigo { font-size: 30px; font-weight: 800; letter-spacing: 3px; }
+.eq-aula .codigo { font-size: 30px; font-weight: 800; letter-spacing: 1px; word-break: break-all; }
 .eq-aula .link { font-size: 12px; word-break: break-all; color:#3d4759; }
 .eq-aula .tabela { background:#fff; border:1px solid #e3e8ef; border-radius: 12px; padding: 6px 12px 12px; }
 .eq-aula select { margin:0; min-width: 150px; padding: 5px; }
@@ -852,6 +852,30 @@ function equipsDaAula() {
     return ids.filter(id => porId[id]).map(id => porId[id]);
 }
 
+// Pede ao is.gd o link curto is.gd/<codigo> (JSONP: o is.gd nao libera CORS).
+// Devolve { curto } | { ocupado: true } (o codigo ja' existe la') | { erro }.
+function encurtarIsgd(urlLonga, codigo) {
+    return new Promise(resolve => {
+        const nome = 'eqIsgd_' + codigo + '_' + Date.now().toString(36);
+        const s = document.createElement('script');
+        let feito = false;
+        const fim = (r) => { if (feito) return; feito = true; clearTimeout(t); try { delete window[nome]; } catch (_) { window[nome] = undefined; } s.remove(); resolve(r); };
+        const t = setTimeout(() => fim({ erro: 'tempo' }), 8000);
+        window[nome] = (d) => {
+            d = d || {};
+            if (d.shorturl) fim({ curto: String(d.shorturl).replace(/^https?:\/\//, '') });
+            else if (String(d.errorcode) === '2' || /already exists/i.test(d.errormessage || '')) fim({ ocupado: true });
+            else fim({ erro: d.errormessage || 'is.gd recusou' });
+        };
+        s.onerror = () => fim({ erro: 'rede' });
+        s.src = E().urlPedidoIsgd(urlLonga, codigo, nome);
+        document.head.appendChild(s);
+    });
+}
+
+function linkCurto(sessao) { return sessao && sessao.curto ? sessao.curto : ''; }
+function linkParaAluno(sessao) { return linkCurto(sessao) ? 'https://' + linkCurto(sessao) : linkDoAluno(sessao.codigo); }
+
 async function eqAbrirLink() {
     const a = st.aula;
     if (!a) return;
@@ -862,7 +886,9 @@ async function eqAbrirLink() {
     const total = Math.max(listaDaChamada(r.turmaId).length, 1);
     const equips = equipsDaAula().map(e => ({ id: e.id, rotulo: e.rotulo }));
     const Timestamp = window.firebase && firebase.firestore && firebase.firestore.Timestamp;
-    let codigo = '';
+    a.aviso = 'Abrindo o link...';
+    desenharPainelAula();
+    let codigo = '', curto = '';
     for (let t = 0; t < 6 && !codigo; t++) {
         const c = E().gerarCodigo();
         try {
@@ -872,18 +898,20 @@ async function eqAbrirLink() {
                 expiraEm: Timestamp ? Timestamp.fromMillis(expiraEmMs) : new Date(expiraEmMs),
                 criadoEm: (window.firebase && firebase.firestore && firebase.firestore.FieldValue) ? firebase.firestore.FieldValue.serverTimestamp() : new Date()
             });
-            codigo = c;
         } catch (e) {
             console.warn('[Equipamentos] código recusado:', e && e.code);
             if (e && e.code && e.code !== 'permission-denied') break;
+            continue;
         }
+        // O link curto is.gd/<codigo>. Se o numero ja' foi usado por alguem no is.gd,
+        // sorteia outro codigo (ate' 3 vezes); se o is.gd nao responder, segue sem ele:
+        // o estudante digita o codigo na pagina.
+        const res = t < 3 ? await encurtarIsgd(linkDoAluno(c), c) : { erro: 'tentativas' };
+        if (res.curto) { codigo = c; curto = res.curto; break; }
+        if (res.ocupado) { try { await sessaoRef(c).delete(); } catch (_) {} continue; }
+        codigo = c;
     }
-    if (!codigo) {
-        a.aviso = 'Não consegui abrir o link. Confira a internet. Se o sistema acabou de ser atualizado, o administrador precisa publicar as Regras novas do banco (firestore.rules). Enquanto isso, use o lançamento à mão abaixo.';
-        desenharPainelAula();
-        return;
-    }
-    a.sessao = { codigo, expiraEmMs };
+    a.sessao = { codigo, expiraEmMs, curto };
     a.aviso = '';
     agendarGravacao();
     ouvirSessao();
@@ -1090,8 +1118,10 @@ function desenharPainelAula() {
                 ${aberta ? `
                     <div style="font-weight:700;">Abra no celular ou no equipamento:</div>
                     <div class="qr" id="eqQr"></div>
-                    <div class="codigo">${esc(a.sessao.codigo)}</div>
-                    <div class="link">${esc(linkDoAluno(a.sessao.codigo))}</div>
+                    ${linkCurto(a.sessao) ? `<div class="codigo">${esc(linkCurto(a.sessao))}</div>
+                    <div class="link">ou abra ${esc(linkDoAluno(''))} e digite <strong>${esc(a.sessao.codigo)}</strong></div>`
+                    : `<div class="codigo">${esc(a.sessao.codigo)}</div>
+                    <div class="link">Abra ${esc(linkDoAluno(''))} e digite o código</div>`}
                     <p style="font-size:13px; color:#3d4759;">O estudante toca o número dele na chamada e o equipamento. Vale até <strong>${esc(E().horaLocal(new Date(a.sessao.expiraEmMs)))}</strong>.</p>
                     <button class="btn btn-sm btn-secondary" onclick="eqCopiarLink()">📋 Copiar link</button>
                     <button class="btn btn-sm btn-danger" style="margin-top:6px" onclick="eqEncerrarLink()">Fechar link</button>`
@@ -1110,7 +1140,7 @@ function desenharPainelAula() {
             </div>
         </div>`;
     atualizarRodapePainel();
-    if (aberta) desenharQr(a.sessao.codigo);
+    if (aberta) desenharQr(linkParaAluno(a.sessao));
     clearInterval(a.relogio);
     if (aberta) a.relogio = setInterval(() => { if (st.aula === a && !(a.sessao && a.sessao.expiraEmMs > Date.now())) { clearInterval(a.relogio); desenharPainelAula(); } }, 30000);
 }
@@ -1126,15 +1156,15 @@ function atualizarRodapePainel() {
 function eqCopiarLink() {
     const a = st.aula;
     if (!a || !a.sessao) return;
-    const link = linkDoAluno(a.sessao.codigo);
+    const link = linkParaAluno(a.sessao);
     try { navigator.clipboard.writeText(link); alert('Link copiado.'); } catch (_) { prompt('Copie o link:', link); }
 }
 
-function desenharQr(codigo) {
+function desenharQr(link) {
     const alvo = document.getElementById('eqQr');
     if (!alvo) return;
     const pintar = () => {
-        try { alvo.innerHTML = ''; new window.QRCode(alvo, { text: linkDoAluno(codigo), width: 220, height: 220 }); }
+        try { alvo.innerHTML = ''; new window.QRCode(alvo, { text: link, width: 220, height: 220 }); }
         catch (_) { alvo.innerHTML = ''; alvo.style.display = 'none'; }
     };
     if (window.QRCode) { pintar(); return; }

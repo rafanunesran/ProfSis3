@@ -101,7 +101,9 @@ async function ate(fn, ms) {
     ok('digitado pelo estudante aparece como digitado', rel.blocos[0].linhas.find(l => l.num === 7).equip === 'Notebook 31 (digitado)');
     const csv = Q.relatorioCsv(rel);
     ok('CSV com cabecalho e o nome', /Nº;Estudante;Equipamento/.test(csv) && /Ana Souza;Notebook 04;Notebook 01 → Notebook 04 \(defeito\)/.test(csv), csv.split('\n')[1]);
-    ok('codigo de 6 sem letra ambigua', Array.from({ length: 300 }, () => Q.gerarCodigo()).every(c => Q.codigoValido(c) && !/[ILOU01]/.test(c)));
+    ok('codigo de 6 numeros, sem zero na frente', Array.from({ length: 300 }, () => Q.gerarCodigo()).every(c => Q.codigoValido(c) && /^[1-9]\d{5}$/.test(c)));
+    ok('codigo colado de jeitos diferentes', Q.limparCodigo('is.gd/482913') === '482913' && Q.limparCodigo('482 913') === '482913' && Q.limparCodigo('https://x/equipamento.html?c=482913') === '482913');
+    ok('pedido ao is.gd com o codigo no fim', /^https:\/\/is\.gd\/create\.php\?format=json&callback=cb&url=https%3A%2F%2Fa.b%2Fequipamento.html%3Fc%3D482913&shorturl=482913$/.test(Q.urlPedidoIsgd('https://a.b/equipamento.html?c=482913', '482913', 'cb')));
     ok('data local (nao UTC)', Q.dataLocal(new Date(2026, 10, 27, 23, 30)) === '2026-11-27');
 
     // -----------------------------------------------------------------------
@@ -112,6 +114,17 @@ async function ate(fn, ms) {
     const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
     await ctx.route(/(gstatic\.com\/firebasejs|accounts\.google\.com|googletagmanager\.com|google-analytics\.com|firebaseinstallations\.googleapis\.com|firestore\.googleapis\.com|identitytoolkit\.googleapis\.com|fonts\.googleapis\.com|fonts\.gstatic\.com|cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|api\.open-meteo\.com|geocoding-api\.open-meteo\.com)/,
                     r => r.abort());
+    // is.gd falso: o 1º codigo "ja existe" (como no is.gd de verdade, errorcode 2); os outros viram is.gd/<codigo>.
+    const pedidosIsgd = [];
+    await ctx.route(/is\.gd\/create\.php/, r => {
+        const u = new URL(r.request().url());
+        pedidosIsgd.push({ url: u.searchParams.get('url'), shorturl: u.searchParams.get('shorturl') });
+        const cb = u.searchParams.get('callback');
+        const corpo = pedidosIsgd.length === 1
+            ? { errorcode: 2, errormessage: 'The shortened URL you picked already exists, please choose another.' }
+            : { shorturl: 'https://is.gd/' + u.searchParams.get('shorturl') };
+        r.fulfill({ status: 200, contentType: 'application/javascript', body: cb + '(' + JSON.stringify(corpo) + ');' });
+    });
     const page = await ctx.newPage();
     await page.setViewportSize({ width: 1280, height: 900 });
     page.on('dialog', async d => { await d.accept(d.type() === 'prompt' ? (d.defaultValue() || 'não liga') : undefined); });
@@ -255,12 +268,15 @@ async function ate(fn, ms) {
     console.log('\n6. Link para os alunos');
     // -----------------------------------------------------------------------
     await page.click('#agendaHoje .agd-equip button:has-text("Link alunos")');
-    await ate(() => page.evaluate(() => !!document.querySelector('#eqAula .codigo')));
+    await ate(() => page.evaluate(() => /is\.gd\//.test((document.querySelector('#eqAula .codigo') || {}).textContent || '')));
     const sess = await page.evaluate(() => {
-        const codigo = document.querySelector('#eqAula .codigo').textContent.trim();
-        return { codigo, doc: window.__fakeBanco.docs['equip_sessoes/' + codigo], link: document.querySelector('#eqAula .link').textContent };
+        const codigo = eqEstado().aula.sessao.codigo;
+        return { codigo, doc: window.__fakeBanco.docs['equip_sessoes/' + codigo], grande: document.querySelector('#eqAula .codigo').textContent.trim(),
+                 link: document.querySelector('#eqAula .link').textContent, sessoes: Object.keys(window.__fakeBanco.docs).filter(k => /^equip_sessoes\/\d+$/.test(k)).length };
     });
-    ok('sessao aberta com codigo de 6 e link equipamento.html?c=', /^[A-Z2-9]{6}$/.test(sess.codigo) && /equipamento\.html\?c=/.test(sess.link), sess.codigo);
+    ok('link curto is.gd/<6 numeros> na tela, com o codigo para digitar', /^\d{6}$/.test(sess.codigo) && sess.grande === 'is.gd/' + sess.codigo && new RegExp('digite ' + sess.codigo).test(sess.link), sess.grande + ' | ' + sess.link);
+    ok('codigo ja usado no is.gd: sorteia outro e apaga a sessao do primeiro', pedidosIsgd.length === 2 && pedidosIsgd[0].shorturl !== sess.codigo && sess.sessoes === 1, JSON.stringify(pedidosIsgd.map(p => p.shorturl)));
+    ok('o is.gd aponta para equipamento.html?c=<codigo>', pedidosIsgd[1].url.endsWith('/equipamento.html?c=' + sess.codigo), pedidosIsgd[1].url);
     ok('sessao: do professor, total 5, 6 equipamentos, SEM nome', sess.doc && sess.doc.hostUid === 'u1' && sess.doc.total === 5 && sess.doc.equipamentos.length === 6 && !/Souza|Carla|Bruno|Eva|Davi/.test(JSON.stringify(sess.doc)));
     const lista = await page.evaluate(() => Array.from(document.querySelectorAll('#eqAula tbody tr')).map(tr => tr.children[0].textContent + ' ' + tr.children[1].textContent));
     ok('painel numera a turma em ordem alfabetica', lista.join(',') === '1 Ana Souza,2 Bruno Lima,3 Carla Dias,4 Davi Melo,5 Eva Rocha', lista.join(','));

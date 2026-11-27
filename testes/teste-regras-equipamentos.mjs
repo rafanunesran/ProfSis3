@@ -40,7 +40,7 @@ async function caso(nome, esperado, promessa) {
     }
 }
 
-const COD = 'K7M2PQ';
+const COD = '482913';
 const daqui = min => Timestamp.fromMillis(Date.now() + min * 60000);
 const sessao = (extra) => Object.assign({
     hostUid: 'prof1', aberta: true, turma: '1º A', horario: '07:00–07:50', total: 30,
@@ -50,7 +50,8 @@ const sessao = (extra) => Object.assign({
 
 console.log('\nequip_sessoes/');
 await caso('codigo fora do formato e recusado', false, setDoc(doc(prof, 'equip_sessoes/abc'), sessao()));
-await caso('codigo com letra ambigua (O, I, 0, 1) e recusado', false, setDoc(doc(prof, 'equip_sessoes/K7M2P0'), sessao()));
+await caso('codigo com letra e recusado', false, setDoc(doc(prof, 'equip_sessoes/48291A'), sessao()));
+await caso('codigo com zero na frente e recusado', false, setDoc(doc(prof, 'equip_sessoes/082913'), sessao()));
 await caso('sessao em nome de outro professor e recusada', false, setDoc(doc(prof, 'equip_sessoes/' + COD), sessao({ hostUid: 'prof2' })));
 await caso('estudante sem conta nao abre sessao', false, setDoc(doc(aluno, 'equip_sessoes/' + COD), sessao()));
 await caso('sessao que vale mais de 18 h e recusada', false, setDoc(doc(prof, 'equip_sessoes/' + COD), sessao({ expiraEm: daqui(60 * 24) })));

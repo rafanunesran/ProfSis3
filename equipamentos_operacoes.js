@@ -29,8 +29,8 @@ const TIPOS = {
     outro:    { nome: 'Outro', icone: '🔌' }
 };
 
-// Sem I, L, O, U, 0 e 1 (o estudante erra ao copiar da lousa).
-const ALFABETO_CODIGO = 'ABCDEFGHJKMNPQRSTVWXYZ23456789';
+// O codigo da aula e' SO' NUMERO (6 digitos, sem zero na frente): o estudante digita
+// rapido no teclado numerico do celular, e e' o mesmo do link curto is.gd/<codigo>.
 const TAM_CODIGO = 6;
 const MAX_ROTULO = 40;
 
@@ -54,17 +54,27 @@ function aleatorios(n) {
 
 function gerarCodigo() {
     const b = aleatorios(TAM_CODIGO);
-    let s = '';
-    for (let i = 0; i < b.length; i++) s += ALFABETO_CODIGO[b[i] % ALFABETO_CODIGO.length];
+    let s = String(1 + (b[0] % 9));
+    for (let i = 1; i < b.length; i++) s += String(b[i] % 10);
     return s;
 }
 
+// Aceita o que o estudante colar: "123 456", "is.gd/123456", o link inteiro...
 function limparCodigo(c) {
-    return String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, TAM_CODIGO);
+    const t = String(c || '');
+    const m = t.match(/(?:is\.gd\/|[?&]c=)(\d{6})/);
+    return (m ? m[1] : t.replace(/\D/g, '')).slice(0, TAM_CODIGO);
 }
 
 function codigoValido(c) {
-    return new RegExp('^[' + ALFABETO_CODIGO + ']{' + TAM_CODIGO + '}$').test(String(c || ''));
+    return /^[1-9]\d{5}$/.test(String(c || ''));
+}
+
+// Link curto do is.gd com o proprio codigo no fim (is.gd/123456). O is.gd aceita
+// apelido de 5 a 30 letras/numeros; o pedido e' feito pelo navegador (JSONP).
+function urlPedidoIsgd(urlLonga, codigo, callback) {
+    return 'https://is.gd/create.php?format=json&callback=' + encodeURIComponent(callback) +
+        '&url=' + encodeURIComponent(urlLonga) + '&shorturl=' + encodeURIComponent(codigo);
 }
 
 function limparRotulo(s) {
@@ -398,7 +408,7 @@ function relatorioCsv(rel) {
 
 const EQUIPOPS = {
     TIPOS, TAM_CODIGO, FOLGA_LINK_MIN, MAX_ROTULO,
-    novoId, gerarCodigo, limparCodigo, codigoValido, limparRotulo, normalizar,
+    novoId, gerarCodigo, limparCodigo, codigoValido, urlPedidoIsgd, limparRotulo, normalizar,
     dataLocal, horaLocal, mesDe, horaValida, cruza,
     gerarLote, ordenarEquipamentos, funciona, resumirIds, rotuloDe,
     normalizarReserva, problemasDaReserva, ocupadosNoHorario, disponibilidade, contarPorTipo,
