@@ -1,7 +1,7 @@
 // MAPÕES → BOLETIM (mapao.js): a gestão envia vários PDFs de mapão (ou o link de uma pasta do
 // Drive), o EdiProf lê no aparelho, reconhece a turma pelos nomes, grava o boletim e, se pedido,
 // atualiza a situação dos estudantes. O boletim aparece na ficha do estudante, na ficha de tutoria
-// na tela e na ficha de tutoria impressa do professor.
+// na tela — e NÃO no relatório de tutoria impresso.
 //
 // Os PDFs deste teste são FALSOS (nomes inventados), montados pelo próprio Chromium no mesmo
 // desenho do mapão da SED: nome quebrado em 2–3 linhas, situação, M/F/AC por disciplina e TOTAL.
@@ -246,12 +246,12 @@ function htmlMapao(turma, fechamento, alunos, comNomes) {
   let impresso = '';
   if (janela) {
     await janela.addInitScript(() => { window.print = () => {}; });
-    await janela.waitForFunction(() => /Boletim|Conversa/.test(document.body && document.body.textContent), null, { timeout: 8000 }).catch(() => {});
+    await janela.waitForFunction(() => /Conversa/.test(document.body && document.body.textContent), null, { timeout: 8000 }).catch(() => {});
     impresso = await janela.evaluate(() => document.body.textContent.replace(/\s+/g, ' '));
     if (FOTOS) await janela.screenshot({ path: path.join(FOTOS, 'boletim-tutoria-impressa.png'), fullPage: true });
   }
   if (!janela) console.log('        (nenhuma janela abriu)');
-  ok('ficha de tutoria IMPRESSA traz o boletim', /Boletim/.test(impresso) && /Matematica/.test(impresso) && /Conversa sobre notas/.test(impresso), impresso.slice(0, 300));
+  ok('ficha de tutoria IMPRESSA NÃO traz o boletim (pedido do Rafael)', !/Boletim/.test(impresso) && /Conversa sobre notas/.test(impresso), impresso.slice(0, 300));
 
   // --- 6. Link de pasta do Drive ------------------------------------------------
   await p.evaluate((u) => {

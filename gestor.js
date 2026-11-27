@@ -3386,7 +3386,6 @@ async function verRelatorioTutoriaAluno(profId, profNome, alunoId, alunoNome) {
     const encontrosAluno = encontros.filter(e => e.tutoradoId == alunoId || e.encontroTutorado == alunoId);
     container.dataset.encontros = JSON.stringify(encontrosAluno);
     container.dataset.tutoradoInfo = JSON.stringify(tutoradoInfo || {});
-    container.dataset.notasOficiaisHtml = notasHtml || '';
 
     filtrarRelatorioTutoriaUI();
 }
@@ -3429,7 +3428,6 @@ function imprimirRelatorioTutoriaGestorSimplificado(profNome, alunoNome) {
     const semestreVal = document.getElementById('filtroSemestre').value;
     const encontros = JSON.parse(container.dataset.encontros || '[]');
     const t = JSON.parse(container.dataset.tutoradoInfo || '{}');
-    const notasHtml = container.dataset.notasOficiaisHtml || '';
 
     const calcIdade = (dn) => {
         if(!dn) return '';
@@ -3502,7 +3500,6 @@ function imprimirRelatorioTutoriaGestorSimplificado(profNome, alunoNome) {
                 </div>
             </div>
 
-            ${notasHtml ? `<div class="info">${notasHtml}</div>` : ''}
 
             ${filtrados.length > 0 ? filtrados.map(e => `
                 <div class="registro">
@@ -3593,11 +3590,7 @@ async function imprimirTodosRelatoriosTutoriaGestor(profId, profNome) {
             return false;
         }).sort((a,b) => new Date(a.data) - new Date(b.data));
 
-        const notasHtmlAluno = montarTabelaNotasOficiaisHtml({
-            notasBimestraisOficiais: data.notasBimestraisOficiais,
-            avaliacoesGestor: data.avaliacoesGestor,
-            notasAvaliacoesGestor: data.notasAvaliacoesGestor
-        }, normNomeNotasOficiais(t.nome_estudante));
+        // O boletim (mapão) aparece só na ficha de tutoria da tela, não no relatório impresso.
 
         html += `<div class="page-break">
             <div class="header">
@@ -3617,7 +3610,6 @@ async function imprimirTodosRelatoriosTutoriaGestor(profId, profNome) {
                     <p style="margin:2px 0;"><strong>Projeto de Vida:</strong> ${t.projeto_vida || '-'}</p>
                 </div>
             </div>
-            ${notasHtmlAluno ? `<div class="info">${notasHtmlAluno}</div>` : ''}
             ${encontrosAluno.length > 0 ? encontrosAluno.map(e => `<div class="registro"><div class="registro-data">📅 ${formatDate(e.data)}</div><div class="registro-titulo">${e.tema || 'Sem Título'}</div><div class="registro-texto">${e.resumo || ''}</div></div>`).join('') : '<p style="text-align:center; font-style:italic; color:#777;">Nenhum registro encontrado neste semestre.</p>'}
             <div style="margin-top:50px; border-top:1px solid #000; width:200px; text-align:center; font-size:10px; padding-top:5px;">Visto da Coordenação</div>
         </div>`;

@@ -7942,19 +7942,7 @@ async function imprimirRelatorioTutorado(id, nome) {
     if (!win) return alert('O navegador bloqueou a janela de impressão. Permita pop-ups para este site.');
     win.document.write('<p style="font-family:Arial; padding:40px;">Montando o relatório...</p>');
 
-    // Boletim (mapão da gestão): o mesmo da ficha de tutoria na tela. Quem não é gestor
-    // recebe pela lista publicada da escola (obterDadosGestor).
-    let notasHtml = '';
-    try {
-        const fonte = (typeof currentViewMode !== 'undefined' && currentViewMode === 'gestor') ? data : await obterDadosGestor();
-        if (fonte && typeof montarTabelaNotasOficiaisHtml === 'function') {
-            notasHtml = montarTabelaNotasOficiaisHtml({
-                notasBimestraisOficiais: fonte.notasBimestraisOficiais,
-                avaliacoesGestor: fonte.avaliacoesGestor,
-                notasAvaliacoesGestor: fonte.notasAvaliacoesGestor
-            }, t ? t.nome_estudante : nome, { impressao: true });
-        }
-    } catch (e) { console.warn('[Tutoria] Boletim não entrou no relatório:', e); }
+    // O boletim (mapão) fica só na ficha de tutoria da TELA: o relatório impresso não leva notas.
 
     const html = `
         <html>
@@ -7996,8 +7984,6 @@ async function imprimirRelatorioTutorado(id, nome) {
                     <p style="margin:2px 0;"><strong>Eletiva:</strong> ${t.eletiva_1 || '-'} / ${t.eletiva_2 || '-'}</p>
                 </div>
             </div>
-
-            ${notasHtml ? `<div class="info">${notasHtml}</div>` : ''}
 
             ${encontros.map(e => `
                 <div class="registro">
