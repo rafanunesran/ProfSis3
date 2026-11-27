@@ -152,6 +152,9 @@ function analisarItensMapao(paginas) {
         const nomes = dentro.filter(t => !/^\d{3,6}$/.test(t.s)).sort((a, b) => a.y - b.y || a.x - b.x);
         g.nome = nomes.map(t => t.s).join(' ').replace(/([A-Za-zÀ-ú])- /g, '$1-').replace(/\s+/g, ' ').trim() || ('Disciplina ' + (i + 1));
         g.codigo = codigo ? codigo.s : '';
+        // Código colado no nome ("ARTE 1813", "EDUCAÇAO FINANCEIRA 52000"): sai do nome.
+        const colado = g.nome.match(/^(.*\D)\s*(\d{3,6})$/);
+        if (colado && colado[1].trim()) { g.nome = colado[1].trim(); if (!g.codigo) g.codigo = colado[2]; }
     });
     resultado.disciplinas = grupos.map(g => ({ nome: g.nome, codigo: g.codigo }));
 
@@ -811,7 +814,9 @@ async function renderFechamentosTurma() {
     const todas = (fonte && fonte.notasBimestraisOficiais) || [];
     const nomes = new Set(estudantes.map(e => normNomeNotasOficiais(e.nome_completo)));
     const daTurma = todas.filter(n => nomes.has(normNomeNotasOficiais(n.nome_estudante_norm)));
-    const disponiveis = Array.from(new Set(daTurma.map(n => n.disciplina).filter(d => d && d !== MAPAO_DISCIPLINA_TOTAL))).sort();
+    // Mesma disciplina com grafias diferentes ("ARTE" / "ARTE 1813") vira uma só (chave).
+    const gruposDisc = agruparDisciplinasBoletim(daTurma.filter(n => n.disciplina !== MAPAO_DISCIPLINA_TOTAL));
+    const disponiveis = Object.keys(gruposDisc).sort((a, b) => a.localeCompare(b));
 
     if (!daTurma.length) {
         alvo.innerHTML = `<div class="card" style="padding:16px;"><p class="empty-state" style="margin:0;">Ainda não há mapão desta turma. Os fechamentos aparecem aqui quando a gestão enviar os mapões da SED (Painel da Gestão › 📋 Mapões → Boletim).</p></div>`;
@@ -825,7 +830,7 @@ async function renderFechamentosTurma() {
     const seletor = !ehGestor ? '' : `<label style="font-size:12px; display:inline-flex; align-items:center; gap:6px;">Disciplina no mapão:
         <select onchange="escolherDisciplinaFechamento(this.value)" style="width:auto; padding:4px 8px; font-size:13px;">
             ${disciplina ? '' : '<option value="">— escolha —</option>'}
-            ${disponiveis.map(d => `<option value="${escMapao(d)}" ${d === disciplina ? 'selected' : ''}>${escMapao(nomeDisciplinaBoletim(d))}</option>`).join('')}
+            ${disponiveis.map(d => `<option value="${escMapao(d)}" ${d === disciplina ? 'selected' : ''}>${escMapao(nomeDisciplinaBoletim(gruposDisc[d].nome))}</option>`).join('')}
         </select></label>`;
 
     if (!disciplina) {
@@ -835,7 +840,7 @@ async function renderFechamentosTurma() {
         return;
     }
 
-    const notasDisc = daTurma.filter(n => n.disciplina === disciplina);
+    const notasDisc = gruposDisc[disciplina].registros;
     const comDado = [1, 2, 3, 4].filter(b => notasDisc.some(n => n.bimestre == b && String(n.valor || '').trim() && n.valor !== '-'));
     const ultimo = comDado.length ? comDado[comDado.length - 1] : 0;
     const num = (v) => { const x = parseFloat(String(v).replace(',', '.')); return isNaN(x) ? null : x; };
@@ -844,8 +849,7 @@ async function renderFechamentosTurma() {
     let abaixo = 0, risco = 0, semMapao = 0, impossivel = 0;
     const linhas = estudantes.map(e => {
         const k = normNomeNotasOficiais(e.nome_completo);
-        const porBim = {};
-        notasDisc.filter(n => normNomeNotasOficiais(n.nome_estudante_norm) === k).forEach(n => { porBim[n.bimestre] = n; });
+        const porBim = porBimestreBoletim(notasDisc.filter(n => normNomeNotasOficiais(n.nome_estudante_norm) === k));
         if (!Object.keys(porBim).length) semMapao++;
         const est = estimativaBoletim(porBim, ultimo);
         if (est.risco) risco++;
@@ -879,7 +883,7 @@ async function renderFechamentosTurma() {
         <div class="card" style="padding:14px;">
             <div class="boletim" style="max-width:720px;">
                 <div class="bol-topo">
-                    <strong>📋 Fechamentos — ${escMapao(nomeDisciplinaBoletim(disciplina))}</strong>
+                    <strong>📋 Fechamentos — ${escMapao(nomeDisciplinaBoletim(gruposDisc[disciplina].nome))}</strong>
                     ${seletor}
                 </div>
                 <div class="bol-chips" style="margin-bottom:8px;">${chips}
@@ -924,9 +928,9 @@ async function carregarMetasTrabalhos() {
     const estudantes = (data.estudantes || []).filter(e => e.id_turma == turmaId);
     const nomes = new Set(estudantes.map(e => normNomeNotasOficiais(e.nome_completo)));
     const todas = ((fonte && fonte.notasBimestraisOficiais) || []).filter(n => nomes.has(normNomeNotasOficiais(n.nome_estudante_norm)));
-    const disponiveis = Array.from(new Set(todas.map(n => n.disciplina).filter(d => d && d !== MAPAO_DISCIPLINA_TOTAL)));
-    const disciplina = disciplinaDaTurmaNoMapao(turma.disciplina, disponiveis);
-    const notasDisc = disciplina ? todas.filter(n => n.disciplina === disciplina) : [];
+    const gruposDisc = agruparDisciplinasBoletim(todas.filter(n => n.disciplina !== MAPAO_DISCIPLINA_TOTAL));
+    const disciplina = disciplinaDaTurmaNoMapao(turma.disciplina, Object.keys(gruposDisc));
+    const notasDisc = disciplina ? gruposDisc[disciplina].registros : [];
     const num = (v) => { const x = parseFloat(String(v).replace(',', '.')); return isNaN(x) ? null : x; };
 
     const porEst = {};
@@ -934,8 +938,7 @@ async function carregarMetasTrabalhos() {
         const k = normNomeNotasOficiais(e.nome_completo);
         const minhas = notasDisc.filter(n => normNomeNotasOficiais(n.nome_estudante_norm) === k);
         const oficial = minhas.find(n => n.bimestre == bim && num(n.valor) !== null);
-        const anteriores = {};
-        minhas.filter(n => Number(n.bimestre) < bim).forEach(n => { anteriores[n.bimestre] = n; });
+        const anteriores = porBimestreBoletim(minhas.filter(n => Number(n.bimestre) < bim));
         const est = estimativaBoletim(anteriores, bim - 1);
         const x = est.porBim[bim];
         let meta;

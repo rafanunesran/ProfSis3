@@ -330,6 +330,35 @@ function htmlMapao(turma, fechamento, alunos, comNomes) {
   });
   ok('Fechamentos do gestor: pode trocar a disciplina', seletorGestor);
 
+  // A SED escreve a mesma disciplina de jeitos diferentes ("ARTE" / "ARTE 1813", com e sem cedilha):
+  // tudo vira uma linha só, no boletim e nos Fechamentos.
+  const dup = await p.evaluate(async () => {
+    const nome = 'ana carolina de souza lima';
+    const reg = (disciplina, bimestre, valor) => ({ origem: 'mapao', id_estudante: 1, nome_estudante_norm: nome, disciplina, bimestre, valor, faltas: '0' });
+    const dg = { notasBimestraisOficiais: [
+      reg('ARTE', 1, '10'), reg('ARTE 1813', 1, '10'), reg('ARTE', 2, '8'), reg('ARTE', 3, '8'),
+      reg('CIENCIAS 8468', 1, '7'), reg('CIENCIAS', 2, '7'), reg('CIENCIAS', 3, '8'),
+      reg('EDUCACAO FISICA', 1, '5'), reg('EDUCACAO FISICA 1900', 1, '5'), reg('EDUCAÇAO FISICA', 2, '8'),
+      reg('EDUCAÇAO FINANCEIRA 52000', 1, '5'), reg('EDUCAÇAO FINANCEIRA', 2, '7'), reg('EDUCAÇAO FINANCEIRA', 3, '8')
+    ] };
+    const div = document.createElement('div'); div.innerHTML = montarTabelaNotasOficiaisHtml(dg, nome);
+    const linhas = Array.from(div.querySelectorAll('.bol-tabela tbody tr')).map(tr => Array.from(tr.children).map(c => c.textContent.trim().replace(/\s+/g, '')).join('|'))
+      .filter(l => !/^Frequ/.test(l));
+    obterDadosGestor = async () => dg;
+    data.turmas[0].disciplina = 'Educação Física';
+    verFechamentosTrabalhos = true; renderTrabalhos();
+    for (let i = 0; i < 30; i++) { await new Promise(r => setTimeout(r, 50)); if (document.querySelector('#fechamentosTurma .bol-tabela')) break; }
+    const titulo = (document.querySelector('#fechamentosTurma .bol-topo strong') || {}).textContent || document.getElementById('fechamentosTurma').textContent;
+    const ana = Array.from(document.querySelectorAll('#fechamentosTurma tbody tr')).map(tr => tr.textContent.replace(/\s+/g, '')).find(t => /AnaCarolina/.test(t));
+    verFechamentosTrabalhos = false; data.turmas[0].disciplina = 'Matemática';
+    return { linhas, titulo, ana };
+  });
+  ok('boletim junta grafias da mesma disciplina (4 linhas, sem código)', dup.linhas.length === 4
+    && dup.linhas.every(l => !/\d{4}/.test(l.split('|')[0]))
+    && dup.linhas.some(l => /^Arte\|10\|8\|8\|/.test(l)) && dup.linhas.some(l => /^Ciencias\|7\|7\|8\|/.test(l))
+    && dup.linhas.some(l => /^Educaçao(Fisica)\|5\|8\|–?/.test(l)) && dup.linhas.some(l => /^EducaçaoFinanceira\|5\|7\|8\|/.test(l)), JSON.stringify(dup.linhas));
+  ok('Fechamentos acha a disciplina juntando as grafias', /Educaçao Fisica/.test(dup.titulo) && /AnaCarolinadeSouzaLima5–?8/.test(dup.ana || ''), JSON.stringify(dup));
+
   const [janela] = await Promise.all([
     p.waitForEvent('popup', { timeout: 8000 }).catch(() => null),
     p.evaluate(() => { window.print = () => {}; imprimirRelatorioTutorado(700, 'Ana Carolina de Souza Lima'); })

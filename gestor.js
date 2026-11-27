@@ -3652,6 +3652,41 @@ function nomeDisciplinaBoletim(d) {
     ).join(' ');
 }
 
+// A SED escreve a mesma disciplina de jeitos diferentes conforme o mapão: "ARTE" e "ARTE 1813",
+// "EDUCACAO FISICA" e "EDUCAÇAO FISICA". A chave ignora código numérico no começo/fim, acento,
+// maiúsculas, pontuação e espaços; tudo que tem a mesma chave vira uma linha só no boletim.
+function semCodigoDisciplinaBoletim(d) {
+    return String(d || '').replace(/\s+/g, ' ').trim().replace(/^\d{3,6}\s*[-–]?\s*(?=\D)/, '').replace(/(\D)\s*[-–]?\s*\d{3,6}$/, '$1').trim();
+}
+function chaveDisciplinaBoletim(d) {
+    return semCodigoDisciplinaBoletim(d).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+}
+// registros (de um estudante ou de uma turma) → { chave: { nome, registros: [...] } }.
+// Nome mostrado: a grafia sem código que tem mais acentos (Educaçao > Educacao).
+function agruparDisciplinasBoletim(registros) {
+    const grupos = {};
+    const acentos = (s) => (s.match(/[^\x00-\x7F]/g) || []).length;
+    (registros || []).forEach(n => {
+        const k = chaveDisciplinaBoletim(n.disciplina);
+        if (!k) return;
+        const nome = semCodigoDisciplinaBoletim(n.disciplina);
+        if (!grupos[k]) grupos[k] = { nome, registros: [] };
+        else if (acentos(nome) > acentos(grupos[k].nome)) grupos[k].nome = nome;
+        grupos[k].registros.push(n);
+    });
+    return grupos;
+}
+// Vários registros do mesmo bimestre (grafias diferentes): vale o que tem nota; empate, o mais novo.
+function porBimestreBoletim(registros) {
+    const temNota = (n) => n && !isNaN(parseFloat(String(n.valor).replace(',', '.')));
+    const porBim = {};
+    (registros || []).forEach(n => {
+        const atual = porBim[n.bimestre];
+        if (!atual || temNota(n) || !temNota(atual)) porBim[n.bimestre] = n;
+    });
+    return porBim;
+}
+
 // Média para não reprovar e a conta das notas mínimas do boletim.
 const MEDIA_APROVACAO_BOLETIM = 5;
 
@@ -3711,11 +3746,9 @@ function montarTabelaNotasOficiaisHtml(dadosGestor, nomeNorm, opcoes) {
     const mapao = mapaoTudo.filter(n => n.disciplina !== NOTAS_OFICIAIS_TOTAL);
     const totais = mapaoTudo.filter(n => n.disciplina === NOTAS_OFICIAIS_TOTAL);
     if (mapao.length > 0 || totais.length > 0) {
-        const porDisciplina = {};
-        mapao.forEach(n => {
-            if (!porDisciplina[n.disciplina]) porDisciplina[n.disciplina] = {};
-            porDisciplina[n.disciplina][n.bimestre] = n;
-        });
+        const porDisciplina = {}, nomeDisc = {};
+        const grupos = agruparDisciplinasBoletim(mapao);
+        Object.keys(grupos).forEach(k => { porDisciplina[k] = porBimestreBoletim(grupos[k].registros); nomeDisc[k] = grupos[k].nome; });
         const porBimTotal = {};
         totais.forEach(n => { porBimTotal[n.bimestre] = n; });
         const vazio = (v) => v === undefined || v === null || v === '' || v === '-';
@@ -3743,7 +3776,7 @@ function montarTabelaNotasOficiaisHtml(dadosGestor, nomeNorm, opcoes) {
         const rotuloBim = (b) => b === 5 ? '5º C.' : b + 'º';
 
         let emRisco = 0;
-        const linhasDisc = Object.keys(porDisciplina).sort().map(disc => {
+        const linhasDisc = Object.keys(porDisciplina).sort((a, b) => a.localeCompare(b)).map(disc => {
             const est = estimativaBoletim(porDisciplina[disc], ultimo);
             if (est.risco) emRisco++;
             const celulas = bimestres.map(bm => {
@@ -3752,7 +3785,7 @@ function montarTabelaNotasOficiaisHtml(dadosGestor, nomeNorm, opcoes) {
                 if (est.porBim[bm]) return celEstimada(est.porBim[bm]);
                 return celLancada(n);
             }).join('');
-            return `<tr><th scope="row">${escNotasOficiais(nomeDisciplinaBoletim(disc))}</th>${celulas}</tr>`;
+            return `<tr><th scope="row">${escNotasOficiais(nomeDisciplinaBoletim(nomeDisc[disc]))}</th>${celulas}</tr>`;
         }).join('');
 
         // Resumo do bimestre mais recente, em chips.

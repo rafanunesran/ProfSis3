@@ -3418,3 +3418,5 @@ html.no-app-android .btn-instalar-app {
 .meta-chip.meta-ok { color: #276749; border-color: #48bb78; background: #f0fff4; }
 .meta-chip.meta-ruim { color: #c53030; border-color: #fc8181; background: #fff5f5; }
 .meta-sed { display: block; font-size: 9.5px; color: var(--text-3, #7a869a); font-weight: 600; margin-top: 1px; }
+/* Cabeçalho "Disciplina" acompanha a coluna fixa quando a tabela rola para o lado. */
+.bol-tabela thead th:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); }
